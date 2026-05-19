@@ -2,14 +2,15 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { learnFolderFromLabel, listFolderDomainSuggestions, addDomainFilter } from "@/lib/gmail.functions";
+import { learnFolderFromLabel, listFolderDomainSuggestions, addDomainFilter, reassignDomainToFolder } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, X, Sparkles, Link2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Plus, Trash2, X, Sparkles, Link2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 export type Folder = {
