@@ -14,7 +14,219 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      emails: {
+        Row: {
+          ai_confidence: number | null
+          ai_summary: string | null
+          body_html: string | null
+          body_text: string | null
+          classified_by: string | null
+          created_at: string
+          folder_id: string | null
+          from_addr: string | null
+          from_name: string | null
+          gmail_message_id: string
+          has_attachment: boolean
+          id: string
+          is_archived: boolean
+          is_read: boolean
+          raw_labels: string[] | null
+          received_at: string | null
+          snippet: string | null
+          subject: string | null
+          thread_id: string | null
+          to_addrs: string | null
+          user_id: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          ai_summary?: string | null
+          body_html?: string | null
+          body_text?: string | null
+          classified_by?: string | null
+          created_at?: string
+          folder_id?: string | null
+          from_addr?: string | null
+          from_name?: string | null
+          gmail_message_id: string
+          has_attachment?: boolean
+          id?: string
+          is_archived?: boolean
+          is_read?: boolean
+          raw_labels?: string[] | null
+          received_at?: string | null
+          snippet?: string | null
+          subject?: string | null
+          thread_id?: string | null
+          to_addrs?: string | null
+          user_id: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          ai_summary?: string | null
+          body_html?: string | null
+          body_text?: string | null
+          classified_by?: string | null
+          created_at?: string
+          folder_id?: string | null
+          from_addr?: string | null
+          from_name?: string | null
+          gmail_message_id?: string
+          has_attachment?: boolean
+          id?: string
+          is_archived?: boolean
+          is_read?: boolean
+          raw_labels?: string[] | null
+          received_at?: string | null
+          snippet?: string | null
+          subject?: string | null
+          thread_id?: string | null
+          to_addrs?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emails_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      folder_filters: {
+        Row: {
+          created_at: string
+          field: string
+          folder_id: string
+          id: string
+          op: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          field: string
+          folder_id: string
+          id?: string
+          op: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          field?: string
+          folder_id?: string
+          id?: string
+          op?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_filters_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      folders: {
+        Row: {
+          ai_rule: string | null
+          auto_archive: boolean
+          auto_mark_read: boolean
+          color: string
+          created_at: string
+          gmail_label_id: string | null
+          id: string
+          name: string
+          priority: number
+          user_id: string
+        }
+        Insert: {
+          ai_rule?: string | null
+          auto_archive?: boolean
+          auto_mark_read?: boolean
+          color?: string
+          created_at?: string
+          gmail_label_id?: string | null
+          id?: string
+          name: string
+          priority?: number
+          user_id: string
+        }
+        Update: {
+          ai_rule?: string | null
+          auto_archive?: boolean
+          auto_mark_read?: boolean
+          color?: string
+          created_at?: string
+          gmail_label_id?: string | null
+          id?: string
+          name?: string
+          priority?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      reply_drafts: {
+        Row: {
+          created_at: string
+          draft_text: string
+          email_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          draft_text: string
+          email_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          draft_text?: string
+          email_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reply_drafts_email_id_fkey"
+            columns: ["email_id"]
+            isOneToOne: false
+            referencedRelation: "emails"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sync_state: {
+        Row: {
+          id: number
+          last_history_id: string | null
+          last_poll_at: string | null
+          updated_at: string
+          user_id: string | null
+          watch_expiration: string | null
+        }
+        Insert: {
+          id?: number
+          last_history_id?: string | null
+          last_poll_at?: string | null
+          updated_at?: string
+          user_id?: string | null
+          watch_expiration?: string | null
+        }
+        Update: {
+          id?: number
+          last_history_id?: string | null
+          last_poll_at?: string | null
+          updated_at?: string
+          user_id?: string | null
+          watch_expiration?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
