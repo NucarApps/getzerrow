@@ -317,15 +317,18 @@ export async function backfillRecent(accountId: string, userId: string, maxResul
 async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   const account = await getAccount(accountId);
   const watch = await ensureWatch(accountId, account.watch_expiration);
-  const updates: Record<string, any> = {
-    history_id: historyId,
-    last_poll_at: new Date().toISOString(),
-  };
   if (watch) {
-    updates.history_id = watch.historyId;
-    updates.watch_expiration = new Date(parseInt(watch.expiration, 10)).toISOString();
+    await supabaseAdmin.from("gmail_accounts").update({
+      history_id: watch.historyId,
+      watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
+      last_poll_at: new Date().toISOString(),
+    }).eq("id", accountId);
+  } else {
+    await supabaseAdmin.from("gmail_accounts").update({
+      history_id: historyId,
+      last_poll_at: new Date().toISOString(),
+    }).eq("id", accountId);
   }
-  await supabaseAdmin.from("gmail_accounts").update(updates).eq("id", accountId);
 }
 
 export async function syncSinceHistory(accountId: string) {
