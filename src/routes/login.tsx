@@ -17,9 +17,13 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) nav({ to: "/" });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session?.user) nav({ to: "/" });
     });
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user) nav({ to: "/" });
+    });
+    return () => sub.subscription.unsubscribe();
   }, [nav]);
 
   async function submit(e: React.FormEvent) {
@@ -37,10 +41,21 @@ function LoginPage() {
 
   async function signInWithGoogle() {
     setLoading(true);
-    const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-    if (result.error) { setLoading(false); toast.error(result.error.message ?? "Google sign-in failed"); return; }
-    if (result.redirected) return;
-    nav({ to: "/" });
+    try {
+      const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+      if (result.error) {
+        console.error("Google sign-in error", result.error);
+        toast.error(result.error.message ?? "Google sign-in failed");
+        setLoading(false);
+        return;
+      }
+      if (result.redirected) return; // browser navigating to Google
+      // Tokens received inline — onAuthStateChange will redirect.
+    } catch (e: any) {
+      console.error("Google sign-in threw", e);
+      toast.error(e?.message ?? "Google sign-in failed");
+      setLoading(false);
+    }
   }
 
   return (
