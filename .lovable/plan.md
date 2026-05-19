@@ -1,21 +1,109 @@
-## Why "Learn" returned 0 emails
+## Goal
 
-In `learnFromLinkedLabel` (src/lib/sync.server.ts:259) we call:
+Each user signs in and connects **their own** Gmail inbox. Real-time updates flow via Pub/Sub push to a webhook, with polling as the fallback.
 
-```ts
-listMessages({ maxResults: 50, q: `label:${folder.gmail_label_id}` })
-```
+## Two-layer auth model
 
-`folder.gmail_label_id` is the Gmail label **ID** (e.g. `Label_4831…`). Gmail's search operator `label:` expects the label **name** (e.g. `Inbox Zero/Factory`, with `/` replaced by `-` and spaces escaped) — not the ID. So the query matches nothing and we record 0 examples.
+We keep these concerns separate:
 
-The correct way to filter by label ID is the dedicated `labelIds` query parameter on `users.messages.list`, which takes the raw ID.
+1. **App sign-in** — stays as Lovable Cloud Google sign-in (already working). Identifies *who the user is*.
+2. **Gmail authorization** — new, separate OAuth flow against **your own** GCP OAuth client, requesting Gmail scopes. Stores per-user `access_token` + `refresh_token` server-side. Identifies *which inbox to read*.
 
-## Fix
+This is the standard pattern (Superhuman, Shortwave, etc.) and required by Google — Gmail scopes (`gmail.modify`, `gmail.readonly`) must be granted by each end-user through your own verified OAuth client.
 
-1. **`src/lib/gmail.server.ts` — extend `listMessages`** to accept `labelIds?: string[]` and append each as a repeated `labelIds=` query param (Gmail accepts multiple).
+## What you need to set up in GCP (one-time, manual)
 
-2. **`src/lib/sync.server.ts` — `learnFromLinkedLabel`** switch from `q: 'label:…'` to `labelIds: [folder.gmail_label_id]`. Keep the rest (fetch each message, upsert into `folder_examples` as `seed`, regenerate `learned_profile`, stamp `last_learned_at`) unchanged.
+You'll do this in console.cloud.google.com — I can't do it for you:
 
-3. **Guard against empty results with a clearer toast**: if Gmail returns 0 messages for the linked label, surface "No emails found under linked label — make sure the label has messages" instead of the current silent "Learned from 0 emails". (Frontend toast string in `folders.tsx`.)
+1. Create a GCP project (or use an existing one).
+2. Enable the **Gmail API** and **Cloud Pub/Sub API**.
+3. **OAuth consent screen**: set to *External*, add scopes `gmail.modify`, `gmail.readonly`, `gmail.send`, `openid`, `email`, `profile`. Add yourself as a test user. (For broad release later you'd submit for verification — for personal/small use, leaving in Testing mode is fine, max 100 users.)
+4. **Create OAuth 2.0 Client ID** (Web application). Authorized redirect URI: `https://<your-published-domain>/api/public/google-oauth-callback` (and the preview URL too while developing). Note `client_id` and `client_secret`.
+5. **Create a Pub/Sub topic** `gmail-push` and grant `gmail-api-push@system.gserviceaccount.com` the *Pub/Sub Publisher* role on it.
+6. **Create a Push subscription** on that topic with endpoint `https://<your-published-domain>/api/public/gmail-webhook`.
 
-No schema changes, no UI restructuring — just the query fix plus a friendlier message.
+Once that's done I'll need three secrets added to the project: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GMAIL_PUBSUB_TOPIC` (full path like `projects/your-gcp/topics/gmail-push`).
+
+## What I'll build
+
+### 1. Database
+
+New table `gmail_accounts` (one row per connected Gmail per app user):
+
+- `user_id` → `auth.users`
+- `email_address`
+- `access_token`, `refresh_token`, `token_expires_at`
+- `history_id`, `watch_expiration`
+- RLS: user can only see/edit their own row
+
+Migrate `sync_state` from singleton-row-id-1 to one row per `gmail_accounts.id`. Update `emails`, `folders`, `folder_examples` to scope by `gmail_account_id` (already scoped by `user_id`, just add the FK).
+
+### 2. OAuth flow
+
+- New route `/settings/connect-gmail` — button that redirects to Google's consent screen with `access_type=offline&prompt=consent` (forces refresh token).
+- New server route `/api/public/google-oauth-callback` — exchanges the auth code for tokens, fetches the user's email address, inserts/updates `gmail_accounts`, immediately starts a Gmail `watch` against your Pub/Sub topic, redirects back to settings.
+
+### 3. Replace `gmail.server.ts`
+
+Currently it goes through `connector-gateway.lovable.dev` with `GOOGLE_MAIL_API_KEY`. Rewrite to call `https://gmail.googleapis.com/gmail/v1/...` directly with the per-user bearer token.
+
+Add a `getAccessToken(accountId)` helper that:
+- Returns the stored token if it's >2 min from expiry.
+- Otherwise calls Google's token endpoint with the refresh token, updates the DB, returns the new one.
+
+Every existing function (`listMessages`, `getMessage`, `modifyMessage`, `sendMessage`, `listHistory`, `watchInbox`, `stopWatch`, `listLabels`, `createLabel`, `trashMessage`) takes `accountId` as the first argument now.
+
+### 4. Pub/Sub webhook
+
+`/api/public/gmail-webhook` already exists but currently grabs "the first user". Rewrite to:
+- Decode the Pub/Sub envelope → `{ emailAddress, historyId }`.
+- Look up `gmail_accounts` by `email_address`.
+- Call `syncSinceHistory(accountId)` for that account.
+
+Optional but recommended: verify the Pub/Sub JWT in the `Authorization` header (Google signs push messages). Quick and prevents anyone from spamming the endpoint.
+
+### 5. Settings UI
+
+- Replace the "Inbox sync" card with a "Connected Gmail accounts" list showing each connected address, watch status, last sync time, and a Disconnect button.
+- "Connect Gmail" button kicks off the OAuth flow.
+- Existing Backfill / Sync now buttons take an `accountId`.
+
+### 6. Migration of existing data
+
+You currently have emails synced via the shared connector. Options:
+- **Wipe and resync** — simplest, given this is a personal-use app. After you connect your Gmail through the new flow, click Backfill.
+- **Backfill-then-merge** — keep existing rows, attach them to the new `gmail_account_id` once your address matches.
+
+I'd recommend wiping — 30 emails comes back in seconds.
+
+## Files changed (preview)
+
+- New: `supabase/migrations/...` (gmail_accounts + FK updates)
+- New: `src/routes/api/public/google-oauth-callback.ts`
+- New: `src/lib/google-oauth.server.ts` (token exchange + refresh)
+- Rewritten: `src/lib/gmail.server.ts` (direct Gmail API, per-account)
+- Rewritten: `src/lib/sync.server.ts` (accountId-aware)
+- Rewritten: `src/routes/api/public/gmail-webhook.ts` (proper account lookup)
+- Updated: `src/lib/gmail.functions.ts` (all fns take accountId)
+- Updated: `src/routes/_authenticated/settings.tsx` (account list + connect button)
+- Updated: `src/routes/_authenticated/folders.tsx` (scope by accountId)
+- Removed: dependency on `GOOGLE_MAIL_API_KEY` connector secret
+
+## Order of execution
+
+1. You set up GCP (steps 1–6 above) and tell me when done.
+2. I request the 3 secrets (`GOOGLE_OAUTH_CLIENT_ID`, `_SECRET`, `GMAIL_PUBSUB_TOPIC`).
+3. DB migration.
+4. OAuth flow + token refresh.
+5. Rewrite gmail.server.ts to direct API.
+6. Rewrite webhook + sync.
+7. Update UI.
+8. You click "Connect Gmail" → authorize → backfill.
+
+## Scope of this plan
+
+- ✅ Per-user Gmail via your GCP
+- ✅ Real-time Pub/Sub push
+- ✅ Token refresh
+- ❌ Google OAuth app verification (you can run in Testing mode for now)
+- ❌ Multi-Gmail-per-user (one inbox per app user — straightforward to extend later)
