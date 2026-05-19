@@ -40,6 +40,15 @@ function InboxPage() {
   const [selectedFolder, setSelectedFolder] = useState<string | "all" | "unsorted">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const accountQ = useQuery({
+    queryKey: ["gmail_account"],
+    queryFn: async () => {
+      const { data } = await supabase.from("gmail_accounts").select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
+      return data as { id: string } | null;
+    },
+  });
+  const accountId = accountQ.data?.id ?? null;
+
   const foldersQ = useQuery({
     queryKey: ["folders"],
     queryFn: async () => {
