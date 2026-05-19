@@ -2,14 +2,15 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { learnFolderFromLabel, listFolderDomainSuggestions, addDomainFilter } from "@/lib/gmail.functions";
+import { learnFolderFromLabel, listFolderDomainSuggestions, addDomainFilter, reassignDomainToFolder } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, X, Sparkles, Link2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Plus, Trash2, X, Sparkles, Link2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 export type Folder = {
@@ -41,7 +42,9 @@ export function FolderEditor({
   const learnFn = useServerFn(learnFolderFromLabel);
   const listDomainsFn = useServerFn(listFolderDomainSuggestions);
   const addDomainFn = useServerFn(addDomainFilter);
+  const reassignFn = useServerFn(reassignDomainToFolder);
   const [local, setLocal] = useState(folder);
+  const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
@@ -70,6 +73,19 @@ export function FolderEditor({
     enabled: exampleCount > 0,
     queryFn: async () => (await listDomainsFn({ data: { folder_id: folder.id } })).suggestions,
     placeholderData: (prev) => prev,
+  });
+
+  const otherFoldersQ = useQuery({
+    queryKey: ["folders-picker", folder.gmail_account_id, folder.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("folders")
+        .select("id, name, color")
+        .eq("gmail_account_id", folder.gmail_account_id)
+        .neq("id", folder.id)
+        .order("name");
+      return (data ?? []) as Array<{ id: string; name: string; color: string }>;
+    },
   });
 
   async function save() {
@@ -114,6 +130,25 @@ export function FolderEditor({
     } catch (e: any) {
       qc.setQueryData(key, prev);
       toast.error(e.message ?? "Failed to add");
+    }
+  }
+  async function reassignDomain(domain: string, toFolderId: string, toName: string) {
+    const key = ["folder-domains", folder.id, exampleCount];
+    const prev = qc.getQueryData<Array<{ domain: string; count: number }>>(key);
+    qc.setQueryData(key, (old: Array<{ domain: string; count: number }> | undefined) =>
+      (old ?? []).filter((s) => s.domain !== domain),
+    );
+    setPickerOpen(null);
+    try {
+      const r = await reassignFn({ data: { from_folder_id: folder.id, to_folder_id: toFolderId, domain } });
+      toast.success(`Moved ${r.moved} email${r.moved === 1 ? "" : "s"} to ${toName} · routing future ${domain}`);
+      qc.invalidateQueries({ queryKey: ["emails"] });
+      qc.invalidateQueries({ queryKey: ["folder-filters", toFolderId] });
+      qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
+      qc.invalidateQueries({ queryKey: ["folders-full"] });
+    } catch (e: any) {
+      qc.setQueryData(key, prev);
+      toast.error(e.message ?? "Failed to move");
     }
   }
   async function learn() {
@@ -181,16 +216,51 @@ export function FolderEditor({
             <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Suggested domains</div>
             <div className="flex flex-wrap gap-1.5">
               {domainsQ.data!.map((s) => (
-                <button
+                <div
                   key={s.domain}
-                  onClick={() => addDomain(s.domain)}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:border-primary hover:bg-primary/5 transition-colors"
-                  title={`Click to auto-route all ${s.domain} emails to ${folder.name}`}
+                  className="inline-flex items-stretch rounded-full border border-border bg-background text-xs overflow-hidden hover:border-primary transition-colors"
                 >
-                  <Plus className="h-3 w-3" />
-                  <span className="font-mono">{s.domain}</span>
-                  <span className="text-muted-foreground">· {s.count}</span>
-                </button>
+                  <button
+                    onClick={() => addDomain(s.domain)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 hover:bg-primary/5"
+                    title={`Auto-route all ${s.domain} emails to ${folder.name}`}
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span className="font-mono">{s.domain}</span>
+                    <span className="text-muted-foreground">· {s.count}</span>
+                  </button>
+                  <Popover open={pickerOpen === s.domain} onOpenChange={(o) => setPickerOpen(o ? s.domain : null)}>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="inline-flex items-center justify-center border-l border-border px-1.5 hover:bg-primary/5"
+                        title={`Move ${s.domain} to a different folder`}
+                      >
+                        <ArrowRight className="h-3 w-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-1" align="end">
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        Move {s.domain} to…
+                      </div>
+                      {(otherFoldersQ.data ?? []).length === 0 ? (
+                        <div className="px-2 py-2 text-xs text-muted-foreground italic">No other folders</div>
+                      ) : (
+                        <div className="max-h-64 overflow-y-auto">
+                          {(otherFoldersQ.data ?? []).map((f) => (
+                            <button
+                              key={f.id}
+                              onClick={() => reassignDomain(s.domain, f.id, f.name)}
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent text-left"
+                            >
+                              <span className="h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                              <span className="truncate">{f.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
               ))}
             </div>
           </div>
