@@ -173,9 +173,10 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
   const domainsQ = useQuery({
-    queryKey: ["folder-domains", folder.id, exampleCount, filters.length],
+    queryKey: ["folder-domains", folder.id, exampleCount],
     enabled: exampleCount > 0,
     queryFn: async () => (await listDomainsFn({ data: { folder_id: folder.id } })).suggestions,
+    placeholderData: (prev) => prev,
   });
 
   async function save() {
