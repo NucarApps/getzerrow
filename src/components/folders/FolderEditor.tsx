@@ -132,6 +132,25 @@ export function FolderEditor({
       toast.error(e.message ?? "Failed to add");
     }
   }
+  async function reassignDomain(domain: string, toFolderId: string, toName: string) {
+    const key = ["folder-domains", folder.id, exampleCount];
+    const prev = qc.getQueryData<Array<{ domain: string; count: number }>>(key);
+    qc.setQueryData(key, (old: Array<{ domain: string; count: number }> | undefined) =>
+      (old ?? []).filter((s) => s.domain !== domain),
+    );
+    setPickerOpen(null);
+    try {
+      const r = await reassignFn({ data: { from_folder_id: folder.id, to_folder_id: toFolderId, domain } });
+      toast.success(`Moved ${r.moved} email${r.moved === 1 ? "" : "s"} to ${toName} · routing future ${domain}`);
+      qc.invalidateQueries({ queryKey: ["emails"] });
+      qc.invalidateQueries({ queryKey: ["folder-filters", toFolderId] });
+      qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
+      qc.invalidateQueries({ queryKey: ["folders-full"] });
+    } catch (e: any) {
+      qc.setQueryData(key, prev);
+      toast.error(e.message ?? "Failed to move");
+    }
+  }
   async function learn() {
     if (!folder.gmail_label_id) { toast.error("Link a Gmail label first, then save."); return; }
     setLearning(true);
