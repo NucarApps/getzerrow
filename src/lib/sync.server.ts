@@ -371,6 +371,7 @@ export async function syncSinceHistory(accountId: string) {
         try { await processGmailMessage(accountId, m.id, account.user_id); } catch (e) { console.error(e); }
       }
       for (const ev of h.labelsAdded ?? []) {
+        try { await applyLabelChange(accountId, ev.message.id, ev.message.labelIds, ev.labelIds, []); } catch (e) { console.error("applyLabelChange add failed", e); }
         const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
         if (matched.length === 0) continue;
         try {
@@ -385,6 +386,16 @@ export async function syncSinceHistory(accountId: string) {
             });
           }
         } catch (e) { console.error("labelAdded handler failed", e); }
+      }
+      for (const ev of h.labelsRemoved ?? []) {
+        try { await applyLabelChange(accountId, ev.message.id, ev.message.labelIds, [], ev.labelIds); } catch (e) { console.error("applyLabelChange remove failed", e); }
+      }
+      for (const ev of h.messagesDeleted ?? []) {
+        try {
+          await supabaseAdmin.from("emails").delete()
+            .eq("gmail_account_id", accountId)
+            .eq("gmail_message_id", ev.message.id);
+        } catch (e) { console.error("messagesDeleted handler failed", e); }
       }
     }
     if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);
