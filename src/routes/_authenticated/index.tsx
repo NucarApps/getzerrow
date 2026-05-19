@@ -61,7 +61,9 @@ function InboxPage() {
   const emailsQ = useQuery({
     queryKey: ["emails"],
     queryFn: async () => {
-      const { data } = await supabase.from("emails").select("*").eq("is_archived", false).order("received_at", { ascending: false }).limit(300);
+      // Include archived rows so folder views can show labeled mail that isn't in INBOX.
+      // The All inbox / Unsorted views filter is_archived in-memory below.
+      const { data } = await supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(500);
       return (data ?? []) as Email[];
     },
   });
@@ -81,8 +83,8 @@ function InboxPage() {
 
   const filtered = useMemo(() => {
     const all = emailsQ.data ?? [];
-    if (selectedFolder === "all") return all;
-    if (selectedFolder === "unsorted") return all.filter((e) => !e.folder_id);
+    if (selectedFolder === "all") return all.filter((e) => !e.is_archived);
+    if (selectedFolder === "unsorted") return all.filter((e) => !e.is_archived && !e.folder_id);
     return all.filter((e) => e.folder_id === selectedFolder);
   }, [emailsQ.data, selectedFolder]);
 
