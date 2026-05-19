@@ -182,7 +182,8 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
     setLearning(true);
     try {
       const r = await learnFn({ data: { folder_id: folder.id } });
-      toast.success(`Learned from ${r.learned} emails`);
+      if (r.learned === 0) toast.warning("No emails found under linked label — make sure the label has messages.");
+      else toast.success(`Learned from ${r.learned} emails`);
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       qc.invalidateQueries({ queryKey: ["folder-example-counts"] });
     } catch (e: any) {

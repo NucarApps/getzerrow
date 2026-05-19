@@ -42,11 +42,12 @@ export async function createLabel(name: string) {
   });
 }
 
-export async function listMessages(opts: { maxResults?: number; q?: string; pageToken?: string } = {}) {
+export async function listMessages(opts: { maxResults?: number; q?: string; pageToken?: string; labelIds?: string[] } = {}) {
   const params = new URLSearchParams();
   if (opts.maxResults) params.set("maxResults", String(opts.maxResults));
   if (opts.q) params.set("q", opts.q);
   if (opts.pageToken) params.set("pageToken", opts.pageToken);
+  if (opts.labelIds) for (const id of opts.labelIds) params.append("labelIds", id);
   return gmailFetch<{ messages?: Array<{ id: string; threadId: string }>; nextPageToken?: string }>(
     `/users/me/messages?${params.toString()}`
   );
