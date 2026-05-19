@@ -73,6 +73,7 @@ function Sidebar() {
     const ch = supabase
       .channel("sidebar-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
+        qc.invalidateQueries({ queryKey: ["emails-summary"] });
         qc.invalidateQueries({ queryKey: ["emails"] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
