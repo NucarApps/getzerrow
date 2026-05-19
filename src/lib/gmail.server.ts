@@ -84,12 +84,16 @@ export async function sendMessage(accountId: string, to: string, subject: string
 export async function listHistory(accountId: string, startHistoryId: string) {
   const params = new URLSearchParams({ startHistoryId });
   params.append("historyTypes", "messageAdded");
+  params.append("historyTypes", "messageDeleted");
   params.append("historyTypes", "labelAdded");
+  params.append("historyTypes", "labelRemoved");
   return gmailFetch<{
     history?: Array<{
       messages?: Array<{ id: string; threadId: string }>;
       messagesAdded?: Array<{ message: { id: string; threadId: string; labelIds?: string[] } }>;
+      messagesDeleted?: Array<{ message: { id: string; threadId: string; labelIds?: string[] } }>;
       labelsAdded?: Array<{ message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }>;
+      labelsRemoved?: Array<{ message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }>;
     }>;
     historyId?: string;
   }>(accountId, `/users/me/history?${params.toString()}`);
