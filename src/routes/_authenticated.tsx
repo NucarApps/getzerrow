@@ -64,8 +64,8 @@ function Sidebar() {
   const emailsQ = useQuery({
     queryKey: ["emails"],
     queryFn: async () => {
-      const { data } = await supabase.from("emails").select("id,folder_id,is_read,is_archived").eq("is_archived", false).limit(1000);
-      return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean }>;
+      const { data } = await supabase.from("emails").select("id,folder_id,is_read,is_archived").limit(2000);
+      return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean; is_archived: boolean }>;
     },
   });
 
@@ -88,9 +88,14 @@ function Sidebar() {
     let total = 0;
     for (const e of emailsQ.data ?? []) {
       if (e.is_read) continue;
-      total++;
-      const k = e.folder_id ?? "unsorted";
-      m.set(k, (m.get(k) ?? 0) + 1);
+      if (e.folder_id) {
+        // Folder counts include archived rows so labeled mail outside INBOX still shows.
+        m.set(e.folder_id, (m.get(e.folder_id) ?? 0) + 1);
+        if (!e.is_archived) total++;
+      } else if (!e.is_archived) {
+        total++;
+        m.set("unsorted", (m.get("unsorted") ?? 0) + 1);
+      }
     }
     return { byFolder: m, total };
   }, [emailsQ.data]);
