@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { backfillRecent, syncSinceHistory, learnFromLinkedLabel } from "./sync.server";
+import { backfillRecent, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox } from "./sync.server";
 import {
   listLabels,
   createLabel,
@@ -230,7 +230,9 @@ export const triggerSync = createServerFn({ method: "POST" })
   .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
-    return syncSinceHistory(data.account_id);
+    const histResult = await syncSinceHistory(data.account_id);
+    const recon = await reconcileLocalInbox(data.account_id, 100);
+    return { ...histResult, reconciled: recon };
   });
 
 export const renewGmailWatch = createServerFn({ method: "POST" })

@@ -1,7 +1,7 @@
 // Core sync pipeline: pull messages for a specific gmail_account, apply filters/AI,
 // persist, apply Gmail label/actions. Server-only.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMessage, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch } from "./gmail.server";
+import { getMessage, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels } from "./gmail.server";
 import { classifyEmail, buildFolderProfile, type ClassifyFolder } from "./ai.server";
 
 type Folder = {
@@ -430,4 +430,52 @@ export async function syncSinceHistory(accountId: string) {
     await supabaseAdmin.from("gmail_accounts").update({ history_id: null }).eq("id", accountId);
     return { error: e.message };
   }
+}
+
+/**
+ * Safety net: reconcile rows the app still considers "in inbox" against Gmail's
+ * actual current labels. Catches messages whose history events we missed.
+ */
+export async function reconcileLocalInbox(accountId: string, limit = 100) {
+  const { data: rows } = await supabaseAdmin
+    .from("emails")
+    .select("id, gmail_message_id, raw_labels")
+    .eq("gmail_account_id", accountId)
+    .eq("is_archived", false)
+    .order("received_at", { ascending: false })
+    .limit(limit);
+
+  let archived = 0;
+  let deleted = 0;
+  let updated = 0;
+
+  for (const row of rows ?? []) {
+    try {
+      const labels = await getMessageLabels(accountId, row.gmail_message_id);
+      if (labels === null) {
+        await supabaseAdmin.from("emails").delete().eq("id", row.id);
+        deleted++;
+        continue;
+      }
+      const patch: { raw_labels?: string[]; is_archived?: boolean; is_read?: boolean } = {};
+      const inInbox = labels.includes("INBOX");
+      const inTrash = labels.includes("TRASH");
+      if (inTrash) {
+        await supabaseAdmin.from("emails").delete().eq("id", row.id);
+        deleted++;
+        continue;
+      }
+      if (!inInbox) {
+        patch.is_archived = true;
+        archived++;
+      }
+      patch.raw_labels = labels;
+      patch.is_read = !labels.includes("UNREAD");
+      await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
+      if (!patch.is_archived) updated++;
+    } catch (e) {
+      console.error("reconcile row failed", row.gmail_message_id, e);
+    }
+  }
+  return { checked: rows?.length ?? 0, archived, deleted, updated };
 }
