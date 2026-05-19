@@ -264,27 +264,55 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
       .ilike("from_addr", `%@${domain}%`);
 
     const ids = (matches ?? []).map((m) => m.id);
-    if (ids.length === 0) return { moved: 0 };
 
-    const { error: upErr } = await supabaseAdmin
-      .from("emails")
-      .update({ folder_id: data.to_folder_id, classified_by: "domain_rule", ai_confidence: 1 })
-      .in("id", ids);
-    if (upErr) throw new Error(upErr.message);
+    if (ids.length > 0) {
+      const { error: upErr } = await supabaseAdmin
+        .from("emails")
+        .update({ folder_id: data.to_folder_id, classified_by: "domain_rule", ai_confidence: 1 })
+        .in("id", ids);
+      if (upErr) throw new Error(upErr.message);
 
-    // Best-effort Gmail label sync
-    if (from.gmail_label_id || to.gmail_label_id) {
-      const addLabels = to.gmail_label_id ? [to.gmail_label_id] : [];
-      const removeLabels = from.gmail_label_id ? [from.gmail_label_id] : [];
-      await Promise.all(
-        (matches ?? []).map(async (m) => {
-          try {
-            await modifyMessage(m.gmail_account_id, m.gmail_message_id, addLabels, removeLabels);
-          } catch (e) {
-            console.error("reassign label modify failed", e);
-          }
-        })
-      );
+      // Best-effort Gmail label sync
+      if (from.gmail_label_id || to.gmail_label_id) {
+        const addLabels = to.gmail_label_id ? [to.gmail_label_id] : [];
+        const removeLabels = from.gmail_label_id ? [from.gmail_label_id] : [];
+        await Promise.all(
+          (matches ?? []).map(async (m) => {
+            try {
+              await modifyMessage(m.gmail_account_id, m.gmail_message_id, addLabels, removeLabels);
+            } catch (e) {
+              console.error("reassign label modify failed", e);
+            }
+          })
+        );
+      }
+    }
+
+    // Remove source folder examples for this domain so the suggestion stops reappearing
+    const { data: srcExamples } = await supabaseAdmin
+      .from("folder_examples")
+      .select("id, from_addr, gmail_message_id, subject, snippet, gmail_account_id")
+      .eq("folder_id", data.from_folder_id)
+      .ilike("from_addr", `%@${domain}%`);
+
+    const srcExampleIds = (srcExamples ?? []).map((e) => e.id);
+    if (srcExampleIds.length > 0) {
+      await supabaseAdmin.from("folder_examples").delete().in("id", srcExampleIds);
+
+      // Mirror examples onto destination folder so its learned signal reflects the move
+      const mirrored = (srcExamples ?? []).map((e) => ({
+        folder_id: data.to_folder_id,
+        user_id: context.userId,
+        gmail_message_id: e.gmail_message_id,
+        from_addr: e.from_addr,
+        subject: e.subject,
+        snippet: e.snippet,
+        gmail_account_id: e.gmail_account_id,
+        source: "reassigned",
+      }));
+      if (mirrored.length > 0) {
+        await supabaseAdmin.from("folder_examples").insert(mirrored);
+      }
     }
 
     return { moved: ids.length };
