@@ -1,46 +1,42 @@
-# Deeper relearn + domain suggestions
+# Fix: Gmail archive / read / trash changes don't propagate to the app
 
-## What changes
+## Root cause
 
-### 1. Capture up to one month of label emails during relearn
-Today `learnFromLinkedLabel` calls `listMessages` once with `maxResults: 50`, so any folder linked to a busy Gmail label only ever learns from the last 50 messages.
+`syncSinceHistory` in `src/lib/sync.server.ts` processes only two kinds of Gmail history events:
 
-Change in `src/lib/sync.server.ts → learnFromLinkedLabel`:
-- Page through `listMessages` using `nextPageToken`, passing `q: "newer_than:30d"` plus the linked `labelIds: [folder.gmail_label_id]`.
-- Cap at 500 messages per relearn (Gmail's per-call ceiling × ~5 pages) to keep latency and AI cost bounded.
-- Continue upserting each into `folder_examples` with `source: "seed"` (already idempotent on `folder_id + gmail_message_id`).
-- After paging, run `regenerateFolderProfile(folderId)` once at the end (unchanged).
+1. `messagesAdded` → `processGmailMessage` (insert new email)
+2. `labelsAdded` → records a manual move when a folder-linked label is added
 
-`buildFolderProfile` already takes up to 50 examples for the AI prompt — leave that cap; the extra examples improve domain suggestions and future re-learns without exploding prompt cost.
+It **ignores**:
+- `labelsRemoved` (Gmail's archive = INBOX removed; mark-as-read = UNREAD removed)
+- `messagesDeleted` (permanently deleted in Gmail)
+- Trash (`labelsAdded: ["TRASH"]`)
 
-Update the toast in `folders.tsx` to reflect the higher count ("Learned from N emails from the past month").
+So when you archive a message in Gmail, the next resync sees the history event but does nothing — the row in `emails` keeps `is_archived=false` and `raw_labels` still includes `INBOX`, so the inbox view keeps showing it. Hitting "Resync now" loops the same history events and gets the same no-op.
 
-### 2. Suggested domains panel per folder
-After relearn, derive distinct sender domains from `folder_examples` for that folder and show them in the folder card as one-click chips that create a `domain contains <domain>` filter.
+## Fix
 
-- New server fn `listFolderDomainSuggestions(folder_id)` in `src/lib/gmail.functions.ts`:
-  - Reads `folder_examples` rows for the folder (auth-scoped via `requireSupabaseAuth`).
-  - Extracts the domain from `from_addr` (lowercase, after `@`).
-  - Returns `[{ domain, count }]` sorted by count desc, top 15.
-  - Excludes domains that already have a matching `folder_filters` row (`field='domain' op='contains' value=domain`) so the chip list reflects unadded suggestions only.
-- New server fn `addDomainFilter({ folder_id, domain })`:
-  - Verifies folder ownership, inserts a `folder_filters` row `{ field: 'domain', op: 'contains', value: domain }`.
+Extend `syncSinceHistory` so every label change and deletion in Gmail is mirrored locally. One pass over each `history[]` entry:
 
-UI in `src/routes/_authenticated/folders.tsx`:
-- Under each folder's "Learned profile" block, add a "Top domains in this folder" section.
-- Render each suggestion as a small `Badge`/`Button` chip: `acme.com · 12`. Click → call `addDomainFilter`, optimistic-remove from list, toast confirmation.
-- Refresh suggestions after relearn completes and after a domain is added.
+- **`labelsRemoved`** with `INBOX` → set `is_archived = true`, update `raw_labels`
+- **`labelsRemoved`** with `UNREAD` → set `is_read = true`, update `raw_labels`
+- **`labelsAdded`** with `TRASH` OR **`messagesDeleted`** → delete row from `emails`
+- **`labelsAdded`** with `UNREAD` → set `is_read = false` (re-marked unread in Gmail)
+- For any label change, update `raw_labels` to the current set on the event (Gmail includes the full `labelIds` array on each event's `message`)
+- Keep existing `labelsAdded` → folder-linked-label manual-move learning (unchanged behavior)
 
-### 3. No schema changes
-`folder_filters` already supports `field='domain' op='contains'` (see `applyFilter` in `sync.server.ts`), and `folder_examples` already stores `from_addr`. Nothing to migrate.
+All updates are scoped by `gmail_account_id + gmail_message_id` and are no-ops if the row doesn't exist locally (e.g. an old message we never ingested).
 
 ## Files touched
-- `src/lib/sync.server.ts` — paginate `learnFromLinkedLabel`, add 30-day query.
-- `src/lib/gmail.functions.ts` — add `listFolderDomainSuggestions`, `addDomainFilter`.
-- `src/routes/_authenticated/folders.tsx` — domain chip UI, wire to the new server fns, refresh on relearn.
 
-## Technical notes
-- Paging loop: `let pageToken; do { ... } while (pageToken && fetched < 500)`. Each page is up to `maxResults: 100`.
-- Per-message fetch (`getMessage`) is still the bottleneck. 500 messages ≈ 500 sequential Gmail calls; we'll keep it sequential to respect rate limits, but log progress and surface "Learned from N emails (took Xs)" in the toast.
-- Domain extraction is plain string split — addresses already normalized when stored (see `parseMessage`).
-- The auto-relearn trigger after 3 manual moves (`recordManualMove`) is unchanged; it only regenerates the profile from existing examples and stays cheap.
+- `src/lib/sync.server.ts` — add a small helper `applyLabelChangesLocally(accountId, event)` and wire `labelsRemoved` + `messagesDeleted` branches into the `syncSinceHistory` loop.
+
+## Verification
+
+After the change, the user clicks **Resync now** once; the three already-archived emails will disappear from the inbox view because their `is_archived` flips to `true`. Going forward, every archive/read/trash done in Gmail propagates automatically on the next push or poll (≤ 2 min via the cron fallback we already set up).
+
+## Notes
+
+- No schema changes.
+- Existing webhook path benefits automatically since the webhook also calls `syncSinceHistory`.
+- This is purely a server-side fix; no UI work needed.
