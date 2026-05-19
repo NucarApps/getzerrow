@@ -344,6 +344,31 @@ async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   }
 }
 
+async function applyLabelChange(
+  accountId: string,
+  messageId: string,
+  currentLabels: string[] | undefined,
+  added: string[],
+  removed: string[],
+) {
+  const patch: Record<string, unknown> = {};
+  if (currentLabels) patch.raw_labels = currentLabels;
+  if (removed.includes("INBOX")) patch.is_archived = true;
+  if (added.includes("INBOX")) patch.is_archived = false;
+  if (removed.includes("UNREAD")) patch.is_read = true;
+  if (added.includes("UNREAD")) patch.is_read = false;
+  if (added.includes("TRASH")) {
+    await supabaseAdmin.from("emails").delete()
+      .eq("gmail_account_id", accountId)
+      .eq("gmail_message_id", messageId);
+    return;
+  }
+  if (Object.keys(patch).length === 0) return;
+  await supabaseAdmin.from("emails").update(patch)
+    .eq("gmail_account_id", accountId)
+    .eq("gmail_message_id", messageId);
+}
+
 export async function syncSinceHistory(accountId: string) {
   const account = await getAccount(accountId);
   if (!account.history_id) {
