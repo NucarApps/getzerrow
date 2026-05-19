@@ -28,6 +28,10 @@ function LoginPage() {
       if (!session?.user || handledRef.current) return;
       handledRef.current = true;
 
+      // Only persist Gmail tokens when Google returned a refresh_token,
+      // which only happens during an explicit consent flow (first sign-in
+      // or after revoking access). On normal refreshes there's no
+      // provider_refresh_token, so skip the upsert and just enter the app.
       const accessToken = session.provider_token;
       const refreshToken = session.provider_refresh_token;
       const email = session.user.email;
@@ -63,7 +67,10 @@ function LoginPage() {
       options: {
         redirectTo: window.location.origin + "/login",
         scopes: GMAIL_SCOPES,
-        queryParams: { access_type: "offline", prompt: "consent" },
+        // No prompt=consent: Google will skip the permissions screen on
+        // subsequent sign-ins. Use the Settings → "Reauthorize Gmail" flow
+        // when a fresh refresh token is needed.
+        queryParams: { access_type: "offline" },
       },
     });
     if (error) {
