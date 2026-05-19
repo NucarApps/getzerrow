@@ -1,5 +1,5 @@
-Swap the Edit folder modal for a right-side drawer using the existing shadcn `Sheet` component.
+Replace the hover three-dots dropdown on each folder row with a single pencil button that opens the edit drawer directly.
 
-**Change**: `src/components/folders/EditFolderDialog.tsx` — replace `Dialog`/`DialogContent`/`DialogHeader`/`DialogTitle` with `Sheet`/`SheetContent side="right"`/`SheetHeader`/`SheetTitle`. Keep the same props and the `FolderEditor` body; widen `SheetContent` (e.g. `sm:max-w-xl w-full`) and make it scrollable.
+**Change**: `src/routes/_authenticated.tsx` — swap the `DropdownMenu`/`DropdownMenuTrigger`/`DropdownMenuContent`/`DropdownMenuItem` block (lines ~238-253) for a plain `<button>` containing the existing `Pencil` icon, with the same hover-reveal styling (`opacity-0 group-hover:opacity-100`) and `onClick={(e) => { e.stopPropagation(); onEdit(); }}`. Drop the now-unused `MoreHorizontal` import and the four `DropdownMenu*` imports.
 
-No changes to `FolderEditor`, `AddFolderDialog`, or the sidebar trigger logic. Add-folder stays a dialog unless you want that to be a drawer too — let me know.
+No changes to `EditFolderDialog`, `FolderEditor`, or any other file.

@@ -4,14 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
-import { Inbox, Settings, LogOut, Plus, MoreHorizontal, Pencil } from "lucide-react";
+import { Inbox, Settings, LogOut, Plus, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
@@ -235,22 +229,13 @@ function FolderRow({
         )}
       </button>
       {onEdit && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="mr-1 grid h-6 w-6 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background/50 hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`More options for ${label}`}
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-            <DropdownMenuItem onSelect={onEdit}>
-              <Pencil className="mr-2 h-3.5 w-3.5" /> Edit folder
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          className="mr-1 grid h-6 w-6 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background/50 hover:text-foreground group-hover:opacity-100"
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          aria-label={`Edit ${label}`}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
       )}
     </div>
   );
