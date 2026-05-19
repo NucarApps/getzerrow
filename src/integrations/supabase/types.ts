@@ -94,6 +94,50 @@ export type Database = {
           },
         ]
       }
+      folder_examples: {
+        Row: {
+          created_at: string
+          folder_id: string
+          from_addr: string | null
+          gmail_message_id: string
+          id: string
+          snippet: string | null
+          source: string
+          subject: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          folder_id: string
+          from_addr?: string | null
+          gmail_message_id: string
+          id?: string
+          snippet?: string | null
+          source?: string
+          subject?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          folder_id?: string
+          from_addr?: string | null
+          gmail_message_id?: string
+          id?: string
+          snippet?: string | null
+          source?: string
+          subject?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_examples_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       folder_filters: {
         Row: {
           created_at: string
@@ -138,6 +182,8 @@ export type Database = {
           created_at: string
           gmail_label_id: string | null
           id: string
+          last_learned_at: string | null
+          learned_profile: string | null
           name: string
           priority: number
           user_id: string
@@ -150,6 +196,8 @@ export type Database = {
           created_at?: string
           gmail_label_id?: string | null
           id?: string
+          last_learned_at?: string | null
+          learned_profile?: string | null
           name: string
           priority?: number
           user_id: string
@@ -162,6 +210,8 @@ export type Database = {
           created_at?: string
           gmail_label_id?: string | null
           id?: string
+          last_learned_at?: string | null
+          learned_profile?: string | null
           name?: string
           priority?: number
           user_id?: string

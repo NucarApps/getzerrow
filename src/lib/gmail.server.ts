@@ -85,10 +85,17 @@ export async function sendMessage(to: string, subject: string, body: string, thr
 }
 
 export async function listHistory(startHistoryId: string) {
-  const params = new URLSearchParams({ startHistoryId, historyTypes: "messageAdded" });
-  return gmailFetch<{ history?: Array<{ messages?: Array<{ id: string; threadId: string }> }>; historyId?: string }>(
-    `/users/me/history?${params.toString()}`
-  );
+  const params = new URLSearchParams({ startHistoryId });
+  params.append("historyTypes", "messageAdded");
+  params.append("historyTypes", "labelAdded");
+  return gmailFetch<{
+    history?: Array<{
+      messages?: Array<{ id: string; threadId: string }>;
+      messagesAdded?: Array<{ message: { id: string; threadId: string; labelIds?: string[] } }>;
+      labelsAdded?: Array<{ message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }>;
+    }>;
+    historyId?: string;
+  }>(`/users/me/history?${params.toString()}`);
 }
 
 export async function watchInbox(topicName: string) {

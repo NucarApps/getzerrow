@@ -1,10 +1,27 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { backfillRecent, syncSinceHistory } from "./sync.server";
+import { backfillRecent, syncSinceHistory, learnFromLinkedLabel } from "./sync.server";
 import { listLabels, createLabel, modifyMessage, trashMessage, sendMessage, watchInbox, stopWatch } from "./gmail.server";
 import { suggestReply } from "./ai.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
+export const listGmailLabels = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const r = await listLabels();
+    // Only user labels (not system labels like INBOX/SENT/etc)
+    const labels = (r.labels ?? []).filter((l) => l.type === "user");
+    return { labels };
+  });
+
+export const learnFolderFromLabel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    return learnFromLinkedLabel(data.folder_id, context.userId);
+  });
+
 
 export const triggerBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
