@@ -1,7 +1,7 @@
-// Core sync pipeline: pull a single message, apply filters/AI, persist, apply Gmail label/actions.
-// Server-only. Used by initial backfill, polling, and the webhook handler.
+// Core sync pipeline: pull messages for a specific gmail_account, apply filters/AI,
+// persist, apply Gmail label/actions. Server-only.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMessage, modifyMessage, parseMessage, listMessages, listHistory } from "./gmail.server";
+import { getMessage, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch } from "./gmail.server";
 import { classifyEmail, buildFolderProfile, type ClassifyFolder } from "./ai.server";
 
 type Folder = {
@@ -14,14 +14,28 @@ type Folder = {
   auto_archive: boolean;
   auto_mark_read: boolean;
   priority: number;
+  gmail_account_id: string;
 };
 
-type Filter = {
-  folder_id: string;
-  field: string;
-  op: string;
-  value: string;
+type Filter = { folder_id: string; field: string; op: string; value: string };
+
+type GmailAccount = {
+  id: string;
+  user_id: string;
+  email_address: string;
+  history_id: string | null;
+  watch_expiration: string | null;
 };
+
+async function getAccount(accountId: string): Promise<GmailAccount> {
+  const { data, error } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("id, user_id, email_address, history_id, watch_expiration")
+    .eq("id", accountId)
+    .single();
+  if (error || !data) throw new Error("Gmail account not found");
+  return data as GmailAccount;
+}
 
 function applyFilter(
   email: { from_addr: string; from_name: string; to_addrs: string; subject: string; body_text: string; has_attachment: boolean },
@@ -48,11 +62,7 @@ function applyFilter(
   }
 }
 
-function matchByFilters(
-  email: Parameters<typeof applyFilter>[0],
-  folders: Folder[],
-  filters: Filter[]
-): string | null {
+function matchByFilters(email: Parameters<typeof applyFilter>[0], folders: Folder[], filters: Filter[]): string | null {
   const byFolder = new Map<string, Filter[]>();
   for (const f of filters) {
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
@@ -92,30 +102,31 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   }));
 }
 
-export async function processGmailMessage(gmailId: string, userId: string) {
+export async function processGmailMessage(accountId: string, gmailId: string, userId: string) {
   const { data: existing } = await supabaseAdmin
     .from("emails")
     .select("id")
     .eq("gmail_message_id", gmailId)
+    .eq("gmail_account_id", accountId)
     .maybeSingle();
   if (existing) return { skipped: true };
 
-  const raw = await getMessage(gmailId);
+  const raw = await getMessage(accountId, gmailId);
   const parsed = parseMessage(raw);
 
   if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
 
   const [{ data: folders }, { data: filters }] = await Promise.all([
-    supabaseAdmin.from("folders").select("*").order("priority", { ascending: false }),
+    supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId).order("priority", { ascending: false }),
     supabaseAdmin.from("folder_filters").select("folder_id, field, op, value"),
   ]);
 
   const folderList = (folders ?? []) as Folder[];
-  const filterList = (filters ?? []) as Filter[];
+  const folderIds = new Set(folderList.map((f) => f.id));
+  const filterList = ((filters ?? []) as Filter[]).filter((f) => folderIds.has(f.folder_id));
 
-  // Also: if the message already carries a linked Gmail label, trust that.
   let folder_id: string | null = null;
-  let classified_by: string = "none";
+  let classified_by = "none";
   let confidence = 0;
   let summary = "";
 
@@ -146,6 +157,7 @@ export async function processGmailMessage(gmailId: string, userId: string) {
     .from("emails")
     .insert({
       user_id: userId,
+      gmail_account_id: accountId,
       gmail_message_id: parsed.gmail_message_id,
       thread_id: parsed.thread_id,
       from_addr: parsed.from_addr,
@@ -181,7 +193,7 @@ export async function processGmailMessage(gmailId: string, userId: string) {
       if (folder.auto_mark_read) removeLabels.push("UNREAD");
       if (folder.auto_archive) removeLabels.push("INBOX");
       if (addLabels.length || removeLabels.length) {
-        try { await modifyMessage(gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
+        try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
       }
       if (folder.auto_archive) {
         await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", inserted.id);
@@ -195,15 +207,16 @@ export async function processGmailMessage(gmailId: string, userId: string) {
   return { id: inserted.id };
 }
 
-/** Record a manual-move example and maybe refresh the AI profile. */
 async function recordManualMove(
   folder: Folder,
+  accountId: string,
   userId: string,
   msg: { gmail_message_id: string; from_addr: string; subject: string; snippet: string }
 ) {
   const { error } = await supabaseAdmin.from("folder_examples").upsert(
     {
       folder_id: folder.id,
+      gmail_account_id: accountId,
       user_id: userId,
       gmail_message_id: msg.gmail_message_id,
       from_addr: msg.from_addr,
@@ -215,13 +228,12 @@ async function recordManualMove(
   );
   if (error) console.error("example upsert failed", error);
 
-  // Update local email if we have it
   await supabaseAdmin
     .from("emails")
     .update({ folder_id: folder.id, classified_by: "manual_move", ai_confidence: 1 })
-    .eq("gmail_message_id", msg.gmail_message_id);
+    .eq("gmail_message_id", msg.gmail_message_id)
+    .eq("gmail_account_id", accountId);
 
-  // Re-learn if we've collected enough new manual examples since last learn
   const since = folder.last_learned_at ?? "1970-01-01T00:00:00Z";
   const { count } = await supabaseAdmin
     .from("folder_examples")
@@ -254,18 +266,21 @@ export async function regenerateFolderProfile(folderId: string) {
 export async function learnFromLinkedLabel(folderId: string, userId: string) {
   const { data: folder } = await supabaseAdmin.from("folders").select("*").eq("id", folderId).single();
   if (!folder) throw new Error("Folder not found");
+  if (folder.user_id !== userId) throw new Error("Not authorized");
   if (!folder.gmail_label_id) throw new Error("Folder is not linked to a Gmail label");
+  const accountId = folder.gmail_account_id;
 
-  const list = await listMessages({ maxResults: 50, labelIds: [folder.gmail_label_id] });
+  const list = await listMessages(accountId, { maxResults: 50, labelIds: [folder.gmail_label_id] });
   const ids = (list.messages || []).map((m) => m.id);
   let learned = 0;
   for (const id of ids) {
     try {
-      const raw = await getMessage(id);
+      const raw = await getMessage(accountId, id);
       const p = parseMessage(raw);
       const { error } = await supabaseAdmin.from("folder_examples").upsert(
         {
           folder_id: folderId,
+          gmail_account_id: accountId,
           user_id: userId,
           gmail_message_id: p.gmail_message_id,
           from_addr: p.from_addr,
@@ -284,13 +299,13 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   return { learned, profile };
 }
 
-export async function backfillRecent(userId: string, maxResults = 30) {
-  const list = await listMessages({ maxResults, q: "in:inbox" });
+export async function backfillRecent(accountId: string, userId: string, maxResults = 30) {
+  const list = await listMessages(accountId, { maxResults, q: "in:inbox" });
   const ids = list.messages || [];
   const results: any[] = [];
   for (const m of ids) {
     try {
-      const r = await processGmailMessage(m.id, userId);
+      const r = await processGmailMessage(accountId, m.id, userId);
       results.push(r);
     } catch (e: any) {
       results.push({ error: e.message });
@@ -299,42 +314,54 @@ export async function backfillRecent(userId: string, maxResults = 30) {
   return { processed: results.length };
 }
 
-export async function syncSinceHistory(userId: string) {
-  const { data: state } = await supabaseAdmin.from("sync_state").select("*").eq("id", 1).single();
-  if (!state?.last_history_id) {
-    await backfillRecent(userId, 20);
-    const recent = await listMessages({ maxResults: 1 });
+async function bumpHistoryAndWatch(accountId: string, historyId: string) {
+  const account = await getAccount(accountId);
+  const watch = await ensureWatch(accountId, account.watch_expiration);
+  const updates: Record<string, any> = {
+    history_id: historyId,
+    last_poll_at: new Date().toISOString(),
+  };
+  if (watch) {
+    updates.history_id = watch.historyId;
+    updates.watch_expiration = new Date(parseInt(watch.expiration, 10)).toISOString();
+  }
+  await supabaseAdmin.from("gmail_accounts").update(updates).eq("id", accountId);
+}
+
+export async function syncSinceHistory(accountId: string) {
+  const account = await getAccount(accountId);
+  if (!account.history_id) {
+    await backfillRecent(accountId, account.user_id, 20);
+    const recent = await listMessages(accountId, { maxResults: 1 });
     if (recent.messages?.[0]) {
-      const m = await getMessage(recent.messages[0].id);
-      await supabaseAdmin.from("sync_state").update({ last_history_id: m.historyId, last_poll_at: new Date().toISOString() }).eq("id", 1);
+      const m = await getMessage(accountId, recent.messages[0].id);
+      await bumpHistoryAndWatch(accountId, m.historyId);
     }
     return { bootstrapped: true };
   }
   try {
-    const hist = await listHistory(state.last_history_id);
+    const hist = await listHistory(accountId, account.history_id);
     const seenAdded = new Set<string>();
-    const { data: folders } = await supabaseAdmin.from("folders").select("*");
+    const { data: folders } = await supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId);
     const folderList = (folders ?? []) as Folder[];
     const labelToFolder = new Map<string, Folder>();
     for (const f of folderList) if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f);
 
     for (const h of hist.history || []) {
-      // New messages
       const added = h.messagesAdded?.map((x) => x.message) ?? h.messages ?? [];
       for (const m of added) {
         if (seenAdded.has(m.id)) continue;
         seenAdded.add(m.id);
-        try { await processGmailMessage(m.id, userId); } catch (e) { console.error(e); }
+        try { await processGmailMessage(accountId, m.id, account.user_id); } catch (e) { console.error(e); }
       }
-      // Label-added events (manual moves)
       for (const ev of h.labelsAdded ?? []) {
         const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
         if (matched.length === 0) continue;
         try {
-          const raw = await getMessage(ev.message.id);
+          const raw = await getMessage(accountId, ev.message.id);
           const p = parseMessage(raw);
           for (const folder of matched) {
-            await recordManualMove(folder, userId, {
+            await recordManualMove(folder, accountId, account.user_id, {
               gmail_message_id: p.gmail_message_id,
               from_addr: p.from_addr,
               subject: p.subject,
@@ -344,13 +371,11 @@ export async function syncSinceHistory(userId: string) {
         } catch (e) { console.error("labelAdded handler failed", e); }
       }
     }
-    if (hist.historyId) {
-      await supabaseAdmin.from("sync_state").update({ last_history_id: hist.historyId, last_poll_at: new Date().toISOString() }).eq("id", 1);
-    }
+    if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);
     return { synced: seenAdded.size };
   } catch (e: any) {
     console.error("history failed, rebootstrapping", e.message);
-    await supabaseAdmin.from("sync_state").update({ last_history_id: null }).eq("id", 1);
+    await supabaseAdmin.from("gmail_accounts").update({ history_id: null }).eq("id", accountId);
     return { error: e.message };
   }
 }
