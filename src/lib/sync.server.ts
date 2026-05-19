@@ -1,7 +1,7 @@
 // Core sync pipeline: pull messages for a specific gmail_account, apply filters/AI,
 // persist, apply Gmail label/actions. Server-only.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMessage, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch } from "./gmail.server";
+import { getMessage, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels } from "./gmail.server";
 import { classifyEmail, buildFolderProfile, type ClassifyFolder } from "./ai.server";
 
 type Folder = {
