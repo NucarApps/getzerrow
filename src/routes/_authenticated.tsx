@@ -4,14 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
-import { Inbox, Settings, LogOut, Plus, MoreHorizontal, Pencil } from "lucide-react";
+import { Inbox, Settings, LogOut, Plus, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
