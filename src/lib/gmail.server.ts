@@ -149,9 +149,9 @@ export function parseMessage(msg: any) {
   const headers: GmailHeader[] = payload.headers || [];
   const h = (n: string) => headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value || "";
   const from = h("from");
-  const m = from.match(/^"?([^"<]*)"?\s*<?([^>]+)?>?$/);
-  const fromName = (m?.[1] || "").trim();
-  const fromAddr = (m?.[2] || from).trim();
+  const angle = from.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  const fromName = (angle?.[1] || "").trim();
+  const fromAddr = (angle?.[2] || from).trim();
   const bodyText = extractPart(payload, "text/plain");
   const bodyHtml = extractPart(payload, "text/html");
   const hasAttachment = (() => {
