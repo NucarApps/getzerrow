@@ -25,6 +25,7 @@ export type Database = {
           folder_id: string | null
           from_addr: string | null
           from_name: string | null
+          gmail_account_id: string
           gmail_message_id: string
           has_attachment: boolean
           id: string
@@ -48,6 +49,7 @@ export type Database = {
           folder_id?: string | null
           from_addr?: string | null
           from_name?: string | null
+          gmail_account_id: string
           gmail_message_id: string
           has_attachment?: boolean
           id?: string
@@ -71,6 +73,7 @@ export type Database = {
           folder_id?: string | null
           from_addr?: string | null
           from_name?: string | null
+          gmail_account_id?: string
           gmail_message_id?: string
           has_attachment?: boolean
           id?: string
@@ -92,6 +95,13 @@ export type Database = {
             referencedRelation: "folders"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "emails_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
         ]
       }
       folder_examples: {
@@ -99,6 +109,7 @@ export type Database = {
           created_at: string
           folder_id: string
           from_addr: string | null
+          gmail_account_id: string
           gmail_message_id: string
           id: string
           snippet: string | null
@@ -110,6 +121,7 @@ export type Database = {
           created_at?: string
           folder_id: string
           from_addr?: string | null
+          gmail_account_id: string
           gmail_message_id: string
           id?: string
           snippet?: string | null
@@ -121,6 +133,7 @@ export type Database = {
           created_at?: string
           folder_id?: string
           from_addr?: string | null
+          gmail_account_id?: string
           gmail_message_id?: string
           id?: string
           snippet?: string | null
@@ -134,6 +147,13 @@ export type Database = {
             columns: ["folder_id"]
             isOneToOne: false
             referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "folder_examples_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -180,6 +200,7 @@ export type Database = {
           auto_mark_read: boolean
           color: string
           created_at: string
+          gmail_account_id: string
           gmail_label_id: string | null
           id: string
           last_learned_at: string | null
@@ -194,6 +215,7 @@ export type Database = {
           auto_mark_read?: boolean
           color?: string
           created_at?: string
+          gmail_account_id: string
           gmail_label_id?: string | null
           id?: string
           last_learned_at?: string | null
@@ -208,6 +230,7 @@ export type Database = {
           auto_mark_read?: boolean
           color?: string
           created_at?: string
+          gmail_account_id?: string
           gmail_label_id?: string | null
           id?: string
           last_learned_at?: string | null
@@ -215,6 +238,56 @@ export type Database = {
           name?: string
           priority?: number
           user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folders_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gmail_accounts: {
+        Row: {
+          access_token: string
+          created_at: string
+          email_address: string
+          history_id: string | null
+          id: string
+          last_poll_at: string | null
+          refresh_token: string
+          token_expires_at: string
+          updated_at: string
+          user_id: string
+          watch_expiration: string | null
+        }
+        Insert: {
+          access_token: string
+          created_at?: string
+          email_address: string
+          history_id?: string | null
+          id?: string
+          last_poll_at?: string | null
+          refresh_token: string
+          token_expires_at: string
+          updated_at?: string
+          user_id: string
+          watch_expiration?: string | null
+        }
+        Update: {
+          access_token?: string
+          created_at?: string
+          email_address?: string
+          history_id?: string | null
+          id?: string
+          last_poll_at?: string | null
+          refresh_token?: string
+          token_expires_at?: string
+          updated_at?: string
+          user_id?: string
+          watch_expiration?: string | null
         }
         Relationships: []
       }
