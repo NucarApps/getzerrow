@@ -42,7 +42,7 @@ export function FolderEditor({
   const learnFn = useServerFn(learnFolderFromLabel);
   const listDomainsFn = useServerFn(listFolderDomainSuggestions);
   const addDomainFn = useServerFn(addDomainFilter);
-  const [local, setLocal] = useState(folder);
+  const reassignFn = useServerFn(reassignDomainToFolder);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
