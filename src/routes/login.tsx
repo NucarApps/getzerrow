@@ -1,43 +1,77 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
+import { useServerFn } from "@tanstack/react-start";
+import { connectGmailFromSession } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
+const GMAIL_SCOPES = [
+  "openid",
+  "email",
+  "profile",
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+].join(" ");
+
 function LoginPage() {
   const nav = useNavigate();
   const [loading, setLoading] = useState(false);
+  const connectFn = useServerFn(connectGmailFromSession);
+  const handledRef = useRef(false);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (session?.user) nav({ to: "/" });
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user) nav({ to: "/" });
-    });
+    async function handleSession(session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) {
+      if (!session?.user || handledRef.current) return;
+      handledRef.current = true;
+
+      const accessToken = session.provider_token;
+      const refreshToken = session.provider_refresh_token;
+      const email = session.user.email;
+      const expiresIn = (session as any).expires_in ?? 3600;
+
+      if (accessToken && refreshToken && email) {
+        try {
+          await connectFn({
+            data: {
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              expires_in: typeof expiresIn === "number" ? expiresIn : 3600,
+              email_address: email,
+            },
+          });
+        } catch (e: any) {
+          console.error("Auto-connect Gmail failed", e);
+          toast.error(`Couldn't auto-connect Gmail: ${e?.message ?? "unknown error"}`);
+        }
+      }
+      nav({ to: "/" });
+    }
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => { void handleSession(session); });
+    supabase.auth.getSession().then(({ data }) => { void handleSession(data.session); });
     return () => sub.subscription.unsubscribe();
-  }, [nav]);
+  }, [nav, connectFn]);
 
   async function signInWithGoogle() {
     setLoading(true);
-    try {
-      const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-      if (result.error) {
-        console.error("Google sign-in error", result.error);
-        toast.error(result.error.message ?? "Google sign-in failed");
-        setLoading(false);
-        return;
-      }
-      if (result.redirected) return; // browser navigating to Google
-      // Tokens received inline — onAuthStateChange will redirect.
-    } catch (e: any) {
-      console.error("Google sign-in threw", e);
-      toast.error(e?.message ?? "Google sign-in failed");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin + "/login",
+        scopes: GMAIL_SCOPES,
+        queryParams: { access_type: "offline", prompt: "consent" },
+      },
+    });
+    if (error) {
+      console.error("Google sign-in error", error);
+      toast.error(error.message ?? "Google sign-in failed");
       setLoading(false);
     }
+    // Otherwise the browser is redirecting to Google.
   }
 
   return (
@@ -58,7 +92,7 @@ function LoginPage() {
             {loading ? "Redirecting…" : "Continue with Google"}
           </Button>
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Google sign-in only. We'll use your Google account to sign in and to connect Gmail.
+            We'll sign you in and connect your inbox in one step.
           </p>
         </div>
       </div>
