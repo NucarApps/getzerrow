@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { FolderEditor, type Folder, type GLabel } from "./FolderEditor";
 
 export function EditFolderDialog({
@@ -13,17 +13,19 @@ export function EditFolderDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader><DialogTitle>Edit folder</DialogTitle></DialogHeader>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetHeader><SheetTitle>Edit folder</SheetTitle></SheetHeader>
         {folder && (
-          <FolderEditor
-            folder={folder}
-            labels={labels}
-            onDeleted={() => onOpenChange(false)}
-          />
+          <div className="mt-4">
+            <FolderEditor
+              folder={folder}
+              labels={labels}
+              onDeleted={() => onOpenChange(false)}
+            />
+          </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
