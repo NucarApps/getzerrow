@@ -256,7 +256,7 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   if (!folder) throw new Error("Folder not found");
   if (!folder.gmail_label_id) throw new Error("Folder is not linked to a Gmail label");
 
-  const list = await listMessages({ maxResults: 50, q: `label:${folder.gmail_label_id}` });
+  const list = await listMessages({ maxResults: 50, labelIds: [folder.gmail_label_id] });
   const ids = (list.messages || []).map((m) => m.id);
   let learned = 0;
   for (const id of ids) {
