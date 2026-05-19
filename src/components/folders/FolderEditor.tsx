@@ -216,16 +216,51 @@ export function FolderEditor({
             <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Suggested domains</div>
             <div className="flex flex-wrap gap-1.5">
               {domainsQ.data!.map((s) => (
-                <button
+                <div
                   key={s.domain}
-                  onClick={() => addDomain(s.domain)}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:border-primary hover:bg-primary/5 transition-colors"
-                  title={`Click to auto-route all ${s.domain} emails to ${folder.name}`}
+                  className="inline-flex items-stretch rounded-full border border-border bg-background text-xs overflow-hidden hover:border-primary transition-colors"
                 >
-                  <Plus className="h-3 w-3" />
-                  <span className="font-mono">{s.domain}</span>
-                  <span className="text-muted-foreground">· {s.count}</span>
-                </button>
+                  <button
+                    onClick={() => addDomain(s.domain)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 hover:bg-primary/5"
+                    title={`Auto-route all ${s.domain} emails to ${folder.name}`}
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span className="font-mono">{s.domain}</span>
+                    <span className="text-muted-foreground">· {s.count}</span>
+                  </button>
+                  <Popover open={pickerOpen === s.domain} onOpenChange={(o) => setPickerOpen(o ? s.domain : null)}>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="inline-flex items-center justify-center border-l border-border px-1.5 hover:bg-primary/5"
+                        title={`Move ${s.domain} to a different folder`}
+                      >
+                        <ArrowRight className="h-3 w-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-1" align="end">
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        Move {s.domain} to…
+                      </div>
+                      {(otherFoldersQ.data ?? []).length === 0 ? (
+                        <div className="px-2 py-2 text-xs text-muted-foreground italic">No other folders</div>
+                      ) : (
+                        <div className="max-h-64 overflow-y-auto">
+                          {(otherFoldersQ.data ?? []).map((f) => (
+                            <button
+                              key={f.id}
+                              onClick={() => reassignDomain(s.domain, f.id, f.name)}
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent text-left"
+                            >
+                              <span className="h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                              <span className="truncate">{f.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
               ))}
             </div>
           </div>
