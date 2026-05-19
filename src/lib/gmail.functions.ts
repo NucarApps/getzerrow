@@ -215,6 +215,81 @@ export const addDomainFilter = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const reassignDomainToFolder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { from_folder_id: string; to_folder_id: string; domain: string }) =>
+    z.object({
+      from_folder_id: z.string().uuid(),
+      to_folder_id: z.string().uuid(),
+      domain: z.string().min(1).max(253).regex(/^[a-z0-9.-]+$/i),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    if (data.from_folder_id === data.to_folder_id) throw new Error("Folders must differ");
+    const { data: folders } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, name, gmail_label_id, gmail_account_id")
+      .in("id", [data.from_folder_id, data.to_folder_id]);
+    const from = folders?.find((f) => f.id === data.from_folder_id);
+    const to = folders?.find((f) => f.id === data.to_folder_id);
+    if (!from || !to || from.user_id !== context.userId || to.user_id !== context.userId) {
+      throw new Error("Not authorized");
+    }
+    const domain = data.domain.toLowerCase();
+
+    // Add domain filter on destination if not already there
+    const { data: existing } = await supabaseAdmin
+      .from("folder_filters")
+      .select("id")
+      .eq("folder_id", data.to_folder_id)
+      .eq("field", "domain")
+      .eq("op", "contains")
+      .eq("value", domain)
+      .maybeSingle();
+    if (!existing) {
+      await supabaseAdmin.from("folder_filters").insert({
+        folder_id: data.to_folder_id,
+        field: "domain",
+        op: "contains",
+        value: domain,
+      });
+    }
+
+    // Find emails in the source folder matching this domain
+    const { data: matches } = await supabaseAdmin
+      .from("emails")
+      .select("id, gmail_message_id, gmail_account_id")
+      .eq("user_id", context.userId)
+      .eq("folder_id", data.from_folder_id)
+      .ilike("from_addr", `%@${domain}%`);
+
+    const ids = (matches ?? []).map((m) => m.id);
+    if (ids.length === 0) return { moved: 0 };
+
+    const { error: upErr } = await supabaseAdmin
+      .from("emails")
+      .update({ folder_id: data.to_folder_id, classified_by: "domain_rule", ai_confidence: 1 })
+      .in("id", ids);
+    if (upErr) throw new Error(upErr.message);
+
+    // Best-effort Gmail label sync
+    if (from.gmail_label_id || to.gmail_label_id) {
+      const addLabels = to.gmail_label_id ? [to.gmail_label_id] : [];
+      const removeLabels = from.gmail_label_id ? [from.gmail_label_id] : [];
+      await Promise.all(
+        (matches ?? []).map(async (m) => {
+          try {
+            await modifyMessage(m.gmail_account_id, m.gmail_message_id, addLabels, removeLabels);
+          } catch (e) {
+            console.error("reassign label modify failed", e);
+          }
+        })
+      );
+    }
+
+    return { moved: ids.length };
+  });
+
 export const triggerBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; count?: number }) =>
