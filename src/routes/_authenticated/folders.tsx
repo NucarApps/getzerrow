@@ -268,6 +268,25 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
           {folder.last_learned_at && ` · learned ${new Date(folder.last_learned_at).toLocaleString()}`}
           {" · "}auto-updates as you move emails in Gmail
         </p>
+        {(domainsQ.data?.length ?? 0) > 0 && (
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Suggested domains</div>
+            <div className="flex flex-wrap gap-1.5">
+              {domainsQ.data!.map((s) => (
+                <button
+                  key={s.domain}
+                  onClick={() => addDomain(s.domain)}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:border-primary hover:bg-primary/5 transition-colors"
+                  title={`Click to auto-route all ${s.domain} emails to ${folder.name}`}
+                >
+                  <Plus className="h-3 w-3" />
+                  <span className="font-mono">{s.domain}</span>
+                  <span className="text-muted-foreground">· {s.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4">
