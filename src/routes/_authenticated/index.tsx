@@ -88,7 +88,10 @@ function InboxPage() {
   const selected = filtered.find((e) => e.id === selectedId) ?? null;
 
   const syncMut = useMutation({
-    mutationFn: () => sync(),
+    mutationFn: () => {
+      if (!accountId) throw new Error("Connect Gmail in Settings first");
+      return sync({ data: { account_id: accountId } });
+    },
     onSuccess: () => { toast.success("Synced"); qc.invalidateQueries({ queryKey: ["emails"] }); },
     onError: (e: any) => toast.error(e.message),
   });
