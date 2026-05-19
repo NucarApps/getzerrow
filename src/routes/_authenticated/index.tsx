@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { useFolderSelection } from "@/lib/folder-selection";
 
 export const Route = createFileRoute("/_authenticated/")({ component: InboxPage });
 
@@ -37,7 +38,7 @@ type Folder = { id: string; name: string; color: string };
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
-  const [selectedFolder, setSelectedFolder] = useState<string | "all" | "unsorted">("all");
+  const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const accountQ = useQuery({
@@ -96,57 +97,20 @@ function InboxPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const counts = useMemo(() => {
-    const all = emailsQ.data ?? [];
-    const m = new Map<string, number>();
-    for (const e of all) {
-      if (e.is_read) continue;
-      const k = e.folder_id ?? "unsorted";
-      m.set(k, (m.get(k) ?? 0) + 1);
-    }
-    return m;
-  }, [emailsQ.data]);
+  const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
   return (
-    <div className="grid h-screen grid-cols-[220px_360px_1fr]">
-      {/* Folders pane */}
-      <div className="overflow-y-auto border-r border-border bg-card/30 p-3">
-        <div className="mb-3 flex items-center justify-between px-2">
-          <span className="text-[11px] uppercase tracking-widest text-muted-foreground">Folders</span>
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => syncMut.mutate()} disabled={syncMut.isPending}>
-            <RefreshCw className={`h-3.5 w-3.5 ${syncMut.isPending ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-        <FolderButton
-          active={selectedFolder === "all"} onClick={() => setSelectedFolder("all")}
-          color="#a3a3a3" label="All inbox" count={Array.from(counts.values()).reduce((a, b) => a + b, 0)}
-        />
-        <FolderButton
-          active={selectedFolder === "unsorted"} onClick={() => setSelectedFolder("unsorted")}
-          color="#71717a" label="Unsorted" count={counts.get("unsorted") ?? 0}
-        />
-        <div className="mt-3 border-t border-border pt-3">
-          {(foldersQ.data ?? []).map((f) => (
-            <FolderButton
-              key={f.id}
-              active={selectedFolder === f.id}
-              onClick={() => setSelectedFolder(f.id)}
-              color={f.color}
-              label={f.name}
-              count={counts.get(f.id) ?? 0}
-            />
-          ))}
-          {(foldersQ.data ?? []).length === 0 && (
-            <p className="px-2 py-4 text-xs text-muted-foreground">No folders yet. Create some in <a href="/folders" className="underline">Folders</a>.</p>
-          )}
-        </div>
-      </div>
-
+    <div className="grid h-screen grid-cols-[400px_1fr]">
       {/* List */}
       <div className="flex flex-col overflow-hidden border-r border-border">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="font-display text-xl">{labelForFolder(selectedFolder, foldersQ.data ?? [])}</h2>
-          <span className="text-xs text-muted-foreground">{filtered.length}</span>
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <h2 className="truncate font-display text-xl">{headerLabel}</h2>
+            <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
+          </div>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => syncMut.mutate()} disabled={syncMut.isPending} title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
+          </Button>
         </div>
         <div className="flex-1 overflow-y-auto">
           {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
@@ -199,21 +163,6 @@ function labelForFolder(sel: string | "all" | "unsorted", folders: Folder[]) {
   if (sel === "all") return "All inbox";
   if (sel === "unsorted") return "Unsorted";
   return folders.find((f) => f.id === sel)?.name ?? "Folder";
-}
-
-function FolderButton({ active, onClick, color, label, count }: { active: boolean; onClick: () => void; color: string; label: string; count: number }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`}
-    >
-      <span className="flex items-center gap-2 truncate">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
-        <span className="truncate">{label}</span>
-      </span>
-      {count > 0 && <span className="rounded-full bg-primary/20 px-1.5 text-[10px] text-primary">{count}</span>}
-    </button>
-  );
 }
 
 function Reader({ email, folders }: { email: Email; folders: Folder[] }) {
