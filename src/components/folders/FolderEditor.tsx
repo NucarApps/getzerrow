@@ -75,6 +75,19 @@ export function FolderEditor({
     placeholderData: (prev) => prev,
   });
 
+  const otherFoldersQ = useQuery({
+    queryKey: ["folders-picker", folder.gmail_account_id, folder.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("folders")
+        .select("id, name, color")
+        .eq("gmail_account_id", folder.gmail_account_id)
+        .neq("id", folder.id)
+        .order("name");
+      return (data ?? []) as Array<{ id: string; name: string; color: string }>;
+    },
+  });
+
   async function save() {
     const { error } = await supabase.from("folders").update({
       name: local.name, color: local.color, ai_rule: local.ai_rule,
