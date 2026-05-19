@@ -73,6 +73,7 @@ function InboxPage() {
       .channel("emails-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
         qc.invalidateQueries({ queryKey: ["emails"] });
+        qc.invalidateQueries({ queryKey: ["emails-summary"] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
         qc.invalidateQueries({ queryKey: ["folders"] });
