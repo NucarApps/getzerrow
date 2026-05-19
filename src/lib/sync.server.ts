@@ -448,6 +448,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
   let archived = 0;
   let deleted = 0;
   let updated = 0;
+  let failed = 0;
 
   for (const row of rows ?? []) {
     try {
@@ -474,8 +475,9 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
       if (!patch.is_archived) updated++;
     } catch (e) {
+      failed++;
       console.error("reconcile row failed", row.gmail_message_id, e);
     }
   }
-  return { checked: rows?.length ?? 0, archived, deleted, updated };
+  return { checked: rows?.length ?? 0, archived, deleted, updated, failed };
 }
