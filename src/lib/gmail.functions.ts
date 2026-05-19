@@ -59,6 +59,55 @@ export const startConnectGmail = createServerFn({ method: "POST" })
     return { url: buildAuthorizeUrl(redirectUri, state) };
   });
 
+export const connectGmailFromSession = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { access_token: string; refresh_token: string; expires_in: number; email_address: string }) =>
+    z.object({
+      access_token: z.string().min(1),
+      refresh_token: z.string().min(1),
+      expires_in: z.number().int().positive().max(60 * 60 * 24),
+      email_address: z.string().email(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
+    const { data: account, error } = await supabaseAdmin
+      .from("gmail_accounts")
+      .upsert(
+        {
+          user_id: context.userId,
+          email_address: data.email_address,
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          token_expires_at: expiresAt,
+        },
+        { onConflict: "user_id,email_address" }
+      )
+      .select("id")
+      .single();
+    if (error || !account) throw new Error(`Failed to save account: ${error?.message}`);
+
+    try {
+      const watch = await ensureWatch(account.id, null);
+      if (watch) {
+        await supabaseAdmin.from("gmail_accounts").update({
+          history_id: watch.historyId,
+          watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
+        }).eq("id", account.id);
+      }
+    } catch (e) {
+      console.error("ensureWatch failed during auto-connect", e);
+    }
+
+    try {
+      await backfillRecent(account.id, context.userId, 30);
+    } catch (e) {
+      console.error("backfill failed during auto-connect", e);
+    }
+
+    return { account_id: account.id };
+  });
+
 export const disconnectGmailAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
