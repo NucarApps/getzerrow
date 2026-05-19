@@ -1,7 +1,21 @@
-import { createFileRoute, redirect, Outlet, Link, useLocation } from "@tanstack/react-router";
+import { createFileRoute, redirect, Outlet, Link } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Inbox, FolderTree, Settings, LogOut } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
+import { Inbox, Settings, LogOut, Plus, MoreHorizontal, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
+import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
+import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
+import type { Folder, GLabel } from "@/components/folders/FolderEditor";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
@@ -12,47 +26,232 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthedLayout() {
-  const loc = useLocation();
-  const items = [
-    { to: "/", icon: Inbox, label: "Inbox" },
-    { to: "/folders", icon: FolderTree, label: "Folders" },
-    { to: "/settings", icon: Settings, label: "Settings" },
-  ];
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-4">
-        <div className="mb-8 px-2">
-          <h1 className="font-display text-3xl tracking-tight text-foreground">Zerrow</h1>
-          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">AI inbox</p>
-        </div>
-        <nav className="flex flex-col gap-1">
-          {items.map((it) => {
-            const active = loc.pathname === it.to;
-            return (
-              <Link
-                key={it.to}
-                to={it.to}
-                className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60"}`}
-              >
-                <it.icon className="h-4 w-4" />{it.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="mt-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-sidebar-foreground"
-            onClick={async () => { await supabase.auth.signOut(); window.location.href = "/login"; }}
-          >
-            <LogOut className="mr-2 h-4 w-4" /> Sign out
-          </Button>
-        </div>
-      </aside>
-      <main className="flex-1 overflow-hidden">
-        <Outlet />
-      </main>
+    <FolderSelectionProvider>
+      <div className="flex min-h-screen bg-background text-foreground">
+        <Sidebar />
+        <main className="flex-1 overflow-hidden">
+          <Outlet />
+        </main>
+      </div>
+    </FolderSelectionProvider>
+  );
+}
+
+function Sidebar() {
+  const qc = useQueryClient();
+  const { selected, setSelected } = useFolderSelection();
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<Folder | null>(null);
+
+  const listAccounts = useServerFn(listMyGmailAccounts);
+  const listLabelsFn = useServerFn(listGmailLabels);
+
+  const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
+  const accountId = accountsQ.data?.accounts[0]?.id ?? null;
+
+  const foldersQ = useQuery({
+    queryKey: ["folders-full", accountId],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const { data } = await supabase.from("folders").select("*").eq("gmail_account_id", accountId!).order("priority", { ascending: false });
+      return (data ?? []) as Folder[];
+    },
+  });
+
+  const labelsQ = useQuery({
+    queryKey: ["gmail-labels", accountId],
+    enabled: !!accountId,
+    queryFn: async () => {
+      try { return (await listLabelsFn({ data: { account_id: accountId! } })).labels as GLabel[]; } catch { return [] as GLabel[]; }
+    },
+  });
+
+  const emailsQ = useQuery({
+    queryKey: ["emails"],
+    queryFn: async () => {
+      const { data } = await supabase.from("emails").select("id,folder_id,is_read,is_archived").eq("is_archived", false).limit(1000);
+      return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean }>;
+    },
+  });
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("sidebar-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
+        qc.invalidateQueries({ queryKey: ["emails"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
+        qc.invalidateQueries({ queryKey: ["folders-full"] });
+        qc.invalidateQueries({ queryKey: ["folders"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc]);
+
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
+    let total = 0;
+    for (const e of emailsQ.data ?? []) {
+      if (e.is_read) continue;
+      total++;
+      const k = e.folder_id ?? "unsorted";
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return { byFolder: m, total };
+  }, [emailsQ.data]);
+
+  return (
+    <aside className="flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-4">
+      <div className="mb-6 px-2">
+        <h1 className="font-display text-3xl tracking-tight text-foreground">Zerrow</h1>
+        <p className="text-[11px] uppercase tracking-widest text-muted-foreground">AI inbox</p>
+      </div>
+
+      <nav className="flex flex-col gap-0.5">
+        <Link
+          to="/"
+          className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/60"
+          onClick={() => setSelected("all")}
+        >
+          <Inbox className="h-4 w-4" /> Inbox
+        </Link>
+        <Link
+          to="/settings"
+          activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
+          className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/60"
+        >
+          <Settings className="h-4 w-4" /> Settings
+        </Link>
+      </nav>
+
+      <div className="mt-6 flex items-center justify-between px-2">
+        <span className="text-[11px] uppercase tracking-widest text-muted-foreground">Folders</span>
+        <button
+          onClick={() => setAddOpen(true)}
+          disabled={!accountId}
+          className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
+          title="Add folder"
+          aria-label="Add folder"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto">
+        <FolderRow
+          active={selected === "all"}
+          onSelect={() => setSelected("all")}
+          color="#a3a3a3"
+          label="All inbox"
+          count={counts.total}
+        />
+        <FolderRow
+          active={selected === "unsorted"}
+          onSelect={() => setSelected("unsorted")}
+          color="#71717a"
+          label="Unsorted"
+          count={counts.byFolder.get("unsorted") ?? 0}
+        />
+
+        {(foldersQ.data ?? []).map((f) => (
+          <FolderRow
+            key={f.id}
+            active={selected === f.id}
+            onSelect={() => setSelected(f.id as FolderSelection)}
+            color={f.color}
+            label={f.name}
+            count={counts.byFolder.get(f.id) ?? 0}
+            onEdit={() => setEditing(f)}
+          />
+        ))}
+
+        {accountId && (foldersQ.data ?? []).length === 0 && (
+          <p className="px-3 py-3 text-xs text-muted-foreground">
+            No folders yet. Click + to add one.
+          </p>
+        )}
+        {!accountId && !accountsQ.isLoading && (
+          <p className="px-3 py-3 text-xs text-muted-foreground">
+            Connect Gmail in <Link to="/settings" className="underline">Settings</Link>.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start text-sidebar-foreground"
+          onClick={async () => { await supabase.auth.signOut(); window.location.href = "/login"; }}
+        >
+          <LogOut className="mr-2 h-4 w-4" /> Sign out
+        </Button>
+      </div>
+
+      <AddFolderDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        accountId={accountId}
+        labels={labelsQ.data ?? []}
+      />
+      <EditFolderDialog
+        folder={editing}
+        labels={labelsQ.data ?? []}
+        open={!!editing}
+        onOpenChange={(v) => { if (!v) setEditing(null); }}
+      />
+    </aside>
+  );
+}
+
+function FolderRow({
+  active,
+  onSelect,
+  color,
+  label,
+  count,
+  onEdit,
+}: {
+  active: boolean;
+  onSelect: () => void;
+  color: string;
+  label: string;
+  count: number;
+  onEdit?: () => void;
+}) {
+  return (
+    <div
+      className={`group flex items-center rounded-md text-sm transition-colors ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60"}`}
+    >
+      <button
+        onClick={onSelect}
+        className="flex flex-1 items-center gap-2 truncate px-3 py-1.5 text-left"
+      >
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
+        <span className="flex-1 truncate">{label}</span>
+        {count > 0 && (
+          <span className="rounded-full bg-primary/20 px-1.5 text-[10px] text-primary">{count}</span>
+        )}
+      </button>
+      {onEdit && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="mr-1 grid h-6 w-6 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background/50 hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`More options for ${label}`}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem onSelect={onEdit}>
+              <Pencil className="mr-2 h-3.5 w-3.5" /> Edit folder
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
