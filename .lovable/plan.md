@@ -1,25 +1,34 @@
-Move folder navigation into the left sidebar and convert the Folders page into per-folder edit dialogs.
+## What's happening
 
-## New left sidebar layout
-- Keep the brand at the top, and `Inbox` and `Settings` as top-level links.
-- Add a `Folders` section header with a `+` button on the right that opens an "Add folder" dialog (name + Gmail label select, same fields as today's add row).
-- Below the header, list every folder (color dot, name, unread count) — same data the inbox column shows today.
-- Add `All inbox` and `Unsorted` as the first two entries in the folder list so nothing is lost.
-- Clicking a folder navigates to `/?folder=<id>` (or `all` / `unsorted`); the inbox reads the selected folder from the URL instead of local state.
-- On hover, each folder row reveals a `⋯` button. Clicking it opens an "Edit folder" dialog containing the existing `FolderEditor` (color, Gmail label, AI rule, learned profile + suggested domains, auto-archive / mark-read, filters, delete).
+Both the inbox refresh button and Settings' "Sync now" call the same `triggerSync` server function (history sync + `reconcileLocalInbox`), and both invalidate the `["emails"]` query on success. Functionally they should produce the same result, so the fact that one "worked" and the other didn't points at one of:
 
-## Inbox screen
-- Drop the 220px folders column. The inbox becomes a two-pane layout: message list (left) and reader (right).
-- Move the refresh button into the message-list header.
-- The selected-folder state moves from `useState` to a URL search param so the sidebar can drive it.
+1. **The reconcile silently did nothing** on the inbox click (e.g. swallowed per-row errors in `reconcileLocalInbox`, or `syncSinceHistory` threw before reconcile ran), and the success toast hid that.
+2. **The refetch happened but the cached UI wasn't updated** (realtime + invalidate race, or selected message keeps the row in view).
 
-## Folders route
-- `/folders` becomes redundant. Redirect it to `/` so existing links / bookmarks still work, and remove the `Folders` item from the sidebar nav (its functionality is now the sidebar section + dialogs).
+Right now we can't tell which, because the toast just says "Synced" with no detail and `console.error` from swallowed reconcile failures isn't surfaced.
 
-## Technical details
-- Files touched:
-  - `src/routes/_authenticated.tsx` — render the new folder section (queries `folders`, `emails` unread counts, `gmail_accounts`, `gmail-labels`); wire add + edit dialogs; subscribe to the same realtime channel for folders/emails so the sidebar updates live.
-  - `src/routes/_authenticated/index.tsx` — remove the folders column; read `?folder=` from the URL; keep realtime + list/reader panes.
-  - `src/routes/_authenticated/folders.tsx` — replace with a redirect to `/`. Extract `FolderEditor` and the add-folder form into `src/components/folders/FolderEditor.tsx` and `AddFolderDialog.tsx` so the sidebar can reuse them.
-- New shadcn pieces used: `Dialog` (already installed) for add + edit, `DropdownMenu` for the `⋯` action, optional `ScrollArea` for the folder list.
-- No database or server-function changes.
+## Plan
+
+Small, frontend + light server-side change to make the inbox refresh button observable and as reliable as Settings:
+
+1. **Surface reconcile results in the inbox toast.** Change `syncMut.onSuccess` in `src/routes/_authenticated/index.tsx` to read the returned `{ reconciled: { checked, archived, deleted, updated }, synced?, bootstrapped?, error? }` and show e.g. `Synced · 2 archived, 1 removed` (or `Sync error: …` when `histResult.error` is set). This immediately tells us whether reconcile actually ran and what it did.
+
+2. **Await the refetch before clearing the spinner.** Switch `qc.invalidateQueries({ queryKey: ["emails"] })` to `await qc.refetchQueries({ queryKey: ["emails"] })` and make `onSuccess` async, so the button stays in its pending state until the new list is in the cache. Same for `["folders"]` is not needed.
+
+3. **Clear `selectedId` if the open message disappeared after refetch.** After the refetch, if `selectedId` is no longer in the new list, reset it to `null` so the reading pane doesn't keep showing a ghost of an archived/trashed email.
+
+4. **Stop swallowing reconcile row failures silently.** In `src/lib/sync.server.ts` `reconcileLocalInbox`, count failures into the return object (`failed`) instead of only `console.error`-ing them, and include that in the toast. If the token is expired or Gmail returns 401, we'll see `failed: N` and know to reauthorize.
+
+5. **Match Settings exactly.** Settings' `run()` invalidates both `["gmail-accounts"]` and `["emails"]`. Mirror that in the inbox `onSuccess` so `last_poll_at`-style data stays consistent (cheap, removes one more difference between the two paths).
+
+No DB changes, no auth changes, no folder/UI restructuring — purely the refresh-button behavior and one server-fn return shape.
+
+## Files touched
+
+- `src/routes/_authenticated/index.tsx` — `syncMut` onSuccess (toast detail, awaited refetch, selectedId cleanup, second invalidate).
+- `src/lib/sync.server.ts` — `reconcileLocalInbox` returns `failed` count.
+- `src/lib/gmail.functions.ts` — no change needed (it already spreads the reconcile result).
+
+## Open question
+
+Is it OK to keep the same `triggerSync` server function (history + reconcile), or do you want the inbox refresh button to also run a small `backfillRecent` (like Settings' "Backfill recent 30") as a heavier fallback when history returns `{ error }`? I'd lean **no** by default — backfill is slower and you already have a dedicated button for it — but happy to wire an automatic fallback if you'd rather the inbox refresh "just always work".

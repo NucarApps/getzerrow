@@ -93,7 +93,23 @@ function InboxPage() {
       if (!accountId) throw new Error("Connect Gmail in Settings first");
       return sync({ data: { account_id: accountId } });
     },
-    onSuccess: () => { toast.success("Synced"); qc.invalidateQueries({ queryKey: ["emails"] }); },
+    onSuccess: async (res: any) => {
+      const r = res?.reconciled;
+      const parts: string[] = [];
+      if (typeof res?.synced === "number" && res.synced > 0) parts.push(`${res.synced} new`);
+      if (r?.archived) parts.push(`${r.archived} archived`);
+      if (r?.deleted) parts.push(`${r.deleted} removed`);
+      if (r?.failed) parts.push(`${r.failed} failed`);
+      const msg = parts.length ? `Synced · ${parts.join(", ")}` : "Synced";
+      if (res?.error) toast.error(`Sync error: ${res.error}`);
+      else toast.success(msg);
+      await Promise.all([
+        qc.refetchQueries({ queryKey: ["emails"] }),
+        qc.invalidateQueries({ queryKey: ["gmail-accounts"] }),
+      ]);
+      const fresh = qc.getQueryData<Email[]>(["emails"]) ?? [];
+      if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
