@@ -351,7 +351,7 @@ async function applyLabelChange(
   added: string[],
   removed: string[],
 ) {
-  const patch: Record<string, unknown> = {};
+  const patch: { raw_labels?: string[]; is_archived?: boolean; is_read?: boolean } = {};
   if (currentLabels) patch.raw_labels = currentLabels;
   if (removed.includes("INBOX")) patch.is_archived = true;
   if (added.includes("INBOX")) patch.is_archived = false;
