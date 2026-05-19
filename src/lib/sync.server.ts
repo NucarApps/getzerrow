@@ -464,19 +464,63 @@ export async function syncSinceHistory(accountId: string) {
 export async function reconcileLocalInbox(accountId: string, limit = 100) {
   const { data: rows } = await supabaseAdmin
     .from("emails")
-    .select("id, gmail_message_id, raw_labels")
+    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at")
     .eq("gmail_account_id", accountId)
     .eq("is_archived", false)
-    .order("received_at", { ascending: false })
+    .order("received_at", { ascending: false, nullsFirst: true })
     .limit(limit);
 
   let archived = 0;
   let deleted = 0;
   let updated = 0;
+  let repaired = 0;
   let failed = 0;
 
   for (const row of rows ?? []) {
     try {
+      const needsRepair =
+        !row.from_addr ||
+        !row.subject ||
+        (!row.body_text && !row.body_html) ||
+        !row.received_at;
+
+      if (needsRepair) {
+        try {
+          const raw = await getMessage(accountId, row.gmail_message_id);
+          const parsed = parseMessage(raw);
+          const inTrash = parsed.raw_labels?.includes("TRASH");
+          if (inTrash) {
+            await supabaseAdmin.from("emails").delete().eq("id", row.id);
+            deleted++;
+            continue;
+          }
+          await supabaseAdmin.from("emails").update({
+            from_addr: parsed.from_addr,
+            from_name: parsed.from_name,
+            to_addrs: parsed.to_addrs,
+            subject: parsed.subject,
+            snippet: parsed.snippet,
+            body_text: parsed.body_text,
+            body_html: parsed.body_html,
+            received_at: parsed.received_at,
+            has_attachment: parsed.has_attachment,
+            raw_labels: parsed.raw_labels,
+            is_read: parsed.is_read,
+            is_archived: !parsed.raw_labels?.includes("INBOX"),
+          }).eq("id", row.id);
+          if (!parsed.raw_labels?.includes("INBOX")) archived++;
+          repaired++;
+          continue;
+        } catch (e: any) {
+          if (typeof e?.message === "string" && e.message.includes("404")) {
+            await supabaseAdmin.from("emails").delete().eq("id", row.id);
+            deleted++;
+            continue;
+          }
+          throw e;
+        }
+      }
+
       const labels = await getMessageLabels(accountId, row.gmail_message_id);
       if (labels === null) {
         await supabaseAdmin.from("emails").delete().eq("id", row.id);
@@ -504,5 +548,5 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       console.error("reconcile row failed", row.gmail_message_id, e);
     }
   }
-  return { checked: rows?.length ?? 0, archived, deleted, updated, failed };
+  return { checked: rows?.length ?? 0, archived, deleted, updated, repaired, failed };
 }
