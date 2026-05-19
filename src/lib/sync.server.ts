@@ -311,6 +311,8 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   } while (pageToken);
 
   let learned = 0;
+  let ingested = 0;
+  let claimed = 0;
   for (const id of ids.slice(0, MAX_MESSAGES)) {
     try {
       const raw = await getMessage(accountId, id);
@@ -329,12 +331,52 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
         { onConflict: "folder_id,gmail_message_id" }
       );
       if (!error) learned++;
+
+      // Also bring the message into our local emails table and tag it with this folder.
+      const { data: existing } = await supabaseAdmin
+        .from("emails")
+        .select("id, folder_id")
+        .eq("gmail_message_id", p.gmail_message_id)
+        .maybeSingle();
+      if (existing) {
+        if (existing.folder_id !== folderId) {
+          await supabaseAdmin
+            .from("emails")
+            .update({ folder_id: folderId, classified_by: "gmail_label", ai_confidence: 1 })
+            .eq("id", existing.id);
+          claimed++;
+        }
+      } else {
+        const { error: insErr } = await supabaseAdmin.from("emails").insert({
+          user_id: userId,
+          gmail_account_id: accountId,
+          gmail_message_id: p.gmail_message_id,
+          thread_id: p.thread_id,
+          from_addr: p.from_addr,
+          from_name: p.from_name,
+          to_addrs: p.to_addrs,
+          subject: p.subject,
+          snippet: p.snippet,
+          body_text: p.body_text,
+          body_html: p.body_html,
+          received_at: p.received_at,
+          is_read: p.is_read,
+          is_archived: !p.raw_labels?.includes("INBOX"),
+          has_attachment: p.has_attachment,
+          raw_labels: p.raw_labels,
+          folder_id: folderId,
+          classified_by: "gmail_label",
+          ai_confidence: 1,
+        });
+        if (!insErr) ingested++;
+        else console.error("ingest labeled message failed", insErr);
+      }
     } catch (e) {
       console.error("seed example failed", e);
     }
   }
   const profile = await regenerateFolderProfile(folderId);
-  return { learned, profile };
+  return { learned, ingested, claimed, profile };
 }
 
 export async function backfillRecent(accountId: string, userId: string, maxResults = 30) {
