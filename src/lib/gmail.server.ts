@@ -53,6 +53,17 @@ export async function getMessage(accountId: string, id: string) {
   return gmailFetch<any>(accountId, `/users/me/messages/${id}?format=full`);
 }
 
+/** Lightweight fetch: just labelIds. Returns null if message no longer exists (404). */
+export async function getMessageLabels(accountId: string, id: string): Promise<string[] | null> {
+  try {
+    const r = await gmailFetch<{ labelIds?: string[] }>(accountId, `/users/me/messages/${id}?format=minimal`);
+    return r.labelIds ?? [];
+  } catch (e: any) {
+    if (typeof e?.message === "string" && e.message.includes("404")) return null;
+    throw e;
+  }
+}
+
 export async function modifyMessage(accountId: string, id: string, addLabelIds: string[] = [], removeLabelIds: string[] = []) {
   return gmailFetch(accountId, `/users/me/messages/${id}/modify`, {
     method: "POST",
