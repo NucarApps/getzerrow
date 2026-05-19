@@ -1,9 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { createGmailLabel, listGmailLabels, learnFolderFromLabel } from "@/lib/gmail.functions";
+import { createGmailLabel, listGmailLabels, learnFolderFromLabel, listMyGmailAccounts } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +27,7 @@ type Folder = {
   auto_archive: boolean;
   auto_mark_read: boolean;
   priority: number;
+  gmail_account_id: string;
 };
 type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 type GLabel = { id: string; name: string; type: string };
@@ -37,13 +38,18 @@ function FoldersPage() {
   const qc = useQueryClient();
   const createLabel = useServerFn(createGmailLabel);
   const listLabelsFn = useServerFn(listGmailLabels);
+  const listAccounts = useServerFn(listMyGmailAccounts);
   const [newName, setNewName] = useState("");
   const [newLabelChoice, setNewLabelChoice] = useState<string>(NEW_LABEL);
 
+  const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
+  const accountId = accountsQ.data?.accounts[0]?.id;
+
   const foldersQ = useQuery({
-    queryKey: ["folders-full"],
+    queryKey: ["folders-full", accountId],
+    enabled: !!accountId,
     queryFn: async () => {
-      const { data } = await supabase.from("folders").select("*").order("priority", { ascending: false });
+      const { data } = await supabase.from("folders").select("*").eq("gmail_account_id", accountId!).order("priority", { ascending: false });
       return (data ?? []) as Folder[];
     },
   });
@@ -55,9 +61,10 @@ function FoldersPage() {
     },
   });
   const labelsQ = useQuery({
-    queryKey: ["gmail-labels"],
+    queryKey: ["gmail-labels", accountId],
+    enabled: !!accountId,
     queryFn: async () => {
-      try { return (await listLabelsFn()).labels as GLabel[]; } catch { return [] as GLabel[]; }
+      try { return (await listLabelsFn({ data: { account_id: accountId! } })).labels as GLabel[]; } catch { return [] as GLabel[]; }
     },
   });
   const exampleCountsQ = useQuery({
@@ -71,15 +78,15 @@ function FoldersPage() {
   });
 
   async function addFolder() {
-    if (!newName.trim()) return;
+    if (!newName.trim() || !accountId) return;
     const userId = (await supabase.auth.getUser()).data.user!.id;
     let labelId: string | null = null;
     if (newLabelChoice === NEW_LABEL) {
       try {
-        const r = await createLabel({ data: { name: newName.trim() } });
+        const r = await createLabel({ data: { account_id: accountId, name: newName.trim() } });
         labelId = r.id;
       } catch {
-        toast.warning("Couldn't create Gmail label (Gmail may not be connected). Folder created locally.");
+        toast.warning("Couldn't create Gmail label. Folder created locally.");
       }
     } else {
       labelId = newLabelChoice;
@@ -87,6 +94,7 @@ function FoldersPage() {
     const { error } = await supabase.from("folders").insert({
       name: newName.trim(),
       user_id: userId,
+      gmail_account_id: accountId,
       gmail_label_id: labelId,
       color: pickColor(),
     });
@@ -97,12 +105,28 @@ function FoldersPage() {
     qc.invalidateQueries({ queryKey: ["folders"] });
   }
 
+  if (accountsQ.isLoading) {
+    return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
+  }
+
+  if (!accountId) {
+    return (
+      <div className="p-8">
+        <Card className="mx-auto max-w-xl p-6 text-center">
+          <h2 className="font-display text-2xl">Connect Gmail first</h2>
+          <p className="mt-2 text-sm text-muted-foreground">You need to connect a Gmail account before creating folders.</p>
+          <Link to="/settings" className="mt-4 inline-block"><Button>Go to Settings</Button></Link>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen overflow-y-auto p-8">
       <div className="mx-auto max-w-3xl">
         <h1 className="font-display text-4xl">Folders</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Link a folder to an existing Gmail label, then let Zerrow learn from what's already in it. Manual moves in Gmail keep training the AI.
+          Link a folder to an existing Gmail label, then let Zerrow learn from it. Manual moves in Gmail keep training the AI.
         </p>
 
         <Card className="mt-6 p-4">
@@ -144,7 +168,6 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
-
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
   async function save() {
@@ -158,14 +181,12 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
     qc.invalidateQueries({ queryKey: ["folders-full"] });
     qc.invalidateQueries({ queryKey: ["folders"] });
   }
-
   async function remove() {
-    if (!confirm(`Delete "${folder.name}"? Emails in it will move to Unsorted.`)) return;
+    if (!confirm(`Delete "${folder.name}"?`)) return;
     await supabase.from("folders").delete().eq("id", folder.id);
     qc.invalidateQueries({ queryKey: ["folders-full"] });
     qc.invalidateQueries({ queryKey: ["folders"] });
   }
-
   async function addFilter() {
     if (!newF.value.trim()) return;
     await supabase.from("folder_filters").insert({ ...newF, folder_id: folder.id, value: newF.value.trim() });
@@ -176,31 +197,23 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
     await supabase.from("folder_filters").delete().eq("id", id);
     qc.invalidateQueries({ queryKey: ["folder-filters"] });
   }
-
   async function learn() {
     if (!folder.gmail_label_id) { toast.error("Link a Gmail label first, then save."); return; }
     setLearning(true);
     try {
       const r = await learnFn({ data: { folder_id: folder.id } });
-      if (r.learned === 0) toast.warning("No emails found under linked label — make sure the label has messages.");
+      if (r.learned === 0) toast.warning("No emails found under linked label.");
       else toast.success(`Learned from ${r.learned} emails`);
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       qc.invalidateQueries({ queryKey: ["folder-example-counts"] });
-    } catch (e: any) {
-      toast.error(e.message ?? "Failed to learn");
-    } finally {
-      setLearning(false);
-    }
+    } catch (e: any) { toast.error(e.message ?? "Failed to learn"); }
+    finally { setLearning(false); }
   }
 
   return (
     <Card className="p-5">
       <div className="flex items-center gap-3">
-        <input
-          type="color" value={local.color}
-          onChange={(e) => setLocal({ ...local, color: e.target.value })}
-          className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent"
-        />
+        <input type="color" value={local.color} onChange={(e) => setLocal({ ...local, color: e.target.value })} className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent" />
         <Input className="flex-1" value={local.name} onChange={(e) => setLocal({ ...local, name: e.target.value })} />
         <Input type="number" className="w-20" value={local.priority} onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })} title="Priority (higher wins)" />
         <Button variant="ghost" size="icon" onClick={remove}><Trash2 className="h-4 w-4 text-destructive" /></Button>
@@ -211,22 +224,14 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
         <Select value={local.gmail_label_id ?? ""} onValueChange={(v) => setLocal({ ...local, gmail_label_id: v || null })}>
           <SelectTrigger><SelectValue placeholder="Not linked" /></SelectTrigger>
           <SelectContent>
-            {labels.map((l) => (
-              <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-            ))}
+            {labels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>))}
           </SelectContent>
         </Select>
       </div>
 
       <div className="mt-4">
         <Label className="text-xs uppercase tracking-wider text-muted-foreground">AI rule (natural language)</Label>
-        <Textarea
-          className="mt-1.5"
-          rows={2}
-          placeholder='e.g. "Newsletters, marketing emails, product updates"'
-          value={local.ai_rule ?? ""}
-          onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })}
-        />
+        <Textarea className="mt-1.5" rows={2} placeholder='e.g. "Newsletters, marketing emails"' value={local.ai_rule ?? ""} onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })} />
       </div>
 
       <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">

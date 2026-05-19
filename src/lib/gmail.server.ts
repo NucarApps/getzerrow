@@ -1,22 +1,17 @@
-// Gmail API helpers via Lovable connector gateway. Server-only.
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_mail/gmail/v1";
+// Gmail API helpers — direct calls to Google with per-user OAuth tokens. Server-only.
+import { getAccessToken } from "./google-oauth.server";
 
-function authHeaders() {
-  const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
-  const GOOGLE_MAIL_API_KEY = process.env.GOOGLE_MAIL_API_KEY;
-  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-  if (!GOOGLE_MAIL_API_KEY) throw new Error("GOOGLE_MAIL_API_KEY is not configured. Connect Gmail in Settings.");
-  return {
-    Authorization: `Bearer ${LOVABLE_API_KEY}`,
-    "X-Connection-Api-Key": GOOGLE_MAIL_API_KEY,
-    "Content-Type": "application/json",
-  };
-}
+const BASE = "https://gmail.googleapis.com/gmail/v1";
 
-async function gmailFetch<T = any>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${GATEWAY_URL}${path}`, {
+async function gmailFetch<T = any>(accountId: string, path: string, init?: RequestInit): Promise<T> {
+  const token = await getAccessToken(accountId);
+  const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { ...authHeaders(), ...(init?.headers || {}) },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
   });
   const text = await res.text();
   if (!res.ok) {
@@ -25,50 +20,51 @@ async function gmailFetch<T = any>(path: string, init?: RequestInit): Promise<T>
   return text ? JSON.parse(text) : ({} as T);
 }
 
-export async function listLabels() {
+export async function listLabels(accountId: string) {
   return gmailFetch<{ labels: Array<{ id: string; name: string; type: string }> }>(
+    accountId,
     "/users/me/labels"
   );
 }
 
-export async function createLabel(name: string) {
-  return gmailFetch<{ id: string; name: string }>("/users/me/labels", {
+export async function createLabel(accountId: string, name: string) {
+  return gmailFetch<{ id: string; name: string }>(accountId, "/users/me/labels", {
     method: "POST",
-    body: JSON.stringify({
-      name,
-      labelListVisibility: "labelShow",
-      messageListVisibility: "show",
-    }),
+    body: JSON.stringify({ name, labelListVisibility: "labelShow", messageListVisibility: "show" }),
   });
 }
 
-export async function listMessages(opts: { maxResults?: number; q?: string; pageToken?: string; labelIds?: string[] } = {}) {
+export async function listMessages(
+  accountId: string,
+  opts: { maxResults?: number; q?: string; pageToken?: string; labelIds?: string[] } = {}
+) {
   const params = new URLSearchParams();
   if (opts.maxResults) params.set("maxResults", String(opts.maxResults));
   if (opts.q) params.set("q", opts.q);
   if (opts.pageToken) params.set("pageToken", opts.pageToken);
   if (opts.labelIds) for (const id of opts.labelIds) params.append("labelIds", id);
   return gmailFetch<{ messages?: Array<{ id: string; threadId: string }>; nextPageToken?: string }>(
+    accountId,
     `/users/me/messages?${params.toString()}`
   );
 }
 
-export async function getMessage(id: string) {
-  return gmailFetch<any>(`/users/me/messages/${id}?format=full`);
+export async function getMessage(accountId: string, id: string) {
+  return gmailFetch<any>(accountId, `/users/me/messages/${id}?format=full`);
 }
 
-export async function modifyMessage(id: string, addLabelIds: string[] = [], removeLabelIds: string[] = []) {
-  return gmailFetch(`/users/me/messages/${id}/modify`, {
+export async function modifyMessage(accountId: string, id: string, addLabelIds: string[] = [], removeLabelIds: string[] = []) {
+  return gmailFetch(accountId, `/users/me/messages/${id}/modify`, {
     method: "POST",
     body: JSON.stringify({ addLabelIds, removeLabelIds }),
   });
 }
 
-export async function trashMessage(id: string) {
-  return gmailFetch(`/users/me/messages/${id}/trash`, { method: "POST" });
+export async function trashMessage(accountId: string, id: string) {
+  return gmailFetch(accountId, `/users/me/messages/${id}/trash`, { method: "POST" });
 }
 
-export async function sendMessage(to: string, subject: string, body: string, threadId?: string, inReplyTo?: string) {
+export async function sendMessage(accountId: string, to: string, subject: string, body: string, threadId?: string, inReplyTo?: string) {
   const headers = [
     `To: ${to}`,
     `Subject: ${subject}`,
@@ -79,13 +75,13 @@ export async function sendMessage(to: string, subject: string, body: string, thr
     body,
   ].filter(Boolean).join("\r\n");
   const raw = Buffer.from(headers).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return gmailFetch("/users/me/messages/send", {
+  return gmailFetch(accountId, "/users/me/messages/send", {
     method: "POST",
     body: JSON.stringify({ raw, threadId }),
   });
 }
 
-export async function listHistory(startHistoryId: string) {
+export async function listHistory(accountId: string, startHistoryId: string) {
   const params = new URLSearchParams({ startHistoryId });
   params.append("historyTypes", "messageAdded");
   params.append("historyTypes", "labelAdded");
@@ -96,18 +92,18 @@ export async function listHistory(startHistoryId: string) {
       labelsAdded?: Array<{ message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }>;
     }>;
     historyId?: string;
-  }>(`/users/me/history?${params.toString()}`);
+  }>(accountId, `/users/me/history?${params.toString()}`);
 }
 
-export async function watchInbox(topicName: string) {
-  return gmailFetch<{ historyId: string; expiration: string }>("/users/me/watch", {
+export async function watchInbox(accountId: string, topicName: string) {
+  return gmailFetch<{ historyId: string; expiration: string }>(accountId, "/users/me/watch", {
     method: "POST",
     body: JSON.stringify({ topicName, labelIds: ["INBOX"], labelFilterAction: "include" }),
   });
 }
 
-export async function stopWatch() {
-  return gmailFetch("/users/me/stop", { method: "POST" });
+export async function stopWatch(accountId: string) {
+  return gmailFetch(accountId, "/users/me/stop", { method: "POST" });
 }
 
 // ---- Message parsing ----
@@ -166,4 +162,16 @@ export function parseMessage(msg: any) {
     raw_labels: (msg.labelIds || []) as string[],
     is_read: !(msg.labelIds || []).includes("UNREAD"),
   };
+}
+
+/** Ensure Gmail push watch is active for this account. Re-watches if expired or near expiry. */
+export async function ensureWatch(accountId: string, watchExpiration: string | null): Promise<{ historyId: string; expiration: string } | null> {
+  const topic = process.env.GMAIL_PUBSUB_TOPIC;
+  if (!topic) return null;
+  if (watchExpiration) {
+    const expMs = new Date(watchExpiration).getTime();
+    // Renew if less than 1 day remaining
+    if (expMs - Date.now() > 24 * 60 * 60 * 1000) return null;
+  }
+  return watchInbox(accountId, topic);
 }

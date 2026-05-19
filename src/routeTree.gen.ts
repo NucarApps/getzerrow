@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
+import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
 
@@ -41,6 +42,12 @@ const AuthenticatedFoldersRoute = AuthenticatedFoldersRouteImport.update({
   path: '/folders',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const ApiPublicGoogleOauthCallbackRoute =
+  ApiPublicGoogleOauthCallbackRouteImport.update({
+    id: '/api/public/google-oauth-callback',
+    path: '/api/public/google-oauth-callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicGmailWebhookRoute = ApiPublicGmailWebhookRouteImport.update({
   id: '/api/public/gmail-webhook',
   path: '/api/public/gmail-webhook',
@@ -59,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
+  '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -67,6 +75,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
+  '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,6 +86,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
+  '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-webhook'
+    | '/api/public/google-oauth-callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-webhook'
+    | '/api/public/google-oauth-callback'
   id:
     | '__root__'
     | '/_authenticated'
@@ -104,6 +116,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-webhook'
+    | '/api/public/google-oauth-callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -111,6 +124,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
+  ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -150,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedFoldersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/api/public/google-oauth-callback': {
+      id: '/api/public/google-oauth-callback'
+      path: '/api/public/google-oauth-callback'
+      fullPath: '/api/public/google-oauth-callback'
+      preLoaderRoute: typeof ApiPublicGoogleOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/gmail-webhook': {
       id: '/api/public/gmail-webhook'
       path: '/api/public/gmail-webhook'
@@ -188,6 +209,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
+  ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

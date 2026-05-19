@@ -1,5 +1,4 @@
-// Gmail Pub/Sub push webhook. Public route — Gmail can't sign with our secret,
-// so we verify it's a valid Pub/Sub payload and pull state from our DB.
+// Gmail Pub/Sub push webhook. Looks up the right gmail_account by emailAddress.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory } from "@/lib/sync.server";
@@ -10,19 +9,23 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
       POST: async ({ request }) => {
         try {
           const body = await request.json();
-          // Pub/Sub envelope: { message: { data: base64(JSON {emailAddress, historyId}) } }
           const dataB64 = body?.message?.data;
           if (!dataB64) return new Response("ok", { status: 200 });
-          const decoded = JSON.parse(Buffer.from(dataB64, "base64").toString("utf-8"));
-          // Find which user this is for — single-tenant; use first user.
-          const { data: users } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 });
-          const userId = users?.users?.[0]?.id;
-          if (!userId) return new Response("no user", { status: 200 });
-          await syncSinceHistory(userId);
+          const decoded = JSON.parse(Buffer.from(dataB64, "base64").toString("utf-8")) as {
+            emailAddress: string;
+            historyId: number | string;
+          };
+          const { data: accounts } = await supabaseAdmin
+            .from("gmail_accounts")
+            .select("id")
+            .eq("email_address", decoded.emailAddress);
+          for (const acc of accounts ?? []) {
+            try { await syncSinceHistory(acc.id); } catch (e) { console.error("sync failed for", acc.id, e); }
+          }
           return new Response("ok", { status: 200 });
         } catch (e: any) {
           console.error("webhook error", e);
-          return new Response("ok", { status: 200 }); // ack to avoid Pub/Sub retries storm
+          return new Response("ok", { status: 200 });
         }
       },
     },

@@ -1,29 +1,46 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { triggerBackfill, triggerSync, getSyncState } from "@/lib/gmail.functions";
+import {
+  listMyGmailAccounts, startConnectGmail, disconnectGmailAccount,
+  triggerBackfill, triggerSync, renewGmailWatch,
+} from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
 
 function SettingsPage() {
   const qc = useQueryClient();
+  const listAccounts = useServerFn(listMyGmailAccounts);
+  const connect = useServerFn(startConnectGmail);
+  const disconnect = useServerFn(disconnectGmailAccount);
   const backfill = useServerFn(triggerBackfill);
   const sync = useServerFn(triggerSync);
-  const getState = useServerFn(getSyncState);
+  const renew = useServerFn(renewGmailWatch);
 
-  const stateQ = useQuery({ queryKey: ["sync-state"], queryFn: () => getState() });
+  const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function run(name: string, fn: () => Promise<any>, msg: string) {
-    setBusy(name);
-    try { await fn(); toast.success(msg); qc.invalidateQueries({ queryKey: ["sync-state"] }); qc.invalidateQueries({ queryKey: ["emails"] }); }
+  async function run(key: string, fn: () => Promise<any>, msg: string) {
+    setBusy(key);
+    try { await fn(); toast.success(msg); qc.invalidateQueries({ queryKey: ["gmail-accounts"] }); qc.invalidateQueries({ queryKey: ["emails"] }); }
     catch (e: any) { toast.error(e.message); }
     setBusy(null);
   }
+
+  async function startConnect() {
+    setBusy("connect");
+    try {
+      const { url } = await connect();
+      window.location.href = url;
+    } catch (e: any) { toast.error(e.message); setBusy(null); }
+  }
+
+  const accounts = accountsQ.data?.accounts ?? [];
 
   return (
     <div className="h-screen overflow-y-auto p-8">
@@ -31,24 +48,60 @@ function SettingsPage() {
         <h1 className="font-display text-4xl">Settings</h1>
 
         <Card className="p-6">
-          <h2 className="font-display text-2xl">Inbox sync</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Gmail is connected through Lovable. Pull in your recent inbox to start, or sync incrementally afterward.
-          </p>
-          <div className="mt-4 flex gap-2">
-            <Button onClick={() => run("backfill", () => backfill({ data: { count: 30 } }), "Backfilled latest 30")} disabled={busy !== null}>
-              {busy === "backfill" ? "Backfilling…" : "Backfill recent 30"}
-            </Button>
-            <Button variant="outline" onClick={() => run("sync", () => sync(), "Synced")} disabled={busy !== null}>
-              {busy === "sync" ? "Syncing…" : "Sync now"}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-display text-2xl">Connected Gmail accounts</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Connect your own Google account. Zerrow will read, organize, and watch your inbox in real time.
+              </p>
+            </div>
+            <Button onClick={startConnect} disabled={busy !== null}>
+              <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : "Connect Gmail"}
             </Button>
           </div>
-          {stateQ.data?.last_poll_at && (
-            <p className="mt-3 text-xs text-muted-foreground">Last polled: {new Date(stateQ.data.last_poll_at).toLocaleString()}</p>
-          )}
-          <p className="mt-4 text-xs text-muted-foreground">
-            Note: Real-time Gmail push (Pub/Sub watch) isn't available through the shared Lovable Gmail connector — use "Sync now" or schedule a periodic poll instead.
-          </p>
+
+          <div className="mt-6 space-y-3">
+            {accounts.length === 0 && (
+              <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                No Gmail connected yet. Click "Connect Gmail" to authorize.
+              </p>
+            )}
+            {accounts.map((a) => {
+              const exp = a.watch_expiration ? new Date(a.watch_expiration) : null;
+              const watchActive = exp && exp > new Date();
+              return (
+                <div key={a.id} className="rounded-md border border-border p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{a.email_address}</div>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        {watchActive ? (
+                          <><CheckCircle2 className="h-3 w-3 text-primary" />Real-time push active · renews {exp!.toLocaleDateString()}</>
+                        ) : (
+                          <><AlertCircle className="h-3 w-3" />No active push watch</>
+                        )}
+                        {a.last_poll_at && <span>· last synced {new Date(a.last_poll_at).toLocaleString()}</span>}
+                      </div>
+                    </div>
+                    <Button size="icon" variant="ghost" onClick={() => run(`del-${a.id}`, () => disconnect({ data: { account_id: a.id } }), "Disconnected")} disabled={busy !== null}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => run(`bf-${a.id}`, () => backfill({ data: { account_id: a.id, count: 30 } }), "Backfilled latest 30")} disabled={busy !== null}>
+                      {busy === `bf-${a.id}` ? "Backfilling…" : "Backfill recent 30"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => run(`sync-${a.id}`, () => sync({ data: { account_id: a.id } }), "Synced")} disabled={busy !== null}>
+                      <RefreshCw className="mr-1.5 h-3 w-3" />{busy === `sync-${a.id}` ? "Syncing…" : "Sync now"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => run(`watch-${a.id}`, () => renew({ data: { account_id: a.id } }), "Watch renewed")} disabled={busy !== null}>
+                      {busy === `watch-${a.id}` ? "Renewing…" : "Renew push watch"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       </div>
     </div>
