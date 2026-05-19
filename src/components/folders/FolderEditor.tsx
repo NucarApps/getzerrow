@@ -121,11 +121,16 @@ export function FolderEditor({
     setLearning(true);
     try {
       const r = await learnFn({ data: { folder_id: folder.id } });
-      if (r.learned === 0) toast.warning("No emails found under linked label in the past 30 days.");
-      else toast.success(`Learned from ${r.learned} emails from the past month`);
+      const bits: string[] = [];
+      if (r.learned) bits.push(`learned from ${r.learned}`);
+      if (r.ingested) bits.push(`imported ${r.ingested}`);
+      if (r.claimed) bits.push(`tagged ${r.claimed}`);
+      if (bits.length === 0) toast.warning("No emails found under linked label in the past 30 days.");
+      else toast.success(bits.join(" · "));
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       qc.invalidateQueries({ queryKey: ["folder-example-count", folder.id] });
       qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
+      qc.invalidateQueries({ queryKey: ["emails"] });
     } catch (e: any) { toast.error(e.message ?? "Failed to learn"); }
     finally { setLearning(false); }
   }
