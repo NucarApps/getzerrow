@@ -173,9 +173,10 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
   const domainsQ = useQuery({
-    queryKey: ["folder-domains", folder.id, exampleCount, filters.length],
+    queryKey: ["folder-domains", folder.id, exampleCount],
     enabled: exampleCount > 0,
     queryFn: async () => (await listDomainsFn({ data: { folder_id: folder.id } })).suggestions,
+    placeholderData: (prev) => prev,
   });
 
   async function save() {
@@ -206,12 +207,20 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
     qc.invalidateQueries({ queryKey: ["folder-filters"] });
   }
   async function addDomain(domain: string) {
+    const key = ["folder-domains", folder.id, exampleCount];
+    const prev = qc.getQueryData<Array<{ domain: string; count: number }>>(key);
+    qc.setQueryData(key, (old: Array<{ domain: string; count: number }> | undefined) =>
+      (old ?? []).filter((s) => s.domain !== domain),
+    );
     try {
       await addDomainFn({ data: { folder_id: folder.id, domain } });
       toast.success(`Now routing ${domain} → ${folder.name}`);
       qc.invalidateQueries({ queryKey: ["folder-filters"] });
       qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
-    } catch (e: any) { toast.error(e.message ?? "Failed to add"); }
+    } catch (e: any) {
+      qc.setQueryData(key, prev);
+      toast.error(e.message ?? "Failed to add");
+    }
   }
   async function learn() {
     if (!folder.gmail_label_id) { toast.error("Link a Gmail label first, then save."); return; }
