@@ -7,11 +7,22 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
   server: {
     handlers: {
       POST: async () => {
-        const { data: users } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 });
-        const userId = users?.users?.[0]?.id;
-        if (!userId) return Response.json({ ok: false, reason: "no user" });
-        const r = await syncSinceHistory(userId);
-        return Response.json({ ok: true, ...r });
+        const { data: accounts, error } = await supabaseAdmin
+          .from("gmail_accounts")
+          .select("id, email_address");
+        if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+
+        const results: Array<{ id: string; email: string; ok: boolean; error?: string }> = [];
+        for (const acc of accounts ?? []) {
+          try {
+            const r = await syncSinceHistory(acc.id);
+            results.push({ id: acc.id, email: acc.email_address, ok: true, ...r });
+          } catch (e: any) {
+            console.error("poll failed for", acc.email_address, e);
+            results.push({ id: acc.id, email: acc.email_address, ok: false, error: e?.message ?? String(e) });
+          }
+        }
+        return Response.json({ ok: true, count: results.length, results });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
     },
