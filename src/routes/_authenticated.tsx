@@ -62,7 +62,7 @@ function Sidebar() {
   });
 
   const emailsQ = useQuery({
-    queryKey: ["emails"],
+    queryKey: ["emails-summary"],
     queryFn: async () => {
       const { data } = await supabase.from("emails").select("id,folder_id,is_read,is_archived").limit(2000);
       return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean; is_archived: boolean }>;
