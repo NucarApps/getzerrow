@@ -149,6 +149,72 @@ export const learnFolderFromLabel = createServerFn({ method: "POST" })
     return learnFromLinkedLabel(data.folder_id, context.userId);
   });
 
+export const listFolderDomainSuggestions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id")
+      .eq("id", data.folder_id)
+      .single();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
+
+    const [{ data: examples }, { data: existingFilters }] = await Promise.all([
+      supabaseAdmin
+        .from("folder_examples")
+        .select("from_addr")
+        .eq("folder_id", data.folder_id),
+      supabaseAdmin
+        .from("folder_filters")
+        .select("value")
+        .eq("folder_id", data.folder_id)
+        .eq("field", "domain")
+        .eq("op", "contains"),
+    ]);
+
+    const taken = new Set((existingFilters ?? []).map((f) => f.value.toLowerCase()));
+    const counts = new Map<string, number>();
+    for (const e of examples ?? []) {
+      const addr = (e.from_addr || "").toLowerCase().trim();
+      const at = addr.lastIndexOf("@");
+      if (at === -1) continue;
+      const domain = addr.slice(at + 1).replace(/[>\s].*$/, "");
+      if (!domain || taken.has(domain)) continue;
+      counts.set(domain, (counts.get(domain) ?? 0) + 1);
+    }
+    const suggestions = [...counts.entries()]
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
+    return { suggestions };
+  });
+
+export const addDomainFilter = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string; domain: string }) =>
+    z.object({
+      folder_id: z.string().uuid(),
+      domain: z.string().min(1).max(253).regex(/^[a-z0-9.-]+$/i),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id")
+      .eq("id", data.folder_id)
+      .single();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
+    const { error } = await supabaseAdmin.from("folder_filters").insert({
+      folder_id: data.folder_id,
+      field: "domain",
+      op: "contains",
+      value: data.domain.toLowerCase(),
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const triggerBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; count?: number }) =>

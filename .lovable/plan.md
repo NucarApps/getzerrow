@@ -1,31 +1,46 @@
-# Auto-classification: cron poll fallback
+# Deeper relearn + domain suggestions
 
-## Current state (already working)
-- Gmail → Pub/Sub topic `gmail-push` → `POST /api/public/gmail-webhook`
-- Webhook calls `syncSinceHistory(accountId)`, which pulls new messages and runs `processGmailMessage` on each
-- `processGmailMessage` classifies via (1) linked Gmail label, (2) folder filters, (3) AI (`classifyEmail` via Lovable AI Gateway), then inserts into `emails` with `folder_id`, `ai_summary`, `ai_confidence`, applying `auto_archive` / `auto_mark_read` if set
+## What changes
 
-So real-time auto-classification is already in place. This plan only adds the safety net.
+### 1. Capture up to one month of label emails during relearn
+Today `learnFromLinkedLabel` calls `listMessages` once with `maxResults: 50`, so any folder linked to a busy Gmail label only ever learns from the last 50 messages.
 
-## What I'll add
+Change in `src/lib/sync.server.ts → learnFromLinkedLabel`:
+- Page through `listMessages` using `nextPageToken`, passing `q: "newer_than:30d"` plus the linked `labelIds: [folder.gmail_label_id]`.
+- Cap at 500 messages per relearn (Gmail's per-call ceiling × ~5 pages) to keep latency and AI cost bounded.
+- Continue upserting each into `folder_examples` with `source: "seed"` (already idempotent on `folder_id + gmail_message_id`).
+- After paging, run `regenerateFolderProfile(folderId)` once at the end (unchanged).
 
-A scheduled `pg_cron` job that POSTs to the existing `/api/public/gmail-poll` route every 2 minutes. That route already loops over every `gmail_account` and runs `syncSinceHistory`, so any message a Pub/Sub push missed gets picked up and classified within ~2 minutes.
+`buildFolderProfile` already takes up to 50 examples for the AI prompt — leave that cap; the extra examples improve domain suggestions and future re-learns without exploding prompt cost.
 
-## Steps
+Update the toast in `folders.tsx` to reflect the higher count ("Learned from N emails from the past month").
 
-1. Enable `pg_cron` and `pg_net` extensions (no-op if already enabled).
-2. Schedule the job via `cron.schedule` using `net.http_post`:
-   - Name: `gmail-poll-fallback`
-   - Schedule: `*/2 * * * *` (every 2 minutes)
-   - URL: `https://project--9ca78824-55f5-4897-b74d-b5b1d219918a.lovable.app/api/public/gmail-poll`
-   - Headers: `Content-Type: application/json`, `apikey: <publishable key>`
-   - Body: `{}` (route reads no body fields)
-3. Insert via the Supabase insert tool (not migration), since the URL + anon key are environment-specific.
+### 2. Suggested domains panel per folder
+After relearn, derive distinct sender domains from `folder_examples` for that folder and show them in the folder card as one-click chips that create a `domain contains <domain>` filter.
+
+- New server fn `listFolderDomainSuggestions(folder_id)` in `src/lib/gmail.functions.ts`:
+  - Reads `folder_examples` rows for the folder (auth-scoped via `requireSupabaseAuth`).
+  - Extracts the domain from `from_addr` (lowercase, after `@`).
+  - Returns `[{ domain, count }]` sorted by count desc, top 15.
+  - Excludes domains that already have a matching `folder_filters` row (`field='domain' op='contains' value=domain`) so the chip list reflects unadded suggestions only.
+- New server fn `addDomainFilter({ folder_id, domain })`:
+  - Verifies folder ownership, inserts a `folder_filters` row `{ field: 'domain', op: 'contains', value: domain }`.
+
+UI in `src/routes/_authenticated/folders.tsx`:
+- Under each folder's "Learned profile" block, add a "Top domains in this folder" section.
+- Render each suggestion as a small `Badge`/`Button` chip: `acme.com · 12`. Click → call `addDomainFilter`, optimistic-remove from list, toast confirmation.
+- Refresh suggestions after relearn completes and after a domain is added.
+
+### 3. No schema changes
+`folder_filters` already supports `field='domain' op='contains'` (see `applyFilter` in `sync.server.ts`), and `folder_examples` already stores `from_addr`. Nothing to migrate.
+
+## Files touched
+- `src/lib/sync.server.ts` — paginate `learnFromLinkedLabel`, add 30-day query.
+- `src/lib/gmail.functions.ts` — add `listFolderDomainSuggestions`, `addDomainFilter`.
+- `src/routes/_authenticated/folders.tsx` — domain chip UI, wire to the new server fns, refresh on relearn.
 
 ## Technical notes
-
-- No code changes — the `/api/public/gmail-poll` route already exists and does exactly this work.
-- `syncSinceHistory` is idempotent: it skips messages already in the `emails` table (uniqueness on `gmail_message_id` + `gmail_account_id`), so overlap with the webhook is harmless.
-- If a push watch has expired, `syncSinceHistory` → `bumpHistoryAndWatch` renews it automatically on each poll, so the watch self-heals.
-- To inspect: `SELECT * FROM cron.job;` and `SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 20;`
-- To disable later: `SELECT cron.unschedule('gmail-poll-fallback');`
+- Paging loop: `let pageToken; do { ... } while (pageToken && fetched < 500)`. Each page is up to `maxResults: 100`.
+- Per-message fetch (`getMessage`) is still the bottleneck. 500 messages ≈ 500 sequential Gmail calls; we'll keep it sequential to respect rate limits, but log progress and surface "Learned from N emails (took Xs)" in the toast.
+- Domain extraction is plain string split — addresses already normalized when stored (see `parseMessage`).
+- The auto-relearn trigger after 3 manual moves (`recordManualMove`) is unchanged; it only regenerates the profile from existing examples and stays cheap.

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { createGmailLabel, listGmailLabels, learnFolderFromLabel, listMyGmailAccounts } from "@/lib/gmail.functions";
+import { createGmailLabel, listGmailLabels, learnFolderFromLabel, listMyGmailAccounts, listFolderDomainSuggestions, addDomainFilter } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -164,11 +164,19 @@ function FoldersPage() {
 function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folder; filters: Filter[]; labels: GLabel[]; exampleCount: number }) {
   const qc = useQueryClient();
   const learnFn = useServerFn(learnFolderFromLabel);
+  const listDomainsFn = useServerFn(listFolderDomainSuggestions);
+  const addDomainFn = useServerFn(addDomainFilter);
   const [local, setLocal] = useState(folder);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
+
+  const domainsQ = useQuery({
+    queryKey: ["folder-domains", folder.id, exampleCount, filters.length],
+    enabled: exampleCount > 0,
+    queryFn: async () => (await listDomainsFn({ data: { folder_id: folder.id } })).suggestions,
+  });
 
   async function save() {
     const { error } = await supabase.from("folders").update({
@@ -197,15 +205,24 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
     await supabase.from("folder_filters").delete().eq("id", id);
     qc.invalidateQueries({ queryKey: ["folder-filters"] });
   }
+  async function addDomain(domain: string) {
+    try {
+      await addDomainFn({ data: { folder_id: folder.id, domain } });
+      toast.success(`Now routing ${domain} → ${folder.name}`);
+      qc.invalidateQueries({ queryKey: ["folder-filters"] });
+      qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
+    } catch (e: any) { toast.error(e.message ?? "Failed to add"); }
+  }
   async function learn() {
     if (!folder.gmail_label_id) { toast.error("Link a Gmail label first, then save."); return; }
     setLearning(true);
     try {
       const r = await learnFn({ data: { folder_id: folder.id } });
-      if (r.learned === 0) toast.warning("No emails found under linked label.");
-      else toast.success(`Learned from ${r.learned} emails`);
+      if (r.learned === 0) toast.warning("No emails found under linked label in the past 30 days.");
+      else toast.success(`Learned from ${r.learned} emails from the past month`);
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       qc.invalidateQueries({ queryKey: ["folder-example-counts"] });
+      qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
     } catch (e: any) { toast.error(e.message ?? "Failed to learn"); }
     finally { setLearning(false); }
   }
@@ -251,6 +268,25 @@ function FolderEditor({ folder, filters, labels, exampleCount }: { folder: Folde
           {folder.last_learned_at && ` · learned ${new Date(folder.last_learned_at).toLocaleString()}`}
           {" · "}auto-updates as you move emails in Gmail
         </p>
+        {(domainsQ.data?.length ?? 0) > 0 && (
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Suggested domains</div>
+            <div className="flex flex-wrap gap-1.5">
+              {domainsQ.data!.map((s) => (
+                <button
+                  key={s.domain}
+                  onClick={() => addDomain(s.domain)}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:border-primary hover:bg-primary/5 transition-colors"
+                  title={`Click to auto-route all ${s.domain} emails to ${folder.name}`}
+                >
+                  <Plus className="h-3 w-3" />
+                  <span className="font-mono">{s.domain}</span>
+                  <span className="text-muted-foreground">· {s.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4">
