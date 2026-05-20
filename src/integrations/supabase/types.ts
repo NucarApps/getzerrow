@@ -348,6 +348,33 @@ export type Database = {
         }
         Relationships: []
       }
+      inbox_overrides: {
+        Row: {
+          created_at: string
+          id: string
+          match_type: string
+          note: string | null
+          user_id: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          match_type: string
+          note?: string | null
+          user_id: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          match_type?: string
+          note?: string | null
+          user_id?: string
+          value?: string
+        }
+        Relationships: []
+      }
       reply_drafts: {
         Row: {
           created_at: string

@@ -409,6 +409,8 @@ function ClassifiedChip({ by }: { by: string | null }) {
     gmail_label: { label: "Gmail label", Icon: Tag, cls: "text-foreground" },
     domain_rule: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
     manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
+    excluded: { label: "Excluded", Icon: HelpCircle, cls: "text-destructive" },
+    global_exclude: { label: "Inbox list", Icon: HelpCircle, cls: "text-destructive" },
     none: { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" },
   };
   const k = by ?? "none";
@@ -424,7 +426,8 @@ function ClassifiedChip({ by }: { by: string | null }) {
 function opLabel(op: string) {
   const m: Record<string, string> = {
     contains: "contains", equals: "equals", starts_with: "starts with",
-    ends_with: "ends with", regex: "matches regex", not_contains: "does not contain",
+    ends_with: "ends with", regex: "matches regex",
+    not_contains: "does not contain", not_equals: "does not equal",
   };
   return m[op] ?? op;
 }
@@ -505,6 +508,24 @@ function TriggeredBy({
       <div className="space-y-1">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Moved manually</div>
         <p className="text-foreground/90">{reason ?? "You moved this email into the folder."}</p>
+      </div>
+    );
+  }
+
+  if (by === "excluded") {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-destructive">Kept in inbox by exclude rule</div>
+        <p className="text-foreground/90">{reason ?? "An exclude rule on a matching folder kept this email in your inbox."}</p>
+      </div>
+    );
+  }
+
+  if (by === "global_exclude") {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-destructive">Always send to inbox</div>
+        <p className="text-foreground/90">{reason ?? "This sender is on your global inbox list, so folder rules and AI sorting are skipped."}</p>
       </div>
     );
   }

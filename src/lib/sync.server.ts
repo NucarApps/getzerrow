@@ -56,32 +56,60 @@ function applyFilter(
   switch (f.op) {
     case "contains": return fieldVal.includes(v);
     case "equals": return fieldVal === v;
+    case "not_contains": return !fieldVal.includes(v);
+    case "not_equals": return fieldVal !== v;
     case "regex":
       try { return new RegExp(f.value, "i").test(fieldVal); } catch { return false; }
     default: return false;
   }
 }
 
+const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
+
+type FolderMatch =
+  | { kind: "match"; folder_id: string; filter: Filter }
+  | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
+
 function matchByFilters(
   email: Parameters<typeof applyFilter>[0],
   folders: Folder[],
   filters: Filter[],
-): { folder_id: string; filter: Filter } | null {
+): FolderMatch | null {
   const byFolder = new Map<string, Filter[]>();
   for (const f of filters) {
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
     byFolder.get(f.folder_id)!.push(f);
   }
   const matched: Array<{ folder: Folder; filter: Filter }> = [];
+  const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
   for (const folder of folders) {
     const fs = byFolder.get(folder.id) || [];
     if (fs.length === 0) continue;
-    const hit = fs.find((f) => applyFilter(email, f));
-    if (hit) matched.push({ folder, filter: hit });
+    const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
+    const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
+    const includeHit = includes.find((f) => applyFilter(email, f));
+    if (!includeHit) continue;
+    const excludeHit = excludes.find((f) => applyFilter(email, f));
+    if (excludeHit) {
+      excludedFolders.push({ folder, exclude: excludeHit });
+      continue;
+    }
+    matched.push({ folder, filter: includeHit });
   }
-  if (matched.length === 0) return null;
-  matched.sort((a, b) => b.folder.priority - a.folder.priority);
-  return { folder_id: matched[0].folder.id, filter: matched[0].filter };
+  if (matched.length > 0) {
+    matched.sort((a, b) => b.folder.priority - a.folder.priority);
+    return { kind: "match", folder_id: matched[0].folder.id, filter: matched[0].filter };
+  }
+  if (excludedFolders.length > 0) {
+    excludedFolders.sort((a, b) => b.folder.priority - a.folder.priority);
+    return {
+      kind: "excluded",
+      folder_id: excludedFolders[0].folder.id,
+      folder_name: excludedFolders[0].folder.name,
+      exclude: excludedFolders[0].exclude,
+    };
+  }
+  return null;
 }
 function labelOf(folders: Folder[], id: string) {
   return folders.find((f) => f.id === id)?.name ?? "folder";
@@ -150,9 +178,10 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
 
   if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
 
-  const [{ data: folders }, { data: filters }] = await Promise.all([
+  const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
     supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId).order("priority", { ascending: false }),
     supabaseAdmin.from("folder_filters").select("folder_id, field, op, value"),
+    supabaseAdmin.from("inbox_overrides").select("match_type, value").eq("user_id", userId),
   ]);
 
   const folderList = (folders ?? []) as Folder[];
@@ -164,6 +193,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   let confidence = 0;
   let summary = "";
   let classification_reason: string | null = null;
+  let aiSkipped = false;
 
   const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
   if (labeledFolder) {
@@ -172,19 +202,36 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
     confidence = 1;
     classification_reason = `Matched Gmail label "${labeledFolder.name}"`;
   } else {
-    const m = matchByFilters(parsed, folderList, filterList);
-    if (m) {
-      folder_id = m.folder_id;
-      classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
-      confidence = 1;
-      classification_reason =
-        classified_by === "domain_rule"
-          ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
-          : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+    // Global inbox override — short-circuits filters and AI, keeps email in inbox.
+    const fromAddr = (parsed.from_addr || "").toLowerCase();
+    const fromDomain = fromAddr.split("@")[1] || "";
+    const hit = (overrides ?? []).find((o) => {
+      const val = (o.value || "").toLowerCase();
+      return o.match_type === "email" ? val === fromAddr : val === fromDomain;
+    });
+    if (hit) {
+      classified_by = "global_exclude";
+      classification_reason = `Global inbox list: ${hit.match_type} "${hit.value}"`;
+      aiSkipped = true;
+    } else {
+      const m = matchByFilters(parsed, folderList, filterList);
+      if (m?.kind === "match") {
+        folder_id = m.folder_id;
+        classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
+        confidence = 1;
+        classification_reason =
+          classified_by === "domain_rule"
+            ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
+            : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+      } else if (m?.kind === "excluded") {
+        classified_by = "excluded";
+        classification_reason = `Would match "${m.folder_name}" but excluded by rule: ${m.exclude.field} ${m.exclude.op} "${m.exclude.value}"`;
+        aiSkipped = true;
+      }
     }
   }
 
-  if (!folder_id && folderList.length > 0) {
+  if (!folder_id && !aiSkipped && folderList.length > 0) {
     try {
       const enriched = await loadFoldersWithExamples(folderList);
       const r = await classifyEmail(parsed, enriched);
