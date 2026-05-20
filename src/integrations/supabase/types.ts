@@ -387,6 +387,54 @@ export type Database = {
         }
         Relationships: []
       }
+      message_jobs: {
+        Row: {
+          attempt: number
+          created_at: string
+          from_addr: string | null
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          last_error: string | null
+          locked_at: string | null
+          next_run_at: string
+          status: string
+          subject: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt?: number
+          created_at?: string
+          from_addr?: string | null
+          gmail_account_id: string
+          gmail_message_id: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          next_run_at?: string
+          status?: string
+          subject?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt?: number
+          created_at?: string
+          from_addr?: string | null
+          gmail_account_id?: string
+          gmail_message_id?: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          next_run_at?: string
+          status?: string
+          subject?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       pubsub_events: {
         Row: {
           accounts_matched: number | null
