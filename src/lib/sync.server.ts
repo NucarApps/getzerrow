@@ -617,6 +617,15 @@ async function applyLabelChange(
 
 const MAX_JOB_ATTEMPTS = 5;
 const BACKOFF_SECONDS = [30, 120, 600, 1800, 7200]; // 30s, 2m, 10m, 30m, 2h
+// Short jittered backoff for transient Gmail-side failures (429, 5xx, timeout).
+// First 2 retryable failures don't count toward MAX_JOB_ATTEMPTS, so a flaky
+// Google API won't burn a message into the DLQ.
+const RETRYABLE_BACKOFF_SECONDS = [30, 90, 300, 900, 3600]; // 30s, 1.5m, 5m, 15m, 1h
+const RETRYABLE_FREE_ATTEMPTS = 2;
+
+function jitter(seconds: number): number {
+  return Math.floor(seconds * (0.75 + Math.random() * 0.5));
+}
 
 export async function enqueueMessageJob(
   accountId: string,
@@ -640,9 +649,6 @@ export async function enqueueMessageJob(
 }
 
 export async function runMessageJobs(limit = 25) {
-  // Claim a batch of due jobs. We don't have FOR UPDATE SKIP LOCKED via PostgREST,
-  // so we approximate with a timestamp-based lock: only pick rows whose locked_at
-  // is null or older than 5 minutes, then mark them running with locked_at=now().
   const lockCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   const { data: candidates } = await supabaseAdmin
     .from("message_jobs")
@@ -653,9 +659,8 @@ export async function runMessageJobs(limit = 25) {
     .order("next_run_at", { ascending: true })
     .limit(limit);
 
-  const results: Array<{ id: string; ok: boolean; error?: string; dlq?: boolean }> = [];
+  const results: Array<{ id: string; ok: boolean; error?: string; dlq?: boolean; retryable?: boolean }> = [];
   for (const job of candidates ?? []) {
-    // Try to claim
     const { data: claimed } = await supabaseAdmin
       .from("message_jobs")
       .update({ status: "running", locked_at: new Date().toISOString() })
@@ -667,21 +672,32 @@ export async function runMessageJobs(limit = 25) {
 
     try {
       await processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id);
-      // Success: remove the job row.
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
       results.push({ id: job.id, ok: true });
     } catch (e: any) {
       const msg = e?.message ?? String(e);
-      const nextAttempt = (job.attempt ?? 0) + 1;
-      const is404 = typeof msg === "string" && msg.includes("404");
-      if (is404) {
-        // Message was deleted in Gmail before we could fetch it. No point retrying.
+      const status: number | undefined = e instanceof GmailApiError ? e.status : undefined;
+      const retryable: boolean = e instanceof GmailApiError
+        ? e.retryable
+        : (typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg));
+
+      // 404 — message gone from Gmail. Drop the job.
+      if (status === 404 || (typeof msg === "string" && msg.includes(" 404 "))) {
         await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
         results.push({ id: job.id, ok: true });
         continue;
       }
-      if (nextAttempt >= MAX_JOB_ATTEMPTS) {
-        // Capture preview (from/subject) so the user can see what failed.
+
+      // 400/401/403 — terminal. Straight to DLQ.
+      const terminal = status === 400 || status === 401 || status === 403;
+      const currentAttempt = job.attempt ?? 0;
+      // Retryable failures get RETRYABLE_FREE_ATTEMPTS "free" retries before
+      // they start incrementing the attempt counter that pushes toward DLQ.
+      const nextAttempt = retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS
+        ? currentAttempt
+        : currentAttempt + 1;
+
+      if (terminal || nextAttempt >= MAX_JOB_ATTEMPTS) {
         let from_addr: string | null = null;
         let subject: string | null = null;
         try {
@@ -700,7 +716,9 @@ export async function runMessageJobs(limit = 25) {
         }).eq("id", job.id);
         results.push({ id: job.id, ok: false, dlq: true, error: msg });
       } else {
-        const backoff = BACKOFF_SECONDS[Math.min(nextAttempt - 1, BACKOFF_SECONDS.length - 1)];
+        const table = retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
+        const idx = retryable ? Math.min(currentAttempt, table.length - 1) : Math.min(nextAttempt - 1, table.length - 1);
+        const backoff = jitter(table[idx]);
         await supabaseAdmin.from("message_jobs").update({
           status: "pending",
           attempt: nextAttempt,
@@ -708,12 +726,30 @@ export async function runMessageJobs(limit = 25) {
           locked_at: null,
           next_run_at: new Date(Date.now() + backoff * 1000).toISOString(),
         }).eq("id", job.id);
-        results.push({ id: job.id, ok: false, error: msg });
+        results.push({ id: job.id, ok: false, retryable, error: msg });
+      }
+
+      // Log retryable Gmail-side failures so the Sync activity panel surfaces them.
+      if (retryable && status && status !== 0) {
+        try {
+          await supabaseAdmin.from("pubsub_events").insert({
+            event_type: "gmail_api_error",
+            history_id: null,
+            error: `Gmail API ${status}: ${msg.slice(0, 300)}`,
+          });
+        } catch { /* best-effort */ }
       }
     }
   }
-  return { processed: results.length, ok: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok && !r.dlq).length, dlq: results.filter(r => r.dlq).length };
+  return {
+    processed: results.length,
+    ok: results.filter(r => r.ok).length,
+    failed: results.filter(r => !r.ok && !r.dlq).length,
+    dlq: results.filter(r => r.dlq).length,
+    retryable: results.filter(r => r.retryable).length,
+  };
 }
+
 
 export async function retryMessageJob(jobId: string) {
   await supabaseAdmin.from("message_jobs").update({
