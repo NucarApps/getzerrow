@@ -1,54 +1,49 @@
-## Sync messages that skip the inbox
+## Right-click: strip folder label, don't route to Inbox
 
-### Root cause
-- `setupWatch` in `src/lib/gmail.server.ts` line 141 calls Gmail with `labelIds: ["INBOX"], labelFilterAction: "include"`. The push channel only fires for changes to INBOX.
-- `backfillRecent` in `src/lib/sync.server.ts` line 549 calls `listMessages(..., { q: "in:inbox" })`.
+### Current behavior
 
-When the user has a Gmail filter that applies a folder label (e.g. `Label_458` = Cold Email) **and** skips inbox, the message never touches INBOX → no watch notification → no sync → invisible to the app.
+Right-click → **Just <sender>** / **Anyone @domain** shows two items:
+1. *Future emails only* → adds an `inbox_overrides` row so future mail from that sender bypasses folders.
+2. *Future + move past emails to Inbox* → adds the same override **and** strips the current folder label from past emails (it doesn't actually add the `INBOX` label in Gmail — the label is misleading).
 
-`braund_erik@officeonkatmai.help`'s message today is exactly that case.
+### What you want
 
-### Fix
+The second item should just remove the folder label from past matching emails — no Inbox routing, no future-mail override.
 
-**1. `src/lib/gmail.server.ts` → `setupWatch`**
-Drop the INBOX filter — watch the full mailbox:
+### Changes
+
+**`src/routes/_authenticated/index.tsx`** (both submenus, sender + domain — lines 299-311 and 335-347):
+
+Replace the second `ContextMenuItem` so it:
+- Labels itself **"Remove folder label from past emails"** (and the domain variant: same wording).
+- Calls a new server fn `stripFolderLabelPast` (see below) with `value` + `match_type` — NOT `addInboxOverride`.
+- Invalidates `["emails"]` and `["emails-summary"]` only (no `["inbox-overrides"]` since we no longer touch overrides).
+- Toast: *"Removed folder label from N past email(s)"*.
+
+Keep the *Future emails only* item unchanged.
+
+**`src/lib/gmail.functions.ts`** — add a new server fn:
 
 ```ts
-body: JSON.stringify({ topicName })   // no labelIds, no labelFilterAction
+export const stripFolderLabelPast = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { value: string; match_type: "email" | "domain" }) =>
+    z.object({
+      value: z.string().min(1).max(320),
+      match_type: z.enum(["email", "domain"]),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => { /* see below */ });
 ```
 
-Gmail will then deliver `messagesAdded` and `labelsAdded` events for any change in the mailbox, including filter-auto-labeled mail that skipped inbox.
-
-**2. `src/lib/sync.server.ts` → `backfillRecent`**
-Broaden the bootstrap query so the first-run pull picks up filter-routed mail too:
-
-```ts
-const list = await listMessages(accountId, {
-  maxResults,
-  q: "-in:chats -in:trash -in:spam newer_than:7d",
-});
-```
-
-Drops the `in:inbox` constraint; excludes chats/trash/spam to avoid noise. `newer_than:7d` caps backfill volume on first connect.
-
-**3. Re-arm the existing user's watch**
-The current account's watch is registered against INBOX only. Existing watch expires 2026-05-26; we shouldn't wait. Add a one-time re-arm:
-
-- After deploy, call `setupWatch` for `chris@nucar.com` (account `adb85c80-…`) via the existing `triggerSync` path or a small admin server-fn invocation. Simplest: clear `history_id` and `watch_expiration` to force the next `triggerSync` to re-bootstrap with the new (broader) watch.
-
-I'll do this through a one-shot SQL update after the code change ships, so the next sync re-registers the watch.
-
-**4. Catch up the missed message**
-After step 3, call `backfillRecent` (built-in path runs when `history_id` is null) — it will pull all mail from the last 7 days, including the missing `braund_erik@officeonkatmai.help` message, and run it through the classifier.
-
-### Volume / safety
-
-- Gmail watch on the whole mailbox typically fires a few times per minute for active users. The existing `processGmailMessage` already deduplicates by `gmail_message_id` and is idempotent. No new tables or queues needed.
-- The classifier in its current state correctly handles non-INBOX mail (it sets `is_archived = !raw_labels.includes("INBOX")` — see line 717), so the inbox view stays clean. Newly-synced filter-routed mail will appear under its folder, not in "All Inbox".
+Body reuses the existing "strip label" logic from `addInboxOverride` (lines 1161-1217) verbatim, but:
+- Does NOT insert into `inbox_overrides`.
+- Sets `classified_by: "manual_strip"` and `classification_reason: "Right-click: removed folder label"` (so the row is no longer attributed to a global-exclude rule that doesn't exist).
+- Same Gmail `modifyMessage(..., [], [oldLabel])` call and same concurrency=5 worker pattern.
+- Returns `{ stripped_count }`.
 
 ### Out of scope
-
-- No change to the UI search (already global from the last fix).
-- No reconfiguration of the user's Gmail filters.
-- No realtime backfill across all historical mail — only last 7 days on rebootstrap. Older filter-skipped mail stays missing unless the user clicks reprocess manually.
-- No notification/badge for newly-synced non-inbox mail.
+- No change to *Future emails only* item.
+- No change to `addInboxOverride` itself — it stays available for the first item.
+- No change to folder-classifier logic (`classified_by: "manual_strip"` is just a label string; nothing branches on it).
+- No UI for re-classifying stripped emails back into folders.
