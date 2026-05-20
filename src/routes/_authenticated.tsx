@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -11,6 +11,7 @@ import { FolderSelectionProvider, useFolderSelection, type FolderSelection } fro
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
+import { useEmailRealtime } from "@/lib/use-email-realtime";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
@@ -22,21 +23,8 @@ export const Route = createFileRoute("/_authenticated")({
 
 function AuthedLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const qc = useQueryClient();
+  useEmailRealtime();
 
-  useEffect(() => {
-    const ch = supabase
-      .channel("sidebar-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
-        qc.refetchQueries({ queryKey: ["emails"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
-        qc.invalidateQueries({ queryKey: ["folders-full"] });
-        qc.invalidateQueries({ queryKey: ["folders"] });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [qc]);
   return (
     <FolderSelectionProvider>
       <div className="flex h-screen bg-background text-foreground">
