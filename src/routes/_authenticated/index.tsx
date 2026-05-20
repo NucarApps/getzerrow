@@ -81,43 +81,116 @@ function InboxPage() {
   const foldersQ = useQuery({
     queryKey: ["folders"],
     queryFn: async () => {
-      const { data } = await supabase.from("folders").select("id,name,color").order("priority", { ascending: false });
+      const { data } = await supabase.from("folders").select("id,name,color,gmail_label_id").order("priority", { ascending: false });
       return (data ?? []) as Folder[];
     },
   });
 
-  const emailsQ = useQuery({
-    queryKey: ["emails"],
+  const isSearching = query.trim().length > 0;
+
+  // Pagination state — reset to page 1 whenever the folder or search changes.
+  // cursors[i] is the `received_at <` cursor used to fetch page i+1 (cursors[0] = null).
+  const [page, setPage] = useState(1);
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  useEffect(() => {
+    setPage(1);
+    setCursors([null]);
+    setSelectedId(null);
+  }, [selectedFolder]);
+  const cursor = cursors[page - 1] ?? null;
+
+  const loadOlderFn = useServerFn(loadOlderFromGmail);
+
+  const emailsQ = useQuery<Email[]>({
+    queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
     queryFn: async () => {
-      // Include archived rows so folder views can show labeled mail that isn't in INBOX.
-      // The All inbox / Unsorted views filter is_archived in-memory below.
-      const { data } = await supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(2000);
+      if (isSearching) {
+        // Global search over the most recent 500 messages (across folders, archived included).
+        const { data } = await supabase
+          .from("emails")
+          .select("*")
+          .order("received_at", { ascending: false })
+          .limit(500);
+        return (data ?? []) as Email[];
+      }
+      let q = supabase
+        .from("emails")
+        .select("*")
+        .order("received_at", { ascending: false, nullsFirst: false })
+        .limit(PAGE_SIZE + 1);
+      if (cursor) q = q.lt("received_at", cursor);
+      if (selectedFolder === "all") q = q.eq("is_archived", false);
+      else if (selectedFolder === "unsorted") q = q.eq("is_archived", false).is("folder_id", null);
+      else q = q.eq("folder_id", selectedFolder);
+      const { data } = await q;
       return (data ?? []) as Email[];
     },
     refetchOnWindowFocus: true,
     refetchInterval: 30_000,
   });
 
+  const rawEmails = emailsQ.data ?? [];
+  const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
+  const pageRows = isSearching ? rawEmails : rawEmails.slice(0, PAGE_SIZE);
 
   const filtered = useMemo(() => {
-    const all = emailsQ.data ?? [];
-    const q = query.trim().toLowerCase();
-    if (q) {
-      // Global search: ignore folder + archived scoping so users can find anything.
-      return all.filter((e) => {
+    if (isSearching) {
+      const qstr = query.trim().toLowerCase();
+      return pageRows.filter((e) => {
         return (
-          (e.from_name && e.from_name.toLowerCase().includes(q)) ||
-          (e.from_addr && e.from_addr.toLowerCase().includes(q)) ||
-          (e.subject && e.subject.toLowerCase().includes(q)) ||
-          (e.snippet && e.snippet.toLowerCase().includes(q))
+          (e.from_name && e.from_name.toLowerCase().includes(qstr)) ||
+          (e.from_addr && e.from_addr.toLowerCase().includes(qstr)) ||
+          (e.subject && e.subject.toLowerCase().includes(qstr)) ||
+          (e.snippet && e.snippet.toLowerCase().includes(qstr))
         );
       });
     }
-    if (selectedFolder === "all") return all.filter((e) => !e.is_archived);
-    if (selectedFolder === "unsorted") return all.filter((e) => !e.is_archived && !e.folder_id);
-    return all.filter((e) => e.folder_id === selectedFolder);
-  }, [emailsQ.data, selectedFolder, query]);
-  const isSearching = query.trim().length > 0;
+    return pageRows;
+  }, [pageRows, isSearching, query]);
+
+  const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
+  const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
+
+  const pullOlderMut = useMutation({
+    mutationFn: async () => {
+      if (!currentFolderObj?.gmail_label_id) throw new Error("This view isn't linked to a Gmail label.");
+      const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
+      return loadOlderFn({ data: { folder_id: currentFolderObj.id, before_received_at: lastReceived } });
+    },
+    onSuccess: async (r: any) => {
+      await qc.refetchQueries({ queryKey: ["emails", selectedFolder] });
+      const pulled = (r?.ingested ?? 0) + (r?.claimed ?? 0);
+      if (pulled > 0) toast.success(`Pulled ${pulled} older email${pulled === 1 ? "" : "s"} from Gmail.`);
+      else toast.message("No older emails found in Gmail.");
+      // Advance to next page using last row of CURRENT page as cursor.
+      const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
+      setCursors((prev) => {
+        const next = prev.slice(0, page);
+        next.push(lastReceived);
+        return next;
+      });
+      setPage((p) => p + 1);
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Failed to pull from Gmail"),
+  });
+
+  function goNext() {
+    if (hasMoreLocal) {
+      const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
+      setCursors((prev) => {
+        const next = prev.slice(0, page);
+        next.push(lastReceived);
+        return next;
+      });
+      setPage((p) => p + 1);
+      return;
+    }
+    if (canPullFromGmail && !pullOlderMut.isPending) pullOlderMut.mutate();
+  }
+  function goPrev() {
+    if (page > 1) setPage((p) => p - 1);
+  }
+  const canGoNext = !isSearching && (hasMoreLocal || canPullFromGmail);
 
   const selected = filtered.find((e) => e.id === selectedId) ?? null;
 
