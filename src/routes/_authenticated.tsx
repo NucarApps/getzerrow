@@ -173,7 +173,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex h-full flex-col p-4">
       <div className="mb-6 px-2">
         <div className="flex items-center gap-2">
-          <img src={zerrowLogo} alt="Zerrow" className="h-9 w-auto" />
+          <img src={zerrowLogo} alt="Zerrow" className="h-14 w-auto" />
         </div>
         <p className="text-[11px] uppercase tracking-widest text-muted-foreground">AI inbox</p>
       </div>
