@@ -534,29 +534,46 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
   transform: translateX(-50%);
   width: 120px;
   z-index: 3;
-  transition: bottom 1.2s cubic-bezier(.4,0,.2,1);
+  transition: transform 1.6s cubic-bezier(.5,0,.2,1);
 }
-.rocket-wrap.lifted { bottom: 280px; }
+/* Liftoff — rocket clears the top of the viewport */
+.rocket-wrap.phase-liftoff,
+.rocket-wrap.lifted {
+  transform: translate(-50%, -140%);
+}
 .rocket {
   width: 100%;
   position: relative;
-  animation: rocketShake .15s infinite;
+  animation: rocketShake .25s infinite;
 }
+.rocket-wrap.phase-ignition .rocket { animation: rocketShake .12s infinite; }
+.rocket-wrap.phase-liftoff  .rocket { animation: rocketShake .08s infinite; }
 @keyframes rocketShake {
   0%,100% { transform: translateX(0); }
   25% { transform: translateX(-0.5px); }
   75% { transform: translateX(0.5px); }
 }
 
-/* Exhaust plume */
+/* Exhaust plume — hidden until ignition */
 .exhaust {
   position: absolute;
   top: 100%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scaleY(.15);
+  transform-origin: top center;
   width: 38px;
   height: 120px;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity .6s ease-out, transform .6s ease-out;
+}
+.rocket-wrap.phase-ignition .exhaust {
+  opacity: 1;
+  transform: translateX(-50%) scaleY(1);
+}
+.rocket-wrap.phase-liftoff .exhaust {
+  opacity: 1;
+  transform: translateX(-50%) scaleY(1.4);
 }
 .exhaust__core {
   position: absolute;
@@ -583,7 +600,7 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
   50% { opacity: .85; transform: scaleX(.92); }
 }
 
-/* Smoke at base */
+/* Smoke at base — always present, intensifies with phase */
 .smoke {
   position: absolute;
   bottom: 30px;
@@ -602,7 +619,17 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
   border-radius: 50%;
   background: radial-gradient(circle, rgba(180,180,180,.5) 0%, rgba(120,120,120,.15) 50%, transparent 80%);
   filter: blur(4px);
-  animation: smokeDrift 3s infinite ease-out;
+  animation: smokeDrift 4s infinite ease-out;
+  opacity: .6;
+}
+.rocket-wrap.phase-ignition ~ .smoke i,
+.phase-ignition .smoke i {
+  animation-duration: 2s;
+  background: radial-gradient(circle, rgba(220,220,220,.7) 0%, rgba(140,120,110,.25) 50%, transparent 80%);
+}
+.phase-liftoff .smoke i {
+  animation-duration: 1.2s;
+  background: radial-gradient(circle, rgba(240,230,220,.85) 0%, rgba(180,120,80,.35) 50%, transparent 80%);
 }
 .smoke i:nth-child(1) { left: 20%;  animation-delay: 0s;    }
 .smoke i:nth-child(2) { left: 38%;  animation-delay: .4s;   }

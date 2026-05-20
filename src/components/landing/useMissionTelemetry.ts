@@ -22,12 +22,21 @@ export function useMissionTelemetry() {
     let start: number | null = null;
     const DURATION = 8000;
     let rafId = 0;
+    let currentPhase: "smoke" | "ignition" | "liftoff" | null = null;
+    const setPhase = (next: "smoke" | "ignition" | "liftoff") => {
+      if (!rocketEl || currentPhase === next) return;
+      rocketEl.classList.remove("phase-smoke", "phase-ignition", "phase-liftoff");
+      rocketEl.classList.add(`phase-${next}`);
+      currentPhase = next;
+    };
     const step = (ts: number) => {
       if (start === null) start = ts;
       const t = Math.min(1, (ts - start) / DURATION);
       const eased = 1 - Math.pow(1 - t, 3);
       const current = Math.round(1247 * (1 - eased));
       if (counterEl) counterEl.textContent = fmt(current);
+      if (t < 0.4) setPhase("smoke");
+      else if (t < 1) setPhase("ignition");
       if (t < 1) {
         rafId = requestAnimationFrame(step);
       } else {
@@ -39,7 +48,7 @@ export function useMissionTelemetry() {
           deltaEl.textContent = "▲ INBOX ZERO";
           deltaEl.classList.add("zero");
         }
-        if (rocketEl) rocketEl.classList.add("lifted");
+        setPhase("liftoff");
       }
     };
     rafId = requestAnimationFrame(step);
