@@ -150,7 +150,8 @@ function LandingPage() {
                 <div className="tele-row"><span className="k">Heading</span><span className="v orange" id="t-hdg">000.0°</span></div>
               </div>
 
-              <div className="smoke"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div className="smoke"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div className="sparks"><b></b><b></b><b></b><b></b><b></b></div>
 
               <div className="rocket-wrap" id="rocket">
                 <svg className="rocket" viewBox="0 0 120 240" xmlns="http://www.w3.org/2000/svg">
