@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, Outlet, Link } from "@tanstack/react-router";
+import { createFileRoute, redirect, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -128,7 +128,13 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     return { byFolder: m, total };
   }, [emailsQ.data]);
 
-  const pick = (s: FolderSelection) => { setSelected(s); onNavigate?.(); };
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pick = (s: FolderSelection) => {
+    setSelected(s);
+    if (pathname !== "/") navigate({ to: "/" });
+    onNavigate?.();
+  };
 
   return (
     <div className="flex h-full flex-col p-4">
