@@ -20,6 +20,7 @@ export type Database = {
           ai_summary: string | null
           body_html: string | null
           body_text: string | null
+          classification_reason: string | null
           classified_by: string | null
           created_at: string
           folder_id: string | null
@@ -44,6 +45,7 @@ export type Database = {
           ai_summary?: string | null
           body_html?: string | null
           body_text?: string | null
+          classification_reason?: string | null
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
@@ -68,6 +70,7 @@ export type Database = {
           ai_summary?: string | null
           body_html?: string | null
           body_text?: string | null
+          classification_reason?: string | null
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
