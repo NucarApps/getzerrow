@@ -609,3 +609,143 @@ export const applyRecategorization = createServerFn({ method: "POST" })
 
     return { moved: 1, source_updated, target_updated };
   });
+
+// ============ Folder summary schedules ============
+
+const ianaTz = z.string().min(1).max(64).regex(/^[A-Za-z0-9_+\-/]+$/);
+
+async function getOwnedFolder(userId: string, folderId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("folders")
+    .select("id, user_id, gmail_account_id")
+    .eq("id", folderId)
+    .single();
+  if (error || !data) throw new Error("Folder not found");
+  if (data.user_id !== userId) throw new Error("Not authorized");
+  return data;
+}
+
+async function getOwnedSchedule(userId: string, id: string) {
+  const { data, error } = await supabaseAdmin
+    .from("folder_summary_schedules")
+    .select("id, user_id, folder_id, hour, minute, timezone, enabled")
+    .eq("id", id)
+    .single();
+  if (error || !data) throw new Error("Schedule not found");
+  if (data.user_id !== userId) throw new Error("Not authorized");
+  return data;
+}
+
+export const listFolderSummaries = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) =>
+    z.object({ folder_id: z.string().uuid() }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    await getOwnedFolder(context.userId, data.folder_id);
+    const { data: rows } = await supabaseAdmin
+      .from("folder_summary_schedules")
+      .select("id, name, instructions, hour, minute, timezone, enabled, last_run_at, next_run_at, last_error")
+      .eq("folder_id", data.folder_id)
+      .order("created_at", { ascending: true });
+    return { schedules: rows ?? [] };
+  });
+
+export const createFolderSummary = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    folder_id: string; name: string; instructions: string;
+    hour: number; minute: number; timezone: string;
+  }) =>
+    z.object({
+      folder_id: z.string().uuid(),
+      name: z.string().min(1).max(100),
+      instructions: z.string().max(2000),
+      hour: z.number().int().min(0).max(23),
+      minute: z.number().int().min(0).max(59),
+      timezone: ianaTz,
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const folder = await getOwnedFolder(context.userId, data.folder_id);
+    const next = computeNextRun(data.hour, data.minute, data.timezone).toISOString();
+    const { data: row, error } = await supabaseAdmin
+      .from("folder_summary_schedules")
+      .insert({
+        user_id: context.userId,
+        folder_id: data.folder_id,
+        gmail_account_id: folder.gmail_account_id,
+        name: data.name,
+        instructions: data.instructions,
+        hour: data.hour,
+        minute: data.minute,
+        timezone: data.timezone,
+        next_run_at: next,
+      })
+      .select("id")
+      .single();
+    if (error || !row) throw new Error(error?.message ?? "Failed to create");
+    return { id: row.id };
+  });
+
+export const updateFolderSummary = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    id: string;
+    name?: string; instructions?: string;
+    hour?: number; minute?: number; timezone?: string;
+    enabled?: boolean;
+  }) =>
+    z.object({
+      id: z.string().uuid(),
+      name: z.string().min(1).max(100).optional(),
+      instructions: z.string().max(2000).optional(),
+      hour: z.number().int().min(0).max(23).optional(),
+      minute: z.number().int().min(0).max(59).optional(),
+      timezone: ianaTz.optional(),
+      enabled: z.boolean().optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const existing = await getOwnedSchedule(context.userId, data.id);
+    const patch: Record<string, unknown> = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.instructions !== undefined) patch.instructions = data.instructions;
+    if (data.hour !== undefined) patch.hour = data.hour;
+    if (data.minute !== undefined) patch.minute = data.minute;
+    if (data.timezone !== undefined) patch.timezone = data.timezone;
+    if (data.enabled !== undefined) patch.enabled = data.enabled;
+
+    const timeChanged = data.hour !== undefined || data.minute !== undefined || data.timezone !== undefined;
+    const reEnabled = data.enabled === true && !existing.enabled;
+    if (timeChanged || reEnabled) {
+      patch.next_run_at = computeNextRun(
+        data.hour ?? existing.hour,
+        data.minute ?? existing.minute,
+        data.timezone ?? existing.timezone,
+      ).toISOString();
+    }
+    const { error } = await supabaseAdmin
+      .from("folder_summary_schedules")
+      .update(patch)
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteFolderSummary = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await getOwnedSchedule(context.userId, data.id);
+    await supabaseAdmin.from("folder_summary_schedules").delete().eq("id", data.id);
+    return { ok: true };
+  });
+
+export const runFolderSummaryNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await getOwnedSchedule(context.userId, data.id);
+    return runFolderSummary(data.id);
+  });
