@@ -1,18 +1,16 @@
-## Confirm: real manual Gmail moves still register as Manual
+## Problem
 
-The fix from the previous turn already preserves this. Walking through the cases:
+In the Edit folder sheet, the Delete (trash) button sits in the header row right next to the sheet's close (X) button. On mobile that's a thumb's-width away — easy to tap Delete by accident.
 
-| Scenario | Row before event | Skip? | Result |
-|---|---|---|---|
-| Our AI/filter classifies into Factory, Gmail echoes labelsAdded for Factory | `folder_id=Factory, classified_by=ai` | **Yes** | Stays "AI" ✓ |
-| User manually drags an email into Factory in Gmail (was in Inbox / no folder) | `folder_id=null` or different | No | Recorded as **manual_move** ✓ |
-| User moves from Folder A → Folder B in Gmail | `folder_id=A` ≠ B | No | Recorded as **manual_move** ✓ |
-| User re-applies Factory label to an email already in Factory via AI | `folder_id=Factory, classified_by=ai` | Yes | Stays "AI" (no-op label) ✓ |
+## Change
 
-The skip condition requires **both** `folder_id === folder.id` **and** an auto-classified `classified_by`. Any genuine user move from Gmail's UI fails one of those two checks, so it still gets recorded as `manual_move`.
+In `src/components/folders/FolderEditor.tsx`, replace the inline Delete icon button (line 206) with a three-dot (MoreVertical) `DropdownMenu` trigger. The menu contains a single destructive "Delete folder…" item that calls the existing `remove()` handler (which already shows a confirm dialog).
 
-### No code changes needed
+- Trigger: `Button variant="ghost" size="icon"` with `MoreVertical` icon — same footprint as today, but a neutral icon instead of a red trash.
+- Menu item: `DropdownMenuItem` styled with `text-destructive` + `Trash2` icon, label "Delete folder…".
+- Keeps the existing `confirm()` step in `remove()` as a second guard.
 
-The current implementation already does what you want. No plan to execute.
+No behavior changes elsewhere; the X close button on the Sheet is untouched. Desktop and mobile both benefit (menu makes the destructive action a deliberate two-tap action).
 
-If you want extra confidence we could also add a short-window guard (e.g. skip only if our row was updated in the last 60s) but that's optional and the folder-match check is already sufficient.
+### Files
+- `src/components/folders/FolderEditor.tsx` — swap trash button for DropdownMenu; add `MoreVertical` to lucide imports; add `DropdownMenu*` imports from `@/components/ui/dropdown-menu`.
