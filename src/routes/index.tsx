@@ -155,10 +155,14 @@ function Marquee() {
       className="border-y py-6"
       style={{ borderColor: PAPER_DEEP, background: PAPER_DEEP }}
     >
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-10 gap-y-3 px-6 text-sm" style={{ color: INK_SOFT, ...sora }}>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-3 px-6 text-xs" style={{ color: INK_SOFT, ...sora }}>
+        <span className="uppercase tracking-[0.25em]" style={{ color: GOLD }}>
+          Systems check
+        </span>
         {items.map((t) => (
-          <span key={t} className="uppercase tracking-[0.18em]">
-            {t}
+          <span key={t} className="flex items-center gap-2 uppercase tracking-[0.2em]">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#4ade80", boxShadow: "0 0 6px #4ade80" }} />
+            {t} · GO
           </span>
         ))}
       </div>
