@@ -178,6 +178,11 @@ function InboxPage() {
               </button>
             )}
           </div>
+          {isSearching && (
+            <div className="mt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              Searching all folders, including archived
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto">
           {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
