@@ -138,7 +138,7 @@ function InboxPage() {
         qc.refetchQueries({ queryKey: ["emails"] }),
         qc.invalidateQueries({ queryKey: ["gmail-accounts"] }),
       ]);
-      const fresh = qc.getQueryData<Email[]>(["emails"]) ?? [];
+      const fresh = qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([,d]) => d ?? []) ?? [];
       if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
     },
     onError: (e: any) => toast.error(e.message),
@@ -233,7 +233,7 @@ function InboxPage() {
                       <>
                         <ContextMenuItem
                           onSelect={async () => {
-                            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, classified_by: "manual_inbox" } : x)));
+                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, classified_by: "manual_inbox" } : x)));
                             try {
                               await moveInboxFn({ data: { email_id: e.id } });
                               toast.success("Moved to inbox");
@@ -257,7 +257,7 @@ function InboxPage() {
                       <ContextMenuItem
                         key={f.id}
                         onSelect={async () => {
-                          qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, classified_by: "manual_move" } : x)));
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, classified_by: "manual_move" } : x)));
                           try {
                             await moveFolderFn({ data: { email_id: e.id, to_folder_id: f.id } });
                             toast.success(`Moved to ${f.name}`);
@@ -351,7 +351,7 @@ function InboxPage() {
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   onSelect={async () => {
-                    qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true } : x)));
+                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true } : x)));
                     try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
                     catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
                   }}
@@ -362,7 +362,7 @@ function InboxPage() {
                 <ContextMenuItem
                   className="text-destructive focus:text-destructive"
                   onSelect={async () => {
-                    qc.setQueryData<Email[]>(["emails"], (prev) => prev?.filter((x) => x.id !== e.id));
+                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
                     try { await trashFnList({ data: { id: e.id } }); toast.success("Trashed"); }
                     catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
                   }}
@@ -436,7 +436,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
   useEffect(() => {
     if (email.is_read) return;
-    qc.setQueryData<Email[]>(["emails"], (prev) =>
+    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
       prev?.map((e) => (e.id === email.id ? { ...e, is_read: true } : e)),
     );
     markFn({ data: { id: email.id, read: true } }).catch(() =>
@@ -450,7 +450,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   async function moveTo(target: Folder) {
     setMoving(true);
     // Optimistic: flip folder_id locally so the row jumps immediately.
-    qc.setQueryData<Email[]>(["emails"], (prev) =>
+    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
       prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id } : e)),
     );
     try {
@@ -530,7 +530,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                   <DropdownMenuItem
                     onSelect={async () => {
                       setMoving(true);
-                      qc.setQueryData<Email[]>(["emails"], (prev) =>
+                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
                         prev?.map((e) => (e.id === email.id ? { ...e, folder_id: null, is_archived: false } : e)),
                       );
                       try {
@@ -568,20 +568,20 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           </DropdownMenu>
           <Button size="sm" variant="ghost" onClick={() => {
             const next = !email.is_read;
-            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)));
+            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)));
             markFn({ data: { id: email.id, read: next } }).catch(() => qc.invalidateQueries({ queryKey: ["emails"] }));
           }}>
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
           <Button size="sm" variant="ghost" onClick={async () => {
-            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
+            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
             try { await archFn({ data: { id: email.id } }); toast.success("Archived"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
           }}>
             <Archive className="h-4 w-4" />
           </Button>
           <Button size="sm" variant="ghost" onClick={async () => {
-            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.filter((e) => e.id !== email.id));
+            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((e) => e.id !== email.id));
             try { await trashFn({ data: { id: email.id } }); toast.success("Trashed"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
           }}>
