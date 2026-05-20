@@ -28,6 +28,7 @@ import { useFolderSelection } from "@/lib/folder-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
+import { TelemetryStandby } from "@/components/inbox/TelemetryStandby";
 
 
 export const Route = createFileRoute("/_authenticated/inbox")({ component: InboxPage });
@@ -539,9 +540,7 @@ function InboxPage() {
       {/* Reading pane */}
       <div className={`h-full overflow-y-auto ${selected ? "block" : "hidden md:block"}`}>
         {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} onBack={() => setSelectedId(null)} /> : (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <p className="text-sm">Select an email</p>
-          </div>
+          <TelemetryStandby />
         )}
       </div>
     </div>
