@@ -213,6 +213,21 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     toFolder: Folder;
   }>(null);
 
+  const folderRulesQ = useQuery({
+    queryKey: ["folder-rules", email.folder_id],
+    enabled: !!email.folder_id,
+    queryFn: async () => {
+      const [folderRes, filtersRes] = await Promise.all([
+        supabase.from("folders").select("id, name, ai_rule, gmail_label_id").eq("id", email.folder_id!).maybeSingle(),
+        supabase.from("folder_filters").select("field, op, value").eq("folder_id", email.folder_id!),
+      ]);
+      return {
+        folder: folderRes.data as { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null,
+        filters: (filtersRes.data ?? []) as Array<{ field: string; op: string; value: string }>,
+      };
+    },
+  });
+
   useEffect(() => {
     if (!email.is_read) {
       markFn({ data: { id: email.id, read: true } }).then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
