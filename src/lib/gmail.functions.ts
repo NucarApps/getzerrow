@@ -949,3 +949,180 @@ export const bulkMoveEmails = createServerFn({ method: "POST" })
     }
     return { moved, failed };
   });
+
+export const reanalyzeEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email_id: string }) =>
+    z.object({ email_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { classifyParsedEmail } = await import("./sync.server");
+    const { data: email } = await supabaseAdmin
+      .from("emails")
+      .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
+      .eq("id", data.email_id)
+      .single();
+    if (!email || email.user_id !== context.userId) throw new Error("Email not found");
+
+    const parsed = {
+      from_addr: email.from_addr ?? "",
+      from_name: email.from_name ?? "",
+      to_addrs: email.to_addrs ?? "",
+      subject: email.subject ?? "",
+      snippet: email.snippet ?? "",
+      body_text: email.body_text ?? "",
+      body_html: email.body_html ?? "",
+      has_attachment: !!email.has_attachment,
+      received_at: email.received_at ?? new Date().toISOString(),
+      raw_labels: (email.raw_labels as string[] | null) ?? null,
+    };
+
+    const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id);
+
+    await supabaseAdmin
+      .from("emails")
+      .update({
+        folder_id: result.folder_id,
+        classified_by: result.classified_by,
+        ai_confidence: result.ai_confidence,
+        ai_summary: result.ai_summary || null,
+        classification_reason: result.classification_reason,
+        matched_filter_ids: result.matched_filter_ids,
+      })
+      .eq("id", email.id);
+
+    // Best-effort Gmail label sync if folder changed.
+    if (email.folder_id !== result.folder_id) {
+      const ids = [email.folder_id, result.folder_id].filter((x): x is string => !!x);
+      let fromLabel: string | null = null;
+      let toLabel: string | null = null;
+      let toName: string | null = null;
+      if (ids.length) {
+        const { data: fs } = await supabaseAdmin
+          .from("folders")
+          .select("id, name, gmail_label_id")
+          .in("id", ids);
+        fromLabel = fs?.find((f) => f.id === email.folder_id)?.gmail_label_id ?? null;
+        const tof = fs?.find((f) => f.id === result.folder_id);
+        toLabel = tof?.gmail_label_id ?? null;
+        toName = tof?.name ?? null;
+      }
+      if (fromLabel || toLabel) {
+        try {
+          await modifyMessage(
+            email.gmail_account_id,
+            email.gmail_message_id,
+            toLabel ? [toLabel] : [],
+            fromLabel ? [fromLabel] : [],
+          );
+        } catch (e) { console.error("reanalyze label sync failed", e); }
+      }
+      return {
+        ok: true,
+        folder_id: result.folder_id,
+        folder_name: toName,
+        classified_by: result.classified_by,
+        classification_reason: result.classification_reason,
+        changed: true,
+      };
+    }
+
+    return {
+      ok: true,
+      folder_id: result.folder_id,
+      folder_name: null,
+      classified_by: result.classified_by,
+      classification_reason: result.classification_reason,
+      changed: false,
+    };
+  });
+
+export const moveEmailToInbox = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email_id: string; add_override?: "email" | "domain" | null }) =>
+    z.object({
+      email_id: z.string().uuid(),
+      add_override: z.enum(["email", "domain"]).nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: email } = await supabaseAdmin
+      .from("emails")
+      .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr")
+      .eq("id", data.email_id)
+      .single();
+    if (!email || email.user_id !== context.userId) throw new Error("Email not found");
+
+    let fromLabel: string | null = null;
+    if (email.folder_id) {
+      const { data: f } = await supabaseAdmin
+        .from("folders")
+        .select("gmail_label_id")
+        .eq("id", email.folder_id)
+        .maybeSingle();
+      fromLabel = f?.gmail_label_id ?? null;
+    }
+
+    await supabaseAdmin
+      .from("emails")
+      .update({
+        folder_id: null,
+        is_archived: false,
+        classified_by: "manual_inbox",
+        ai_confidence: 1,
+        classification_reason: "Moved to Inbox manually",
+        matched_filter_ids: [],
+      })
+      .eq("id", email.id);
+
+    // Remove old folder label, ensure INBOX is present.
+    try {
+      await modifyMessage(
+        email.gmail_account_id,
+        email.gmail_message_id,
+        ["INBOX"],
+        fromLabel ? [fromLabel] : [],
+      );
+    } catch (e) { console.error("inbox label sync failed", e); }
+
+    // Stop training AI on this mistake.
+    if (email.folder_id) {
+      await supabaseAdmin
+        .from("folder_examples")
+        .delete()
+        .eq("folder_id", email.folder_id)
+        .eq("gmail_message_id", email.gmail_message_id);
+    }
+
+    const domain = extractDomain(email.from_addr);
+    let override_added: "email" | "domain" | null = null;
+    if (data.add_override && email.from_addr) {
+      const value = data.add_override === "email"
+        ? email.from_addr.toLowerCase()
+        : domain;
+      if (value) {
+        const { data: existing } = await supabaseAdmin
+          .from("inbox_overrides")
+          .select("id")
+          .eq("user_id", context.userId)
+          .eq("match_type", data.add_override)
+          .eq("value", value)
+          .maybeSingle();
+        if (!existing) {
+          await supabaseAdmin.from("inbox_overrides").insert({
+            user_id: context.userId,
+            match_type: data.add_override,
+            value,
+          });
+        }
+        override_added = data.add_override;
+      }
+    }
+
+    return {
+      ok: true,
+      from_addr: email.from_addr,
+      domain,
+      override_added,
+    };
+  });

@@ -139,45 +139,31 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   }));
 }
 
-export async function processGmailMessage(accountId: string, gmailId: string, userId: string) {
-  const { data: existing } = await supabaseAdmin
-    .from("emails")
-    .select("id, from_addr, subject, body_text, body_html, received_at")
-    .eq("gmail_message_id", gmailId)
-    .eq("gmail_account_id", accountId)
-    .maybeSingle();
+export type ClassificationResult = {
+  folder_id: string | null;
+  classified_by: string;
+  ai_confidence: number;
+  ai_summary: string;
+  classification_reason: string | null;
+  matched_filter_ids: string[];
+};
 
-  const raw = await getMessage(accountId, gmailId);
-  const parsed = parseMessage(raw);
-
-  if (existing) {
-    // Repair rows that were inserted with missing/blank metadata.
-    const needsRepair =
-      !existing.from_addr ||
-      !existing.subject ||
-      (!existing.body_text && !existing.body_html) ||
-      !existing.received_at;
-    if (needsRepair) {
-      await supabaseAdmin.from("emails").update({
-        from_addr: parsed.from_addr,
-        from_name: parsed.from_name,
-        to_addrs: parsed.to_addrs,
-        subject: parsed.subject,
-        snippet: parsed.snippet,
-        body_text: parsed.body_text,
-        body_html: parsed.body_html,
-        received_at: parsed.received_at,
-        has_attachment: parsed.has_attachment,
-        raw_labels: parsed.raw_labels,
-        is_read: parsed.is_read,
-      }).eq("id", existing.id);
-      return { repaired: true };
-    }
-    return { skipped: true };
-  }
-
-  if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
-
+export async function classifyParsedEmail(
+  parsed: {
+    from_addr: string;
+    from_name: string;
+    to_addrs: string;
+    subject: string;
+    snippet: string;
+    body_text: string;
+    body_html: string;
+    has_attachment: boolean;
+    received_at: string;
+    raw_labels: string[] | null;
+  },
+  userId: string,
+  accountId: string,
+): Promise<ClassificationResult> {
   const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
     supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId).order("priority", { ascending: false }),
     supabaseAdmin.from("folder_filters").select("id, folder_id, field, op, value"),
@@ -203,7 +189,6 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
     confidence = 1;
     classification_reason = `Matched Gmail label "${labeledFolder.name}"`;
   } else {
-    // Global inbox override — short-circuits filters and AI, keeps email in inbox.
     const fromAddr = (parsed.from_addr || "").toLowerCase();
     const fromDomain = fromAddr.split("@")[1] || "";
     const hit = (overrides ?? []).find((o) => {
@@ -247,6 +232,65 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
     }
   }
 
+  return {
+    folder_id,
+    classified_by,
+    ai_confidence: confidence,
+    ai_summary: summary,
+    classification_reason,
+    matched_filter_ids,
+  };
+}
+
+export async function processGmailMessage(accountId: string, gmailId: string, userId: string) {
+
+  const { data: existing } = await supabaseAdmin
+    .from("emails")
+    .select("id, from_addr, subject, body_text, body_html, received_at")
+    .eq("gmail_message_id", gmailId)
+    .eq("gmail_account_id", accountId)
+    .maybeSingle();
+
+  const raw = await getMessage(accountId, gmailId);
+  const parsed = parseMessage(raw);
+
+  if (existing) {
+    // Repair rows that were inserted with missing/blank metadata.
+    const needsRepair =
+      !existing.from_addr ||
+      !existing.subject ||
+      (!existing.body_text && !existing.body_html) ||
+      !existing.received_at;
+    if (needsRepair) {
+      await supabaseAdmin.from("emails").update({
+        from_addr: parsed.from_addr,
+        from_name: parsed.from_name,
+        to_addrs: parsed.to_addrs,
+        subject: parsed.subject,
+        snippet: parsed.snippet,
+        body_text: parsed.body_text,
+        body_html: parsed.body_html,
+        received_at: parsed.received_at,
+        has_attachment: parsed.has_attachment,
+        raw_labels: parsed.raw_labels,
+        is_read: parsed.is_read,
+      }).eq("id", existing.id);
+      return { repaired: true };
+    }
+    return { skipped: true };
+  }
+
+  if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
+
+  const c = await classifyParsedEmail(parsed, userId, accountId);
+  const folder_id = c.folder_id;
+  const classified_by = c.classified_by;
+  const confidence = c.ai_confidence;
+  const summary = c.ai_summary;
+  const classification_reason = c.classification_reason;
+  const matched_filter_ids = c.matched_filter_ids;
+
+
   const { data: inserted, error } = await supabaseAdmin
     .from("emails")
     .insert({
@@ -281,7 +325,11 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   }
 
   if (folder_id) {
-    const folder = folderList.find((f) => f.id === folder_id);
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, gmail_label_id, auto_archive, auto_mark_read")
+      .eq("id", folder_id)
+      .maybeSingle();
     if (folder) {
       const addLabels: string[] = [];
       const removeLabels: string[] = [];
@@ -299,6 +347,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       }
     }
   }
+
 
   return { id: inserted.id };
 }

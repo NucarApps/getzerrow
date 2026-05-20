@@ -1,49 +1,70 @@
-## What's already there
+## Goal
 
-Two realtime channels exist — one in `src/routes/_authenticated.tsx` (sidebar) and one in `src/routes/_authenticated/index.tsx` (inbox). Both subscribe to `postgres_changes` on `public.emails` and `public.folders`. The tables are in the `supabase_realtime` publication and have `REPLICA IDENTITY FULL`, so the database side is correctly wired.
+Two related fixes for misclassified emails:
 
-So why does it still feel stale? A few likely culprits:
+1. **Re-analyze**: re-run the full classification pipeline (overrides → Gmail label → filters → AI) on an existing email, so it picks up changes you made to folders/rules/overrides after it landed.
+2. **Move to plain Inbox**: explicit "no folder, no rule" destination — plus the option to add the sender to "Always send to inbox" so future mail from them also skips folders.
 
-1. **Two channels racing.** Both subscribe to the same tables. If one fails to connect (websocket auth race, tab throttling, sleep), the other might or might not be alive. Behavior becomes inconsistent.
-2. **No reconnect on auth/visibility changes.** When the browser tab is backgrounded, the websocket can drop. When it wakes, missed events are gone forever — there's no catch-up unless we refetch.
-3. **No realtime auth refresh.** If the channel was opened before the Supabase session was hydrated, RLS filters out every payload server-side and the client silently receives nothing.
-4. **External writes via the webhook/cron** (`gmail-webhook`, `gmail-poll`, AI classifier) use the service-role admin client — these DO trigger postgres replication, so they should fire `postgres_changes`. If realtime auth is broken, they're filtered out by RLS.
+Today the only way out of a wrong folder is into another folder (`moveEmailToFolder` requires a target UUID). There's no way to unfile an email, and there's no way to ask the system "look at this again."
 
-## Plan
+## Changes
 
-Consolidate to a single, resilient realtime layer plus a focus/visibility fallback so the inbox is always within a couple seconds of the database.
+### 1. Server function: `reanalyzeEmail` (new, in `src/lib/gmail.functions.ts`)
 
-### 1. One root-level realtime subscription
+- Input: `{ email_id }`.
+- Loads the email row + the user's folders, filters, and overrides.
+- Reuses the existing classification logic from `sync.server.ts` — the cleanest path is to extract the override/filter/AI cascade (lines ~191–248) into a `classifyParsedEmail()` helper in `src/lib/sync.server.ts` and call it from both the sync path and the new server fn.
+- Updates the email row with the new `folder_id`, `classified_by`, `ai_confidence`, `ai_summary`, `classification_reason`, `matched_filter_ids`.
+- Best-effort Gmail label sync: remove the old folder's `gmail_label_id`, add the new one (mirrors `performMove`).
+- Returns `{ folder_id, classified_by, classification_reason }` so the UI can toast it.
 
-Move both channels into a single `useEmailRealtime` hook mounted in `_authenticated.tsx`. Remove the duplicate subscription in `_authenticated/index.tsx`. The hook:
+### 2. Server function: `moveEmailToInbox` (new, in `src/lib/gmail.functions.ts`)
 
-- Subscribes to `postgres_changes` on `emails` and `folders` filtered by `user_id=eq.<current uid>` to reduce noise.
-- On every event, calls `qc.invalidateQueries({ queryKey: ["emails"] })` and (for folder events) `["folders"]` / `["folders-full"]`.
-- Logs `subscribe` status to the console once so we can confirm connection in the user's preview.
+- Input: `{ email_id, add_override?: "email" | "domain" | null }`.
+- Sets `folder_id = null`, `classified_by = "manual_inbox"`, `classification_reason = "Moved to Inbox manually"`.
+- Removes the old folder's `gmail_label_id` from the Gmail message; ensures `INBOX` label is present (in case auto-archive moved it out).
+- Deletes any `folder_examples` row for this message so the AI doesn't keep training on the mistake.
+- If `add_override` is set, upserts an `inbox_overrides` row for `from_addr` (email) or its domain. Skips silently if the value already exists.
+- Returns `{ from_addr, domain, override_added }`.
 
-### 2. Re-auth the realtime socket on auth changes
+### 3. UI: Reader actions (`src/routes/_authenticated/index.tsx`)
 
-Inside the hook, on mount and inside `supabase.auth.onAuthStateChange`, call `supabase.realtime.setAuth(session.access_token)` so RLS sees the user. Tear down and re-create the channel when the access token rotates.
+In the existing action bar next to Move/Archive/Trash:
 
-### 3. Catch-up refetch on tab focus / visibility
+- **Add a "Re-analyze" button** (Sparkles or RotateCw icon). On click: optimistic spinner, call `reanalyzeEmail`, toast the result (e.g. "Re-analyzed → Cold outreach" or "Re-analyzed → Inbox"), invalidate `["emails"]`.
+- **Add "Inbox (no folder)" as the first item in the Move dropdown**, separated from the folder list. Clicking it calls `moveEmailToInbox` (no override) and shows a follow-up dialog (reuses the pattern of `MoveSimilarDialog`) asking:
+  - "Always send mail from `jared@dcd.auto` to inbox?" → calls again with `add_override: "email"`.
+  - "Always send mail from `dcd.auto` to inbox?" → calls again with `add_override: "domain"`.
+  - "No thanks" → closes.
 
-Add a small effect that listens to `visibilitychange` and `focus`. When the tab becomes visible again, call `qc.invalidateQueries({ queryKey: ["emails"] })` and `["folders"]`. This covers the "laptop was asleep, websocket dropped, missed 12 events" case without waiting for the user to click refresh.
+The dialog is a new tiny component `src/components/emails/AlwaysInboxDialog.tsx` mirroring `MoveSimilarDialog`. It only renders if `from_addr` is present.
 
-### 4. Light periodic safety net
+### 4. Refactor inside `src/lib/sync.server.ts`
 
-Set `refetchOnWindowFocus: true` and `refetchInterval: 30_000` on the `["emails"]` query as a belt-and-suspenders fallback. Cheap (single indexed query), invisible to the user, and guarantees the inbox is never more than ~30s stale even if realtime is completely broken.
+Extract the classification cascade (the block currently at lines ~181–248) into:
 
-### 5. Optimistic local updates for the actor
+```ts
+export async function classifyParsedEmail(parsed, userId, accountId): Promise<{
+  folder_id: string | null;
+  classified_by: string;
+  ai_confidence: number;
+  ai_summary: string;
+  classification_reason: string | null;
+  matched_filter_ids: string[];
+}>
+```
 
-When the current user archives, trashes, marks read/unread, or moves an email, update the React Query cache immediately (we already do this for mark-read) so the row flips before the server round-trip completes. Realtime then reconciles. This is the only way "feels instant" actions stay instant.
+Have both `processMessage` (sync) and the new `reanalyzeEmail` server fn call it. No behavior change to the sync path.
+
+## What I'm NOT changing
+
+- `moveEmailToFolder` keeps requiring a UUID — moving to a real folder still goes through it.
+- The "move similar" prompt for folder→folder moves stays as-is.
+- DB schema, RLS, and the realtime hook (already in place from the last turn — re-analyze results will propagate automatically).
 
 ## Files
 
-- `src/lib/use-email-realtime.ts` (new) — the consolidated hook with channel + visibility + auth-refresh.
-- `src/routes/_authenticated.tsx` — replace inline `useEffect` channel with the hook.
-- `src/routes/_authenticated/index.tsx` — delete the duplicate channel; add `refetchOnWindowFocus` + `refetchInterval` to `emailsQ`; add optimistic cache updates inside the archive/trash/move/mark handlers in `Reader`.
-
-## What I'm not changing
-
-- The webhook / cron / sync server-fn code. Those already write through `supabaseAdmin` which triggers replication correctly; the gap is on the client.
-- The DB schema, RLS, or publication. All three are already correct.
+- `src/lib/sync.server.ts` — extract `classifyParsedEmail`, swap `processMessage` to use it.
+- `src/lib/gmail.functions.ts` — add `reanalyzeEmail` + `moveEmailToInbox` server fns.
+- `src/components/emails/AlwaysInboxDialog.tsx` (new) — follow-up "always send to inbox?" prompt.
+- `src/routes/_authenticated/index.tsx` — Reader gets a Re-analyze button + "Inbox (no folder)" move option + dialog wiring.
