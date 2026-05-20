@@ -1010,6 +1010,24 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
 
     const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id);
 
+    // Always make sure we have a summary on the row after Reanalyze, even when
+    // the classifier (filter/label/domain rule) didn't run the AI summarizer.
+    let summary = result.ai_summary || "";
+    if (!summary) {
+      try {
+        const { summarizeEmail } = await import("./ai.server");
+        summary = await summarizeEmail({
+          from_name: parsed.from_name,
+          from_addr: parsed.from_addr,
+          subject: parsed.subject,
+          body_text: parsed.body_text,
+          snippet: parsed.snippet,
+        });
+      } catch (e) {
+        console.error("reanalyze summarize failed", e);
+      }
+    }
+
     // If AI couldn't pick a folder and the email already has one, keep the
     // current assignment instead of clearing it (and don't touch Gmail labels).
     const noMatch =
@@ -1020,7 +1038,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
     if (noMatch && email.folder_id) {
       await supabaseAdmin
         .from("emails")
-        .update({ ai_summary: result.ai_summary || null })
+        .update({ ai_summary: summary || null })
         .eq("id", email.id);
       return {
         ok: true,
@@ -1039,7 +1057,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
         folder_id: result.folder_id,
         classified_by: result.classified_by,
         ai_confidence: result.ai_confidence,
-        ai_summary: result.ai_summary || null,
+        ai_summary: summary || null,
         classification_reason: result.classification_reason,
         matched_filter_ids: result.matched_filter_ids,
       })
