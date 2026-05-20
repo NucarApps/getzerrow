@@ -1,83 +1,76 @@
 ## Problem
 
-Clicking **Reanalyze email** on a cold email returned no AI match (`folder_name: "NONE"`), and the server function then wrote `folder_id: null` to the row. That moves the email into the **No rules** view, which surprised the user — they expected reanalyze to either improve the classification or leave it alone, never to strip an existing folder when the AI just couldn't decide.
-
-## Root cause
-
-`reanalyzeEmail` in `src/lib/gmail.functions.ts` (~lines 1011–1023) trusts `classifyParsedEmail`'s result unconditionally:
-
-```ts
-const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id);
-await supabaseAdmin.from("emails").update({
-  folder_id: result.folder_id,           // ← becomes NULL when AI says NONE
-  classified_by: result.classified_by,   // ← "ai"
-  ai_confidence: result.ai_confidence,   // ← typically 0 / low
-  ai_summary:    result.ai_summary || null,
-  classification_reason: result.classification_reason,
-  matched_filter_ids:    result.matched_filter_ids,
-}).eq("id", email.id);
-```
-
-`classifyParsedEmail` returns `folder_id: null` when the AI replies `NONE` (see `src/lib/ai.server.ts:108–114`). The reanalyze handler then also runs the "folder changed" branch and calls Gmail `modifyMessage` to remove the previous folder's label.
+When an email is classified by **Gmail label**, **filter**, or **domain rule** (not AI), `classifyParsedEmail` never calls the AI, so `ai_summary` stays `null`. Clicking **Reanalyze** runs the same path and again skips summarization, leaving the row with no yellow ✨ summary in the list. The user wants Reanalyze to **always** produce a summary when one is missing, even if the folder doesn't change.
 
 ## Fix
 
-When reanalyze produces no folder match, treat it as a no-op for the row's assignment instead of clearing it.
+Add a tiny standalone summarizer and call it from `reanalyzeEmail` whenever the post-classification summary is empty.
 
-### Change in `src/lib/gmail.functions.ts` — `reanalyzeEmail` handler
+### 1. `src/lib/ai.server.ts` — add `summarizeEmail`
 
-After computing `result` and before the DB update, detect the no-match case:
+New exported function next to `classifyEmail` (one short LLM call, plain text out, capped at 140 chars to match the existing column usage):
 
 ```ts
-const noMatch =
-  result.folder_id === null &&
-  (result.classified_by === "ai" || result.classified_by === "none" || result.classified_by === "ai_error");
+export async function summarizeEmail(email: {
+  from_name: string;
+  from_addr: string;
+  subject: string;
+  body_text: string;
+  snippet: string;
+}): Promise<string> {
+  const { text } = await generateText({
+    model: getModel("google/gemini-2.5-flash-lite"),
+    prompt: `Write a single-sentence summary (max 140 chars) of this email — what it's about and what (if anything) the sender wants. No greetings, no preamble, no quotes.
 
-if (noMatch && email.folder_id) {
-  // AI couldn't pick a better folder — keep the existing assignment untouched.
-  // Still refresh ai_summary if we got one, but never strip folder_id / classified_by / Gmail label.
-  await supabaseAdmin
-    .from("emails")
-    .update({
-      ai_summary: result.ai_summary || null,
-    })
-    .eq("id", email.id);
+From: ${email.from_name} <${email.from_addr}>
+Subject: ${email.subject}
 
-  return {
-    ok: true,
-    folder_id: email.folder_id,
-    folder_name: null,                       // caller doesn't use this when changed=false
-    classified_by: "kept",
-    classification_reason: "AI found no better folder — kept current assignment",
-    changed: false,
-  };
+${(email.body_text || email.snippet || "").slice(0, 4000)}`,
+  });
+  return text.trim().replace(/^["']|["']$/g, "").slice(0, 140);
 }
 ```
 
-Then leave the rest of the handler unchanged. The existing `email.folder_id !== result.folder_id` branch keeps handling real moves (including null → folder and folder → different folder).
+Use `flash-lite` since this is a quick one-line task; fall back silently on errors.
 
-The `is_archived` flag is **not touched**, matching the user's preference to leave archived state alone.
+### 2. `src/lib/gmail.functions.ts` — `reanalyzeEmail` handler
 
-### Optional UX touch in `_authenticated/index.tsx`
+After `classifyParsedEmail` returns, if `result.ai_summary` is empty AND we have body content to summarize, generate one and merge it into every update path:
 
-The "Reanalyze" button calls `reanalyzeEmail` and shows a toast. Add a small adjustment so the `changed: false` + `classified_by: "kept"` case shows a clearer message: e.g. `toast.message("No better folder — kept in <current folder name>.")`. Read the current folder name from `foldersQ.data` using `email.folder_id`. No new data fetches needed.
+```ts
+const { summarizeEmail } = await import("./ai.server");
 
-## Edge cases
+let summary = result.ai_summary || "";
+if (!summary) {
+  try {
+    summary = await summarizeEmail({
+      from_name: parsed.from_name,
+      from_addr: parsed.from_addr,
+      subject: parsed.subject,
+      body_text: parsed.body_text,
+      snippet: parsed.snippet,
+    });
+  } catch (e) {
+    console.error("reanalyze summarize failed", e);
+  }
+}
+```
 
-- **Email had no folder to begin with** (`email.folder_id === null`) and AI returns NONE again: behavior unchanged — row stays with `folder_id: null` in No rules. Returning early would skip writing `classified_by`/`classification_reason`, so we still go through the normal update path in this case (the early-return guard requires `email.folder_id` to be truthy).
-- **AI returns a different folder than current**: unchanged — the existing folder-change branch runs, Gmail labels swap, row updates.
-- **AI returns the same folder**: unchanged — DB update writes the same `folder_id`, no Gmail label sync.
-- **`classifyParsedEmail` returned a filter/label match (not AI)**: `classified_by` will be `"filter" | "domain_rule" | "gmail_label" | "global_exclude"` — none match the `noMatch` guard, so the row updates normally even if `folder_id` ends up null (e.g. a global inbox-override hit). That preserves filter-driven outcomes.
+Then thread `summary` (instead of `result.ai_summary`) into:
+- the **noMatch + kept folder** early-return branch's `update({ ai_summary: summary || null })`
+- the main `update({...})` block (replace `ai_summary: result.ai_summary || null` with `ai_summary: summary || null`)
+- the `changed: true` and `changed: false` returns (no functional change, just consistency).
+
+That way the yellow summary chip appears on the list row immediately after Reanalyze, regardless of whether the folder changed.
 
 ## Not changing
 
-- `classifyParsedEmail` / AI prompt — the model is still allowed to say NONE; we just stop letting NONE wipe a known-good assignment.
-- Archive / INBOX state.
-- The initial classification on ingest (where there's no prior folder to protect).
-- Schema or migrations.
+- Initial ingest path (`processGmailMessage`) — summaries on first arrival still only come from the AI classification path. We can extend this later if the user wants summaries on every inbound email, but it would mean an extra LLM call per email on sync.
+- Classification logic / filters / labels / archived state.
+- Schema.
 
 ## Verification
 
-1. Open a cold email currently in a folder (e.g. Cold Outreach), click **Reanalyze**.
-2. Confirm the toast says it kept the current folder and the email remains in that folder's list — does NOT appear in **No rules**.
-3. Open an email AI should re-route to a different folder, click **Reanalyze**, and confirm the move still happens with the Gmail label swap.
+1. Open the **Cold Email** screenshot row, click Reanalyze.
+2. Toast still says "Re-analyzed — no change" (or "kept" if AI returns NONE), but the row in the list now shows the ✨ yellow one-liner summary.
+3. Open an email that *does* change folder on reanalyze — confirm the summary is also populated.
