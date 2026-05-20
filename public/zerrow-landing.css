@@ -1179,7 +1179,9 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
 .launchpad__viewport.is-tracking .rocket-wrap,
 .launchpad__viewport.is-tracking .smoke,
 .launchpad__viewport.is-tracking .sparks,
-.launchpad__viewport.is-tracking .pad-base {
+.launchpad__viewport.is-tracking .pad-base,
+.launchpad__viewport.is-tracking .viewport-counter,
+.launchpad__viewport.is-tracking .viewport-telemetry {
   opacity: 0 !important;
   transition: opacity .5s ease-out;
   pointer-events: none;
