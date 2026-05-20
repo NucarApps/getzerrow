@@ -171,6 +171,23 @@ export function PubsubActivity() {
         </div>
       )}
 
+      {/* RED: watch is armed but Google has not delivered a real push since */}
+      {noPushSinceRearm && !showUnmatchedBanner && (
+        <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="text-xs">
+              <div className="font-medium text-destructive">Watch is armed, but no real Google push has arrived since.</div>
+              <div className="mt-1 text-muted-foreground">
+                The Gmail watch was re-armed {relTime(lastRenew!.received_at)} against <span className="font-mono">{diag?.pubsubTopic ?? "(unset)"}</span>, but Google has not POSTed a real <span className="font-mono">push</span> envelope to this app since then. Polling is filling the gap (~2 min delay), so the broken piece is the GCP Pub/Sub <strong>push subscription</strong> — not the watch, not this app's webhook. Verify the subscription on that topic is enabled and its push URL is exactly:
+                <div className="mt-1 font-mono break-all">{diag?.webhookUrl} {diag?.webhookUrl && <CopyBtn value={diag.webhookUrl} />}</div>
+              </div>
+            </div>
+          </div>
+          {renewBtn}
+        </div>
+      )}
+
       {/* AMBER: stuck jobs (worker timed out mid-processing) */}
       {diag?.stuckJobs && diag.stuckJobs.length > 0 && (
         <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
