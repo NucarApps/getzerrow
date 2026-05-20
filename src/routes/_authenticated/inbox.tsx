@@ -307,7 +307,10 @@ function InboxPage() {
             </div>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div
+          className="flex-1 overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
+        >
           {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
           {!emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
