@@ -706,7 +706,7 @@ export const createFolderSummary = createServerFn({ method: "POST" })
     z.object({
       folder_id: z.string().uuid(),
       name: z.string().min(1).max(100),
-      instructions: z.string().max(10000),
+      instructions: z.string().max(50000),
       hour: z.number().int().min(0).max(23),
       minute: z.number().int().min(0).max(59),
       timezone: ianaTz,
@@ -745,7 +745,7 @@ export const updateFolderSummary = createServerFn({ method: "POST" })
     z.object({
       id: z.string().uuid(),
       name: z.string().min(1).max(100).optional(),
-      instructions: z.string().max(10000).optional(),
+      instructions: z.string().max(50000).optional(),
       hour: z.number().int().min(0).max(23).optional(),
       minute: z.number().int().min(0).max(59).optional(),
       timezone: ianaTz.optional(),
