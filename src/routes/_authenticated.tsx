@@ -95,10 +95,9 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     queryFn: async () => {
       const { data } = await supabase
         .from("emails")
-        .select("id,folder_id,is_read,is_archived")
-        .eq("is_read", false)
+        .select("id,folder_id,is_read,is_archived,raw_labels")
         .limit(5000);
-      return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean; is_archived: boolean }>;
+      return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean; is_archived: boolean; raw_labels: string[] | null }>;
     },
   });
 
@@ -107,13 +106,13 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     const m = new Map<string, number>();
     let total = 0;
     for (const e of emailsQ.data ?? []) {
-      if (e.is_read) continue;
       if (e.folder_id) {
-        m.set(e.folder_id, (m.get(e.folder_id) ?? 0) + 1);
-        if (!e.is_archived) total++;
-      } else if (!e.is_archived) {
-        total++;
-        m.set("unsorted", (m.get("unsorted") ?? 0) + 1);
+        if (!e.is_read) m.set(e.folder_id, (m.get(e.folder_id) ?? 0) + 1);
+        if (!e.is_read && !e.is_archived) total++;
+      } else {
+        if (!e.is_read && !e.is_archived) total++;
+        const hasUserLabel = e.raw_labels?.some((l) => l.startsWith("Label_")) ?? false;
+        if (!hasUserLabel) m.set("no_rules", (m.get("no_rules") ?? 0) + 1);
       }
     }
     return { byFolder: m, total };
