@@ -52,7 +52,9 @@ type Email = {
   has_attachment: boolean;
 };
 
-type Folder = { id: string; name: string; color: string };
+type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
+
+const PAGE_SIZE = 50;
 
 function InboxPage() {
   const qc = useQueryClient();
