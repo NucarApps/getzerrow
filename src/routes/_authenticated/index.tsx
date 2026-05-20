@@ -86,8 +86,7 @@ function InboxPage() {
     const ch = supabase
       .channel("emails-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
-        qc.invalidateQueries({ queryKey: ["emails"] });
-        qc.invalidateQueries({ queryKey: ["emails-summary"] });
+        qc.refetchQueries({ queryKey: ["emails"] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
         qc.invalidateQueries({ queryKey: ["folders"] });
