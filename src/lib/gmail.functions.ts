@@ -1577,14 +1577,35 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       if (r.error) errors24++;
     }
 
-    // Most recent push (matched or not) so the UI can show "Last push details"
-    const { data: lastPushRows } = await supabaseAdmin
+    // Most recent push (matched or not). Prefer rows logged by the new
+    // instrumented webhook (payload IS NOT NULL); fall back to the truly
+    // latest push if no instrumented one exists yet.
+    const cols = "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details";
+    const { data: instrumentedPushRows } = await supabaseAdmin
       .from("pubsub_events")
-      .select("id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details")
+      .select(cols)
       .in("event_type", ["push", "push_empty"])
+      .not("payload", "is", null)
       .order("received_at", { ascending: false })
       .limit(1);
-    const lastPush = lastPushRows?.[0] ?? null;
+    let lastPush = instrumentedPushRows?.[0] ?? null;
+    if (!lastPush) {
+      const { data: anyPushRows } = await supabaseAdmin
+        .from("pubsub_events")
+        .select(cols)
+        .in("event_type", ["push", "push_empty"])
+        .order("received_at", { ascending: false })
+        .limit(1);
+      lastPush = anyPushRows?.[0] ?? null;
+    }
+
+    const { data: lastRenewRows } = await supabaseAdmin
+      .from("pubsub_events")
+      .select("received_at, details, email_address, history_id")
+      .in("event_type", ["watch_renew", "watch_rearm_auto"])
+      .order("received_at", { ascending: false })
+      .limit(1);
+    const lastWatchRenew = lastRenewRows?.[0] ?? null;
 
     const host = getRequestHost();
     const webhookUrl = `https://${host}/api/public/gmail-webhook`;
@@ -1600,11 +1621,13 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       },
       diagnostics: {
         lastPush,
+        lastWatchRenew,
         webhookUrl,
         pubsubTopic: process.env.GMAIL_PUBSUB_TOPIC ?? null,
       },
     };
   });
+
 
 
 /** Re-pull the current Gmail label state for a single message and reconcile our row. */
