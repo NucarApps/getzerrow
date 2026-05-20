@@ -651,7 +651,9 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                 const r = await reanalyzeFn({ data: { email_id: email.id } });
                 qc.invalidateQueries({ queryKey: ["emails"] });
                 qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                if (!r.changed) {
+                if (r.classified_by === "ai_error") {
+                  toast.error(r.classification_reason || "AI classifier failed");
+                } else if (!r.changed) {
                   toast.success("Re-analyzed — no change");
                 } else if (r.folder_id && r.folder_name) {
                   toast.success(`Re-analyzed → ${r.folder_name}`);

@@ -1,30 +1,35 @@
-## Why the 30–60s "Loading…" on reload
+## Root cause
 
-The sidebar's unread-counts query (in `src/routes/_authenticated.tsx`) runs on every page load:
+The reply email is in the DB with `classified_by: "none"`, `folder_id: null`. That's what gets written when the AI classifier throws inside `classifyParsedEmail` → `catch (e) { console.error("AI classify failed", e) }`.
 
-```ts
-supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(2000)
+Server logs confirm it: every reanalyze attempt today is failing with
+
+```
+AI_NoObjectGeneratedError: No object generated: response did not match schema.
 ```
 
-It pulls **every column** of up to 2000 emails just to count unread per folder. With ~1017 emails and ~11 KB of `body_html`/`body_text` per row, that's roughly **11 MB** of JSON shipped over the network on every reload, every realtime invalidation, every tab focus, and every sync — exactly the "30–60 second blank screen" symptom.
+So the AI gateway call to `google/gemini-3-flash-preview` (in `src/lib/ai.server.ts → classifyEmail`) returns text the `ai` SDK's structured-output adapter can't parse against the Zod schema. The folder isn't actually being chosen — the classifier crashes silently, folder stays `null`, and the UI dutifully reports "no change" because `email.folder_id (null) === result.folder_id (null)`.
 
-The inbox search path (in `src/routes/_authenticated/index.tsx`) has the same problem: when `isSearching`, it does `select("*")` with `limit(2000)`.
-
-Reloading is especially bad because `useEmailRealtime` invalidates `["emails"]` once on mount, once again when the channel subscribes, once again on visibility/focus — each invalidation re-runs the 11 MB query.
+Reanalyze itself is fine; the AI step is the bug.
 
 ## Plan
 
-1. **Sidebar counts query** — change `select("*")` to `select("id,folder_id,is_read,is_archived")`. Counts only need those 4 columns. This alone cuts the payload from ~11 MB to well under 100 KB.
+1. **Switch the classifier model to a stable, structured-output-friendly model.**  
+   `google/gemini-3-flash-preview` is a preview model and is the one throwing `AI_NoObjectGeneratedError`. Change `getModel()` in `src/lib/ai.server.ts` so `classifyEmail` uses `google/gemini-2.5-flash` (reliable JSON-mode support). Keep the other helpers on whatever model they were on, or move all of them — simplest is to switch the single shared `getModel()`.
 
-2. **Inbox search query** — change the `isSearching` branch from `select("*")` to a slimmer column list (`id, from_addr, from_name, subject, snippet, received_at, is_read, is_archived, folder_id, ai_summary, thread_id, has_attachment`) — exclude `body_text` / `body_html`. The body is only needed when an email is opened; the detail pane already has its own fetch path or we add one on selection.
+2. **Make `classifyEmail` resilient to schema-parse failures.**  
+   Wrap the `generateText` call in a one-shot retry: if the first call throws `AI_NoObjectGeneratedError`, retry once with a tighter prompt that explicitly demands JSON only. If both attempts fail, fall back to a plain-text `generateText` call and `JSON.parse` the response (best-effort), and only then give up. This keeps reanalyze working even if a future model regresses on structured output.
 
-3. **Reduce redundant refetches on mount** — `useEmailRealtime` currently invalidates `["emails"]` immediately on mount AND again when the channel subscribes. Drop the mount-time invalidation; let the initial `useQuery` fetch do the first load, and only catch up after the channel is subscribed.
+3. **Surface real classifier errors to the user instead of "no change".**  
+   In `classifyParsedEmail` (`src/lib/sync.server.ts`), when the AI step throws, return a `classified_by: "ai_error"` (or similar) with the error message in `classification_reason`, instead of silently leaving `classified_by: "none"`. Then in `reanalyzeEmail`'s response (`src/lib/gmail.functions.ts`) and in the inbox UI toast (`src/routes/_authenticated/index.tsx`), show that reason — so when AI can't classify, the user sees "AI couldn't classify: …" instead of a misleading "no change".
 
-4. **Lower the refetch interval cost** — keep `refetchInterval: 30_000` on the inbox list (it's already paged to ~50 rows so it's cheap), but make sure neither the sidebar's counts query nor the search query carry that interval.
-
-No backend / schema / functionality changes — this is purely fixing the over-fetching on the client.
+4. **Re-run reanalysis on the Eric Braund reply once the fix is shipped.**  
+   No data migration needed — clicking "Reprocess" on that email will now succeed and route it to **Cold Email** based on the folder's `ai_rule` text already configured.
 
 ### Files to edit
-- `src/routes/_authenticated.tsx` — narrow the sidebar emails select.
-- `src/routes/_authenticated/index.tsx` — narrow the search-mode emails select.
-- `src/lib/use-email-realtime.ts` — remove the immediate post-subscribe invalidation on first mount.
+- `src/lib/ai.server.ts` — swap model in `getModel()`; add retry + JSON-parse fallback in `classifyEmail`.
+- `src/lib/sync.server.ts` — return `classified_by: "ai_error"` with the error message when the AI step throws.
+- `src/lib/gmail.functions.ts` — propagate the error reason in the `reanalyzeEmail` return shape.
+- `src/routes/_authenticated/index.tsx` — show that reason in the reprocess toast.
+
+No DB / schema changes. No new dependencies.
