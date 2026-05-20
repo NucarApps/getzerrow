@@ -1010,6 +1010,29 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
 
     const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id);
 
+    // If AI couldn't pick a folder and the email already has one, keep the
+    // current assignment instead of clearing it (and don't touch Gmail labels).
+    const noMatch =
+      result.folder_id === null &&
+      (result.classified_by === "ai" ||
+        result.classified_by === "none" ||
+        result.classified_by === "ai_error");
+    if (noMatch && email.folder_id) {
+      await supabaseAdmin
+        .from("emails")
+        .update({ ai_summary: result.ai_summary || null })
+        .eq("id", email.id);
+      return {
+        ok: true,
+        folder_id: email.folder_id,
+        folder_name: null,
+        classified_by: "kept",
+        classification_reason: "AI found no better folder — kept current assignment",
+        changed: false,
+      };
+    }
+
+
     await supabaseAdmin
       .from("emails")
       .update({
