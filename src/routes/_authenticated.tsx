@@ -173,11 +173,11 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           count={counts.total}
         />
         <FolderRow
-          active={selected === "unsorted"}
-          onSelect={() => pick("unsorted")}
+          active={selected === "no_rules"}
+          onSelect={() => pick("no_rules")}
           color="#71717a"
-          label="Unsorted"
-          count={counts.byFolder.get("unsorted") ?? 0}
+          label="No rules"
+          count={counts.byFolder.get("no_rules") ?? 0}
         />
 
         {(foldersQ.data ?? []).map((f) => (
