@@ -11,7 +11,9 @@ import {
   ensureWatch,
   stopWatch,
   listMessages,
+  getMessage,
   getMessageMetadata,
+  getThread,
   parseMessage,
 } from "./gmail.server";
 import { suggestReply, suggestRuleUpdates } from "./ai.server";
