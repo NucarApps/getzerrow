@@ -1020,27 +1020,69 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
     gap: 32px;
     padding-bottom: 56px;
   }
+  .hero__title { font-size: clamp(48px, 9vw, 72px); line-height: 1; }
   .launchpad { min-height: 560px; }
   .features-grid { grid-template-columns: repeat(2, 1fr); }
   .flight-sequence { grid-template-columns: 1fr; }
   .flight-sequence::before { display: none; }
   .section-head { grid-template-columns: 1fr; gap: 16px; padding-top: 56px; }
-  .nav { grid-template-columns: auto auto; }
+  .section { padding: 0 20px; }
+  .nav { grid-template-columns: auto auto; padding: 18px 20px; }
   .nav__links { display: none; }
+  .viewport-counter { top: 12px; left: 12px; padding: 8px 10px; }
+  .viewport-counter__num { font-size: 28px; }
+  .viewport-telemetry { top: 12px; right: 12px; min-width: 140px; max-width: 160px; gap: 4px; }
+  .tele-row { padding: 4px 8px; font-size: 9px; }
 }
 @media (max-width: 640px) {
+  .nav { padding: 16px 16px; }
   .nav__cta .btn--ghost { display: none; }
+  .section { padding: 0 16px; }
   .features-grid { grid-template-columns: 1fr; }
+  .hero { padding: 40px 16px 56px; }
+  .hero__title { font-size: clamp(40px, 12vw, 56px); letter-spacing: -0.03em; }
   .hero__stats { grid-template-columns: 1fr; }
   .hero__stat { border-right: 0; border-bottom: 1px solid var(--line); }
   .hero__stat:last-child { border-bottom: 0; }
+  .hero__cta { flex-wrap: wrap; gap: 10px; }
+  .hero__cta .btn { width: 100%; justify-content: center; }
   .liftoff { padding: 56px 24px; }
   .liftoff::before { font-size: 200px; }
   .faq-item summary { grid-template-columns: 40px 1fr auto; gap: 14px; font-size: 18px; }
   .faq-body { padding-left: 54px; }
   .footer__inner { grid-template-columns: 1fr; text-align: center; }
   .footer__links { justify-self: center; }
-  .status-bar__inner { font-size: 10px; padding: 6px 16px; gap: 12px; }
+  .status-bar__inner { font-size: 10px; padding: 6px 12px; gap: 10px; }
   .t-minus__big { font-size: 48px; }
+
+  /* Launchpad: keep instruments out of rocket's way on small screens */
+  .launchpad { min-height: 480px; }
+  .launchpad__viewport { min-height: 360px; }
+  .viewport-counter { top: 10px; left: 10px; padding: 6px 9px; }
+  .viewport-counter__lbl { font-size: 8px; margin-bottom: 2px; }
+  .viewport-counter__num { font-size: 22px; }
+  .viewport-counter__delta { font-size: 9px; margin-top: 2px; }
+  .viewport-telemetry { top: 10px; right: 10px; min-width: 118px; max-width: 130px; gap: 3px; }
+  .tele-row { padding: 3px 6px; font-size: 8px; letter-spacing: .04em; gap: 6px; }
+  .rocket-wrap { transform: scale(0.78); transform-origin: bottom center; }
+  .launchpad__foot { grid-template-columns: repeat(2, 1fr); }
+  .launchpad__foot .foot-cell:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
 }
+@media (max-width: 420px) {
+  .status-cluster:nth-child(2) { display: none; }
+  .status-bar__inner { gap: 8px; padding: 6px 10px; }
+  .hero__title { font-size: 44px; }
+  .section-title { font-size: clamp(28px, 8vw, 38px); }
+  .t-minus__big { font-size: 40px; }
+  .nav { padding: 14px 14px; }
+  .nav__cta .btn--primary { padding: 10px 12px; font-size: 12px; }
+  .brand__word { font-size: 18px; }
+  .launchpad__head { font-size: 10px; padding: 8px 12px; }
+  .launchpad__viewport { min-height: 320px; }
+  .rocket-wrap { transform: scale(0.65); }
+  .viewport-counter__num { font-size: 20px; }
+  .liftoff { padding: 48px 16px; }
+  .liftoff::before { font-size: 160px; }
+}
+
 
