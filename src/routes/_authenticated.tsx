@@ -297,7 +297,7 @@ function FolderRow({
   onSelect: () => void;
   color: string;
   label: string;
-  count: number;
+  count?: number;
   onEdit?: () => void;
 }) {
   return (
