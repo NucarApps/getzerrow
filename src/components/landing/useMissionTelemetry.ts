@@ -23,7 +23,7 @@ export function useMissionTelemetry() {
 
     // Inbox 1247 -> 0 over 8s, ease-out cubic
     let start: number | null = null;
-    const DURATION = 8000;
+    const DURATION = 18000;
     let rafId = 0;
     let currentPhase: "smoke" | "ignition" | "liftoff" | null = null;
     const setPhase = (next: "smoke" | "ignition" | "liftoff") => {
