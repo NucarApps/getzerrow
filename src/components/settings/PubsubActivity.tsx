@@ -141,13 +141,28 @@ export function PubsubActivity() {
         </div>
       )}
 
+      {stats && stats.gmailErrors24 > 0 && (
+        <div className="mt-4 flex gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 p-3">
+          <Activity className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+          <div className="text-xs">
+            <div className="font-medium text-blue-700 dark:text-blue-400">
+              Gmail API returned {stats.gmailErrors24} transient error{stats.gmailErrors24 === 1 ? "" : "s"} in the last 24h.
+            </div>
+            <div className="mt-1 text-muted-foreground">
+              These are 429 (rate limit) or 5xx responses from Google — they match the <span className="font-mono">caribou.api.proto.MailboxService.GetMessage</span> errors you may see in the GCP console. The worker auto-retries them with jittered backoff and the first 2 retries are free, so they don't push messages to the DLQ. If the count keeps climbing, check the Processing queue panel.
+            </div>
+          </div>
+        </div>
+      )}
+
       {stats && (
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
           <Stat label="Push (24h)" value={stats.push24} />
           <Stat label="Poll (24h)" value={stats.poll24} />
           <Stat label="Watch renew (24h)" value={stats.renew24} />
           <Stat label="Accounts matched" value={stats.accounts24} />
           <Stat label="Emails synced" value={stats.synced24} />
+          <Stat label="Gmail API errors" value={stats.gmailErrors24} accent={stats.gmailErrors24 > 0 ? "warn" : undefined} />
           <Stat label="Errors" value={stats.errors24} accent={stats.errors24 > 0 ? "danger" : undefined} />
         </div>
       )}
