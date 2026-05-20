@@ -1,67 +1,71 @@
-## Goal
+## Problem
 
-Rename the sidebar entry **Unsorted** → **No rules** and change its meaning to: every email that has **no folder assigned** in the app AND **no user-created Gmail label** in `raw_labels`, regardless of read/archived state. These are emails Gmail just dropped into the archive with nothing routed to them.
+On a folder like **Factory** (linked to a Gmail label), clicking **Next page** past the locally-loaded emails calls `loadOlderFromLabel` and reports "No older emails found in Gmail" — even though many older messages exist in that label.
 
-## Definition of "no user labels"
+## Root cause
 
-Gmail system label ids: `INBOX`, `UNREAD`, `STARRED`, `IMPORTANT`, `SENT`, `DRAFT`, `SPAM`, `TRASH`, `CHAT`, `CATEGORY_*`. User-created labels always have ids that start with `Label_`.
+`loadOlderFromLabel` (`src/lib/sync.server.ts:771`) decides how to fetch the next batch from Gmail based on a stored `gmail_backfill_page_token` + `gmail_backfill_oldest_received_at`:
 
-So a row qualifies for "No rules" when:
-
-```
-folder_id IS NULL
-AND NOT EXISTS l ∈ raw_labels WHERE l LIKE 'Label\_%'
-```
-
-## Changes
-
-### 1. `src/lib/folder-selection.tsx`
-Change the union type:
 ```ts
-export type FolderSelection = string | "all" | "no_rules";
-```
-(Renaming `"unsorted"` → `"no_rules"` everywhere — it's an internal key, no migration needed.)
-
-### 2. `src/routes/_authenticated.tsx` (sidebar)
-- Replace the `"Unsorted"` `FolderRow` with `label="No rules"`, key `"no_rules"`, same muted color.
-- Update the counts builder (~line 106–120): a row counts toward `no_rules` when `folder_id IS NULL` AND `!raw_labels?.some(l => l.startsWith("Label_"))`. Include both read and unread.
-  - Also update `emailsQ` (~line 93–103) to fetch `raw_labels` and drop the `is_read=false` filter so the count reflects read + unread. (Bump `limit` only if needed; 5000 stays.)
-- The "All inbox" total stays as today (unread, not archived).
-
-### 3. `src/routes/_authenticated/index.tsx` (email list query)
-Line 125 currently does:
-```ts
-else if (selectedFolder === "unsorted") q = q.eq("is_archived", false).is("folder_id", null);
-```
-Replace with the `no_rules` branch:
-```ts
-else if (selectedFolder === "no_rules") {
-  q = q.is("folder_id", null);
-  // user-label filter applied client-side (see below)
+if (beforeReceivedAt <= folder.gmail_backfill_oldest_received_at && pageToken) {
+  pageToken = folder.gmail_backfill_page_token;
 }
 ```
-Postgres array filtering with a `LIKE` predicate isn't expressible through PostgREST, so after `await q` we filter the returned rows:
+
+If that condition fails — which is the normal case the first time a user paginates, or whenever the locally-known emails are newer than the last backfill checkpoint — we fall through with **no `pageToken` and no date filter**, so `listMessages({ labelIds: [...], maxResults: 50 })` returns the **newest 50 messages in the label**. Those are exactly the ones we already have, so `ingested = 0`, `claimed = 0`, and the UI shows "No older emails found in Gmail."
+
+There is no fallback that uses the caller-provided `beforeReceivedAt` as a Gmail search anchor, so we never actually ask Gmail for older messages.
+
+## Fix
+
+When we don't have a usable `pageToken`, fall back to a Gmail search query anchored to `beforeReceivedAt` so we always retrieve messages older than the local cursor.
+
+### Change in `src/lib/sync.server.ts` (`loadOlderFromLabel`)
+
+Replace the listMessages call (~lines 792–807) with:
+
 ```ts
-let rows = (data ?? []) as Email[];
-if (selectedFolder === "no_rules") {
-  rows = rows.filter(e => !(e as any).raw_labels?.some((l: string) => l.startsWith("Label_")));
+let pageToken: string | undefined;
+let q: string | undefined;
+
+const tokenUsable =
+  beforeReceivedAt &&
+  folder.gmail_backfill_oldest_received_at &&
+  new Date(beforeReceivedAt).getTime() <=
+    new Date(folder.gmail_backfill_oldest_received_at).getTime() &&
+  folder.gmail_backfill_page_token;
+
+if (tokenUsable) {
+  pageToken = folder.gmail_backfill_page_token!;
+} else if (beforeReceivedAt) {
+  // Anchor to the local cursor so Gmail returns messages older than what
+  // we already have. Gmail's `before:` operator takes a unix-seconds value.
+  const secs = Math.floor(new Date(beforeReceivedAt).getTime() / 1000);
+  q = `before:${secs}`;
 }
+
+const list = await listMessages(folder.gmail_account_id, {
+  labelIds: [folder.gmail_label_id],
+  maxResults: 50,
+  pageToken,
+  q,
+});
 ```
-To keep pagination predictable, bump the per-page fetch when on `no_rules` (e.g. `limit(PAGE_SIZE * 3 + 1)`) and slice to `PAGE_SIZE` after filtering. Cursor still uses the last returned row's `received_at`. Acceptable trade-off — most users have very few user labels, so filter loss is small.
 
-Also update `labelForFolder` (~line 544–548): `if (sel === "no_rules") return "No rules";`.
+`listMessages` already supports `q` (see `src/lib/gmail.server.ts`), so no API helper changes are needed.
 
-### 4. Search for any other `"unsorted"` references
-`MoveSimilarDialog.tsx` line 48 uses the string `"Unsorted"` as a display fallback for "no folder assigned" — change that copy to `"No rules"` so the label stays consistent across the UI.
+### Optional defensive tweak
+
+After processing, if `ingested === 0 && claimed === 0` AND we took the `pageToken` path AND `list.nextPageToken` exists, the stored token is stale. Clear it (`gmail_backfill_page_token: null`) so the next click falls through to the date-anchored query. Small change in the same `update({...})` block at the bottom.
 
 ## Not changing
 
-- No DB schema changes, no migrations.
-- No server functions added — the existing `supabase.from("emails")` query path stays.
-- Sync / classification logic unchanged.
-- "All inbox" semantics unchanged.
+- The "No rules" / All-inbox views (those don't call `loadOlderFromLabel`).
+- The pagination state machine in `_authenticated/index.tsx` — `pullOlderMut` already passes `pageRows[last].received_at` as `before_received_at`.
+- No schema migrations; we already store the columns we need.
 
-## Risk / edge cases
+## Verification
 
-- Client-side label filtering means a heavily-labeled mailbox could see fewer than `PAGE_SIZE` rows per page even after the 3× overfetch. If that turns out to matter we can promote this to a `createServerFn` with a raw SQL `NOT EXISTS (SELECT 1 FROM unnest(raw_labels) l WHERE l LIKE 'Label\_%')`. Left out for now to keep the change small.
-- Sidebar count is approximate — it's bounded by the existing 5000-row `emailsQ` fetch, same as today.
+1. Open **Factory**, paginate past page 2 to trigger the pull.
+2. Confirm the toast now says "Pulled N older email(s) from Gmail." and the next page renders.
+3. Repeat — each click should keep walking deeper via the new `before:` cursor anchored to the last visible row.

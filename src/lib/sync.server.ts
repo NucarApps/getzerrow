@@ -787,23 +787,29 @@ export async function loadOlderFromLabel(
     return { ingested: 0, hasMore: false, reason: "no_label" as const };
   }
 
-  // Reuse stored pageToken only if caller's cursor matches our last known
-  // oldest_received_at — otherwise reset and walk from the top.
+  // Prefer the stored pageToken when it lines up with the caller's cursor.
+  // Otherwise fall back to a Gmail `before:` query anchored to the cursor,
+  // so we always retrieve messages older than what's local.
   let pageToken: string | undefined;
-  if (
+  let q: string | undefined;
+  const tokenUsable =
     beforeReceivedAt &&
     folder.gmail_backfill_oldest_received_at &&
     new Date(beforeReceivedAt).getTime() <=
       new Date(folder.gmail_backfill_oldest_received_at).getTime() &&
-    folder.gmail_backfill_page_token
-  ) {
-    pageToken = folder.gmail_backfill_page_token;
+    folder.gmail_backfill_page_token;
+  if (tokenUsable) {
+    pageToken = folder.gmail_backfill_page_token!;
+  } else if (beforeReceivedAt) {
+    const secs = Math.floor(new Date(beforeReceivedAt).getTime() / 1000);
+    q = `before:${secs}`;
   }
 
   const list = await listMessages(folder.gmail_account_id, {
     labelIds: [folder.gmail_label_id],
     maxResults: 50,
     pageToken,
+    q,
   });
   const ids = (list.messages ?? []).map((m) => m.id);
   let ingested = 0;
@@ -880,11 +886,16 @@ export async function loadOlderFromLabel(
     }
   }
 
+  // If we used a stale pageToken and got nothing new, clear it so the next
+  // click falls through to the date-anchored query path.
+  const clearStaleToken =
+    !!pageToken && ingested === 0 && claimed === 0;
+
   const hasMore = !!list.nextPageToken;
   await supabaseAdmin
     .from("folders")
     .update({
-      gmail_backfill_page_token: list.nextPageToken ?? null,
+      gmail_backfill_page_token: clearStaleToken ? null : (list.nextPageToken ?? null),
       gmail_backfill_oldest_received_at:
         oldestSeen ?? folder.gmail_backfill_oldest_received_at ?? null,
     })
