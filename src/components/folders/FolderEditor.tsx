@@ -10,6 +10,11 @@ import {
   listFolderHistory,
   suggestRecategorization,
   applyRecategorization,
+  listFolderSummaries,
+  createFolderSummary,
+  updateFolderSummary,
+  deleteFolderSummary,
+  runFolderSummaryNow,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Trash2, X, Sparkles, Link2, ArrowRight, History, Loader2, MoveRight } from "lucide-react";
+import { Plus, Trash2, X, Sparkles, Link2, ArrowRight, History, Loader2, MoveRight, Clock, Play, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 export type Folder = {
