@@ -377,7 +377,12 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const acc = await getOwnedAccount(context.userId, data.account_id);
+    await getOwnedAccount(context.userId, data.account_id);
+    const { data: accRow } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("email_address")
+      .eq("id", data.account_id)
+      .single();
     // Force renewal by passing null
     const watch = await ensureWatch(data.account_id, null);
     if (!watch) throw new Error("GMAIL_PUBSUB_TOPIC is not configured");
