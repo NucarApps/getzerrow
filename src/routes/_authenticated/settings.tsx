@@ -109,6 +109,8 @@ function SettingsPage() {
         </Card>
 
         <InboxOverrides />
+        <PubsubActivity />
+
       </div>
     </div>
   );
