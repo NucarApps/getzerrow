@@ -429,3 +429,182 @@ export const sendReply = createServerFn({ method: "POST" })
     );
     return { ok: true };
   });
+
+export const listFolderHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string; limit?: number }) =>
+    z.object({ folder_id: z.string().uuid(), limit: z.number().min(1).max(200).optional() }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { data: folder } = await supabaseAdmin
+      .from("folders").select("id, user_id").eq("id", data.folder_id).single();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
+    const { data: rows } = await supabaseAdmin
+      .from("emails")
+      .select("id, subject, from_addr, from_name, received_at, classified_by, ai_confidence, ai_summary, snippet")
+      .eq("user_id", context.userId)
+      .eq("folder_id", data.folder_id)
+      .order("received_at", { ascending: false })
+      .limit(data.limit ?? 100);
+    return { emails: rows ?? [] };
+  });
+
+export const suggestRecategorization = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email_id: string; to_folder_id: string }) =>
+    z.object({ email_id: z.string().uuid(), to_folder_id: z.string().uuid() }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { data: email } = await supabaseAdmin
+      .from("emails")
+      .select("id, user_id, folder_id, from_addr, from_name, subject, snippet, body_text")
+      .eq("id", data.email_id).single();
+    if (!email || email.user_id !== context.userId) throw new Error("Email not found");
+    if (!email.folder_id) throw new Error("Email has no source folder");
+    if (email.folder_id === data.to_folder_id) throw new Error("Source and target folders must differ");
+
+    const { data: folders } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, name, ai_rule, learned_profile")
+      .in("id", [email.folder_id, data.to_folder_id]);
+    const source = folders?.find((f) => f.id === email.folder_id);
+    const target = folders?.find((f) => f.id === data.to_folder_id);
+    if (!source || !target || source.user_id !== context.userId || target.user_id !== context.userId) {
+      throw new Error("Not authorized");
+    }
+
+    try {
+      const sug = await suggestRuleUpdates({
+        email: {
+          from_addr: email.from_addr || "",
+          from_name: email.from_name || "",
+          subject: email.subject || "",
+          snippet: email.snippet || "",
+          body_text: email.body_text || "",
+        },
+        source: { name: source.name, ai_rule: source.ai_rule, learned_profile: source.learned_profile },
+        target: { name: target.name, ai_rule: target.ai_rule, learned_profile: target.learned_profile },
+      });
+      return {
+        source: {
+          id: source.id, name: source.name,
+          current_rule: source.ai_rule, current_profile: source.learned_profile,
+          ...sug.source,
+        },
+        target: {
+          id: target.id, name: target.name,
+          current_rule: target.ai_rule, current_profile: target.learned_profile,
+          ...sug.target,
+        },
+        error: null as string | null,
+      };
+    } catch (e: any) {
+      console.error("suggestRecategorization AI failed", e);
+      return {
+        source: {
+          id: source.id, name: source.name,
+          current_rule: source.ai_rule, current_profile: source.learned_profile,
+          proposed_rule: source.ai_rule ?? "", proposed_profile: source.learned_profile ?? "",
+          why: "AI suggestion unavailable — you can still apply the move.",
+        },
+        target: {
+          id: target.id, name: target.name,
+          current_rule: target.ai_rule, current_profile: target.learned_profile,
+          proposed_rule: target.ai_rule ?? "", proposed_profile: target.learned_profile ?? "",
+          why: "AI suggestion unavailable — you can still apply the move.",
+        },
+        error: e?.message ?? "AI request failed",
+      };
+    }
+  });
+
+export const applyRecategorization = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    email_id: string; to_folder_id: string;
+    apply_source: boolean; apply_target: boolean;
+    source_rule?: string | null; source_profile?: string | null;
+    target_rule?: string | null; target_profile?: string | null;
+  }) =>
+    z.object({
+      email_id: z.string().uuid(),
+      to_folder_id: z.string().uuid(),
+      apply_source: z.boolean(),
+      apply_target: z.boolean(),
+      source_rule: z.string().max(2000).nullable().optional(),
+      source_profile: z.string().max(2000).nullable().optional(),
+      target_rule: z.string().max(2000).nullable().optional(),
+      target_profile: z.string().max(2000).nullable().optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { data: email } = await supabaseAdmin
+      .from("emails")
+      .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr, subject, snippet")
+      .eq("id", data.email_id).single();
+    if (!email || email.user_id !== context.userId) throw new Error("Email not found");
+    if (!email.folder_id) throw new Error("Email has no source folder");
+    const fromFolderId = email.folder_id;
+    if (fromFolderId === data.to_folder_id) throw new Error("Source and target folders must differ");
+
+    const { data: folders } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, name, gmail_label_id")
+      .in("id", [fromFolderId, data.to_folder_id]);
+    const from = folders?.find((f) => f.id === fromFolderId);
+    const to = folders?.find((f) => f.id === data.to_folder_id);
+    if (!from || !to || from.user_id !== context.userId || to.user_id !== context.userId) {
+      throw new Error("Not authorized");
+    }
+
+    // Move the email
+    await supabaseAdmin.from("emails")
+      .update({ folder_id: data.to_folder_id, classified_by: "manual_move", ai_confidence: 1 })
+      .eq("id", email.id);
+
+    // Best-effort Gmail label sync
+    if (from.gmail_label_id || to.gmail_label_id) {
+      try {
+        await modifyMessage(
+          email.gmail_account_id,
+          email.gmail_message_id,
+          to.gmail_label_id ? [to.gmail_label_id] : [],
+          from.gmail_label_id ? [from.gmail_label_id] : []
+        );
+      } catch (e) { console.error("label sync failed", e); }
+    }
+
+    // Move example from source → target so AI signal reflects the correction
+    await supabaseAdmin.from("folder_examples")
+      .delete().eq("folder_id", fromFolderId).eq("gmail_message_id", email.gmail_message_id);
+    await supabaseAdmin.from("folder_examples").insert({
+      folder_id: data.to_folder_id,
+      user_id: context.userId,
+      gmail_message_id: email.gmail_message_id,
+      gmail_account_id: email.gmail_account_id,
+      from_addr: email.from_addr,
+      subject: email.subject,
+      snippet: email.snippet,
+      source: "correction",
+    });
+
+    let source_updated = false;
+    let target_updated = false;
+    const now = new Date().toISOString();
+    if (data.apply_source) {
+      const patch: Record<string, any> = { last_learned_at: now };
+      if (data.source_rule !== undefined) patch.ai_rule = data.source_rule;
+      if (data.source_profile !== undefined) patch.learned_profile = data.source_profile;
+      await supabaseAdmin.from("folders").update(patch).eq("id", fromFolderId);
+      source_updated = true;
+    }
+    if (data.apply_target) {
+      const patch: Record<string, any> = { last_learned_at: now };
+      if (data.target_rule !== undefined) patch.ai_rule = data.target_rule;
+      if (data.target_profile !== undefined) patch.learned_profile = data.target_profile;
+      await supabaseAdmin.from("folders").update(patch).eq("id", data.to_folder_id);
+      target_updated = true;
+    }
+
+    return { moved: 1, source_updated, target_updated };
+  });
