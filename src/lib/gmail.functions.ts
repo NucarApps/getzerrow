@@ -1610,6 +1610,16 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     const host = getRequestHost();
     const webhookUrl = `https://${host}/api/public/gmail-webhook`;
 
+    // Stuck jobs: status='running' for > 2 minutes (worker died mid-processing).
+    const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: stuckJobs } = await supabaseAdmin
+      .from("message_jobs")
+      .select("id, gmail_message_id, gmail_account_id, attempt, locked_at, from_addr, subject")
+      .eq("status", "running")
+      .lt("locked_at", stuckCutoff)
+      .order("locked_at", { ascending: true })
+      .limit(25);
+
     return {
       events: rows ?? [],
       stats: {
@@ -1624,6 +1634,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
         lastWatchRenew,
         webhookUrl,
         pubsubTopic: process.env.GMAIL_PUBSUB_TOPIC ?? null,
+        stuckJobs: stuckJobs ?? [],
       },
     };
   });
