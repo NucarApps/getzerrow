@@ -32,7 +32,7 @@ function SettingsPage() {
 
   async function run(key: string, fn: () => Promise<any>, msg: string) {
     setBusy(key);
-    try { await fn(); toast.success(msg); qc.invalidateQueries({ queryKey: ["gmail-accounts"] }); qc.invalidateQueries({ queryKey: ["emails"] }); }
+    try { await fn(); if (msg) toast.success(msg); qc.invalidateQueries({ queryKey: ["gmail-accounts"] }); qc.invalidateQueries({ queryKey: ["emails"] }); }
     catch (e: any) { toast.error(e.message); }
     setBusy(null);
   }
