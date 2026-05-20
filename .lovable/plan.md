@@ -1,95 +1,49 @@
-# Bulletproof Gmail Processing
+## What's actually happening
 
-## What's actually broken
+The `pubsub_events` table genuinely has **0 rows ever**. The panel is technically correct — it's showing zero activity because Google has never delivered a push to `/api/public/gmail-webhook`. But it feels broken because:
 
-I checked the database for your account (`chris@nucar.com`):
-
-- **`pubsub_events` table has 0 rows ever.** Google is not delivering a single push to `/api/public/gmail-webhook`. Every email you've received has only arrived through the 2-minute fallback poll. That's why things feel slow / occasionally missed.
-- **Julie Caltabiano's email IS in your DB** — it was processed, classified to Factory, and archived 5/20 at 1:48 PM. The reason it looks "unprocessed" is that you moved it back into the Gmail Inbox afterwards, and we haven't re-synced that label change yet. Its stored `raw_labels` are `Label_347, CATEGORY_PERSONAL, Label_...` — no `INBOX`, no `UNREAD`.
-- **There is no per-message retry.** If `processGmailMessage` throws for any reason (Gmail 5xx, AI timeout, classifier error), the message is silently skipped and never retried — the history cursor still advances.
-- **Reconciliation only looks at the last 200 archived rows.** A move-back-to-inbox older than that is invisible until you click "Resync" manually.
+1. The app **is** doing real work every 1-2 minutes (polling, syncing, processing) — none of that is being recorded into `pubsub_events`, so the panel looks dead.
+2. The "Last event: never" line, empty table, and silent state make it look like the panel is the bug, when really the GCP push subscription is the bug.
 
 ## Plan
 
-### 1. Durable per-message processing queue
+Make the panel reflect all sync-related activity (not just push) so the user can see the system is alive, while keeping push vs. poll clearly distinguished.
 
-Today: webhook/poll → `syncSinceHistory` → inline `processGmailMessage` for each new message. One failure = one lost message.
+### 1. Log poll runs to `pubsub_events`
 
-Change to a queue:
+In `src/routes/api/public/gmail-poll.ts`, after the per-account sync loop, insert one row per poll run:
+- `event_type: "poll"`
+- `email_address`: account email
+- `accounts_matched`: number of accounts polled
+- `synced_count`: emails enqueued/synced this run
+- `error`: any error
 
-```text
-history event ──► enqueue message_jobs(message_id, account_id, attempt=0)
-                                 │
-                                 ▼
-                  process-message-jobs cron (every 30s)
-                  ├─ claim batch (FOR UPDATE SKIP LOCKED)
-                  ├─ run full pipeline (fetch → parse → classify → store)
-                  ├─ success → delete row
-                  └─ failure → attempt++, next_run_at = now()+backoff
-                              attempt ≥ 5 → status='dlq', error stored
-```
+Also log a `"watch_rearm_auto"` event when self-heal re-arms a watch.
 
-New table `message_jobs(id, gmail_account_id, gmail_message_id, attempt, next_run_at, status, last_error, created_at)` with a unique index on `(gmail_account_id, gmail_message_id)` so we never double-queue.
+### 2. Show poll + push distinctly in the panel
 
-`syncSinceHistory` becomes a thin "enqueue" function. The webhook returns 200 immediately after enqueuing — no more long-running work inside the Pub/Sub push handler (which is what makes Pub/Sub retry storms and silently fail).
+In `src/components/settings/PubsubActivity.tsx`:
+- Rename header to **"Gmail sync activity"** with subtitle clarifying push vs poll.
+- Add a 6th stat tile: **Poll runs (24h)**.
+- Add `"poll"` to the filter chips (All / Push / Poll / Errors / Watch renewals).
+- Color-code the `Type` badge: push (default), poll (secondary), watch_renew/watch_rearm_auto (outline), error (destructive).
+- Update the red banner: only trigger when push24 === 0 **AND** poll24 > 0 (proves polling works, push is the broken half).
+- Add a green "polling is working" banner when poll24 > 0 (so the user knows the fallback is keeping mail flowing).
 
-### 2. Faster, complete inbox reconciliation
+### 3. Surface the real bug clearly
 
-- Bump the archived-rows scan from 200 → 1000 and run it every cron tick.
-- Add a "full reconcile" button in Settings that walks all rows for the account, in pages of 500, and queues any label drift into `message_jobs`.
-- Keep the per-message "Resync from Gmail" button on `EmailDetail` for one-offs.
+When `push24 === 0 && poll24 === 0` for >30 min, show an amber banner: "Neither push nor poll has fired recently — the cron job may be paused." (Different root cause from the existing "push silent" banner.)
 
-### 3. Pub/Sub health & self-healing
+### 4. Don't touch
 
-The push subscription is broken right now. We need to know that without me running SQL.
+- The actual GCP Pub/Sub subscription config (out of scope, requires Google Cloud Console).
+- `message_jobs` queue, classifier, sync logic.
+- Other settings panels.
 
-- Add a `pubsub_health` view: last push received, last watch renew, accounts with active `watch_expiration`, push silence > 1h.
-- Settings → Pub/Sub Activity card surfaces a red banner when silence > 1h AND watch is active, with two buttons:
-  - **Re-arm watch** (calls existing `renewGmailWatch`)
-  - **Send test push to webhook** (POSTs an empty Pub/Sub envelope and confirms it writes a `push_empty` row — isolates GCP-side vs. our-side)
-- Add a server-side guard: if `gmail-poll` runs and notices `pubsub_events` has been silent > 6h while watch is active, it auto-calls `ensureWatch` to re-arm.
+### Files
 
-### 4. Per-message visibility in Settings
+- `src/routes/api/public/gmail-poll.ts` — add `pubsub_events` insert per run + per re-arm.
+- `src/components/settings/PubsubActivity.tsx` — new stat, new filter, new banners, color-coded badges.
+- `src/lib/gmail.functions.ts` — extend `listPubsubEvents` stats to compute `poll24`.
 
-New "Processing jobs" panel below Pub/Sub Activity:
-
-- Live count of `message_jobs` by status (pending, retrying, dlq)
-- Table of DLQ rows with: from, subject, attempt count, last error, "Retry now" button
-- Filter by account
-
-This is the missing piece — today there's nowhere to see "we tried to process X and it failed because Y."
-
-### 5. Idempotency hardening
-
-- `processGmailMessage` already upserts by `(gmail_account_id, gmail_message_id)` — confirm and add a unique constraint if missing so retries are always safe.
-- Webhook handler stays at "ack within 1s" so Pub/Sub never retries us (we own retries via `message_jobs`).
-
-## Technical details
-
-**Files touched:**
-
-- New migration: `message_jobs` table + index, optional `emails` unique constraint
-- `src/lib/sync.server.ts` — `syncSinceHistory` enqueues into `message_jobs` instead of processing inline; add `runMessageJobs(limit)` worker function; expand `reconcileLocalInbox` archived scan to 1000
-- `src/routes/api/public/gmail-process-jobs.ts` — new cron endpoint, called every 30s
-- `src/routes/api/public/gmail-webhook.ts` — return 200 after enqueue; never run pipeline inline
-- `src/routes/api/public/gmail-poll.ts` — add self-heal: re-arm watch if push silent > 6h
-- `src/lib/gmail.functions.ts` — add `listMessageJobs`, `retryMessageJob`, `runFullReconcile`, `pingWebhook` server fns
-- `src/components/settings/PubsubActivity.tsx` — silence banner + test-push button
-- `src/components/settings/ProcessingJobs.tsx` — new panel for DLQ visibility
-- `src/routes/_authenticated/settings.tsx` — mount the new panel
-
-**Cron schedule (Supabase pg_cron):**
-
-- `gmail-process-jobs` every 30s (new — the actual worker)
-- `gmail-poll` every 2 min (unchanged — fills history gaps)
-- `gmail-renew-watches` daily (unchanged)
-
-**No changes to:** classification logic, folder rules, saved instructions, AI prompts, or any UI outside Settings + EmailDetail.
-
-## Out of scope
-
-- Fixing the GCP Pub/Sub subscription itself (that's a one-time console action — I'll surface it as a clearly-marked banner with instructions, but I can't reach into your Google Cloud project)
-- Rewriting the classifier
-- Schema changes to `emails` beyond the unique constraint
-
-After this lands: a message that arrives via push OR poll is enqueued in `message_jobs`, processed within 30s, retried with backoff on any failure, and visible in Settings with a "Retry" button if it ever ends up in DLQ. No message can silently disappear.
+No DB migration needed (`pubsub_events.event_type` is free-form text).

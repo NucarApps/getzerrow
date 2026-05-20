@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { RefreshCw, ChevronRight, ChevronDown, AlertTriangle, Activity } from "lucide-react";
 import { toast } from "sonner";
 
-type Filter = "all" | "push" | "errors" | "watch_renew";
+type Filter = "all" | "push" | "poll" | "errors" | "watch_renew";
 
 function relTime(iso: string | null): string {
   if (!iso) return "—";
@@ -38,7 +38,11 @@ export function PubsubActivity() {
     queryFn: () =>
       fetchEvents({
         data: {
-          event_type: filter === "push" ? "push" : filter === "watch_renew" ? "watch_renew" : undefined,
+          event_type:
+            filter === "push" ? "push" :
+            filter === "poll" ? "poll" :
+            filter === "watch_renew" ? "watch_renew" :
+            undefined,
           only_errors: filter === "errors" ? true : undefined,
           limit: 100,
         },
@@ -58,9 +62,9 @@ export function PubsubActivity() {
     <Card className="p-4 md:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="font-display text-2xl">Gmail Pub/Sub activity</h2>
+          <h2 className="font-display text-2xl">Gmail sync activity</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Raw push notifications from Gmail. Use this to verify whether new emails are arriving via push or only via the 2-minute fallback poll.
+            Live feed of every push notification from Gmail and every fallback poll run. Use this to see whether new mail is arriving via push, via the 2-minute poll, or not at all.
           </p>
         </div>
         <Button
@@ -75,14 +79,14 @@ export function PubsubActivity() {
         </Button>
       </div>
 
-      {stats && stats.push24 === 0 && (accountsQ.data?.accounts ?? []).some((a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()) && (
+      {stats && stats.push24 === 0 && stats.poll24 > 0 && (accountsQ.data?.accounts ?? []).some((a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()) && (
         <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
           <div className="flex gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             <div className="text-xs">
-              <div className="font-medium text-destructive">Gmail is not pushing notifications to this app.</div>
+              <div className="font-medium text-destructive">Gmail push notifications are not arriving.</div>
               <div className="mt-1 text-muted-foreground">
-                Zero push events in the last 24h, but the Gmail watch is still active. Emails are still arriving via the 2-minute fallback poll, but live updates are off. Re-arm the watch to refresh Gmail's push subscription. If that doesn't help, the GCP Pub/Sub push subscription is missing or pointed at the wrong URL.
+                Zero push events in the last 24h, but the fallback poll is running ({stats.poll24} runs) so mail is still flowing. The Gmail watch is still active — re-arm it to refresh Google's push subscription. If that doesn't help, the GCP Pub/Sub subscription is missing or pointed at the wrong URL.
               </div>
             </div>
           </div>
@@ -113,9 +117,34 @@ export function PubsubActivity() {
         </div>
       )}
 
+      {stats && stats.push24 === 0 && stats.poll24 === 0 && (
+        <div className="mt-4 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="text-xs">
+            <div className="font-medium text-amber-700 dark:text-amber-400">No sync activity in the last 24h.</div>
+            <div className="mt-1 text-muted-foreground">
+              Neither push nor poll has fired. The cron job that calls <span className="font-mono">/api/public/gmail-poll</span> may be paused, or the worker route is failing. Check the cron schedule and recent deployment logs.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {stats && stats.poll24 > 0 && (
+        <div className="mt-4 flex gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+          <Activity className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <div className="text-xs">
+            <div className="font-medium text-emerald-700 dark:text-emerald-400">Fallback poll is healthy.</div>
+            <div className="mt-1 text-muted-foreground">
+              {stats.poll24} poll runs in the last 24h, {stats.synced24} messages synced. Last poll {stats.lastPollAt ? relTime(stats.lastPollAt) : "—"}.
+            </div>
+          </div>
+        </div>
+      )}
+
       {stats && (
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
           <Stat label="Push (24h)" value={stats.push24} />
+          <Stat label="Poll (24h)" value={stats.poll24} />
           <Stat label="Watch renew (24h)" value={stats.renew24} />
           <Stat label="Accounts matched" value={stats.accounts24} />
           <Stat label="Emails synced" value={stats.synced24} />
@@ -125,17 +154,19 @@ export function PubsubActivity() {
 
       <div className="mt-3 text-xs text-muted-foreground">
         Last event: {stats?.lastReceivedAt ? `${relTime(stats.lastReceivedAt)} (${new Date(stats.lastReceivedAt).toLocaleString()})` : "never"}
+        {stats?.lastPushAt && <> · Last push: {relTime(stats.lastPushAt)}</>}
+        {stats?.lastPollAt && <> · Last poll: {relTime(stats.lastPollAt)}</>}
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {(["all", "push", "errors", "watch_renew"] as Filter[]).map((f) => (
+        {(["all", "push", "poll", "errors", "watch_renew"] as Filter[]).map((f) => (
           <Button
             key={f}
             size="sm"
             variant={filter === f ? "default" : "outline"}
             onClick={() => setFilter(f)}
           >
-            {f === "all" ? "All" : f === "push" ? "Push only" : f === "errors" ? "Errors only" : "Watch renewals"}
+            {f === "all" ? "All" : f === "push" ? "Push only" : f === "poll" ? "Poll only" : f === "errors" ? "Errors only" : "Watch renewals"}
           </Button>
         ))}
       </div>
@@ -174,7 +205,15 @@ export function PubsubActivity() {
                       {relTime(e.received_at)}
                     </td>
                     <td className="p-2">
-                      <Badge variant={e.event_type === "push" ? "default" : "secondary"} className="text-[10px]">
+                      <Badge
+                        variant={
+                          e.error ? "destructive" :
+                          e.event_type === "push" ? "default" :
+                          e.event_type === "poll" ? "secondary" :
+                          "outline"
+                        }
+                        className="text-[10px]"
+                      >
                         {e.event_type}
                       </Badge>
                     </td>
