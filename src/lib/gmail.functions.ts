@@ -1521,7 +1521,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
     z.object({
-      event_type: z.enum(["push", "poll", "watch_renew", "watch_rearm_auto"]).optional(),
+      event_type: z.enum(["push", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error"]).optional(),
       only_errors: z.boolean().optional(),
       limit: z.number().min(1).max(500).optional(),
     }).parse(input ?? {})
@@ -1545,7 +1545,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .gte("received_at", since)
       .limit(5000);
 
-    let push24 = 0, poll24 = 0, renew24 = 0, accounts24 = 0, synced24 = 0, errors24 = 0;
+    let push24 = 0, poll24 = 0, renew24 = 0, accounts24 = 0, synced24 = 0, errors24 = 0, gmailErrors24 = 0;
     let lastPollAt: string | null = null;
     let lastPushAt: string | null = null;
     for (const r of agg ?? []) {
@@ -1557,6 +1557,8 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
         if (!lastPollAt || r.received_at > lastPollAt) lastPollAt = r.received_at;
       } else if (r.event_type === "watch_renew" || r.event_type === "watch_rearm_auto") {
         renew24++;
+      } else if (r.event_type === "gmail_api_error") {
+        gmailErrors24++;
       }
       accounts24 += r.accounts_matched ?? 0;
       synced24 += r.synced_count ?? 0;
@@ -1566,7 +1568,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     return {
       events: rows ?? [],
       stats: {
-        push24, poll24, renew24, accounts24, synced24, errors24,
+        push24, poll24, renew24, accounts24, synced24, errors24, gmailErrors24,
         lastReceivedAt: rows?.[0]?.received_at ?? null,
         lastPollAt,
         lastPushAt,

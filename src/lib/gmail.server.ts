@@ -2,23 +2,54 @@
 import { getAccessToken } from "./google-oauth.server";
 
 const BASE = "https://gmail.googleapis.com/gmail/v1";
+const REQUEST_TIMEOUT_MS = 20_000;
+
+export class GmailApiError extends Error {
+  status: number;
+  retryable: boolean;
+  constructor(message: string, status: number, retryable: boolean) {
+    super(message);
+    this.name = "GmailApiError";
+    this.status = status;
+    this.retryable = retryable;
+  }
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
 
 async function gmailFetch<T = any>(accountId: string, path: string, init?: RequestInit): Promise<T> {
   const token = await getAccessToken(accountId);
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+    });
+  } catch (e: any) {
+    // Network error or AbortSignal timeout — treat as retryable.
+    const msg = e?.name === "TimeoutError" || e?.name === "AbortError"
+      ? `Gmail API timeout on ${path} (>${REQUEST_TIMEOUT_MS}ms)`
+      : `Gmail API network error on ${path}: ${e?.message ?? String(e)}`;
+    throw new GmailApiError(msg, 0, true);
+  }
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Gmail API ${res.status} on ${path}: ${text.slice(0, 500)}`);
+    throw new GmailApiError(
+      `Gmail API ${res.status} on ${path}: ${text.slice(0, 500)}`,
+      res.status,
+      isRetryableStatus(res.status),
+    );
   }
   return text ? JSON.parse(text) : ({} as T);
 }
+
 
 export async function listLabels(accountId: string) {
   return gmailFetch<{ labels: Array<{ id: string; name: string; type: string }> }>(
