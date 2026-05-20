@@ -721,6 +721,9 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           )}
         </div>
         <div className="flex gap-1">
+          <Button size="sm" variant="default" onClick={() => setReplyOpen(true)} className="h-8">
+            <Reply className="mr-1.5 h-3.5 w-3.5" />Reply
+          </Button>
           <Button
             size="sm"
             variant="ghost"
