@@ -114,9 +114,8 @@ export function PubsubActivity() {
             {events.map((e) => {
               const isOpen = expanded === e.id;
               return (
-                <>
+                <Fragment key={e.id}>
                   <tr
-                    key={e.id}
                     className="cursor-pointer border-t hover:bg-muted/30"
                     onClick={() => setExpanded(isOpen ? null : e.id)}
                   >
@@ -136,7 +135,7 @@ export function PubsubActivity() {
                     <td className="p-2 max-w-[200px] truncate text-destructive">{e.error ?? ""}</td>
                   </tr>
                   {isOpen && (
-                    <tr key={e.id + "-raw"} className="border-t bg-muted/20">
+                    <tr className="border-t bg-muted/20">
                       <td></td>
                       <td colSpan={7} className="p-2">
                         <pre className="overflow-x-auto whitespace-pre-wrap break-all text-[11px]">
@@ -145,7 +144,7 @@ export function PubsubActivity() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
           </tbody>
