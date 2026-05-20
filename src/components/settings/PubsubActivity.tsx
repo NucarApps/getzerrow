@@ -386,6 +386,24 @@ export function PubsubActivity() {
           <Activity className="h-4 w-4" />
           Push subscription diagnostics
         </div>
+        {lastRenew && (
+          <div className="mt-3 rounded border border-blue-500/30 bg-blue-500/5 p-2 text-xs">
+            <div className="font-medium text-blue-700 dark:text-blue-400">
+              Watch re-armed {relTime(lastRenew.received_at)}
+              {lastPushMs > lastRenewMs && lastPush?.event_type === "push" && (lastPush.accounts_matched ?? 0) > 0 && (
+                <span className="ml-2 text-emerald-700 dark:text-emerald-400">· verified by a fresh matched push ✓</span>
+              )}
+            </div>
+            {lastRenew.details && (
+              <div className="mt-0.5 text-muted-foreground break-all">{lastRenew.details}</div>
+            )}
+            {!(lastPushMs > lastRenewMs && lastPush?.event_type === "push" && (lastPush.accounts_matched ?? 0) > 0) && (
+              <div className="mt-1 text-muted-foreground">
+                <strong>How to verify:</strong> send yourself an email from another account, then watch this panel for ~30s. A new <span className="font-mono">push</span> row with <span className="font-mono">accounts_matched ≥ 1</span> means real-time push is working. If only <span className="font-mono">poll</span> rows show up, the GCP subscription is the broken piece.
+              </div>
+            )}
+          </div>
+        )}
         <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
           {(accountsQ.data?.accounts ?? []).map((a) => (
             <div key={a.id} className="rounded border bg-card p-2">
