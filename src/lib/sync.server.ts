@@ -886,11 +886,16 @@ export async function loadOlderFromLabel(
     }
   }
 
+  // If we used a stale pageToken and got nothing new, clear it so the next
+  // click falls through to the date-anchored query path.
+  const clearStaleToken =
+    !!pageToken && ingested === 0 && claimed === 0;
+
   const hasMore = !!list.nextPageToken;
   await supabaseAdmin
     .from("folders")
     .update({
-      gmail_backfill_page_token: list.nextPageToken ?? null,
+      gmail_backfill_page_token: clearStaleToken ? null : (list.nextPageToken ?? null),
       gmail_backfill_oldest_received_at:
         oldestSeen ?? folder.gmail_backfill_oldest_received_at ?? null,
     })
