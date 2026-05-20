@@ -138,7 +138,8 @@ export async function listHistory(accountId: string, startHistoryId: string) {
 export async function watchInbox(accountId: string, topicName: string) {
   return gmailFetch<{ historyId: string; expiration: string }>(accountId, "/users/me/watch", {
     method: "POST",
-    body: JSON.stringify({ topicName, labelIds: ["INBOX"], labelFilterAction: "include" }),
+    // Watch the full mailbox so filter-routed mail that skips INBOX still triggers sync.
+    body: JSON.stringify({ topicName }),
   });
 }
 
