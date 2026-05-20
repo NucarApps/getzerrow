@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 import { InboxOverrides } from "@/components/settings/InboxOverrides";
 import { PubsubActivity } from "@/components/settings/PubsubActivity";
+import { ProcessingJobs } from "@/components/settings/ProcessingJobs";
 
 export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
 
