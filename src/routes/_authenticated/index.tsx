@@ -436,44 +436,93 @@ function opLabel(op: string) {
   return m[op] ?? op;
 }
 
+// Mirror of applyFilter in src/lib/sync.server.ts — keep in sync.
+function applyFilterClient(
+  email: { from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text: string | null; has_attachment: boolean },
+  f: { field: string; op: string; value: string },
+): boolean {
+  const v = (f.value || "").toLowerCase();
+  const fieldVal = (() => {
+    switch (f.field) {
+      case "from": return `${email.from_addr ?? ""} ${email.from_name ?? ""}`.toLowerCase();
+      case "to": return (email.to_addrs ?? "").toLowerCase();
+      case "subject": return (email.subject ?? "").toLowerCase();
+      case "body": return (email.body_text ?? "").toLowerCase();
+      case "domain": return ((email.from_addr ?? "").split("@")[1] ?? "").toLowerCase();
+      case "has_attachment": return email.has_attachment ? "true" : "false";
+      default: return "";
+    }
+  })();
+  switch (f.op) {
+    case "contains": return fieldVal.includes(v);
+    case "equals": return fieldVal === v;
+    case "not_contains": return !fieldVal.includes(v);
+    case "not_equals": return fieldVal !== v;
+    case "regex":
+      try { return new RegExp(f.value, "i").test(fieldVal); } catch { return false; }
+    default: return false;
+  }
+}
+
+const EXCLUDE_OPS_CLIENT = new Set(["not_contains", "not_equals"]);
+
 function TriggeredBy({
-  classifiedBy, reason, folder, filters,
+  classifiedBy, reason, folder, filters, email,
 }: {
   classifiedBy: string | null;
   reason: string | null;
   folder: { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null;
-  filters: Array<{ field: string; op: string; value: string }>;
+  filters: Array<{ id: string; field: string; op: string; value: string }>;
+  email: Email;
 }) {
   const by = classifiedBy ?? "none";
 
+  const { matched, rulesChanged } = useMemo(() => {
+    if (by !== "filter" && by !== "domain_rule") return { matched: [], rulesChanged: false };
+    const persisted = email.matched_filter_ids ?? [];
+    if (persisted.length > 0) {
+      const byId = new Map(filters.map((f) => [f.id, f]));
+      const hits = persisted.map((id) => byId.get(id)).filter(Boolean) as typeof filters;
+      if (hits.length > 0) return { matched: hits, rulesChanged: false };
+      // Persisted ids exist but rules have since been removed/edited.
+      return { matched: [], rulesChanged: true };
+    }
+    // Legacy email: recompute the matching includes client-side.
+    const includes = filters.filter((f) => !EXCLUDE_OPS_CLIENT.has(f.op));
+    return { matched: includes.filter((f) => applyFilterClient(email, f)), rulesChanged: false };
+  }, [by, email, filters]);
+
   if (by === "filter" || by === "domain_rule") {
+    const showAllFallback = matched.length === 0 && filters.length > 0;
+    const list = matched.length > 0 ? matched : filters;
     return (
       <div className="space-y-2">
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">Matching rule</div>
-        {reason ? (
-          <p className="text-foreground/90">{reason}</p>
-        ) : (
-          <p className="italic text-muted-foreground">Specific match not recorded. This email matches one of the folder's rules below.</p>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">
+          {matched.length > 1 ? "Rules that matched" : "Rule that matched"}
+        </div>
+        {reason && <p className="text-foreground/90">{reason}</p>}
+        {list.length > 0 && (
+          <ul className="space-y-1">
+            {list.map((f, i) => (
+              <li key={i} className="rounded border border-border bg-background/40 px-2 py-1 font-mono text-xs">
+                <span className="text-muted-foreground">{f.field}</span>{" "}
+                <span className="text-primary">{opLabel(f.op)}</span>{" "}
+                <span className="text-foreground">"{f.value}"</span>
+              </li>
+            ))}
+          </ul>
         )}
-        {filters.length > 0 && (
-          <div className="space-y-1 border-t border-border/60 pt-2">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">
-              All rules for {folder?.name ?? "this folder"}
-            </div>
-            <ul className="space-y-1">
-              {filters.map((f, i) => (
-                <li key={i} className="rounded border border-border bg-background/40 px-2 py-1 font-mono text-xs">
-                  <span className="text-muted-foreground">{f.field}</span>{" "}
-                  <span className="text-primary">{opLabel(f.op)}</span>{" "}
-                  <span className="text-foreground">"{f.value}"</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {showAllFallback && (
+          <p className="text-xs italic text-muted-foreground">
+            {rulesChanged
+              ? "The rule that originally matched this email has since been removed or edited."
+              : "Couldn't pinpoint the exact rule — showing all rules for this folder."}
+          </p>
         )}
       </div>
     );
   }
+
 
   if (by === "ai") {
     return (
