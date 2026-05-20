@@ -1588,7 +1588,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .not("payload", "is", null)
       .order("received_at", { ascending: false })
       .limit(1);
-    let lastPush = instrumentedPushRows?.[0] ?? null;
+    let lastPush: any = instrumentedPushRows?.[0] ?? null;
     if (!lastPush) {
       const { data: anyPushRows } = await supabaseAdmin
         .from("pubsub_events")
