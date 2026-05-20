@@ -218,7 +218,20 @@ function InboxPage() {
   }
   const canGoNext = !isSearching && (hasMoreLocal || canPullFromGmail);
 
-  const selected = filtered.find((e) => e.id === selectedId) ?? null;
+  const selectedListItem = filtered.find((e) => e.id === selectedId) ?? null;
+
+  // When searching, the list rows don't include body_text/body_html. Fetch the
+  // full email on demand when one is selected so the detail pane can render it.
+  const selectedFullQ = useQuery<Email | null>({
+    queryKey: ["email-full", selectedId],
+    enabled: !!selectedId && isSearching,
+    queryFn: async () => {
+      if (!selectedId) return null;
+      const { data } = await supabase.from("emails").select("*").eq("id", selectedId).maybeSingle();
+      return (data ?? null) as Email | null;
+    },
+  });
+  const selected = isSearching && selectedFullQ.data ? selectedFullQ.data : selectedListItem;
 
   const syncMut = useMutation({
     mutationFn: () => {
