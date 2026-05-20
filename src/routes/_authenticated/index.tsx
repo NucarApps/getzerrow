@@ -451,6 +451,27 @@ function InboxPage() {
             );
           })}
         </div>
+        {!isSearching && (
+          <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={goPrev} disabled={page === 1}>
+              <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Prev
+            </Button>
+            <span>
+              Page {page}
+              {pullOlderMut.isPending ? " · pulling from Gmail…" : ""}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={goNext}
+              disabled={!canGoNext || pullOlderMut.isPending}
+              title={!canGoNext ? "No more emails in this view" : !hasMoreLocal ? "Pull next 50 from Gmail" : ""}
+            >
+              Next <ChevronLeft className="ml-1 h-3.5 w-3.5 rotate-180" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Reading pane */}
