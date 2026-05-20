@@ -405,9 +405,9 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 function ClassifiedChip({ by }: { by: string | null }) {
   const map: Record<string, { label: string; Icon: typeof Bot; cls: string }> = {
     ai: { label: "AI", Icon: Bot, cls: "text-primary" },
-    filter: { label: "Filter", Icon: FilterIcon, cls: "text-foreground" },
+    filter: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
     gmail_label: { label: "Gmail label", Icon: Tag, cls: "text-foreground" },
-    domain_rule: { label: "Domain rule", Icon: FilterIcon, cls: "text-foreground" },
+    domain_rule: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
     manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
     none: { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" },
   };
