@@ -22,11 +22,15 @@ export const Route = createFileRoute("/")({
 
 const BG = "#0c0c14";
 const BG_RAISED = "#15151f";
-const BG_ELEVATED = "#1c1c28";
 const FG = "#f4f3ee";
 const FG_MUTED = "#9a9aa8";
-const BORDER = "#26262f";
 const GOLD = "#e0b54a";
+
+// Map legacy light-theme names to dark tokens to flip the palette.
+const PAPER = BG;
+const PAPER_DEEP = BG_RAISED;
+const INK = FG;
+const INK_SOFT = FG_MUTED;
 
 const sora = { fontFamily: "'Sora', ui-sans-serif, system-ui, sans-serif" };
 const manrope = { fontFamily: "'Manrope', ui-sans-serif, system-ui, sans-serif" };
