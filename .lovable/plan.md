@@ -1,70 +1,61 @@
-# Why your new email isn't in Pub/Sub activity
+# Fix the misleading "push didn't match" banner + verify the re-arm worked
 
-I checked the database and here's what actually happened with your "Test 2" email:
+## What's actually going on
 
-- **Email arrived in Gmail:** 18:13:48
-- **It DID get synced into the app at 18:16:00**, but via the **2-minute poll fallback** — not via a Google push.
-- The last (and only) push event we've ever received was at **18:12:05**, and even that one had `email_address = NULL` and `accounts_matched = 0` — meaning Google's Pub/Sub message did not contain a usable payload, so we couldn't match it to your account.
+I queried `pubsub_events`. The full picture:
 
-So the user-visible symptom ("it's not in pub/sub activity") is real and correct: **Google is not pushing notifications for new messages on this account.** Polling is the only thing keeping the inbox up to date right now, which is why you see a ~2 minute delay.
+| time | event | notes |
+|------|-------|-------|
+| 18:23:19 | `watch_renew` | Your re-arm worked. Bound to `projects/projectinboxzero-495314/topics/gmail-push`, expires 5/27. |
+| 18:24, 18:22, 18:20, 18:18 … | `poll` | Polling keeps catching up every 2 min. |
+| **18:12:05** | `push` | **This is the row the banner is yelling about.** It happened ~12 min *before* the re-arm, and predates the migration so it has no `payload` / `message_id` columns to inspect. |
+| 18:12:05 | `push_empty` | Same envelope as above — body had no `message.data`. |
 
-## Root-cause hypotheses (in order of likelihood)
-
-1. **Pub/Sub topic / subscription mis-wired.** The Gmail watch we re-arm points at the topic in `GMAIL_PUBSUB_TOPIC`, but the push subscription on that topic may not point at `https://getzerrow.com/api/public/gmail-webhook` (or the dev URL). Symptom matches exactly: watch is "alive" (expires 5/27) but pushes never reach us.
-2. **Watch is registered against the wrong topic / different Google project** than the one whose subscription targets our webhook. Same symptom.
-3. **Subscription is paused or has an ack-deadline / dead-letter problem** in GCP, so Google stops re-delivering after the one bad push at 18:12.
-4. **Webhook is rejecting the body** — ruled out, our handler always returns 200 and we have a `push_empty` row proving Google reached us once.
+So the banner is reacting to a stale push from before you re-armed. It does NOT mean the re-arm failed. We just don't know yet, because **Gmail only emits a push when new mail actually changes the inbox** — the watch alone doesn't trigger one.
 
 ## Plan
 
-### 1. Make push diagnosable from the app (no GCP console needed)
+### 1. Make the "push didn't match" banner age-aware
 
-- Extend `pubsub_events` logging in `src/routes/api/public/gmail-webhook.ts` to also store:
-  - raw `message.messageId` and `message.publishTime` from the Pub/Sub envelope
-  - the decoded payload as JSON (so we can see when `emailAddress` is missing)
-  - the `subscription` field GCP includes on every push
-- In `src/components/settings/PubsubActivity.tsx`, add a **"Last push details"** expandable row showing those fields for the most recent `push` / `push_empty` event. This immediately tells you whether the push that arrived was malformed vs not arriving at all.
+In `src/components/settings/PubsubActivity.tsx`, only show the red "Push arrived but didn't match" banner when **`lastPush.received_at` is within the last 10 minutes AND newer than the most recent `watch_renew` event**. Otherwise the diagnostic is stale and actively misleading.
 
-### 2. Surface the right diagnosis banner
+Same for the "Last push" expandable card — show an `(stale, before last re-arm)` chip so you immediately know it's not the current picture.
 
-Right now the panel shows generic banners. Replace with one of:
-- **Red — "Google is not pushing for your account"**: shown when `last push > 10 min ago` AND polling has synced ≥1 message in that window. Includes a one-click **"Re-arm watch"** button (already wired) and a copy-to-clipboard of the **exact webhook URL** the GCP push subscription should target.
-- **Amber — "Push received but payload didn't match your account"**: shown when most recent push has `accounts_matched = 0`. Tells the user the watch was probably created against a different Google project / topic than the subscription forwarding to us.
-- **Green — "Push is healthy"**: when a `push` event with `accounts_matched ≥ 1` arrived in the last 10 minutes.
+### 2. Surface re-arm freshness
 
-### 3. Re-arm with stricter verification
+Add a small status line under the diagnostics header:
+- "Watch re-armed 1m ago against `projects/projectinboxzero-495314/topics/gmail-push`. Send yourself an email to verify push delivery."
+- Computed from the most recent `watch_renew` row's `details` + `received_at`.
 
-In `renewGmailWatch` (server fn), after calling `users.watch`:
-- Log the `topicName` and `historyId` that Google returned into a new `gmail_watch_log` table (or just into `pubsub_events` as `event_type = 'watch_rearm'` with the topic embedded in `error`/a new `details` column).
-- Surface that topic name in the activity panel so it's obvious whether watch and subscription are on the same topic.
+### 3. Add a "Verify push end-to-end" affordance
 
-### 4. (Optional, do not touch yet) GCP-side checklist for the user
+Right next to the re-arm button, add a small **"How to verify"** helper that just renders 2 lines:
+1. Send yourself an email from another account.
+2. Watch this panel for a new `push` row within ~30s. If only `poll` rows show up, the GCP subscription is the broken piece.
 
-Add a small collapsible **"Pub/Sub setup checklist"** in the panel listing:
-- Topic name must equal `GMAIL_PUBSUB_TOPIC` (we'll display the current value)
-- A push subscription on that topic must POST to the webhook URL we display
-- `gmail-api-push@system.gserviceaccount.com` must have `roles/pubsub.publisher` on the topic
-- Subscription must not be paused and ack deadline ≥ 10s
+(No code that actually sends mail — we can't, it'd send from your own connected account.)
 
-No code is changed for #4 beyond rendering static text — it just gives you a one-screen verification.
+### 4. Extend the `lastPush` query to skip pre-instrumentation rows
+
+`listPubsubEvents` in `src/lib/gmail.functions.ts`: when picking `lastPush`, prefer the most recent push that has `payload IS NOT NULL` (i.e. logged by the new webhook). Fall back to the truly latest row only if no instrumented push exists yet. That way the "Last push details" block stops showing the 18:12 ghost.
+
+### 5. Also fetch the latest `watch_renew` and expose it
+
+Extend `listPubsubEvents`'s `diagnostics` return with `lastWatchRenew: { received_at, details }` so the UI doesn't need a second round trip to show #2.
 
 ## Files to touch
 
-- `src/routes/api/public/gmail-webhook.ts` — richer logging
-- `src/lib/gmail.functions.ts` — extend `listPubsubEvents` return shape, expose `lastPush`, `lastPushPayload`, `webhookUrl`, `pubsubTopic`
-- `src/components/settings/PubsubActivity.tsx` — new banners, "Last push details" row, checklist
-- `supabase/migrations/*.sql` — add `payload jsonb`, `message_id text`, `publish_time timestamptz`, `subscription text` columns to `pubsub_events`
+- `src/lib/gmail.functions.ts` — `listPubsubEvents`: pick `lastPush` preferring instrumented rows; add `lastWatchRenew` to `diagnostics`.
+- `src/components/settings/PubsubActivity.tsx` — age-gate the "didn't match" banner; "stale" chip on Last push card; re-arm freshness line; "How to verify" helper.
 
 ## Out of scope
 
-- Anything inside Google Cloud Console — we'll give you the values to check, but won't (and can't) edit the subscription.
-- Changing how polling works. Polling is already covering for push and successfully synced your "Test 2".
-- Folder / classifier / job worker changes.
+- No backend / webhook / sync changes. The webhook instrumentation from the last turn is already correct; we just need to interpret the data more carefully in the UI.
+- Anything inside Google Cloud Console.
+- Polling, classifier, job worker.
 
-## What you'll see after this lands
+## What you'll see after this
 
-Within 1 next push (or the next time you click "Send test push"):
-- A red banner saying *"Google delivered a push but `emailAddress` was missing — your watch is probably on a different topic than the subscription forwarding to us. Topic the watch returned: `projects/.../topics/X`. Webhook URL the subscription should target: `https://getzerrow.com/api/public/gmail-webhook`."*
-- Or, if pushes still don't arrive at all: an amber banner saying *"No push received in 12 min, polling synced 3 messages in that window — the subscription almost certainly isn't pointed at our webhook."*
-
-Either way you'll know in one glance which knob to turn in GCP.
+- The red banner disappears (the only offending push is from 12+ min ago and predates the re-arm).
+- A new status line: *"Watch re-armed 1m ago against `projects/projectinboxzero-495314/topics/gmail-push`. Send yourself an email to verify push delivery."*
+- When you send yourself a test email, a fresh `push` row appears with a fully populated payload — at which point we'll know definitively whether the topic/subscription wiring is right or still broken.

@@ -72,6 +72,7 @@ export function PubsubActivity() {
   const stats = q.data?.stats;
   const diag = q.data?.diagnostics;
   const lastPush = diag?.lastPush ?? null;
+  const lastRenew = diag?.lastWatchRenew ?? null;
   const watchActive = (accountsQ.data?.accounts ?? []).some(
     (a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()
   );
@@ -81,6 +82,19 @@ export function PubsubActivity() {
   const pushHealthy =
     stats && stats.push24 > 0 && (stats.push24 - (stats.pushUnmatched24 ?? 0)) > 0 &&
     pushSilentMin !== null && pushSilentMin < 10;
+
+  // Is lastPush stale (older than 10 min, or older than the most recent re-arm)?
+  const lastPushMs = lastPush ? new Date(lastPush.received_at).getTime() : 0;
+  const lastRenewMs = lastRenew ? new Date(lastRenew.received_at).getTime() : 0;
+  const lastPushAgeMin = lastPush ? Math.floor((Date.now() - lastPushMs) / 60000) : null;
+  const lastPushStale = lastPush ? (lastPushAgeMin! >= 10 || lastPushMs < lastRenewMs) : false;
+  // Only the FRESH version of the "didn't match" condition should trigger the red banner.
+  const showUnmatchedBanner =
+    !!lastPush &&
+    !lastPushStale &&
+    lastPush.event_type === "push" &&
+    (lastPush.accounts_matched ?? 0) === 0;
+
 
   const renewBtn = (
     <Button
@@ -131,7 +145,7 @@ export function PubsubActivity() {
       </div>
 
       {/* RED: push received but payload didn't match account */}
-      {stats && (stats.pushUnmatched24 ?? 0) > 0 && lastPush && lastPush.event_type === "push" && (lastPush.accounts_matched ?? 0) === 0 && (
+      {showUnmatchedBanner && (
         <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
           <div className="flex gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -246,10 +260,15 @@ export function PubsubActivity() {
             className="flex w-full items-center justify-between p-3 text-left text-sm font-medium"
             onClick={() => setShowLastPush((v) => !v)}
           >
-            <span className="flex items-center gap-2">
+            <span className="flex flex-wrap items-center gap-2">
               {showLastPush ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               Last push from Google ({lastPush.event_type})
               <span className="text-xs font-normal text-muted-foreground">— {relTime(lastPush.received_at)}</span>
+              {lastPushStale && (
+                <Badge variant="outline" className="text-[10px]">
+                  stale{lastRenew && lastPushMs < lastRenewMs ? " · before last re-arm" : ""}
+                </Badge>
+              )}
             </span>
           </button>
           {showLastPush && (
@@ -367,6 +386,24 @@ export function PubsubActivity() {
           <Activity className="h-4 w-4" />
           Push subscription diagnostics
         </div>
+        {lastRenew && (
+          <div className="mt-3 rounded border border-blue-500/30 bg-blue-500/5 p-2 text-xs">
+            <div className="font-medium text-blue-700 dark:text-blue-400">
+              Watch re-armed {relTime(lastRenew.received_at)}
+              {lastPushMs > lastRenewMs && lastPush?.event_type === "push" && (lastPush.accounts_matched ?? 0) > 0 && (
+                <span className="ml-2 text-emerald-700 dark:text-emerald-400">· verified by a fresh matched push ✓</span>
+              )}
+            </div>
+            {lastRenew.details && (
+              <div className="mt-0.5 text-muted-foreground break-all">{lastRenew.details}</div>
+            )}
+            {!(lastPushMs > lastRenewMs && lastPush?.event_type === "push" && (lastPush.accounts_matched ?? 0) > 0) && (
+              <div className="mt-1 text-muted-foreground">
+                <strong>How to verify:</strong> send yourself an email from another account, then watch this panel for ~30s. A new <span className="font-mono">push</span> row with <span className="font-mono">accounts_matched ≥ 1</span> means real-time push is working. If only <span className="font-mono">poll</span> rows show up, the GCP subscription is the broken piece.
+              </div>
+            )}
+          </div>
+        )}
         <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
           {(accountsQ.data?.accounts ?? []).map((a) => (
             <div key={a.id} className="rounded border bg-card p-2">
