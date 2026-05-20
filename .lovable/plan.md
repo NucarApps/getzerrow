@@ -1,29 +1,30 @@
-## What I found
+## Why the 30–60s "Loading…" on reload
 
-The app only has the May 18 message stored locally for `braund_erik@officeonkatmai.help`. Gmail shows today's 9:28 email as `Re: Christopher - Office question`, which is likely a reply in the same Gmail thread. The current Gmail-backed search checks only `from:<email>` and only inserts brand-new message IDs. It does not handle the case where Gmail returns an existing thread/message record while a newer reply in that thread is missing locally.
+The sidebar's unread-counts query (in `src/routes/_authenticated.tsx`) runs on every page load:
+
+```ts
+supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(2000)
+```
+
+It pulls **every column** of up to 2000 emails just to count unread per folder. With ~1017 emails and ~11 KB of `body_html`/`body_text` per row, that's roughly **11 MB** of JSON shipped over the network on every reload, every realtime invalidation, every tab focus, and every sync — exactly the "30–60 second blank screen" symptom.
+
+The inbox search path (in `src/routes/_authenticated/index.tsx`) has the same problem: when `isSearching`, it does `select("*")` with `limit(2000)`.
+
+Reloading is especially bad because `useEmailRealtime` invalidates `["emails"]` once on mount, once again when the channel subscribes, once again on visibility/focus — each invalidation re-runs the 11 MB query.
 
 ## Plan
 
-1. **Make Gmail fallback search thread-aware**
-   - When Gmail search returns matches, fetch the full Gmail thread for each match.
-   - Ingest every message in the matching thread that is not already in the local `emails` table.
-   - This will catch today’s reply even when the search result points at the older May 18 thread message.
+1. **Sidebar counts query** — change `select("*")` to `select("id,folder_id,is_read,is_archived")`. Counts only need those 4 columns. This alone cuts the payload from ~11 MB to well under 100 KB.
 
-2. **Store enough data for searched messages to display correctly**
-   - Use full Gmail message fetches for search ingestion, not metadata-only fetches.
-   - Save sender, subject, snippet, body, labels, read/archive state, and received time.
-   - Preserve the current folder mapping from Gmail labels where applicable.
+2. **Inbox search query** — change the `isSearching` branch from `select("*")` to a slimmer column list (`id, from_addr, from_name, subject, snippet, received_at, is_read, is_archived, folder_id, ai_summary, thread_id, has_attachment`) — exclude `body_text` / `body_html`. The body is only needed when an email is opened; the detail pane already has its own fetch path or we add one on selection.
 
-3. **Improve resync safety net for recent mail**
-   - On manual resync, include a recent Gmail search/backfill pass across the mailbox, not just history events.
-   - Keep the existing history sync, but add this fallback so missed history/webhook events don’t leave recent replies invisible.
+3. **Reduce redundant refetches on mount** — `useEmailRealtime` currently invalidates `["emails"]` immediately on mount AND again when the channel subscribes. Drop the mount-time invalidation; let the initial `useQuery` fetch do the first load, and only catch up after the channel is subscribed.
 
-4. **Refresh the current search results after ingestion**
-   - After Gmail fallback ingests any new thread messages, refetch the email list so the new 9:28 message appears immediately in the current view.
+4. **Lower the refetch interval cost** — keep `refetchInterval: 30_000` on the inbox list (it's already paged to ~50 rows so it's cheap), but make sure neither the sidebar's counts query nor the search query carry that interval.
 
-## Technical notes
+No backend / schema / functionality changes — this is purely fixing the over-fetching on the client.
 
-- Add Gmail helper for `GET /users/me/threads/{threadId}?format=full`.
-- Update `searchGmailAndIngest` to dedupe by `gmail_message_id` after expanding thread messages.
-- Avoid changing the database schema.
-- Keep existing folder-label behavior and RLS/auth patterns unchanged.
+### Files to edit
+- `src/routes/_authenticated.tsx` — narrow the sidebar emails select.
+- `src/routes/_authenticated/index.tsx` — narrow the search-mode emails select.
+- `src/lib/use-email-realtime.ts` — remove the immediate post-subscribe invalidation on first mount.

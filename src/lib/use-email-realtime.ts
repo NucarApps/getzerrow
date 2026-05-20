@@ -51,9 +51,8 @@ export function useEmailRealtime() {
         )
         .subscribe((status) => {
           if (status === "SUBSCRIBED") {
-            // Catch up on anything written between mount and subscription.
-            invalidateEmails();
-            invalidateFolders();
+            // No mount-time invalidation — the initial useQuery fetches the
+            // first payload. We only need to catch up on focus/visibility.
           }
         });
     }
