@@ -106,6 +106,8 @@ function SettingsPage() {
             })}
           </div>
         </Card>
+
+        <InboxOverrides />
       </div>
     </div>
   );
