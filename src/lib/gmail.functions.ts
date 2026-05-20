@@ -433,21 +433,29 @@ export const sendReply = createServerFn({ method: "POST" })
 
 export const listFolderHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; limit?: number }) =>
-    z.object({ folder_id: z.string().uuid(), limit: z.number().min(1).max(200).optional() }).parse(d)
+  .inputValidator((d: { folder_id: string; limit?: number; offset?: number }) =>
+    z.object({
+      folder_id: z.string().uuid(),
+      limit: z.number().min(1).max(200).optional(),
+      offset: z.number().min(0).max(10000).optional(),
+    }).parse(d)
   )
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
       .from("folders").select("id, user_id").eq("id", data.folder_id).single();
     if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
+    const limit = data.limit ?? 25;
+    const offset = data.offset ?? 0;
     const { data: rows } = await supabaseAdmin
       .from("emails")
       .select("id, subject, from_addr, from_name, received_at, classified_by, ai_confidence, ai_summary, snippet")
       .eq("user_id", context.userId)
       .eq("folder_id", data.folder_id)
       .order("received_at", { ascending: false })
-      .limit(data.limit ?? 100);
-    return { emails: rows ?? [] };
+      .range(offset, offset + limit); // fetch one extra to detect has_more
+    const all = rows ?? [];
+    const has_more = all.length > limit;
+    return { emails: has_more ? all.slice(0, limit) : all, has_more, next_offset: offset + limit };
   });
 
 export const suggestRecategorization = createServerFn({ method: "POST" })
