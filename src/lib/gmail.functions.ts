@@ -1630,6 +1630,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       diagnostics: {
         lastPush,
         lastWatchRenew,
+        lastWebhookTest,
         webhookUrl,
         pubsubTopic: process.env.GMAIL_PUBSUB_TOPIC ?? null,
         stuckJobs: stuckJobs ?? [],
