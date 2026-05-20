@@ -420,3 +420,98 @@ function ClassifiedChip({ by }: { by: string | null }) {
     </span>
   );
 }
+
+function opLabel(op: string) {
+  const m: Record<string, string> = {
+    contains: "contains", equals: "equals", starts_with: "starts with",
+    ends_with: "ends with", regex: "matches regex", not_contains: "does not contain",
+  };
+  return m[op] ?? op;
+}
+
+function TriggeredBy({
+  classifiedBy, reason, folder, filters,
+}: {
+  classifiedBy: string | null;
+  reason: string | null;
+  folder: { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null;
+  filters: Array<{ field: string; op: string; value: string }>;
+}) {
+  const by = classifiedBy ?? "none";
+
+  if (by === "filter" || by === "domain_rule") {
+    return (
+      <div className="space-y-2">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Matching rule</div>
+        {reason ? (
+          <p className="text-foreground/90">{reason}</p>
+        ) : (
+          <p className="italic text-muted-foreground">Specific match not recorded. This email matches one of the folder's rules below.</p>
+        )}
+        {filters.length > 0 && (
+          <div className="space-y-1 border-t border-border/60 pt-2">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">
+              All rules for {folder?.name ?? "this folder"}
+            </div>
+            <ul className="space-y-1">
+              {filters.map((f, i) => (
+                <li key={i} className="rounded border border-border bg-background/40 px-2 py-1 font-mono text-xs">
+                  <span className="text-muted-foreground">{f.field}</span>{" "}
+                  <span className="text-primary">{opLabel(f.op)}</span>{" "}
+                  <span className="text-foreground">"{f.value}"</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (by === "ai") {
+    return (
+      <div className="space-y-2">
+        {folder?.ai_rule && (
+          <div>
+            <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Folder AI prompt</div>
+            <p className="rounded border border-border bg-background/40 px-2 py-1.5 text-foreground/90 italic">"{folder.ai_rule}"</p>
+          </div>
+        )}
+        <div>
+          <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Why the AI picked this folder</div>
+          {reason ? (
+            <p className="text-foreground/90">{reason}</p>
+          ) : (
+            <p className="italic text-muted-foreground">No reasoning recorded for this email. Newly synced emails will include one.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (by === "gmail_label") {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Gmail label</div>
+        <p className="text-foreground/90">
+          {reason ?? `Mapped from Gmail label${folder?.name ? ` to "${folder.name}"` : ""}.`}
+        </p>
+      </div>
+    );
+  }
+
+  if (by === "manual_move") {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Moved manually</div>
+        <p className="text-foreground/90">{reason ?? "You moved this email into the folder."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <p className="italic text-muted-foreground">
+      This email hasn't been classified yet.
+    </p>
+  );
+}
