@@ -128,7 +128,13 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     return { byFolder: m, total };
   }, [emailsQ.data]);
 
-  const pick = (s: FolderSelection) => { setSelected(s); onNavigate?.(); };
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pick = (s: FolderSelection) => {
+    setSelected(s);
+    if (pathname !== "/") navigate({ to: "/" });
+    onNavigate?.();
+  };
 
   return (
     <div className="flex h-full flex-col p-4">
