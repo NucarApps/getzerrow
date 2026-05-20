@@ -564,7 +564,9 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   const moveFn = useServerFn(moveEmailToFolder);
   const reanalyzeFn = useServerFn(reanalyzeEmail);
   const inboxFn = useServerFn(moveEmailToInbox);
+  const resyncFn = useServerFn(resyncMessage);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
   const [alwaysInbox, setAlwaysInbox] = useState<null | { fromAddr: string | null; domain: string | null }>(null);
   const [reply, setReply] = useState("");
   const [generating, setGenerating] = useState(false);
