@@ -108,3 +108,54 @@ ${(email.body_text || "").slice(0, 4000)}`,
   });
   return text.trim();
 }
+
+export type RuleSuggestion = {
+  source: { proposed_rule: string; proposed_profile: string; why: string };
+  target: { proposed_rule: string; proposed_profile: string; why: string };
+};
+
+export async function suggestRuleUpdates(args: {
+  email: { from_addr: string; from_name: string; subject: string; snippet: string; body_text: string };
+  source: { name: string; ai_rule: string | null; learned_profile: string | null };
+  target: { name: string; ai_rule: string | null; learned_profile: string | null };
+}): Promise<RuleSuggestion> {
+  const { output } = await generateText({
+    model: getModel(),
+    output: Output.object({
+      schema: z.object({
+        source: z.object({
+          proposed_rule: z.string().max(500),
+          proposed_profile: z.string().max(800),
+          why: z.string().max(200),
+        }),
+        target: z.object({
+          proposed_rule: z.string().max(500),
+          proposed_profile: z.string().max(800),
+          why: z.string().max(200),
+        }),
+      }),
+    }),
+    prompt: `An email was misclassified. The user is moving it from "${args.source.name}" to "${args.target.name}". Propose updated rules and learned profiles for BOTH folders so this kind of email is routed correctly next time.
+
+SOURCE folder "${args.source.name}" (wrong destination):
+- Current rule: ${args.source.ai_rule || "(none)"}
+- Current learned profile: ${args.source.learned_profile || "(none)"}
+
+TARGET folder "${args.target.name}" (correct destination):
+- Current rule: ${args.target.ai_rule || "(none)"}
+- Current learned profile: ${args.target.learned_profile || "(none)"}
+
+The misclassified email:
+From: ${args.email.from_name} <${args.email.from_addr}>
+Subject: ${args.email.subject}
+Body: ${(args.email.body_text || args.email.snippet || "").slice(0, 2000)}
+
+Guidelines:
+- Refine, don't rewrite. Keep most of the existing wording.
+- SOURCE: tighten so emails like this one are NOT included. Add a brief exclusion clause if useful.
+- TARGET: broaden/clarify so emails like this one ARE included. Mention concrete signals (sender domain, subject keywords, intent).
+- Each rule: at most 2 short sentences. Each profile: at most 3 short sentences.
+- "why": one plain-English line.`,
+  });
+  return output as RuleSuggestion;
+}
