@@ -131,9 +131,57 @@ function LandingPage() {
               </div>
             </div>
 
-            <div className="launchpad__viewport">
+            <div className="launchpad__viewport" id="launchpad-viewport">
               <div className="viewport-grid"></div>
               <div className="viewport-crosshair"></div>
+
+              {/* Downrange tracking view — revealed after liftoff */}
+              <div className="tracking" aria-hidden="true">
+                <div className="tracking__sky">
+                  <i style={{ left: "8%",  top: "18%" }}></i>
+                  <i style={{ left: "22%", top: "42%" }}></i>
+                  <i style={{ left: "34%", top: "12%" }}></i>
+                  <i style={{ left: "47%", top: "28%" }}></i>
+                  <i style={{ left: "58%", top: "8%"  }}></i>
+                  <i style={{ left: "66%", top: "36%" }}></i>
+                  <i style={{ left: "74%", top: "20%" }}></i>
+                  <i style={{ left: "86%", top: "32%" }}></i>
+                  <i style={{ left: "92%", top: "14%" }}></i>
+                  <i style={{ left: "14%", top: "60%" }}></i>
+                </div>
+                <div className="tracking__earth"></div>
+                <svg className="tracking__arc" viewBox="0 0 600 400" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="arcGrad" x1="0" y1="1" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#ff5a2e" stopOpacity=".15" />
+                      <stop offset="50%" stopColor="#ff8a3d" stopOpacity=".9" />
+                      <stop offset="100%" stopColor="#ffd089" stopOpacity=".4" />
+                    </linearGradient>
+                  </defs>
+                  <path className="tracking__arc-ghost" d="M 30 370 Q 300 -120 570 90" fill="none" />
+                  <path className="tracking__arc-live"  d="M 30 370 Q 300 -120 570 90" fill="none" stroke="url(#arcGrad)" />
+                </svg>
+                <div className="tracking__icon" aria-hidden="true">
+                  <svg viewBox="0 0 120 280">
+                    <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
+                    <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
+                    <path d="M42 150 L12 226 L42 218 Z" fill="#ff5a2e" />
+                    <path d="M42 150 L42 218 L34 226 Z" fill="#8a2a14" />
+                    <path d="M78 150 L108 226 L78 218 Z" fill="#ff5a2e" />
+                    <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
+                    <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
+                  </svg>
+                </div>
+                <div className="tracking__hud tracking__hud--tl">
+                  <span className="tracking__dot"></span>
+                  TRACKING · DOWNRANGE
+                </div>
+                <div className="tracking__hud tracking__hud--br">
+                  <div className="tele-row"><span className="k">Downrange</span><span className="v orange" id="t-downrange">0 km</span></div>
+                  <div className="tele-row"><span className="k">Apogee</span><span className="v" id="t-apogee">0.0 km</span></div>
+                </div>
+              </div>
+
 
               <div className="viewport-counter">
                 <div className="viewport-counter__lbl">Inbox · Unread</div>

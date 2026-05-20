@@ -12,8 +12,11 @@ export function useMissionTelemetry() {
     const counterEl = $("inbox-count");
     const deltaEl = $("inbox-delta");
     const rocketEl = $("rocket");
+    const viewportEl = $("launchpad-viewport");
     const footRouted = $("foot-routed");
     const statRouted = $("stat-routed");
+    let trackingTimeout = 0;
+    let apogeeKm = 0;
 
     let routedToday = 142;
     const fmt = (n: number) => n.toLocaleString("en-US");
@@ -49,6 +52,9 @@ export function useMissionTelemetry() {
           deltaEl.classList.add("zero");
         }
         setPhase("liftoff");
+        trackingTimeout = window.setTimeout(() => {
+          viewportEl?.classList.add("tracking");
+        }, 1600);
       }
     };
     rafId = requestAnimationFrame(step);
@@ -89,6 +95,8 @@ export function useMissionTelemetry() {
     const tFuel = $("t-fuel");
     const tG = $("t-g");
     const tHdg = $("t-hdg");
+    const tDownrange = $("t-downrange");
+    const tApogee = $("t-apogee");
     const footLat = $("foot-lat");
     const uplink = $("uplink-val");
 
@@ -124,6 +132,10 @@ export function useMissionTelemetry() {
       if (tFuel) tFuel.textContent = `${fuel.toFixed(0)}%`;
       if (tG) tG.textContent = `${g.toFixed(1)} g`;
       if (tHdg) tHdg.textContent = `${hdg.toFixed(1)}°`;
+      if (alt > apogeeKm) apogeeKm = alt;
+      const downrange = Math.max(0, Math.round((vel * Math.max(0, launchT - 8)) / 1000));
+      if (tDownrange) tDownrange.textContent = `${downrange.toLocaleString("en-US")} km`;
+      if (tApogee) tApogee.textContent = `${apogeeKm.toFixed(1)} km`;
       if (footLat && footLat.firstChild) {
         const lat = (2.2 + Math.random() * 0.6).toFixed(1);
         footLat.firstChild.textContent = lat;
@@ -160,6 +172,7 @@ export function useMissionTelemetry() {
       cancelAnimationFrame(rafId);
       clearInterval(tickInterval);
       clearInterval(teleInterval);
+      clearTimeout(trackingTimeout);
       handlers.forEach(({ d, h }) => d.removeEventListener("toggle", h));
     };
   }, []);
