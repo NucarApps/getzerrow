@@ -184,7 +184,7 @@ function labelForFolder(sel: string | "all" | "unsorted", folders: Folder[]) {
   return folders.find((f) => f.id === sel)?.name ?? "Folder";
 }
 
-function Reader({ email, folders }: { email: Email; folders: Folder[] }) {
+function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; onBack?: () => void }) {
   const qc = useQueryClient();
   const markFn = useServerFn(markEmailRead);
   const archFn = useServerFn(archiveEmail);
@@ -205,8 +205,13 @@ function Reader({ email, folders }: { email: Email; folders: Folder[] }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-6 py-3">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          {onBack && (
+            <button onClick={onBack} className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent md:hidden" aria-label="Back">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
           {folder && <Badge variant="outline" className="gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />{folder.name}</Badge>}
           {email.ai_confidence != null && email.ai_summary && (
             <Badge variant="outline" className="gap-1 text-xs"><Sparkles className="h-3 w-3" />AI · {Math.round(email.ai_confidence * 100)}%</Badge>
