@@ -924,28 +924,46 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         </div>
       </div>
 
-      <div className="border-t border-border bg-card/30 p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs uppercase tracking-widest text-muted-foreground">Reply</span>
-          <Button size="sm" variant="ghost" disabled={generating}
-            onClick={async () => {
-              setGenerating(true);
-              try { const r = await genFn({ data: { id: email.id } }); setReply(r.draft); } catch (e: any) { toast.error(e.message); }
-              setGenerating(false);
-            }}>
-            <Sparkles className="mr-1.5 h-3.5 w-3.5" />{generating ? "Drafting…" : "Suggest reply"}
-          </Button>
+      <div
+        className={`absolute inset-x-0 bottom-0 z-20 border-t border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
+          replyOpen ? "translate-y-0" : "translate-y-full"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <span className="truncate text-xs uppercase tracking-widest text-muted-foreground">
+            Reply to {email.from_name || email.from_addr}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="ghost" disabled={generating}
+              onClick={async () => {
+                setGenerating(true);
+                try { const r = await genFn({ data: { id: email.id } }); setReply(r.draft); } catch (e: any) { toast.error(e.message); }
+                setGenerating(false);
+              }}>
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />{generating ? "Drafting…" : "Suggest reply"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setReplyOpen(false)} aria-label="Close reply">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-        <Textarea rows={4} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" />
-        <div className="mt-2 flex justify-end">
-          <Button size="sm" disabled={!reply.trim() || sending}
-            onClick={async () => {
-              setSending(true);
-              try { await sendFn({ data: { id: email.id, body: reply } }); toast.success("Sent"); setReply(""); } catch (e: any) { toast.error(e.message); }
-              setSending(false);
-            }}>
-            <Send className="mr-1.5 h-3.5 w-3.5" />Send
-          </Button>
+        <div className="p-4">
+          <Textarea rows={6} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" autoFocus={replyOpen} />
+          <div className="mt-2 flex justify-end">
+            <Button size="sm" disabled={!reply.trim() || sending}
+              onClick={async () => {
+                setSending(true);
+                try {
+                  await sendFn({ data: { id: email.id, body: reply } });
+                  toast.success("Sent");
+                  setReply("");
+                  setReplyOpen(false);
+                } catch (e: any) { toast.error(e.message); }
+                setSending(false);
+              }}>
+              <Send className="mr-1.5 h-3.5 w-3.5" />Send
+            </Button>
+          </div>
         </div>
       </div>
 
