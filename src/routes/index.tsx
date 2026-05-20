@@ -20,10 +20,13 @@ export const Route = createFileRoute("/")({
   component: LandingPage,
 });
 
-const PAPER = "#f5f3ee";
-const PAPER_DEEP = "#e8e4dd";
-const INK = "#0d0d0d";
-const INK_SOFT = "#2d2d2d";
+const BG = "#0c0c14";
+const BG_RAISED = "#15151f";
+const BG_ELEVATED = "#1c1c28";
+const FG = "#f4f3ee";
+const FG_MUTED = "#9a9aa8";
+const BORDER = "#26262f";
+const GOLD = "#e0b54a";
 
 const sora = { fontFamily: "'Sora', ui-sans-serif, system-ui, sans-serif" };
 const manrope = { fontFamily: "'Manrope', ui-sans-serif, system-ui, sans-serif" };
