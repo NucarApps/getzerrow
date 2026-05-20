@@ -408,7 +408,8 @@ function Footer() {
         <p style={sora}>© {new Date().getFullYear()} Zerrow</p>
         <div className="flex items-center gap-6">
           <a href="#features" className="hover:opacity-60">Features</a>
-          <a href="#how" className="hover:opacity-60">How it works</a>
+          <Link to="/privacy" className="hover:opacity-60">Privacy</Link>
+          <Link to="/terms" className="hover:opacity-60">Terms</Link>
           <Link to="/login" className="hover:opacity-60">Sign in</Link>
         </div>
       </div>
