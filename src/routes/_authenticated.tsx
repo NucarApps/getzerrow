@@ -224,14 +224,12 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           onSelect={() => pick("all_mail")}
           color="#d4d4d8"
           label="All mail"
-          count={emailsQ.data?.length ?? 0}
         />
         <FolderRow
           active={selected === "no_rules"}
           onSelect={() => pick("no_rules")}
           color="#71717a"
           label="No rules"
-          count={counts.byFolder.get("no_rules") ?? 0}
         />
 
         {(foldersQ.data ?? []).map((f) => (
