@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 import { InboxOverrides } from "@/components/settings/InboxOverrides";
+import { PubsubActivity } from "@/components/settings/PubsubActivity";
 
 export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
 
@@ -108,6 +109,8 @@ function SettingsPage() {
         </Card>
 
         <InboxOverrides />
+        <PubsubActivity />
+
       </div>
     </div>
   );
