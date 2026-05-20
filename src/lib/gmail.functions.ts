@@ -377,12 +377,7 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await getOwnedAccount(context.userId, data.account_id);
-    const { data: acc } = await supabaseAdmin
-      .from("gmail_accounts")
-      .select("watch_expiration")
-      .eq("id", data.account_id)
-      .single();
+    const acc = await getOwnedAccount(context.userId, data.account_id);
     // Force renewal by passing null
     const watch = await ensureWatch(data.account_id, null);
     if (!watch) throw new Error("GMAIL_PUBSUB_TOPIC is not configured");
@@ -390,8 +385,17 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
       history_id: watch.historyId,
       watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
     }).eq("id", data.account_id);
-    return { expiration: watch.expiration };
+    try {
+      await supabaseAdmin.from("pubsub_events").insert({
+        event_type: "watch_renew",
+        email_address: acc.email_address ?? null,
+        history_id: watch.historyId,
+        details: `Watch armed against topic ${process.env.GMAIL_PUBSUB_TOPIC ?? "(unset)"} — expires ${new Date(parseInt(watch.expiration, 10)).toISOString()}`,
+      });
+    } catch (e) { console.error("watch_renew log failed", e); }
+    return { expiration: watch.expiration, topic: process.env.GMAIL_PUBSUB_TOPIC ?? null };
   });
+
 
 export const markEmailRead = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
