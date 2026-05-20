@@ -270,6 +270,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       ai_confidence: confidence,
       classified_by,
       classification_reason,
+      matched_filter_ids,
     })
     .select("id, folder_id")
     .single();
