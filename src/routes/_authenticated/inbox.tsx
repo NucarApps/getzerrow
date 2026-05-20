@@ -21,7 +21,7 @@ import {
   ContextMenuSub, ContextMenuSubTrigger, ContextMenuSubContent, ContextMenuSeparator, ContextMenuLabel,
 } from "@/components/ui/context-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw, AtSign, Globe } from "lucide-react";
+import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw, AtSign, Globe, Reply } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { useFolderSelection } from "@/lib/folder-selection";
@@ -609,7 +609,7 @@ function InboxPage() {
       </div>
 
       {/* Reading pane */}
-      <div className={`h-full overflow-y-auto ${selected ? "block" : "hidden md:block"}`}>
+      <div className={`h-full overflow-hidden ${selected ? "block" : "hidden md:block"}`}>
         {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} onBack={() => setSelectedId(null)} /> : (
           <TelemetryStandby />
         )}
@@ -643,6 +643,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [replyOpen, setReplyOpen] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
   const [similarPrompt, setSimilarPrompt] = useState<null | {
     fromFolderId: string | null;
@@ -706,7 +707,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
         <div className="flex min-w-0 items-center gap-2">
           {onBack && (
@@ -720,6 +721,9 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           )}
         </div>
         <div className="flex gap-1">
+          <Button size="sm" variant="default" onClick={() => setReplyOpen(true)} className="h-8">
+            <Reply className="mr-1.5 h-3.5 w-3.5" />Reply
+          </Button>
           <Button
             size="sm"
             variant="ghost"
@@ -920,28 +924,46 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         </div>
       </div>
 
-      <div className="border-t border-border bg-card/30 p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs uppercase tracking-widest text-muted-foreground">Reply</span>
-          <Button size="sm" variant="ghost" disabled={generating}
-            onClick={async () => {
-              setGenerating(true);
-              try { const r = await genFn({ data: { id: email.id } }); setReply(r.draft); } catch (e: any) { toast.error(e.message); }
-              setGenerating(false);
-            }}>
-            <Sparkles className="mr-1.5 h-3.5 w-3.5" />{generating ? "Drafting…" : "Suggest reply"}
-          </Button>
+      <div
+        className={`absolute inset-x-0 bottom-0 z-20 border-t border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
+          replyOpen ? "translate-y-0" : "translate-y-full"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <span className="truncate text-xs uppercase tracking-widest text-muted-foreground">
+            Reply to {email.from_name || email.from_addr}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="ghost" disabled={generating}
+              onClick={async () => {
+                setGenerating(true);
+                try { const r = await genFn({ data: { id: email.id } }); setReply(r.draft); } catch (e: any) { toast.error(e.message); }
+                setGenerating(false);
+              }}>
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />{generating ? "Drafting…" : "Suggest reply"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setReplyOpen(false)} aria-label="Close reply">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-        <Textarea rows={4} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" />
-        <div className="mt-2 flex justify-end">
-          <Button size="sm" disabled={!reply.trim() || sending}
-            onClick={async () => {
-              setSending(true);
-              try { await sendFn({ data: { id: email.id, body: reply } }); toast.success("Sent"); setReply(""); } catch (e: any) { toast.error(e.message); }
-              setSending(false);
-            }}>
-            <Send className="mr-1.5 h-3.5 w-3.5" />Send
-          </Button>
+        <div className="p-4">
+          <Textarea rows={6} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" autoFocus={replyOpen} />
+          <div className="mt-2 flex justify-end">
+            <Button size="sm" disabled={!reply.trim() || sending}
+              onClick={async () => {
+                setSending(true);
+                try {
+                  await sendFn({ data: { id: email.id, body: reply } });
+                  toast.success("Sent");
+                  setReply("");
+                  setReplyOpen(false);
+                } catch (e: any) { toast.error(e.message); }
+                setSending(false);
+              }}>
+              <Send className="mr-1.5 h-3.5 w-3.5" />Send
+            </Button>
+          </div>
         </div>
       </div>
 
