@@ -1,42 +1,17 @@
+## Goal
+Make the Inbox update as soon as Gmail Pub/Sub push events arrive, instead of waiting for the polling/job worker cycle.
 
-# Found it — GCP push endpoint is the wrong URL
+## What I found
+- Pub/Sub is now arriving correctly: recent `push` rows show `accounts_matched = 1` and `synced_count = 1`.
+- The Inbox already has a realtime subscription to the `emails` table, and the table is in the realtime publication.
+- The missing link is the processing path: the webhook currently enqueues Gmail message jobs, but those jobs are only drained by `/api/public/gmail-process-jobs` or the poll fallback. Until a job writes to `emails`, the Inbox realtime subscription has nothing to receive.
+- The queue is currently empty, which means jobs do run eventually, but not directly from the push request.
 
-No code change needed. The fix is one field in Google Cloud.
+## Plan
+1. Update the Gmail webhook so after `syncSinceHistory()` enqueues messages from a push, it immediately drains a small batch of due `message_jobs` for that matched account.
+2. Keep the existing queue/cron/poll fallback intact so slow Gmail/API/AI work can still retry safely if immediate processing times out or fails.
+3. Add clearer Pub/Sub activity diagnostics: show both “queued from push” and “processed immediately” so we can distinguish delivery from inbox insertion.
+4. Tighten the existing inbox realtime hook if needed so it refetches the exact active email/count queries after inserts/updates.
 
-## What's wrong
-
-Your subscription's **Push endpoint** is set to:
-
-```
-https://getzerrow.lovable.app/api/public/gmail-webhook
-```
-
-I just POSTed a sample Pub/Sub envelope to both URLs:
-
-| URL | Response |
-|---|---|
-| `https://getzerrow.lovable.app/api/public/gmail-webhook` | **HTTP 302** (redirect) |
-| `https://getzerrow.com/api/public/gmail-webhook` | **HTTP 200 `ok`** |
-
-`getzerrow.lovable.app` is redirecting to your custom domain. **Google Cloud Pub/Sub push subscriptions do not follow 3xx redirects** — anything other than 2xx is treated as a delivery failure, with no record in `pubsub_events` because the POST never reaches our handler. That's exactly the symptom you're seeing: watch armed, polling fills the gap, zero `push` rows ever.
-
-The topic, permissions (`gmail-api-push@system.gserviceaccount.com` ✅), and subscription state (`active`, Push, auth disabled) are all correct. Only the endpoint URL is wrong.
-
-## Fix (in Google Cloud Console)
-
-1. Pub/Sub → Subscriptions → `gmail-push` → **Edit**
-2. Change **Push endpoint** to:
-   ```
-   https://getzerrow.com/api/public/gmail-webhook
-   ```
-3. Save.
-
-Within ~30s you should see `push` rows in the Pub/Sub Activity panel and the red "Watch is armed, but no real Google push has arrived" banner clear.
-
-## Optional follow-up (code, after the fix verifies)
-
-If you want, I can:
-
-- Update the diagnostic banner in `PubsubActivity.tsx` to actively probe the configured push URL on the server and warn if it returns a redirect instead of 200 — so future domain swaps surface this within the app instead of requiring a GCP console trip.
-
-Tell me whether to add that probe; otherwise the GCP edit alone fixes today's issue.
+## Expected result
+When a new Gmail push comes in, the webhook should enqueue the changed message, process it right away, insert/update `emails`, and the open Inbox should refresh from its realtime invalidation within a few seconds.
