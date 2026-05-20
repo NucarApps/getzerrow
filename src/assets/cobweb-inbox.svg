@@ -1,0 +1,89 @@
+<svg width="220" height="160" viewBox="0 0 220 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Cobweb inbox</title>
+  <desc id="desc">A simple empty inbox tray with small spider webs, a dangling spider, and quiet dark-mode styling.</desc>
+
+  <style>
+    .line {
+      stroke: #6F7280;
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .soft {
+      stroke: #4B4F5C;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .web {
+      stroke: #555A68;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .faint {
+      stroke: #363A45;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .fill {
+      fill: #242832;
+    }
+    .spider {
+      fill: #4F98A3;
+      stroke: #4F98A3;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+
+  <!-- Soft floor shadow -->
+  <ellipse cx="110" cy="136" rx="60" ry="8" fill="#151820" />
+
+  <!-- Empty inbox tray -->
+  <path class="fill" d="M48 101L63 57C64.4 53 68.2 50 72.5 50H147.5C151.8 50 155.6 53 157 57L172 101V123C172 129.1 167.1 134 161 134H59C52.9 134 48 129.1 48 123V101Z" />
+  <path class="line" d="M51 101H86L94 112H126L134 101H169" />
+  <path class="line" d="M48 101L63 57C64.4 53 68.2 50 72.5 50H147.5C151.8 50 155.6 53 157 57L172 101V123C172 129.1 167.1 134 161 134H59C52.9 134 48 129.1 48 123V101Z" />
+  <path class="soft" d="M76 69H144" />
+
+  <!-- Left cobweb tucked into the tray -->
+  <path class="web" d="M64 56V88" />
+  <path class="web" d="M64 56H96" />
+  <path class="web" d="M64 56L93 84" />
+  <path class="web" d="M64 69C73 67 82 62 88 56" />
+  <path class="web" d="M64 80C78 78 88 70 96 60" />
+  <path class="web" d="M76 56C75 63 70 71 64 76" />
+  <path class="web" d="M87 56C84 68 75 80 64 87" />
+
+  <!-- Right cobweb on the inbox lip -->
+  <path class="web" d="M156 64V96" />
+  <path class="web" d="M156 64H132" />
+  <path class="web" d="M156 64L134 88" />
+  <path class="web" d="M156 75C149 74 140 70 135 64" />
+  <path class="web" d="M156 87C147 85 139 79 133 70" />
+  <path class="web" d="M147 64C148 72 152 80 156 85" />
+
+  <!-- Tiny dangling spider -->
+  <path class="faint" d="M110 37V65" />
+  <circle cx="110" cy="70" r="5" class="spider" />
+  <circle cx="110" cy="63" r="3" class="spider" />
+  <path class="spider" d="M105 69L99 65" />
+  <path class="spider" d="M105 72L98 74" />
+  <path class="spider" d="M115 69L121 65" />
+  <path class="spider" d="M115 72L122 74" />
+
+  <!-- One abandoned email -->
+  <rect x="91" y="83" width="38" height="24" rx="4" class="fill" />
+  <path class="soft" d="M93 86L110 99L127 86" />
+  <path class="soft" d="M91 83H129V107H91Z" />
+
+  <!-- Sparse dust -->
+  <path class="faint" d="M39 78V83" />
+  <path class="faint" d="M36.5 80.5H41.5" />
+  <path class="faint" d="M181 50V55" />
+  <path class="faint" d="M178.5 52.5H183.5" />
+  <circle cx="45" cy="46" r="2" fill="#363A45" />
+  <circle cx="177" cy="86" r="2" fill="#363A45" />
+</svg>

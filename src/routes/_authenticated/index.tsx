@@ -27,6 +27,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useFolderSelection } from "@/lib/folder-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
+import cobwebInbox from "@/assets/cobweb-inbox.svg";
 
 
 export const Route = createFileRoute("/_authenticated/")({ component: InboxPage });
@@ -307,8 +308,8 @@ function InboxPage() {
         <div className="flex-1 overflow-y-auto">
           {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
           {!emailsQ.isLoading && filtered.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-2 p-12 text-center text-muted-foreground">
-              <Inbox className="h-8 w-8 opacity-40" />
+            <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
+              <img src={cobwebInbox} alt="" className="h-32 w-auto opacity-90" />
               <p className="text-sm">Nothing here yet.</p>
               <p className="text-xs">Hit refresh, or connect Gmail in Settings.</p>
             </div>
