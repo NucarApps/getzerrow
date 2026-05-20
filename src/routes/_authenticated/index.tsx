@@ -40,6 +40,9 @@ type Email = {
   thread_id: string | null;
   classified_by: string | null;
   classification_reason: string | null;
+  matched_filter_ids: string[] | null;
+  to_addrs: string | null;
+  has_attachment: boolean;
 };
 
 type Folder = { id: string; name: string; color: string };
