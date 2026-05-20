@@ -1028,14 +1028,11 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       }
     }
 
-    // If AI couldn't pick a folder and the email already has one, keep the
-    // current assignment instead of clearing it (and don't touch Gmail labels).
-    const noMatch =
-      result.folder_id === null &&
-      (result.classified_by === "ai" ||
-        result.classified_by === "none" ||
-        result.classified_by === "ai_error");
-    if (noMatch && email.folder_id) {
+    // If the classifier didn't pick a folder and the email already has one,
+    // keep the current assignment regardless of WHY the classifier abstained
+    // (AI no-match, excluded by rule, global override, etc.). Reanalyze should
+    // only move emails to a better folder, never silently clear them.
+    if (result.folder_id === null && email.folder_id) {
       await supabaseAdmin
         .from("emails")
         .update({ ai_summary: summary || null })
@@ -1045,7 +1042,9 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
         folder_id: email.folder_id,
         folder_name: null,
         classified_by: "kept",
-        classification_reason: "AI found no better folder — kept current assignment",
+        classification_reason:
+          result.classification_reason ||
+          "Classifier found no better folder — kept current assignment",
         changed: false,
       };
     }
