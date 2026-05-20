@@ -13,6 +13,7 @@ import {
   listMessages,
   getMessage,
   getMessageMetadata,
+  getMessageLabels,
   getThread,
   parseMessage,
 } from "./gmail.server";
@@ -1558,3 +1559,61 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       stats: { push24, renew24, accounts24, synced24, errors24, lastReceivedAt: rows?.[0]?.received_at ?? null },
     };
   });
+
+/** Re-pull the current Gmail label state for a single message and reconcile our row. */
+export const resyncMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const email = await getEmailAccount(context.userId, data.id);
+    const labels = await getMessageLabels(email.gmail_account_id, email.gmail_message_id);
+    if (labels === null) {
+      await supabaseAdmin.from("emails").delete().eq("id", data.id);
+      return { deleted: true };
+    }
+    if (labels.includes("TRASH")) {
+      await supabaseAdmin.from("emails").delete().eq("id", data.id);
+      return { deleted: true };
+    }
+    const inInbox = labels.includes("INBOX");
+    const unread = labels.includes("UNREAD");
+    await supabaseAdmin.from("emails").update({
+      raw_labels: labels,
+      is_archived: !inInbox,
+      is_read: !unread,
+    }).eq("id", data.id);
+    return { in_inbox: inInbox, unread, labels };
+  });
+
+/** POST a synthetic empty envelope to our own Pub/Sub webhook to prove the endpoint is reachable. */
+export const pingPubsubWebhook = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const host = getRequestHost();
+    const url = `https://${host}/api/public/gmail-webhook`;
+    const started = Date.now();
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: {} }),
+      });
+      return {
+        url,
+        ok: r.ok,
+        status: r.status,
+        elapsed_ms: Date.now() - started,
+        topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
+      };
+    } catch (e: any) {
+      return {
+        url,
+        ok: false,
+        status: 0,
+        elapsed_ms: Date.now() - started,
+        topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
+        error: e?.message ?? String(e),
+      };
+    }
+  });
+

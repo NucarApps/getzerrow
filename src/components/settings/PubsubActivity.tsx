@@ -1,11 +1,12 @@
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listPubsubEvents } from "@/lib/gmail.functions";
+import { listPubsubEvents, pingPubsubWebhook, listMyGmailAccounts, renewGmailWatch } from "@/lib/gmail.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, ChevronRight, ChevronDown } from "lucide-react";
+import { RefreshCw, ChevronRight, ChevronDown, AlertTriangle, Activity } from "lucide-react";
+import { toast } from "sonner";
 
 type Filter = "all" | "push" | "errors" | "watch_renew";
 
@@ -23,8 +24,14 @@ function relTime(iso: string | null): string {
 
 export function PubsubActivity() {
   const fetchEvents = useServerFn(listPubsubEvents);
+  const pingFn = useServerFn(pingPubsubWebhook);
+  const accountsFn = useServerFn(listMyGmailAccounts);
+  const renewFn = useServerFn(renewGmailWatch);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [pinging, setPinging] = useState(false);
+  const [pingResult, setPingResult] = useState<null | { ok: boolean; status: number; elapsed_ms: number; topic_set: boolean; error?: string; url: string }>(null);
+  const [renewing, setRenewing] = useState(false);
 
   const q = useQuery({
     queryKey: ["pubsub-events", filter],
@@ -37,6 +44,11 @@ export function PubsubActivity() {
         },
       }),
     refetchInterval: 10000,
+  });
+
+  const accountsQ = useQuery({
+    queryKey: ["my-gmail-accounts-pubsub"],
+    queryFn: () => accountsFn(),
   });
 
   const events = q.data?.events ?? [];
@@ -62,6 +74,44 @@ export function PubsubActivity() {
           Refresh
         </Button>
       </div>
+
+      {stats && stats.push24 === 0 && (accountsQ.data?.accounts ?? []).some((a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()) && (
+        <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="text-xs">
+              <div className="font-medium text-destructive">Gmail is not pushing notifications to this app.</div>
+              <div className="mt-1 text-muted-foreground">
+                Zero push events in the last 24h, but the Gmail watch is still active. Emails are still arriving via the 2-minute fallback poll, but live updates are off. Re-arm the watch to refresh Gmail's push subscription. If that doesn't help, the GCP Pub/Sub push subscription is missing or pointed at the wrong URL.
+              </div>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={renewing}
+            onClick={async () => {
+              const acc = (accountsQ.data?.accounts ?? [])[0];
+              if (!acc) return;
+              setRenewing(true);
+              try {
+                await renewFn({ data: { account_id: acc.id } });
+                toast.success("Watch re-armed");
+                q.refetch();
+                accountsQ.refetch();
+              } catch (e: any) {
+                toast.error(e.message);
+              } finally {
+                setRenewing(false);
+              }
+            }}
+            className="shrink-0"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${renewing ? "animate-spin" : ""}`} />
+            Re-arm push watch
+          </Button>
+        </div>
+      )}
 
       {stats && (
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -149,6 +199,67 @@ export function PubsubActivity() {
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-6 rounded-md border bg-muted/20 p-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Activity className="h-4 w-4" />
+          Push subscription diagnostics
+        </div>
+        <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+          {(accountsQ.data?.accounts ?? []).map((a) => (
+            <div key={a.id} className="rounded border bg-card p-2">
+              <div className="font-medium">{a.email_address}</div>
+              <div className="text-muted-foreground">
+                History ID: <span className="font-mono">{a.history_id ?? "—"}</span>
+              </div>
+              <div className="text-muted-foreground">
+                Watch expires: {a.watch_expiration ? new Date(a.watch_expiration).toLocaleString() : "—"}
+              </div>
+              <div className="text-muted-foreground">
+                Last poll: {a.last_poll_at ? relTime(a.last_poll_at) : "—"}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pinging}
+            onClick={async () => {
+              setPinging(true);
+              setPingResult(null);
+              try {
+                const r = await pingFn();
+                setPingResult(r);
+                if (r.ok) toast.success(`Webhook reachable (${r.status} in ${r.elapsed_ms}ms)`);
+                else toast.error(`Webhook returned ${r.status}`);
+                q.refetch();
+              } catch (e: any) {
+                toast.error(e.message);
+              } finally {
+                setPinging(false);
+              }
+            }}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${pinging ? "animate-spin" : ""}`} />
+            Send test request to webhook
+          </Button>
+          {pingResult && (
+            <div className="text-xs text-muted-foreground">
+              <span className={pingResult.ok ? "text-foreground" : "text-destructive"}>
+                {pingResult.ok ? "✓" : "✗"} {pingResult.status} · {pingResult.elapsed_ms}ms
+              </span>
+              {" · "}
+              GMAIL_PUBSUB_TOPIC: {pingResult.topic_set ? "set" : <span className="text-destructive">not set</span>}
+              {pingResult.error && <span className="text-destructive"> · {pingResult.error}</span>}
+            </div>
+          )}
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          A successful test means our endpoint accepts pushes — so if real pushes are still missing, the Google Cloud Pub/Sub subscription is either missing, paused, or pointed at the wrong URL.
+        </p>
       </div>
     </Card>
   );
