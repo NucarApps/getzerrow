@@ -265,9 +265,13 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   });
 
   useEffect(() => {
-    if (!email.is_read) {
-      markFn({ data: { id: email.id, read: true } }).then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
-    }
+    if (email.is_read) return;
+    qc.setQueryData<Email[]>(["emails"], (prev) =>
+      prev?.map((e) => (e.id === email.id ? { ...e, is_read: true } : e)),
+    );
+    markFn({ data: { id: email.id, read: true } }).catch(() =>
+      qc.invalidateQueries({ queryKey: ["emails"] }),
+    );
   }, [email.id]); // eslint-disable-line
 
   const folder = folders.find((f) => f.id === email.folder_id);
