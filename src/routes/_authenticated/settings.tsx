@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   listMyGmailAccounts, startConnectGmail, disconnectGmailAccount,
-  triggerBackfill, triggerSync, renewGmailWatch,
+  triggerBackfill, triggerWeekBackfill, triggerSync, renewGmailWatch,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
