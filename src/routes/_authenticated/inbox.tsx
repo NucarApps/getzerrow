@@ -30,7 +30,7 @@ import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 
 
-export const Route = createFileRoute("/_authenticated/")({ component: InboxPage });
+export const Route = createFileRoute("/_authenticated/inbox")({ component: InboxPage });
 
 type Email = {
   id: string;
