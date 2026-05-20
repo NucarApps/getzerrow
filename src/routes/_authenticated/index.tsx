@@ -98,10 +98,21 @@ function InboxPage() {
 
   const filtered = useMemo(() => {
     const all = emailsQ.data ?? [];
-    if (selectedFolder === "all") return all.filter((e) => !e.is_archived);
-    if (selectedFolder === "unsorted") return all.filter((e) => !e.is_archived && !e.folder_id);
-    return all.filter((e) => e.folder_id === selectedFolder);
-  }, [emailsQ.data, selectedFolder]);
+    let scoped: Email[];
+    if (selectedFolder === "all") scoped = all.filter((e) => !e.is_archived);
+    else if (selectedFolder === "unsorted") scoped = all.filter((e) => !e.is_archived && !e.folder_id);
+    else scoped = all.filter((e) => e.folder_id === selectedFolder);
+    const q = query.trim().toLowerCase();
+    if (!q) return scoped;
+    return scoped.filter((e) => {
+      return (
+        (e.from_name && e.from_name.toLowerCase().includes(q)) ||
+        (e.from_addr && e.from_addr.toLowerCase().includes(q)) ||
+        (e.subject && e.subject.toLowerCase().includes(q)) ||
+        (e.snippet && e.snippet.toLowerCase().includes(q))
+      );
+    });
+  }, [emailsQ.data, selectedFolder, query]);
 
   const selected = filtered.find((e) => e.id === selectedId) ?? null;
 
