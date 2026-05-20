@@ -3,10 +3,10 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 
-function getModel() {
+function getModel(modelId: string = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY;
   if (!key) throw new Error("LOVABLE_API_KEY missing");
-  return createLovableAiGatewayProvider(key)("google/gemini-3-flash-preview");
+  return createLovableAiGatewayProvider(key)(modelId);
 }
 
 export type ClassifyFolder = {
