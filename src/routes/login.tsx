@@ -52,7 +52,7 @@ function LoginPage() {
           toast.error(`Couldn't auto-connect Gmail: ${e?.message ?? "unknown error"}`);
         }
       }
-      nav({ to: "/" });
+      nav({ to: "/inbox" });
     }
 
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => { void handleSession(session); });
