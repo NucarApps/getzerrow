@@ -119,9 +119,9 @@ function InboxPage() {
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
   return (
-    <div className="grid h-screen grid-cols-[400px_1fr]">
+    <div className="grid h-full md:h-screen md:grid-cols-[400px_1fr]">
       {/* List */}
-      <div className="flex flex-col overflow-hidden border-r border-border">
+      <div className={`flex-col overflow-hidden border-r border-border ${selected ? "hidden md:flex" : "flex"} h-[calc(100vh-49px)] md:h-auto`}>
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
@@ -167,8 +167,8 @@ function InboxPage() {
       </div>
 
       {/* Reading pane */}
-      <div className="overflow-y-auto">
-        {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} /> : (
+      <div className={`overflow-y-auto ${selected ? "block" : "hidden md:block"} h-[calc(100vh-49px)] md:h-auto`}>
+        {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} onBack={() => setSelectedId(null)} /> : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             <p className="text-sm">Select an email</p>
           </div>
