@@ -153,31 +153,29 @@ function LandingPage() {
               <div className="smoke"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
               <div className="rocket-wrap" id="rocket">
-                <svg className="rocket" viewBox="0 0 120 220" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M60 6 C 70 30, 86 60, 86 90 L34 90 C 34 60, 50 30, 60 6 Z" fill="#f5f5f0" stroke="#d8d8d0" strokeWidth="1" />
-                  <circle cx="60" cy="58" r="9" fill="#0a0e1a" stroke="#6bd1e0" strokeWidth="1.5" />
-                  <circle cx="57" cy="55" r="3" fill="#6bd1e0" opacity=".4" />
-                  <rect x="34" y="90" width="52" height="70" fill="#f5f5f0" stroke="#d8d8d0" strokeWidth="1" />
-                  <rect x="34" y="100" width="52" height="14" fill="#ff6b3d" />
-                  <text x="60" y="111" textAnchor="middle" fontFamily="JetBrains Mono" fontSize="9" fontWeight="600" fill="#0a0e1a" letterSpacing=".15em">ZERROW</text>
-                  <rect x="34" y="138" width="52" height="6" fill="#1a1f2e" />
-                  <circle cx="40" cy="125" r="1.2" fill="#8a92a8" />
-                  <circle cx="80" cy="125" r="1.2" fill="#8a92a8" />
-                  <circle cx="40" cy="152" r="1.2" fill="#8a92a8" />
-                  <circle cx="80" cy="152" r="1.2" fill="#8a92a8" />
-                  <rect x="34" y="160" width="52" height="20" fill="#e5e5dd" stroke="#d8d8d0" strokeWidth="1" />
-                  <path d="M34 160 L18 200 L34 200 Z" fill="#ff6b3d" stroke="#e3552a" strokeWidth="1" />
-                  <path d="M86 160 L102 200 L86 200 Z" fill="#ff6b3d" stroke="#e3552a" strokeWidth="1" />
-                  <path d="M50 180 L60 210 L70 180 Z" fill="#1a1f2e" />
-                  <path d="M44 180 L42 210 L78 210 L76 180 Z" fill="#1a1f2e" stroke="#2f3852" strokeWidth="1" />
-                  <line x1="48" y1="186" x2="48" y2="208" stroke="#2f3852" strokeWidth=".7" />
-                  <line x1="60" y1="186" x2="60" y2="208" stroke="#2f3852" strokeWidth=".7" />
-                  <line x1="72" y1="186" x2="72" y2="208" stroke="#2f3852" strokeWidth=".7" />
+                <svg className="rocket" viewBox="0 0 120 240" xmlns="http://www.w3.org/2000/svg">
+                  {/* Left (lit) body half */}
+                  <path d="M60 8 L92 178 L60 178 Z" fill="#ff6b3d" />
+                  {/* Right (shadow) body half */}
+                  <path d="M60 8 L28 178 L60 178 Z" fill="#c94a22" />
+                  {/* Dark nozzle / center recess */}
+                  <path d="M50 158 L70 158 L62 192 L58 192 Z" fill="#0a0e1a" />
+                  {/* Left fin — lit face */}
+                  <path d="M40 140 L18 196 L40 192 Z" fill="#ff6b3d" />
+                  {/* Left fin — shadow face */}
+                  <path d="M40 140 L40 192 L32 196 Z" fill="#a83a18" />
+                  {/* Right fin — lit face */}
+                  <path d="M80 140 L102 196 L80 192 Z" fill="#ff6b3d" />
+                  {/* Right fin — shadow face */}
+                  <path d="M80 140 L80 192 L88 196 Z" fill="#c94a22" />
+                  {/* Small dark center fin behind nozzle */}
+                  <path d="M54 178 L66 178 L60 202 Z" fill="#0a0e1a" />
                 </svg>
 
                 <div className="exhaust">
                   <div className="exhaust__halo"></div>
                   <div className="exhaust__core"></div>
+                  <div className="exhaust__jet"></div>
                 </div>
               </div>
 
