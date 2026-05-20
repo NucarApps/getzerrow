@@ -160,7 +160,7 @@ export function useMissionTelemetry() {
       }
     };
     updateTelemetry();
-    const teleInterval = window.setInterval(updateTelemetry, 220);
+    const teleInterval = window.setInterval(updateTelemetry, 600);
 
     // FAQ exclusivity
     const faqItems = Array.from(
