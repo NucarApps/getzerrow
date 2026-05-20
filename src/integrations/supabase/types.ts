@@ -193,6 +193,60 @@ export type Database = {
           },
         ]
       }
+      folder_summary_schedules: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          folder_id: string
+          gmail_account_id: string
+          hour: number
+          id: string
+          instructions: string
+          last_error: string | null
+          last_run_at: string | null
+          minute: number
+          name: string
+          next_run_at: string
+          timezone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          folder_id: string
+          gmail_account_id: string
+          hour: number
+          id?: string
+          instructions?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          minute: number
+          name: string
+          next_run_at: string
+          timezone?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          folder_id?: string
+          gmail_account_id?: string
+          hour?: number
+          id?: string
+          instructions?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          minute?: number
+          name?: string
+          next_run_at?: string
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       folders: {
         Row: {
           ai_rule: string | null

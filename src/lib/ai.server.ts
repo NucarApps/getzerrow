@@ -159,3 +159,57 @@ Guidelines:
   });
   return output as RuleSuggestion;
 }
+
+export type FolderSummaryOutput = {
+  subject: string;
+  body_text: string;
+  body_html: string;
+};
+
+export async function summarizeFolderEmails(args: {
+  folderName: string;
+  instructions: string;
+  emails: Array<{
+    from_addr: string | null;
+    from_name: string | null;
+    subject: string | null;
+    snippet: string | null;
+    received_at: string | null;
+  }>;
+}): Promise<FolderSummaryOutput> {
+  const list = args.emails
+    .slice(0, 200)
+    .map((e, i) => {
+      const when = e.received_at ? new Date(e.received_at).toISOString() : "";
+      const who = e.from_name ? `${e.from_name} <${e.from_addr ?? ""}>` : (e.from_addr ?? "");
+      return `${i + 1}. [${when}] ${who}\n   Subject: ${e.subject ?? ""}\n   Snippet: ${(e.snippet ?? "").slice(0, 240)}`;
+    })
+    .join("\n");
+
+  const { output } = await generateText({
+    model: getModel(),
+    output: Output.object({
+      schema: z.object({
+        subject: z.string().min(1).max(140).describe("Concise subject line for the digest email"),
+        body_text: z.string().min(1).max(20000).describe("Plain-text digest body"),
+        body_html: z.string().min(1).max(40000).describe("HTML digest body (semantic, inline-styled, no <html>/<body> tags)"),
+      }),
+    }),
+    prompt: `You write a daily digest of emails that landed in the user's "${args.folderName}" folder.
+
+User instructions for how to group and format the digest:
+${args.instructions || "(none — use sensible defaults: group by sender or topic, surface action items, keep it scannable.)"}
+
+Emails (most recent first):
+${list}
+
+Write:
+- subject: short, mentions the folder and date range or count.
+- body_text: clean plain-text version.
+- body_html: well-structured HTML using headings, bullet lists, and bold for emphasis. Use simple inline styles only. No <html>, <head>, or <body> tags — just the inner content. Do not include images.
+
+Be concise. Skip empty/duplicate content. If there are no emails, say so briefly.`,
+  });
+
+  return output;
+}
