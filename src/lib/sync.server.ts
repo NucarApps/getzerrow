@@ -238,6 +238,24 @@ async function recordManualMove(
   userId: string,
   msg: { gmail_message_id: string; from_addr: string; subject: string; snippet: string }
 ) {
+  // Skip when this labelsAdded event is just Gmail echoing a label we applied
+  // ourselves during AI/filter/label classification.
+  const { data: existingRow } = await supabaseAdmin
+    .from("emails")
+    .select("folder_id, classified_by")
+    .eq("gmail_message_id", msg.gmail_message_id)
+    .eq("gmail_account_id", accountId)
+    .maybeSingle();
+  if (
+    existingRow &&
+    existingRow.folder_id === folder.id &&
+    ["ai", "filter", "gmail_label", "domain_rule", "manual_move"].includes(
+      existingRow.classified_by ?? ""
+    )
+  ) {
+    return;
+  }
+
   const { error } = await supabaseAdmin.from("folder_examples").upsert(
     {
       folder_id: folder.id,

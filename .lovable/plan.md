@@ -1,49 +1,21 @@
-## Folder History — collapsible rows, richer reasons, pagination
+## Bug: AI-classified email shows "Moved here manually"
 
-Rework the History tab inside `FolderEditor` so it scales to many emails and works well on mobile.
+### Root cause
 
-### 1. Collapsed-by-default rows
-Each email becomes a single tappable row (full width, no inline action button):
-- Subject (truncated, one line)
-- Sender + relative time (e.g. "Acme · 2h ago") on one line
-- Small reason chip on the right (color-coded): `AI`, `Manual`, `Rule`, `Seed`
-- Chevron that rotates on expand
+When `processGmailMessage` AI-classifies a new email and adds the folder's Gmail label via `modifyMessage`, Gmail emits a `labelsAdded` history event for that same label. On the next `syncSinceHistory` run, that event matches a folder and calls `recordManualMove`, which overwrites the row's `classified_by` from `"ai"` to `"manual_move"` and inserts a `folder_examples` row with `source: "manual_move"`. The History tab then shows the manual-move card instead of the AI reason.
 
-Clicking the row (anywhere) toggles an expanded panel below it. Only one row expanded at a time. This removes the always-visible "Wrong folder?" button so rows are compact on mobile.
+### Fix
 
-### 2. Expanded panel — "Why is this here?"
-When a row is expanded, show:
+In `src/lib/sync.server.ts`, `recordManualMove`: before treating a `labelsAdded` event as a manual move, look up the existing email row. Skip the manual-move recording when the row already belongs to this folder AND was classified by us (`ai`, `filter`, `gmail_label`, `domain_rule`). Only genuine user/Gmail-side moves — where the row's `folder_id` is different from (or null vs.) the labeled folder — should be recorded as `manual_move`.
 
-- **Reason block** (varies by `classified_by`):
-  - `ai` → "Classified by AI" + the AI's reason (`ai_summary`) in a quoted block + confidence pill (e.g. `87%`).
-  - `manual` → "Moved here manually" — explains a person dragged/labeled this email into the folder.
-  - `rule` → "Matched a folder rule" + the matching rule field/op/value if available (best-effort lookup from `folder_filters`; otherwise just the label).
-  - `seed` / `none` / unknown → "Imported with this folder" fallback copy.
-- **Snippet preview** (1–2 lines from `snippet`) so the user has context without leaving the page.
-- **Actions row**:
-  - `Move to…` button — opens the existing folder picker (popover on desktop, bottom-sheet style list on mobile via `Drawer`-like layout already in the codebase, or just inline list under the button).
-  - Picking a target folder runs the existing `suggestRecategorization` / `applyRecategorization` flow in place, reusing `RulePatchCard`. No visual changes to that sub-flow.
+### Steps
 
-### 3. Load more pagination
-- `listFolderHistory` already accepts `limit` (max 200). Add an `offset` parameter and return `{ emails, has_more }`.
-- Default page size: 25 (was 100). Client keeps an `offset` state and appends pages with React Query's standard pattern (single `useQuery` keyed by offset, accumulate locally, or `useInfiniteQuery`). Use `useInfiniteQuery` for cleanliness.
-- Render a `Load more` button at the bottom when `has_more` is true; show a spinner while fetching the next page.
-- Empty state unchanged.
-
-### 4. Reason chip styling
-Centralize a small helper that maps `classified_by` → `{ label, tone }`:
-- `ai` → indigo
-- `manual` → emerald
-- `rule` → amber
-- `seed` / fallback → muted
-
-Use semantic tokens / existing badge styles, no raw colors.
-
-### Technical notes
-- Files: `src/components/folders/FolderEditor.tsx` (UI rework), `src/lib/gmail.functions.ts` (add `offset`, return `has_more`).
-- Keep `suggestRecategorization` / `applyRecategorization` and `RulePatchCard` untouched.
-- For `rule` reason detail, do a lightweight `folder_filters` fetch alongside history (once per open) so we can render which rule matched when possible; if we can't determine which specific rule matched, just say "Matched a folder rule" without details.
-- No DB migration needed.
+1. In `recordManualMove`, first `select id, folder_id, classified_by` for `(gmail_message_id, gmail_account_id)`.
+2. If `folder_id === folder.id` and `classified_by` is in `{ai, filter, gmail_label, domain_rule, manual_move}`, return early (no example insert, no row update, no re-learn counter bump).
+3. Otherwise proceed with existing behavior (insert example, update row to `manual_move`, maybe re-learn).
 
 ### Out of scope
-- Virtualized list, search/filter inside history, bulk move, exporting history.
+
+- Changing the History UI.
+- Suppressing the labelsAdded echo at the Gmail level.
+- Backfilling existing rows already mislabeled as `manual_move` (user can re-process or we can do a one-off later).
