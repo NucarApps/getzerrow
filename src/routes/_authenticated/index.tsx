@@ -314,23 +314,80 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           )}
         </div>
         <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={reanalyzing}
+            title="Re-analyze with current folders & rules"
+            onClick={async () => {
+              setReanalyzing(true);
+              try {
+                const r = await reanalyzeFn({ data: { email_id: email.id } });
+                qc.invalidateQueries({ queryKey: ["emails"] });
+                qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                if (!r.changed) {
+                  toast.success("Re-analyzed — no change");
+                } else if (r.folder_id && r.folder_name) {
+                  toast.success(`Re-analyzed → ${r.folder_name}`);
+                } else {
+                  toast.success("Re-analyzed → Inbox");
+                }
+              } catch (e: any) {
+                toast.error(e.message);
+              } finally {
+                setReanalyzing(false);
+              }
+            }}
+          >
+            <RotateCw className={`h-4 w-4 ${reanalyzing ? "animate-spin" : ""}`} />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" disabled={moving || otherFolders.length === 0} title="Move to folder">
+              <Button size="sm" variant="ghost" disabled={moving} title="Move to folder">
                 <FolderInput className="h-4 w-4" />
                 <ChevronDown className="ml-0.5 h-3 w-3 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Move to folder</DropdownMenuLabel>
+              <DropdownMenuLabel>Move to</DropdownMenuLabel>
               <DropdownMenuSeparator />
+              {email.folder_id && (
+                <>
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      setMoving(true);
+                      qc.setQueryData<Email[]>(["emails"], (prev) =>
+                        prev?.map((e) => (e.id === email.id ? { ...e, folder_id: null, is_archived: false } : e)),
+                      );
+                      try {
+                        const r = await inboxFn({ data: { email_id: email.id, add_override: null } });
+                        qc.invalidateQueries({ queryKey: ["emails"] });
+                        qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                        toast.success("Moved to Inbox");
+                        if (r.from_addr || r.domain) {
+                          setAlwaysInbox({ fromAddr: r.from_addr, domain: r.domain });
+                        }
+                      } catch (e: any) {
+                        qc.invalidateQueries({ queryKey: ["emails"] });
+                        toast.error(e.message);
+                      } finally {
+                        setMoving(false);
+                      }
+                    }}
+                  >
+                    <Inbox className="mr-2 h-4 w-4" />
+                    Inbox (no folder)
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               {otherFolders.map((f) => (
                 <DropdownMenuItem key={f.id} onSelect={() => moveTo(f)}>
                   <span className="mr-2 h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
                   {f.name}
                 </DropdownMenuItem>
               ))}
-              {otherFolders.length === 0 && (
+              {otherFolders.length === 0 && !email.folder_id && (
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">No other folders</div>
               )}
             </DropdownMenuContent>
@@ -358,6 +415,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           </Button>
 
         </div>
+
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-6">
