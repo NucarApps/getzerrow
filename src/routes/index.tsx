@@ -310,7 +310,7 @@ function BigStatement() {
           className="italic"
           style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: INK_SOFT }}
         >
-          Zerrow is the assistant that finally treats it like one — and does it for you.
+          Zerrow is the countdown that finally gets you to zero.
         </span>
       </p>
     </section>
