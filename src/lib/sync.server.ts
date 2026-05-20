@@ -62,21 +62,26 @@ function applyFilter(
   }
 }
 
-function matchByFilters(email: Parameters<typeof applyFilter>[0], folders: Folder[], filters: Filter[]): string | null {
+function matchByFilters(
+  email: Parameters<typeof applyFilter>[0],
+  folders: Folder[],
+  filters: Filter[],
+): { folder_id: string; filter: Filter } | null {
   const byFolder = new Map<string, Filter[]>();
   for (const f of filters) {
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
     byFolder.get(f.folder_id)!.push(f);
   }
-  const matched: Folder[] = [];
+  const matched: Array<{ folder: Folder; filter: Filter }> = [];
   for (const folder of folders) {
     const fs = byFolder.get(folder.id) || [];
     if (fs.length === 0) continue;
-    if (fs.some((f) => applyFilter(email, f))) matched.push(folder);
+    const hit = fs.find((f) => applyFilter(email, f));
+    if (hit) matched.push({ folder, filter: hit });
   }
   if (matched.length === 0) return null;
-  matched.sort((a, b) => b.priority - a.priority);
-  return matched[0].id;
+  matched.sort((a, b) => b.folder.priority - a.folder.priority);
+  return { folder_id: matched[0].folder.id, filter: matched[0].filter };
 }
 
 async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolder[]> {
