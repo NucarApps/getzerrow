@@ -92,6 +92,23 @@ export async function sendMessage(accountId: string, to: string, subject: string
   });
 }
 
+/** Insert an RFC 822 message directly into the user's mailbox (does NOT send). */
+export async function insertMessage(
+  accountId: string,
+  rawRfc822: string,
+  labelIds: string[] = ["INBOX", "UNREAD"]
+) {
+  const raw = Buffer.from(rawRfc822).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return gmailFetch<{ id: string; threadId: string }>(
+    accountId,
+    "/users/me/messages?internalDateSource=dateHeader",
+    {
+      method: "POST",
+      body: JSON.stringify({ raw, labelIds }),
+    }
+  );
+}
+
 export async function listHistory(accountId: string, startHistoryId: string) {
   const params = new URLSearchParams({ startHistoryId });
   params.append("historyTypes", "messageAdded");
