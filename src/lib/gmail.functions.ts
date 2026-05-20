@@ -1333,7 +1333,7 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
 
     let q = supabaseAdmin
       .from("emails")
-      .select("id, gmail_message_id, gmail_account_id, folder_id, from_addr")
+      .select("id, gmail_message_id, gmail_account_id, folder_id, from_addr, raw_labels")
       .eq("user_id", context.userId)
       .not("folder_id", "is", null);
     if (data.match_type === "email") {
@@ -1367,7 +1367,7 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
               .from("emails")
               .update({
                 folder_id: null,
-                is_archived: false,
+                is_archived: !((m.raw_labels ?? []) as string[]).includes("INBOX"),
                 classified_by: "manual_strip",
                 classification_reason: reason,
                 matched_filter_ids: [],
