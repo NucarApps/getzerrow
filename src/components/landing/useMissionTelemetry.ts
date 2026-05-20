@@ -97,6 +97,8 @@ export function useMissionTelemetry() {
     const tHdg = $("t-hdg");
     const tDownrange = $("t-downrange");
     const tApogee = $("t-apogee");
+    const tPitch = $("t-pitch");
+    const tAttitudeNeedle = $("t-attitude-needle");
     const footLat = $("foot-lat");
     const uplink = $("uplink-val");
 
