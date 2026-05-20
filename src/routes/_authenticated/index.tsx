@@ -659,7 +659,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                 if (r.classified_by === "ai_error") {
                   toast.error(r.classification_reason || "AI classifier failed");
                 } else if (r.classified_by === "kept") {
-                  const name = (foldersQ.data ?? []).find((f) => f.id === r.folder_id)?.name;
+                  const name = folders.find((f) => f.id === r.folder_id)?.name;
                   toast.message(name ? `No better folder — kept in ${name}.` : "No better folder — kept current.");
                 } else if (!r.changed) {
                   toast.success("Re-analyzed — no change");
