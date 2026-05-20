@@ -22,6 +22,22 @@ export const Route = createFileRoute("/_authenticated")({
 
 function AuthedLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("sidebar-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
+        qc.invalidateQueries({ queryKey: ["emails-summary"] });
+        qc.invalidateQueries({ queryKey: ["emails"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
+        qc.invalidateQueries({ queryKey: ["folders-full"] });
+        qc.invalidateQueries({ queryKey: ["folders"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc]);
   return (
     <FolderSelectionProvider>
       <div className="flex min-h-screen bg-background text-foreground">
