@@ -76,6 +76,39 @@ type Folder = { id: string; name: string; color: string; gmail_label_id: string 
 
 const PAGE_SIZE = 50;
 
+function EmailBodyFrame({ html }: { html: string }) {
+  const ref = useMemo(() => ({ current: null as HTMLIFrameElement | null }), []);
+  const srcDoc = `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;padding:16px;background:#fff;color:#111;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;word-wrap:break-word;overflow-wrap:break-word;}img{max-width:100%;height:auto;}a{color:#2563eb;}table{max-width:100%;}</style></head><body>${html}</body></html>`;
+  const resize = () => {
+    const f = ref.current;
+    if (!f || !f.contentDocument) return;
+    const h = f.contentDocument.documentElement.scrollHeight;
+    f.style.height = Math.min(Math.max(h + 4, 120), 4000) + "px";
+  };
+  return (
+    <iframe
+      ref={(el) => { ref.current = el; }}
+      title="Email body"
+      srcDoc={srcDoc}
+      sandbox="allow-popups allow-popups-to-escape-sandbox"
+      onLoad={() => {
+        resize();
+        const f = ref.current;
+        if (!f || !f.contentDocument) return;
+        const body = f.contentDocument.body;
+        if (body && typeof ResizeObserver !== "undefined") {
+          new ResizeObserver(resize).observe(body);
+        }
+        f.contentDocument.querySelectorAll("img").forEach((img) => {
+          img.addEventListener("load", resize);
+        });
+      }}
+      className="w-full rounded-lg bg-white"
+      style={{ border: 0, colorScheme: "light", minHeight: 120 }}
+    />
+  );
+}
+
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
@@ -879,11 +912,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
         <div className="mt-6">
           {email.body_html ? (
-            <div
-              className="rounded-lg bg-white p-4 text-sm leading-relaxed text-neutral-900 [&_*]:max-w-full [&_a]:text-blue-600 [&_img]:h-auto [&_img]:max-w-full"
-              style={{ colorScheme: "light" }}
-              dangerouslySetInnerHTML={{ __html: email.body_html }}
-            />
+            <EmailBodyFrame html={email.body_html} />
           ) : (
             <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{email.body_text}</pre>
           )}
