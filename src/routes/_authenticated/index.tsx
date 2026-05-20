@@ -53,6 +53,7 @@ function InboxPage() {
   const sync = useServerFn(triggerSync);
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const accountQ = useQuery({
     queryKey: ["gmail_account"],
