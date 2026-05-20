@@ -363,11 +363,11 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       const removeLabels: string[] = [];
       if (folder.gmail_label_id && !parsed.raw_labels?.includes(folder.gmail_label_id)) addLabels.push(folder.gmail_label_id);
       if (folder.auto_mark_read) removeLabels.push("UNREAD");
-      if (folder.auto_archive) removeLabels.push("INBOX");
+      if (inInbox && folder.auto_archive) removeLabels.push("INBOX");
       if (addLabels.length || removeLabels.length) {
         try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
       }
-      if (folder.auto_archive) {
+      if (inInbox && folder.auto_archive) {
         await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", inserted.id);
       }
       if (folder.auto_mark_read) {
