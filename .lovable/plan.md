@@ -1,31 +1,54 @@
-## Make search global
+## Sync messages that skip the inbox
 
-The email is in the system (Cold Email folder, archived). It's hidden from "All Inbox" because that view filters out archived rows, and the search bar at the top is currently scoped to the active folder, so typing "officeonkatmai" while standing on All Inbox returned nothing.
+### Root cause
+- `setupWatch` in `src/lib/gmail.server.ts` line 141 calls Gmail with `labelIds: ["INBOX"], labelFilterAction: "include"`. The push channel only fires for changes to INBOX.
+- `backfillRecent` in `src/lib/sync.server.ts` line 549 calls `listMessages(..., { q: "in:inbox" })`.
+
+When the user has a Gmail filter that applies a folder label (e.g. `Label_458` = Cold Email) **and** skips inbox, the message never touches INBOX → no watch notification → no sync → invisible to the app.
+
+`braund_erik@officeonkatmai.help`'s message today is exactly that case.
 
 ### Fix
 
-In `src/routes/_authenticated/index.tsx` → `filtered` memo (lines 99–115):
+**1. `src/lib/gmail.server.ts` → `setupWatch`**
+Drop the INBOX filter — watch the full mailbox:
 
-When there is a non-empty `query`, search across **all** emails in `emailsQ.data` (including archived, including every folder), regardless of `selectedFolder`. When the query is empty, keep the existing folder-scoped behavior.
-
-```text
-if (query) {
-  return all.filter(matchesQuery)        // all rows, ignore folder + archived
-} else {
-  apply existing folder/archive scoping
-}
+```ts
+body: JSON.stringify({ topicName })   // no labelIds, no labelFilterAction
 ```
 
-That's a ~10-line change in one memo. The query already matches `from_name`, `from_addr`, `subject`, `snippet` — no change to fields.
+Gmail will then deliver `messagesAdded` and `labelsAdded` events for any change in the mailbox, including filter-auto-labeled mail that skipped inbox.
 
-### UX details
+**2. `src/lib/sync.server.ts` → `backfillRecent`**
+Broaden the bootstrap query so the first-run pull picks up filter-routed mail too:
 
-- Add a small hint next to results when searching: `Searching all folders` (right-aligned in the header bar), so the user knows the scope changed.
-- Clicking a search result still opens the email pane as today.
-- No URL/search-param plumbing — the search box state stays local.
+```ts
+const list = await listMessages(accountId, {
+  maxResults,
+  q: "-in:chats -in:trash -in:spam newer_than:7d",
+});
+```
+
+Drops the `in:inbox` constraint; excludes chats/trash/spam to avoid noise. `newer_than:7d` caps backfill volume on first connect.
+
+**3. Re-arm the existing user's watch**
+The current account's watch is registered against INBOX only. Existing watch expires 2026-05-26; we shouldn't wait. Add a one-time re-arm:
+
+- After deploy, call `setupWatch` for `chris@nucar.com` (account `adb85c80-…`) via the existing `triggerSync` path or a small admin server-fn invocation. Simplest: clear `history_id` and `watch_expiration` to force the next `triggerSync` to re-bootstrap with the new (broader) watch.
+
+I'll do this through a one-shot SQL update after the code change ships, so the next sync re-registers the watch.
+
+**4. Catch up the missed message**
+After step 3, call `backfillRecent` (built-in path runs when `history_id` is null) — it will pull all mail from the last 7 days, including the missing `braund_erik@officeonkatmai.help` message, and run it through the classifier.
+
+### Volume / safety
+
+- Gmail watch on the whole mailbox typically fires a few times per minute for active users. The existing `processGmailMessage` already deduplicates by `gmail_message_id` and is idempotent. No new tables or queues needed.
+- The classifier in its current state correctly handles non-INBOX mail (it sets `is_archived = !raw_labels.includes("INBOX")` — see line 717), so the inbox view stays clean. Newly-synced filter-routed mail will appear under its folder, not in "All Inbox".
 
 ### Out of scope
 
-- No change to the default folder views (still hide archived in All Inbox / Unsorted).
-- No server-side search; client-side over the 2000-row cap is fine for current volumes.
-- No change to classifier, overrides, or sync.
+- No change to the UI search (already global from the last fix).
+- No reconfiguration of the user's Gmail filters.
+- No realtime backfill across all historical mail — only last 7 days on rebootstrap. Older filter-skipped mail stays missing unless the user clicks reprocess manually.
+- No notification/badge for newly-synced non-inbox mail.
