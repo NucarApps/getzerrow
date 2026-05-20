@@ -1521,7 +1521,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
     z.object({
-      event_type: z.enum(["push", "watch_renew"]).optional(),
+      event_type: z.enum(["push", "poll", "watch_renew", "watch_rearm_auto"]).optional(),
       only_errors: z.boolean().optional(),
       limit: z.number().min(1).max(500).optional(),
     }).parse(input ?? {})
@@ -1541,14 +1541,23 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: agg } = await supabaseAdmin
       .from("pubsub_events")
-      .select("event_type, accounts_matched, synced_count, error")
+      .select("event_type, accounts_matched, synced_count, error, received_at")
       .gte("received_at", since)
       .limit(5000);
 
-    let push24 = 0, renew24 = 0, accounts24 = 0, synced24 = 0, errors24 = 0;
+    let push24 = 0, poll24 = 0, renew24 = 0, accounts24 = 0, synced24 = 0, errors24 = 0;
+    let lastPollAt: string | null = null;
+    let lastPushAt: string | null = null;
     for (const r of agg ?? []) {
-      if (r.event_type === "push") push24++;
-      else if (r.event_type === "watch_renew") renew24++;
+      if (r.event_type === "push") {
+        push24++;
+        if (!lastPushAt || r.received_at > lastPushAt) lastPushAt = r.received_at;
+      } else if (r.event_type === "poll") {
+        poll24++;
+        if (!lastPollAt || r.received_at > lastPollAt) lastPollAt = r.received_at;
+      } else if (r.event_type === "watch_renew" || r.event_type === "watch_rearm_auto") {
+        renew24++;
+      }
       accounts24 += r.accounts_matched ?? 0;
       synced24 += r.synced_count ?? 0;
       if (r.error) errors24++;
@@ -1556,7 +1565,12 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
 
     return {
       events: rows ?? [],
-      stats: { push24, renew24, accounts24, synced24, errors24, lastReceivedAt: rows?.[0]?.received_at ?? null },
+      stats: {
+        push24, poll24, renew24, accounts24, synced24, errors24,
+        lastReceivedAt: rows?.[0]?.received_at ?? null,
+        lastPollAt,
+        lastPushAt,
+      },
     };
   });
 
