@@ -32,6 +32,7 @@ export type Database = {
           id: string
           is_archived: boolean
           is_read: boolean
+          matched_filter_ids: string[]
           raw_labels: string[] | null
           received_at: string | null
           snippet: string | null
@@ -57,6 +58,7 @@ export type Database = {
           id?: string
           is_archived?: boolean
           is_read?: boolean
+          matched_filter_ids?: string[]
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
@@ -82,6 +84,7 @@ export type Database = {
           id?: string
           is_archived?: boolean
           is_read?: boolean
+          matched_filter_ids?: string[]
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
