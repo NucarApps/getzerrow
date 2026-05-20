@@ -53,8 +53,8 @@ export function useMissionTelemetry() {
         }
         setPhase("liftoff");
         trackingTimeout = window.setTimeout(() => {
-          viewportEl?.classList.add("tracking");
-        }, 1600);
+          viewportEl?.classList.add("is-tracking");
+        }, 1800);
       }
     };
     rafId = requestAnimationFrame(step);
