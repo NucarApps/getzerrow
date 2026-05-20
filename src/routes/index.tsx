@@ -20,10 +20,17 @@ export const Route = createFileRoute("/")({
   component: LandingPage,
 });
 
-const PAPER = "#f5f3ee";
-const PAPER_DEEP = "#e8e4dd";
-const INK = "#0d0d0d";
-const INK_SOFT = "#2d2d2d";
+const BG = "#0c0c14";
+const BG_RAISED = "#15151f";
+const FG = "#f4f3ee";
+const FG_MUTED = "#9a9aa8";
+const GOLD = "#e0b54a";
+
+// Map legacy light-theme names to dark tokens to flip the palette.
+const PAPER = BG;
+const PAPER_DEEP = BG_RAISED;
+const INK = FG;
+const INK_SOFT = FG_MUTED;
 
 const sora = { fontFamily: "'Sora', ui-sans-serif, system-ui, sans-serif" };
 const manrope = { fontFamily: "'Manrope', ui-sans-serif, system-ui, sans-serif" };
@@ -65,7 +72,7 @@ function Header() {
         <Link
           to="/login"
           className="rounded-full px-5 py-2 text-sm font-medium transition hover:opacity-85"
-          style={{ background: INK, color: PAPER, ...sora }}
+          style={{ background: GOLD, color: "#1a1405", ...sora }}
         >
           Sign in
         </Link>
@@ -90,7 +97,7 @@ function Hero() {
             style={sora}
           >
             An inbox that{" "}
-            <span className="italic" style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400 }}>
+            <span className="italic" style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: GOLD }}>
               sorts itself.
             </span>
           </h1>
@@ -107,7 +114,7 @@ function Hero() {
             <Link
               to="/login"
               className="rounded-full px-7 py-3.5 text-base font-medium transition hover:translate-y-[-1px] hover:opacity-90"
-              style={{ background: INK, color: PAPER, ...sora }}
+              style={{ background: GOLD, color: "#1a1405", ...sora }}
             >
               Connect Gmail
             </Link>
@@ -267,19 +274,19 @@ function HowItWorks() {
     <section
       id="how"
       className="border-y py-28 md:py-36"
-      style={{ borderColor: PAPER_DEEP, background: INK, color: PAPER }}
+      style={{ borderColor: PAPER_DEEP, background: PAPER_DEEP, color: FG }}
     >
       <div className="mx-auto max-w-6xl px-6">
         <div className="mb-16 max-w-2xl">
           <p
             className="mb-5 text-xs uppercase tracking-[0.25em]"
-            style={{ color: "#a8a59c", ...sora }}
+            style={{ color: GOLD, ...sora }}
           >
             How it works
           </p>
           <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
             Three steps to inbox zero.{" "}
-            <span className="italic" style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400 }}>
+            <span className="italic" style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: GOLD }}>
               Then it keeps itself there.
             </span>
           </h2>
@@ -289,15 +296,15 @@ function HowItWorks() {
             <div
               key={s.n}
               className="rounded-2xl border p-8"
-              style={{ borderColor: "#2d2d2d", background: "#161616" }}
+              style={{ borderColor: "#2a2a36", background: "#0c0c14" }}
             >
-              <p className="text-xs uppercase tracking-[0.25em]" style={{ color: "#a8a59c", ...sora }}>
+              <p className="text-xs uppercase tracking-[0.25em]" style={{ color: GOLD, ...sora }}>
                 {s.n}
               </p>
               <h3 className="mt-6 text-2xl font-semibold leading-tight" style={sora}>
                 {s.title}
               </h3>
-              <p className="mt-4 text-base leading-relaxed" style={{ color: "#c9c5b8" }}>
+              <p className="mt-4 text-base leading-relaxed" style={{ color: FG_MUTED }}>
                 {s.body}
               </p>
             </div>
@@ -378,18 +385,18 @@ function CTA() {
     <section className="mx-auto max-w-6xl px-6 pb-32">
       <div
         className="rounded-3xl px-10 py-16 text-center md:px-16 md:py-24"
-        style={{ background: INK, color: PAPER }}
+        style={{ background: GOLD, color: "#1a1405" }}
       >
         <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
           Take your inbox back.
         </h2>
-        <p className="mx-auto mt-6 max-w-xl text-lg" style={{ color: "#c9c5b8" }}>
+        <p className="mx-auto mt-6 max-w-xl text-lg" style={{ color: "#3a2d08" }}>
           Connect Gmail in 30 seconds. Zerrow does the rest.
         </p>
         <Link
           to="/login"
           className="mt-10 inline-block rounded-full px-8 py-4 text-base font-medium transition hover:opacity-90"
-          style={{ background: PAPER, color: INK, ...sora }}
+          style={{ background: "#0c0c14", color: GOLD, ...sora }}
         >
           Get started — it's free
         </Link>
