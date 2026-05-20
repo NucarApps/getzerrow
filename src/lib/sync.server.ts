@@ -767,7 +767,48 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       console.error("reconcile row failed", row.gmail_message_id, e);
     }
   }
-  return { checked: rows?.length ?? 0, archived, deleted, updated, repaired, failed };
+
+  // Second pass: scan the most recent archived rows for "moved back to inbox in Gmail"
+  // or "marked unread in Gmail" changes that the history poll missed. Cheap label-only fetches.
+  let unarchived = 0;
+  const { data: archivedRows } = await supabaseAdmin
+    .from("emails")
+    .select("id, gmail_message_id, raw_labels, is_read")
+    .eq("gmail_account_id", accountId)
+    .eq("is_archived", true)
+    .order("received_at", { ascending: false, nullsFirst: false })
+    .limit(200);
+  for (const row of archivedRows ?? []) {
+    try {
+      const labels = await getMessageLabels(accountId, row.gmail_message_id);
+      if (labels === null) {
+        await supabaseAdmin.from("emails").delete().eq("id", row.id);
+        deleted++;
+        continue;
+      }
+      if (labels.includes("TRASH")) {
+        await supabaseAdmin.from("emails").delete().eq("id", row.id);
+        deleted++;
+        continue;
+      }
+      const inInbox = labels.includes("INBOX");
+      const unread = labels.includes("UNREAD");
+      const patch: { raw_labels?: string[]; is_archived?: boolean; is_read?: boolean } = {
+        raw_labels: labels,
+      };
+      if (inInbox) {
+        patch.is_archived = false;
+        unarchived++;
+      }
+      if (row.is_read !== !unread) patch.is_read = !unread;
+      await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
+    } catch (e) {
+      failed++;
+      console.error("reconcile archived row failed", row.gmail_message_id, e);
+    }
+  }
+
+  return { checked: rows?.length ?? 0, archived, deleted, updated, repaired, failed, archived_checked: archivedRows?.length ?? 0, unarchived };
 }
 
 /**
