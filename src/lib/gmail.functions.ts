@@ -1367,7 +1367,7 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
               .from("emails")
               .update({
                 folder_id: null,
-                is_archived: false,
+                is_archived: !((m.raw_labels ?? []) as string[]).includes("INBOX"),
                 classified_by: "manual_strip",
                 classification_reason: reason,
                 matched_filter_ids: [],
