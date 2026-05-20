@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { backfillRecent, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox } from "./sync.server";
+import { backfillRecent, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox, loadOlderFromLabel } from "./sync.server";
 import {
   listLabels,
   createLabel,
@@ -148,6 +148,20 @@ export const learnFolderFromLabel = createServerFn({ method: "POST" })
   .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     return learnFromLinkedLabel(data.folder_id, context.userId);
+  });
+
+export const loadOlderFromGmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string; before_received_at: string | null }) =>
+    z
+      .object({
+        folder_id: z.string().uuid(),
+        before_received_at: z.string().datetime().nullable(),
+      })
+      .parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    return loadOlderFromLabel(data.folder_id, context.userId, data.before_received_at);
   });
 
 export const listFolderDomainSuggestions = createServerFn({ method: "POST" })

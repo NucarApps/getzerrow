@@ -261,6 +261,8 @@ export type Database = {
           color: string
           created_at: string
           gmail_account_id: string
+          gmail_backfill_oldest_received_at: string | null
+          gmail_backfill_page_token: string | null
           gmail_label_id: string | null
           id: string
           last_learned_at: string | null
@@ -276,6 +278,8 @@ export type Database = {
           color?: string
           created_at?: string
           gmail_account_id: string
+          gmail_backfill_oldest_received_at?: string | null
+          gmail_backfill_page_token?: string | null
           gmail_label_id?: string | null
           id?: string
           last_learned_at?: string | null
@@ -291,6 +295,8 @@ export type Database = {
           color?: string
           created_at?: string
           gmail_account_id?: string
+          gmail_backfill_oldest_received_at?: string | null
+          gmail_backfill_page_token?: string | null
           gmail_label_id?: string | null
           id?: string
           last_learned_at?: string | null

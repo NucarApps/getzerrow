@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
   moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
+  loadOlderFromGmail,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,9 @@ type Email = {
   has_attachment: boolean;
 };
 
-type Folder = { id: string; name: string; color: string };
+type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
+
+const PAGE_SIZE = 50;
 
 function InboxPage() {
   const qc = useQueryClient();
@@ -79,43 +82,116 @@ function InboxPage() {
   const foldersQ = useQuery({
     queryKey: ["folders"],
     queryFn: async () => {
-      const { data } = await supabase.from("folders").select("id,name,color").order("priority", { ascending: false });
+      const { data } = await supabase.from("folders").select("id,name,color,gmail_label_id").order("priority", { ascending: false });
       return (data ?? []) as Folder[];
     },
   });
 
-  const emailsQ = useQuery({
-    queryKey: ["emails"],
+  const isSearching = query.trim().length > 0;
+
+  // Pagination state — reset to page 1 whenever the folder or search changes.
+  // cursors[i] is the `received_at <` cursor used to fetch page i+1 (cursors[0] = null).
+  const [page, setPage] = useState(1);
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  useEffect(() => {
+    setPage(1);
+    setCursors([null]);
+    setSelectedId(null);
+  }, [selectedFolder]);
+  const cursor = cursors[page - 1] ?? null;
+
+  const loadOlderFn = useServerFn(loadOlderFromGmail);
+
+  const emailsQ = useQuery<Email[]>({
+    queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
     queryFn: async () => {
-      // Include archived rows so folder views can show labeled mail that isn't in INBOX.
-      // The All inbox / Unsorted views filter is_archived in-memory below.
-      const { data } = await supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(2000);
+      if (isSearching) {
+        // Global search over the most recent 500 messages (across folders, archived included).
+        const { data } = await supabase
+          .from("emails")
+          .select("*")
+          .order("received_at", { ascending: false })
+          .limit(500);
+        return (data ?? []) as Email[];
+      }
+      let q = supabase
+        .from("emails")
+        .select("*")
+        .order("received_at", { ascending: false, nullsFirst: false })
+        .limit(PAGE_SIZE + 1);
+      if (cursor) q = q.lt("received_at", cursor);
+      if (selectedFolder === "all") q = q.eq("is_archived", false);
+      else if (selectedFolder === "unsorted") q = q.eq("is_archived", false).is("folder_id", null);
+      else q = q.eq("folder_id", selectedFolder);
+      const { data } = await q;
       return (data ?? []) as Email[];
     },
     refetchOnWindowFocus: true,
     refetchInterval: 30_000,
   });
 
+  const rawEmails = emailsQ.data ?? [];
+  const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
+  const pageRows = isSearching ? rawEmails : rawEmails.slice(0, PAGE_SIZE);
 
   const filtered = useMemo(() => {
-    const all = emailsQ.data ?? [];
-    const q = query.trim().toLowerCase();
-    if (q) {
-      // Global search: ignore folder + archived scoping so users can find anything.
-      return all.filter((e) => {
+    if (isSearching) {
+      const qstr = query.trim().toLowerCase();
+      return pageRows.filter((e) => {
         return (
-          (e.from_name && e.from_name.toLowerCase().includes(q)) ||
-          (e.from_addr && e.from_addr.toLowerCase().includes(q)) ||
-          (e.subject && e.subject.toLowerCase().includes(q)) ||
-          (e.snippet && e.snippet.toLowerCase().includes(q))
+          (e.from_name && e.from_name.toLowerCase().includes(qstr)) ||
+          (e.from_addr && e.from_addr.toLowerCase().includes(qstr)) ||
+          (e.subject && e.subject.toLowerCase().includes(qstr)) ||
+          (e.snippet && e.snippet.toLowerCase().includes(qstr))
         );
       });
     }
-    if (selectedFolder === "all") return all.filter((e) => !e.is_archived);
-    if (selectedFolder === "unsorted") return all.filter((e) => !e.is_archived && !e.folder_id);
-    return all.filter((e) => e.folder_id === selectedFolder);
-  }, [emailsQ.data, selectedFolder, query]);
-  const isSearching = query.trim().length > 0;
+    return pageRows;
+  }, [pageRows, isSearching, query]);
+
+  const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
+  const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
+
+  const pullOlderMut = useMutation({
+    mutationFn: async () => {
+      if (!currentFolderObj?.gmail_label_id) throw new Error("This view isn't linked to a Gmail label.");
+      const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
+      return loadOlderFn({ data: { folder_id: currentFolderObj.id, before_received_at: lastReceived } });
+    },
+    onSuccess: async (r: any) => {
+      await qc.refetchQueries({ queryKey: ["emails", selectedFolder] });
+      const pulled = (r?.ingested ?? 0) + (r?.claimed ?? 0);
+      if (pulled > 0) toast.success(`Pulled ${pulled} older email${pulled === 1 ? "" : "s"} from Gmail.`);
+      else toast.message("No older emails found in Gmail.");
+      // Advance to next page using last row of CURRENT page as cursor.
+      const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
+      setCursors((prev) => {
+        const next = prev.slice(0, page);
+        next.push(lastReceived);
+        return next;
+      });
+      setPage((p) => p + 1);
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Failed to pull from Gmail"),
+  });
+
+  function goNext() {
+    if (hasMoreLocal) {
+      const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
+      setCursors((prev) => {
+        const next = prev.slice(0, page);
+        next.push(lastReceived);
+        return next;
+      });
+      setPage((p) => p + 1);
+      return;
+    }
+    if (canPullFromGmail && !pullOlderMut.isPending) pullOlderMut.mutate();
+  }
+  function goPrev() {
+    if (page > 1) setPage((p) => p - 1);
+  }
+  const canGoNext = !isSearching && (hasMoreLocal || canPullFromGmail);
 
   const selected = filtered.find((e) => e.id === selectedId) ?? null;
 
@@ -138,7 +214,7 @@ function InboxPage() {
         qc.refetchQueries({ queryKey: ["emails"] }),
         qc.invalidateQueries({ queryKey: ["gmail-accounts"] }),
       ]);
-      const fresh = qc.getQueryData<Email[]>(["emails"]) ?? [];
+      const fresh = qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([,d]) => d ?? []) ?? [];
       if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
     },
     onError: (e: any) => toast.error(e.message),
@@ -233,7 +309,7 @@ function InboxPage() {
                       <>
                         <ContextMenuItem
                           onSelect={async () => {
-                            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, classified_by: "manual_inbox" } : x)));
+                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, classified_by: "manual_inbox" } : x)));
                             try {
                               await moveInboxFn({ data: { email_id: e.id } });
                               toast.success("Moved to inbox");
@@ -257,7 +333,7 @@ function InboxPage() {
                       <ContextMenuItem
                         key={f.id}
                         onSelect={async () => {
-                          qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, classified_by: "manual_move" } : x)));
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, classified_by: "manual_move" } : x)));
                           try {
                             await moveFolderFn({ data: { email_id: e.id, to_folder_id: f.id } });
                             toast.success(`Moved to ${f.name}`);
@@ -351,7 +427,7 @@ function InboxPage() {
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   onSelect={async () => {
-                    qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true } : x)));
+                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true } : x)));
                     try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
                     catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
                   }}
@@ -362,7 +438,7 @@ function InboxPage() {
                 <ContextMenuItem
                   className="text-destructive focus:text-destructive"
                   onSelect={async () => {
-                    qc.setQueryData<Email[]>(["emails"], (prev) => prev?.filter((x) => x.id !== e.id));
+                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
                     try { await trashFnList({ data: { id: e.id } }); toast.success("Trashed"); }
                     catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
                   }}
@@ -375,6 +451,27 @@ function InboxPage() {
             );
           })}
         </div>
+        {!isSearching && (
+          <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={goPrev} disabled={page === 1}>
+              <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Prev
+            </Button>
+            <span>
+              Page {page}
+              {pullOlderMut.isPending ? " · pulling from Gmail…" : ""}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={goNext}
+              disabled={!canGoNext || pullOlderMut.isPending}
+              title={!canGoNext ? "No more emails in this view" : !hasMoreLocal ? "Pull next 50 from Gmail" : ""}
+            >
+              Next <ChevronLeft className="ml-1 h-3.5 w-3.5 rotate-180" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Reading pane */}
@@ -436,7 +533,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
   useEffect(() => {
     if (email.is_read) return;
-    qc.setQueryData<Email[]>(["emails"], (prev) =>
+    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
       prev?.map((e) => (e.id === email.id ? { ...e, is_read: true } : e)),
     );
     markFn({ data: { id: email.id, read: true } }).catch(() =>
@@ -450,7 +547,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   async function moveTo(target: Folder) {
     setMoving(true);
     // Optimistic: flip folder_id locally so the row jumps immediately.
-    qc.setQueryData<Email[]>(["emails"], (prev) =>
+    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
       prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id } : e)),
     );
     try {
@@ -530,7 +627,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                   <DropdownMenuItem
                     onSelect={async () => {
                       setMoving(true);
-                      qc.setQueryData<Email[]>(["emails"], (prev) =>
+                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
                         prev?.map((e) => (e.id === email.id ? { ...e, folder_id: null, is_archived: false } : e)),
                       );
                       try {
@@ -568,20 +665,20 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           </DropdownMenu>
           <Button size="sm" variant="ghost" onClick={() => {
             const next = !email.is_read;
-            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)));
+            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)));
             markFn({ data: { id: email.id, read: next } }).catch(() => qc.invalidateQueries({ queryKey: ["emails"] }));
           }}>
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
           <Button size="sm" variant="ghost" onClick={async () => {
-            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
+            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
             try { await archFn({ data: { id: email.id } }); toast.success("Archived"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
           }}>
             <Archive className="h-4 w-4" />
           </Button>
           <Button size="sm" variant="ghost" onClick={async () => {
-            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.filter((e) => e.id !== email.id));
+            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((e) => e.id !== email.id));
             try { await trashFn({ data: { id: email.id } }); toast.success("Trashed"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
           }}>
