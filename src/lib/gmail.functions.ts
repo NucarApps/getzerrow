@@ -1530,7 +1530,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
     z.object({
-      event_type: z.enum(["push", "push_empty", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error"]).optional(),
+      event_type: z.enum(["push", "push_empty", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error", "webhook_test"]).optional(),
       only_errors: z.boolean().optional(),
       limit: z.number().min(1).max(500).optional(),
     }).parse(input ?? {})
@@ -1577,27 +1577,25 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       if (r.error) errors24++;
     }
 
-    // Most recent push (matched or not). Prefer rows logged by the new
-    // instrumented webhook (payload IS NOT NULL); fall back to the truly
-    // latest push if no instrumented one exists yet.
+    // Most recent REAL push from Google (synthetic webhook_test rows are
+    // excluded — they're app-side tests, not proof of GCP delivery).
     const cols = "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details";
-    const { data: instrumentedPushRows } = await supabaseAdmin
+    const { data: anyPushRows } = await supabaseAdmin
       .from("pubsub_events")
       .select(cols)
       .in("event_type", ["push", "push_empty"])
-      .not("payload", "is", null)
       .order("received_at", { ascending: false })
       .limit(1);
-    let lastPush: any = instrumentedPushRows?.[0] ?? null;
-    if (!lastPush) {
-      const { data: anyPushRows } = await supabaseAdmin
-        .from("pubsub_events")
-        .select(cols)
-        .in("event_type", ["push", "push_empty"])
-        .order("received_at", { ascending: false })
-        .limit(1);
-      lastPush = anyPushRows?.[0] ?? null;
-    }
+    const lastPush: any = anyPushRows?.[0] ?? null;
+
+    // Most recent webhook self-test (separate from real pushes).
+    const { data: lastTestRows } = await supabaseAdmin
+      .from("pubsub_events")
+      .select(cols)
+      .eq("event_type", "webhook_test")
+      .order("received_at", { ascending: false })
+      .limit(1);
+    const lastWebhookTest = lastTestRows?.[0] ?? null;
 
     const { data: lastRenewRows } = await supabaseAdmin
       .from("pubsub_events")
@@ -1632,6 +1630,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       diagnostics: {
         lastPush,
         lastWatchRenew,
+        lastWebhookTest,
         webhookUrl,
         pubsubTopic: process.env.GMAIL_PUBSUB_TOPIC ?? null,
         stuckJobs: stuckJobs ?? [],
@@ -1666,18 +1665,55 @@ export const resyncMessage = createServerFn({ method: "POST" })
     return { in_inbox: inInbox, unread, labels };
   });
 
-/** POST a synthetic empty envelope to our own Pub/Sub webhook to prove the endpoint is reachable. */
+/**
+ * POST a synthetic envelope to our own Pub/Sub webhook to prove the endpoint
+ * is reachable. Tagged with `x-zerrow-test: 1` so the webhook logs it as
+ * `webhook_test` and it does NOT pollute real push diagnostics.
+ *
+ * If `realistic` is true and the user has a connected account, builds a
+ * Pub/Sub-shaped envelope using that account's email + current history_id
+ * so the test also exercises account matching + sync code.
+ */
 export const pingPubsubWebhook = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
+  .inputValidator((d) => z.object({ realistic: z.boolean().optional() }).parse(d ?? {}))
+  .handler(async ({ data, context }) => {
     const host = getRequestHost();
     const url = `https://${host}/api/public/gmail-webhook`;
+
+    let envelope: Record<string, unknown> = { message: {} };
+    let mode: "empty" | "realistic" = "empty";
+    let account_email: string | null = null;
+    if (data.realistic) {
+      const { data: acc } = await supabaseAdmin
+        .from("gmail_accounts")
+        .select("email_address, history_id")
+        .eq("user_id", context.userId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (acc?.email_address && acc.history_id) {
+        const payload = { emailAddress: acc.email_address, historyId: acc.history_id };
+        const dataB64 = Buffer.from(JSON.stringify(payload), "utf-8").toString("base64");
+        envelope = {
+          message: {
+            data: dataB64,
+            messageId: `zerrow-test-${Date.now()}`,
+            publishTime: new Date().toISOString(),
+          },
+          subscription: "zerrow-app-side-test",
+        };
+        mode = "realistic";
+        account_email = acc.email_address;
+      }
+    }
+
     const started = Date.now();
     try {
       const r = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: {} }),
+        headers: { "Content-Type": "application/json", "x-zerrow-test": "1" },
+        body: JSON.stringify(envelope),
       });
       return {
         url,
@@ -1685,6 +1721,8 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         status: r.status,
         elapsed_ms: Date.now() - started,
         topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
+        mode,
+        account_email,
       };
     } catch (e: any) {
       return {
@@ -1693,6 +1731,8 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         status: 0,
         elapsed_ms: Date.now() - started,
         topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
+        mode,
+        account_email,
         error: e?.message ?? String(e),
       };
     }

@@ -44,8 +44,8 @@ export function PubsubActivity() {
   const [retryingJob, setRetryingJob] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [pinging, setPinging] = useState(false);
-  const [pingResult, setPingResult] = useState<null | { ok: boolean; status: number; elapsed_ms: number; topic_set: boolean; error?: string; url: string }>(null);
+  const [pinging, setPinging] = useState<null | "empty" | "realistic">(null);
+  const [pingResult, setPingResult] = useState<null | { ok: boolean; status: number; elapsed_ms: number; topic_set: boolean; mode?: string; account_email?: string | null; error?: string; url: string }>(null);
   const [renewing, setRenewing] = useState(false);
   const [showLastPush, setShowLastPush] = useState(false);
 
@@ -76,6 +76,7 @@ export function PubsubActivity() {
   const diag = q.data?.diagnostics;
   const lastPush = diag?.lastPush ?? null;
   const lastRenew = diag?.lastWatchRenew ?? null;
+  const lastWebhookTest = (diag as any)?.lastWebhookTest ?? null;
   const watchActive = (accountsQ.data?.accounts ?? []).some(
     (a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()
   );
@@ -97,6 +98,13 @@ export function PubsubActivity() {
     !lastPushStale &&
     lastPush.event_type === "push" &&
     (lastPush.accounts_matched ?? 0) === 0;
+
+  // After a re-arm, if no real Google push has arrived, the GCP subscription
+  // is the broken piece. Show this as soon as the re-arm is >60s old.
+  const noPushSinceRearm =
+    !!lastRenew &&
+    Date.now() - lastRenewMs > 60_000 &&
+    lastPushMs < lastRenewMs;
 
 
   const renewBtn = (
@@ -156,6 +164,23 @@ export function PubsubActivity() {
               <div className="font-medium text-destructive">Push arrived but didn't match a connected account.</div>
               <div className="mt-1 text-muted-foreground">
                 Google delivered a Pub/Sub push, but the decoded <span className="font-mono">emailAddress</span> {lastPush.email_address ? <>(<span className="font-mono">{lastPush.email_address}</span>)</> : "was missing"} doesn't match any account in this app. The Gmail watch is almost certainly attached to a different Google project or a different topic than the subscription forwarding to us. Re-arming forces a new watch against <span className="font-mono">{diag?.pubsubTopic ?? "GMAIL_PUBSUB_TOPIC (unset)"}</span>.
+              </div>
+            </div>
+          </div>
+          {renewBtn}
+        </div>
+      )}
+
+      {/* RED: watch is armed but Google has not delivered a real push since */}
+      {noPushSinceRearm && !showUnmatchedBanner && (
+        <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="text-xs">
+              <div className="font-medium text-destructive">Watch is armed, but no real Google push has arrived since.</div>
+              <div className="mt-1 text-muted-foreground">
+                The Gmail watch was re-armed {relTime(lastRenew!.received_at)} against <span className="font-mono">{diag?.pubsubTopic ?? "(unset)"}</span>, but Google has not POSTed a real <span className="font-mono">push</span> envelope to this app since then. Polling is filling the gap (~2 min delay), so the broken piece is the GCP Pub/Sub <strong>push subscription</strong> — not the watch, not this app's webhook. Verify the subscription on that topic is enabled and its push URL is exactly:
+                <div className="mt-1 font-mono break-all">{diag?.webhookUrl} {diag?.webhookUrl && <CopyBtn value={diag.webhookUrl} />}</div>
               </div>
             </div>
           </div>
@@ -484,40 +509,49 @@ export function PubsubActivity() {
           ))}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pinging}
-            onClick={async () => {
-              setPinging(true);
-              setPingResult(null);
-              try {
-                const r = await pingFn();
-                setPingResult(r);
-                if (r.ok) toast.success(`Webhook reachable (${r.status} in ${r.elapsed_ms}ms)`);
-                else toast.error(`Webhook returned ${r.status}`);
-                q.refetch();
-              } catch (e: any) {
-                toast.error(e.message);
-              } finally {
-                setPinging(false);
-              }
-            }}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${pinging ? "animate-spin" : ""}`} />
-            Send test request to webhook
-          </Button>
+          {(["empty", "realistic"] as const).map((mode) => (
+            <Button
+              key={mode}
+              size="sm"
+              variant="outline"
+              disabled={pinging !== null}
+              onClick={async () => {
+                setPinging(mode);
+                setPingResult(null);
+                try {
+                  const r = await pingFn({ data: { realistic: mode === "realistic" } });
+                  setPingResult(r);
+                  if (r.ok) toast.success(`Webhook reachable (${r.status} in ${r.elapsed_ms}ms)`);
+                  else toast.error(`Webhook returned ${r.status}`);
+                  q.refetch();
+                } catch (e: any) {
+                  toast.error(e.message);
+                } finally {
+                  setPinging(null);
+                }
+              }}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${pinging === mode ? "animate-spin" : ""}`} />
+              {mode === "empty" ? "Test webhook reachable" : "Test with connected account"}
+            </Button>
+          ))}
           {pingResult && (
             <div className="text-xs text-muted-foreground">
               <span className={pingResult.ok ? "text-foreground" : "text-destructive"}>
                 {pingResult.ok ? "✓" : "✗"} {pingResult.status} · {pingResult.elapsed_ms}ms
               </span>
+              {pingResult.mode && <> · mode: <span className="font-mono">{pingResult.mode}</span></>}
+              {pingResult.account_email && <> · {pingResult.account_email}</>}
               {" · "}
               GMAIL_PUBSUB_TOPIC: {pingResult.topic_set ? "set" : <span className="text-destructive">not set</span>}
               {pingResult.error && <span className="text-destructive"> · {pingResult.error}</span>}
             </div>
           )}
         </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          These are app-side tests, logged as <span className="font-mono">webhook_test</span> — they prove our endpoint works but do NOT prove the Google Cloud Pub/Sub subscription is delivering. Only a real <span className="font-mono">push</span> row from Google does that.
+          {lastWebhookTest && <> · Last test: {relTime(lastWebhookTest.received_at)}</>}
+        </p>
 
         <div className="mt-4 rounded border bg-card p-3 text-xs">
           <div className="font-medium">Google Cloud Pub/Sub setup checklist</div>

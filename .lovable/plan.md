@@ -1,47 +1,32 @@
+## What I found
 
-## What's happening
-
-Michelle's email did arrive in the app — the 18:26 poll detected it and enqueued a job for Gmail message `19e469f81176c627`. But the job is stuck:
-
-```
-message_jobs row
-  status        running
-  locked_at     18:26:00   (held > 2 min, never released)
-  attempt       0
-  last_error    null
-```
-
-`processGmailMessage` calls Gmail `GetMessage` (the API you saw erroring in Google Console) and then `classifyParsedEmail` (AI Gateway). One of those is hanging or hitting the Cloudflare Worker wall-time limit, so the request is killed *before* the `catch` block runs. Because nothing increments `attempt` or clears `locked_at`, the row sits in `running` until the 5-minute lock cutoff — then the next poll reclaims it and the cycle repeats. The email never appears, and the job never reaches the DLQ.
-
-This is also why we never see a `last_error` for it: the worker is dying mid-execution, not throwing.
+- Re-arming is working: Gmail accepted a new watch for `chris@nucar.com` and returned a fresh `history_id`.
+- Real Gmail Pub/Sub pushes are not arriving after the watch is armed.
+- The only recent “push” rows are from the app’s own **Send test request to webhook** button. That button posts an empty `{ message: {} }` payload, so it creates confusing `push_empty` / `push accounts_matched=0` rows even though Google did not send them.
+- New emails are still being picked up by fallback polling every ~2 minutes, which means the Gmail account/history sync works; the broken piece is between Google Cloud Pub/Sub subscription delivery and this app’s webhook URL.
 
 ## Plan
 
-### 1. Unstick Michelle's email right now
-- Reset that specific job (`status='pending'`, `locked_at=null`, `next_run_at=now()`) so the next poll picks it up cleanly. If it fails again, it'll do so loudly (see #2).
+1. **Stop fake webhook tests from looking like real pushes**
+   - Change the webhook/self-test flow so synthetic app-generated tests are logged as `webhook_test`, not `push` or `push_empty`.
+   - Fix the current double-log behavior where an empty test request creates both `push_empty` and a final `push` row.
 
-### 2. Insert the email row BEFORE classification (the real fix for visibility)
-In `processGmailMessage`:
-- After `parseMessage`, insert the email row immediately with `folder_id=null` (lands in Inbox), `classified_by='pending'`.
-- Then run `classifyParsedEmail` and `UPDATE` the row with folder/summary/etc.
-- If classification fails or times out, the email is already visible in the inbox — only the AI label is missing.
+2. **Make diagnostics explicitly compare “watch armed” vs “real push delivered”**
+   - In the Gmail sync activity panel, show a clear status when the latest `watch_renew` is newer than the latest real Gmail push.
+   - Message should say: the Gmail watch is armed, but the Pub/Sub subscription is not delivering to this app.
+   - Keep polling visible as fallback, but label it as fallback rather than treating it as proof push works.
 
-This is the core decoupling: Gmail-API latency and AI latency should never block an email from appearing.
+3. **Add a real-payload webhook verifier for app-side processing only**
+   - Add a “Test webhook with connected account payload” action that sends a valid Pub/Sub-shaped payload for `chris@nucar.com` to the local webhook.
+   - This proves the webhook can decode `emailAddress`, match the account, and call `syncSinceHistory`.
+   - Label it clearly as an app-side test, not proof that Google Cloud subscription delivery is configured.
 
-### 3. Hard timeout + stuck-job self-heal in `runMessageJobs`
-- Wrap `processGmailMessage` in `Promise.race` with a 25 s timeout so the worker always throws into the `catch` block (which already handles attempt counting, backoff, DLQ).
-- At the top of `runMessageJobs`, sweep rows where `status='running' AND locked_at < cutoff`: increment `attempt`, set `last_error='stuck (worker timeout)'`, and either re-pend with backoff or move to DLQ at `MAX_JOB_ATTEMPTS`. This breaks the infinite stuck→reclaim loop even if a future bug brings it back.
+4. **Improve the checklist to show the actual external fix needed**
+   - Update the checklist to emphasize that the Google Cloud push subscription must POST to the current webhook URL:
+     `https://getzerrow.com/api/public/gmail-webhook` or the current preview URL if testing preview.
+   - Show that the topic and subscription must be in the same Google project as `projects/projectinboxzero-495314/topics/gmail-push`.
+   - Keep the publisher permission reminder for `gmail-api-push@system.gserviceaccount.com`.
 
-### 4. Surface stuck jobs in the diagnostics panel
-Add a small "Stuck jobs" row to `PubsubActivity` showing any `message_jobs` with `status='running'` for >2 min, with the gmail_message_id and a "Force retry" button (calls existing `retryMessageJob`). So next time this happens you see it instead of guessing.
-
-## Files to touch
-- `src/lib/sync.server.ts` — split insert/classify in `processGmailMessage`; add stuck-job sweep + `Promise.race` timeout in `runMessageJobs`.
-- `src/lib/gmail.functions.ts` — extend `listPubsubEvents` to also return stuck `message_jobs`.
-- `src/components/settings/PubsubActivity.tsx` — render stuck-jobs row + Force retry.
-- One-off SQL to reset job `f6e18c37-…` to pending so Michelle's email shows up on the next poll (≤ 2 min).
-
-## Out of scope
-- Re-architecting Gmail polling, push, or watch logic.
-- Changing the classifier itself.
-- GCP console changes.
+5. **Validate after changes**
+   - Check the latest `pubsub_events` rows to confirm synthetic tests no longer pollute real push diagnostics.
+   - Re-arm, send a real email, and confirm the panel shows either a fresh real `push` row or a precise “subscription not delivering” status.
