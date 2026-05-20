@@ -1,0 +1,1 @@
+ALTER TABLE public.emails ADD COLUMN IF NOT EXISTS matched_filter_ids uuid[] NOT NULL DEFAULT '{}'::uuid[];

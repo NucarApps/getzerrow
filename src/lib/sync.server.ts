@@ -17,7 +17,7 @@ type Folder = {
   gmail_account_id: string;
 };
 
-type Filter = { folder_id: string; field: string; op: string; value: string };
+type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 
 type GmailAccount = {
   id: string;
@@ -67,7 +67,7 @@ function applyFilter(
 const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
 
 type FolderMatch =
-  | { kind: "match"; folder_id: string; filter: Filter }
+  | { kind: "match"; folder_id: string; filter: Filter; matched_filters: Filter[] }
   | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
 
 function matchByFilters(
@@ -80,25 +80,25 @@ function matchByFilters(
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
     byFolder.get(f.folder_id)!.push(f);
   }
-  const matched: Array<{ folder: Folder; filter: Filter }> = [];
+  const matched: Array<{ folder: Folder; filter: Filter; allMatches: Filter[] }> = [];
   const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
   for (const folder of folders) {
     const fs = byFolder.get(folder.id) || [];
     if (fs.length === 0) continue;
     const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
     const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
-    const includeHit = includes.find((f) => applyFilter(email, f));
-    if (!includeHit) continue;
+    const includeHits = includes.filter((f) => applyFilter(email, f));
+    if (includeHits.length === 0) continue;
     const excludeHit = excludes.find((f) => applyFilter(email, f));
     if (excludeHit) {
       excludedFolders.push({ folder, exclude: excludeHit });
       continue;
     }
-    matched.push({ folder, filter: includeHit });
+    matched.push({ folder, filter: includeHits[0], allMatches: includeHits });
   }
   if (matched.length > 0) {
     matched.sort((a, b) => b.folder.priority - a.folder.priority);
-    return { kind: "match", folder_id: matched[0].folder.id, filter: matched[0].filter };
+    return { kind: "match", folder_id: matched[0].folder.id, filter: matched[0].filter, matched_filters: matched[0].allMatches };
   }
   if (excludedFolders.length > 0) {
     excludedFolders.sort((a, b) => b.folder.priority - a.folder.priority);
@@ -180,7 +180,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
 
   const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
     supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId).order("priority", { ascending: false }),
-    supabaseAdmin.from("folder_filters").select("folder_id, field, op, value"),
+    supabaseAdmin.from("folder_filters").select("id, folder_id, field, op, value"),
     supabaseAdmin.from("inbox_overrides").select("match_type, value").eq("user_id", userId),
   ]);
 
@@ -193,6 +193,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   let confidence = 0;
   let summary = "";
   let classification_reason: string | null = null;
+  let matched_filter_ids: string[] = [];
   let aiSkipped = false;
 
   const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
@@ -219,6 +220,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
         folder_id = m.folder_id;
         classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
         confidence = 1;
+        matched_filter_ids = m.matched_filters.map((f) => f.id);
         classification_reason =
           classified_by === "domain_rule"
             ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
@@ -268,6 +270,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       ai_confidence: confidence,
       classified_by,
       classification_reason,
+      matched_filter_ids,
     })
     .select("id, folder_id")
     .single();
