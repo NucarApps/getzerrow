@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { connectGmailFromSession } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import zerrowLogo from "@/assets/zerrow-logo.png";
+import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
