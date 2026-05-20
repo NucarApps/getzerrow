@@ -17,7 +17,7 @@ type Folder = {
   gmail_account_id: string;
 };
 
-type Filter = { folder_id: string; field: string; op: string; value: string };
+type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 
 type GmailAccount = {
   id: string;
