@@ -588,6 +588,79 @@ export async function backfillRecent(accountId: string, userId: string, maxResul
   return { processed: results.length };
 }
 
+export async function backfillWindow(
+  accountId: string,
+  userId: string,
+  opts: { query: string; maxMessages?: number; concurrency?: number },
+) {
+  const started = Date.now();
+  const maxMessages = opts.maxMessages ?? 1000;
+  const concurrency = opts.concurrency ?? 4;
+
+  // 1) Page through Gmail collecting IDs, de-duped.
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  let pageToken: string | undefined;
+  while (ids.length < maxMessages) {
+    const remaining = maxMessages - ids.length;
+    const list = await listMessages(accountId, {
+      q: opts.query,
+      maxResults: Math.min(100, remaining),
+      pageToken,
+    });
+    for (const m of list.messages ?? []) {
+      if (!seen.has(m.id)) { seen.add(m.id); ids.push(m.id); }
+      if (ids.length >= maxMessages) break;
+    }
+    pageToken = list.nextPageToken;
+    if (!pageToken) break;
+  }
+
+  // 2) Drop IDs we already have for this account (batched).
+  let alreadyHad = 0;
+  const todo: string[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const slice = ids.slice(i, i + 500);
+    const { data: existing } = await supabaseAdmin
+      .from("emails")
+      .select("gmail_message_id")
+      .eq("gmail_account_id", accountId)
+      .in("gmail_message_id", slice);
+    const have = new Set((existing ?? []).map((r) => r.gmail_message_id));
+    for (const id of slice) {
+      if (have.has(id)) alreadyHad++;
+      else todo.push(id);
+    }
+  }
+
+  // 3) Process with bounded concurrency.
+  let processed = 0;
+  let failed = 0;
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= todo.length) return;
+      try {
+        await processGmailMessage(accountId, todo[i], userId);
+        processed++;
+      } catch (e) {
+        failed++;
+        console.error("backfillWindow process failed", todo[i], e);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, todo.length) }, worker));
+
+  return {
+    found: ids.length,
+    alreadyHad,
+    processed,
+    failed,
+    durationMs: Date.now() - started,
+  };
+}
+
 async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   const account = await getAccount(accountId);
   const watch = await ensureWatch(accountId, account.watch_expiration);
