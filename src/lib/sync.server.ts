@@ -292,15 +292,9 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
 
   if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
 
-  const c = await classifyParsedEmail(parsed, userId, accountId);
-  const folder_id = c.folder_id;
-  const classified_by = c.classified_by;
-  const confidence = c.ai_confidence;
-  const summary = c.ai_summary;
-  const classification_reason = c.classification_reason;
-  const matched_filter_ids = c.matched_filter_ids;
-
-
+  // 1) Insert the email row FIRST with no folder so it shows up in Inbox
+  //    immediately, even if classification (AI Gateway) is slow or fails.
+  //    Classification runs in step 2 and UPDATEs the row.
   const { data: inserted, error } = await supabaseAdmin
     .from("emails")
     .insert({
@@ -319,15 +313,11 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       is_read: parsed.is_read,
       has_attachment: parsed.has_attachment,
       raw_labels: parsed.raw_labels,
-      folder_id,
-      ai_summary: summary || null,
-      ai_confidence: confidence,
-      classified_by,
-      classification_reason,
-      matched_filter_ids,
+      folder_id: null,
+      classified_by: "pending",
       processed_at: new Date().toISOString(),
     })
-    .select("id, folder_id")
+    .select("id")
     .single();
 
   if (error) {
@@ -335,6 +325,29 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
     return { error: error.message };
   }
 
+  // 2) Classify. If this throws or times out, the email is already in Inbox.
+  let folder_id: string | null = null;
+  try {
+    const c = await classifyParsedEmail(parsed, userId, accountId);
+    folder_id = c.folder_id ?? null;
+    await supabaseAdmin.from("emails").update({
+      folder_id,
+      ai_summary: c.ai_summary || null,
+      ai_confidence: c.ai_confidence,
+      classified_by: c.classified_by,
+      classification_reason: c.classification_reason,
+      matched_filter_ids: c.matched_filter_ids,
+    }).eq("id", inserted.id);
+  } catch (e) {
+    console.error("classify failed (email already visible in Inbox)", e);
+    await supabaseAdmin.from("emails").update({
+      classified_by: "unclassified",
+      classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
+    }).eq("id", inserted.id);
+    return { id: inserted.id, classify_failed: true };
+  }
+
+  // 3) Apply Gmail label / auto-archive / auto-mark-read for the assigned folder.
   if (folder_id) {
     const { data: folder } = await supabaseAdmin
       .from("folders")
