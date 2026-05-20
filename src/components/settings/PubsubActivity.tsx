@@ -200,6 +200,67 @@ export function PubsubActivity() {
           </tbody>
         </table>
       </div>
+
+      <div className="mt-6 rounded-md border bg-muted/20 p-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Activity className="h-4 w-4" />
+          Push subscription diagnostics
+        </div>
+        <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+          {(accountsQ.data?.accounts ?? []).map((a) => (
+            <div key={a.id} className="rounded border bg-card p-2">
+              <div className="font-medium">{a.email_address}</div>
+              <div className="text-muted-foreground">
+                History ID: <span className="font-mono">{a.history_id ?? "—"}</span>
+              </div>
+              <div className="text-muted-foreground">
+                Watch expires: {a.watch_expiration ? new Date(a.watch_expiration).toLocaleString() : "—"}
+              </div>
+              <div className="text-muted-foreground">
+                Last poll: {a.last_poll_at ? relTime(a.last_poll_at) : "—"}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pinging}
+            onClick={async () => {
+              setPinging(true);
+              setPingResult(null);
+              try {
+                const r = await pingFn();
+                setPingResult(r);
+                if (r.ok) toast.success(`Webhook reachable (${r.status} in ${r.elapsed_ms}ms)`);
+                else toast.error(`Webhook returned ${r.status}`);
+                q.refetch();
+              } catch (e: any) {
+                toast.error(e.message);
+              } finally {
+                setPinging(false);
+              }
+            }}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${pinging ? "animate-spin" : ""}`} />
+            Send test request to webhook
+          </Button>
+          {pingResult && (
+            <div className="text-xs text-muted-foreground">
+              <span className={pingResult.ok ? "text-foreground" : "text-destructive"}>
+                {pingResult.ok ? "✓" : "✗"} {pingResult.status} · {pingResult.elapsed_ms}ms
+              </span>
+              {" · "}
+              GMAIL_PUBSUB_TOPIC: {pingResult.topic_set ? "set" : <span className="text-destructive">not set</span>}
+              {pingResult.error && <span className="text-destructive"> · {pingResult.error}</span>}
+            </div>
+          )}
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          A successful test means our endpoint accepts pushes — so if real pushes are still missing, the Google Cloud Pub/Sub subscription is either missing, paused, or pointed at the wrong URL.
+        </p>
+      </div>
     </Card>
   );
 }
