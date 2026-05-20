@@ -23,6 +23,7 @@ function SettingsPage() {
   const connect = useServerFn(startConnectGmail);
   const disconnect = useServerFn(disconnectGmailAccount);
   const backfill = useServerFn(triggerBackfill);
+  const weekBackfill = useServerFn(triggerWeekBackfill);
   const sync = useServerFn(triggerSync);
   const renew = useServerFn(renewGmailWatch);
 
