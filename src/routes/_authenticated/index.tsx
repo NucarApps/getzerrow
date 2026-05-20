@@ -106,12 +106,12 @@ function InboxPage() {
     queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
     queryFn: async () => {
       if (isSearching) {
-        // Global search over the most recent 500 messages (across folders, archived included).
+        // Global search over the most recent 2000 messages, including archived/stripped.
         const { data } = await supabase
           .from("emails")
           .select("*")
           .order("received_at", { ascending: false })
-          .limit(500);
+          .limit(2000);
         return (data ?? []) as Email[];
       }
       let q = supabase
