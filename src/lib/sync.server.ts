@@ -67,7 +67,7 @@ function applyFilter(
 const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
 
 type FolderMatch =
-  | { kind: "match"; folder_id: string; filter: Filter }
+  | { kind: "match"; folder_id: string; filter: Filter; matched_filters: Filter[] }
   | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
 
 function matchByFilters(
@@ -80,25 +80,25 @@ function matchByFilters(
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
     byFolder.get(f.folder_id)!.push(f);
   }
-  const matched: Array<{ folder: Folder; filter: Filter }> = [];
+  const matched: Array<{ folder: Folder; filter: Filter; allMatches: Filter[] }> = [];
   const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
   for (const folder of folders) {
     const fs = byFolder.get(folder.id) || [];
     if (fs.length === 0) continue;
     const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
     const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
-    const includeHit = includes.find((f) => applyFilter(email, f));
-    if (!includeHit) continue;
+    const includeHits = includes.filter((f) => applyFilter(email, f));
+    if (includeHits.length === 0) continue;
     const excludeHit = excludes.find((f) => applyFilter(email, f));
     if (excludeHit) {
       excludedFolders.push({ folder, exclude: excludeHit });
       continue;
     }
-    matched.push({ folder, filter: includeHit });
+    matched.push({ folder, filter: includeHits[0], allMatches: includeHits });
   }
   if (matched.length > 0) {
     matched.sort((a, b) => b.folder.priority - a.folder.priority);
-    return { kind: "match", folder_id: matched[0].folder.id, filter: matched[0].filter };
+    return { kind: "match", folder_id: matched[0].folder.id, filter: matched[0].filter, matched_filters: matched[0].allMatches };
   }
   if (excludedFolders.length > 0) {
     excludedFolders.sort((a, b) => b.folder.priority - a.folder.priority);
