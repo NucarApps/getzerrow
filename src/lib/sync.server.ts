@@ -195,6 +195,10 @@ export async function classifyParsedEmail(
     classification_reason = `Global inbox list: ${overrideHit.match_type} "${overrideHit.value}"`;
     aiSkipped = true;
   } else {
+    // Gmail label match always wins — if the message already has one of our
+    // folder labels at sync time, that's either a manual move in Gmail or a
+    // label we previously applied. Either way, we should NOT re-attribute it
+    // to a domain/filter rule that happens to also match.
     const labeledFolder = opts.skipGmailLabelMatch
       ? undefined
       : folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
@@ -202,7 +206,7 @@ export async function classifyParsedEmail(
       folder_id = labeledFolder.id;
       classified_by = "gmail_label";
       confidence = 1;
-      classification_reason = `Matched Gmail label "${labeledFolder.name}"`;
+      classification_reason = `Already labeled "${labeledFolder.name}" in Gmail at sync time`;
     } else {
       const m = matchByFilters(parsed, folderList, filterList);
       if (m?.kind === "match") {
@@ -321,6 +325,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       classified_by,
       classification_reason,
       matched_filter_ids,
+      processed_at: new Date().toISOString(),
     })
     .select("id, folder_id")
     .single();
