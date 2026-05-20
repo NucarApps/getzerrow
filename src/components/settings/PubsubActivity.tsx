@@ -24,8 +24,14 @@ function relTime(iso: string | null): string {
 
 export function PubsubActivity() {
   const fetchEvents = useServerFn(listPubsubEvents);
+  const pingFn = useServerFn(pingPubsubWebhook);
+  const accountsFn = useServerFn(listMyGmailAccounts);
+  const renewFn = useServerFn(renewGmailWatch);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [pinging, setPinging] = useState(false);
+  const [pingResult, setPingResult] = useState<null | { ok: boolean; status: number; elapsed_ms: number; topic_set: boolean; error?: string; url: string }>(null);
+  const [renewing, setRenewing] = useState(false);
 
   const q = useQuery({
     queryKey: ["pubsub-events", filter],
@@ -38,6 +44,11 @@ export function PubsubActivity() {
         },
       }),
     refetchInterval: 10000,
+  });
+
+  const accountsQ = useQuery({
+    queryKey: ["my-gmail-accounts-pubsub"],
+    queryFn: () => accountsFn(),
   });
 
   const events = q.data?.events ?? [];
