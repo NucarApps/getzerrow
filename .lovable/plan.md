@@ -1,13 +1,9 @@
-# Replace logo and increase size
+# Replace logo with new upload
 
-## Changes
+The previous turn didn't actually copy the uploaded image into `src/assets/zerrow-logo.png` — the file on disk is unchanged, so you're still seeing the old logo.
 
-1. **`src/assets/zerrow-logo.png`** — overwrite with the newly uploaded image.
+## Change
 
-2. **Bump display sizes everywhere the logo is rendered:**
-   - `src/routes/index.tsx` (landing nav): `height: 32` → `height: 56`
-   - `src/routes/_authenticated.tsx` topbar (line 96): `h-7` → `h-12`
-   - `src/routes/_authenticated.tsx` sidebar (line 176): `h-9` → `h-14`
-   - `src/routes/login.tsx` (line 89): `h-20` → `h-28`
+1. Copy `user-uploads://IMG_2149.png` → `src/assets/zerrow-logo.png` (overwrite).
 
-No other changes.
+No code changes needed — all four render sites (`index.tsx`, `_authenticated.tsx` topbar + sidebar, `login.tsx`) already import this asset at the larger sizes set last turn.
