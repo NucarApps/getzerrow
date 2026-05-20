@@ -19,6 +19,7 @@ import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
+import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 
@@ -72,6 +73,12 @@ const ApiPublicGmailWebhookRoute = ApiPublicGmailWebhookRouteImport.update({
   path: '/api/public/gmail-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGmailRenewWatchesRoute =
+  ApiPublicGmailRenewWatchesRouteImport.update({
+    id: '/api/public/gmail-renew-watches',
+    path: '/api/public/gmail-renew-watches',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicGmailPollRoute = ApiPublicGmailPollRouteImport.update({
   id: '/api/public/gmail-poll',
   path: '/api/public/gmail-poll',
@@ -93,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof AuthenticatedInboxRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
+  '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -106,6 +114,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof AuthenticatedInboxRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
+  '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -121,6 +130,7 @@ export interface FileRoutesById {
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
+  '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/settings'
     | '/api/public/gmail-poll'
+    | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/hooks/run-folder-summaries'
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/settings'
     | '/api/public/gmail-poll'
+    | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/hooks/run-folder-summaries'
@@ -163,6 +175,7 @@ export interface FileRouteTypes {
     | '/_authenticated/inbox'
     | '/_authenticated/settings'
     | '/api/public/gmail-poll'
+    | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/hooks/run-folder-summaries'
@@ -175,6 +188,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
+  ApiPublicGmailRenewWatchesRoute: typeof ApiPublicGmailRenewWatchesRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
@@ -252,6 +266,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/gmail-renew-watches': {
+      id: '/api/public/gmail-renew-watches'
+      path: '/api/public/gmail-renew-watches'
+      fullPath: '/api/public/gmail-renew-watches'
+      preLoaderRoute: typeof ApiPublicGmailRenewWatchesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/gmail-poll': {
       id: '/api/public/gmail-poll'
       path: '/api/public/gmail-poll'
@@ -292,6 +313,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
+  ApiPublicGmailRenewWatchesRoute: ApiPublicGmailRenewWatchesRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,

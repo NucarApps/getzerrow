@@ -52,6 +52,7 @@ type Email = {
   matched_filter_ids: string[] | null;
   to_addrs: string | null;
   has_attachment: boolean;
+  processed_at: string | null;
 };
 
 type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
@@ -111,7 +112,7 @@ function InboxPage() {
         // Exclude body_text/body_html — they're only needed when an email is opened.
         const { data } = await supabase
           .from("emails")
-          .select("id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,to_addrs,has_attachment")
+          .select("id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,to_addrs,has_attachment,processed_at")
           .order("received_at", { ascending: false })
           .limit(2000);
         return (data ?? []) as Email[];
@@ -794,6 +795,21 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div className="h-full bg-primary" style={{ width: `${Math.round(email.ai_confidence * 100)}%` }} />
                 </div>
+              </div>
+            )}
+            {email.processed_at && email.received_at && (
+              <div className="text-xs text-muted-foreground">
+                Synced{" "}
+                {(() => {
+                  const delta = Math.max(0, Math.round((new Date(email.processed_at).getTime() - new Date(email.received_at).getTime()) / 1000));
+                  if (delta < 90) return `${delta}s`;
+                  if (delta < 3600) return `${Math.round(delta / 60)} min`;
+                  return `${Math.round(delta / 3600)}h`;
+                })()}{" "}
+                after Gmail received it
+                {email.processed_at && (
+                  <> · {new Date(email.processed_at).toLocaleString()}</>
+                )}
               </div>
             )}
           </CollapsibleContent>
