@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import cobwebInbox from "@/assets/cobweb-inbox.svg";
+import { RocketCountdown } from "@/components/landing/RocketCountdown";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -88,9 +88,9 @@ function Hero() {
         <div>
           <p
             className="mb-6 text-xs uppercase tracking-[0.25em]"
-            style={{ color: INK_SOFT, ...sora }}
+            style={{ color: GOLD, ...sora }}
           >
-            For Gmail · powered by AI
+            T-minus to Inbox Zero
           </p>
           <h1
             className="text-5xl font-bold leading-[1.02] tracking-tight md:text-7xl"
@@ -127,33 +127,12 @@ function Hero() {
             </a>
           </div>
           <p className="mt-6 text-sm" style={{ color: INK_SOFT }}>
-            Free to try · Works with your existing Gmail labels
+            Free to try · 3, 2, 1, launch
           </p>
         </div>
 
         <div className="relative">
-          <div
-            className="rounded-3xl border p-10 shadow-sm"
-            style={{ background: PAPER_DEEP, borderColor: PAPER_DEEP }}
-          >
-            <div className="flex flex-col items-center gap-6 text-center">
-              <img src={cobwebInbox} alt="" className="h-44 w-auto opacity-90" />
-              <div>
-                <p className="text-sm font-medium" style={sora}>
-                  Yesterday's inbox
-                </p>
-                <p
-                  className="mt-2 text-3xl font-bold"
-                  style={{ ...sora }}
-                >
-                  0 unread
-                </p>
-                <p className="mt-2 text-xs" style={{ color: INK_SOFT }}>
-                  142 messages routed automatically
-                </p>
-              </div>
-            </div>
-          </div>
+          <RocketCountdown />
         </div>
       </div>
     </section>
@@ -176,10 +155,14 @@ function Marquee() {
       className="border-y py-6"
       style={{ borderColor: PAPER_DEEP, background: PAPER_DEEP }}
     >
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-10 gap-y-3 px-6 text-sm" style={{ color: INK_SOFT, ...sora }}>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-3 px-6 text-xs" style={{ color: INK_SOFT, ...sora }}>
+        <span className="uppercase tracking-[0.25em]" style={{ color: GOLD }}>
+          Systems check
+        </span>
         {items.map((t) => (
-          <span key={t} className="uppercase tracking-[0.18em]">
-            {t}
+          <span key={t} className="flex items-center gap-2 uppercase tracking-[0.2em]">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#4ade80", boxShadow: "0 0 6px #4ade80" }} />
+            {t} · GO
           </span>
         ))}
       </div>
@@ -255,17 +238,17 @@ function Features() {
 function HowItWorks() {
   const steps = [
     {
-      n: "Step 1",
+      n: "T − 3 · Ignition",
       title: "Connect Gmail",
       body: "Sign in with Google. Zerrow connects to your existing Gmail account using OAuth — no password, no migration.",
     },
     {
-      n: "Step 2",
+      n: "T − 2 · Trajectory",
       title: "Describe your folders",
       body: "Create a folder and write a one-line rule in plain English. Zerrow learns the rest from a handful of examples.",
     },
     {
-      n: "Step 3",
+      n: "T − 1 · Liftoff",
       title: "Open a clean inbox",
       body: "Newsletters land in Newsletters. Receipts land in Receipts. Your inbox shows what's left — the email that actually wants you.",
     },
@@ -282,12 +265,12 @@ function HowItWorks() {
             className="mb-5 text-xs uppercase tracking-[0.25em]"
             style={{ color: GOLD, ...sora }}
           >
-            How it works
+            Mission stages
           </p>
           <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
-            Three steps to inbox zero.{" "}
+            Three stages to liftoff.{" "}
             <span className="italic" style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: GOLD }}>
-              Then it keeps itself there.
+              Then it holds the orbit for you.
             </span>
           </h2>
         </div>
@@ -327,7 +310,7 @@ function BigStatement() {
           className="italic"
           style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: INK_SOFT }}
         >
-          Zerrow is the assistant that finally treats it like one — and does it for you.
+          Zerrow is the countdown that finally gets you to zero.
         </span>
       </p>
     </section>
@@ -388,17 +371,17 @@ function CTA() {
         style={{ background: GOLD, color: "#1a1405" }}
       >
         <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
-          Take your inbox back.
+          Ready for liftoff?
         </h2>
         <p className="mx-auto mt-6 max-w-xl text-lg" style={{ color: "#3a2d08" }}>
-          Connect Gmail in 30 seconds. Zerrow does the rest.
+          Connect Gmail in 30 seconds. Zerrow handles the countdown.
         </p>
         <Link
           to="/login"
           className="mt-10 inline-block rounded-full px-8 py-4 text-base font-medium transition hover:opacity-90"
           style={{ background: "#0c0c14", color: GOLD, ...sora }}
         >
-          Get started — it's free
+          Start the countdown
         </Link>
       </div>
     </section>
