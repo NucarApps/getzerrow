@@ -1,4 +1,7 @@
-// Gmail Pub/Sub push webhook. Looks up the right gmail_account by emailAddress.
+// Gmail Pub/Sub push webhook. Acks within ~1s by enqueuing message jobs
+// rather than processing inline. The history fetch is still synchronous,
+// but each message goes onto the durable queue and is processed by
+// /api/public/gmail-process-jobs with retries.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory } from "@/lib/sync.server";
@@ -10,15 +13,13 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
         let emailAddress: string | null = null;
         let historyId: string | null = null;
         let accountsMatched = 0;
-        let syncedCount = 0;
+        let enqueuedCount = 0;
         let errorMsg: string | null = null;
         try {
           const body = await request.json();
           const dataB64 = body?.message?.data;
           if (!dataB64) {
-            await supabaseAdmin.from("pubsub_events").insert({
-              event_type: "push_empty",
-            });
+            await supabaseAdmin.from("pubsub_events").insert({ event_type: "push_empty" });
             return new Response("ok", { status: 200 });
           }
           const decoded = JSON.parse(Buffer.from(dataB64, "base64").toString("utf-8")) as {
@@ -35,15 +36,18 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
           for (const acc of accounts ?? []) {
             try {
               const r = await syncSinceHistory(acc.id);
-              if (r && typeof (r as any).synced === "number") syncedCount += (r as any).synced;
+              if (r && typeof (r as { synced?: number }).synced === "number") {
+                enqueuedCount += (r as { synced: number }).synced;
+              }
             } catch (e) {
               console.error("sync failed for", acc.id, e);
               errorMsg = (e as Error)?.message ?? String(e);
             }
           }
-        } catch (e: any) {
-          console.error("webhook error", e);
-          errorMsg = e?.message ?? String(e);
+        } catch (e: unknown) {
+          const err = e as Error;
+          console.error("webhook error", err);
+          errorMsg = err?.message ?? String(e);
         } finally {
           try {
             await supabaseAdmin.from("pubsub_events").insert({
@@ -51,7 +55,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               email_address: emailAddress,
               history_id: historyId,
               accounts_matched: accountsMatched,
-              synced_count: syncedCount,
+              synced_count: enqueuedCount,
               error: errorMsg,
             });
           } catch (logErr) {

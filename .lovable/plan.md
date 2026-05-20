@@ -1,61 +1,95 @@
-# Diagnose the Pub/Sub silence + fix the stale Julie Caltabiano row
+# Bulletproof Gmail Processing
 
-## What's actually happening
+## What's actually broken
 
-1. **The Julie Caltabiano email IS processed.** It's in the DB:
-   - From: `Julie.Caltabiano@nissan-usa.com`
-   - Subject: "FW: INFORMATION: Voice of Customer Survey – Appeals & Post-Launch Q&A"
-   - Classified to **Factory** via domain rule, auto-archived, marked read.
-   - Stored labels: `Label_347, CATEGORY_PERSONAL, Factory` — no INBOX, no UNREAD.
+I checked the database for your account (`chris@nucar.com`):
 
-2. **You moved it back to your inbox in Gmail.** Now Gmail says it has INBOX + UNREAD, but our row still shows the pre-move state. Our `applyLabelChange` handler would flip `is_archived=false` and `is_read=false` the moment we see a `labelsAdded` history event for INBOX/UNREAD — we just haven't seen it.
-
-3. **Why we haven't seen it: Pub/Sub is dead silent.** `pubsub_events` has **zero rows in its entire history**. Google has never POSTed to `/api/public/gmail-webhook`. Everything currently working works only because of the 2-min fallback poll. That's the real bug.
+- **`pubsub_events` table has 0 rows ever.** Google is not delivering a single push to `/api/public/gmail-webhook`. Every email you've received has only arrived through the 2-minute fallback poll. That's why things feel slow / occasionally missed.
+- **Julie Caltabiano's email IS in your DB** — it was processed, classified to Factory, and archived 5/20 at 1:48 PM. The reason it looks "unprocessed" is that you moved it back into the Gmail Inbox afterwards, and we haven't re-synced that label change yet. Its stored `raw_labels` are `Label_347, CATEGORY_PERSONAL, Label_...` — no `INBOX`, no `UNREAD`.
+- **There is no per-message retry.** If `processGmailMessage` throws for any reason (Gmail 5xx, AI timeout, classifier error), the message is silently skipped and never retried — the history cursor still advances.
+- **Reconciliation only looks at the last 200 archived rows.** A move-back-to-inbox older than that is invisible until you click "Resync" manually.
 
 ## Plan
 
-### Step 1 — Unstick the immediate Julie Caltabiano row (fast)
-Add a small **"Resync this message from Gmail"** action in the email detail view. It calls a new `resyncMessage` server function that:
-- Fetches the current Gmail message metadata (labels) via the existing `getMessageMetadata` helper.
-- Calls `applyLabelChange` against the current labels vs. our stored `raw_labels` to reconcile INBOX/UNREAD/TRASH state immediately.
-- Invalidates the inbox query.
+### 1. Durable per-message processing queue
 
-This gives you a button you can hit on any row that looks stale, without waiting for the next poll.
+Today: webhook/poll → `syncSinceHistory` → inline `processGmailMessage` for each new message. One failure = one lost message.
 
-### Step 2 — Make stale-archived rows reconcile automatically
-`reconcileLocalInbox` today only checks rows where `is_archived = false`. So once we archive a row, we never re-check it — meaning "moved back to inbox in Gmail" is silently missed by reconciliation.
+Change to a queue:
 
-Change: run a second pass that scans the **most recent 200 archived rows** for each account and checks Gmail for INBOX/UNREAD label additions. Cheap (just label fetches, batched), runs in the same 2-min cron tick. This guarantees that anything moved back to inbox in Gmail shows up in our inbox within 2 minutes even when Pub/Sub is silent.
+```text
+history event ──► enqueue message_jobs(message_id, account_id, attempt=0)
+                                 │
+                                 ▼
+                  process-message-jobs cron (every 30s)
+                  ├─ claim batch (FOR UPDATE SKIP LOCKED)
+                  ├─ run full pipeline (fetch → parse → classify → store)
+                  ├─ success → delete row
+                  └─ failure → attempt++, next_run_at = now()+backoff
+                              attempt ≥ 5 → status='dlq', error stored
+```
 
-### Step 3 — Surface a Pub/Sub health banner in Settings
-In the new "Gmail Pub/Sub activity" card, add a red banner at the top when:
-- `pubsub_events` has zero rows in the last 24h, AND
-- the account has an active `watch_expiration` in the future.
+New table `message_jobs(id, gmail_account_id, gmail_message_id, attempt, next_run_at, status, last_error, created_at)` with a unique index on `(gmail_account_id, gmail_message_id)` so we never double-queue.
 
-Banner text: "Gmail is not pushing notifications to this app. Emails are still arriving via the 2-minute fallback poll, but live updates are off. Click **Re-arm push watch** to refresh the Gmail watch."
+`syncSinceHistory` becomes a thin "enqueue" function. The webhook returns 200 immediately after enqueuing — no more long-running work inside the Pub/Sub push handler (which is what makes Pub/Sub retry storms and silently fail).
 
-The "Re-arm push watch" button calls the existing `renewGmailWatch` server fn (already wired in Settings) — that re-runs `users.watch` against the configured `GMAIL_PUBSUB_TOPIC`, which is the standard fix when a watch goes silent.
+### 2. Faster, complete inbox reconciliation
 
-### Step 4 — Add a diagnostics panel to confirm topic config
-Below the Pub/Sub activity card, add a small **"Push subscription diagnostics"** panel that shows:
-- The configured topic name (`GMAIL_PUBSUB_TOPIC` env var, masked).
-- Whether the env var is set at all.
-- The account's current `watch_expiration` and `history_id`.
-- A "Send test request to webhook" button that POSTs a synthetic empty Pub/Sub envelope to `/api/public/gmail-webhook` and confirms our handler responds 200 and writes a `push_empty` row. This proves the endpoint itself is reachable — if the test succeeds but real pushes are still missing, the problem is on the Google Cloud subscription side (subscription deleted, points to the wrong URL, or topic permissions stripped).
+- Bump the archived-rows scan from 200 → 1000 and run it every cron tick.
+- Add a "full reconcile" button in Settings that walks all rows for the account, in pages of 500, and queues any label drift into `message_jobs`.
+- Keep the per-message "Resync from Gmail" button on `EmailDetail` for one-offs.
 
-We cannot introspect the GCP push subscription from inside the app, but this gives you a clean test that isolates "our endpoint works" vs. "GCP isn't pushing."
+### 3. Pub/Sub health & self-healing
 
-## What this does NOT change
-- No schema changes.
-- No change to classification logic, folders, or auto-archive rules.
-- No change to your saved instructions or digest config.
-- No new secrets.
+The push subscription is broken right now. We need to know that without me running SQL.
 
-## Technical notes
-Files touched:
-- `src/lib/sync.server.ts` — extend `reconcileLocalInbox` to also scan recent archived rows.
-- `src/lib/gmail.functions.ts` — new `resyncMessage` + `pingPubsubWebhook` server fns.
-- `src/components/inbox/EmailDetail.tsx` (or equivalent) — "Resync from Gmail" button.
-- `src/components/settings/PubsubActivity.tsx` — silent-pushes banner + diagnostics panel + ping button.
+- Add a `pubsub_health` view: last push received, last watch renew, accounts with active `watch_expiration`, push silence > 1h.
+- Settings → Pub/Sub Activity card surfaces a red banner when silence > 1h AND watch is active, with two buttons:
+  - **Re-arm watch** (calls existing `renewGmailWatch`)
+  - **Send test push to webhook** (POSTs an empty Pub/Sub envelope and confirms it writes a `push_empty` row — isolates GCP-side vs. our-side)
+- Add a server-side guard: if `gmail-poll` runs and notices `pubsub_events` has been silent > 6h while watch is active, it auto-calls `ensureWatch` to re-arm.
 
-After this lands you'll have (a) an immediate way to fix the Julie row, (b) automatic reconciliation of emails moved back to inbox in Gmail within 2 minutes, and (c) a clear signal in Settings that Pub/Sub itself is silent, plus a test that tells you whether to re-arm the watch or fix the GCP subscription.
+### 4. Per-message visibility in Settings
+
+New "Processing jobs" panel below Pub/Sub Activity:
+
+- Live count of `message_jobs` by status (pending, retrying, dlq)
+- Table of DLQ rows with: from, subject, attempt count, last error, "Retry now" button
+- Filter by account
+
+This is the missing piece — today there's nowhere to see "we tried to process X and it failed because Y."
+
+### 5. Idempotency hardening
+
+- `processGmailMessage` already upserts by `(gmail_account_id, gmail_message_id)` — confirm and add a unique constraint if missing so retries are always safe.
+- Webhook handler stays at "ack within 1s" so Pub/Sub never retries us (we own retries via `message_jobs`).
+
+## Technical details
+
+**Files touched:**
+
+- New migration: `message_jobs` table + index, optional `emails` unique constraint
+- `src/lib/sync.server.ts` — `syncSinceHistory` enqueues into `message_jobs` instead of processing inline; add `runMessageJobs(limit)` worker function; expand `reconcileLocalInbox` archived scan to 1000
+- `src/routes/api/public/gmail-process-jobs.ts` — new cron endpoint, called every 30s
+- `src/routes/api/public/gmail-webhook.ts` — return 200 after enqueue; never run pipeline inline
+- `src/routes/api/public/gmail-poll.ts` — add self-heal: re-arm watch if push silent > 6h
+- `src/lib/gmail.functions.ts` — add `listMessageJobs`, `retryMessageJob`, `runFullReconcile`, `pingWebhook` server fns
+- `src/components/settings/PubsubActivity.tsx` — silence banner + test-push button
+- `src/components/settings/ProcessingJobs.tsx` — new panel for DLQ visibility
+- `src/routes/_authenticated/settings.tsx` — mount the new panel
+
+**Cron schedule (Supabase pg_cron):**
+
+- `gmail-process-jobs` every 30s (new — the actual worker)
+- `gmail-poll` every 2 min (unchanged — fills history gaps)
+- `gmail-renew-watches` daily (unchanged)
+
+**No changes to:** classification logic, folder rules, saved instructions, AI prompts, or any UI outside Settings + EmailDetail.
+
+## Out of scope
+
+- Fixing the GCP Pub/Sub subscription itself (that's a one-time console action — I'll surface it as a clearly-marked banner with instructions, but I can't reach into your Google Cloud project)
+- Rewriting the classifier
+- Schema changes to `emails` beyond the unique constraint
+
+After this lands: a message that arrives via push OR poll is enqueued in `message_jobs`, processed within 30s, retried with backoff on any failure, and visible in Settings with a "Retry" button if it ever ends up in DLQ. No message can silently disappear.

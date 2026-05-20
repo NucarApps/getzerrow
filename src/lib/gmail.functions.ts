@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { backfillRecent, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox, loadOlderFromLabel } from "./sync.server";
+import { backfillRecent, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox, loadOlderFromLabel, runMessageJobs, retryMessageJob, enqueueMessageJob } from "./sync.server";
 import {
   listLabels,
   createLabel,
@@ -1617,3 +1617,82 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
     }
   });
 
+
+/** List processing jobs (queue + DLQ) for the current user. */
+export const listMessageJobs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({
+      status: z.enum(["pending", "running", "dlq", "all"]).optional(),
+      limit: z.number().min(1).max(500).optional(),
+    }).parse(input ?? {})
+  )
+  .handler(async ({ data, context }) => {
+    const limit = data.limit ?? 100;
+    let q = supabaseAdmin
+      .from("message_jobs")
+      .select("id, gmail_account_id, gmail_message_id, attempt, status, next_run_at, last_error, from_addr, subject, created_at, updated_at")
+      .eq("user_id", context.userId)
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+    if (data.status && data.status !== "all") q = q.eq("status", data.status);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+
+    const { data: agg } = await supabaseAdmin
+      .from("message_jobs")
+      .select("status")
+      .eq("user_id", context.userId);
+    const stats = { pending: 0, running: 0, dlq: 0, total: agg?.length ?? 0 };
+    for (const r of agg ?? []) {
+      if (r.status === "pending") stats.pending++;
+      else if (r.status === "running") stats.running++;
+      else if (r.status === "dlq") stats.dlq++;
+    }
+    return { jobs: rows ?? [], stats };
+  });
+
+/** Manually retry a DLQ or pending job. */
+export const retryJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: job } = await supabaseAdmin
+      .from("message_jobs")
+      .select("id, user_id")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!job || job.user_id !== context.userId) throw new Error("Not found");
+    await retryMessageJob(data.id);
+    return { ok: true };
+  });
+
+/** Run the worker now (drains up to N jobs). Useful for "Retry now" UI button. */
+export const runJobsNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({ limit: z.number().min(1).max(100).optional() }).parse(input ?? {})
+  )
+  .handler(async ({ data }) => {
+    return await runMessageJobs(data.limit ?? 25);
+  });
+
+/** Re-enqueue a single Gmail message id for the current user's connected accounts. */
+export const enqueueGmailMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { gmail_account_id: string; gmail_message_id: string }) =>
+    z.object({
+      gmail_account_id: z.string().uuid(),
+      gmail_message_id: z.string().min(1).max(64),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { data: acc } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("id, user_id")
+      .eq("id", data.gmail_account_id)
+      .maybeSingle();
+    if (!acc || acc.user_id !== context.userId) throw new Error("Not found");
+    await enqueueMessageJob(data.gmail_account_id, context.userId, data.gmail_message_id);
+    return { ok: true };
+  });
