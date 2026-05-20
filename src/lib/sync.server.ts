@@ -83,6 +83,10 @@ function matchByFilters(
   matched.sort((a, b) => b.folder.priority - a.folder.priority);
   return { folder_id: matched[0].folder.id, filter: matched[0].filter };
 }
+function labelOf(folders: Folder[], id: string) {
+  return folders.find((f) => f.id === id)?.name ?? "folder";
+}
+
 
 async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolder[]> {
   if (folders.length === 0) return [];
