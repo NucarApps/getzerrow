@@ -303,6 +303,8 @@ export function FolderEditor({
             )}
           </div>
 
+          <SummariesPanel folderId={folder.id} />
+
           <div className="mt-4 grid grid-cols-2 gap-4">
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto-archive
