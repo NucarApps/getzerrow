@@ -221,7 +221,11 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   }
 
   if (folder_id) {
-    const folder = folderList.find((f) => f.id === folder_id);
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, gmail_label_id, auto_archive, auto_mark_read")
+      .eq("id", folder_id)
+      .maybeSingle();
     if (folder) {
       const addLabels: string[] = [];
       const removeLabels: string[] = [];
@@ -239,6 +243,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       }
     }
   }
+
 
   return { id: inserted.id };
 }
