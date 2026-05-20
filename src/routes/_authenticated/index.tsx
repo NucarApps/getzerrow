@@ -80,20 +80,10 @@ function InboxPage() {
       const { data } = await supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(2000);
       return (data ?? []) as Email[];
     },
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
   });
 
-  useEffect(() => {
-    const ch = supabase
-      .channel("emails-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
-        qc.refetchQueries({ queryKey: ["emails"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
-        qc.invalidateQueries({ queryKey: ["folders"] });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [qc]);
 
   const filtered = useMemo(() => {
     const all = emailsQ.data ?? [];
@@ -279,6 +269,10 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
   async function moveTo(target: Folder) {
     setMoving(true);
+    // Optimistic: flip folder_id locally so the row jumps immediately.
+    qc.setQueryData<Email[]>(["emails"], (prev) =>
+      prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id } : e)),
+    );
     try {
       const r = await moveFn({ data: { email_id: email.id, to_folder_id: target.id } });
       qc.invalidateQueries({ queryKey: ["emails"] });
@@ -291,11 +285,13 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         toFolder: target,
       });
     } catch (e: any) {
+      qc.invalidateQueries({ queryKey: ["emails"] });
       toast.error(e.message);
     } finally {
       setMoving(false);
     }
   }
+
 
   return (
     <div className="flex h-full flex-col">
@@ -333,15 +329,28 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="sm" variant="ghost" onClick={() => markFn({ data: { id: email.id, read: !email.is_read } }).then(() => qc.invalidateQueries({ queryKey: ["emails"] }))}>
+          <Button size="sm" variant="ghost" onClick={() => {
+            const next = !email.is_read;
+            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)));
+            markFn({ data: { id: email.id, read: next } }).catch(() => qc.invalidateQueries({ queryKey: ["emails"] }));
+          }}>
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
-          <Button size="sm" variant="ghost" onClick={async () => { await archFn({ data: { id: email.id } }); qc.invalidateQueries({ queryKey: ["emails"] }); toast.success("Archived"); }}>
+          <Button size="sm" variant="ghost" onClick={async () => {
+            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
+            try { await archFn({ data: { id: email.id } }); toast.success("Archived"); }
+            catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
+          }}>
             <Archive className="h-4 w-4" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={async () => { await trashFn({ data: { id: email.id } }); qc.invalidateQueries({ queryKey: ["emails"] }); toast.success("Trashed"); }}>
+          <Button size="sm" variant="ghost" onClick={async () => {
+            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.filter((e) => e.id !== email.id));
+            try { await trashFn({ data: { id: email.id } }); toast.success("Trashed"); }
+            catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
+          }}>
             <Trash2 className="h-4 w-4" />
           </Button>
+
         </div>
       </div>
 
