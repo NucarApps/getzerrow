@@ -1345,3 +1345,38 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
   .tracking__hud--br { min-width: 120px; font-size: 9px; }
   .tracking__hud--tl { font-size: 9px; }
 }
+
+/* Attitude / pitch HUD (top-right) */
+.tracking__hud--tr {
+  top: 14px; right: 14px;
+  display: flex; align-items: center; gap: 10px;
+  min-width: 0;
+}
+.tracking__hud--tr .tele-row { font-size: 10px; }
+.attitude {
+  position: relative;
+  width: 40px; height: 40px;
+  flex-shrink: 0;
+}
+.attitude__ring { display: block; width: 100%; height: 100%; }
+.attitude__needle {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 2px; height: 16px;
+  background: linear-gradient(180deg, var(--orange, #ff5a2e), rgba(255,138,61,.4));
+  border-radius: 1px;
+  transform-origin: 50% 100%;
+  transform: translate(-50%, -100%) rotate(0deg);
+  transition: transform .35s ease-out;
+  box-shadow: 0 0 6px rgba(255,138,61,.7);
+}
+.attitude__needle::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: -3px;
+  width: 6px; height: 6px;
+  margin-left: -3px;
+  background: var(--orange, #ff5a2e);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--orange, #ff5a2e);
+}
