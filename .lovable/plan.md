@@ -1,37 +1,53 @@
-## Why reanalyze said "no change" for Jared
+## Right-click → "Always send to inbox" with past-email reprocess
 
-`jsmith@dcd.auto` is sitting in the **Cold Email** folder because Gmail has `Label_458` on it, and that label is mapped to the Cold Email folder (`folders.gmail_label_id = 'Label_458'`).
+Currently the right-click "Always send to inbox" submenu has two items:
+- Just `e.from_addr`
+- Anyone `@domain`
 
-In `classifyParsedEmail` (`src/lib/sync.server.ts`), the order of checks is:
+Both only add a row to `inbox_overrides`, so future mail bypasses folders, but anything already classified into a folder (e.g. Cold Email) stays put.
 
-1. **Gmail label match** → if any folder's `gmail_label_id` is in `raw_labels`, classify as that folder. ✋ Wins here.
-2. Inbox overrides (`inbox_overrides` table).
-3. Folder filters / domain rules.
-4. AI fallback.
+### UX
 
-You did add `dcd.auto` to `inbox_overrides` (confirmed in DB), but the Gmail-label check fires first, so the override never gets a chance. Reanalyze recomputes the same Cold Email folder → `folder_id` unchanged → "no change".
+Turn each option into a sub-menu with two choices:
 
-This is wrong: an explicit "always send to inbox" rule should beat an inherited Gmail label.
+- **Just `jsmith@dcd.auto`**
+  - Future emails only
+  - Future + move past emails to Inbox
+- **Anyone `@dcd.auto`**
+  - Future emails only
+  - Future + move past emails to Inbox
 
-## Fix
+Toast after the "past" variant: `Moved N past emails to Inbox`.
 
-In `src/lib/sync.server.ts` → `classifyParsedEmail`, move the **inbox overrides** check ahead of the Gmail-label check:
+### Server
 
-1. Compute `fromAddr` / `fromDomain`.
-2. If any override matches → `folder_id = null`, `classified_by = "global_exclude"`, set `classification_reason`, skip AI. Return.
-3. Otherwise fall through to the existing Gmail-label match → filters → AI flow (unchanged).
+Extend `addInboxOverride` in `src/lib/gmail.functions.ts` with an optional `reprocess_past: boolean` flag.
 
-That's a ~15-line reorder inside one function. The existing reanalyze handler in `gmail.functions.ts` already strips the old folder's Gmail label when `folder_id` changes (via `modifyMessage(..., removeLabelIds: [fromLabel])`), so after the fix, hitting reanalyze on Jared will:
+When `reprocess_past` is true, after the override is inserted (or even if `already` exists), in the same handler:
 
-- Compute `folder_id = null` (override wins)
-- Update the row to Inbox
-- Remove `Label_458` from the Gmail message
-- Toast `Re-analyzed → Inbox`
+1. Select all `emails` for `context.userId` where:
+   - `match_type === "email"`: `lower(from_addr) = value`
+   - `match_type === "domain"`: `lower(from_addr)` ends with `@${value}`
+   - `folder_id IS NOT NULL` (already in inbox → skip)
+2. For each, in parallel-bounded batches (e.g. 5 at a time):
+   - Look up the old folder's `gmail_label_id` (single `folders` query keyed by the set of `folder_id`s).
+   - `update emails set folder_id = null, classified_by = 'global_exclude', classification_reason = 'Global inbox list: <type> "<value>"', matched_filter_ids = '{}', ai_summary = null` for that row.
+   - Best-effort `modifyMessage(account_id, gmail_message_id, [], [oldLabel])` to strip the Gmail label so it doesn't re-pull into the folder on next sync. Wrap in `try/catch`, log failures, keep going.
+3. Return `{ ok, value, match_type, already, reprocessed_count }`.
 
-…and the email won't be reclassified back into Cold Email on next sync because the label is gone.
+Domain filter SQL: `from_addr ILIKE '%@' || value` (safe — `value` is lowercased & sanitized in the handler).
 
-## Out of scope
+### Client wiring
 
-- No change to the UI, the right-click menu, `addInboxOverride`, or `reanalyzeEmail`.
-- No backfill: I won't auto-reprocess every existing email that matches an override. You'll trigger them individually via the reanalyze button (or we can add a "reapply overrides to all matching emails" action in a follow-up if you want).
-- No change to the precedence between filters and Gmail labels — only overrides are being lifted above labels.
+In `src/routes/_authenticated/index.tsx`:
+
+- Replace each of the two `ContextMenuItem`s in the "Always send to inbox" block with a `ContextMenuSub` containing the two `ContextMenuItem` variants above.
+- Both variants call `addOverrideFn`; the "past" variant passes `reprocess_past: true`.
+- After success with `reprocess_past`, also invalidate `["emails"]` and `["emails-summary"]` and toast the count.
+
+### Out of scope
+
+- No bulk-reprocess UI in Settings (only the right-click flow).
+- No undo button — relisting in Settings already lets the user delete the override, and they can manually move emails back via the existing Move-to-folder menu.
+- No rate-limit/queue work; we cap concurrency at 5 in-handler, which is fine for the volumes here.
+- Classifier order, reanalyze handler, and the existing "future only" path stay unchanged.
