@@ -43,12 +43,12 @@ function SettingsPage() {
   const accounts = accountsQ.data?.accounts ?? [];
 
   return (
-    <div className="h-screen overflow-y-auto p-8">
+    <div className="h-full overflow-y-auto p-4 md:p-8">
       <div className="mx-auto max-w-3xl space-y-6">
-        <h1 className="font-display text-4xl">Settings</h1>
+        <h1 className="font-display text-3xl md:text-4xl">Settings</h1>
 
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
+        <Card className="p-4 md:p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="font-display text-2xl">Connected Gmail accounts</h2>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -56,7 +56,7 @@ function SettingsPage() {
               </p>
             </div>
             {accounts.length === 0 && (
-              <Button onClick={startConnect} disabled={busy !== null}>
+              <Button onClick={startConnect} disabled={busy !== null} className="self-start md:self-auto">
                 <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : "Reauthorize Gmail"}
               </Button>
             )}

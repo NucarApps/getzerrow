@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox } from "lucide-react";
+import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { useFolderSelection } from "@/lib/folder-selection";
@@ -119,9 +119,9 @@ function InboxPage() {
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
   return (
-    <div className="grid h-screen grid-cols-[400px_1fr]">
+    <div className="grid h-full md:grid-cols-[400px_1fr]">
       {/* List */}
-      <div className="flex flex-col overflow-hidden border-r border-border">
+      <div className={`h-full flex-col overflow-hidden border-r border-border ${selected ? "hidden md:flex" : "flex"}`}>
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
@@ -167,8 +167,8 @@ function InboxPage() {
       </div>
 
       {/* Reading pane */}
-      <div className="overflow-y-auto">
-        {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} /> : (
+      <div className={`h-full overflow-y-auto ${selected ? "block" : "hidden md:block"}`}>
+        {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} onBack={() => setSelectedId(null)} /> : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             <p className="text-sm">Select an email</p>
           </div>
@@ -184,7 +184,7 @@ function labelForFolder(sel: string | "all" | "unsorted", folders: Folder[]) {
   return folders.find((f) => f.id === sel)?.name ?? "Folder";
 }
 
-function Reader({ email, folders }: { email: Email; folders: Folder[] }) {
+function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; onBack?: () => void }) {
   const qc = useQueryClient();
   const markFn = useServerFn(markEmailRead);
   const archFn = useServerFn(archiveEmail);
@@ -205,8 +205,13 @@ function Reader({ email, folders }: { email: Email; folders: Folder[] }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-6 py-3">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          {onBack && (
+            <button onClick={onBack} className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent md:hidden" aria-label="Back">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
           {folder && <Badge variant="outline" className="gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />{folder.name}</Badge>}
           {email.ai_confidence != null && email.ai_summary && (
             <Badge variant="outline" className="gap-1 text-xs"><Sparkles className="h-3 w-3" />AI · {Math.round(email.ai_confidence * 100)}%</Badge>
@@ -225,8 +230,8 @@ function Reader({ email, folders }: { email: Email; folders: Folder[] }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        <h1 className="font-display text-3xl leading-tight">{email.subject || "(no subject)"}</h1>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <h1 className="font-display text-2xl leading-tight md:text-3xl">{email.subject || "(no subject)"}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
           {email.from_name && email.from_addr ? ` <${email.from_addr}>` : ""}

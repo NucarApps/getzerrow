@@ -4,8 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
-import { Inbox, Settings, LogOut, Plus, Pencil } from "lucide-react";
+import { Inbox, Settings, LogOut, Plus, Pencil, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
@@ -20,19 +21,44 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthedLayout() {
+  const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <FolderSelectionProvider>
       <div className="flex min-h-screen bg-background text-foreground">
-        <Sidebar />
-        <main className="flex-1 overflow-hidden">
-          <Outlet />
+        {/* Desktop sidebar */}
+        <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
+          <SidebarInner />
+        </aside>
+
+        {/* Mobile drawer */}
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetContent side="left" className="w-72 border-sidebar-border bg-sidebar p-0">
+            <SidebarInner onNavigate={() => setMobileOpen(false)} />
+          </SheetContent>
+        </Sheet>
+
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Mobile top bar */}
+          <div className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur md:hidden">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="grid h-9 w-9 place-items-center rounded-md hover:bg-accent"
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <span className="font-display text-xl">Zerrow</span>
+          </div>
+          <div className="min-h-0 flex-1">
+            <Outlet />
+          </div>
         </main>
       </div>
     </FolderSelectionProvider>
   );
 }
 
-function Sidebar() {
+function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   const qc = useQueryClient();
   const { selected, setSelected } = useFolderSelection();
   const [addOpen, setAddOpen] = useState(false);
@@ -90,7 +116,6 @@ function Sidebar() {
     for (const e of emailsQ.data ?? []) {
       if (e.is_read) continue;
       if (e.folder_id) {
-        // Folder counts include archived rows so labeled mail outside INBOX still shows.
         m.set(e.folder_id, (m.get(e.folder_id) ?? 0) + 1);
         if (!e.is_archived) total++;
       } else if (!e.is_archived) {
@@ -101,8 +126,10 @@ function Sidebar() {
     return { byFolder: m, total };
   }, [emailsQ.data]);
 
+  const pick = (s: FolderSelection) => { setSelected(s); onNavigate?.(); };
+
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-4">
+    <div className="flex h-full flex-col p-4">
       <div className="mb-6 px-2">
         <h1 className="font-display text-3xl tracking-tight text-foreground">Zerrow</h1>
         <p className="text-[11px] uppercase tracking-widest text-muted-foreground">AI inbox</p>
@@ -112,7 +139,7 @@ function Sidebar() {
         <Link
           to="/"
           className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/60"
-          onClick={() => setSelected("all")}
+          onClick={() => pick("all")}
         >
           <Inbox className="h-4 w-4" /> Inbox
         </Link>
@@ -120,6 +147,7 @@ function Sidebar() {
           to="/settings"
           activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
           className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/60"
+          onClick={() => onNavigate?.()}
         >
           <Settings className="h-4 w-4" /> Settings
         </Link>
@@ -141,14 +169,14 @@ function Sidebar() {
       <div className="mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto">
         <FolderRow
           active={selected === "all"}
-          onSelect={() => setSelected("all")}
+          onSelect={() => pick("all")}
           color="#a3a3a3"
           label="All inbox"
           count={counts.total}
         />
         <FolderRow
           active={selected === "unsorted"}
-          onSelect={() => setSelected("unsorted")}
+          onSelect={() => pick("unsorted")}
           color="#71717a"
           label="Unsorted"
           count={counts.byFolder.get("unsorted") ?? 0}
@@ -158,7 +186,7 @@ function Sidebar() {
           <FolderRow
             key={f.id}
             active={selected === f.id}
-            onSelect={() => setSelected(f.id as FolderSelection)}
+            onSelect={() => pick(f.id as FolderSelection)}
             color={f.color}
             label={f.name}
             count={counts.byFolder.get(f.id) ?? 0}
@@ -173,7 +201,7 @@ function Sidebar() {
         )}
         {!accountId && !accountsQ.isLoading && (
           <p className="px-3 py-3 text-xs text-muted-foreground">
-            Connect Gmail in <Link to="/settings" className="underline">Settings</Link>.
+            Connect Gmail in <Link to="/settings" className="underline" onClick={() => onNavigate?.()}>Settings</Link>.
           </p>
         )}
       </div>
@@ -201,7 +229,7 @@ function Sidebar() {
         open={!!editing}
         onOpenChange={(v) => { if (!v) setEditing(null); }}
       />
-    </aside>
+    </div>
   );
 }
 
@@ -236,7 +264,7 @@ function FolderRow({
       </button>
       {onEdit && (
         <button
-          className="mr-1 grid h-6 w-6 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background/50 hover:text-foreground group-hover:opacity-100"
+          className="mr-1 grid h-6 w-6 place-items-center rounded text-muted-foreground opacity-100 transition-opacity hover:bg-background/50 hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
           onClick={(e) => { e.stopPropagation(); onEdit(); }}
           aria-label={`Edit ${label}`}
         >
