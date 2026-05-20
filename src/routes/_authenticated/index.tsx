@@ -27,6 +27,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useFolderSelection } from "@/lib/folder-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
+import cobwebInbox from "@/assets/cobweb-inbox.svg";
 
 
 export const Route = createFileRoute("/_authenticated/")({ component: InboxPage });
