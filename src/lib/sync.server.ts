@@ -385,7 +385,12 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
         if (existing.folder_id !== folderId) {
           await supabaseAdmin
             .from("emails")
-            .update({ folder_id: folderId, classified_by: "gmail_label", ai_confidence: 1 })
+            .update({
+              folder_id: folderId,
+              classified_by: "gmail_label",
+              ai_confidence: 1,
+              classification_reason: `Matched Gmail label "${folder.name}"`,
+            })
             .eq("id", existing.id);
           claimed++;
         }
@@ -410,6 +415,7 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           folder_id: folderId,
           classified_by: "gmail_label",
           ai_confidence: 1,
+          classification_reason: `Matched Gmail label "${folder.name}"`,
         });
         if (!insErr) ingested++;
         else console.error("ingest labeled message failed", insErr);
