@@ -106,10 +106,11 @@ function InboxPage() {
     queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
     queryFn: async () => {
       if (isSearching) {
-        // Global search over the most recent 2000 messages, including archived/stripped.
+        // Global search over the most recent messages, including archived/stripped.
+        // Exclude body_text/body_html — they're only needed when an email is opened.
         const { data } = await supabase
           .from("emails")
-          .select("*")
+          .select("id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,to_addrs,has_attachment")
           .order("received_at", { ascending: false })
           .limit(2000);
         return (data ?? []) as Email[];
