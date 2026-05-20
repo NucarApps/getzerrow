@@ -1282,6 +1282,7 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
               .from("emails")
               .update({
                 folder_id: null,
+                is_archived: false,
                 classified_by: "manual_strip",
                 classification_reason: reason,
                 matched_filter_ids: [],
