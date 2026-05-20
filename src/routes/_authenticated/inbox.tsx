@@ -119,13 +119,16 @@ function InboxPage() {
         return (data ?? []) as Email[];
       }
       const isNoRules = selectedFolder === "no_rules";
+      const isAllMail = selectedFolder === "all_mail";
       let q = supabase
         .from("emails")
         .select("*")
         .order("received_at", { ascending: false, nullsFirst: false })
         .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
       if (cursor) q = q.lt("received_at", cursor);
-      if (selectedFolder === "all") q = q.eq("is_archived", false);
+      if (isAllMail) {
+        // no filter — show everything
+      } else if (selectedFolder === "all") q = q.eq("is_archived", false);
       else if (isNoRules) q = q.is("folder_id", null);
       else q = q.eq("folder_id", selectedFolder);
       const { data } = await q;
@@ -323,6 +326,8 @@ function InboxPage() {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
             const folderList = foldersQ.data ?? [];
             const currentFolderId = e.folder_id;
+            const showFolderPill = isSearching || selectedFolder === "all" || selectedFolder === "all_mail" || selectedFolder === "no_rules";
+            const rowFolder = showFolderPill && currentFolderId ? folderList.find((f) => f.id === currentFolderId) : null;
             return (
             <ContextMenu key={e.id}>
               <ContextMenuTrigger asChild>
@@ -337,6 +342,19 @@ function InboxPage() {
                     </span>
                   </div>
                   <div className="truncate text-sm text-foreground/90">{e.subject || "(no subject)"}</div>
+                  {rowFolder && (
+                    <div className="mt-1">
+                      <span
+                        className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+                        style={{
+                          backgroundColor: `color-mix(in oklab, ${rowFolder.color} 18%, transparent)`,
+                          color: rowFolder.color,
+                        }}
+                      >
+                        {rowFolder.name}
+                      </span>
+                    </div>
+                  )}
                   {e.ai_summary ? (
                     <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
                       <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
@@ -550,8 +568,9 @@ function InboxPage() {
   );
 }
 
-function labelForFolder(sel: string | "all" | "no_rules", folders: Folder[]) {
+function labelForFolder(sel: string | "all" | "all_mail" | "no_rules", folders: Folder[]) {
   if (sel === "all") return "All inbox";
+  if (sel === "all_mail") return "All mail";
   if (sel === "no_rules") return "No rules";
   return folders.find((f) => f.id === sel)?.name ?? "Folder";
 }
