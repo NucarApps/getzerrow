@@ -28,7 +28,7 @@ function TermsPage() {
           <Link to="/" className="text-2xl font-bold tracking-tight" style={sora}>
             Zerrow<span style={{ color: INK_SOFT }}>.</span>
           </Link>
-          <Link to="/login" className="rounded-full px-5 py-2 text-sm font-medium" style={{ background: INK, color: PAPER, ...sora }}>
+          <Link to="/login" className="rounded-full px-5 py-2 text-sm font-medium" style={{ background: GOLD, color: "#1a1405", ...sora }}>
             Sign in
           </Link>
         </div>
