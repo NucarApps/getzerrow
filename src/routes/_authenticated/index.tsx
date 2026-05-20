@@ -243,11 +243,15 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
             {email.ai_summary}
           </div>
         )}
-        <div className="prose prose-invert mt-6 max-w-none">
+        <div className="mt-6">
           {email.body_html ? (
-            <div className="text-sm leading-relaxed [&_a]:text-primary" dangerouslySetInnerHTML={{ __html: email.body_html }} />
+            <div
+              className="rounded-lg bg-white p-4 text-sm leading-relaxed text-neutral-900 [&_*]:max-w-full [&_a]:text-blue-600 [&_img]:h-auto [&_img]:max-w-full"
+              style={{ colorScheme: "light" }}
+              dangerouslySetInnerHTML={{ __html: email.body_html }}
+            />
           ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{email.body_text}</pre>
+            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{email.body_text}</pre>
           )}
         </div>
       </div>
