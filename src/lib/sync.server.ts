@@ -180,7 +180,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
 
   const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
     supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId).order("priority", { ascending: false }),
-    supabaseAdmin.from("folder_filters").select("folder_id, field, op, value"),
+    supabaseAdmin.from("folder_filters").select("id, folder_id, field, op, value"),
     supabaseAdmin.from("inbox_overrides").select("match_type, value").eq("user_id", userId),
   ]);
 
