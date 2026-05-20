@@ -77,7 +77,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     queryKey: ["folders-full", accountId],
     enabled: !!accountId,
     queryFn: async () => {
-      const { data } = await supabase.from("folders").select("*").eq("gmail_account_id", accountId!).order("priority", { ascending: false });
+      const { data } = await supabase.from("folders").select("*").eq("gmail_account_id", accountId!).order("name", { ascending: true });
       return (data ?? []) as Folder[];
     },
   });
