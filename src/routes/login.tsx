@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { connectGmailFromSession } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import zerrowLogo from "@/assets/zerrow-logo.png";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
@@ -84,7 +85,8 @@ function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-10 text-center">
+        <div className="mb-10 flex flex-col items-center text-center">
+          <img src={zerrowLogo} alt="Zerrow" className="mb-3 h-14 w-auto" />
           <h1 className="font-display text-6xl tracking-tight">Zerrow</h1>
           <p className="mt-2 text-sm text-muted-foreground">An inbox that sorts itself.</p>
         </div>
