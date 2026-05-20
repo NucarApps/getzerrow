@@ -53,6 +53,14 @@ export async function getMessage(accountId: string, id: string) {
   return gmailFetch<any>(accountId, `/users/me/messages/${id}?format=full`);
 }
 
+/** Headers-only fetch: From + Subject + snippet. ~10x smaller than format=full. */
+export async function getMessageMetadata(accountId: string, id: string) {
+  return gmailFetch<any>(
+    accountId,
+    `/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`
+  );
+}
+
 /** Lightweight fetch: just labelIds. Returns null if message no longer exists (404). */
 export async function getMessageLabels(accountId: string, id: string): Promise<string[] | null> {
   try {
