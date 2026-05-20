@@ -1,30 +1,31 @@
-## Bug
+## Add search to the email list
 
-In `src/routes/_authenticated.tsx`, `SidebarInner` updates `selected` via `setSelected(f.id)` when you click a folder row. The Inbox page (`/`) reads that selection and re-renders, but **no route navigation happens**. So when you're on `/settings` and click "Factory notifications", the sidebar highlights it but the main panel stays on Settings.
+Add a search input in the header of the email list pane in `src/routes/_authenticated/index.tsx`. Because the same list pane renders both the Inbox (All / Unsorted) and any folder view, one input covers both cases.
 
-The same bug affects clicking "All inbox" / "Unsorted" from `/settings`.
+## Behavior
 
-## Fix
+- Case-insensitive substring match across each email's:
+  - `from_name` (e.g. "John Smith" → matches "john", "smit", "ohn smi")
+  - `from_addr` (e.g. "john.smith@acme.com" → matches "acme", "smith")
+  - `subject` and `snippet` (so partial subject search also works)
+- Empty query → no filter applied.
+- Search is purely client-side over the already-loaded `emails` list — no new server call, no schema change.
+- Search resets the selected email only if the current selection no longer matches.
+- Persisted in component state (clears on full page refresh). Lives next to existing list state.
+- Header count next to the folder name reflects the filtered count.
 
-In `src/routes/_authenticated.tsx`:
+## UI
 
-1. Import `useNavigate` and `useRouterState` from `@tanstack/react-router`.
-2. In `SidebarInner`, read the current pathname and grab a `navigate` instance.
-3. Update the `pick` helper so that when the current route isn't `/`, it navigates to `/` in addition to setting the selection:
+- Small input under the existing header row (folder name + refresh button), full-width, with a leading magnifier icon and a clear (×) button when there's text.
+- Placeholder: "Search by name, email, or subject".
+- Uses existing `Input` + `lucide-react` `Search` / `X` icons. No new dependencies.
 
-   ```ts
-   const pick = (s: FolderSelection) => {
-     setSelected(s);
-     if (pathname !== "/") navigate({ to: "/" });
-     onNavigate?.();
-   };
-   ```
+## Files
 
-4. Apply the same to the "Inbox" link's `onClick` path implicitly — it's already a `<Link to="/">`, so it's fine.
-
-That's the entire change. No backend, schema, or other UI work.
+- `src/routes/_authenticated/index.tsx` — add `query` state, the input, and a `useMemo` filter on top of the existing `filtered` array.
 
 ## Out of scope
 
-- No change to how `selected` is stored or to the Inbox page rendering.
-- No URL-based folder selection (e.g. `/folders/$id`) — could be a future improvement but not what was asked.
+- No server-side full-text search.
+- No search inside email bodies (`body_text` / `body_html`) — keeps the index of in-memory rows fast; can be added later if needed.
+- No global search across folders (the current folder/inbox selection still scopes the list).
