@@ -239,9 +239,9 @@ export async function summarizeFolderEmails(args: {
     snippet: string | null;
     received_at: string | null;
   }>;
-}): Promise<FolderSummaryOutput> {
+}): Promise<FolderSummaryOutput & { _fallback?: boolean }> {
   const list = args.emails
-    .slice(0, 200)
+    .slice(0, 150)
     .map((e, i) => {
       const when = e.received_at ? new Date(e.received_at).toISOString() : "";
       const who = e.from_name ? `${e.from_name} <${e.from_addr ?? ""}>` : (e.from_addr ?? "");
@@ -249,22 +249,26 @@ export async function summarizeFolderEmails(args: {
     })
     .join("\n");
 
-  const { output } = await generateText({
-    model: getModel(),
-    output: Output.object({
-      schema: z.object({
-        subject: z.string().min(1).max(140).describe("Concise subject line for the digest email"),
-        body_text: z.string().min(1).max(20000).describe("Plain-text digest body"),
-        body_html: z.string().min(1).max(40000).describe("HTML digest body (semantic, inline-styled, no <html>/<body> tags)"),
-      }),
-    }),
-    prompt: `You write a daily digest of emails that landed in the user's "${args.folderName}" folder.
+  const basePrompt = `You write a daily digest of emails that landed in the user's "${args.folderName}" folder.
 
 User instructions for how to group and format the digest:
 ${args.instructions || "(none — use sensible defaults: group by sender or topic, surface action items, keep it scannable.)"}
 
 Emails (most recent first):
-${list}
+${list}`;
+
+  // Primary: structured output with a strong model.
+  try {
+    const { output } = await generateText({
+      model: getModel("google/gemini-2.5-pro"),
+      output: Output.object({
+        schema: z.object({
+          subject: z.string().min(1).max(200).describe("Concise subject line for the digest email"),
+          body_text: z.string().min(1).describe("Plain-text digest body"),
+          body_html: z.string().min(1).describe("HTML digest body (semantic, inline-styled, no <html>/<body> tags)"),
+        }),
+      }),
+      prompt: `${basePrompt}
 
 Write:
 - subject: short, mentions the folder and date range or count.
@@ -272,7 +276,60 @@ Write:
 - body_html: well-structured HTML using headings, bullet lists, and bold for emphasis. Use simple inline styles only. No <html>, <head>, or <body> tags — just the inner content. Do not include images.
 
 Be concise. Skip empty/duplicate content. If there are no emails, say so briefly.`,
+    });
+    return output;
+  } catch (err: any) {
+    console.warn("summarizeFolderEmails: structured output failed, falling back to plain text:", err?.message ?? err);
+  }
+
+  // Fallback: plain Markdown, then convert to text/html.
+  const { text } = await generateText({
+    model: getModel("google/gemini-2.5-pro"),
+    prompt: `${basePrompt}
+
+Write a daily digest in Markdown. Start with a single line: "# <short subject>" — that first line is the email subject. Then group by sender or topic, surface action items, keep it scannable. No images.`,
   });
 
-  return output;
+  const lines = text.split("\n");
+  let subject = `${args.folderName} daily digest`;
+  let bodyMd = text;
+  const firstHeading = lines.findIndex((l) => l.trim().startsWith("#"));
+  if (firstHeading >= 0) {
+    subject = lines[firstHeading].replace(/^#+\s*/, "").trim().slice(0, 200) || subject;
+    bodyMd = lines.slice(firstHeading + 1).join("\n").trim();
+  }
+
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const html = bodyMd
+    .split(/\n{2,}/)
+    .map((block) => {
+      const trimmed = block.trim();
+      if (!trimmed) return "";
+      if (/^#{1,6}\s/.test(trimmed)) {
+        const m = trimmed.match(/^(#{1,6})\s+(.*)$/);
+        if (m) {
+          const level = Math.min(m[1].length + 1, 6);
+          return `<h${level} style="margin:16px 0 8px">${escapeHtml(m[2])}</h${level}>`;
+        }
+      }
+      if (/^[-*]\s/.test(trimmed)) {
+        const items = trimmed
+          .split("\n")
+          .filter((l) => /^[-*]\s/.test(l))
+          .map((l) => `<li>${escapeHtml(l.replace(/^[-*]\s+/, ""))}</li>`)
+          .join("");
+        return `<ul style="margin:8px 0 8px 20px">${items}</ul>`;
+      }
+      return `<p style="margin:8px 0">${escapeHtml(trimmed).replace(/\n/g, "<br>")}</p>`;
+    })
+    .join("\n");
+
+  return {
+    subject,
+    body_text: bodyMd,
+    body_html: html,
+    _fallback: true,
+  };
 }
