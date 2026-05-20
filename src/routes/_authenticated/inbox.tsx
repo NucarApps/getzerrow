@@ -33,6 +33,22 @@ import { TelemetryStandby } from "@/components/inbox/TelemetryStandby";
 
 export const Route = createFileRoute("/_authenticated/inbox")({ component: InboxPage });
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+};
+function decodeEntities(s: string | null | undefined): string {
+  if (!s) return "";
+  return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (m, ent: string) => {
+    if (ent[0] === "#") {
+      const code = ent[1] === "x" || ent[1] === "X"
+        ? parseInt(ent.slice(2), 16)
+        : parseInt(ent.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+    }
+    return NAMED_ENTITIES[ent.toLowerCase()] ?? m;
+  });
+}
+
 type Email = {
   id: string;
   from_addr: string | null;
