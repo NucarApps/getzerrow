@@ -68,7 +68,8 @@ export function useEmailRealtime() {
     connect();
 
     // Reconnect when the session changes (login, token refresh, sign-out).
-    const { data: authSub } = supabase.auth.onAuthStateChange(() => {
+    const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
       teardown();
       connect();
     });
