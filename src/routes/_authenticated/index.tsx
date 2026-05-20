@@ -347,7 +347,7 @@ function InboxPage() {
                       <>
                         <ContextMenuItem
                           onSelect={async () => {
-                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, classified_by: "manual_inbox" } : x)));
+                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, classified_by: "manual_inbox" } : x)));
                             try {
                               await moveInboxFn({ data: { email_id: e.id } });
                               toast.success("Moved to inbox");
@@ -371,7 +371,7 @@ function InboxPage() {
                       <ContextMenuItem
                         key={f.id}
                         onSelect={async () => {
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, classified_by: "manual_move" } : x)));
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, is_archived: true, classified_by: "manual_move" } : x)));
                           try {
                             await moveFolderFn({ data: { email_id: e.id, to_folder_id: f.id } });
                             toast.success(`Moved to ${f.name}`);
@@ -603,7 +603,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     setMoving(true);
     // Optimistic: flip folder_id locally so the row jumps immediately.
     qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-      prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id } : e)),
+      prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id, is_archived: true } : e)),
     );
     try {
       const r = await moveFn({ data: { email_id: email.id, to_folder_id: target.id } });

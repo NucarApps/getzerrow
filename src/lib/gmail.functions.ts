@@ -843,21 +843,24 @@ async function performMove(
       classified_by: "manual_move",
       ai_confidence: 1,
       classification_reason: reason,
+      is_archived: true,
     })
     .eq("id", email.id);
   if (upErr) return { ok: false, error: upErr.message };
 
-  if (from?.gmail_label_id || to.gmail_label_id) {
-    try {
-      await modifyMessage(
-        email.gmail_account_id,
-        email.gmail_message_id,
-        to.gmail_label_id ? [to.gmail_label_id] : [],
-        from?.gmail_label_id ? [from.gmail_label_id] : [],
-      );
-    } catch (e) {
-      console.error("label sync failed", e);
-    }
+  // Always remove INBOX so the row leaves the user's Inbox view, mirroring
+  // Gmail's "Move to label" behavior. Swap folder labels if defined.
+  const addLabels = to.gmail_label_id ? [to.gmail_label_id] : [];
+  const removeLabels = ["INBOX", ...(from?.gmail_label_id ? [from.gmail_label_id] : [])];
+  try {
+    await modifyMessage(
+      email.gmail_account_id,
+      email.gmail_message_id,
+      addLabels,
+      removeLabels,
+    );
+  } catch (e) {
+    console.error("label sync failed", e);
   }
 
   // Migrate example signal

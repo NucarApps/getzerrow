@@ -1,35 +1,41 @@
-## Root cause
+## What's actually happening
 
-The reply email is in the DB with `classified_by: "none"`, `folder_id: null`. That's what gets written when the AI classifier throws inside `classifyParsedEmail` → `catch (e) { console.error("AI classify failed", e) }`.
+The DB shows the email **was** moved successfully:
 
-Server logs confirm it: every reanalyze attempt today is failing with
+- `rberns@nbminc.com — "Copier Leases"` is in **Cold Email** (`folder_id = b1efc962…`).
+- But `classified_by = gmail_label` (not `manual_move`), with reason `Matched Gmail label "Cold Email"`. That means this email was already labeled Cold Email by Gmail at the time it first synced — your manual move in the app then re-applied the same label, which is a no-op.
 
-```
-AI_NoObjectGeneratedError: No object generated: response did not match schema.
-```
+So the move did run on the server. The reason **you still see the row in your Inbox view** is purely a frontend semantics issue:
 
-So the AI gateway call to `google/gemini-3-flash-preview` (in `src/lib/ai.server.ts → classifyEmail`) returns text the `ai` SDK's structured-output adapter can't parse against the Zod schema. The folder isn't actually being chosen — the classifier crashes silently, folder stays `null`, and the UI dutifully reports "no change" because `email.folder_id (null) === result.folder_id (null)`.
+- The sidebar's "Inbox" item is wired to `selectedFolder = "all"`.
+- The `"all"` query is `is_archived = false` — i.e. every non-archived email, **including ones already filed into a folder**.
+- After a manual move, the row's `folder_id` changes but `is_archived` stays `false`, so it keeps showing up in "Inbox".
 
-Reanalyze itself is fine; the AI step is the bug.
+This matches what you're seeing: the move worked in the database, but the row never leaves your Inbox list.
+
+There's also a small secondary issue: the optimistic cache update flips `folder_id` in place but doesn't remove the row from the current view's array, so even on the strictest filter the row only disappears after the refetch.
 
 ## Plan
 
-1. **Switch the classifier model to a stable, structured-output-friendly model.**  
-   `google/gemini-3-flash-preview` is a preview model and is the one throwing `AI_NoObjectGeneratedError`. Change `getModel()` in `src/lib/ai.server.ts` so `classifyEmail` uses `google/gemini-2.5-flash` (reliable JSON-mode support). Keep the other helpers on whatever model they were on, or move all of them — simplest is to switch the single shared `getModel()`.
+Make moving an email to a folder in the app behave like Gmail's "Move to label" — it should leave the Inbox view.
 
-2. **Make `classifyEmail` resilient to schema-parse failures.**  
-   Wrap the `generateText` call in a one-shot retry: if the first call throws `AI_NoObjectGeneratedError`, retry once with a tighter prompt that explicitly demands JSON only. If both attempts fail, fall back to a plain-text `generateText` call and `JSON.parse` the response (best-effort), and only then give up. This keeps reanalyze working even if a future model regresses on structured output.
+1. **Server: archive on manual move (`src/lib/gmail.functions.ts → performMove`)**
+   - When moving to a folder, also set `is_archived = true` in `emails`.
+   - In the Gmail sync call, add `INBOX` to `removeLabels` alongside the existing label swap, so Gmail's inbox stays in sync.
+   - Skip both when the target folder already has `auto_archive = true` (already covered downstream) — so we don't double-write.
+   - Same change for `moveEmailToInbox`: when moving back to inbox, set `is_archived = false` and add `INBOX` back as a Gmail label.
 
-3. **Surface real classifier errors to the user instead of "no change".**  
-   In `classifyParsedEmail` (`src/lib/sync.server.ts`), when the AI step throws, return a `classified_by: "ai_error"` (or similar) with the error message in `classification_reason`, instead of silently leaving `classified_by: "none"`. Then in `reanalyzeEmail`'s response (`src/lib/gmail.functions.ts`) and in the inbox UI toast (`src/routes/_authenticated/index.tsx`), show that reason — so when AI can't classify, the user sees "AI couldn't classify: …" instead of a misleading "no change".
+2. **Client: optimistic state matches (`src/routes/_authenticated/index.tsx`)**
+   - In the two move-to-folder click handlers (inbox row context menu around line 374, and the detail-pane `moveTo` around line 602), include `is_archived: true` in the optimistic `setQueriesData` patch so the row immediately leaves the "Inbox" (`is_archived=false`) view.
+   - In the move-to-inbox handler (line 350), include `is_archived: false`.
+   - Keep the existing `invalidateQueries({ queryKey: ["emails"] })` so the row's final state matches the server.
 
-4. **Re-run reanalysis on the Eric Braund reply once the fix is shipped.**  
-   No data migration needed — clicking "Reprocess" on that email will now succeed and route it to **Cold Email** based on the folder's `ai_rule` text already configured.
+3. **Fix the Robert Berns row retroactively**
+   - One-off update via migration: set `is_archived = true` for the three rows currently sitting in Cold Email but still flagged `is_archived = false` for this user (or just for this specific message). I'll scope it tightly so it only touches emails that are already in a folder and were never archived.
 
-### Files to edit
-- `src/lib/ai.server.ts` — swap model in `getModel()`; add retry + JSON-parse fallback in `classifyEmail`.
-- `src/lib/sync.server.ts` — return `classified_by: "ai_error"` with the error message when the AI step throws.
-- `src/lib/gmail.functions.ts` — propagate the error reason in the `reanalyzeEmail` return shape.
-- `src/routes/_authenticated/index.tsx` — show that reason in the reprocess toast.
+No schema or RLS changes. No new dependencies.
 
-No DB / schema changes. No new dependencies.
+## Out of scope (call out, don't change)
+
+- The `classified_by` for Robert Berns stays `gmail_label` — that's accurate, the email arrived with the label already. If you want manual moves in the app to always overwrite to `manual_move` even when the row already sits in the right folder, that's a separate decision.
+- Renaming "Inbox" sidebar item to mean "Unsorted" — not doing that; you already have a separate Unsorted entry and the Gmail-style "everything not archived" Inbox is the more familiar default.
