@@ -780,12 +780,6 @@ export async function loadOlderFromLabel(
     .single();
   if (!folderRow) throw new Error("Folder not found");
   const folder = folderRow;
-    .select(
-      "id, user_id, name, gmail_label_id, gmail_account_id, gmail_backfill_page_token, gmail_backfill_oldest_received_at"
-    )
-    .eq("id", folderId)
-    .single();
-  if (!folder) throw new Error("Folder not found");
   if (folder.user_id !== userId) throw new Error("Not authorized");
   if (!folder.gmail_label_id) {
     return { ingested: 0, hasMore: false, reason: "no_label" as const };
