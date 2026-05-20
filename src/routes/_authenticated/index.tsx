@@ -200,9 +200,18 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   const trashFn = useServerFn(trashEmail);
   const genFn = useServerFn(generateReply);
   const sendFn = useServerFn(sendReply);
+  const moveFn = useServerFn(moveEmailToFolder);
   const [reply, setReply] = useState("");
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [whyOpen, setWhyOpen] = useState(false);
+  const [similarPrompt, setSimilarPrompt] = useState<null | {
+    fromFolderId: string | null;
+    fromAddr: string | null;
+    domain: string | null;
+    toFolder: Folder;
+  }>(null);
 
   useEffect(() => {
     if (!email.is_read) {
@@ -211,6 +220,27 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   }, [email.id]); // eslint-disable-line
 
   const folder = folders.find((f) => f.id === email.folder_id);
+  const otherFolders = folders.filter((f) => f.id !== email.folder_id);
+
+  async function moveTo(target: Folder) {
+    setMoving(true);
+    try {
+      const r = await moveFn({ data: { email_id: email.id, to_folder_id: target.id } });
+      qc.invalidateQueries({ queryKey: ["emails"] });
+      qc.invalidateQueries({ queryKey: ["emails-summary"] });
+      toast.success(`Moved to ${target.name}`);
+      setSimilarPrompt({
+        fromFolderId: r.from_folder_id,
+        fromAddr: r.from_addr,
+        domain: r.domain,
+        toFolder: target,
+      });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setMoving(false);
+    }
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -227,6 +257,27 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           )}
         </div>
         <div className="flex gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" disabled={moving || otherFolders.length === 0} title="Move to folder">
+                <FolderInput className="h-4 w-4" />
+                <ChevronDown className="ml-0.5 h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Move to folder</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {otherFolders.map((f) => (
+                <DropdownMenuItem key={f.id} onSelect={() => moveTo(f)}>
+                  <span className="mr-2 h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                  {f.name}
+                </DropdownMenuItem>
+              ))}
+              {otherFolders.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No other folders</div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button size="sm" variant="ghost" onClick={() => markFn({ data: { id: email.id, read: !email.is_read } }).then(() => qc.invalidateQueries({ queryKey: ["emails"] }))}>
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
@@ -252,6 +303,37 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
             {email.ai_summary}
           </div>
         )}
+
+        <Collapsible open={whyOpen} onOpenChange={setWhyOpen} className="mt-3">
+          <CollapsibleTrigger asChild>
+            <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-2 text-left text-sm hover:bg-accent/40">
+              <span className="flex items-center gap-2">
+                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">Why this folder?</span>
+                <ClassifiedChip by={email.classified_by} />
+              </span>
+              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 rounded-md border border-border bg-card/30 p-3 text-sm">
+            {email.classification_reason ? (
+              <p className="text-foreground/90">{email.classification_reason}</p>
+            ) : (
+              <p className="italic text-muted-foreground">
+                No reasoning recorded for this email. Newly synced emails will include one.
+              </p>
+            )}
+            {email.classified_by === "ai" && email.ai_confidence != null && (
+              <div className="mt-3">
+                <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">AI confidence</div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full bg-primary" style={{ width: `${Math.round(email.ai_confidence * 100)}%` }} />
+                </div>
+              </div>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
+
         <div className="mt-6">
           {email.body_html ? (
             <div
@@ -289,6 +371,38 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           </Button>
         </div>
       </div>
+
+      {similarPrompt && (
+        <MoveSimilarDialog
+          open={!!similarPrompt}
+          onOpenChange={(v) => { if (!v) setSimilarPrompt(null); }}
+          emailId={email.id}
+          fromFolderId={similarPrompt.fromFolderId}
+          fromAddr={similarPrompt.fromAddr}
+          domain={similarPrompt.domain}
+          toFolder={similarPrompt.toFolder}
+          folders={folders}
+        />
+      )}
     </div>
+  );
+}
+
+function ClassifiedChip({ by }: { by: string | null }) {
+  const map: Record<string, { label: string; Icon: typeof Bot; cls: string }> = {
+    ai: { label: "AI", Icon: Bot, cls: "text-primary" },
+    filter: { label: "Filter", Icon: FilterIcon, cls: "text-foreground" },
+    gmail_label: { label: "Gmail label", Icon: Tag, cls: "text-foreground" },
+    domain_rule: { label: "Domain rule", Icon: FilterIcon, cls: "text-foreground" },
+    manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
+    none: { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" },
+  };
+  const k = by ?? "none";
+  const v = map[k] ?? map.none;
+  const { Icon } = v;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${v.cls}`}>
+      <Icon className="h-3 w-3" /> {v.label}
+    </span>
   );
 }
