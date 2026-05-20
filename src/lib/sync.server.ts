@@ -139,7 +139,111 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   }));
 }
 
+export type ClassificationResult = {
+  folder_id: string | null;
+  classified_by: string;
+  ai_confidence: number;
+  ai_summary: string;
+  classification_reason: string | null;
+  matched_filter_ids: string[];
+};
+
+export async function classifyParsedEmail(
+  parsed: {
+    from_addr: string;
+    from_name: string;
+    to_addrs: string;
+    subject: string;
+    snippet: string;
+    body_text: string;
+    body_html: string;
+    has_attachment: boolean;
+    received_at: string;
+    raw_labels: string[] | null;
+  },
+  userId: string,
+  accountId: string,
+): Promise<ClassificationResult> {
+  const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
+    supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId).order("priority", { ascending: false }),
+    supabaseAdmin.from("folder_filters").select("id, folder_id, field, op, value"),
+    supabaseAdmin.from("inbox_overrides").select("match_type, value").eq("user_id", userId),
+  ]);
+
+  const folderList = (folders ?? []) as Folder[];
+  const folderIds = new Set(folderList.map((f) => f.id));
+  const filterList = ((filters ?? []) as Filter[]).filter((f) => folderIds.has(f.folder_id));
+
+  let folder_id: string | null = null;
+  let classified_by = "none";
+  let confidence = 0;
+  let summary = "";
+  let classification_reason: string | null = null;
+  let matched_filter_ids: string[] = [];
+  let aiSkipped = false;
+
+  const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
+  if (labeledFolder) {
+    folder_id = labeledFolder.id;
+    classified_by = "gmail_label";
+    confidence = 1;
+    classification_reason = `Matched Gmail label "${labeledFolder.name}"`;
+  } else {
+    const fromAddr = (parsed.from_addr || "").toLowerCase();
+    const fromDomain = fromAddr.split("@")[1] || "";
+    const hit = (overrides ?? []).find((o) => {
+      const val = (o.value || "").toLowerCase();
+      return o.match_type === "email" ? val === fromAddr : val === fromDomain;
+    });
+    if (hit) {
+      classified_by = "global_exclude";
+      classification_reason = `Global inbox list: ${hit.match_type} "${hit.value}"`;
+      aiSkipped = true;
+    } else {
+      const m = matchByFilters(parsed, folderList, filterList);
+      if (m?.kind === "match") {
+        folder_id = m.folder_id;
+        classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
+        confidence = 1;
+        matched_filter_ids = m.matched_filters.map((f) => f.id);
+        classification_reason =
+          classified_by === "domain_rule"
+            ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
+            : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+      } else if (m?.kind === "excluded") {
+        classified_by = "excluded";
+        classification_reason = `Would match "${m.folder_name}" but excluded by rule: ${m.exclude.field} ${m.exclude.op} "${m.exclude.value}"`;
+        aiSkipped = true;
+      }
+    }
+  }
+
+  if (!folder_id && !aiSkipped && folderList.length > 0) {
+    try {
+      const enriched = await loadFoldersWithExamples(folderList);
+      const r = await classifyEmail(parsed, enriched);
+      folder_id = r.folder_id;
+      confidence = r.confidence;
+      summary = r.summary;
+      classified_by = "ai";
+      classification_reason = r.reason || null;
+    } catch (e) {
+      console.error("AI classify failed", e);
+    }
+  }
+
+  return {
+    folder_id,
+    classified_by,
+    ai_confidence: confidence,
+    ai_summary: summary,
+    classification_reason,
+    matched_filter_ids,
+  };
+}
+
 export async function processGmailMessage(accountId: string, gmailId: string, userId: string) {
+
   const { data: existing } = await supabaseAdmin
     .from("emails")
     .select("id, from_addr, subject, body_text, body_html, received_at")
