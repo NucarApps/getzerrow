@@ -7,7 +7,7 @@
 // of `push` / `push_empty` and do NOT pollute real Google push diagnostics.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { syncSinceHistory } from "@/lib/sync.server";
+import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 
 export const Route = createFileRoute("/api/public/gmail-webhook")({
   server: {
@@ -66,6 +66,18 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 } catch (e) {
                   console.error("sync failed for", acc.id, e);
                   errorMsg = (e as Error)?.message ?? String(e);
+                }
+              }
+              // Immediately drain newly-enqueued message_jobs so the email row
+              // lands in `emails` (and the Inbox realtime subscription fires)
+              // within this same push request, instead of waiting for the
+              // 30s/60s job cron or the next poll. Best-effort: any failure
+              // here falls back to the existing retry/poll path.
+              if (enqueuedCount > 0) {
+                try {
+                  await runMessageJobs(Math.min(enqueuedCount + 5, 25));
+                } catch (e) {
+                  console.error("inline runMessageJobs failed", e);
                 }
               }
             }
