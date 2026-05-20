@@ -163,6 +163,7 @@ export async function classifyParsedEmail(
   },
   userId: string,
   accountId: string,
+  opts: { skipGmailLabelMatch?: boolean } = {},
 ): Promise<ClassificationResult> {
   const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
     supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId).order("priority", { ascending: false }),
@@ -194,7 +195,9 @@ export async function classifyParsedEmail(
     classification_reason = `Global inbox list: ${overrideHit.match_type} "${overrideHit.value}"`;
     aiSkipped = true;
   } else {
-    const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
+    const labeledFolder = opts.skipGmailLabelMatch
+      ? undefined
+      : folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
     if (labeledFolder) {
       folder_id = labeledFolder.id;
       classified_by = "gmail_label";
