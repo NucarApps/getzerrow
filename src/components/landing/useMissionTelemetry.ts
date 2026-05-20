@@ -23,7 +23,7 @@ export function useMissionTelemetry() {
 
     // Inbox 1247 -> 0 over 8s, ease-out cubic
     let start: number | null = null;
-    const DURATION = 8000;
+    const DURATION = 18000;
     let rafId = 0;
     let currentPhase: "smoke" | "ignition" | "liftoff" | null = null;
     const setPhase = (next: "smoke" | "ignition" | "liftoff") => {
@@ -54,7 +54,7 @@ export function useMissionTelemetry() {
         setPhase("liftoff");
         trackingTimeout = window.setTimeout(() => {
           viewportEl?.classList.add("is-tracking");
-        }, 1800);
+        }, 3500);
       }
     };
     rafId = requestAnimationFrame(step);
@@ -112,21 +112,22 @@ export function useMissionTelemetry() {
     const updateTelemetry = () => {
       const elapsed = (Date.now() - epoch) / 1000;
       const launchT = Math.max(0, elapsed);
-      if (launchT < 8) {
-        const f = launchT / 8;
+      const LIFT_DURATION = 22;
+      if (launchT < LIFT_DURATION) {
+        const f = launchT / LIFT_DURATION;
         alt = +(120 * Math.pow(f, 1.8)).toFixed(1);
         vel = Math.round(2400 * Math.pow(f, 1.4));
         g = +(1 + 2.2 * f).toFixed(1);
-        hdg = +(launchT * 1.2).toFixed(1);
-        thrust = +(96 + (Math.random() - 0.5) * 0.8).toFixed(1);
-        fuel = Math.max(58, +(100 - launchT * 5.3).toFixed(1));
+        hdg = +(launchT * 0.45).toFixed(1);
+        thrust = +(96 + (Math.random() - 0.5) * 0.6).toFixed(1);
+        fuel = Math.max(58, +(100 - launchT * 1.9).toFixed(1));
       } else {
-        alt = +(alt + Math.random() * 0.4).toFixed(1);
-        vel = vel + Math.floor((Math.random() - 0.5) * 6);
-        g = +(2.1 + (Math.random() - 0.5) * 0.3).toFixed(1);
-        hdg = +(hdg + (Math.random() - 0.5) * 0.4).toFixed(1);
-        thrust = +(94 + (Math.random() - 0.5) * 1.2).toFixed(1);
-        fuel = Math.max(20, +(fuel - 0.05).toFixed(1));
+        alt = +(alt + Math.random() * 0.12).toFixed(1);
+        vel = vel + Math.floor((Math.random() - 0.5) * 2);
+        g = +(2.1 + (Math.random() - 0.5) * 0.15).toFixed(1);
+        hdg = +(hdg + (Math.random() - 0.5) * 0.15).toFixed(1);
+        thrust = +(94 + (Math.random() - 0.5) * 0.6).toFixed(1);
+        fuel = Math.max(20, +(fuel - 0.02).toFixed(1));
       }
       if (tAlt) tAlt.textContent = `${alt.toFixed(1)} km`;
       if (tVel) tVel.textContent = `${vel.toLocaleString("en-US")} m/s`;
@@ -135,12 +136,11 @@ export function useMissionTelemetry() {
       if (tG) tG.textContent = `${g.toFixed(1)} g`;
       if (tHdg) tHdg.textContent = `${hdg.toFixed(1)}°`;
       if (alt > apogeeKm) apogeeKm = alt;
-      const downrange = Math.max(0, Math.round((vel * Math.max(0, launchT - 8)) / 1000));
+      const downrange = Math.max(0, Math.round((vel * Math.max(0, launchT - LIFT_DURATION)) / 1000));
       if (tDownrange) tDownrange.textContent = `${downrange.toLocaleString("en-US")} km`;
       if (tApogee) tApogee.textContent = `${apogeeKm.toFixed(1)} km`;
-      // Pitch: 90° straight up at liftoff, easing toward ~25° downrange over ~20s
-      const sinceLift = Math.max(0, launchT - 8);
-      const pitch = Math.max(25, 90 - Math.min(65, sinceLift * 3.2));
+      const sinceLift = Math.max(0, launchT - LIFT_DURATION);
+      const pitch = Math.max(25, 90 - Math.min(65, sinceLift * 1.2));
       if (tPitch) tPitch.textContent = `${pitch.toFixed(0)}°`;
       if (tAttitudeNeedle) {
         // Needle rotates so it points along current pitch (0° = horizontal right, 90° = straight up)
@@ -160,7 +160,7 @@ export function useMissionTelemetry() {
       }
     };
     updateTelemetry();
-    const teleInterval = window.setInterval(updateTelemetry, 220);
+    const teleInterval = window.setInterval(updateTelemetry, 600);
 
     // FAQ exclusivity
     const faqItems = Array.from(
