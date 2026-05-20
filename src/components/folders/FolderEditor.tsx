@@ -246,7 +246,7 @@ export function FolderEditor({
                 <Sparkles className="h-3 w-3" /> Learned profile
               </div>
               <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
-                {learning ? "Learning…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
+                {learning ? "Learning from up to 200 emails…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
               </Button>
             </div>
             <p className="mt-2 text-sm text-foreground/80">
