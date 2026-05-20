@@ -609,7 +609,7 @@ function InboxPage() {
       </div>
 
       {/* Reading pane */}
-      <div className={`h-full overflow-y-auto ${selected ? "block" : "hidden md:block"}`}>
+      <div className={`h-full overflow-hidden ${selected ? "block" : "hidden md:block"}`}>
         {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} onBack={() => setSelectedId(null)} /> : (
           <TelemetryStandby />
         )}
