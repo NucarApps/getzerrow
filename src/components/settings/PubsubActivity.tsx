@@ -145,7 +145,7 @@ export function PubsubActivity() {
       </div>
 
       {/* RED: push received but payload didn't match account */}
-      {stats && (stats.pushUnmatched24 ?? 0) > 0 && lastPush && lastPush.event_type === "push" && (lastPush.accounts_matched ?? 0) === 0 && (
+      {showUnmatchedBanner && (
         <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
           <div className="flex gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
