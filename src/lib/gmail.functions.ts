@@ -13,6 +13,7 @@ import {
   listMessages,
   getMessage,
   getMessageMetadata,
+  getMessageLabels,
   getThread,
   parseMessage,
 } from "./gmail.server";
