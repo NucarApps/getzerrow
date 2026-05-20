@@ -409,6 +409,8 @@ function ClassifiedChip({ by }: { by: string | null }) {
     gmail_label: { label: "Gmail label", Icon: Tag, cls: "text-foreground" },
     domain_rule: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
     manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
+    excluded: { label: "Excluded", Icon: HelpCircle, cls: "text-destructive" },
+    global_exclude: { label: "Inbox list", Icon: HelpCircle, cls: "text-destructive" },
     none: { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" },
   };
   const k = by ?? "none";
