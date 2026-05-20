@@ -75,6 +75,44 @@ export function PubsubActivity() {
         </Button>
       </div>
 
+      {stats && stats.push24 === 0 && (accountsQ.data?.accounts ?? []).some((a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()) && (
+        <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="text-xs">
+              <div className="font-medium text-destructive">Gmail is not pushing notifications to this app.</div>
+              <div className="mt-1 text-muted-foreground">
+                Zero push events in the last 24h, but the Gmail watch is still active. Emails are still arriving via the 2-minute fallback poll, but live updates are off. Re-arm the watch to refresh Gmail's push subscription. If that doesn't help, the GCP Pub/Sub push subscription is missing or pointed at the wrong URL.
+              </div>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={renewing}
+            onClick={async () => {
+              const acc = (accountsQ.data?.accounts ?? [])[0];
+              if (!acc) return;
+              setRenewing(true);
+              try {
+                await renewFn({ data: { account_id: acc.id } });
+                toast.success("Watch re-armed");
+                q.refetch();
+                accountsQ.refetch();
+              } catch (e: any) {
+                toast.error(e.message);
+              } finally {
+                setRenewing(false);
+              }
+            }}
+            className="shrink-0"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${renewing ? "animate-spin" : ""}`} />
+            Re-arm push watch
+          </Button>
+        </div>
+      )}
+
       {stats && (
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
           <Stat label="Push (24h)" value={stats.push24} />
