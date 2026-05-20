@@ -111,6 +111,8 @@ function SettingsPage() {
 
         <InboxOverrides />
         <PubsubActivity />
+        <ProcessingJobs />
+
 
       </div>
     </div>
