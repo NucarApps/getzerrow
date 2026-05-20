@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { RefreshCw, ChevronRight, ChevronDown, AlertTriangle, Activity } from "lucide-react";
 import { toast } from "sonner";
 
-type Filter = "all" | "push" | "errors" | "watch_renew";
+type Filter = "all" | "push" | "poll" | "errors" | "watch_renew";
 
 function relTime(iso: string | null): string {
   if (!iso) return "—";
