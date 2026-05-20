@@ -613,6 +613,117 @@ async function applyLabelChange(
     .eq("gmail_message_id", messageId);
 }
 
+// ─── Durable per-message processing queue ─────────────────────────────────
+
+const MAX_JOB_ATTEMPTS = 5;
+const BACKOFF_SECONDS = [30, 120, 600, 1800, 7200]; // 30s, 2m, 10m, 30m, 2h
+
+export async function enqueueMessageJob(
+  accountId: string,
+  userId: string,
+  gmailMessageId: string,
+) {
+  // Upsert so the same message is never queued twice. If a job already exists
+  // (pending or dlq), do nothing — the worker / retry button owns it from here.
+  await supabaseAdmin
+    .from("message_jobs")
+    .upsert(
+      {
+        gmail_account_id: accountId,
+        gmail_message_id: gmailMessageId,
+        user_id: userId,
+        status: "pending",
+        next_run_at: new Date().toISOString(),
+      },
+      { onConflict: "gmail_account_id,gmail_message_id", ignoreDuplicates: true },
+    );
+}
+
+export async function runMessageJobs(limit = 25) {
+  // Claim a batch of due jobs. We don't have FOR UPDATE SKIP LOCKED via PostgREST,
+  // so we approximate with a timestamp-based lock: only pick rows whose locked_at
+  // is null or older than 5 minutes, then mark them running with locked_at=now().
+  const lockCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: candidates } = await supabaseAdmin
+    .from("message_jobs")
+    .select("id, gmail_account_id, gmail_message_id, user_id, attempt")
+    .neq("status", "dlq")
+    .lte("next_run_at", new Date().toISOString())
+    .or(`locked_at.is.null,locked_at.lt.${lockCutoff}`)
+    .order("next_run_at", { ascending: true })
+    .limit(limit);
+
+  const results: Array<{ id: string; ok: boolean; error?: string; dlq?: boolean }> = [];
+  for (const job of candidates ?? []) {
+    // Try to claim
+    const { data: claimed } = await supabaseAdmin
+      .from("message_jobs")
+      .update({ status: "running", locked_at: new Date().toISOString() })
+      .eq("id", job.id)
+      .neq("status", "dlq")
+      .select("id")
+      .maybeSingle();
+    if (!claimed) continue;
+
+    try {
+      await processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id);
+      // Success: remove the job row.
+      await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
+      results.push({ id: job.id, ok: true });
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      const nextAttempt = (job.attempt ?? 0) + 1;
+      const is404 = typeof msg === "string" && msg.includes("404");
+      if (is404) {
+        // Message was deleted in Gmail before we could fetch it. No point retrying.
+        await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
+        results.push({ id: job.id, ok: true });
+        continue;
+      }
+      if (nextAttempt >= MAX_JOB_ATTEMPTS) {
+        // Capture preview (from/subject) so the user can see what failed.
+        let from_addr: string | null = null;
+        let subject: string | null = null;
+        try {
+          const meta = await getMessageMetadata(job.gmail_account_id, job.gmail_message_id);
+          const p = parseMessage(meta);
+          from_addr = p.from_addr ?? null;
+          subject = p.subject ?? null;
+        } catch { /* best-effort */ }
+        await supabaseAdmin.from("message_jobs").update({
+          status: "dlq",
+          attempt: nextAttempt,
+          last_error: msg.slice(0, 1000),
+          locked_at: null,
+          from_addr,
+          subject,
+        }).eq("id", job.id);
+        results.push({ id: job.id, ok: false, dlq: true, error: msg });
+      } else {
+        const backoff = BACKOFF_SECONDS[Math.min(nextAttempt - 1, BACKOFF_SECONDS.length - 1)];
+        await supabaseAdmin.from("message_jobs").update({
+          status: "pending",
+          attempt: nextAttempt,
+          last_error: msg.slice(0, 1000),
+          locked_at: null,
+          next_run_at: new Date(Date.now() + backoff * 1000).toISOString(),
+        }).eq("id", job.id);
+        results.push({ id: job.id, ok: false, error: msg });
+      }
+    }
+  }
+  return { processed: results.length, ok: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok && !r.dlq).length, dlq: results.filter(r => r.dlq).length };
+}
+
+export async function retryMessageJob(jobId: string) {
+  await supabaseAdmin.from("message_jobs").update({
+    status: "pending",
+    attempt: 0,
+    locked_at: null,
+    next_run_at: new Date().toISOString(),
+  }).eq("id", jobId);
+}
+
 export async function syncSinceHistory(accountId: string) {
   const account = await getAccount(accountId);
   if (!account.history_id) {
