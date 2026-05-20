@@ -1170,16 +1170,16 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
 /* =========================================================
    DOWNRANGE TRACKING VIEW (post-liftoff)
    ========================================================= */
-.launchpad__viewport.tracking {
+.launchpad__viewport.is-tracking {
   background:
     radial-gradient(ellipse 120% 90% at 50% 10%, #0a1430 0%, #04060f 70%, #02030a 100%);
 }
-.launchpad__viewport.tracking .viewport-grid,
-.launchpad__viewport.tracking .viewport-crosshair,
-.launchpad__viewport.tracking .rocket-wrap,
-.launchpad__viewport.tracking .smoke,
-.launchpad__viewport.tracking .sparks,
-.launchpad__viewport.tracking .pad-base {
+.launchpad__viewport.is-tracking .viewport-grid,
+.launchpad__viewport.is-tracking .viewport-crosshair,
+.launchpad__viewport.is-tracking .rocket-wrap,
+.launchpad__viewport.is-tracking .smoke,
+.launchpad__viewport.is-tracking .sparks,
+.launchpad__viewport.is-tracking .pad-base {
   opacity: 0 !important;
   transition: opacity .5s ease-out;
   pointer-events: none;
@@ -1191,7 +1191,7 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
   transition: opacity .7s ease-out;
   z-index: 4;
 }
-.launchpad__viewport.tracking .tracking { opacity: 1; }
+.launchpad__viewport.is-tracking .tracking { opacity: 1; }
 
 /* Stars */
 .tracking__sky { position: absolute; inset: 0; }

@@ -1,49 +1,34 @@
-# Tracking view after liftoff
+# Fix tracking view + show trajectory and angle clearly
 
-Once the rocket clears the launchpad viewport, swap the launchpad scene for a downrange tracking view inside the same `.launchpad__viewport` panel. Telemetry stays live (it already updates after liftoff) and gains a few tracking-only readouts.
+## Root cause
 
-## Trigger
+The overlay child div uses class `tracking` AND the state added to the viewport is also `tracking`. The CSS rule `.tracking { position: absolute; inset: 0; opacity: 0 }` therefore also matches the viewport element once the state flips on — collapsing the whole panel to `opacity: 0`. That's why the screenshot is empty.
 
-In `src/components/landing/useMissionTelemetry.ts`, ~1.6s after `setPhase("liftoff")` (matches the existing 1.6s liftoff transform), add a `tracking` class to the `.launchpad__viewport` element. CSS handles the rest of the scene swap. Clear the timeout in the cleanup.
+## Fixes
 
-## DOM additions (`src/routes/index.tsx`, inside `.launchpad__viewport`)
+### 1. Rename the state class (no collision)
+- `useMissionTelemetry.ts`: change `viewportEl?.classList.add("tracking")` → `add("is-tracking")`.
+- `zerrow-landing.css`: every `.launchpad__viewport.tracking …` selector becomes `.launchpad__viewport.is-tracking …`. The inner overlay div keeps class `tracking` (block class only, no state collision).
 
-Add a sibling block `.tracking` next to the existing smoke / sparks / rocket-wrap. It contains:
+### 2. Tie activation to actual rocket exit
+Bump the timeout from 1.6s to 1.8s (the rocket transform takes 1.6s plus a small buffer so the panel only swaps once the rocket has truly cleared the top).
 
-- `.tracking__sky` — deep-space gradient background with faint star dots.
-- `.tracking__earth` — curved earth horizon arc anchored to the bottom of the viewport (CSS radial / large circle clipped at bottom).
-- `.tracking__arc` — inline SVG with a single dashed/glowing trajectory path arcing from lower-left up across to upper-right. A second solid path layered on top is clip-revealed left→right via `stroke-dasharray` animation so the trajectory "draws" as the rocket flies it.
-- `.tracking__icon` — a small SVG rocket (reuse the same arrowhead silhouette, scaled to ~28px) that moves along the arc using CSS `offset-path` set to the same cubic-bezier curve, with `offset-rotate: auto` so it tilts naturally along the tangent. Animation loops slowly (e.g. 14s) so the rocket appears to continually progress downrange.
-- `.tracking__hud` — two small corner overlays:
-  - top-left badge: `TRACKING · DOWNRANGE` with a blinking dot.
-  - bottom-right mini readout: `DOWNRANGE` (km) and `APOGEE` (km), driven by the existing telemetry interval (new IDs `t-downrange`, `t-apogee`).
-- Keep the existing `.viewport-telemetry` and `.viewport-counter` panels visible (they already show altitude/velocity/etc), but reposition slightly if they overlap the arc — handled in CSS.
+### 3. Make the trajectory clearly readable (`public/zerrow-landing.css` tracking block)
+- Widen the arc stroke (2 → 3px) and brighten the live gradient so it reads against the deep-space background.
+- Increase the ghost arc opacity (.18 → .35) and make its dashes longer (4 6 → 6 8) so the full predicted path is obvious from frame 1.
+- Add tick marks along the arc (small perpendicular notches every ~20% of length) so the user can read progression at a glance.
+- Pin a permanent "current position" rocket marker at the live head of the arc (separate from the looping flyby icon) so even when the loop resets, the trajectory still reads as occupied.
 
-The existing `.smoke`, `.sparks`, `.rocket-wrap`, `.viewport-crosshair`, and `.viewport-grid` are hidden via CSS when `.launchpad__viewport.tracking` is set, with a short fade.
+### 4. Show the rocket's angle / heading
+Add a third HUD overlay (top-right of the viewport):
+- `ANGLE` row showing live pitch in degrees, computed from the tangent of the trajectory curve at the current `offset-distance`. Simpler approach: drive it from a JS angle that ramps from 90° (straight up) → ~25° (downrange) over the same 14s arc cycle. Write to `#t-pitch`.
+- A small circular "attitude indicator" SVG (artificial horizon style): a circle with a rotating internal line that matches the pitch — purely visual, CSS-rotated by the same pitch value via a CSS variable on the HUD container.
 
-## CSS (`public/zerrow-landing.css`)
+### 5. Earth horizon polish
+Reduce the earth sphere size (1800px → 1100px) and raise it slightly (`bottom: -900px`) so the curve is visible at the bottom of the panel instead of being mostly off-screen.
 
-New section near the existing viewport rules:
-
-- `.launchpad__viewport.tracking` — adds the deep-space background gradient (dark navy → near-black) and triggers child reveal transitions.
-- `.tracking` block hidden by default (`opacity: 0; pointer-events: none`), fades in over ~600ms when parent has `.tracking`.
-- `.tracking__sky` — radial subtle vignette + a few `::before/::after` pseudo-elements or small `<i>` star dots with gentle twinkle keyframes.
-- `.tracking__earth` — large circle (e.g. 1600px) positioned so only the top sliver shows at the bottom of the viewport, with a soft blue atmospheric glow above the rim.
-- `.tracking__arc svg` — absolutely positioned to fill the viewport; trajectory path styled with thin orange dashed stroke + a brighter solid stroke animated via `stroke-dasharray` / `stroke-dashoffset` keyframes (draws across, then resets).
-- `.tracking__icon` — uses `offset-path: path("…same curve…")` with `offset-distance` keyframed 0% → 100% and `offset-rotate: auto`. Drop shadow + small flame trail (a short tapered orange streak behind the icon using a pseudo-element).
-- `.tracking__hud` overlays: small badges using the existing telemetry typography tokens.
-- Hide pre-launch elements when tracking is active:
-  `.tracking ~ .rocket-wrap`, `.smoke`, `.sparks`, `.viewport-crosshair` → opacity 0.
-
-## Telemetry tie-in (`useMissionTelemetry.ts`)
-
-Inside the existing post-launch branch of `updateTelemetry`:
-
-- Compute `downrange = vel * elapsedSinceLaunch / 1000` (rough km) and `apogee = max(alt seen)`.
-- Write to new `#t-downrange` and `#t-apogee` text nodes if present.
+## Verification
+After edits, navigate the browser to `/`, wait ~12 seconds (8s burndown + 1.8s liftoff + buffer), screenshot the launchpad panel, and confirm: dark space background, stars visible, earth curve at bottom, ghost arc + live arc + flying rocket icon, HUDs (tracking badge, downrange/apogee, angle/attitude indicator) all readable.
 
 ## Out of scope
-
-- No new routes, no backend, no libraries — pure SVG/CSS + the existing RAF.
-- Pre-launch scene (rocket, smoke, flame, launchpad base) is untouched.
-- Mobile scaling: reuse the existing `@media` rules; the tracking view simply inherits viewport size.
+Pre-launch animation, telemetry math beyond the new pitch readout, and any non-visual changes.
