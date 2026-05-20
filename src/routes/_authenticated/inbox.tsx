@@ -753,6 +753,29 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           }}>
             <Trash2 className="h-4 w-4" />
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={resyncing}
+            title="Resync labels from Gmail"
+            onClick={async () => {
+              setResyncing(true);
+              try {
+                const r = await resyncFn({ data: { id: email.id } });
+                qc.invalidateQueries({ queryKey: ["emails"] });
+                qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                if ((r as any).deleted) toast.message("Removed — no longer in Gmail");
+                else if ((r as any).in_inbox) toast.success("Resynced — back in Inbox");
+                else toast.success("Resynced from Gmail");
+              } catch (e: any) {
+                toast.error(e.message);
+              } finally {
+                setResyncing(false);
+              }
+            }}
+          >
+            <RefreshCw className={`h-4 w-4 ${resyncing ? "animate-spin" : ""}`} />
+          </Button>
 
         </div>
 
