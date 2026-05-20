@@ -106,6 +106,12 @@ function SettingsPage() {
                         <Button size="sm" onClick={() => run(`bf-${a.id}`, () => backfill({ data: { account_id: a.id, count: 30 } }), "Backfilled latest 30")} disabled={busy !== null}>
                           {busy === `bf-${a.id}` ? "Backfilling…" : "Backfill recent 30"}
                         </Button>
+                        <Button size="sm" variant="secondary" onClick={() => run(`week-${a.id}`, async () => {
+                          const r: any = await weekBackfill({ data: { account_id: a.id, days: 7, max: 1000 } });
+                          toast.success(`Pulled ${r?.processed ?? 0} new messages from the last 7 days (${r?.alreadyHad ?? 0} already in sync)`);
+                        }, "")} disabled={busy !== null}>
+                          {busy === `week-${a.id}` ? "Catching up…" : "Catch up last 7 days"}
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => run(`sync-${a.id}`, () => sync({ data: { account_id: a.id } }), "Synced")} disabled={busy !== null}>
                           <RefreshCw className="mr-1.5 h-3 w-3" />{busy === `sync-${a.id}` ? "Syncing…" : "Sync now"}
                         </Button>
