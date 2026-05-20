@@ -1,7 +1,7 @@
 // Core sync pipeline: pull messages for a specific gmail_account, apply filters/AI,
 // persist, apply Gmail label/actions. Server-only.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMessage, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels } from "./gmail.server";
+import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels } from "./gmail.server";
 import { classifyEmail, buildFolderProfile, type ClassifyFolder } from "./ai.server";
 
 type Folder = {
@@ -383,32 +383,44 @@ export async function regenerateFolderProfile(folderId: string) {
 }
 
 export async function learnFromLinkedLabel(folderId: string, userId: string) {
-  const { data: folder } = await supabaseAdmin.from("folders").select("*").eq("id", folderId).single();
-  if (!folder) throw new Error("Folder not found");
+  const { data: folderRow } = await supabaseAdmin.from("folders").select("*").eq("id", folderId).single();
+  if (!folderRow) throw new Error("Folder not found");
+  const folder = folderRow;
   if (folder.user_id !== userId) throw new Error("Not authorized");
   if (!folder.gmail_label_id) throw new Error("Folder is not linked to a Gmail label");
   const accountId = folder.gmail_account_id;
 
-  const MAX_MESSAGES = 2000;
-  const ids: string[] = [];
-  let pageToken: string | undefined;
-  do {
-    const list = await listMessages(accountId, {
-      maxResults: 500,
-      labelIds: [folder.gmail_label_id],
-      pageToken,
-    });
-    for (const m of list.messages ?? []) ids.push(m.id);
-    pageToken = list.nextPageToken;
-    if (ids.length >= MAX_MESSAGES) break;
-  } while (pageToken);
+  // Cap the on-click learn at 200 (profile uses latest 50; 200 gives headroom).
+  const MAX_MESSAGES = 200;
+
+  // Single page is enough at this cap (Gmail returns up to 500 ids per page).
+  const list = await listMessages(accountId, {
+    maxResults: MAX_MESSAGES,
+    labelIds: [folder.gmail_label_id],
+  });
+  const allIds = (list.messages ?? []).map((m) => m.id).slice(0, MAX_MESSAGES);
+
+  // Skip ids we already have as examples for this folder — re-learn becomes near-instant.
+  let idsToFetch = allIds;
+  if (allIds.length > 0) {
+    const { data: known } = await supabaseAdmin
+      .from("folder_examples")
+      .select("gmail_message_id")
+      .eq("folder_id", folderId)
+      .in("gmail_message_id", allIds);
+    const knownSet = new Set((known ?? []).map((r) => r.gmail_message_id));
+    idsToFetch = allIds.filter((id) => !knownSet.has(id));
+  }
 
   let learned = 0;
   let ingested = 0;
   let claimed = 0;
-  for (const id of ids.slice(0, MAX_MESSAGES)) {
+
+  // Parallel pool of 10 — biggest wall-clock win.
+  const CONCURRENCY = 10;
+  async function processOne(id: string) {
     try {
-      const raw = await getMessage(accountId, id);
+      const raw = await getMessageMetadata(accountId, id);
       const p = parseMessage(raw);
       const { error } = await supabaseAdmin.from("folder_examples").upsert(
         {
@@ -425,7 +437,8 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
       );
       if (!error) learned++;
 
-      // Also bring the message into our local emails table and tag it with this folder.
+      // Tag local email if present; insert a lightweight row otherwise.
+      // We skip body_text/body_html — normal sync fills those in later.
       const { data: existing } = await supabaseAdmin
         .from("emails")
         .select("id, folder_id")
@@ -455,8 +468,6 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           to_addrs: p.to_addrs,
           subject: p.subject,
           snippet: p.snippet,
-          body_text: p.body_text,
-          body_html: p.body_html,
           received_at: p.received_at,
           is_read: p.is_read,
           is_archived: !p.raw_labels?.includes("INBOX"),
@@ -474,6 +485,12 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
       console.error("seed example failed", e);
     }
   }
+
+  for (let i = 0; i < idsToFetch.length; i += CONCURRENCY) {
+    const chunk = idsToFetch.slice(i, i + CONCURRENCY);
+    await Promise.all(chunk.map(processOne));
+  }
+
   const profile = await regenerateFolderProfile(folderId);
   return { learned, ingested, claimed, profile };
 }
