@@ -352,12 +352,12 @@ function InboxPage() {
                   className={`block w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${e.is_read ? "opacity-70" : ""}`}
                 >
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className={`truncate text-sm ${e.is_read ? "" : "font-semibold"}`}>{e.from_name || e.from_addr || "Unknown"}</span>
+                    <span className={`truncate text-sm ${e.is_read ? "" : "font-semibold"}`}>{decodeEntities(e.from_name) || e.from_addr || "Unknown"}</span>
                     <span className="shrink-0 text-[11px] text-muted-foreground">
                       {e.received_at ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false }) : ""}
                     </span>
                   </div>
-                  <div className="truncate text-sm text-foreground/90">{e.subject || "(no subject)"}</div>
+                  <div className="truncate text-sm text-foreground/90">{decodeEntities(e.subject) || "(no subject)"}</div>
                   {rowFolder && (
                     <div className="mt-1">
                       <span
@@ -374,10 +374,10 @@ function InboxPage() {
                   {e.ai_summary ? (
                     <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
                       <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
-                      <span className="line-clamp-2">{e.ai_summary}</span>
+                      <span className="line-clamp-2">{decodeEntities(e.ai_summary)}</span>
                     </div>
                   ) : (
-                    <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{e.snippet}</div>
+                    <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{decodeEntities(e.snippet)}</div>
                   )}
                 </button>
               </ContextMenuTrigger>
