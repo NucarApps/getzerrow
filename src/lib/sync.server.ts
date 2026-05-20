@@ -292,15 +292,9 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
 
   if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
 
-  const c = await classifyParsedEmail(parsed, userId, accountId);
-  const folder_id = c.folder_id;
-  const classified_by = c.classified_by;
-  const confidence = c.ai_confidence;
-  const summary = c.ai_summary;
-  const classification_reason = c.classification_reason;
-  const matched_filter_ids = c.matched_filter_ids;
-
-
+  // 1) Insert the email row FIRST with no folder so it shows up in Inbox
+  //    immediately, even if classification (AI Gateway) is slow or fails.
+  //    Classification runs in step 2 and UPDATEs the row.
   const { data: inserted, error } = await supabaseAdmin
     .from("emails")
     .insert({
@@ -319,15 +313,11 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       is_read: parsed.is_read,
       has_attachment: parsed.has_attachment,
       raw_labels: parsed.raw_labels,
-      folder_id,
-      ai_summary: summary || null,
-      ai_confidence: confidence,
-      classified_by,
-      classification_reason,
-      matched_filter_ids,
+      folder_id: null,
+      classified_by: "pending",
       processed_at: new Date().toISOString(),
     })
-    .select("id, folder_id")
+    .select("id")
     .single();
 
   if (error) {
@@ -335,6 +325,29 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
     return { error: error.message };
   }
 
+  // 2) Classify. If this throws or times out, the email is already in Inbox.
+  let folder_id: string | null = null;
+  try {
+    const c = await classifyParsedEmail(parsed, userId, accountId);
+    folder_id = c.folder_id ?? null;
+    await supabaseAdmin.from("emails").update({
+      folder_id,
+      ai_summary: c.ai_summary || null,
+      ai_confidence: c.ai_confidence,
+      classified_by: c.classified_by,
+      classification_reason: c.classification_reason,
+      matched_filter_ids: c.matched_filter_ids,
+    }).eq("id", inserted.id);
+  } catch (e) {
+    console.error("classify failed (email already visible in Inbox)", e);
+    await supabaseAdmin.from("emails").update({
+      classified_by: "unclassified",
+      classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
+    }).eq("id", inserted.id);
+    return { id: inserted.id, classify_failed: true };
+  }
+
+  // 3) Apply Gmail label / auto-archive / auto-mark-read for the assigned folder.
   if (folder_id) {
     const { data: folder } = await supabaseAdmin
       .from("folders")
@@ -649,6 +662,40 @@ export async function enqueueMessageJob(
 }
 
 export async function runMessageJobs(limit = 25) {
+  const STUCK_MS = 90 * 1000; // jobs in 'running' for >90s are presumed dead (worker timeout)
+  const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
+
+  // ─── Self-heal: reclaim any 'running' jobs whose worker died mid-execution.
+  // Without this, a Cloudflare Worker that's killed mid-processGmailMessage
+  // leaves the row in 'running' forever because the catch block never ran,
+  // so attempt is never incremented and the job never reaches the DLQ.
+  const stuckCutoff = new Date(Date.now() - STUCK_MS).toISOString();
+  const { data: stuck } = await supabaseAdmin
+    .from("message_jobs")
+    .select("id, attempt")
+    .eq("status", "running")
+    .lt("locked_at", stuckCutoff);
+  for (const s of stuck ?? []) {
+    const nextAttempt = (s.attempt ?? 0) + 1;
+    if (nextAttempt >= MAX_JOB_ATTEMPTS) {
+      await supabaseAdmin.from("message_jobs").update({
+        status: "dlq",
+        attempt: nextAttempt,
+        last_error: "stuck (worker timeout — exceeded max attempts)",
+        locked_at: null,
+      }).eq("id", s.id);
+    } else {
+      const backoff = jitter(BACKOFF_SECONDS[Math.min(nextAttempt - 1, BACKOFF_SECONDS.length - 1)]);
+      await supabaseAdmin.from("message_jobs").update({
+        status: "pending",
+        attempt: nextAttempt,
+        last_error: "stuck (worker timeout) — auto-reclaimed",
+        locked_at: null,
+        next_run_at: new Date(Date.now() + backoff * 1000).toISOString(),
+      }).eq("id", s.id);
+    }
+  }
+
   const lockCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   const { data: candidates } = await supabaseAdmin
     .from("message_jobs")
@@ -671,7 +718,14 @@ export async function runMessageJobs(limit = 25) {
     if (!claimed) continue;
 
     try {
-      await processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id);
+      // Hard timeout so the worker always reaches the catch block before the
+      // Cloudflare Worker is killed for exceeding wall time.
+      await Promise.race([
+        processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`job timeout after ${JOB_TIMEOUT_MS}ms`)), JOB_TIMEOUT_MS),
+        ),
+      ]);
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
       results.push({ id: job.id, ok: true });
     } catch (e: any) {

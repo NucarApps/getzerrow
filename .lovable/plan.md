@@ -1,61 +1,47 @@
-# Fix the misleading "push didn't match" banner + verify the re-arm worked
 
-## What's actually going on
+## What's happening
 
-I queried `pubsub_events`. The full picture:
+Michelle's email did arrive in the app — the 18:26 poll detected it and enqueued a job for Gmail message `19e469f81176c627`. But the job is stuck:
 
-| time | event | notes |
-|------|-------|-------|
-| 18:23:19 | `watch_renew` | Your re-arm worked. Bound to `projects/projectinboxzero-495314/topics/gmail-push`, expires 5/27. |
-| 18:24, 18:22, 18:20, 18:18 … | `poll` | Polling keeps catching up every 2 min. |
-| **18:12:05** | `push` | **This is the row the banner is yelling about.** It happened ~12 min *before* the re-arm, and predates the migration so it has no `payload` / `message_id` columns to inspect. |
-| 18:12:05 | `push_empty` | Same envelope as above — body had no `message.data`. |
+```
+message_jobs row
+  status        running
+  locked_at     18:26:00   (held > 2 min, never released)
+  attempt       0
+  last_error    null
+```
 
-So the banner is reacting to a stale push from before you re-armed. It does NOT mean the re-arm failed. We just don't know yet, because **Gmail only emits a push when new mail actually changes the inbox** — the watch alone doesn't trigger one.
+`processGmailMessage` calls Gmail `GetMessage` (the API you saw erroring in Google Console) and then `classifyParsedEmail` (AI Gateway). One of those is hanging or hitting the Cloudflare Worker wall-time limit, so the request is killed *before* the `catch` block runs. Because nothing increments `attempt` or clears `locked_at`, the row sits in `running` until the 5-minute lock cutoff — then the next poll reclaims it and the cycle repeats. The email never appears, and the job never reaches the DLQ.
+
+This is also why we never see a `last_error` for it: the worker is dying mid-execution, not throwing.
 
 ## Plan
 
-### 1. Make the "push didn't match" banner age-aware
+### 1. Unstick Michelle's email right now
+- Reset that specific job (`status='pending'`, `locked_at=null`, `next_run_at=now()`) so the next poll picks it up cleanly. If it fails again, it'll do so loudly (see #2).
 
-In `src/components/settings/PubsubActivity.tsx`, only show the red "Push arrived but didn't match" banner when **`lastPush.received_at` is within the last 10 minutes AND newer than the most recent `watch_renew` event**. Otherwise the diagnostic is stale and actively misleading.
+### 2. Insert the email row BEFORE classification (the real fix for visibility)
+In `processGmailMessage`:
+- After `parseMessage`, insert the email row immediately with `folder_id=null` (lands in Inbox), `classified_by='pending'`.
+- Then run `classifyParsedEmail` and `UPDATE` the row with folder/summary/etc.
+- If classification fails or times out, the email is already visible in the inbox — only the AI label is missing.
 
-Same for the "Last push" expandable card — show an `(stale, before last re-arm)` chip so you immediately know it's not the current picture.
+This is the core decoupling: Gmail-API latency and AI latency should never block an email from appearing.
 
-### 2. Surface re-arm freshness
+### 3. Hard timeout + stuck-job self-heal in `runMessageJobs`
+- Wrap `processGmailMessage` in `Promise.race` with a 25 s timeout so the worker always throws into the `catch` block (which already handles attempt counting, backoff, DLQ).
+- At the top of `runMessageJobs`, sweep rows where `status='running' AND locked_at < cutoff`: increment `attempt`, set `last_error='stuck (worker timeout)'`, and either re-pend with backoff or move to DLQ at `MAX_JOB_ATTEMPTS`. This breaks the infinite stuck→reclaim loop even if a future bug brings it back.
 
-Add a small status line under the diagnostics header:
-- "Watch re-armed 1m ago against `projects/projectinboxzero-495314/topics/gmail-push`. Send yourself an email to verify push delivery."
-- Computed from the most recent `watch_renew` row's `details` + `received_at`.
-
-### 3. Add a "Verify push end-to-end" affordance
-
-Right next to the re-arm button, add a small **"How to verify"** helper that just renders 2 lines:
-1. Send yourself an email from another account.
-2. Watch this panel for a new `push` row within ~30s. If only `poll` rows show up, the GCP subscription is the broken piece.
-
-(No code that actually sends mail — we can't, it'd send from your own connected account.)
-
-### 4. Extend the `lastPush` query to skip pre-instrumentation rows
-
-`listPubsubEvents` in `src/lib/gmail.functions.ts`: when picking `lastPush`, prefer the most recent push that has `payload IS NOT NULL` (i.e. logged by the new webhook). Fall back to the truly latest row only if no instrumented push exists yet. That way the "Last push details" block stops showing the 18:12 ghost.
-
-### 5. Also fetch the latest `watch_renew` and expose it
-
-Extend `listPubsubEvents`'s `diagnostics` return with `lastWatchRenew: { received_at, details }` so the UI doesn't need a second round trip to show #2.
+### 4. Surface stuck jobs in the diagnostics panel
+Add a small "Stuck jobs" row to `PubsubActivity` showing any `message_jobs` with `status='running'` for >2 min, with the gmail_message_id and a "Force retry" button (calls existing `retryMessageJob`). So next time this happens you see it instead of guessing.
 
 ## Files to touch
-
-- `src/lib/gmail.functions.ts` — `listPubsubEvents`: pick `lastPush` preferring instrumented rows; add `lastWatchRenew` to `diagnostics`.
-- `src/components/settings/PubsubActivity.tsx` — age-gate the "didn't match" banner; "stale" chip on Last push card; re-arm freshness line; "How to verify" helper.
+- `src/lib/sync.server.ts` — split insert/classify in `processGmailMessage`; add stuck-job sweep + `Promise.race` timeout in `runMessageJobs`.
+- `src/lib/gmail.functions.ts` — extend `listPubsubEvents` to also return stuck `message_jobs`.
+- `src/components/settings/PubsubActivity.tsx` — render stuck-jobs row + Force retry.
+- One-off SQL to reset job `f6e18c37-…` to pending so Michelle's email shows up on the next poll (≤ 2 min).
 
 ## Out of scope
-
-- No backend / webhook / sync changes. The webhook instrumentation from the last turn is already correct; we just need to interpret the data more carefully in the UI.
-- Anything inside Google Cloud Console.
-- Polling, classifier, job worker.
-
-## What you'll see after this
-
-- The red banner disappears (the only offending push is from 12+ min ago and predates the re-arm).
-- A new status line: *"Watch re-armed 1m ago against `projects/projectinboxzero-495314/topics/gmail-push`. Send yourself an email to verify push delivery."*
-- When you send yourself a test email, a fresh `push` row appears with a fully populated payload — at which point we'll know definitively whether the topic/subscription wiring is right or still broken.
+- Re-architecting Gmail polling, push, or watch logic.
+- Changing the classifier itself.
+- GCP console changes.

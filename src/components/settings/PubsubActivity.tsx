@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listPubsubEvents, pingPubsubWebhook, listMyGmailAccounts, renewGmailWatch } from "@/lib/gmail.functions";
+import { listPubsubEvents, pingPubsubWebhook, listMyGmailAccounts, renewGmailWatch, retryJob, runJobsNow } from "@/lib/gmail.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,9 @@ export function PubsubActivity() {
   const pingFn = useServerFn(pingPubsubWebhook);
   const accountsFn = useServerFn(listMyGmailAccounts);
   const renewFn = useServerFn(renewGmailWatch);
+  const retryFn = useServerFn(retryJob);
+  const runJobsFn = useServerFn(runJobsNow);
+  const [retryingJob, setRetryingJob] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [pinging, setPinging] = useState(false);
@@ -157,6 +160,66 @@ export function PubsubActivity() {
             </div>
           </div>
           {renewBtn}
+        </div>
+      )}
+
+      {/* AMBER: stuck jobs (worker timed out mid-processing) */}
+      {diag?.stuckJobs && diag.stuckJobs.length > 0 && (
+        <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div className="flex-1 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-medium text-amber-700 dark:text-amber-400">
+                  {diag.stuckJobs.length} message {diag.stuckJobs.length === 1 ? "job is" : "jobs are"} stuck.
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      const r = await runJobsFn({ data: { limit: 50 } });
+                      toast.success(`Drained ${r.ok} jobs (${r.failed} failed, ${r.dlq} DLQ)`);
+                      q.refetch();
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                >
+                  Run worker now
+                </Button>
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                These jobs were claimed by a worker that died mid-processing (usually a Cloudflare Worker wall-time timeout while calling Gmail GetMessage or the AI classifier). They will auto-reclaim on the next poll, but you can force a retry below.
+              </div>
+              <div className="mt-3 space-y-1.5">
+                {diag.stuckJobs.map((j: any) => (
+                  <div key={j.id} className="flex items-center justify-between gap-2 rounded border bg-card p-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{j.subject ?? "(no subject yet)"} <span className="font-normal text-muted-foreground">— {j.from_addr ?? "unknown sender"}</span></div>
+                      <div className="font-mono text-[10px] text-muted-foreground">msg {j.gmail_message_id} · attempt {j.attempt ?? 0} · locked {relTime(j.locked_at)}</div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={retryingJob === j.id}
+                      onClick={async () => {
+                        setRetryingJob(j.id);
+                        try {
+                          await retryFn({ data: { id: j.id } });
+                          await runJobsFn({ data: { limit: 5 } });
+                          toast.success("Retried");
+                          q.refetch();
+                        } catch (e: any) { toast.error(e.message); }
+                        finally { setRetryingJob(null); }
+                      }}
+                    >
+                      <RefreshCw className={`mr-1 h-3 w-3 ${retryingJob === j.id ? "animate-spin" : ""}`} />
+                      Force retry
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
