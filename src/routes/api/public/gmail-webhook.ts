@@ -32,7 +32,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               message_id: messageId,
               publish_time: publishTime,
               subscription,
-              payload: body ?? null,
+              payload: (body ?? null) as never,
               details,
             });
             return new Response("ok", { status: 200 });
