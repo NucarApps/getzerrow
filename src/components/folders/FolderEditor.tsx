@@ -611,3 +611,223 @@ function RulePatchCard({
     </div>
   );
 }
+
+// ============ Daily summaries ============
+
+type Schedule = {
+  id: string;
+  name: string;
+  instructions: string;
+  hour: number;
+  minute: number;
+  timezone: string;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string;
+  last_error: string | null;
+};
+
+const browserTz = (() => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
+})();
+
+function pad2(n: number) { return n < 10 ? `0${n}` : String(n); }
+
+function SummariesPanel({ folderId }: { folderId: string }) {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listFolderSummaries);
+  const createFn = useServerFn(createFolderSummary);
+  const updateFn = useServerFn(updateFolderSummary);
+  const deleteFn = useServerFn(deleteFolderSummary);
+  const runNowFn = useServerFn(runFolderSummaryNow);
+
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<Schedule | null>(null);
+  const [runningId, setRunningId] = useState<string | null>(null);
+
+  const q = useQuery({
+    queryKey: ["folder-summaries", folderId],
+    queryFn: async () => (await listFn({ data: { folder_id: folderId } })).schedules as Schedule[],
+  });
+  const schedules = q.data ?? [];
+
+  async function toggleEnabled(s: Schedule, enabled: boolean) {
+    try {
+      await updateFn({ data: { id: s.id, enabled } });
+      qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed"); }
+  }
+  async function remove(s: Schedule) {
+    if (!confirm(`Delete summary "${s.name}"?`)) return;
+    await deleteFn({ data: { id: s.id } });
+    qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
+  }
+  async function runNow(s: Schedule) {
+    setRunningId(s.id);
+    try {
+      const r = await runNowFn({ data: { id: s.id } });
+      if (r.ok) toast.success(r.emails === 0 ? "Ran — no emails in window" : `Inserted digest of ${r.emails} email${r.emails === 1 ? "" : "s"}`);
+      else toast.error(r.error ?? "Failed");
+      qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed"); }
+    finally { setRunningId(null); }
+  }
+
+  return (
+    <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <Clock className="h-3 w-3" /> Daily summaries
+        </div>
+        {!showForm && !editing && (
+          <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Add schedule
+          </Button>
+        )}
+      </div>
+
+      <p className="mt-2 text-xs text-muted-foreground">
+        Zerrow reads emails received in this folder over the last 24 hours and inserts an AI-written digest into your inbox at the time you choose.
+      </p>
+
+      {q.isLoading ? (
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {schedules.map((s) => (
+            editing?.id === s.id ? (
+              <ScheduleForm
+                key={s.id}
+                initial={s}
+                onCancel={() => setEditing(null)}
+                onSave={async (vals) => {
+                  await updateFn({ data: { id: s.id, ...vals } });
+                  setEditing(null);
+                  qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
+                }}
+              />
+            ) : (
+              <div key={s.id} className="rounded-md border border-border bg-background p-3">
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{s.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Every day at {pad2(s.hour)}:{pad2(s.minute)} ({s.timezone})
+                    </div>
+                    {s.instructions && (
+                      <div className="mt-1 text-xs text-foreground/70 line-clamp-2">{s.instructions}</div>
+                    )}
+                    <div className="mt-1.5 text-xs text-muted-foreground">
+                      {s.last_run_at ? `Last run: ${new Date(s.last_run_at).toLocaleString()}` : "Not run yet"}
+                      {" · "}Next: {new Date(s.next_run_at).toLocaleString()}
+                    </div>
+                    {s.last_error && (
+                      <div className="mt-1.5 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                        {s.last_error}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Switch checked={s.enabled} onCheckedChange={(v) => toggleEnabled(s, v)} />
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => runNow(s)} disabled={runningId === s.id} title="Run now">
+                      {runningId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditing(s); setShowForm(false); }} title="Edit">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => remove(s)} title="Delete">
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )
+          ))}
+          {schedules.length === 0 && !showForm && (
+            <div className="text-xs text-muted-foreground italic">No schedules yet.</div>
+          )}
+          {showForm && (
+            <ScheduleForm
+              onCancel={() => setShowForm(false)}
+              onSave={async (vals) => {
+                await createFn({ data: { folder_id: folderId, ...vals } });
+                setShowForm(false);
+                qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduleForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: Schedule;
+  onSave: (vals: { name: string; instructions: string; hour: number; minute: number; timezone: string }) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "Daily digest");
+  const [instructions, setInstructions] = useState(initial?.instructions ?? "");
+  const [hour, setHour] = useState(initial?.hour ?? 8);
+  const [minute, setMinute] = useState(initial?.minute ?? 0);
+  const [tz, setTz] = useState(initial?.timezone ?? browserTz);
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (!name.trim()) { toast.error("Name required"); return; }
+    setSaving(true);
+    try {
+      await onSave({ name: name.trim(), instructions: instructions.trim(), hour, minute, timezone: tz.trim() || "UTC" });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-background p-3 space-y-2.5">
+      <div>
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Name</Label>
+        <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="Morning newsletter digest" />
+      </div>
+      <div className="grid grid-cols-[1fr_1fr_1.5fr] gap-2">
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Hour</Label>
+          <Select value={String(hour)} onValueChange={(v) => setHour(parseInt(v, 10))}>
+            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>{Array.from({ length: 24 }).map((_, i) => (<SelectItem key={i} value={String(i)}>{pad2(i)}</SelectItem>))}</SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Minute</Label>
+          <Select value={String(minute)} onValueChange={(v) => setMinute(parseInt(v, 10))}>
+            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>{[0, 15, 30, 45].map((i) => (<SelectItem key={i} value={String(i)}>{pad2(i)}</SelectItem>))}</SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Timezone</Label>
+          <Input className="mt-1" value={tz} onChange={(e) => setTz(e.target.value)} placeholder="America/New_York" />
+        </div>
+      </div>
+      <div>
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Instructions</Label>
+        <Textarea
+          className="mt-1"
+          rows={3}
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          placeholder="Group by sender, surface action items, keep it under 10 bullets."
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
+        <Button size="sm" onClick={submit} disabled={saving}>{saving ? "Saving…" : initial ? "Save" : "Create"}</Button>
+      </div>
+    </div>
+  );
+}
