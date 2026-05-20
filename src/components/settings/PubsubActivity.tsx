@@ -62,9 +62,9 @@ export function PubsubActivity() {
     <Card className="p-4 md:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="font-display text-2xl">Gmail Pub/Sub activity</h2>
+          <h2 className="font-display text-2xl">Gmail sync activity</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Raw push notifications from Gmail. Use this to verify whether new emails are arriving via push or only via the 2-minute fallback poll.
+            Live feed of every push notification from Gmail and every fallback poll run. Use this to see whether new mail is arriving via push, via the 2-minute poll, or not at all.
           </p>
         </div>
         <Button
