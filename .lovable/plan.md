@@ -1,49 +1,71 @@
-## Right-click: strip folder label, don't route to Inbox
+## Auto-claim emails on new folder + paginated folder views
 
-### Current behavior
+### Part 1 — New folder auto-pulls from its Gmail label
 
-Right-click → **Just <sender>** / **Anyone @domain** shows two items:
-1. *Future emails only* → adds an `inbox_overrides` row so future mail from that sender bypasses folders.
-2. *Future + move past emails to Inbox* → adds the same override **and** strips the current folder label from past emails (it doesn't actually add the `INBOX` label in Gmail — the label is misleading).
+**Why nothing showed up for "orders":** `AddFolderDialog` (lines 50-56) just inserts a `folders` row. Existing emails in the DB carrying that Gmail label are never re-tagged to the new folder, and no Gmail backfill runs. There's already a server function `learnFromLinkedLabel` (in `src/lib/sync.server.ts:435`) that does exactly the right thing — pulls up to 200 messages from the linked Gmail label, tags matching local rows with the new `folder_id`, and ingests any that aren't already in the DB. It just isn't wired into folder creation.
 
-### What you want
+**Fix:**
+- Expose `learnFromLinkedLabel` as a server fn (or use the existing wrapper if `FolderEditor` already has one — I'll check and reuse).
+- In `AddFolderDialog.submit`, after the `folders` insert, if `labelId` is set (either a freshly-created label or a linked existing one), `await learnFromLinkedLabelFn({ data: { folder_id } })`.
+- Invalidate `["emails"]` + `["emails-summary"]` after.
+- Toast like "Folder created. Pulled N emails from Gmail."
 
-The second item should just remove the folder label from past matching emails — no Inbox routing, no future-mail override.
+### Part 2 — Paginated folder views (50 per page, pulls more from Gmail when needed)
 
-### Changes
+**Current state:** `src/routes/_authenticated/index.tsx:87-97` does one `supabase.from("emails").select("*").limit(2000)` and filters in memory. No pagination.
 
-**`src/routes/_authenticated/index.tsx`** (both submenus, sender + domain — lines 299-311 and 335-347):
+**Target UX:**
+- Each folder view shows 50 emails at a time (newest first).
+- Pager at the bottom: ◀ Prev · "Page N" · Next ▶.
+- Clicking Next:
+  1. If page N+1 exists in DB → render it.
+  2. If DB is exhausted and the folder is linked to a Gmail label → pull the next 50 from Gmail for that label, ingest them, then render.
+  3. If DB is exhausted and no Gmail label (All / Unsorted) → disable Next.
+- Search box stays global as today and bypasses pagination.
 
-Replace the second `ContextMenuItem` so it:
-- Labels itself **"Remove folder label from past emails"** (and the domain variant: same wording).
-- Calls a new server fn `stripFolderLabelPast` (see below) with `value` + `match_type` — NOT `addInboxOverride`.
-- Invalidates `["emails"]` and `["emails-summary"]` only (no `["inbox-overrides"]` since we no longer touch overrides).
-- Toast: *"Removed folder label from N past email(s)"*.
+**Changes:**
 
-Keep the *Future emails only* item unchanged.
+1. **`src/routes/_authenticated/index.tsx`** — replace the single `useQuery(["emails"])` with one keyed on `["emails", selectedFolder, page]`:
+   - Compute a cursor `before_received_at` from the last row of the current page (or `null` for page 1).
+   - For `selectedFolder === "all"`: query `emails` with `is_archived=false`, `order received_at desc`, `lt received_at, cursor`, `limit 51` (51 to detect if a next page exists).
+   - For `unsorted`: same plus `folder_id is null`.
+   - For a folder UUID: `folder_id = selectedFolder`, no archived filter (folder views show archived as today).
+   - Slice to 50 for render; `hasMoreLocal = rows.length > 50`.
+   - Reset `page` to 1 when `selectedFolder` changes.
+   - Search-mode keeps the existing in-memory filter, but pulls last 500 rows for the search corpus instead of 2000 (search is folder-scoped fallback only).
 
-**`src/lib/gmail.functions.ts`** — add a new server fn:
+2. **New server fn `loadOlderFromGmail({ folder_id, before_received_at })`** in `src/lib/gmail.functions.ts`:
+   - Lookup folder; require `gmail_label_id`.
+   - Determine pageToken: store a per-folder `gmail_backfill_page_token` and `gmail_backfill_oldest_received_at` on the `folders` table (new nullable columns).
+   - If `before_received_at` matches the stored oldest, use stored pageToken; otherwise call Gmail with no pageToken and skip past locally-known ids.
+   - Call `listMessages(accountId, { labelIds: [label], maxResults: 50, pageToken })`.
+   - For each id not already in `emails`, fetch + parseMessage + insert with `folder_id` set + `classified_by: "gmail_label"` (same shape as `learnFromLinkedLabel` lines 510-532).
+   - Update folder with new pageToken + new oldest `received_at`.
+   - Return `{ ingested, hasMore: !!list.nextPageToken }`.
 
-```ts
-export const stripFolderLabelPast = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { value: string; match_type: "email" | "domain" }) =>
-    z.object({
-      value: z.string().min(1).max(320),
-      match_type: z.enum(["email", "domain"]),
-    }).parse(d),
-  )
-  .handler(async ({ data, context }) => { /* see below */ });
-```
+3. **Pager UI** at the bottom of the email list column:
+   - Prev disabled on page 1.
+   - Next behavior:
+     - If `hasMoreLocal` → just `setPage(p + 1)`.
+     - Else if folder has a `gmail_label_id` → mutation that calls `loadOlderFromGmail`, then invalidates `["emails", selectedFolder]`, then advances page.
+     - Else → disabled with tooltip "No more in this view."
+   - Show "Page N" and "Loading older from Gmail…" spinner state during the mutation.
 
-Body reuses the existing "strip label" logic from `addInboxOverride` (lines 1161-1217) verbatim, but:
-- Does NOT insert into `inbox_overrides`.
-- Sets `classified_by: "manual_strip"` and `classification_reason: "Right-click: removed folder label"` (so the row is no longer attributed to a global-exclude rule that doesn't exist).
-- Same Gmail `modifyMessage(..., [], [oldLabel])` call and same concurrency=5 worker pattern.
-- Returns `{ stripped_count }`.
+4. **Migration** to add columns to `folders`:
+   ```sql
+   alter table public.folders
+     add column gmail_backfill_page_token text,
+     add column gmail_backfill_oldest_received_at timestamptz;
+   ```
 
 ### Out of scope
-- No change to *Future emails only* item.
-- No change to `addInboxOverride` itself — it stays available for the first item.
-- No change to folder-classifier logic (`classified_by: "manual_strip"` is just a label string; nothing branches on it).
-- No UI for re-classifying stripped emails back into folders.
+
+- No infinite scroll (explicit pager only, per your request).
+- No global "Load more" across All / Unsorted from Gmail (those views aren't label-scoped — Next is local-only there).
+- No change to search behavior, ordering, or right-click menus.
+- No change to existing sync/watch flow.
+
+### Risk notes
+
+- `learnFromLinkedLabel` is capped at 200 messages on first run. If the label has thousands of historical messages, only the most recent 200 show up immediately — older ones will trickle in via the Part 2 pager (which uses Gmail `pageToken`, so it covers the whole label over time).
+- The pageToken cursor stored per folder is only correct when paging strictly older. If a user creates new labeled mail mid-session, those land in DB via the normal watch and appear on page 1 — they don't disturb the older cursor.
