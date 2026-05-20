@@ -319,11 +319,11 @@ export function PubsubActivity() {
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: number; accent?: "danger" }) {
+function Stat({ label, value, accent }: { label: string; value: number; accent?: "danger" | "warn" }) {
   return (
     <div className="rounded-md border bg-card p-3">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-xl font-semibold ${accent === "danger" ? "text-destructive" : ""}`}>{value}</div>
+      <div className={`mt-1 text-xl font-semibold ${accent === "danger" ? "text-destructive" : accent === "warn" ? "text-amber-600" : ""}`}>{value}</div>
     </div>
   );
 }
