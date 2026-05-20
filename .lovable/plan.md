@@ -1,25 +1,37 @@
-# Add "All mail" folder + folder pill on list rows
+# Make landing page responsive
 
-## What changes
+The homepage already has breakpoints at 860px and 640px, but several pieces still feel cramped on real phones (390px and below) and the launchpad visualization overlaps itself. Scope is `public/zerrow-landing.css` only — no JSX or content changes.
 
-1. **New sidebar entry: "All mail"** — shows every email regardless of folder or archived state (the existing "All inbox" stays as-is and keeps excluding archived/foldered mail).
-2. **Folder pill on list rows** — when an email's `folder_id` matches one of the user's folders, render a small colored pill with the folder name next to the sender line.
+## Issues spotted
 
-## Where
+1. **Status bar** — three clusters (`MISSION CONTROL`, `SIGNAL/UPLINK`, `MET/NOMINAL`) all stay visible at every width; on <420px they bunch up tightly.
+2. **Launchpad viewport on mobile** — the inbox-count card (top-left), telemetry rows (top-right), and rocket all stack into the same small box, overlapping each other.
+3. **Hero title** is fixed-size and doesn't scale down for 320–360px screens.
+4. **Section/nav horizontal padding** is heavy on small viewports.
+5. **FAQ summary** grid columns can squeeze the toggle "+" on tiny widths.
+6. **`hero__fineprint` / hero stats** could use a tighter rhythm on mobile.
 
-- `src/lib/folder-selection.tsx` — extend `FolderSelection` type to include `"all_mail"`.
-- `src/routes/_authenticated.tsx` — add a `FolderRow` for "All mail" right under "All inbox". Count = total emails (or unread count across everything, matching the existing pattern).
-- `src/routes/_authenticated/inbox.tsx`:
-  - In `emailsQ.queryFn`, add a branch: when `selectedFolder === "all_mail"`, don't filter by `is_archived` and don't filter by `folder_id` — just order by `received_at` desc with the same pagination.
-  - In `labelForFolder` helper, return `"All mail"` for that key.
-  - In the list row JSX (around line 333), look up `foldersQ.data.find(f => f.id === e.folder_id)` and, if present, render a pill: small rounded badge using the folder's `color` (background at low opacity, colored text/border) with the folder name. Place it inline next to the sender name or under the subject — under the subject is cleaner so long folder names don't push out the timestamp.
+## Changes (all in `public/zerrow-landing.css`)
 
-## Pill styling
+### Refine existing `@media (max-width: 860px)` block
+- Reduce `.hero__title` font-size; tighten `.section` vertical padding.
+- Shrink `.launchpad__viewport` paddings so telemetry doesn't crowd the rocket.
 
-Use a thin rounded pill, `text-[10px]`, uppercase tracking, `bg` = folder color at ~15% opacity, `text` = folder color, no border. One pill per row max. Hidden when row is in a specific folder view (redundant) — only show on "All inbox", "All mail", "No rules", and search results.
+### Refine existing `@media (max-width: 640px)` block
+- `.viewport-counter` and `.viewport-telemetry`: reposition to top corners with smaller fonts; reduce min-width on telemetry so it doesn't overlap the rocket.
+- Scale rocket SVG container down.
+- Reduce `.hero__title` further; tighten letter-spacing.
+- Reduce horizontal page padding (nav, sections) from current value to ~16px.
+- Tighten `.hero__stats` and `.hero__cta` button sizing.
+- Hide the middle `SIGNAL/UPLINK` cluster (`.status-cluster:nth-child(2)`) to prevent crowding.
+
+### Add new `@media (max-width: 420px)` block
+- Hide the `SIGNAL`/`UPLINK` cluster entirely; keep `MISSION CONTROL` and `MET`.
+- Further shrink `.hero__title` (~44px), `.t-minus__big`, and `.section-title`.
+- Stack `.launchpad__foot` cells into a 2-column grid instead of 4.
+- Reduce launchpad min-height so it doesn't take a full extra screen.
 
 ## Out of scope
-
-- No changes to sync, server functions, or DB schema.
-- No multi-label support (we only show the single `folder_id` mapping).
-- "No rules" view behavior is unchanged.
+- No content/JSX changes in `src/routes/index.tsx`.
+- No changes to the rocket animation logic.
+- No changes to fonts loaded or color tokens.
