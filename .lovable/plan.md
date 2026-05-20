@@ -1,71 +1,83 @@
 ## Problem
 
-On a folder like **Factory** (linked to a Gmail label), clicking **Next page** past the locally-loaded emails calls `loadOlderFromLabel` and reports "No older emails found in Gmail" — even though many older messages exist in that label.
+Clicking **Reanalyze email** on a cold email returned no AI match (`folder_name: "NONE"`), and the server function then wrote `folder_id: null` to the row. That moves the email into the **No rules** view, which surprised the user — they expected reanalyze to either improve the classification or leave it alone, never to strip an existing folder when the AI just couldn't decide.
 
 ## Root cause
 
-`loadOlderFromLabel` (`src/lib/sync.server.ts:771`) decides how to fetch the next batch from Gmail based on a stored `gmail_backfill_page_token` + `gmail_backfill_oldest_received_at`:
+`reanalyzeEmail` in `src/lib/gmail.functions.ts` (~lines 1011–1023) trusts `classifyParsedEmail`'s result unconditionally:
 
 ```ts
-if (beforeReceivedAt <= folder.gmail_backfill_oldest_received_at && pageToken) {
-  pageToken = folder.gmail_backfill_page_token;
-}
+const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id);
+await supabaseAdmin.from("emails").update({
+  folder_id: result.folder_id,           // ← becomes NULL when AI says NONE
+  classified_by: result.classified_by,   // ← "ai"
+  ai_confidence: result.ai_confidence,   // ← typically 0 / low
+  ai_summary:    result.ai_summary || null,
+  classification_reason: result.classification_reason,
+  matched_filter_ids:    result.matched_filter_ids,
+}).eq("id", email.id);
 ```
 
-If that condition fails — which is the normal case the first time a user paginates, or whenever the locally-known emails are newer than the last backfill checkpoint — we fall through with **no `pageToken` and no date filter**, so `listMessages({ labelIds: [...], maxResults: 50 })` returns the **newest 50 messages in the label**. Those are exactly the ones we already have, so `ingested = 0`, `claimed = 0`, and the UI shows "No older emails found in Gmail."
-
-There is no fallback that uses the caller-provided `beforeReceivedAt` as a Gmail search anchor, so we never actually ask Gmail for older messages.
+`classifyParsedEmail` returns `folder_id: null` when the AI replies `NONE` (see `src/lib/ai.server.ts:108–114`). The reanalyze handler then also runs the "folder changed" branch and calls Gmail `modifyMessage` to remove the previous folder's label.
 
 ## Fix
 
-When we don't have a usable `pageToken`, fall back to a Gmail search query anchored to `beforeReceivedAt` so we always retrieve messages older than the local cursor.
+When reanalyze produces no folder match, treat it as a no-op for the row's assignment instead of clearing it.
 
-### Change in `src/lib/sync.server.ts` (`loadOlderFromLabel`)
+### Change in `src/lib/gmail.functions.ts` — `reanalyzeEmail` handler
 
-Replace the listMessages call (~lines 792–807) with:
+After computing `result` and before the DB update, detect the no-match case:
 
 ```ts
-let pageToken: string | undefined;
-let q: string | undefined;
+const noMatch =
+  result.folder_id === null &&
+  (result.classified_by === "ai" || result.classified_by === "none" || result.classified_by === "ai_error");
 
-const tokenUsable =
-  beforeReceivedAt &&
-  folder.gmail_backfill_oldest_received_at &&
-  new Date(beforeReceivedAt).getTime() <=
-    new Date(folder.gmail_backfill_oldest_received_at).getTime() &&
-  folder.gmail_backfill_page_token;
+if (noMatch && email.folder_id) {
+  // AI couldn't pick a better folder — keep the existing assignment untouched.
+  // Still refresh ai_summary if we got one, but never strip folder_id / classified_by / Gmail label.
+  await supabaseAdmin
+    .from("emails")
+    .update({
+      ai_summary: result.ai_summary || null,
+    })
+    .eq("id", email.id);
 
-if (tokenUsable) {
-  pageToken = folder.gmail_backfill_page_token!;
-} else if (beforeReceivedAt) {
-  // Anchor to the local cursor so Gmail returns messages older than what
-  // we already have. Gmail's `before:` operator takes a unix-seconds value.
-  const secs = Math.floor(new Date(beforeReceivedAt).getTime() / 1000);
-  q = `before:${secs}`;
+  return {
+    ok: true,
+    folder_id: email.folder_id,
+    folder_name: null,                       // caller doesn't use this when changed=false
+    classified_by: "kept",
+    classification_reason: "AI found no better folder — kept current assignment",
+    changed: false,
+  };
 }
-
-const list = await listMessages(folder.gmail_account_id, {
-  labelIds: [folder.gmail_label_id],
-  maxResults: 50,
-  pageToken,
-  q,
-});
 ```
 
-`listMessages` already supports `q` (see `src/lib/gmail.server.ts`), so no API helper changes are needed.
+Then leave the rest of the handler unchanged. The existing `email.folder_id !== result.folder_id` branch keeps handling real moves (including null → folder and folder → different folder).
 
-### Optional defensive tweak
+The `is_archived` flag is **not touched**, matching the user's preference to leave archived state alone.
 
-After processing, if `ingested === 0 && claimed === 0` AND we took the `pageToken` path AND `list.nextPageToken` exists, the stored token is stale. Clear it (`gmail_backfill_page_token: null`) so the next click falls through to the date-anchored query. Small change in the same `update({...})` block at the bottom.
+### Optional UX touch in `_authenticated/index.tsx`
+
+The "Reanalyze" button calls `reanalyzeEmail` and shows a toast. Add a small adjustment so the `changed: false` + `classified_by: "kept"` case shows a clearer message: e.g. `toast.message("No better folder — kept in <current folder name>.")`. Read the current folder name from `foldersQ.data` using `email.folder_id`. No new data fetches needed.
+
+## Edge cases
+
+- **Email had no folder to begin with** (`email.folder_id === null`) and AI returns NONE again: behavior unchanged — row stays with `folder_id: null` in No rules. Returning early would skip writing `classified_by`/`classification_reason`, so we still go through the normal update path in this case (the early-return guard requires `email.folder_id` to be truthy).
+- **AI returns a different folder than current**: unchanged — the existing folder-change branch runs, Gmail labels swap, row updates.
+- **AI returns the same folder**: unchanged — DB update writes the same `folder_id`, no Gmail label sync.
+- **`classifyParsedEmail` returned a filter/label match (not AI)**: `classified_by` will be `"filter" | "domain_rule" | "gmail_label" | "global_exclude"` — none match the `noMatch` guard, so the row updates normally even if `folder_id` ends up null (e.g. a global inbox-override hit). That preserves filter-driven outcomes.
 
 ## Not changing
 
-- The "No rules" / All-inbox views (those don't call `loadOlderFromLabel`).
-- The pagination state machine in `_authenticated/index.tsx` — `pullOlderMut` already passes `pageRows[last].received_at` as `before_received_at`.
-- No schema migrations; we already store the columns we need.
+- `classifyParsedEmail` / AI prompt — the model is still allowed to say NONE; we just stop letting NONE wipe a known-good assignment.
+- Archive / INBOX state.
+- The initial classification on ingest (where there's no prior folder to protect).
+- Schema or migrations.
 
 ## Verification
 
-1. Open **Factory**, paginate past page 2 to trigger the pull.
-2. Confirm the toast now says "Pulled N older email(s) from Gmail." and the next page renders.
-3. Repeat — each click should keep walking deeper via the new `before:` cursor anchored to the last visible row.
+1. Open a cold email currently in a folder (e.g. Cold Outreach), click **Reanalyze**.
+2. Confirm the toast says it kept the current folder and the email remains in that folder's list — does NOT appear in **No rules**.
+3. Open an email AI should re-route to a different folder, click **Reanalyze**, and confirm the move still happens with the Gmail label swap.
