@@ -224,14 +224,12 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           onSelect={() => pick("all_mail")}
           color="#d4d4d8"
           label="All mail"
-          count={emailsQ.data?.length ?? 0}
         />
         <FolderRow
           active={selected === "no_rules"}
           onSelect={() => pick("no_rules")}
           color="#71717a"
           label="No rules"
-          count={counts.byFolder.get("no_rules") ?? 0}
         />
 
         {(foldersQ.data ?? []).map((f) => (
@@ -297,7 +295,7 @@ function FolderRow({
   onSelect: () => void;
   color: string;
   label: string;
-  count: number;
+  count?: number;
   onEdit?: () => void;
 }) {
   return (
@@ -310,7 +308,7 @@ function FolderRow({
       >
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <span className="flex-1 truncate">{label}</span>
-        {count > 0 && (
+        {typeof count === "number" && count > 0 && (
           <span className="rounded-full bg-primary/20 px-1.5 text-[10px] text-primary">{count}</span>
         )}
       </button>
