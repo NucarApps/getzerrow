@@ -1008,7 +1008,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       raw_labels: (email.raw_labels as string[] | null) ?? null,
     };
 
-    const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id);
+    const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, { skipGmailLabelMatch: true });
 
     // Always make sure we have a summary on the row after Reanalyze, even when
     // the classifier (filter/label/domain rule) didn't run the AI summarizer.
