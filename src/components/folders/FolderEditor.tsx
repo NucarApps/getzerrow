@@ -329,14 +329,27 @@ export function FolderEditor({
           <div className="mt-4">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
             <div className="mt-2 space-y-1.5">
-              {filters.map((f) => (
-                <div key={f.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm">
-                  <span className="text-muted-foreground">{f.field}</span>
-                  <span className="text-muted-foreground">{f.op}</span>
-                  <span className="flex-1 font-mono text-xs">{f.value}</span>
-                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
-                </div>
-              ))}
+              {filters.map((f) => {
+                const isExclude = f.op === "not_contains" || f.op === "not_equals";
+                return (
+                  <div
+                    key={f.id}
+                    className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${
+                      isExclude ? "border-destructive/40 bg-destructive/5" : "border-border"
+                    }`}
+                  >
+                    {isExclude && (
+                      <span className="rounded-sm bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-destructive">
+                        Exclude
+                      </span>
+                    )}
+                    <span className="text-muted-foreground">{f.field}</span>
+                    <span className={isExclude ? "text-destructive" : "text-muted-foreground"}>{f.op}</span>
+                    <span className="flex-1 font-mono text-xs">{f.value}</span>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
+                  </div>
+                );
+              })}
               <div className="flex items-center gap-2">
                 <Select value={newF.field} onValueChange={(v) => setNewF({ ...newF, field: v })}>
                   <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
@@ -350,16 +363,21 @@ export function FolderEditor({
                   </SelectContent>
                 </Select>
                 <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
-                  <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="contains">contains</SelectItem>
                     <SelectItem value="equals">equals</SelectItem>
+                    <SelectItem value="not_contains">does not contain</SelectItem>
+                    <SelectItem value="not_equals">does not equal</SelectItem>
                     <SelectItem value="regex">regex</SelectItem>
                   </SelectContent>
                 </Select>
                 <Input className="flex-1" placeholder="value" value={newF.value} onChange={(e) => setNewF({ ...newF, value: e.target.value })} />
                 <Button size="sm" onClick={addFilter}>Add</Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Exclude rules keep matching emails in your inbox even if a domain or other rule would route them here.
+              </p>
             </div>
           </div>
 
