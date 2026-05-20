@@ -1,28 +1,21 @@
-# Port Mission Control landing to `/`
+# Use the new rocket-A logo across landing + app
 
-Replace the current `src/routes/index.tsx` with a faithful React port of the uploaded `Zerrow.html`, including the rocket launchpad visual, telemetry counters, and mission elapsed time clock.
+The uploaded `zerrow_logo_clean.png` has lots of whitespace and a stray orange dot on the right (looks like the period from a "Zerrow." wordmark). Crop to just the rocket-A mark and use it everywhere a Zerrow wordmark or sidebar header appears.
 
-## Files
+## Steps
 
-1. **`public/zerrow-landing.css`** — copy uploaded `styles.css` verbatim. Loaded only on the home route via a `<link>` in `head()` so its global selectors (`html, body`, `body::before`, etc.) don't leak into authenticated routes.
-2. **`src/routes/index.tsx`** — rewrite as a 1:1 JSX port of the HTML body. Convert `class` → `className`, self-close void tags, inline the rocket SVG. Replace the obfuscated Cloudflare email with a plain string. Keep all element `id`s (`inbox-count`, `rocket`, `met-val`, `footer-met`, `hero-clock`, `t-alt`, `t-vel`, `t-thrust`, `t-fuel`, `t-g`, `t-hdg`, `foot-routed`, `foot-lat`, `stat-routed`, `uplink-val`, `inbox-delta`) so the telemetry hook targets them by id.
-3. **`src/components/landing/useMissionTelemetry.ts`** — port `telemetry.js` to a React hook that runs once in `useEffect` on mount: inbox 1247→0 burn-down (8s ease-out), rocket `.lifted` class toggle, MET clock, T-3→T-0 hero clock, and the periodic altitude/velocity/thrust/fuel/g/heading/uplink updates. Cleanup cancels rAF and intervals on unmount.
-4. **Remove** `src/components/landing/RocketCountdown.tsx` (replaced by the inline mission-control launchpad).
+1. **Crop and save the asset** — copy the upload to `/tmp`, use ImageMagick (via `nix run nixpkgs#imagemagick`) to trim whitespace and crop to just the left-side rocket-A mark (drop the orange dot on the right). Save the result to `src/assets/zerrow-logo.png` so it can be imported as an ES module.
 
-## Routing wiring
+2. **Landing page (`src/routes/index.tsx`)** — replace the inline `<svg>` inside `.brand__mark` (the triangle placeholder) with `<img src={logo} alt="Zerrow" />`. Keep the existing `Zerrow.` wordmark text and `[for Gmail]` sublabel beside it.
 
-- Header "Sign in" and "Connect Gmail" → `<Link to="/login">`.
-- Liftoff CTA "Get started" → `<Link to="/login">`.
-- Footer "Sign in" → `<Link to="/login">`.
-- Footer "Privacy" → `<Link to="/privacy">`, "Terms" → `<Link to="/terms">`.
-- Section anchors (`#features`, `#how`, `#faq`, `#cta`) stay as plain `<a href="#...">` for in-page scroll.
+3. **App sidebar (`src/routes/_authenticated.tsx`)**
+   - Sidebar header (line ~131): place the logo to the left of the `Zerrow` heading, height ~28px.
+   - Mobile top bar (line ~53): place the logo to the left of the `Zerrow` text, height ~22px.
 
-## Preserve
-
-- Existing `beforeLoad` redirect to `/inbox` for authenticated sessions.
-- Existing `head()` SEO meta (title, description, og/twitter).
-- Add Google Fonts preconnect + `Space Grotesk` / `JetBrains Mono` `<link>` tags to `head()`.
+4. **No other changes** — favicon, OG image, login page, and email templates are not part of this request. Leave them alone.
 
 ## Out of scope
 
-No changes to other routes, auth, or backend behavior. Pure presentation port of the landing page.
+- Favicon / `public/favicon.ico` updates
+- OG/Twitter share image
+- Any color/theme changes
