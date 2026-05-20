@@ -294,7 +294,12 @@ async function recordManualMove(
 
   await supabaseAdmin
     .from("emails")
-    .update({ folder_id: folder.id, classified_by: "manual_move", ai_confidence: 1 })
+    .update({
+      folder_id: folder.id,
+      classified_by: "manual_move",
+      ai_confidence: 1,
+      classification_reason: `Moved to "${folder.name}" manually in Gmail`,
+    })
     .eq("gmail_message_id", msg.gmail_message_id)
     .eq("gmail_account_id", accountId);
 
