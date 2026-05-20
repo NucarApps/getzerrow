@@ -1,9 +1,17 @@
-# Replace logo with new upload
+# Bust the cached logo
 
-The previous turn didn't actually copy the uploaded image into `src/assets/zerrow-logo.png` — the file on disk is unchanged, so you're still seeing the old logo.
+Your browser is serving an old cached version of `zerrow-logo.png` (just the rocket, no wordmark). The file on disk is correct (935×319 with rocket + "Zerrow." wordmark), but the browser is reusing the old PNG.
 
 ## Change
 
-1. Copy `user-uploads://IMG_2149.png` → `src/assets/zerrow-logo.png` (overwrite).
+Rename the asset so Vite emits a fresh hash and bypasses cache entirely:
 
-No code changes needed — all four render sites (`index.tsx`, `_authenticated.tsx` topbar + sidebar, `login.tsx`) already import this asset at the larger sizes set last turn.
+1. Move `src/assets/zerrow-logo.png` → `src/assets/zerrow-logo-v2.png`.
+2. Update the 4 import lines:
+   - `src/routes/index.tsx`
+   - `src/routes/_authenticated.tsx` (the single import is reused twice)
+   - `src/routes/login.tsx`
+
+   Change `import zerrowLogo from "@/assets/zerrow-logo.png"` → `"@/assets/zerrow-logo-v2.png"`.
+
+No other code changes.
