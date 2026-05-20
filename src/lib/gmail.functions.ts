@@ -914,6 +914,7 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
     else query = query.is("folder_id", null);
 
     if (data.mode === "sender") {
+      if (!email.from_addr) return { matches: [], domain: null };
       query = query.eq("from_addr", email.from_addr);
     } else {
       const domain = extractDomain(email.from_addr);
