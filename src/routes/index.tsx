@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import cobwebInbox from "@/assets/cobweb-inbox.svg";
+import { RocketCountdown } from "@/components/landing/RocketCountdown";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
