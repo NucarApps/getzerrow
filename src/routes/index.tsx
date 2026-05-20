@@ -265,12 +265,12 @@ function HowItWorks() {
             className="mb-5 text-xs uppercase tracking-[0.25em]"
             style={{ color: GOLD, ...sora }}
           >
-            How it works
+            Mission stages
           </p>
           <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
-            Three steps to inbox zero.{" "}
+            Three stages to liftoff.{" "}
             <span className="italic" style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: GOLD }}>
-              Then it keeps itself there.
+              Then it holds the orbit for you.
             </span>
           </h2>
         </div>
