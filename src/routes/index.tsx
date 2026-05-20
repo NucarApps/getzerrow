@@ -88,9 +88,9 @@ function Hero() {
         <div>
           <p
             className="mb-6 text-xs uppercase tracking-[0.25em]"
-            style={{ color: INK_SOFT, ...sora }}
+            style={{ color: GOLD, ...sora }}
           >
-            For Gmail · powered by AI
+            T-minus to Inbox Zero
           </p>
           <h1
             className="text-5xl font-bold leading-[1.02] tracking-tight md:text-7xl"
@@ -127,33 +127,12 @@ function Hero() {
             </a>
           </div>
           <p className="mt-6 text-sm" style={{ color: INK_SOFT }}>
-            Free to try · Works with your existing Gmail labels
+            Free to try · 3, 2, 1, launch
           </p>
         </div>
 
         <div className="relative">
-          <div
-            className="rounded-3xl border p-10 shadow-sm"
-            style={{ background: PAPER_DEEP, borderColor: PAPER_DEEP }}
-          >
-            <div className="flex flex-col items-center gap-6 text-center">
-              <img src={cobwebInbox} alt="" className="h-44 w-auto opacity-90" />
-              <div>
-                <p className="text-sm font-medium" style={sora}>
-                  Yesterday's inbox
-                </p>
-                <p
-                  className="mt-2 text-3xl font-bold"
-                  style={{ ...sora }}
-                >
-                  0 unread
-                </p>
-                <p className="mt-2 text-xs" style={{ color: INK_SOFT }}>
-                  142 messages routed automatically
-                </p>
-              </div>
-            </div>
-          </div>
+          <RocketCountdown />
         </div>
       </div>
     </section>
