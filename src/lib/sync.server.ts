@@ -182,23 +182,24 @@ export async function classifyParsedEmail(
   let matched_filter_ids: string[] = [];
   let aiSkipped = false;
 
-  const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
-  if (labeledFolder) {
-    folder_id = labeledFolder.id;
-    classified_by = "gmail_label";
-    confidence = 1;
-    classification_reason = `Matched Gmail label "${labeledFolder.name}"`;
+  const fromAddr = (parsed.from_addr || "").toLowerCase();
+  const fromDomain = fromAddr.split("@")[1] || "";
+  const overrideHit = (overrides ?? []).find((o) => {
+    const val = (o.value || "").toLowerCase();
+    return o.match_type === "email" ? val === fromAddr : val === fromDomain;
+  });
+
+  if (overrideHit) {
+    classified_by = "global_exclude";
+    classification_reason = `Global inbox list: ${overrideHit.match_type} "${overrideHit.value}"`;
+    aiSkipped = true;
   } else {
-    const fromAddr = (parsed.from_addr || "").toLowerCase();
-    const fromDomain = fromAddr.split("@")[1] || "";
-    const hit = (overrides ?? []).find((o) => {
-      const val = (o.value || "").toLowerCase();
-      return o.match_type === "email" ? val === fromAddr : val === fromDomain;
-    });
-    if (hit) {
-      classified_by = "global_exclude";
-      classification_reason = `Global inbox list: ${hit.match_type} "${hit.value}"`;
-      aiSkipped = true;
+    const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
+    if (labeledFolder) {
+      folder_id = labeledFolder.id;
+      classified_by = "gmail_label";
+      confidence = 1;
+      classification_reason = `Matched Gmail label "${labeledFolder.name}"`;
     } else {
       const m = matchByFilters(parsed, folderList, filterList);
       if (m?.kind === "match") {
