@@ -2,7 +2,15 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { learnFolderFromLabel, listFolderDomainSuggestions, addDomainFilter, reassignDomainToFolder } from "@/lib/gmail.functions";
+import {
+  learnFolderFromLabel,
+  listFolderDomainSuggestions,
+  addDomainFilter,
+  reassignDomainToFolder,
+  listFolderHistory,
+  suggestRecategorization,
+  applyRecategorization,
+} from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +18,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Trash2, X, Sparkles, Link2, ArrowRight } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Trash2, X, Sparkles, Link2, ArrowRight, History, Loader2, MoveRight } from "lucide-react";
 import { toast } from "sonner";
 
 export type Folder = {
@@ -29,6 +39,15 @@ export type Folder = {
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
 
+const reasonLabel: Record<string, string> = {
+  gmail_label: "Gmail label",
+  filter: "Filter match",
+  domain_rule: "Domain rule",
+  manual_move: "Moved manually",
+  ai: "AI",
+  none: "Unclassified",
+};
+
 export function FolderEditor({
   folder,
   labels,
@@ -43,6 +62,9 @@ export function FolderEditor({
   const listDomainsFn = useServerFn(listFolderDomainSuggestions);
   const addDomainFn = useServerFn(addDomainFilter);
   const reassignFn = useServerFn(reassignDomainToFolder);
+  const historyFn = useServerFn(listFolderHistory);
+  const suggestFn = useServerFn(suggestRecategorization);
+  const applyFn = useServerFn(applyRecategorization);
   const [local, setLocal] = useState(folder);
   const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
@@ -179,148 +201,406 @@ export function FolderEditor({
         <Button variant="ghost" size="icon" onClick={remove}><Trash2 className="h-4 w-4 text-destructive" /></Button>
       </div>
 
-      <div className="mt-4 grid grid-cols-[auto_1fr] items-center gap-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground"><Link2 className="mr-1 inline h-3 w-3" />Gmail label</Label>
-        <Select value={local.gmail_label_id ?? ""} onValueChange={(v) => setLocal({ ...local, gmail_label_id: v || null })}>
-          <SelectTrigger><SelectValue placeholder="Not linked" /></SelectTrigger>
-          <SelectContent>
-            {labels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>))}
-          </SelectContent>
-        </Select>
-      </div>
+      <Tabs defaultValue="settings" className="mt-4">
+        <TabsList>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="history">
+            <History className="mr-1.5 h-3.5 w-3.5" /> History
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="mt-4">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">AI rule (natural language)</Label>
-        <Textarea className="mt-1.5" rows={2} placeholder='e.g. "Newsletters, marketing emails"' value={local.ai_rule ?? ""} onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })} />
-      </div>
-
-      <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
-        <div className="flex items-center justify-between">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <Sparkles className="h-3 w-3" /> Learned profile
+        <TabsContent value="settings" className="mt-4">
+          <div className="grid grid-cols-[auto_1fr] items-center gap-2">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground"><Link2 className="mr-1 inline h-3 w-3" />Gmail label</Label>
+            <Select value={local.gmail_label_id ?? ""} onValueChange={(v) => setLocal({ ...local, gmail_label_id: v || null })}>
+              <SelectTrigger><SelectValue placeholder="Not linked" /></SelectTrigger>
+              <SelectContent>
+                {labels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>))}
+              </SelectContent>
+            </Select>
           </div>
-          <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
-            {learning ? "Learning…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
-          </Button>
-        </div>
-        <p className="mt-2 text-sm text-foreground/80">
-          {folder.learned_profile || <span className="text-muted-foreground italic">Not learned yet. {linkedLabel ? `Linked to "${linkedLabel.name}".` : "Link a Gmail label and save first."}</span>}
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {exampleCount} example{exampleCount === 1 ? "" : "s"}
-          {folder.last_learned_at && ` · learned ${new Date(folder.last_learned_at).toLocaleString()}`}
-          {" · "}auto-updates as you move emails in Gmail
-        </p>
-        {(domainsQ.data?.length ?? 0) > 0 && (
-          <div className="mt-3 border-t border-border/60 pt-3">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Suggested domains</div>
-            <div className="flex flex-wrap gap-1.5">
-              {domainsQ.data!.map((s) => (
-                <div
-                  key={s.domain}
-                  className="inline-flex items-stretch rounded-full border border-border bg-background text-xs overflow-hidden hover:border-primary transition-colors"
-                >
-                  <button
-                    onClick={() => addDomain(s.domain)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 hover:bg-primary/5"
-                    title={`Auto-route all ${s.domain} emails to ${folder.name}`}
-                  >
-                    <Plus className="h-3 w-3" />
-                    <span className="font-mono">{s.domain}</span>
-                    <span className="text-muted-foreground">· {s.count}</span>
-                  </button>
-                  <Popover open={pickerOpen === s.domain} onOpenChange={(o) => setPickerOpen(o ? s.domain : null)}>
-                    <PopoverTrigger asChild>
+
+          <div className="mt-4">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">AI rule (natural language)</Label>
+            <Textarea className="mt-1.5" rows={2} placeholder='e.g. "Newsletters, marketing emails"' value={local.ai_rule ?? ""} onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })} />
+          </div>
+
+          <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3" /> Learned profile
+              </div>
+              <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
+                {learning ? "Learning…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
+              </Button>
+            </div>
+            <p className="mt-2 text-sm text-foreground/80">
+              {folder.learned_profile || <span className="text-muted-foreground italic">Not learned yet. {linkedLabel ? `Linked to "${linkedLabel.name}".` : "Link a Gmail label and save first."}</span>}
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {exampleCount} example{exampleCount === 1 ? "" : "s"}
+              {folder.last_learned_at && ` · learned ${new Date(folder.last_learned_at).toLocaleString()}`}
+              {" · "}auto-updates as you move emails in Gmail
+            </p>
+            {(domainsQ.data?.length ?? 0) > 0 && (
+              <div className="mt-3 border-t border-border/60 pt-3">
+                <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Suggested domains</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {domainsQ.data!.map((s) => (
+                    <div
+                      key={s.domain}
+                      className="inline-flex items-stretch rounded-full border border-border bg-background text-xs overflow-hidden hover:border-primary transition-colors"
+                    >
                       <button
-                        className="inline-flex items-center justify-center border-l border-border px-1.5 hover:bg-primary/5"
-                        title={`Move ${s.domain} to a different folder`}
+                        onClick={() => addDomain(s.domain)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 hover:bg-primary/5"
+                        title={`Auto-route all ${s.domain} emails to ${folder.name}`}
                       >
-                        <ArrowRight className="h-3 w-3" />
+                        <Plus className="h-3 w-3" />
+                        <span className="font-mono">{s.domain}</span>
+                        <span className="text-muted-foreground">· {s.count}</span>
                       </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-56 p-1" align="end">
-                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        Move {s.domain} to…
-                      </div>
-                      {(otherFoldersQ.data ?? []).length === 0 ? (
-                        <div className="px-2 py-2 text-xs text-muted-foreground italic">No other folders</div>
-                      ) : (
-                        <div className="max-h-64 overflow-y-auto">
-                          {(otherFoldersQ.data ?? []).map((f) => (
-                            <button
-                              key={f.id}
-                              onClick={() => reassignDomain(s.domain, f.id, f.name)}
-                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent text-left"
-                            >
-                              <span className="h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
-                              <span className="truncate">{f.name}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </PopoverContent>
-                  </Popover>
+                      <Popover open={pickerOpen === s.domain} onOpenChange={(o) => setPickerOpen(o ? s.domain : null)}>
+                        <PopoverTrigger asChild>
+                          <button
+                            className="inline-flex items-center justify-center border-l border-border px-1.5 hover:bg-primary/5"
+                            title={`Move ${s.domain} to a different folder`}
+                          >
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-1" align="end">
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                            Move {s.domain} to…
+                          </div>
+                          {(otherFoldersQ.data ?? []).length === 0 ? (
+                            <div className="px-2 py-2 text-xs text-muted-foreground italic">No other folders</div>
+                          ) : (
+                            <div className="max-h-64 overflow-y-auto">
+                              {(otherFoldersQ.data ?? []).map((f) => (
+                                <button
+                                  key={f.id}
+                                  onClick={() => reassignDomain(s.domain, f.id, f.name)}
+                                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent text-left"
+                                >
+                                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                                  <span className="truncate">{f.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
+              Auto-archive
+              <Switch checked={local.auto_archive} onCheckedChange={(v) => setLocal({ ...local, auto_archive: v })} />
+            </label>
+            <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
+              Auto mark-read
+              <Switch checked={local.auto_mark_read} onCheckedChange={(v) => setLocal({ ...local, auto_mark_read: v })} />
+            </label>
+          </div>
+
+          <div className="mt-4">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
+            <div className="mt-2 space-y-1.5">
+              {filters.map((f) => (
+                <div key={f.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm">
+                  <span className="text-muted-foreground">{f.field}</span>
+                  <span className="text-muted-foreground">{f.op}</span>
+                  <span className="flex-1 font-mono text-xs">{f.value}</span>
+                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
                 </div>
               ))}
+              <div className="flex items-center gap-2">
+                <Select value={newF.field} onValueChange={(v) => setNewF({ ...newF, field: v })}>
+                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="from">from</SelectItem>
+                    <SelectItem value="to">to</SelectItem>
+                    <SelectItem value="subject">subject</SelectItem>
+                    <SelectItem value="body">body</SelectItem>
+                    <SelectItem value="domain">domain</SelectItem>
+                    <SelectItem value="has_attachment">has_attachment</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
+                  <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="contains">contains</SelectItem>
+                    <SelectItem value="equals">equals</SelectItem>
+                    <SelectItem value="regex">regex</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input className="flex-1" placeholder="value" value={newF.value} onChange={(e) => setNewF({ ...newF, value: e.target.value })} />
+                <Button size="sm" onClick={addFilter}>Add</Button>
+              </div>
             </div>
           </div>
-        )}
-      </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
-          Auto-archive
-          <Switch checked={local.auto_archive} onCheckedChange={(v) => setLocal({ ...local, auto_archive: v })} />
-        </label>
-        <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
-          Auto mark-read
-          <Switch checked={local.auto_mark_read} onCheckedChange={(v) => setLocal({ ...local, auto_mark_read: v })} />
-        </label>
-      </div>
-
-      <div className="mt-4">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
-        <div className="mt-2 space-y-1.5">
-          {filters.map((f) => (
-            <div key={f.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm">
-              <span className="text-muted-foreground">{f.field}</span>
-              <span className="text-muted-foreground">{f.op}</span>
-              <span className="flex-1 font-mono text-xs">{f.value}</span>
-              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
+          {dirty && (
+            <div className="mt-4 flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setLocal(folder)}>Cancel</Button>
+              <Button size="sm" onClick={save}>Save changes</Button>
             </div>
-          ))}
-          <div className="flex items-center gap-2">
-            <Select value={newF.field} onValueChange={(v) => setNewF({ ...newF, field: v })}>
-              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="from">from</SelectItem>
-                <SelectItem value="to">to</SelectItem>
-                <SelectItem value="subject">subject</SelectItem>
-                <SelectItem value="body">body</SelectItem>
-                <SelectItem value="domain">domain</SelectItem>
-                <SelectItem value="has_attachment">has_attachment</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
-              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="contains">contains</SelectItem>
-                <SelectItem value="equals">equals</SelectItem>
-                <SelectItem value="regex">regex</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input className="flex-1" placeholder="value" value={newF.value} onChange={(e) => setNewF({ ...newF, value: e.target.value })} />
-            <Button size="sm" onClick={addFilter}>Add</Button>
+          )}
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-4">
+          <HistoryPanel
+            folder={folder}
+            otherFolders={otherFoldersQ.data ?? []}
+            historyFn={historyFn}
+            suggestFn={suggestFn}
+            applyFn={applyFn}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+type HistoryEmail = {
+  id: string;
+  subject: string | null;
+  from_addr: string | null;
+  from_name: string | null;
+  received_at: string | null;
+  classified_by: string | null;
+  ai_confidence: number | null;
+  ai_summary: string | null;
+  snippet: string | null;
+};
+
+type SuggestionResult = Awaited<ReturnType<ReturnType<typeof useServerFn<typeof suggestRecategorization>>>>;
+
+function HistoryPanel({
+  folder,
+  otherFolders,
+  historyFn,
+  suggestFn,
+  applyFn,
+}: {
+  folder: Folder;
+  otherFolders: Array<{ id: string; name: string; color: string }>;
+  historyFn: ReturnType<typeof useServerFn<typeof listFolderHistory>>;
+  suggestFn: ReturnType<typeof useServerFn<typeof suggestRecategorization>>;
+  applyFn: ReturnType<typeof useServerFn<typeof applyRecategorization>>;
+}) {
+  const qc = useQueryClient();
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [activeEmail, setActiveEmail] = useState<string | null>(null);
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
+  const [suggestion, setSuggestion] = useState<SuggestionResult | null>(null);
+  const [applySource, setApplySource] = useState(true);
+  const [applyTarget, setApplyTarget] = useState(true);
+  const [applying, setApplying] = useState(false);
+
+  const historyQ = useQuery({
+    queryKey: ["folder-history", folder.id],
+    queryFn: async () => (await historyFn({ data: { folder_id: folder.id } })).emails as HistoryEmail[],
+  });
+
+  async function startSuggestion(emailId: string, toFolderId: string) {
+    setPickerFor(null);
+    setActiveEmail(emailId);
+    setSuggestion(null);
+    setApplySource(true);
+    setApplyTarget(true);
+    setLoadingSuggest(true);
+    try {
+      const r = await suggestFn({ data: { email_id: emailId, to_folder_id: toFolderId } });
+      setSuggestion(r);
+      if (r.error) toast.warning(r.error);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to get suggestion");
+      setActiveEmail(null);
+    } finally {
+      setLoadingSuggest(false);
+    }
+  }
+
+  async function apply() {
+    if (!activeEmail || !suggestion) return;
+    setApplying(true);
+    try {
+      await applyFn({
+        data: {
+          email_id: activeEmail,
+          to_folder_id: suggestion.target.id,
+          apply_source: applySource,
+          apply_target: applyTarget,
+          source_rule: applySource ? suggestion.source.proposed_rule : undefined,
+          source_profile: applySource ? suggestion.source.proposed_profile : undefined,
+          target_rule: applyTarget ? suggestion.target.proposed_rule : undefined,
+          target_profile: applyTarget ? suggestion.target.proposed_profile : undefined,
+        },
+      });
+      toast.success(`Moved to ${suggestion.target.name}`);
+      setActiveEmail(null);
+      setSuggestion(null);
+      qc.invalidateQueries({ queryKey: ["folder-history", folder.id] });
+      qc.invalidateQueries({ queryKey: ["emails"] });
+      qc.invalidateQueries({ queryKey: ["folders-full"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to apply");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  if (historyQ.isLoading) {
+    return <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading history…</div>;
+  }
+  const emails = historyQ.data ?? [];
+  if (emails.length === 0) {
+    return <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No emails have been processed into this folder yet.</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {emails.map((e) => {
+        const isActive = activeEmail === e.id;
+        const reason = reasonLabel[e.classified_by ?? "none"] ?? e.classified_by ?? "—";
+        const conf = e.ai_confidence != null ? Math.round(e.ai_confidence * 100) : null;
+        return (
+          <div key={e.id} className="rounded-md border border-border bg-card/40">
+            <div className="flex items-start gap-3 p-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{e.subject || "(no subject)"}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {e.from_name || e.from_addr || "Unknown"}{e.from_name && e.from_addr ? ` · ${e.from_addr}` : ""}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-muted-foreground">
+                    {reason}{e.classified_by === "ai" && conf != null ? ` · ${conf}%` : ""}
+                  </span>
+                  {e.received_at && (
+                    <span className="text-muted-foreground">{new Date(e.received_at).toLocaleString()}</span>
+                  )}
+                </div>
+                {e.classified_by === "ai" && e.ai_summary && (
+                  <div className="mt-1.5 text-xs text-foreground/70 italic">"{e.ai_summary}"</div>
+                )}
+              </div>
+              <Popover open={pickerFor === e.id} onOpenChange={(o) => setPickerFor(o ? e.id : null)}>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline" className="shrink-0">
+                    <MoveRight className="mr-1 h-3.5 w-3.5" /> Wrong folder?
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-1" align="end">
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">Should go to…</div>
+                  {otherFolders.length === 0 ? (
+                    <div className="px-2 py-2 text-xs text-muted-foreground italic">No other folders</div>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto">
+                      {otherFolders.map((f) => (
+                        <button
+                          key={f.id}
+                          onClick={() => startSuggestion(e.id, f.id)}
+                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent text-left"
+                        >
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                          <span className="truncate">{f.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {isActive && (
+              <div className="border-t border-border bg-muted/20 p-3">
+                {loadingSuggest && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Asking AI for rule updates…
+                  </div>
+                )}
+                {suggestion && (
+                  <div className="space-y-3">
+                    <div className="text-xs text-muted-foreground">
+                      Move 1 email · <span className="font-medium text-foreground">{suggestion.source.name}</span>
+                      {" → "}
+                      <span className="font-medium text-foreground">{suggestion.target.name}</span>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <RulePatchCard
+                        title={`Source · ${suggestion.source.name}`}
+                        current={suggestion.source.current_rule}
+                        proposed={suggestion.source.proposed_rule}
+                        why={suggestion.source.why}
+                        checked={applySource}
+                        onChange={setApplySource}
+                      />
+                      <RulePatchCard
+                        title={`Target · ${suggestion.target.name}`}
+                        current={suggestion.target.current_rule}
+                        proposed={suggestion.target.proposed_rule}
+                        why={suggestion.target.why}
+                        checked={applyTarget}
+                        onChange={setApplyTarget}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => { setActiveEmail(null); setSuggestion(null); }} disabled={applying}>Cancel</Button>
+                      <Button size="sm" onClick={apply} disabled={applying}>
+                        {applying ? "Applying…" : "Apply"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RulePatchCard({
+  title, current, proposed, why, checked, onChange,
+}: {
+  title: string;
+  current: string | null;
+  proposed: string;
+  why: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  const changed = (current ?? "").trim() !== (proposed ?? "").trim();
+  return (
+    <div className="rounded-md border border-border bg-background p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</div>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Checkbox checked={checked} onCheckedChange={(v) => onChange(!!v)} disabled={!changed} />
+          Update rule
+        </label>
+      </div>
+      <div className="mt-2 space-y-2 text-sm">
+        <div>
+          <div className="text-xs text-muted-foreground">Current</div>
+          <div className="text-foreground/80">{current || <span className="italic text-muted-foreground">(empty)</span>}</div>
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground">Proposed</div>
+          <div className={changed ? "text-foreground" : "text-muted-foreground italic"}>
+            {changed ? proposed : "No change suggested"}
           </div>
         </div>
+        {why && <div className="text-xs text-muted-foreground italic">{why}</div>}
       </div>
-
-      {dirty && (
-        <div className="mt-4 flex justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setLocal(folder)}>Cancel</Button>
-          <Button size="sm" onClick={save}>Save changes</Button>
-        </div>
-      )}
     </div>
   );
 }
