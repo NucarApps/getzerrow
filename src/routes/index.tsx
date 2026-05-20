@@ -60,9 +60,8 @@ function LandingPage() {
       <header className="nav">
         <a href="#" className="brand">
           <span className="brand__mark" aria-hidden="true" style={{ background: "transparent", border: "none" }}>
-            <img src={zerrowLogo} alt="" style={{ height: 26, width: "auto", display: "block" }} />
+            <img src={zerrowLogo} alt="Zerrow" style={{ height: 32, width: "auto", display: "block" }} />
           </span>
-          <span className="brand__word">Zerrow<i>.</i></span>
           
         </a>
         <nav className="nav__links">
