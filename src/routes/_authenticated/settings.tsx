@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { InboxOverrides } from "@/components/settings/InboxOverrides";
 
 export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
 
