@@ -759,3 +759,133 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
   }
   return { checked: rows?.length ?? 0, archived, deleted, updated, repaired, failed };
 }
+
+/**
+ * Pull the NEXT page of historical messages from the folder's linked Gmail label
+ * and ingest any we don't already have. Uses a per-folder cursor (pageToken +
+ * oldest received_at) stored on the folders row, so repeated calls walk backwards
+ * through the label.
+ */
+export async function loadOlderFromLabel(
+  folderId: string,
+  userId: string,
+  beforeReceivedAt: string | null
+) {
+  const { data: folder } = await supabaseAdmin
+    .from("folders")
+    .select(
+      "id, user_id, name, gmail_label_id, gmail_account_id, gmail_backfill_page_token, gmail_backfill_oldest_received_at"
+    )
+    .eq("id", folderId)
+    .single();
+  if (!folder) throw new Error("Folder not found");
+  if (folder.user_id !== userId) throw new Error("Not authorized");
+  if (!folder.gmail_label_id) {
+    return { ingested: 0, hasMore: false, reason: "no_label" as const };
+  }
+
+  // Reuse stored pageToken only if caller's cursor matches our last known
+  // oldest_received_at — otherwise reset and walk from the top.
+  let pageToken: string | undefined;
+  if (
+    beforeReceivedAt &&
+    folder.gmail_backfill_oldest_received_at &&
+    new Date(beforeReceivedAt).getTime() <=
+      new Date(folder.gmail_backfill_oldest_received_at).getTime() &&
+    folder.gmail_backfill_page_token
+  ) {
+    pageToken = folder.gmail_backfill_page_token;
+  }
+
+  const list = await listMessages(folder.gmail_account_id, {
+    labelIds: [folder.gmail_label_id],
+    maxResults: 50,
+    pageToken,
+  });
+  const ids = (list.messages ?? []).map((m) => m.id);
+  let ingested = 0;
+  let claimed = 0;
+  let oldestSeen: string | null = null;
+
+  if (ids.length > 0) {
+    const { data: existing } = await supabaseAdmin
+      .from("emails")
+      .select("id, gmail_message_id, folder_id, received_at")
+      .in("gmail_message_id", ids);
+    const known = new Map(
+      (existing ?? []).map((r) => [r.gmail_message_id, r] as const)
+    );
+    for (const r of existing ?? []) {
+      if (r.received_at && (!oldestSeen || r.received_at < oldestSeen)) {
+        oldestSeen = r.received_at;
+      }
+    }
+
+    const CONCURRENCY = 8;
+    async function processOne(id: string) {
+      try {
+        const k = known.get(id);
+        if (k) {
+          if (k.folder_id !== folderId) {
+            await supabaseAdmin
+              .from("emails")
+              .update({
+                folder_id: folderId,
+                classified_by: "gmail_label",
+                ai_confidence: 1,
+                classification_reason: `Matched Gmail label "${folder.name}"`,
+              })
+              .eq("id", k.id);
+            claimed++;
+          }
+          return;
+        }
+        const raw = await getMessageMetadata(folder.gmail_account_id, id);
+        const p = parseMessage(raw);
+        const { error } = await supabaseAdmin.from("emails").insert({
+          user_id: userId,
+          gmail_account_id: folder.gmail_account_id,
+          gmail_message_id: p.gmail_message_id,
+          thread_id: p.thread_id,
+          from_addr: p.from_addr,
+          from_name: p.from_name,
+          to_addrs: p.to_addrs,
+          subject: p.subject,
+          snippet: p.snippet,
+          received_at: p.received_at,
+          is_read: p.is_read,
+          is_archived: !p.raw_labels?.includes("INBOX"),
+          has_attachment: p.has_attachment,
+          raw_labels: p.raw_labels,
+          folder_id: folderId,
+          classified_by: "gmail_label",
+          ai_confidence: 1,
+          classification_reason: `Matched Gmail label "${folder.name}"`,
+        });
+        if (!error) {
+          ingested++;
+          if (p.received_at && (!oldestSeen || p.received_at < oldestSeen)) {
+            oldestSeen = p.received_at;
+          }
+        }
+      } catch (e) {
+        console.error("loadOlderFromLabel one failed", id, e);
+      }
+    }
+    for (let i = 0; i < ids.length; i += CONCURRENCY) {
+      await Promise.all(ids.slice(i, i + CONCURRENCY).map(processOne));
+    }
+  }
+
+  const hasMore = !!list.nextPageToken;
+  await supabaseAdmin
+    .from("folders")
+    .update({
+      gmail_backfill_page_token: list.nextPageToken ?? null,
+      gmail_backfill_oldest_received_at:
+        oldestSeen ?? folder.gmail_backfill_oldest_received_at ?? null,
+    })
+    .eq("id", folderId);
+
+  return { ingested, claimed, hasMore };
+}
