@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
-  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride,
+  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +60,7 @@ function InboxPage() {
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
   const addOverrideFn = useServerFn(addInboxOverride);
+  const stripLabelFn = useServerFn(stripFolderLabelPast);
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
   const { selected: selectedFolder } = useFolderSelection();
@@ -299,15 +300,14 @@ function InboxPage() {
                       <ContextMenuItem
                         onSelect={async () => {
                           try {
-                            const r = await addOverrideFn({ data: { value: e.from_addr!, match_type: "email", reprocess_past: true } });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                            const r = await stripLabelFn({ data: { value: e.from_addr!, match_type: "email" } });
                             qc.invalidateQueries({ queryKey: ["emails"] });
                             qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                            toast.success(`Moved ${r.reprocessed_count} past email${r.reprocessed_count === 1 ? "" : "s"} to Inbox`);
+                            toast.success(`Removed folder label from ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
                           } catch (err: any) { toast.error(err.message); }
                         }}
                       >
-                        Future + move past emails to Inbox
+                        Remove folder label from past emails
                       </ContextMenuItem>
                     </ContextMenuSubContent>
                   </ContextMenuSub>
@@ -335,15 +335,14 @@ function InboxPage() {
                       <ContextMenuItem
                         onSelect={async () => {
                           try {
-                            const r = await addOverrideFn({ data: { value: domain, match_type: "domain", reprocess_past: true } });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                            const r = await stripLabelFn({ data: { value: domain, match_type: "domain" } });
                             qc.invalidateQueries({ queryKey: ["emails"] });
                             qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                            toast.success(`Moved ${r.reprocessed_count} past email${r.reprocessed_count === 1 ? "" : "s"} to Inbox`);
+                            toast.success(`Removed folder label from ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
                           } catch (err: any) { toast.error(err.message); }
                         }}
                       >
-                        Future + move past emails to Inbox
+                        Remove folder label from past emails
                       </ContextMenuItem>
                     </ContextMenuSubContent>
                   </ContextMenuSub>
