@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
-export type FolderSelection = string | "all" | "no_rules";
+export type FolderSelection = string | "all" | "all_mail" | "no_rules";
 
 type Ctx = {
   selected: FolderSelection;
