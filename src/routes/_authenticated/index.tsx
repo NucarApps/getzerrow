@@ -57,6 +57,11 @@ type Folder = { id: string; name: string; color: string };
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
+  const moveFolderFn = useServerFn(moveEmailToFolder);
+  const moveInboxFn = useServerFn(moveEmailToInbox);
+  const addOverrideFn = useServerFn(addInboxOverride);
+  const archFnList = useServerFn(archiveEmail);
+  const trashFnList = useServerFn(trashEmail);
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
