@@ -159,15 +159,25 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   let classified_by = "none";
   let confidence = 0;
   let summary = "";
+  let classification_reason: string | null = null;
 
   const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
   if (labeledFolder) {
     folder_id = labeledFolder.id;
     classified_by = "gmail_label";
     confidence = 1;
+    classification_reason = `Matched Gmail label "${labeledFolder.name}"`;
   } else {
-    folder_id = matchByFilters(parsed, folderList, filterList);
-    if (folder_id) { classified_by = "filter"; confidence = 1; }
+    const m = matchByFilters(parsed, folderList, filterList);
+    if (m) {
+      folder_id = m.folder_id;
+      classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
+      confidence = 1;
+      classification_reason =
+        classified_by === "domain_rule"
+          ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
+          : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+    }
   }
 
   if (!folder_id && folderList.length > 0) {
@@ -178,6 +188,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       confidence = r.confidence;
       summary = r.summary;
       classified_by = "ai";
+      classification_reason = r.reason || null;
     } catch (e) {
       console.error("AI classify failed", e);
     }
@@ -205,6 +216,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       ai_summary: summary || null,
       ai_confidence: confidence,
       classified_by,
+      classification_reason,
     })
     .select("id, folder_id")
     .single();
