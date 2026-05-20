@@ -27,6 +27,7 @@ export function AddFolderDialog({
 }) {
   const qc = useQueryClient();
   const createLabel = useServerFn(createGmailLabel);
+  const learnFn = useServerFn(learnFolderFromLabel);
   const [name, setName] = useState("");
   const [labelChoice, setLabelChoice] = useState<string>(NEW_LABEL);
   const [busy, setBusy] = useState(false);
