@@ -1129,10 +1129,11 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
 
 export const addInboxOverride = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { value: string; match_type: "email" | "domain" }) =>
+  .inputValidator((d: { value: string; match_type: "email" | "domain"; reprocess_past?: boolean }) =>
     z.object({
       value: z.string().min(1).max(320),
       match_type: z.enum(["email", "domain"]),
+      reprocess_past: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -1145,12 +1146,77 @@ export const addInboxOverride = createServerFn({ method: "POST" })
       .eq("match_type", data.match_type)
       .eq("value", value)
       .maybeSingle();
-    if (existing) return { ok: true, value, match_type: data.match_type, already: true };
-    const { error } = await supabaseAdmin.from("inbox_overrides").insert({
-      user_id: context.userId,
-      match_type: data.match_type,
-      value,
-    });
-    if (error) throw new Error(error.message);
-    return { ok: true, value, match_type: data.match_type, already: false };
+    const already = !!existing;
+    if (!already) {
+      const { error } = await supabaseAdmin.from("inbox_overrides").insert({
+        user_id: context.userId,
+        match_type: data.match_type,
+        value,
+      });
+      if (error) throw new Error(error.message);
+    }
+
+    let reprocessed_count = 0;
+    if (data.reprocess_past) {
+      let q = supabaseAdmin
+        .from("emails")
+        .select("id, gmail_message_id, gmail_account_id, folder_id, from_addr")
+        .eq("user_id", context.userId)
+        .not("folder_id", "is", null);
+      if (data.match_type === "email") {
+        q = q.ilike("from_addr", value);
+      } else {
+        q = q.ilike("from_addr", `%@${value}`);
+      }
+      const { data: rows } = await q;
+      const matches = (rows ?? []).filter((r) => {
+        const fa = (r.from_addr || "").toLowerCase();
+        return data.match_type === "email" ? fa === value : fa.split("@")[1] === value;
+      });
+
+      if (matches.length) {
+        const folderIds = Array.from(new Set(matches.map((m) => m.folder_id).filter((x): x is string => !!x)));
+        const { data: fs } = await supabaseAdmin
+          .from("folders")
+          .select("id, gmail_label_id")
+          .in("id", folderIds);
+        const labelById = new Map((fs ?? []).map((f) => [f.id, f.gmail_label_id]));
+        const reason = `Global inbox list: ${data.match_type} "${value}"`;
+
+        const concurrency = 5;
+        let i = 0;
+        async function worker() {
+          while (i < matches.length) {
+            const m = matches[i++];
+            try {
+              await supabaseAdmin
+                .from("emails")
+                .update({
+                  folder_id: null,
+                  classified_by: "global_exclude",
+                  classification_reason: reason,
+                  matched_filter_ids: [],
+                  ai_summary: null,
+                })
+                .eq("id", m.id);
+              const oldLabel = m.folder_id ? labelById.get(m.folder_id) : null;
+              if (oldLabel) {
+                try {
+                  await modifyMessage(m.gmail_account_id, m.gmail_message_id, [], [oldLabel]);
+                } catch (e) {
+                  console.error("reprocess label strip failed", e);
+                }
+              }
+              reprocessed_count++;
+            } catch (e) {
+              console.error("reprocess row failed", e);
+            }
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(concurrency, matches.length) }, worker));
+      }
+    }
+
+    return { ok: true, value, match_type: data.match_type, already, reprocessed_count };
   });
+
