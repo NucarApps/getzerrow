@@ -1220,3 +1220,78 @@ export const addInboxOverride = createServerFn({ method: "POST" })
     return { ok: true, value, match_type: data.match_type, already, reprocessed_count };
   });
 
+export const stripFolderLabelPast = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { value: string; match_type: "email" | "domain" }) =>
+    z.object({
+      value: z.string().min(1).max(320),
+      match_type: z.enum(["email", "domain"]),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const value = data.value.trim().toLowerCase().replace(/^@/, "");
+    if (!value) throw new Error("Empty value");
+
+    let q = supabaseAdmin
+      .from("emails")
+      .select("id, gmail_message_id, gmail_account_id, folder_id, from_addr")
+      .eq("user_id", context.userId)
+      .not("folder_id", "is", null);
+    if (data.match_type === "email") {
+      q = q.ilike("from_addr", value);
+    } else {
+      q = q.ilike("from_addr", `%@${value}`);
+    }
+    const { data: rows } = await q;
+    const matches = (rows ?? []).filter((r) => {
+      const fa = (r.from_addr || "").toLowerCase();
+      return data.match_type === "email" ? fa === value : fa.split("@")[1] === value;
+    });
+
+    let stripped_count = 0;
+    if (matches.length) {
+      const folderIds = Array.from(new Set(matches.map((m) => m.folder_id).filter((x): x is string => !!x)));
+      const { data: fs } = await supabaseAdmin
+        .from("folders")
+        .select("id, gmail_label_id")
+        .in("id", folderIds);
+      const labelById = new Map((fs ?? []).map((f) => [f.id, f.gmail_label_id]));
+      const reason = "Right-click: removed folder label";
+
+      const concurrency = 5;
+      let i = 0;
+      async function worker() {
+        while (i < matches.length) {
+          const m = matches[i++];
+          try {
+            await supabaseAdmin
+              .from("emails")
+              .update({
+                folder_id: null,
+                classified_by: "manual_strip",
+                classification_reason: reason,
+                matched_filter_ids: [],
+                ai_summary: null,
+              })
+              .eq("id", m.id);
+            const oldLabel = m.folder_id ? labelById.get(m.folder_id) : null;
+            if (oldLabel) {
+              try {
+                await modifyMessage(m.gmail_account_id, m.gmail_message_id, [], [oldLabel]);
+              } catch (e) {
+                console.error("strip label failed", e);
+              }
+            }
+            stripped_count++;
+          } catch (e) {
+            console.error("strip row failed", e);
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(concurrency, matches.length) }, worker));
+    }
+
+    return { ok: true, stripped_count };
+  });
+
+
