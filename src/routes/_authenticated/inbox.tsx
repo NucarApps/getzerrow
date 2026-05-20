@@ -119,13 +119,16 @@ function InboxPage() {
         return (data ?? []) as Email[];
       }
       const isNoRules = selectedFolder === "no_rules";
+      const isAllMail = selectedFolder === "all_mail";
       let q = supabase
         .from("emails")
         .select("*")
         .order("received_at", { ascending: false, nullsFirst: false })
         .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
       if (cursor) q = q.lt("received_at", cursor);
-      if (selectedFolder === "all") q = q.eq("is_archived", false);
+      if (isAllMail) {
+        // no filter — show everything
+      } else if (selectedFolder === "all") q = q.eq("is_archived", false);
       else if (isNoRules) q = q.is("folder_id", null);
       else q = q.eq("folder_id", selectedFolder);
       const { data } = await q;
