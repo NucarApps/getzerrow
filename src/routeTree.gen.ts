@@ -17,6 +17,7 @@ import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticate
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
+import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -58,6 +59,12 @@ const ApiPublicGmailPollRoute = ApiPublicGmailPollRouteImport.update({
   path: '/api/public/gmail-poll',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksRunFolderSummariesRoute =
+  ApiPublicHooksRunFolderSummariesRouteImport.update({
+    id: '/api/public/hooks/run-folder-summaries',
+    path: '/api/public/hooks/run-folder-summaries',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -76,6 +84,7 @@ export interface FileRoutesByTo {
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -87,6 +96,7 @@ export interface FileRoutesById {
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-poll'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/api/public/hooks/run-folder-summaries'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-poll'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/api/public/hooks/run-folder-summaries'
   id:
     | '__root__'
     | '/_authenticated'
@@ -117,6 +129,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-poll'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/api/public/hooks/run-folder-summaries'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -125,6 +138,7 @@ export interface RootRouteChildren {
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
+  ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -185,6 +199,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailPollRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/run-folder-summaries': {
+      id: '/api/public/hooks/run-folder-summaries'
+      path: '/api/public/hooks/run-folder-summaries'
+      fullPath: '/api/public/hooks/run-folder-summaries'
+      preLoaderRoute: typeof ApiPublicHooksRunFolderSummariesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -210,7 +231,18 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
+  ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
