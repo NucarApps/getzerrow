@@ -24,7 +24,7 @@ export async function classifyEmail(email: {
   snippet: string;
   body_text: string;
 }, folders: ClassifyFolder[]) {
-  if (folders.length === 0) return { folder_id: null as string | null, confidence: 0, summary: "" };
+  if (folders.length === 0) return { folder_id: null as string | null, confidence: 0, summary: "", reason: "" };
 
   const folderList = folders
     .map((f, i) => {
@@ -46,6 +46,7 @@ export async function classifyEmail(email: {
         folder_name: z.string().describe("Exact name of the chosen folder, or 'NONE' if no folder fits"),
         confidence: z.number().min(0).max(1),
         summary: z.string().max(140).describe("One-line summary of the email"),
+        reason: z.string().max(200).describe("Short explanation of WHY this folder was chosen — cite the folder rule, profile, or example pattern that matched. If 'NONE', explain why nothing fit."),
       }),
     }),
     prompt: `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
@@ -59,7 +60,7 @@ Subject: ${email.subject}
 Body:
 ${(email.body_text || email.snippet || "").slice(0, 4000)}
 
-Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line summary.`,
+Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line summary AND a short reason explaining the match.`,
   });
 
   const match = folders.find((f) => f.name.toLowerCase() === output.folder_name.toLowerCase());
@@ -67,6 +68,7 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
     folder_id: match?.id ?? null,
     confidence: output.confidence,
     summary: output.summary,
+    reason: output.reason,
   };
 }
 

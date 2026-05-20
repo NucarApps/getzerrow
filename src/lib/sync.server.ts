@@ -62,22 +62,31 @@ function applyFilter(
   }
 }
 
-function matchByFilters(email: Parameters<typeof applyFilter>[0], folders: Folder[], filters: Filter[]): string | null {
+function matchByFilters(
+  email: Parameters<typeof applyFilter>[0],
+  folders: Folder[],
+  filters: Filter[],
+): { folder_id: string; filter: Filter } | null {
   const byFolder = new Map<string, Filter[]>();
   for (const f of filters) {
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
     byFolder.get(f.folder_id)!.push(f);
   }
-  const matched: Folder[] = [];
+  const matched: Array<{ folder: Folder; filter: Filter }> = [];
   for (const folder of folders) {
     const fs = byFolder.get(folder.id) || [];
     if (fs.length === 0) continue;
-    if (fs.some((f) => applyFilter(email, f))) matched.push(folder);
+    const hit = fs.find((f) => applyFilter(email, f));
+    if (hit) matched.push({ folder, filter: hit });
   }
   if (matched.length === 0) return null;
-  matched.sort((a, b) => b.priority - a.priority);
-  return matched[0].id;
+  matched.sort((a, b) => b.folder.priority - a.folder.priority);
+  return { folder_id: matched[0].folder.id, filter: matched[0].filter };
 }
+function labelOf(folders: Folder[], id: string) {
+  return folders.find((f) => f.id === id)?.name ?? "folder";
+}
+
 
 async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolder[]> {
   if (folders.length === 0) return [];
@@ -154,15 +163,25 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   let classified_by = "none";
   let confidence = 0;
   let summary = "";
+  let classification_reason: string | null = null;
 
   const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
   if (labeledFolder) {
     folder_id = labeledFolder.id;
     classified_by = "gmail_label";
     confidence = 1;
+    classification_reason = `Matched Gmail label "${labeledFolder.name}"`;
   } else {
-    folder_id = matchByFilters(parsed, folderList, filterList);
-    if (folder_id) { classified_by = "filter"; confidence = 1; }
+    const m = matchByFilters(parsed, folderList, filterList);
+    if (m) {
+      folder_id = m.folder_id;
+      classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
+      confidence = 1;
+      classification_reason =
+        classified_by === "domain_rule"
+          ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
+          : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+    }
   }
 
   if (!folder_id && folderList.length > 0) {
@@ -173,6 +192,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       confidence = r.confidence;
       summary = r.summary;
       classified_by = "ai";
+      classification_reason = r.reason || null;
     } catch (e) {
       console.error("AI classify failed", e);
     }
@@ -200,6 +220,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       ai_summary: summary || null,
       ai_confidence: confidence,
       classified_by,
+      classification_reason,
     })
     .select("id, folder_id")
     .single();
@@ -273,7 +294,12 @@ async function recordManualMove(
 
   await supabaseAdmin
     .from("emails")
-    .update({ folder_id: folder.id, classified_by: "manual_move", ai_confidence: 1 })
+    .update({
+      folder_id: folder.id,
+      classified_by: "manual_move",
+      ai_confidence: 1,
+      classification_reason: `Moved to "${folder.name}" manually in Gmail`,
+    })
     .eq("gmail_message_id", msg.gmail_message_id)
     .eq("gmail_account_id", accountId);
 
@@ -359,7 +385,12 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
         if (existing.folder_id !== folderId) {
           await supabaseAdmin
             .from("emails")
-            .update({ folder_id: folderId, classified_by: "gmail_label", ai_confidence: 1 })
+            .update({
+              folder_id: folderId,
+              classified_by: "gmail_label",
+              ai_confidence: 1,
+              classification_reason: `Matched Gmail label "${folder.name}"`,
+            })
             .eq("id", existing.id);
           claimed++;
         }
@@ -384,6 +415,7 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           folder_id: folderId,
           classified_by: "gmail_label",
           ai_confidence: 1,
+          classification_reason: `Matched Gmail label "${folder.name}"`,
         });
         if (!insErr) ingested++;
         else console.error("ingest labeled message failed", insErr);

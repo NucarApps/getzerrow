@@ -269,7 +269,12 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
     if (ids.length > 0) {
       const { error: upErr } = await supabaseAdmin
         .from("emails")
-        .update({ folder_id: data.to_folder_id, classified_by: "domain_rule", ai_confidence: 1 })
+        .update({
+          folder_id: data.to_folder_id,
+          classified_by: "domain_rule",
+          ai_confidence: 1,
+          classification_reason: `Domain rule: ${domain} → ${to.name}`,
+        })
         .in("id", ids);
       if (upErr) throw new Error(upErr.message);
 
@@ -568,7 +573,12 @@ export const applyRecategorization = createServerFn({ method: "POST" })
 
     // Move the email
     await supabaseAdmin.from("emails")
-      .update({ folder_id: data.to_folder_id, classified_by: "manual_move", ai_confidence: 1 })
+      .update({
+        folder_id: data.to_folder_id,
+        classified_by: "manual_move",
+        ai_confidence: 1,
+        classification_reason: `Re-categorized from "${from.name}" to "${to.name}"`,
+      })
       .eq("id", email.id);
 
     // Best-effort Gmail label sync
@@ -760,4 +770,182 @@ export const runFolderSummaryNow = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await getOwnedSchedule(context.userId, data.id);
     return runFolderSummary(data.id);
+  });
+
+// ============ Per-email move + similar ============
+
+function extractDomain(addr: string | null): string | null {
+  if (!addr) return null;
+  const at = addr.lastIndexOf("@");
+  if (at < 0) return null;
+  return addr.slice(at + 1).toLowerCase().replace(/[>\s]+$/g, "");
+}
+
+async function performMove(
+  userId: string,
+  emailId: string,
+  toFolderId: string,
+  reasonOverride?: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: email } = await supabaseAdmin
+    .from("emails")
+    .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr, subject, snippet")
+    .eq("id", emailId)
+    .single();
+  if (!email || email.user_id !== userId) return { ok: false, error: "Email not found" };
+  if (email.folder_id === toFolderId) return { ok: true };
+
+  const ids = [toFolderId, ...(email.folder_id ? [email.folder_id] : [])];
+  const { data: folders } = await supabaseAdmin
+    .from("folders")
+    .select("id, user_id, name, gmail_label_id")
+    .in("id", ids);
+  const to = folders?.find((f) => f.id === toFolderId);
+  if (!to || to.user_id !== userId) return { ok: false, error: "Target folder not found" };
+  const from = email.folder_id ? folders?.find((f) => f.id === email.folder_id) : null;
+
+  const reason = reasonOverride ?? (from
+    ? `Re-categorized from "${from.name}" to "${to.name}"`
+    : `Moved to "${to.name}" manually`);
+
+  const { error: upErr } = await supabaseAdmin
+    .from("emails")
+    .update({
+      folder_id: toFolderId,
+      classified_by: "manual_move",
+      ai_confidence: 1,
+      classification_reason: reason,
+    })
+    .eq("id", email.id);
+  if (upErr) return { ok: false, error: upErr.message };
+
+  if (from?.gmail_label_id || to.gmail_label_id) {
+    try {
+      await modifyMessage(
+        email.gmail_account_id,
+        email.gmail_message_id,
+        to.gmail_label_id ? [to.gmail_label_id] : [],
+        from?.gmail_label_id ? [from.gmail_label_id] : [],
+      );
+    } catch (e) {
+      console.error("label sync failed", e);
+    }
+  }
+
+  // Migrate example signal
+  if (from) {
+    await supabaseAdmin
+      .from("folder_examples")
+      .delete()
+      .eq("folder_id", from.id)
+      .eq("gmail_message_id", email.gmail_message_id);
+  }
+  await supabaseAdmin.from("folder_examples").upsert(
+    {
+      folder_id: toFolderId,
+      user_id: userId,
+      gmail_account_id: email.gmail_account_id,
+      gmail_message_id: email.gmail_message_id,
+      from_addr: email.from_addr,
+      subject: email.subject,
+      snippet: email.snippet,
+      source: "correction",
+    },
+    { onConflict: "folder_id,gmail_message_id" },
+  );
+
+  return { ok: true };
+}
+
+export const moveEmailToFolder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email_id: string; to_folder_id: string }) =>
+    z.object({
+      email_id: z.string().uuid(),
+      to_folder_id: z.string().uuid(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: email } = await supabaseAdmin
+      .from("emails")
+      .select("from_addr, folder_id, user_id")
+      .eq("id", data.email_id)
+      .single();
+    if (!email || email.user_id !== context.userId) throw new Error("Email not found");
+    const fromFolderId = email.folder_id;
+
+    const result = await performMove(context.userId, data.email_id, data.to_folder_id);
+    if (!result.ok) throw new Error(result.error);
+
+    return {
+      ok: true,
+      from_folder_id: fromFolderId,
+      from_addr: email.from_addr,
+      domain: extractDomain(email.from_addr),
+    };
+  });
+
+export const findSimilarEmails = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email_id: string; from_folder_id: string | null; mode: "sender" | "domain" }) =>
+    z.object({
+      email_id: z.string().uuid(),
+      from_folder_id: z.string().uuid().nullable(),
+      mode: z.enum(["sender", "domain"]),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: email } = await supabaseAdmin
+      .from("emails")
+      .select("id, user_id, from_addr")
+      .eq("id", data.email_id)
+      .single();
+    if (!email || email.user_id !== context.userId) throw new Error("Email not found");
+
+    let query = supabaseAdmin
+      .from("emails")
+      .select("id, subject, from_addr, from_name, received_at, snippet")
+      .eq("user_id", context.userId)
+      .neq("id", data.email_id)
+      .order("received_at", { ascending: false })
+      .limit(50);
+
+    if (data.from_folder_id) query = query.eq("folder_id", data.from_folder_id);
+    else query = query.is("folder_id", null);
+
+    if (data.mode === "sender") {
+      if (!email.from_addr) return { matches: [], domain: null };
+      query = query.eq("from_addr", email.from_addr);
+    } else {
+      const domain = extractDomain(email.from_addr);
+      if (!domain) return { matches: [], domain: null };
+      query = query.ilike("from_addr", `%@${domain}%`);
+    }
+    const { data: rows } = await query;
+    return {
+      matches: (rows ?? []) as Array<{
+        id: string; subject: string | null; from_addr: string | null;
+        from_name: string | null; received_at: string | null; snippet: string | null;
+      }>,
+      domain: extractDomain(email.from_addr),
+    };
+  });
+
+export const bulkMoveEmails = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email_ids: string[]; to_folder_id: string }) =>
+    z.object({
+      email_ids: z.array(z.string().uuid()).min(1).max(100),
+      to_folder_id: z.string().uuid(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    let moved = 0;
+    let failed = 0;
+    for (const id of data.email_ids) {
+      const r = await performMove(context.userId, id, data.to_folder_id);
+      if (r.ok) moved++;
+      else failed++;
+    }
+    return { moved, failed };
   });
