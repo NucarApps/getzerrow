@@ -72,6 +72,7 @@ export function PubsubActivity() {
   const stats = q.data?.stats;
   const diag = q.data?.diagnostics;
   const lastPush = diag?.lastPush ?? null;
+  const lastRenew = diag?.lastWatchRenew ?? null;
   const watchActive = (accountsQ.data?.accounts ?? []).some(
     (a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()
   );
@@ -81,6 +82,19 @@ export function PubsubActivity() {
   const pushHealthy =
     stats && stats.push24 > 0 && (stats.push24 - (stats.pushUnmatched24 ?? 0)) > 0 &&
     pushSilentMin !== null && pushSilentMin < 10;
+
+  // Is lastPush stale (older than 10 min, or older than the most recent re-arm)?
+  const lastPushMs = lastPush ? new Date(lastPush.received_at).getTime() : 0;
+  const lastRenewMs = lastRenew ? new Date(lastRenew.received_at).getTime() : 0;
+  const lastPushAgeMin = lastPush ? Math.floor((Date.now() - lastPushMs) / 60000) : null;
+  const lastPushStale = lastPush ? (lastPushAgeMin! >= 10 || lastPushMs < lastRenewMs) : false;
+  // Only the FRESH version of the "didn't match" condition should trigger the red banner.
+  const showUnmatchedBanner =
+    !!lastPush &&
+    !lastPushStale &&
+    lastPush.event_type === "push" &&
+    (lastPush.accounts_matched ?? 0) === 0;
+
 
   const renewBtn = (
     <Button
