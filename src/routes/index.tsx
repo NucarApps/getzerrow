@@ -1,6 +1,7 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useMissionTelemetry } from "@/components/landing/useMissionTelemetry";
+import zerrowLogo from "@/assets/zerrow-logo.png";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -58,8 +59,8 @@ function LandingPage() {
       {/* NAV */}
       <header className="nav">
         <a href="#" className="brand">
-          <span className="brand__mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="22" height="22"><path d="M16 2 L26 28 L16 22 L6 28 Z" fill="currentColor" /></svg>
+          <span className="brand__mark" aria-hidden="true" style={{ background: "transparent", border: "none" }}>
+            <img src={zerrowLogo} alt="" style={{ height: 26, width: "auto", display: "block" }} />
           </span>
           <span className="brand__word">Zerrow<i>.</i></span>
           <span className="brand__sub">[for&nbsp;Gmail]</span>
