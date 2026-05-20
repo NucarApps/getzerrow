@@ -28,8 +28,7 @@ function AuthedLayout() {
     const ch = supabase
       .channel("sidebar-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
-        qc.invalidateQueries({ queryKey: ["emails-summary"] });
-        qc.invalidateQueries({ queryKey: ["emails"] });
+        qc.refetchQueries({ queryKey: ["emails"] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
         qc.invalidateQueries({ queryKey: ["folders-full"] });
