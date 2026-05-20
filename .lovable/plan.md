@@ -1,17 +1,28 @@
-## Goal
-Make the Inbox update as soon as Gmail Pub/Sub push events arrive, instead of waiting for the polling/job worker cycle.
+# Port Mission Control landing to `/`
 
-## What I found
-- Pub/Sub is now arriving correctly: recent `push` rows show `accounts_matched = 1` and `synced_count = 1`.
-- The Inbox already has a realtime subscription to the `emails` table, and the table is in the realtime publication.
-- The missing link is the processing path: the webhook currently enqueues Gmail message jobs, but those jobs are only drained by `/api/public/gmail-process-jobs` or the poll fallback. Until a job writes to `emails`, the Inbox realtime subscription has nothing to receive.
-- The queue is currently empty, which means jobs do run eventually, but not directly from the push request.
+Replace the current `src/routes/index.tsx` with a faithful React port of the uploaded `Zerrow.html`, including the rocket launchpad visual, telemetry counters, and mission elapsed time clock.
 
-## Plan
-1. Update the Gmail webhook so after `syncSinceHistory()` enqueues messages from a push, it immediately drains a small batch of due `message_jobs` for that matched account.
-2. Keep the existing queue/cron/poll fallback intact so slow Gmail/API/AI work can still retry safely if immediate processing times out or fails.
-3. Add clearer Pub/Sub activity diagnostics: show both “queued from push” and “processed immediately” so we can distinguish delivery from inbox insertion.
-4. Tighten the existing inbox realtime hook if needed so it refetches the exact active email/count queries after inserts/updates.
+## Files
 
-## Expected result
-When a new Gmail push comes in, the webhook should enqueue the changed message, process it right away, insert/update `emails`, and the open Inbox should refresh from its realtime invalidation within a few seconds.
+1. **`public/zerrow-landing.css`** — copy uploaded `styles.css` verbatim. Loaded only on the home route via a `<link>` in `head()` so its global selectors (`html, body`, `body::before`, etc.) don't leak into authenticated routes.
+2. **`src/routes/index.tsx`** — rewrite as a 1:1 JSX port of the HTML body. Convert `class` → `className`, self-close void tags, inline the rocket SVG. Replace the obfuscated Cloudflare email with a plain string. Keep all element `id`s (`inbox-count`, `rocket`, `met-val`, `footer-met`, `hero-clock`, `t-alt`, `t-vel`, `t-thrust`, `t-fuel`, `t-g`, `t-hdg`, `foot-routed`, `foot-lat`, `stat-routed`, `uplink-val`, `inbox-delta`) so the telemetry hook targets them by id.
+3. **`src/components/landing/useMissionTelemetry.ts`** — port `telemetry.js` to a React hook that runs once in `useEffect` on mount: inbox 1247→0 burn-down (8s ease-out), rocket `.lifted` class toggle, MET clock, T-3→T-0 hero clock, and the periodic altitude/velocity/thrust/fuel/g/heading/uplink updates. Cleanup cancels rAF and intervals on unmount.
+4. **Remove** `src/components/landing/RocketCountdown.tsx` (replaced by the inline mission-control launchpad).
+
+## Routing wiring
+
+- Header "Sign in" and "Connect Gmail" → `<Link to="/login">`.
+- Liftoff CTA "Get started" → `<Link to="/login">`.
+- Footer "Sign in" → `<Link to="/login">`.
+- Footer "Privacy" → `<Link to="/privacy">`, "Terms" → `<Link to="/terms">`.
+- Section anchors (`#features`, `#how`, `#faq`, `#cta`) stay as plain `<a href="#...">` for in-page scroll.
+
+## Preserve
+
+- Existing `beforeLoad` redirect to `/inbox` for authenticated sessions.
+- Existing `head()` SEO meta (title, description, og/twitter).
+- Add Google Fonts preconnect + `Space Grotesk` / `JetBrains Mono` `<link>` tags to `head()`.
+
+## Out of scope
+
+No changes to other routes, auth, or backend behavior. Pure presentation port of the landing page.
