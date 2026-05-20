@@ -748,7 +748,7 @@ export async function syncSinceHistory(accountId: string) {
       for (const m of added) {
         if (seenAdded.has(m.id)) continue;
         seenAdded.add(m.id);
-        try { await processGmailMessage(accountId, m.id, account.user_id); } catch (e) { console.error(e); }
+        try { await enqueueMessageJob(accountId, account.user_id, m.id); } catch (e) { console.error("enqueue failed", e); }
       }
       for (const ev of h.labelsAdded ?? []) {
         try { await applyLabelChange(accountId, ev.message.id, ev.message.labelIds, ev.labelIds, []); } catch (e) { console.error("applyLabelChange add failed", e); }
