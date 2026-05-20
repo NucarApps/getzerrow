@@ -1,60 +1,42 @@
 
-# Rocket Countdown Homepage
+# Found it — GCP push endpoint is the wrong URL
 
-Re-theme the landing page around a "T-minus to inbox zero" rocket launch metaphor while keeping the existing dark palette (#0c0c14 background, gold #e0b54a accent, Sora + Instrument Serif type).
+No code change needed. The fix is one field in Google Cloud.
 
-## What changes
+## What's wrong
 
-**Hero — replace the cobweb card with a rocket launch visualization**
+Your subscription's **Push endpoint** is set to:
 
-Right column becomes a tall vertical "launch pad" panel:
-- A stylized rocket (SVG) sitting on a launch gantry, with animated exhaust flame flickering at the nozzle
-- Animated starfield + parallax behind it
-- A large countdown ticker overlaid: `T - 00:00:03 · 02 · 01 · 00` cycling down to `ZERO` (the word LIFTOFF / INBOX ZERO flashes when it hits 0)
-- When the countdown reaches zero: rocket lifts off (translateY up + smoke trail), then resets after ~2s
-- Subtle gold glow + screen shake at ignition
+```
+https://getzerrow.lovable.app/api/public/gmail-webhook
+```
 
-Left column copy shifts subtly to match the theme:
-- Eyebrow: "T-minus to Inbox Zero"
-- Headline keeps "An inbox that *sorts itself*"
-- Replace "Connect Gmail" CTA microcopy line with "Free to try · 3, 2, 1, launch"
+I just POSTed a sample Pub/Sub envelope to both URLs:
 
-**Header**
-- Wordmark tweak: `Zerrow` with the trailing `.` replaced by a small rocket icon (▲ stylized) in gold
+| URL | Response |
+|---|---|
+| `https://getzerrow.lovable.app/api/public/gmail-webhook` | **HTTP 302** (redirect) |
+| `https://getzerrow.com/api/public/gmail-webhook` | **HTTP 200 `ok`** |
 
-**Marquee → Launch checklist**
-Reframe the chip strip as a pre-launch systems check:
-`NEWSLETTERS · GO` · `INVOICES · GO` · `COLD PITCHES · GO` ... in mono-ish tracking. Each chip prefixed with a small green dot.
+`getzerrow.lovable.app` is redirecting to your custom domain. **Google Cloud Pub/Sub push subscriptions do not follow 3xx redirects** — anything other than 2xx is treated as a delivery failure, with no record in `pubsub_events` because the POST never reaches our handler. That's exactly the symptom you're seeing: watch armed, polling fills the gap, zero `push` rows ever.
 
-**How it works → Mission stages**
-Rename steps to mission phases:
-- `T-3 · Ignition` — Connect Gmail
-- `T-2 · Trajectory` — Describe your folders
-- `T-1 · Liftoff` — Open a clean inbox
-Add a thin vertical "launch rail" line connecting the three cards on desktop.
+The topic, permissions (`gmail-api-push@system.gserviceaccount.com` ✅), and subscription state (`active`, Push, auth disabled) are all correct. Only the endpoint URL is wrong.
 
-**Big statement** — keep, lightly reword the italic tail: *"Zerrow is the countdown that finally gets you to zero."*
+## Fix (in Google Cloud Console)
 
-**CTA section**
-- Headline: "Ready for liftoff?"
-- Button label: "Start the countdown"
-- Add faint rocket silhouette + trail behind the gold panel
+1. Pub/Sub → Subscriptions → `gmail-push` → **Edit**
+2. Change **Push endpoint** to:
+   ```
+   https://getzerrow.com/api/public/gmail-webhook
+   ```
+3. Save.
 
-**Footer** — unchanged.
+Within ~30s you should see `push` rows in the Pub/Sub Activity panel and the red "Watch is armed, but no real Google push has arrived" banner clear.
 
-## Technical notes
+## Optional follow-up (code, after the fix verifies)
 
-- New component `RocketCountdown.tsx` in `src/components/landing/` containing the SVG rocket, starfield, countdown timer (useState + setInterval, cycle 5s → liftoff → 1s reset), and exhaust flame animation. Pure CSS keyframes for flame/stars/liftoff; no new deps.
-- New inline SVG assets (rocket, gantry, star dots) — no image generation needed; keeps bundle small and themable via currentColor + GOLD token.
-- Keep all existing typography tokens (Sora, Instrument Serif, Manrope) and color constants. Add one keyframe set for `flicker`, `twinkle`, `liftoff`, `shake` to a small `<style>` block scoped in the component.
-- Respect `prefers-reduced-motion`: countdown still ticks but liftoff/shake disabled.
-- No backend changes, no route changes, no new packages.
+If you want, I can:
 
-## Files touched
-- `src/routes/index.tsx` — section copy/structure updates listed above
-- `src/components/landing/RocketCountdown.tsx` — new
+- Update the diagnostic banner in `PubsubActivity.tsx` to actively probe the configured push URL on the server and warn if it returns a redirect instead of 200 — so future domain swaps surface this within the app instead of requiring a GCP console trip.
 
-## Out of scope
-- Inbox/app UI (this is homepage only)
-- Replacing the gold accent or the existing dark palette
-- 3D / WebGL rocket (SVG + CSS only for performance + reduced-motion safety)
+Tell me whether to add that probe; otherwise the GCP edit alone fixes today's issue.
