@@ -44,8 +44,8 @@ export function PubsubActivity() {
   const [retryingJob, setRetryingJob] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [pinging, setPinging] = useState(false);
-  const [pingResult, setPingResult] = useState<null | { ok: boolean; status: number; elapsed_ms: number; topic_set: boolean; error?: string; url: string }>(null);
+  const [pinging, setPinging] = useState<null | "empty" | "realistic">(null);
+  const [pingResult, setPingResult] = useState<null | { ok: boolean; status: number; elapsed_ms: number; topic_set: boolean; mode?: string; account_email?: string | null; error?: string; url: string }>(null);
   const [renewing, setRenewing] = useState(false);
   const [showLastPush, setShowLastPush] = useState(false);
 
@@ -76,6 +76,7 @@ export function PubsubActivity() {
   const diag = q.data?.diagnostics;
   const lastPush = diag?.lastPush ?? null;
   const lastRenew = diag?.lastWatchRenew ?? null;
+  const lastWebhookTest = (diag as any)?.lastWebhookTest ?? null;
   const watchActive = (accountsQ.data?.accounts ?? []).some(
     (a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()
   );
@@ -97,6 +98,13 @@ export function PubsubActivity() {
     !lastPushStale &&
     lastPush.event_type === "push" &&
     (lastPush.accounts_matched ?? 0) === 0;
+
+  // After a re-arm, if no real Google push has arrived, the GCP subscription
+  // is the broken piece. Show this as soon as the re-arm is >60s old.
+  const noPushSinceRearm =
+    !!lastRenew &&
+    Date.now() - lastRenewMs > 60_000 &&
+    lastPushMs < lastRenewMs;
 
 
   const renewBtn = (
