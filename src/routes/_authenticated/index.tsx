@@ -419,16 +419,24 @@ function InboxPage() {
                       </ContextMenuItem>
                       <ContextMenuItem
                         onSelect={async () => {
+                          const d = domain.toLowerCase();
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                            prev?.filter((x) => ((x.from_addr || "").toLowerCase().split("@")[1] || "") !== d),
+                          );
                           try {
                             const r = await stripLabelFn({ data: { value: domain, match_type: "domain" } });
                             qc.invalidateQueries({ queryKey: ["emails"] });
                             qc.invalidateQueries({ queryKey: ["emails-summary"] });
                             toast.success(`Removed folder label from ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
-                          } catch (err: any) { toast.error(err.message); }
+                          } catch (err: any) {
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            toast.error(err.message);
+                          }
                         }}
                       >
                         Remove folder label from past emails
                       </ContextMenuItem>
+
                     </ContextMenuSubContent>
                   </ContextMenuSub>
                 )}
