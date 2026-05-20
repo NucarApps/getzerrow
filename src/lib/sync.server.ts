@@ -317,6 +317,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       has_attachment: parsed.has_attachment,
       raw_labels: parsed.raw_labels,
       folder_id: null,
+      is_archived: !inInbox,
       classified_by: "pending",
       processed_at: new Date().toISOString(),
     })
