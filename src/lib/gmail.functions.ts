@@ -359,8 +359,17 @@ export const triggerSync = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const histResult = await syncSinceHistory(data.account_id);
+    // Safety net: history events can be missed (webhook drops, expired
+    // historyId, etc.), so always do a small recent backfill on manual sync.
+    let recent_synced = 0;
+    try {
+      const r = await backfillRecent(data.account_id, context.userId, 30);
+      recent_synced = r?.processed ?? 0;
+    } catch (e) {
+      console.error("manual sync recent backfill failed", e);
+    }
     const recon = await reconcileLocalInbox(data.account_id, 100);
-    return { ...histResult, reconciled: recon };
+    return { ...histResult, recent_synced, reconciled: recon };
   });
 
 export const renewGmailWatch = createServerFn({ method: "POST" })
