@@ -272,38 +272,74 @@ function InboxPage() {
                   Always send to inbox
                 </ContextMenuLabel>
                 {e.from_addr ? (
-                  <ContextMenuItem
-                    onSelect={async () => {
-                      try {
-                        const r = await addOverrideFn({ data: { value: e.from_addr!, match_type: "email" } });
-                        qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                        toast.success(r.already ? `${e.from_addr} already on the list` : `Future mail from ${e.from_addr} will go to inbox`);
-                      } catch (err: any) {
-                        toast.error(err.message);
-                      }
-                    }}
-                  >
-                    <AtSign className="mr-2 h-4 w-4" />
-                    <span className="truncate">Just {e.from_addr}</span>
-                  </ContextMenuItem>
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger>
+                      <AtSign className="mr-2 h-4 w-4" />
+                      <span className="truncate">Just {e.from_addr}</span>
+                    </ContextMenuSubTrigger>
+                    <ContextMenuSubContent>
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          try {
+                            const r = await addOverrideFn({ data: { value: e.from_addr!, match_type: "email" } });
+                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                            toast.success(r.already ? `${e.from_addr} already on the list` : `Future mail from ${e.from_addr} will go to inbox`);
+                          } catch (err: any) { toast.error(err.message); }
+                        }}
+                      >
+                        Future emails only
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          try {
+                            const r = await addOverrideFn({ data: { value: e.from_addr!, match_type: "email", reprocess_past: true } });
+                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                            toast.success(`Moved ${r.reprocessed_count} past email${r.reprocessed_count === 1 ? "" : "s"} to Inbox`);
+                          } catch (err: any) { toast.error(err.message); }
+                        }}
+                      >
+                        Future + move past emails to Inbox
+                      </ContextMenuItem>
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
                 ) : (
                   <ContextMenuItem disabled>No sender address</ContextMenuItem>
                 )}
                 {domain && (
-                  <ContextMenuItem
-                    onSelect={async () => {
-                      try {
-                        const r = await addOverrideFn({ data: { value: domain, match_type: "domain" } });
-                        qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                        toast.success(r.already ? `@${domain} already on the list` : `Future mail from @${domain} will go to inbox`);
-                      } catch (err: any) {
-                        toast.error(err.message);
-                      }
-                    }}
-                  >
-                    <Globe className="mr-2 h-4 w-4" />
-                    <span className="truncate">Anyone @{domain}</span>
-                  </ContextMenuItem>
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger>
+                      <Globe className="mr-2 h-4 w-4" />
+                      <span className="truncate">Anyone @{domain}</span>
+                    </ContextMenuSubTrigger>
+                    <ContextMenuSubContent>
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          try {
+                            const r = await addOverrideFn({ data: { value: domain, match_type: "domain" } });
+                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                            toast.success(r.already ? `@${domain} already on the list` : `Future mail from @${domain} will go to inbox`);
+                          } catch (err: any) { toast.error(err.message); }
+                        }}
+                      >
+                        Future emails only
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          try {
+                            const r = await addOverrideFn({ data: { value: domain, match_type: "domain", reprocess_past: true } });
+                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                            toast.success(`Moved ${r.reprocessed_count} past email${r.reprocessed_count === 1 ? "" : "s"} to Inbox`);
+                          } catch (err: any) { toast.error(err.message); }
+                        }}
+                      >
+                        Future + move past emails to Inbox
+                      </ContextMenuItem>
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
                 )}
 
                 <ContextMenuSeparator />
