@@ -43,7 +43,7 @@ function SettingsPage() {
   const accounts = accountsQ.data?.accounts ?? [];
 
   return (
-    <div className="h-screen overflow-y-auto p-4 md:p-8">
+    <div className="h-full overflow-y-auto p-4 md:p-8">
       <div className="mx-auto max-w-3xl space-y-6">
         <h1 className="font-display text-3xl md:text-4xl">Settings</h1>
 
