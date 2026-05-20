@@ -383,8 +383,9 @@ export async function regenerateFolderProfile(folderId: string) {
 }
 
 export async function learnFromLinkedLabel(folderId: string, userId: string) {
-  const { data: folder } = await supabaseAdmin.from("folders").select("*").eq("id", folderId).single();
-  if (!folder) throw new Error("Folder not found");
+  const { data: folderRow } = await supabaseAdmin.from("folders").select("*").eq("id", folderId).single();
+  if (!folderRow) throw new Error("Folder not found");
+  const folder = folderRow;
   if (folder.user_id !== userId) throw new Error("Not authorized");
   if (!folder.gmail_label_id) throw new Error("Folder is not linked to a Gmail label");
   const accountId = folder.gmail_account_id;
