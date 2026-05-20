@@ -5,7 +5,7 @@ import { listPubsubEvents, pingPubsubWebhook, listMyGmailAccounts, renewGmailWat
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, ChevronRight, ChevronDown, AlertTriangle, Activity } from "lucide-react";
+import { RefreshCw, ChevronRight, ChevronDown, AlertTriangle, Activity, Copy, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Filter = "all" | "push" | "poll" | "errors" | "watch_renew";
@@ -22,6 +22,18 @@ function relTime(iso: string | null): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+function CopyBtn({ value }: { value: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => { navigator.clipboard.writeText(value); toast.success("Copied"); }}
+      className="inline-flex items-center gap-1 rounded border bg-card px-1.5 py-0.5 text-[10px] hover:bg-muted"
+    >
+      <Copy className="h-3 w-3" /> copy
+    </button>
+  );
+}
+
 export function PubsubActivity() {
   const fetchEvents = useServerFn(listPubsubEvents);
   const pingFn = useServerFn(pingPubsubWebhook);
@@ -32,6 +44,7 @@ export function PubsubActivity() {
   const [pinging, setPinging] = useState(false);
   const [pingResult, setPingResult] = useState<null | { ok: boolean; status: number; elapsed_ms: number; topic_set: boolean; error?: string; url: string }>(null);
   const [renewing, setRenewing] = useState(false);
+  const [showLastPush, setShowLastPush] = useState(false);
 
   const q = useQuery({
     queryKey: ["pubsub-events", filter],
@@ -57,6 +70,44 @@ export function PubsubActivity() {
 
   const events = q.data?.events ?? [];
   const stats = q.data?.stats;
+  const diag = q.data?.diagnostics;
+  const lastPush = diag?.lastPush ?? null;
+  const watchActive = (accountsQ.data?.accounts ?? []).some(
+    (a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()
+  );
+  const pushSilentMin = stats?.lastPushAt
+    ? Math.floor((Date.now() - new Date(stats.lastPushAt).getTime()) / 60000)
+    : null;
+  const pushHealthy =
+    stats && stats.push24 > 0 && (stats.push24 - (stats.pushUnmatched24 ?? 0)) > 0 &&
+    pushSilentMin !== null && pushSilentMin < 10;
+
+  const renewBtn = (
+    <Button
+      size="sm"
+      variant="destructive"
+      disabled={renewing}
+      onClick={async () => {
+        const acc = (accountsQ.data?.accounts ?? [])[0];
+        if (!acc) return;
+        setRenewing(true);
+        try {
+          await renewFn({ data: { account_id: acc.id } });
+          toast.success("Watch re-armed");
+          q.refetch();
+          accountsQ.refetch();
+        } catch (e: any) {
+          toast.error(e.message);
+        } finally {
+          setRenewing(false);
+        }
+      }}
+      className="shrink-0"
+    >
+      <RefreshCw className={`mr-2 h-4 w-4 ${renewing ? "animate-spin" : ""}`} />
+      Re-arm push watch
+    </Button>
+  );
 
   return (
     <Card className="p-4 md:p-6">
@@ -79,63 +130,77 @@ export function PubsubActivity() {
         </Button>
       </div>
 
-      {stats && stats.push24 === 0 && stats.poll24 > 0 && (accountsQ.data?.accounts ?? []).some((a) => a.watch_expiration && new Date(a.watch_expiration).getTime() > Date.now()) && (
+      {/* RED: push received but payload didn't match account */}
+      {stats && (stats.pushUnmatched24 ?? 0) > 0 && lastPush && lastPush.event_type === "push" && (lastPush.accounts_matched ?? 0) === 0 && (
         <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
           <div className="flex gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             <div className="text-xs">
-              <div className="font-medium text-destructive">Gmail push notifications are not arriving.</div>
+              <div className="font-medium text-destructive">Push arrived but didn't match a connected account.</div>
               <div className="mt-1 text-muted-foreground">
-                Zero push events in the last 24h, but the fallback poll is running ({stats.poll24} runs) so mail is still flowing. The Gmail watch is still active — re-arm it to refresh Google's push subscription. If that doesn't help, the GCP Pub/Sub subscription is missing or pointed at the wrong URL.
+                Google delivered a Pub/Sub push, but the decoded <span className="font-mono">emailAddress</span> {lastPush.email_address ? <>(<span className="font-mono">{lastPush.email_address}</span>)</> : "was missing"} doesn't match any account in this app. The Gmail watch is almost certainly attached to a different Google project or a different topic than the subscription forwarding to us. Re-arming forces a new watch against <span className="font-mono">{diag?.pubsubTopic ?? "GMAIL_PUBSUB_TOPIC (unset)"}</span>.
               </div>
             </div>
           </div>
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={renewing}
-            onClick={async () => {
-              const acc = (accountsQ.data?.accounts ?? [])[0];
-              if (!acc) return;
-              setRenewing(true);
-              try {
-                await renewFn({ data: { account_id: acc.id } });
-                toast.success("Watch re-armed");
-                q.refetch();
-                accountsQ.refetch();
-              } catch (e: any) {
-                toast.error(e.message);
-              } finally {
-                setRenewing(false);
-              }
-            }}
-            className="shrink-0"
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${renewing ? "animate-spin" : ""}`} />
-            Re-arm push watch
-          </Button>
+          {renewBtn}
         </div>
       )}
 
+      {/* RED: push completely silent but poll is working */}
+      {stats && stats.push24 === 0 && stats.poll24 > 0 && watchActive && (
+        <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="text-xs">
+              <div className="font-medium text-destructive">Google is not pushing for your account.</div>
+              <div className="mt-1 text-muted-foreground">
+                Zero pushes in the last 24h, but fallback polling is running ({stats.poll24} runs, {stats.synced24} synced). That means new mail is arriving with a ~2 min delay instead of in real time. The watch is still alive, so the GCP Pub/Sub subscription is most likely paused, missing, or pointed at the wrong URL.
+                <div className="mt-2">
+                  Subscription must POST to:{" "}
+                  <span className="font-mono">{diag?.webhookUrl}</span>{" "}
+                  {diag?.webhookUrl && <CopyBtn value={diag.webhookUrl} />}
+                </div>
+              </div>
+            </div>
+          </div>
+          {renewBtn}
+        </div>
+      )}
+
+      {/* AMBER: total silence */}
       {stats && stats.push24 === 0 && stats.poll24 === 0 && (
         <div className="mt-4 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="text-xs">
             <div className="font-medium text-amber-700 dark:text-amber-400">No sync activity in the last 24h.</div>
             <div className="mt-1 text-muted-foreground">
-              Neither push nor poll has fired. The cron job that calls <span className="font-mono">/api/public/gmail-poll</span> may be paused, or the worker route is failing. Check the cron schedule and recent deployment logs.
+              Neither push nor poll has fired. The cron job that calls <span className="font-mono">/api/public/gmail-poll</span> may be paused, or the worker route is failing.
             </div>
           </div>
         </div>
       )}
 
-      {stats && stats.poll24 > 0 && (
+      {/* GREEN: push healthy */}
+      {pushHealthy && (
         <div className="mt-4 flex gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
-          <Activity className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
           <div className="text-xs">
-            <div className="font-medium text-emerald-700 dark:text-emerald-400">Fallback poll is healthy.</div>
+            <div className="font-medium text-emerald-700 dark:text-emerald-400">Push is healthy.</div>
             <div className="mt-1 text-muted-foreground">
-              {stats.poll24} poll runs in the last 24h, {stats.synced24} messages synced. Last poll {stats.lastPollAt ? relTime(stats.lastPollAt) : "—"}.
+              {stats!.push24} pushes in the last 24h, last one {relTime(stats!.lastPushAt)}. New mail is arriving in real time.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INFO: poll is covering for missing push */}
+      {stats && !pushHealthy && stats.poll24 > 0 && (
+        <div className="mt-4 flex gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 p-3">
+          <Activity className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+          <div className="text-xs">
+            <div className="font-medium text-blue-700 dark:text-blue-400">Fallback poll is keeping mail flowing.</div>
+            <div className="mt-1 text-muted-foreground">
+              {stats.poll24} poll runs in the last 24h, {stats.synced24} messages synced. Last poll {stats.lastPollAt ? relTime(stats.lastPollAt) : "—"}. Real-time push is degraded, so new mail shows up with a small delay instead of instantly.
             </div>
           </div>
         </div>
@@ -149,7 +214,7 @@ export function PubsubActivity() {
               Gmail API returned {stats.gmailErrors24} transient error{stats.gmailErrors24 === 1 ? "" : "s"} in the last 24h.
             </div>
             <div className="mt-1 text-muted-foreground">
-              These are 429 (rate limit) or 5xx responses from Google — they match the <span className="font-mono">caribou.api.proto.MailboxService.GetMessage</span> errors you may see in the GCP console. The worker auto-retries them with jittered backoff and the first 2 retries are free, so they don't push messages to the DLQ. If the count keeps climbing, check the Processing queue panel.
+              These are 429 (rate limit) or 5xx responses from Google. The worker auto-retries them with jittered backoff and the first 2 retries are free.
             </div>
           </div>
         </div>
@@ -172,6 +237,48 @@ export function PubsubActivity() {
         {stats?.lastPushAt && <> · Last push: {relTime(stats.lastPushAt)}</>}
         {stats?.lastPollAt && <> · Last poll: {relTime(stats.lastPollAt)}</>}
       </div>
+
+      {/* Last push details */}
+      {lastPush && (
+        <div className="mt-4 rounded-md border bg-muted/20">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between p-3 text-left text-sm font-medium"
+            onClick={() => setShowLastPush((v) => !v)}
+          >
+            <span className="flex items-center gap-2">
+              {showLastPush ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              Last push from Google ({lastPush.event_type})
+              <span className="text-xs font-normal text-muted-foreground">— {relTime(lastPush.received_at)}</span>
+            </span>
+          </button>
+          {showLastPush && (
+            <div className="border-t p-3 text-xs">
+              <div className="grid gap-2 md:grid-cols-2">
+                <Detail k="emailAddress (decoded)" v={lastPush.email_address ?? "(missing)"} bad={!lastPush.email_address} />
+                <Detail k="historyId (decoded)" v={lastPush.history_id ?? "(missing)"} bad={!lastPush.history_id} />
+                <Detail k="accounts_matched" v={String(lastPush.accounts_matched ?? 0)} bad={(lastPush.accounts_matched ?? 0) === 0} />
+                <Detail k="Pub/Sub messageId" v={lastPush.message_id ?? "—"} />
+                <Detail k="Pub/Sub publishTime" v={lastPush.publish_time ?? "—"} />
+                <Detail k="Pub/Sub subscription" v={lastPush.subscription ?? "—"} mono />
+              </div>
+              {lastPush.details && (
+                <div className="mt-2 rounded border border-destructive/30 bg-destructive/5 p-2 text-destructive">
+                  {lastPush.details}
+                </div>
+              )}
+              {lastPush.payload != null && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-muted-foreground">Raw decoded payload</summary>
+                  <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all rounded border bg-card p-2 text-[11px]">
+{JSON.stringify(lastPush.payload, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-2">
         {(["all", "push", "poll", "errors", "watch_renew"] as Filter[]).map((f) => (
@@ -197,7 +304,7 @@ export function PubsubActivity() {
               <th className="p-2">History ID</th>
               <th className="p-2 text-right">Matched</th>
               <th className="p-2 text-right">Synced</th>
-              <th className="p-2">Error</th>
+              <th className="p-2">Error / details</th>
             </tr>
           </thead>
           <tbody>
@@ -236,7 +343,7 @@ export function PubsubActivity() {
                     <td className="p-2 font-mono">{e.history_id ?? "—"}</td>
                     <td className="p-2 text-right">{e.accounts_matched ?? "—"}</td>
                     <td className="p-2 text-right">{e.synced_count ?? "—"}</td>
-                    <td className="p-2 max-w-[200px] truncate text-destructive">{e.error ?? ""}</td>
+                    <td className="p-2 max-w-[240px] truncate text-destructive">{e.error ?? e.details ?? ""}</td>
                   </tr>
                   {isOpen && (
                     <tr className="border-t bg-muted/20">
@@ -311,8 +418,30 @@ export function PubsubActivity() {
             </div>
           )}
         </div>
+
+        <div className="mt-4 rounded border bg-card p-3 text-xs">
+          <div className="font-medium">Google Cloud Pub/Sub setup checklist</div>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
+            <li>
+              Topic name must equal{" "}
+              <span className="font-mono">{diag?.pubsubTopic ?? "(GMAIL_PUBSUB_TOPIC not set)"}</span>
+              {diag?.pubsubTopic && <> <CopyBtn value={diag.pubsubTopic} /></>}
+            </li>
+            <li>
+              A <strong>push</strong> subscription on that topic must POST to{" "}
+              <span className="font-mono">{diag?.webhookUrl}</span>
+              {diag?.webhookUrl && <> <CopyBtn value={diag.webhookUrl} /></>}
+            </li>
+            <li>
+              <span className="font-mono">gmail-api-push@system.gserviceaccount.com</span> must have <span className="font-mono">roles/pubsub.publisher</span> on the topic.
+            </li>
+            <li>Subscription must not be paused; ack deadline ≥ 10s.</li>
+            <li>The Gmail watch must be re-armed against the same topic as the subscription (use the button above).</li>
+          </ol>
+        </div>
+
         <p className="mt-2 text-[11px] text-muted-foreground">
-          A successful test means our endpoint accepts pushes — so if real pushes are still missing, the Google Cloud Pub/Sub subscription is either missing, paused, or pointed at the wrong URL.
+          A successful test means our endpoint accepts pushes — if real pushes are still missing, work down the checklist above.
         </p>
       </div>
     </Card>
@@ -324,6 +453,15 @@ function Stat({ label, value, accent }: { label: string; value: number; accent?:
     <div className="rounded-md border bg-card p-3">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`mt-1 text-xl font-semibold ${accent === "danger" ? "text-destructive" : accent === "warn" ? "text-amber-600" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
+function Detail({ k, v, mono, bad }: { k: string; v: string; mono?: boolean; bad?: boolean }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</div>
+      <div className={`${mono ? "font-mono" : ""} ${bad ? "text-destructive" : ""} break-all`}>{v}</div>
     </div>
   );
 }
