@@ -230,6 +230,8 @@ export async function classifyParsedEmail(
       classification_reason = r.reason || null;
     } catch (e) {
       console.error("AI classify failed", e);
+      classified_by = "ai_error";
+      classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
     }
   }
 
