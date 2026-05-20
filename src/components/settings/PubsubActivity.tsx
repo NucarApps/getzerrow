@@ -205,7 +205,15 @@ export function PubsubActivity() {
                       {relTime(e.received_at)}
                     </td>
                     <td className="p-2">
-                      <Badge variant={e.event_type === "push" ? "default" : "secondary"} className="text-[10px]">
+                      <Badge
+                        variant={
+                          e.error ? "destructive" :
+                          e.event_type === "push" ? "default" :
+                          e.event_type === "poll" ? "secondary" :
+                          "outline"
+                        }
+                        className="text-[10px]"
+                      >
                         {e.event_type}
                       </Badge>
                     </td>
