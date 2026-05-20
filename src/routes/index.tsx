@@ -238,17 +238,17 @@ function Features() {
 function HowItWorks() {
   const steps = [
     {
-      n: "Step 1",
+      n: "T − 3 · Ignition",
       title: "Connect Gmail",
       body: "Sign in with Google. Zerrow connects to your existing Gmail account using OAuth — no password, no migration.",
     },
     {
-      n: "Step 2",
+      n: "T − 2 · Trajectory",
       title: "Describe your folders",
       body: "Create a folder and write a one-line rule in plain English. Zerrow learns the rest from a handful of examples.",
     },
     {
-      n: "Step 3",
+      n: "T − 1 · Liftoff",
       title: "Open a clean inbox",
       body: "Newsletters land in Newsletters. Receipts land in Receipts. Your inbox shows what's left — the email that actually wants you.",
     },
