@@ -39,6 +39,9 @@ export function PubsubActivity() {
   const pingFn = useServerFn(pingPubsubWebhook);
   const accountsFn = useServerFn(listMyGmailAccounts);
   const renewFn = useServerFn(renewGmailWatch);
+  const retryFn = useServerFn(retryJob);
+  const runJobsFn = useServerFn(runJobsNow);
+  const [retryingJob, setRetryingJob] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [pinging, setPinging] = useState(false);
