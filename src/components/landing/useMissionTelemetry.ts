@@ -132,6 +132,10 @@ export function useMissionTelemetry() {
       if (tFuel) tFuel.textContent = `${fuel.toFixed(0)}%`;
       if (tG) tG.textContent = `${g.toFixed(1)} g`;
       if (tHdg) tHdg.textContent = `${hdg.toFixed(1)}°`;
+      if (alt > apogeeKm) apogeeKm = alt;
+      const downrange = Math.max(0, Math.round((vel * Math.max(0, launchT - 8)) / 1000));
+      if (tDownrange) tDownrange.textContent = `${downrange.toLocaleString("en-US")} km`;
+      if (tApogee) tApogee.textContent = `${apogeeKm.toFixed(1)} km`;
       if (footLat && footLat.firstChild) {
         const lat = (2.2 + Math.random() * 0.6).toFixed(1);
         footLat.firstChild.textContent = lat;
