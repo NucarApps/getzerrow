@@ -52,6 +52,9 @@ export function useMissionTelemetry() {
           deltaEl.classList.add("zero");
         }
         setPhase("liftoff");
+        trackingTimeout = window.setTimeout(() => {
+          viewportEl?.classList.add("tracking");
+        }, 1600);
       }
     };
     rafId = requestAnimationFrame(step);
