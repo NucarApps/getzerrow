@@ -48,19 +48,37 @@ export function AddFolderDialog({
       } else {
         labelId = labelChoice;
       }
-      const { error } = await supabase.from("folders").insert({
-        name: name.trim(),
-        user_id: userId,
-        gmail_account_id: accountId,
-        gmail_label_id: labelId,
-        color: pickColor(),
-      });
+      const { data: inserted, error } = await supabase
+        .from("folders")
+        .insert({
+          name: name.trim(),
+          user_id: userId,
+          gmail_account_id: accountId,
+          gmail_label_id: labelId,
+          color: pickColor(),
+        })
+        .select("id")
+        .single();
       if (error) { toast.error(error.message); return; }
       setName("");
       setLabelChoice(NEW_LABEL);
       qc.invalidateQueries({ queryKey: ["folders"] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       onOpenChange(false);
+      if (labelId && inserted?.id) {
+        toast.message("Pulling emails from Gmail…");
+        try {
+          const r = await learnFn({ data: { folder_id: inserted.id } });
+          const pulled = (r?.claimed ?? 0) + (r?.ingested ?? 0);
+          toast.success(`Folder created. Linked ${pulled} email${pulled === 1 ? "" : "s"} from Gmail.`);
+        } catch (e: any) {
+          toast.warning(`Folder created. Couldn't pull from Gmail: ${e?.message ?? "error"}`);
+        }
+        qc.invalidateQueries({ queryKey: ["emails"] });
+        qc.invalidateQueries({ queryKey: ["emails-summary"] });
+      } else {
+        toast.success("Folder created.");
+      }
     } finally {
       setBusy(false);
     }
