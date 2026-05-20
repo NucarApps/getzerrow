@@ -573,7 +573,12 @@ export const applyRecategorization = createServerFn({ method: "POST" })
 
     // Move the email
     await supabaseAdmin.from("emails")
-      .update({ folder_id: data.to_folder_id, classified_by: "manual_move", ai_confidence: 1 })
+      .update({
+        folder_id: data.to_folder_id,
+        classified_by: "manual_move",
+        ai_confidence: 1,
+        classification_reason: `Re-categorized from "${from.name}" to "${to.name}"`,
+      })
       .eq("id", email.id);
 
     // Best-effort Gmail label sync
