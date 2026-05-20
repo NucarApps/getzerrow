@@ -512,6 +512,24 @@ function TriggeredBy({
     );
   }
 
+  if (by === "excluded") {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-destructive">Kept in inbox by exclude rule</div>
+        <p className="text-foreground/90">{reason ?? "An exclude rule on a matching folder kept this email in your inbox."}</p>
+      </div>
+    );
+  }
+
+  if (by === "global_exclude") {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-destructive">Always send to inbox</div>
+        <p className="text-foreground/90">{reason ?? "This sender is on your global inbox list, so folder rules and AI sorting are skipped."}</p>
+      </div>
+    );
+  }
+
   return (
     <p className="italic text-muted-foreground">
       This email hasn't been classified yet.
