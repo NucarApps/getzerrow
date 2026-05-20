@@ -260,10 +260,15 @@ export function PubsubActivity() {
             className="flex w-full items-center justify-between p-3 text-left text-sm font-medium"
             onClick={() => setShowLastPush((v) => !v)}
           >
-            <span className="flex items-center gap-2">
+            <span className="flex flex-wrap items-center gap-2">
               {showLastPush ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               Last push from Google ({lastPush.event_type})
               <span className="text-xs font-normal text-muted-foreground">— {relTime(lastPush.received_at)}</span>
+              {lastPushStale && (
+                <Badge variant="outline" className="text-[10px]">
+                  stale{lastRenew && lastPushMs < lastRenewMs ? " · before last re-arm" : ""}
+                </Badge>
+              )}
             </span>
           </button>
           {showLastPush && (
