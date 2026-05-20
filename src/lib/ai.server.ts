@@ -39,17 +39,15 @@ export async function classifyEmail(email: {
     })
     .join("\n\n");
 
-  const { output } = await generateText({
-    model: getModel(),
-    output: Output.object({
-      schema: z.object({
-        folder_name: z.string().describe("Exact name of the chosen folder, or 'NONE' if no folder fits"),
-        confidence: z.number().min(0).max(1),
-        summary: z.string().max(140).describe("One-line summary of the email"),
-        reason: z.string().max(200).describe("Short explanation of WHY this folder was chosen — cite the folder rule, profile, or example pattern that matched. If 'NONE', explain why nothing fit."),
-      }),
-    }),
-    prompt: `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
+  const folderNames = folders.map((f) => f.name);
+  const schema = z.object({
+    folder_name: z.string().describe("Exact name of the chosen folder, or 'NONE' if no folder fits"),
+    confidence: z.number().min(0).max(1),
+    summary: z.string().max(140).describe("One-line summary of the email"),
+    reason: z.string().max(200).describe("Short explanation of WHY this folder was chosen — cite the folder rule, profile, or example pattern that matched. If 'NONE', explain why nothing fit."),
+  });
+
+  const basePrompt = `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
 
 Folders:
 ${folderList}
@@ -60,10 +58,54 @@ Subject: ${email.subject}
 Body:
 ${(email.body_text || email.snippet || "").slice(0, 4000)}
 
-Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line summary AND a short reason explaining the match.`,
-  });
+Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line summary AND a short reason explaining the match.`;
 
-  const match = folders.find((f) => f.name.toLowerCase() === output.folder_name.toLowerCase());
+  type Out = z.infer<typeof schema>;
+
+  async function tryStructured(modelId: string): Promise<Out | null> {
+    try {
+      const { output } = await generateText({
+        model: getModel(modelId),
+        output: Output.object({ schema }),
+        prompt: basePrompt,
+      });
+      return output as Out;
+    } catch (e) {
+      console.error(`classify structured failed (${modelId})`, (e as Error)?.message);
+      return null;
+    }
+  }
+
+  async function tryTextJson(modelId: string): Promise<Out | null> {
+    try {
+      const { text } = await generateText({
+        model: getModel(modelId),
+        prompt: `${basePrompt}
+
+Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
+{"folder_name":"<one of: ${folderNames.map((n) => `"${n}"`).join(", ")} or \\"NONE\\">","confidence":<0..1>,"summary":"<<=140 chars>","reason":"<<=200 chars>"}`,
+      });
+      const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      if (start < 0 || end <= start) return null;
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      return schema.parse(parsed);
+    } catch (e) {
+      console.error(`classify text-json failed (${modelId})`, (e as Error)?.message);
+      return null;
+    }
+  }
+
+  let output =
+    (await tryStructured("google/gemini-2.5-flash")) ||
+    (await tryTextJson("google/gemini-2.5-flash")) ||
+    (await tryStructured("google/gemini-2.5-flash-lite")) ||
+    (await tryTextJson("google/gemini-2.5-flash-lite"));
+
+  if (!output) throw new Error("AI classifier returned no parseable response");
+
+  const match = folders.find((f) => f.name.toLowerCase() === output!.folder_name.toLowerCase());
   return {
     folder_id: match?.id ?? null,
     confidence: output.confidence,
