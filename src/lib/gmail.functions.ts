@@ -393,7 +393,7 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
     try {
       await supabaseAdmin.from("pubsub_events").insert({
         event_type: "watch_renew",
-        email_address: acc.email_address ?? null,
+        email_address: accRow?.email_address ?? null,
         history_id: watch.historyId,
         details: `Watch armed against topic ${process.env.GMAIL_PUBSUB_TOPIC ?? "(unset)"} — expires ${new Date(parseInt(watch.expiration, 10)).toISOString()}`,
       });
