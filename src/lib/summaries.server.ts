@@ -164,7 +164,9 @@ export async function runFolderSummary(scheduleId: string): Promise<{ ok: boolea
     await supabaseAdmin.from("folder_summary_schedules").update({
       last_run_at: windowEnd.toISOString(),
       next_run_at: advance(),
-      last_error: null,
+      last_error: (summary as any)._fallback
+        ? "Sent using plain-text fallback (structured AI output failed once)."
+        : null,
     }).eq("id", schedule.id);
 
     return { ok: true, emails: emailCount };
