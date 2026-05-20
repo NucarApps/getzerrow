@@ -191,10 +191,10 @@ function InboxPage() {
       const qstr = query.trim().toLowerCase();
       return pageRows.filter((e) => {
         return (
-          (e.from_name && e.from_name.toLowerCase().includes(qstr)) ||
+          (e.from_name && decodeEntities(e.from_name).toLowerCase().includes(qstr)) ||
           (e.from_addr && e.from_addr.toLowerCase().includes(qstr)) ||
-          (e.subject && e.subject.toLowerCase().includes(qstr)) ||
-          (e.snippet && e.snippet.toLowerCase().includes(qstr))
+          (e.subject && decodeEntities(e.subject).toLowerCase().includes(qstr)) ||
+          (e.snippet && decodeEntities(e.snippet).toLowerCase().includes(qstr))
         );
       });
     }
