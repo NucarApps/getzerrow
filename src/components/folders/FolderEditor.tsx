@@ -204,7 +204,16 @@ export function FolderEditor({
         <input type="color" value={local.color} onChange={(e) => setLocal({ ...local, color: e.target.value })} className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent" />
         <Input className="flex-1" value={local.name} onChange={(e) => setLocal({ ...local, name: e.target.value })} />
         <Input type="number" className="w-20" value={local.priority} onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })} title="Priority (higher wins)" />
-        <Button variant="ghost" size="icon" onClick={remove}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="More actions"><MoreVertical className="h-4 w-4" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={remove} className="text-destructive focus:text-destructive">
+              <Trash2 className="mr-2 h-4 w-4" /> Delete folder…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <Tabs defaultValue="settings" className="mt-4">
