@@ -12,8 +12,11 @@ export function useMissionTelemetry() {
     const counterEl = $("inbox-count");
     const deltaEl = $("inbox-delta");
     const rocketEl = $("rocket");
+    const viewportEl = $("launchpad-viewport");
     const footRouted = $("foot-routed");
     const statRouted = $("stat-routed");
+    let trackingTimeout = 0;
+    let apogeeKm = 0;
 
     let routedToday = 142;
     const fmt = (n: number) => n.toLocaleString("en-US");
