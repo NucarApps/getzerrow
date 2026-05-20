@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
-  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox,
+  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,12 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
   DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
+  ContextMenuSub, ContextMenuSubTrigger, ContextMenuSubContent, ContextMenuSeparator, ContextMenuLabel,
+} from "@/components/ui/context-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw } from "lucide-react";
+import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw, AtSign, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { useFolderSelection } from "@/lib/folder-selection";
@@ -53,6 +57,11 @@ type Folder = { id: string; name: string; color: string };
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
+  const moveFolderFn = useServerFn(moveEmailToFolder);
+  const moveInboxFn = useServerFn(moveEmailToInbox);
+  const addOverrideFn = useServerFn(addInboxOverride);
+  const archFnList = useServerFn(archiveEmail);
+  const trashFnList = useServerFn(trashEmail);
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -177,29 +186,152 @@ function InboxPage() {
               <p className="text-xs">Hit refresh, or connect Gmail in Settings.</p>
             </div>
           )}
-          {filtered.map((e) => (
-            <button
-              key={e.id}
-              onClick={() => setSelectedId(e.id)}
-              className={`block w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${e.is_read ? "opacity-70" : ""}`}
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className={`truncate text-sm ${e.is_read ? "" : "font-semibold"}`}>{e.from_name || e.from_addr || "Unknown"}</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
-                  {e.received_at ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false }) : ""}
-                </span>
-              </div>
-              <div className="truncate text-sm text-foreground/90">{e.subject || "(no subject)"}</div>
-              {e.ai_summary ? (
-                <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
-                  <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span className="line-clamp-2">{e.ai_summary}</span>
-                </div>
-              ) : (
-                <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{e.snippet}</div>
-              )}
-            </button>
-          ))}
+          {filtered.map((e) => {
+            const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
+            const folderList = foldersQ.data ?? [];
+            const currentFolderId = e.folder_id;
+            return (
+            <ContextMenu key={e.id}>
+              <ContextMenuTrigger asChild>
+                <button
+                  onClick={() => setSelectedId(e.id)}
+                  className={`block w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${e.is_read ? "opacity-70" : ""}`}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className={`truncate text-sm ${e.is_read ? "" : "font-semibold"}`}>{e.from_name || e.from_addr || "Unknown"}</span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {e.received_at ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false }) : ""}
+                    </span>
+                  </div>
+                  <div className="truncate text-sm text-foreground/90">{e.subject || "(no subject)"}</div>
+                  {e.ai_summary ? (
+                    <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
+                      <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span className="line-clamp-2">{e.ai_summary}</span>
+                    </div>
+                  ) : (
+                    <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{e.snippet}</div>
+                  )}
+                </button>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="w-64">
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <FolderInput className="mr-2 h-4 w-4" />
+                    Move to folder
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent className="max-h-72 overflow-y-auto">
+                    {currentFolderId && (
+                      <>
+                        <ContextMenuItem
+                          onSelect={async () => {
+                            qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, classified_by: "manual_inbox" } : x)));
+                            try {
+                              await moveInboxFn({ data: { email_id: e.id } });
+                              toast.success("Moved to inbox");
+                              qc.invalidateQueries({ queryKey: ["emails"] });
+                            } catch (err: any) {
+                              qc.invalidateQueries({ queryKey: ["emails"] });
+                              toast.error(err.message);
+                            }
+                          }}
+                        >
+                          <Inbox className="mr-2 h-4 w-4" />
+                          Inbox (no folder)
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                      </>
+                    )}
+                    {folderList.length === 0 && (
+                      <ContextMenuItem disabled>No folders yet</ContextMenuItem>
+                    )}
+                    {folderList.filter((f) => f.id !== currentFolderId).map((f) => (
+                      <ContextMenuItem
+                        key={f.id}
+                        onSelect={async () => {
+                          qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, classified_by: "manual_move" } : x)));
+                          try {
+                            await moveFolderFn({ data: { email_id: e.id, to_folder_id: f.id } });
+                            toast.success(`Moved to ${f.name}`);
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                          } catch (err: any) {
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            toast.error(err.message);
+                          }
+                        }}
+                      >
+                        <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                        <span className="truncate">{f.name}</span>
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+
+                <ContextMenuSeparator />
+                <ContextMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Always send to inbox
+                </ContextMenuLabel>
+                {e.from_addr ? (
+                  <ContextMenuItem
+                    onSelect={async () => {
+                      try {
+                        const r = await addOverrideFn({ data: { value: e.from_addr!, match_type: "email" } });
+                        qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                        toast.success(r.already ? `${e.from_addr} already on the list` : `Future mail from ${e.from_addr} will go to inbox`);
+                      } catch (err: any) {
+                        toast.error(err.message);
+                      }
+                    }}
+                  >
+                    <AtSign className="mr-2 h-4 w-4" />
+                    <span className="truncate">Just {e.from_addr}</span>
+                  </ContextMenuItem>
+                ) : (
+                  <ContextMenuItem disabled>No sender address</ContextMenuItem>
+                )}
+                {domain && (
+                  <ContextMenuItem
+                    onSelect={async () => {
+                      try {
+                        const r = await addOverrideFn({ data: { value: domain, match_type: "domain" } });
+                        qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                        toast.success(r.already ? `@${domain} already on the list` : `Future mail from @${domain} will go to inbox`);
+                      } catch (err: any) {
+                        toast.error(err.message);
+                      }
+                    }}
+                  >
+                    <Globe className="mr-2 h-4 w-4" />
+                    <span className="truncate">Anyone @{domain}</span>
+                  </ContextMenuItem>
+                )}
+
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  onSelect={async () => {
+                    qc.setQueryData<Email[]>(["emails"], (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true } : x)));
+                    try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
+                    catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
+                  }}
+                >
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </ContextMenuItem>
+                <ContextMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={async () => {
+                    qc.setQueryData<Email[]>(["emails"], (prev) => prev?.filter((x) => x.id !== e.id));
+                    try { await trashFnList({ data: { id: e.id } }); toast.success("Trashed"); }
+                    catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Trash
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+            );
+          })}
         </div>
       </div>
 
