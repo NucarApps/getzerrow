@@ -213,6 +213,21 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     toFolder: Folder;
   }>(null);
 
+  const folderRulesQ = useQuery({
+    queryKey: ["folder-rules", email.folder_id],
+    enabled: !!email.folder_id,
+    queryFn: async () => {
+      const [folderRes, filtersRes] = await Promise.all([
+        supabase.from("folders").select("id, name, ai_rule, gmail_label_id").eq("id", email.folder_id!).maybeSingle(),
+        supabase.from("folder_filters").select("field, op, value").eq("folder_id", email.folder_id!),
+      ]);
+      return {
+        folder: folderRes.data as { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null,
+        filters: (filtersRes.data ?? []) as Array<{ field: string; op: string; value: string }>,
+      };
+    },
+  });
+
   useEffect(() => {
     if (!email.is_read) {
       markFn({ data: { id: email.id, read: true } }).then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
@@ -315,16 +330,15 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
             </button>
           </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 rounded-md border border-border bg-card/30 p-3 text-sm">
-            {email.classification_reason ? (
-              <p className="text-foreground/90">{email.classification_reason}</p>
-            ) : (
-              <p className="italic text-muted-foreground">
-                No reasoning recorded for this email. Newly synced emails will include one.
-              </p>
-            )}
+          <CollapsibleContent className="mt-2 space-y-3 rounded-md border border-border bg-card/30 p-3 text-sm">
+            <TriggeredBy
+              classifiedBy={email.classified_by}
+              reason={email.classification_reason}
+              folder={folderRulesQ.data?.folder ?? null}
+              filters={folderRulesQ.data?.filters ?? []}
+            />
             {email.classified_by === "ai" && email.ai_confidence != null && (
-              <div className="mt-3">
+              <div>
                 <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">AI confidence</div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div className="h-full bg-primary" style={{ width: `${Math.round(email.ai_confidence * 100)}%` }} />
@@ -391,9 +405,9 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 function ClassifiedChip({ by }: { by: string | null }) {
   const map: Record<string, { label: string; Icon: typeof Bot; cls: string }> = {
     ai: { label: "AI", Icon: Bot, cls: "text-primary" },
-    filter: { label: "Filter", Icon: FilterIcon, cls: "text-foreground" },
+    filter: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
     gmail_label: { label: "Gmail label", Icon: Tag, cls: "text-foreground" },
-    domain_rule: { label: "Domain rule", Icon: FilterIcon, cls: "text-foreground" },
+    domain_rule: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
     manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
     none: { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" },
   };
@@ -404,5 +418,100 @@ function ClassifiedChip({ by }: { by: string | null }) {
     <span className={`inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${v.cls}`}>
       <Icon className="h-3 w-3" /> {v.label}
     </span>
+  );
+}
+
+function opLabel(op: string) {
+  const m: Record<string, string> = {
+    contains: "contains", equals: "equals", starts_with: "starts with",
+    ends_with: "ends with", regex: "matches regex", not_contains: "does not contain",
+  };
+  return m[op] ?? op;
+}
+
+function TriggeredBy({
+  classifiedBy, reason, folder, filters,
+}: {
+  classifiedBy: string | null;
+  reason: string | null;
+  folder: { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null;
+  filters: Array<{ field: string; op: string; value: string }>;
+}) {
+  const by = classifiedBy ?? "none";
+
+  if (by === "filter" || by === "domain_rule") {
+    return (
+      <div className="space-y-2">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Matching rule</div>
+        {reason ? (
+          <p className="text-foreground/90">{reason}</p>
+        ) : (
+          <p className="italic text-muted-foreground">Specific match not recorded. This email matches one of the folder's rules below.</p>
+        )}
+        {filters.length > 0 && (
+          <div className="space-y-1 border-t border-border/60 pt-2">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">
+              All rules for {folder?.name ?? "this folder"}
+            </div>
+            <ul className="space-y-1">
+              {filters.map((f, i) => (
+                <li key={i} className="rounded border border-border bg-background/40 px-2 py-1 font-mono text-xs">
+                  <span className="text-muted-foreground">{f.field}</span>{" "}
+                  <span className="text-primary">{opLabel(f.op)}</span>{" "}
+                  <span className="text-foreground">"{f.value}"</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (by === "ai") {
+    return (
+      <div className="space-y-2">
+        {folder?.ai_rule && (
+          <div>
+            <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Folder AI prompt</div>
+            <p className="rounded border border-border bg-background/40 px-2 py-1.5 text-foreground/90 italic">"{folder.ai_rule}"</p>
+          </div>
+        )}
+        <div>
+          <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Why the AI picked this folder</div>
+          {reason ? (
+            <p className="text-foreground/90">{reason}</p>
+          ) : (
+            <p className="italic text-muted-foreground">No reasoning recorded for this email. Newly synced emails will include one.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (by === "gmail_label") {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Gmail label</div>
+        <p className="text-foreground/90">
+          {reason ?? `Mapped from Gmail label${folder?.name ? ` to "${folder.name}"` : ""}.`}
+        </p>
+      </div>
+    );
+  }
+
+  if (by === "manual_move") {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Moved manually</div>
+        <p className="text-foreground/90">{reason ?? "You moved this email into the folder."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <p className="italic text-muted-foreground">
+      This email hasn't been classified yet.
+    </p>
   );
 }

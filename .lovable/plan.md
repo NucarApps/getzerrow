@@ -1,79 +1,52 @@
 ## Goal
 
-In the email reader, add three connected capabilities:
-1. **Move to folder** — pick any folder from the reader header.
-2. **Why this folder?** — expandable panel explaining how the classification happened.
-3. **Move similar too** — after a manual move, offer to move other matching emails (preview list with per-row checkboxes + select-all).
+In the email reader, the "Why this folder?" panel should clearly explain what rule (or AI prompt) routed the email — not a vague "FILTER" pill with "No reasoning recorded".
 
-## 1. Capture & show classification reason
+## Changes
 
-### Schema
-Add `classification_reason text` to `emails` (nullable). Populated alongside `classified_by`:
+### 1. Rename the badge: "Filter" / "Domain rule" → "Rule"
 
-| `classified_by` | `classification_reason` example |
-|---|---|
-| `gmail_label` | `Matched Gmail label "Factory"` |
-| `filter` | `Filter: from contains "@acme.com"` (the specific rule that hit) |
-| `domain_rule` | `Domain rule: acme.com → Factory` |
-| `ai` | AI's one-line rationale (extend `classifyEmail` output with a `reason` field, separate from `summary`) |
-| `manual_move` | `Moved manually on <date>` (set in move handler) |
-| `none` | null |
+`src/routes/_authenticated/index.tsx` — `ClassifiedChip`:
+- `filter` → label "Rule", icon `FilterIcon`
+- `domain_rule` → label "Rule" (same), so the user sees one consistent concept
+- Keep `ai` → "AI", `gmail_label` → "Gmail label", `manual_move` → "Manual"
 
-Update:
-- `src/lib/sync.server.ts` — set `classification_reason` at insert + in `recordManualMove` + label-import paths.
-- `src/lib/ai.server.ts` — extend Zod output schema with `reason: z.string().max(200)` and return it; pass through to the insert.
-- `src/lib/gmail.functions.ts` — set reason in `reassignDomainToFolder`, `suggestRecategorization` apply, and the new move fn.
-- No backfill needed; older rows just show "—" in the panel.
+### 2. Load the folder's actual rules and show them in the panel
 
-### UI — Reader
-Below the AI summary box, add a collapsible **"Why this folder?"** section (shadcn `Collapsible` with chevron). When expanded shows:
-- Trigger type chip (AI / Filter / Gmail label / Domain rule / Manual)
-- `classification_reason` text
-- Confidence bar when AI
-- Link "Edit folder rules →" jumping to that folder's edit sheet
+The reader already has `email.folder_id`. Add a query that pulls the folder + its `folder_filters` rows + `ai_rule` for the email's folder, then render a structured "Triggered by" block inside the collapsible:
 
-## 2. Move to a different folder from the reader
+```
+Triggered by
+  Rule: from contains "@na.honda.com"   → Factory
+  Rule: subject contains "Daily Doc"    → Factory
+AI rule (folder prompt)
+  "Anything from Honda factory contacts about daily docs or shipments"
+Reasoning recorded for this email
+  Matched Gmail label "Factory"           (or italic fallback if null)
+```
 
-Header gets a **"Move to…"** dropdown next to the existing folder badge. Lists all folders (excluding current) with their color dot. Selecting one:
-- Calls new server fn `moveEmailToFolder({ email_id, to_folder_id })` in `src/lib/gmail.functions.ts`:
-  - Updates `emails.folder_id`, `classified_by="manual_move"`, `ai_confidence=1`, `classification_reason="Moved manually on …"`.
-  - Best-effort Gmail label sync (add target label, remove source label) using existing `modifyMessage`.
-  - Adds a `folder_examples` row for the target (source `"correction"`), removes any in the source — same pattern already used by `applyRecategorization`.
-  - Returns `{ from_folder_id, from_addr, domain }` so the UI can immediately open the "Move similar?" dialog.
+Rendering rules per `classified_by`:
+- `filter` / `domain_rule` → list all `folder_filters` for the folder; if `classification_reason` recorded the specific match, highlight that row.
+- `ai` → show the folder's `ai_rule` (the natural-language prompt the user wrote) plus the recorded `classification_reason` (AI's per-email rationale) plus the existing confidence bar.
+- `gmail_label` → show "Mapped to Gmail label '<label>'" using the folder's `gmail_label_id` / name.
+- `manual_move` → show "Moved manually" + reason.
+- `none` → italic fallback (unchanged).
 
-## 3. "Move similar" dialog
+This means old emails with `classification_reason = null` will still get a useful explanation, because we always show the folder's rule set as the source of truth.
 
-After a successful move, open a sheet/dialog:
+### 3. Data fetching
 
-### Server fn `findSimilarEmails`
-Input: `{ email_id, from_folder_id, mode: "sender" | "domain" }` (default `sender`).
-Returns the other emails currently in `from_folder_id` where:
-- `sender` mode → `from_addr = <original from_addr>`
-- `domain` mode → `from_addr` ends with the original domain
+New `useQuery` keyed `["folder-rules", email.folder_id]` that runs only when `email.folder_id` is set. Two parallel selects via the existing browser `supabase` client (RLS already scopes to the user):
 
-Selects `id, subject, from_addr, from_name, received_at, snippet` ordered by `received_at desc`, limit 50.
+```ts
+supabase.from("folders").select("id, name, ai_rule, gmail_label_id").eq("id", folderId).single()
+supabase.from("folder_filters").select("field, op, value").eq("folder_id", folderId)
+```
 
-### Server fn `bulkMoveEmails`
-Input: `{ email_ids: string[] (max 100), to_folder_id }`.
-Loops through and applies the same move logic as `moveEmailToFolder` (extract to a shared internal helper). Returns `{ moved, failed }`.
+No new server function needed; no schema changes.
 
-### Dialog UI (new `MoveSimilarDialog.tsx`)
-- Toggle pill: **Same sender** / **Same domain** (re-runs `findSimilarEmails`).
-- List of matching emails, each row: checkbox + sender + subject + relative time. Select-all in the header.
-- Footer: count selected + "Move N to {target folder}" button.
-- Empty state: "No other matching emails in {source folder}".
+### Files touched
 
-## Files
+- `src/routes/_authenticated/index.tsx` — chip label map, new `useQuery`, new `TriggeredBy` sub-component rendered inside the existing `<CollapsibleContent>` above the recorded-reason paragraph.
 
-- **Migration**: add `classification_reason text` to `emails`.
-- `src/lib/ai.server.ts` — extend classifier output with `reason`.
-- `src/lib/sync.server.ts` — write `classification_reason` everywhere `classified_by` is set.
-- `src/lib/gmail.functions.ts` — `moveEmailToFolder`, `findSimilarEmails`, `bulkMoveEmails` (+ internal shared move helper).
-- `src/routes/_authenticated/index.tsx` — Reader: "Move to" dropdown, "Why this folder?" collapsible, wire dialog.
-- `src/components/emails/MoveSimilarDialog.tsx` (new) — the preview + bulk-confirm dialog.
-
-## Notes / non-goals
-
-- The "Move to" picker reuses the same folder list already fetched in the inbox; no extra round-trip.
-- Bulk move stays capped at 100 to keep one click bounded and avoid Gmail rate limits; if the user has more than 100 matches we show the cap with a hint.
-- We do **not** auto-create a domain filter on bulk move — the "create a routing rule" flow already lives in the Folder editor's domain suggestions. We can add a "Also auto-route this sender/domain in the future" checkbox in a follow-up.
+No backend, sync, or migration changes.
