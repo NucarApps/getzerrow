@@ -546,9 +546,9 @@ function InboxPage() {
   );
 }
 
-function labelForFolder(sel: string | "all" | "unsorted", folders: Folder[]) {
+function labelForFolder(sel: string | "all" | "no_rules", folders: Folder[]) {
   if (sel === "all") return "All inbox";
-  if (sel === "unsorted") return "Unsorted";
+  if (sel === "no_rules") return "No rules";
   return folders.find((f) => f.id === sel)?.name ?? "Folder";
 }
 
