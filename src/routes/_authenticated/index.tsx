@@ -281,7 +281,7 @@ function InboxPage() {
           </div>
           {isSearching && (
             <div className="mt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              Searching all folders, including archived
+              {gmailSearching ? "Checking Gmail…" : "Searching all folders, including archived"}
             </div>
           )}
         </div>
