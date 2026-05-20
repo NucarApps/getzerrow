@@ -114,6 +114,25 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
   };
 }
 
+export async function summarizeEmail(email: {
+  from_name: string;
+  from_addr: string;
+  subject: string;
+  body_text: string;
+  snippet: string;
+}): Promise<string> {
+  const { text } = await generateText({
+    model: getModel("google/gemini-2.5-flash-lite"),
+    prompt: `Write a single-sentence summary (max 140 chars) of this email — what it's about and what (if anything) the sender wants. No greetings, no preamble, no quotes.
+
+From: ${email.from_name} <${email.from_addr}>
+Subject: ${email.subject}
+
+${(email.body_text || email.snippet || "").slice(0, 4000)}`,
+  });
+  return text.trim().replace(/^["']|["']$/g, "").slice(0, 140);
+}
+
 export async function buildFolderProfile(
   folderName: string,
   rule: string | null,
