@@ -546,7 +546,8 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
 }
 
 export async function backfillRecent(accountId: string, userId: string, maxResults = 30) {
-  const list = await listMessages(accountId, { maxResults, q: "in:inbox" });
+  // Include mail that filters auto-route past the inbox (e.g. Cold Email).
+  const list = await listMessages(accountId, { maxResults, q: "-in:chats -in:trash -in:spam newer_than:7d" });
   const ids = list.messages || [];
   const results: any[] = [];
   for (const m of ids) {
