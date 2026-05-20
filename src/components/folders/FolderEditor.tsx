@@ -959,8 +959,13 @@ function ScheduleForm({
   const [tz, setTz] = useState(initial?.timezone ?? browserTz);
   const [saving, setSaving] = useState(false);
 
+  const MAX_INSTRUCTIONS = 50000;
+  const instructionsLen = instructions.length;
+  const overLimit = instructionsLen > MAX_INSTRUCTIONS;
+
   async function submit() {
     if (!name.trim()) { toast.error("Name required"); return; }
+    if (overLimit) { toast.error(`Instructions are too long (${instructionsLen.toLocaleString()} / ${MAX_INSTRUCTIONS.toLocaleString()})`); return; }
     setSaving(true);
     try {
       await onSave({ name: name.trim(), instructions: instructions.trim(), hour, minute, timezone: tz.trim() || "UTC" });
@@ -996,10 +1001,15 @@ function ScheduleForm({
         </div>
       </div>
       <div>
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Instructions</Label>
+        <div className="flex items-center justify-between">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Instructions</Label>
+          <span className={`text-[10px] tabular-nums ${overLimit ? "text-destructive" : "text-muted-foreground"}`}>
+            {instructionsLen.toLocaleString()} / {MAX_INSTRUCTIONS.toLocaleString()}
+          </span>
+        </div>
         <Textarea
           className="mt-1"
-          rows={3}
+          rows={6}
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
           placeholder="Group by sender, surface action items, keep it under 10 bullets."
@@ -1007,7 +1017,7 @@ function ScheduleForm({
       </div>
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
-        <Button size="sm" onClick={submit} disabled={saving}>{saving ? "Saving…" : initial ? "Save" : "Create"}</Button>
+        <Button size="sm" onClick={submit} disabled={saving || overLimit}>{saving ? "Saving…" : initial ? "Save" : "Create"}</Button>
       </div>
     </div>
   );
