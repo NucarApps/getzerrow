@@ -167,7 +167,7 @@ function InboxPage() {
       </div>
 
       {/* Reading pane */}
-      <div className={`overflow-y-auto ${selected ? "block" : "hidden md:block"} h-[calc(100vh-49px)] md:h-auto`}>
+      <div className={`h-full overflow-y-auto ${selected ? "block" : "hidden md:block"}`}>
         {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} onBack={() => setSelectedId(null)} /> : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             <p className="text-sm">Select an email</p>
