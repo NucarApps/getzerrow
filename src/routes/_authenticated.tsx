@@ -310,7 +310,7 @@ function FolderRow({
       >
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <span className="flex-1 truncate">{label}</span>
-        {count > 0 && (
+        {typeof count === "number" && count > 0 && (
           <span className="rounded-full bg-primary/20 px-1.5 text-[10px] text-primary">{count}</span>
         )}
       </button>
