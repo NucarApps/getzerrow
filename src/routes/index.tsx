@@ -180,6 +180,16 @@ function LandingPage() {
                   <div className="tele-row"><span className="k">Downrange</span><span className="v orange" id="t-downrange">0 km</span></div>
                   <div className="tele-row"><span className="k">Apogee</span><span className="v" id="t-apogee">0.0 km</span></div>
                 </div>
+                <div className="tracking__hud tracking__hud--tr" id="t-attitude-hud">
+                  <div className="attitude">
+                    <svg viewBox="0 0 40 40" className="attitude__ring">
+                      <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,138,61,.35)" strokeWidth="1" />
+                      <line x1="3" y1="20" x2="37" y2="20" stroke="rgba(255,138,61,.25)" strokeWidth="1" strokeDasharray="2 2" />
+                    </svg>
+                    <div className="attitude__needle" id="t-attitude-needle"></div>
+                  </div>
+                  <div className="tele-row"><span className="k">Pitch</span><span className="v orange" id="t-pitch">90°</span></div>
+                </div>
               </div>
 
 

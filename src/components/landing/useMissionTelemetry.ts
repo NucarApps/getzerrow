@@ -53,8 +53,8 @@ export function useMissionTelemetry() {
         }
         setPhase("liftoff");
         trackingTimeout = window.setTimeout(() => {
-          viewportEl?.classList.add("tracking");
-        }, 1600);
+          viewportEl?.classList.add("is-tracking");
+        }, 1800);
       }
     };
     rafId = requestAnimationFrame(step);
@@ -97,6 +97,8 @@ export function useMissionTelemetry() {
     const tHdg = $("t-hdg");
     const tDownrange = $("t-downrange");
     const tApogee = $("t-apogee");
+    const tPitch = $("t-pitch");
+    const tAttitudeNeedle = $("t-attitude-needle");
     const footLat = $("foot-lat");
     const uplink = $("uplink-val");
 
@@ -136,6 +138,14 @@ export function useMissionTelemetry() {
       const downrange = Math.max(0, Math.round((vel * Math.max(0, launchT - 8)) / 1000));
       if (tDownrange) tDownrange.textContent = `${downrange.toLocaleString("en-US")} km`;
       if (tApogee) tApogee.textContent = `${apogeeKm.toFixed(1)} km`;
+      // Pitch: 90° straight up at liftoff, easing toward ~25° downrange over ~20s
+      const sinceLift = Math.max(0, launchT - 8);
+      const pitch = Math.max(25, 90 - Math.min(65, sinceLift * 3.2));
+      if (tPitch) tPitch.textContent = `${pitch.toFixed(0)}°`;
+      if (tAttitudeNeedle) {
+        // Needle rotates so it points along current pitch (0° = horizontal right, 90° = straight up)
+        tAttitudeNeedle.style.transform = `translate(-50%, -100%) rotate(${90 - pitch}deg)`;
+      }
       if (footLat && footLat.firstChild) {
         const lat = (2.2 + Math.random() * 0.6).toFixed(1);
         footLat.firstChild.textContent = lat;

@@ -1170,16 +1170,16 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
 /* =========================================================
    DOWNRANGE TRACKING VIEW (post-liftoff)
    ========================================================= */
-.launchpad__viewport.tracking {
+.launchpad__viewport.is-tracking {
   background:
     radial-gradient(ellipse 120% 90% at 50% 10%, #0a1430 0%, #04060f 70%, #02030a 100%);
 }
-.launchpad__viewport.tracking .viewport-grid,
-.launchpad__viewport.tracking .viewport-crosshair,
-.launchpad__viewport.tracking .rocket-wrap,
-.launchpad__viewport.tracking .smoke,
-.launchpad__viewport.tracking .sparks,
-.launchpad__viewport.tracking .pad-base {
+.launchpad__viewport.is-tracking .viewport-grid,
+.launchpad__viewport.is-tracking .viewport-crosshair,
+.launchpad__viewport.is-tracking .rocket-wrap,
+.launchpad__viewport.is-tracking .smoke,
+.launchpad__viewport.is-tracking .sparks,
+.launchpad__viewport.is-tracking .pad-base {
   opacity: 0 !important;
   transition: opacity .5s ease-out;
   pointer-events: none;
@@ -1191,7 +1191,7 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
   transition: opacity .7s ease-out;
   z-index: 4;
 }
-.launchpad__viewport.tracking .tracking { opacity: 1; }
+.launchpad__viewport.is-tracking .tracking { opacity: 1; }
 
 /* Stars */
 .tracking__sky { position: absolute; inset: 0; }
@@ -1215,24 +1215,24 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
 .tracking__earth {
   position: absolute;
   left: 50%;
-  bottom: -1400px;
-  width: 1800px; height: 1800px;
-  margin-left: -900px;
+  bottom: -900px;
+  width: 1100px; height: 1100px;
+  margin-left: -550px;
   border-radius: 50%;
   background:
     radial-gradient(circle at 50% 30%, #2563a8 0%, #1b3f72 45%, #0c1e3d 75%, #06122a 100%);
   box-shadow:
-    0 -20px 40px -10px rgba(120,180,255,.35),
-    inset 0 60px 80px -40px rgba(180,220,255,.4);
+    0 -20px 40px -10px rgba(120,180,255,.4),
+    inset 0 60px 80px -40px rgba(180,220,255,.45);
 }
 .tracking__earth::after {
   content: "";
   position: absolute;
   left: 0; right: 0; top: -2px;
-  height: 60px;
+  height: 70px;
   background: linear-gradient(180deg,
-    rgba(120,180,255,.45) 0%,
-    rgba(80,140,220,.18) 50%,
+    rgba(120,180,255,.55) 0%,
+    rgba(80,140,220,.22) 50%,
     transparent 100%);
   filter: blur(8px);
   border-radius: 50%;
@@ -1245,14 +1245,14 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
   width: 100%; height: 100%;
 }
 .tracking__arc-ghost {
-  stroke: rgba(255,138,61,.18);
-  stroke-width: 1.2;
-  stroke-dasharray: 4 6;
+  stroke: rgba(255,138,61,.45);
+  stroke-width: 1.6;
+  stroke-dasharray: 6 8;
 }
 .tracking__arc-live {
-  stroke-width: 2;
+  stroke-width: 3;
   stroke-linecap: round;
-  filter: drop-shadow(0 0 6px rgba(255,138,61,.6));
+  filter: drop-shadow(0 0 8px rgba(255,138,61,.85));
   stroke-dasharray: 900;
   stroke-dashoffset: 900;
   animation: arcDraw 14s ease-in-out infinite;
@@ -1260,8 +1260,8 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
 @keyframes arcDraw {
   0%   { stroke-dashoffset: 900; }
   60%  { stroke-dashoffset: 0; }
-  85%  { stroke-dashoffset: 0; opacity: 1; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
+  90%  { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 900; opacity: 1; }
 }
 
 /* Moving rocket icon along arc */
@@ -1344,4 +1344,39 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
 @media (max-width: 720px) {
   .tracking__hud--br { min-width: 120px; font-size: 9px; }
   .tracking__hud--tl { font-size: 9px; }
+}
+
+/* Attitude / pitch HUD (top-right) */
+.tracking__hud--tr {
+  top: 14px; right: 14px;
+  display: flex; align-items: center; gap: 10px;
+  min-width: 0;
+}
+.tracking__hud--tr .tele-row { font-size: 10px; }
+.attitude {
+  position: relative;
+  width: 40px; height: 40px;
+  flex-shrink: 0;
+}
+.attitude__ring { display: block; width: 100%; height: 100%; }
+.attitude__needle {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 2px; height: 16px;
+  background: linear-gradient(180deg, var(--orange, #ff5a2e), rgba(255,138,61,.4));
+  border-radius: 1px;
+  transform-origin: 50% 100%;
+  transform: translate(-50%, -100%) rotate(0deg);
+  transition: transform .35s ease-out;
+  box-shadow: 0 0 6px rgba(255,138,61,.7);
+}
+.attitude__needle::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: -3px;
+  width: 6px; height: 6px;
+  margin-left: -3px;
+  background: var(--orange, #ff5a2e);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--orange, #ff5a2e);
 }
