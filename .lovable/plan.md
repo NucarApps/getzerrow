@@ -1,27 +1,46 @@
-## Right-click context menu on email list rows
+## What's happening
 
-Add a right-click context menu to each email row in the inbox/folder list with these actions:
+On a hard refresh while signed in, the page is slow and you sometimes land on `/login`. The `Uncaught undefined` and the bounce-to-login both trace back to how we check auth on boot.
 
-1. **Move to folder →** submenu of all folders + "Inbox (no folder)"
-2. **Always send sender to inbox** — adds `from_addr` to `inbox_overrides` (match_type=email)
-3. **Always send domain to inbox** — adds the domain of `from_addr` to `inbox_overrides` (match_type=domain)
-4. Separator + quick **Archive** / **Trash** (nice-to-haves, optional)
+### Root causes
 
-### Implementation
+1. **`_authenticated.beforeLoad` calls `supabase.auth.getUser()`.** That is a network round-trip to Supabase Auth on *every* navigation/refresh. On a cold refresh it can be slow, and if it ever returns `null` (token expired-then-refreshing, or transient network blip), we throw `redirect({ to: "/login" })` — so the signed-in user gets bounced out. The correct primitive for a guard is `getSession()`, which reads from localStorage synchronously after the SDK hydrates and doesn't hit the network.
 
-**`src/lib/gmail.functions.ts`** — add one new server function:
-- `addInboxOverride({ value, match_type })` — upserts a row in `inbox_overrides` for the current user. (Today `moveEmailToInbox` already accepts an `add_override` flag, but it also moves the email; we want override-only when the email is already in inbox or the user just wants to whitelist without moving.)
+2. **Auth-state subscribers fire on every event, including `INITIAL_SESSION` and `TOKEN_REFRESHED`.** We have two of them:
+   - `AuthSync` in `__root.tsx` → calls `router.invalidate()` + `queryClient.invalidateQueries()` (re-runs every loader + every query).
+   - `useEmailRealtime` in `_authenticated.tsx` → tears down and rebuilds the realtime channel.
 
-**`src/routes/_authenticated/index.tsx`**:
-- Wrap each list row `<button>` in `<ContextMenu>` from `@/components/ui/context-menu` (already installed).
-- Build the menu inline per-row with:
-  - `ContextMenuSub` "Move to folder" listing `folders` + Inbox option, calling existing `moveEmailToFolder` / `moveEmailToInbox` with optimistic cache updates (mirroring the Reader's move logic — extract into a small `useEmailActions(email)` helper to avoid duplication).
-  - Two items: "Always send {sender} to inbox" and "Always send @{domain} to inbox" calling the new `addInboxOverride` fn, then toast.
-  - Archive / Trash items reusing existing `archiveEmail` / `trashEmail`.
-- Domain is derived client-side from `from_addr.split("@")[1]`; hide the domain item if no `@`.
-- Right-clicking does NOT select the email (preserve `setSelectedId` only on left click).
+   On boot Supabase fires `INITIAL_SESSION` and then (often) `TOKEN_REFRESHED`. That triggers two full loader/query re-runs plus a realtime reconnect, layered on top of the initial render — that's the slowness. It's also a likely source of the `Uncaught undefined`: an in-flight server-fn promise gets aborted/orphaned by `router.invalidate()` and the rejection value (a TanStack `redirect` object) bubbles up unhandled.
+
+### Fix
+
+**`src/routes/_authenticated.tsx`** — swap `getUser()` for `getSession()`:
+```ts
+beforeLoad: async () => {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) throw redirect({ to: "/login" });
+}
+```
+Fast, offline-safe, and doesn't false-bounce when a token is mid-refresh.
+
+**`src/routes/__root.tsx` (`AuthSync`)** — only invalidate on real sign-in/sign-out, not on every token refresh or the boot `INITIAL_SESSION`:
+```ts
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+    router.invalidate();
+    qc.invalidateQueries();
+  }
+});
+```
+
+**`src/lib/use-email-realtime.ts`** — same filter for the channel rebuild:
+```ts
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_IN" || event === "SIGNED_OUT") { teardown(); connect(); }
+});
+```
+(Token refreshes are handled by `supabase.realtime.setAuth` inside `connect`; we don't need to drop and rebuild the channel for them.)
 
 ### Out of scope
-- No DB schema changes (table + RLS already exist).
-- No changes to the existing Reader action bar, MoveSimilarDialog, AlwaysInboxDialog, or settings InboxOverrides UI.
-- No training/folder_examples additions.
+- No changes to login flow, the new context menu, the `addInboxOverride` server fn, or any UI.
+- No source-map / deployment changes; if `Uncaught undefined` persists after this fix, I'll add a global `unhandledrejection` listener to print the stack and we can diagnose further.
