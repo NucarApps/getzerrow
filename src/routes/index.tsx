@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { RocketCountdown } from "@/components/landing/RocketCountdown";
+import { useMissionTelemetry } from "@/components/landing/useMissionTelemetry";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -16,393 +16,394 @@ export const Route = createFileRoute("/")({
       { name: "twitter:title", content: "Zerrow — An inbox that sorts itself" },
       { name: "twitter:description", content: "AI-powered Gmail sorting built around the folders you already think in." },
     ],
+    links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" },
+      { rel: "stylesheet", href: "/zerrow-landing.css" },
+    ],
   }),
   component: LandingPage,
 });
 
-const BG = "#0c0c14";
-const BG_RAISED = "#15151f";
-const FG = "#f4f3ee";
-const FG_MUTED = "#9a9aa8";
-const GOLD = "#e0b54a";
-
-// Map legacy light-theme names to dark tokens to flip the palette.
-const PAPER = BG;
-const PAPER_DEEP = BG_RAISED;
-const INK = FG;
-const INK_SOFT = FG_MUTED;
-
-const sora = { fontFamily: "'Sora', ui-sans-serif, system-ui, sans-serif" };
-const manrope = { fontFamily: "'Manrope', ui-sans-serif, system-ui, sans-serif" };
-
 function LandingPage() {
+  useMissionTelemetry();
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: PAPER, color: INK, ...manrope }}
-    >
-      <Header />
-      <Hero />
-      <Marquee />
-      <Features />
-      <HowItWorks />
-      <BigStatement />
-      <FAQ />
-      <CTA />
-      <Footer />
-    </div>
-  );
-}
-
-function Header() {
-  return (
-    <header
-      className="sticky top-0 z-30 border-b backdrop-blur"
-      style={{ borderColor: PAPER_DEEP, background: `${PAPER}cc` }}
-    >
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <Link to="/" className="text-2xl font-bold tracking-tight" style={sora}>
-          Zerrow<span style={{ color: INK_SOFT }}>.</span>
-        </Link>
-        <nav className="hidden items-center gap-8 text-sm md:flex" style={manrope}>
-          <a href="#features" className="hover:opacity-60">Features</a>
-          <a href="#how" className="hover:opacity-60">How it works</a>
-          <a href="#faq" className="hover:opacity-60">FAQ</a>
-        </nav>
-        <Link
-          to="/login"
-          className="rounded-full px-5 py-2 text-sm font-medium transition hover:opacity-85"
-          style={{ background: GOLD, color: "#1a1405", ...sora }}
-        >
-          Sign in
-        </Link>
-      </div>
-    </header>
-  );
-}
-
-function Hero() {
-  return (
-    <section className="mx-auto max-w-6xl px-6 pt-24 pb-28 md:pt-36 md:pb-40">
-      <div className="grid items-center gap-16 md:grid-cols-[1.2fr_1fr]">
-        <div>
-          <p
-            className="mb-6 text-xs uppercase tracking-[0.25em]"
-            style={{ color: GOLD, ...sora }}
-          >
-            T-minus to Inbox Zero
-          </p>
-          <h1
-            className="text-5xl font-bold leading-[1.02] tracking-tight md:text-7xl"
-            style={sora}
-          >
-            An inbox that{" "}
-            <span className="italic" style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: GOLD }}>
-              sorts itself.
-            </span>
-          </h1>
-          <p
-            className="mt-8 max-w-xl text-lg leading-relaxed md:text-xl"
-            style={{ color: INK_SOFT }}
-          >
-            Zerrow reads every new email and files it into the folders you
-            actually use — newsletters, invoices, cold pitches, calendar
-            invites — so the only thing left in your inbox is what deserves
-            your attention.
-          </p>
-          <div className="mt-10 flex flex-wrap items-center gap-4">
-            <Link
-              to="/login"
-              className="rounded-full px-7 py-3.5 text-base font-medium transition hover:translate-y-[-1px] hover:opacity-90"
-              style={{ background: GOLD, color: "#1a1405", ...sora }}
-            >
-              Connect Gmail
-            </Link>
-            <a
-              href="#how"
-              className="rounded-full border px-7 py-3.5 text-base font-medium transition hover:opacity-70"
-              style={{ borderColor: INK_SOFT, color: INK_SOFT, ...sora }}
-            >
-              See how it works
-            </a>
+    <>
+      {/* TOP STATUS BAR */}
+      <div className="status-bar">
+        <div className="status-bar__inner">
+          <div className="status-cluster">
+            <span className="status-dot" aria-hidden="true"></span>
+            <span className="status-label">MISSION CONTROL</span>
+            <span className="status-sep">·</span>
+            <span className="status-id">ZRW-001</span>
           </div>
-          <p className="mt-6 text-sm" style={{ color: INK_SOFT }}>
-            Free to try · 3, 2, 1, launch
-          </p>
-        </div>
-
-        <div className="relative">
-          <RocketCountdown />
+          <div className="status-cluster">
+            <span className="status-label muted">SIGNAL</span>
+            <span className="status-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span className="status-sep">·</span>
+            <span className="status-label muted">UPLINK</span>
+            <span className="status-val" id="uplink-val">98.4%</span>
+          </div>
+          <div className="status-cluster">
+            <span className="status-label muted">MET</span>
+            <span className="status-val" id="met-val">T+00:00:00</span>
+            <span className="status-sep">·</span>
+            <span className="status-pill">NOMINAL</span>
+          </div>
         </div>
       </div>
-    </section>
-  );
-}
 
-function Marquee() {
-  const items = [
-    "Newsletters",
-    "Invoices",
-    "Cold pitches",
-    "Calendar invites",
-    "Receipts",
-    "Notifications",
-    "Recruiters",
-    "Updates",
-  ];
-  return (
-    <section
-      className="border-y py-6"
-      style={{ borderColor: PAPER_DEEP, background: PAPER_DEEP }}
-    >
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-3 px-6 text-xs" style={{ color: INK_SOFT, ...sora }}>
-        <span className="uppercase tracking-[0.25em]" style={{ color: GOLD }}>
-          Systems check
-        </span>
-        {items.map((t) => (
-          <span key={t} className="flex items-center gap-2 uppercase tracking-[0.2em]">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#4ade80", boxShadow: "0 0 6px #4ade80" }} />
-            {t} · GO
+      {/* NAV */}
+      <header className="nav">
+        <a href="#" className="brand">
+          <span className="brand__mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="22" height="22"><path d="M16 2 L26 28 L16 22 L6 28 Z" fill="currentColor" /></svg>
           </span>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Features() {
-  const features = [
-    {
-      kicker: "01",
-      title: "Folders you define, in plain English",
-      body: "Tell Zerrow what belongs in each folder — \"receipts from Stripe\", \"cold sales pitches\", \"calendar invites from clients\". The AI handles the rest. No filter rules, no regex.",
-    },
-    {
-      kicker: "02",
-      title: "Real-time sorting as mail arrives",
-      body: "Zerrow listens to Gmail's push events. New mail is read, summarized, and moved within seconds — long before you open the app.",
-    },
-    {
-      kicker: "03",
-      title: "One-sentence AI summaries",
-      body: "Every email gets a single-line summary so you can scan the day in a minute. Open only the ones that need a real reply.",
-    },
-    {
-      kicker: "04",
-      title: "Learns from your moves",
-      body: "Drag an email into a different folder and Zerrow updates that folder's profile. The next misclassification of the same kind doesn't happen.",
-    },
-    {
-      kicker: "05",
-      title: "Reanalyze on demand",
-      body: "Added a new folder? Hit Reanalyze on any email and Zerrow reroutes it against your latest rules — no full re-sync required.",
-    },
-    {
-      kicker: "06",
-      title: "Suggested replies, when you want them",
-      body: "Zerrow drafts a concise, on-tone reply for any thread. You stay in control — review, edit, and send from the same view.",
-    },
-  ];
-  return (
-    <section id="features" className="mx-auto max-w-6xl px-6 py-28 md:py-36">
-      <div className="mb-16 max-w-2xl">
-        <p
-          className="mb-5 text-xs uppercase tracking-[0.25em]"
-          style={{ color: INK_SOFT, ...sora }}
-        >
-          Features
-        </p>
-        <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
-          Built for people who'd rather <em style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400 }}>not</em> live in their inbox.
-        </h2>
-      </div>
-      <div className="grid gap-x-12 gap-y-16 md:grid-cols-2">
-        {features.map((f) => (
-          <div key={f.kicker}>
-            <p className="mb-4 text-sm font-medium tabular-nums" style={{ color: INK_SOFT, ...sora }}>
-              {f.kicker}
-            </p>
-            <h3 className="text-2xl font-semibold leading-tight md:text-3xl" style={sora}>
-              {f.title}
-            </h3>
-            <p className="mt-4 max-w-md text-base leading-relaxed" style={{ color: INK_SOFT }}>
-              {f.body}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function HowItWorks() {
-  const steps = [
-    {
-      n: "T − 3 · Ignition",
-      title: "Connect Gmail",
-      body: "Sign in with Google. Zerrow connects to your existing Gmail account using OAuth — no password, no migration.",
-    },
-    {
-      n: "T − 2 · Trajectory",
-      title: "Describe your folders",
-      body: "Create a folder and write a one-line rule in plain English. Zerrow learns the rest from a handful of examples.",
-    },
-    {
-      n: "T − 1 · Liftoff",
-      title: "Open a clean inbox",
-      body: "Newsletters land in Newsletters. Receipts land in Receipts. Your inbox shows what's left — the email that actually wants you.",
-    },
-  ];
-  return (
-    <section
-      id="how"
-      className="border-y py-28 md:py-36"
-      style={{ borderColor: PAPER_DEEP, background: PAPER_DEEP, color: FG }}
-    >
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="mb-16 max-w-2xl">
-          <p
-            className="mb-5 text-xs uppercase tracking-[0.25em]"
-            style={{ color: GOLD, ...sora }}
-          >
-            Mission stages
-          </p>
-          <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
-            Three stages to liftoff.{" "}
-            <span className="italic" style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: GOLD }}>
-              Then it holds the orbit for you.
-            </span>
-          </h2>
+          <span className="brand__word">Zerrow<i>.</i></span>
+          <span className="brand__sub">[for&nbsp;Gmail]</span>
+        </a>
+        <nav className="nav__links">
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <div className="nav__cta">
+          <Link className="btn btn--ghost" to="/login">Sign in</Link>
+          <Link className="btn btn--primary" to="/login">Connect Gmail <span aria-hidden="true">→</span></Link>
         </div>
-        <div className="grid gap-10 md:grid-cols-3">
-          {steps.map((s) => (
-            <div
-              key={s.n}
-              className="rounded-2xl border p-8"
-              style={{ borderColor: "#2a2a36", background: "#0c0c14" }}
-            >
-              <p className="text-xs uppercase tracking-[0.25em]" style={{ color: GOLD, ...sora }}>
-                {s.n}
-              </p>
-              <h3 className="mt-6 text-2xl font-semibold leading-tight" style={sora}>
-                {s.title}
-              </h3>
-              <p className="mt-4 text-base leading-relaxed" style={{ color: FG_MUTED }}>
-                {s.body}
-              </p>
+      </header>
+
+      <main>
+        {/* HERO */}
+        <section className="hero" data-screen-label="01 Hero">
+          <div className="hero__left">
+            <div className="hero__eyebrow">
+              <span>For Gmail</span>
+              <span>·</span>
+              <span>powered by <b>AI</b></span>
             </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function BigStatement() {
-  return (
-    <section className="mx-auto max-w-6xl px-6 py-32 md:py-44">
-      <p
-        className="mx-auto max-w-4xl text-center text-3xl font-medium leading-[1.15] md:text-5xl"
-        style={sora}
-      >
-        Email shouldn't be a job.{" "}
-        <span
-          className="italic"
-          style={{ fontFamily: "'Instrument Serif', serif", fontWeight: 400, color: INK_SOFT }}
-        >
-          Zerrow is the countdown that finally gets you to zero.
-        </span>
-      </p>
-    </section>
-  );
-}
-
-function FAQ() {
-  const items = [
-    {
-      q: "Does Zerrow store my emails?",
-      a: "Zerrow syncs message metadata and content so it can classify and summarize. Everything is scoped to your account, and you can disconnect Gmail at any time from Settings.",
-    },
-    {
-      q: "Will it move emails in Gmail itself?",
-      a: "Yes — when Zerrow files an email into a folder, it applies the matching Gmail label so your phone, web, and other clients stay in sync.",
-    },
-    {
-      q: "What if it gets it wrong?",
-      a: "Move the email to the correct folder and Zerrow learns from it. The next time a similar email arrives, it routes correctly. You can also hit Reanalyze on any single message.",
-    },
-    {
-      q: "Which mail providers are supported?",
-      a: "Gmail and Google Workspace today. Other providers may come later.",
-    },
-  ];
-  return (
-    <section id="faq" className="mx-auto max-w-4xl px-6 py-28 md:py-36">
-      <p
-        className="mb-5 text-xs uppercase tracking-[0.25em]"
-        style={{ color: INK_SOFT, ...sora }}
-      >
-        FAQ
-      </p>
-      <h2 className="mb-14 text-4xl font-bold tracking-tight md:text-5xl" style={sora}>
-        Questions, answered.
-      </h2>
-      <div className="divide-y" style={{ borderColor: PAPER_DEEP }}>
-        {items.map((it) => (
-          <div key={it.q} className="py-7" style={{ borderTop: `1px solid ${PAPER_DEEP}` }}>
-            <h3 className="text-xl font-semibold" style={sora}>
-              {it.q}
-            </h3>
-            <p className="mt-3 text-base leading-relaxed" style={{ color: INK_SOFT }}>
-              {it.a}
+            <h1 className="hero__title">
+              An inbox<br />
+              that <em>sorts</em><br />
+              <span className="stroke">itself.</span>
+            </h1>
+            <p className="hero__sub">
+              Zerrow reads every new email and files it into the folders you actually use — <b>newsletters, invoices, cold pitches, calendar invites</b> — so the only thing left in your inbox is what deserves your attention.
             </p>
+            <div className="hero__cta">
+              <Link className="btn btn--primary btn--lg" to="/login">Connect Gmail <span aria-hidden="true">→</span></Link>
+              <a className="btn btn--ghost btn--lg" href="#how">See how it works</a>
+            </div>
+            <div className="hero__fineprint">
+              Free to try · Works with your existing Gmail labels
+            </div>
+
+            <div className="hero__stats">
+              <div className="hero__stat">
+                <div className="hero__stat__num"><span id="stat-routed">142</span></div>
+                <div className="hero__stat__lbl">Messages routed · last 24h</div>
+              </div>
+              <div className="hero__stat">
+                <div className="hero__stat__num">99.<span>2</span>%</div>
+                <div className="hero__stat__lbl">Classification accuracy</div>
+              </div>
+              <div className="hero__stat">
+                <div className="hero__stat__num"><span>2.4</span>s</div>
+                <div className="hero__stat__lbl">Median sort time</div>
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
-    </section>
-  );
-}
 
-function CTA() {
-  return (
-    <section className="mx-auto max-w-6xl px-6 pb-32">
-      <div
-        className="rounded-3xl px-10 py-16 text-center md:px-16 md:py-24"
-        style={{ background: GOLD, color: "#1a1405" }}
-      >
-        <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
-          Ready for liftoff?
-        </h2>
-        <p className="mx-auto mt-6 max-w-xl text-lg" style={{ color: "#3a2d08" }}>
-          Connect Gmail in 30 seconds. Zerrow handles the countdown.
-        </p>
-        <Link
-          to="/login"
-          className="mt-10 inline-block rounded-full px-8 py-4 text-base font-medium transition hover:opacity-90"
-          style={{ background: "#0c0c14", color: GOLD, ...sora }}
-        >
-          Start the countdown
-        </Link>
-      </div>
-    </section>
-  );
-}
+          {/* LAUNCHPAD */}
+          <aside className="launchpad" aria-label="Mission control launchpad visualization">
+            <div className="launchpad__head">
+              <div className="left">
+                <span className="launchpad__lights"><i className="green"></i><i className="amber"></i><i className="red"></i></span>
+                <span>ZRW-001 · <b>LAUNCHPAD</b></span>
+              </div>
+              <div className="right">
+                <span>CAM 04</span>
+                <span>·</span>
+                <span id="hero-clock">T-00:00:03</span>
+              </div>
+            </div>
 
-function Footer() {
-  return (
-    <footer
-      className="border-t py-10"
-      style={{ borderColor: PAPER_DEEP }}
-    >
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 text-sm md:flex-row" style={{ color: INK_SOFT }}>
-        <p style={sora}>© {new Date().getFullYear()} Zerrow</p>
-        <div className="flex items-center gap-6">
-          <a href="#features" className="hover:opacity-60">Features</a>
-          <Link to="/privacy" className="hover:opacity-60">Privacy</Link>
-          <Link to="/terms" className="hover:opacity-60">Terms</Link>
-          <Link to="/login" className="hover:opacity-60">Sign in</Link>
-        </div>
-      </div>
-    </footer>
+            <div className="launchpad__viewport">
+              <div className="viewport-grid"></div>
+              <div className="viewport-crosshair"></div>
+
+              <div className="viewport-counter">
+                <div className="viewport-counter__lbl">Inbox · Unread</div>
+                <div className="viewport-counter__num" id="inbox-count">1,247</div>
+                <div className="viewport-counter__delta" id="inbox-delta">▼ routing…</div>
+              </div>
+
+              <div className="viewport-telemetry">
+                <div className="tele-row"><span className="k">Altitude</span><span className="v" id="t-alt">000.0 km</span></div>
+                <div className="tele-row"><span className="k">Velocity</span><span className="v" id="t-vel">0,000 m/s</span></div>
+                <div className="tele-row"><span className="k">Thrust</span><span className="v green" id="t-thrust">96.1%</span></div>
+                <div className="tele-row"><span className="k">Fuel</span><span className="v amber" id="t-fuel">100%</span></div>
+                <div className="tele-row"><span className="k">G-force</span><span className="v" id="t-g">1.0 g</span></div>
+                <div className="tele-row"><span className="k">Heading</span><span className="v orange" id="t-hdg">000.0°</span></div>
+              </div>
+
+              <div className="smoke"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+              <div className="rocket-wrap" id="rocket">
+                <svg className="rocket" viewBox="0 0 120 220" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M60 6 C 70 30, 86 60, 86 90 L34 90 C 34 60, 50 30, 60 6 Z" fill="#f5f5f0" stroke="#d8d8d0" strokeWidth="1" />
+                  <circle cx="60" cy="58" r="9" fill="#0a0e1a" stroke="#6bd1e0" strokeWidth="1.5" />
+                  <circle cx="57" cy="55" r="3" fill="#6bd1e0" opacity=".4" />
+                  <rect x="34" y="90" width="52" height="70" fill="#f5f5f0" stroke="#d8d8d0" strokeWidth="1" />
+                  <rect x="34" y="100" width="52" height="14" fill="#ff6b3d" />
+                  <text x="60" y="111" textAnchor="middle" fontFamily="JetBrains Mono" fontSize="9" fontWeight="600" fill="#0a0e1a" letterSpacing=".15em">ZERROW</text>
+                  <rect x="34" y="138" width="52" height="6" fill="#1a1f2e" />
+                  <circle cx="40" cy="125" r="1.2" fill="#8a92a8" />
+                  <circle cx="80" cy="125" r="1.2" fill="#8a92a8" />
+                  <circle cx="40" cy="152" r="1.2" fill="#8a92a8" />
+                  <circle cx="80" cy="152" r="1.2" fill="#8a92a8" />
+                  <rect x="34" y="160" width="52" height="20" fill="#e5e5dd" stroke="#d8d8d0" strokeWidth="1" />
+                  <path d="M34 160 L18 200 L34 200 Z" fill="#ff6b3d" stroke="#e3552a" strokeWidth="1" />
+                  <path d="M86 160 L102 200 L86 200 Z" fill="#ff6b3d" stroke="#e3552a" strokeWidth="1" />
+                  <path d="M50 180 L60 210 L70 180 Z" fill="#1a1f2e" />
+                  <path d="M44 180 L42 210 L78 210 L76 180 Z" fill="#1a1f2e" stroke="#2f3852" strokeWidth="1" />
+                  <line x1="48" y1="186" x2="48" y2="208" stroke="#2f3852" strokeWidth=".7" />
+                  <line x1="60" y1="186" x2="60" y2="208" stroke="#2f3852" strokeWidth=".7" />
+                  <line x1="72" y1="186" x2="72" y2="208" stroke="#2f3852" strokeWidth=".7" />
+                </svg>
+
+                <div className="exhaust">
+                  <div className="exhaust__halo"></div>
+                  <div className="exhaust__core"></div>
+                </div>
+              </div>
+
+              <div className="pad-base"></div>
+            </div>
+
+            <div className="launchpad__foot">
+              <div className="foot-cell">
+                <div className="k">Routed today</div>
+                <div className="v"><span id="foot-routed">142</span></div>
+              </div>
+              <div className="foot-cell">
+                <div className="k">Folders</div>
+                <div className="v">8 <small>active</small></div>
+              </div>
+              <div className="foot-cell">
+                <div className="k">Latency</div>
+                <div className="v green" id="foot-lat">2.4<small>s</small></div>
+              </div>
+              <div className="foot-cell">
+                <div className="k">Status</div>
+                <div className="v orange">SORTING</div>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        {/* FEATURES */}
+        <section className="section" id="features" data-screen-label="02 Features">
+          <header className="section-head">
+            <div className="t-minus">
+              <span className="t-minus__label">Stage 03 · Payload</span>
+              <span className="t-minus__big"><span>T</span>−3</span>
+              <span>Six instruments. One mission.</span>
+            </div>
+            <div>
+              <div className="section-kicker">FEATURES / PAYLOAD MANIFEST</div>
+              <h2 className="section-title">Built for people who'd rather <em>not</em> live in their inbox.</h2>
+              <p className="section-lede">Every onboard system is calibrated to one objective: keep the inbox at zero without making you babysit it.</p>
+            </div>
+          </header>
+
+          <div className="features-grid">
+            <article className="feature">
+              <div className="feature__num">01 / Folder profiles</div>
+              <h3 className="feature__title">Folders you define, in plain English</h3>
+              <p className="feature__body">Tell Zerrow what belongs in each folder — <code>receipts from Stripe</code>, <code>cold sales pitches</code>, <code>calendar invites from clients</code>. The AI handles the rest. No filter rules, no regex.</p>
+            </article>
+            <article className="feature">
+              <div className="feature__num">02 / Realtime routing</div>
+              <h3 className="feature__title">Real-time sorting as mail arrives</h3>
+              <p className="feature__body">Zerrow listens to Gmail's push events. New mail is read, summarized, and moved within seconds — long before you open the app.</p>
+            </article>
+            <article className="feature">
+              <div className="feature__num">03 / Auto-summary</div>
+              <h3 className="feature__title">One-sentence AI summaries</h3>
+              <p className="feature__body">Every email gets a single-line summary so you can scan the day in a minute. Open only the ones that need a real reply.</p>
+            </article>
+            <article className="feature">
+              <div className="feature__num">04 / Self-tuning</div>
+              <h3 className="feature__title">Learns from your moves</h3>
+              <p className="feature__body">Drag an email into a different folder and Zerrow updates that folder's profile. The next misclassification of the same kind doesn't happen.</p>
+            </article>
+            <article className="feature">
+              <div className="feature__num">05 / Reanalyze</div>
+              <h3 className="feature__title">Reanalyze on demand</h3>
+              <p className="feature__body">Added a new folder? Hit <code>Reanalyze</code> on any email and Zerrow reroutes it against your latest rules — no full re-sync required.</p>
+            </article>
+            <article className="feature">
+              <div className="feature__num">06 / Drafts</div>
+              <h3 className="feature__title">Suggested replies, when you want them</h3>
+              <p className="feature__body">Zerrow drafts a concise, on-tone reply for any thread. You stay in control — review, edit, and send from the same view.</p>
+            </article>
+          </div>
+        </section>
+
+        {/* HOW IT WORKS */}
+        <section className="section" id="how" data-screen-label="03 How it works">
+          <header className="section-head">
+            <div className="t-minus">
+              <span className="t-minus__label">Stage 02 · Flight Sequence</span>
+              <span className="t-minus__big"><span>T</span>−2</span>
+              <span>Three steps to inbox zero.</span>
+            </div>
+            <div>
+              <div className="section-kicker">FLIGHT SEQUENCE / SOP</div>
+              <h2 className="section-title">Three steps to inbox zero.<br />Then it keeps itself there.</h2>
+              <p className="section-lede">Sign on, describe your folders, hand over the controls. Zerrow takes it from there.</p>
+            </div>
+          </header>
+
+          <div className="flight-sequence">
+            <div className="step">
+              <div className="step__head">
+                <span className="step__dot">01</span>
+                <span>Step · Pre-flight</span>
+              </div>
+              <h3 className="step__title">Connect Gmail</h3>
+              <p className="step__body">Sign in with Google. Zerrow connects to your existing Gmail account using OAuth — no password, no migration.</p>
+              <div className="step__demo">
+                <div className="ln"><span>OAuth handshake <b>· accepted</b></span></div>
+                <div className="ln"><span>Reading labels <b>· 12 found</b></span></div>
+                <div className="ln ok"><span>Connected to <b>you@gmail.com</b> ✓</span></div>
+              </div>
+            </div>
+            <div className="step">
+              <div className="step__head">
+                <span className="step__dot">02</span>
+                <span>Step · Configure</span>
+              </div>
+              <h3 className="step__title">Describe your folders</h3>
+              <p className="step__body">Create a folder and write a one-line rule in plain English. Zerrow learns the rest from a handful of examples.</p>
+              <div className="step__demo">
+                <div className="ln"><span>+ <b>Receipts</b> &nbsp;"any payment confirmation"</span></div>
+                <div className="ln"><span>+ <b>Cold pitches</b> &nbsp;"unsolicited sales emails"</span></div>
+                <div className="ln ok"><span>8 folders trained ✓</span></div>
+              </div>
+            </div>
+            <div className="step">
+              <div className="step__head">
+                <span className="step__dot">03</span>
+                <span>Step · Liftoff</span>
+              </div>
+              <h3 className="step__title">Open a clean inbox</h3>
+              <p className="step__body">Newsletters land in Newsletters. Receipts land in Receipts. Your inbox shows what's left — the email that actually wants you.</p>
+              <div className="step__demo">
+                <div className="ln"><span>Routed 142 messages overnight</span></div>
+                <div className="ln"><span>Inbox now at <b>0 unread</b></span></div>
+                <div className="ln ok"><span>Mission · NOMINAL ✓</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="section" id="faq" data-screen-label="04 FAQ">
+          <header className="section-head">
+            <div className="t-minus">
+              <span className="t-minus__label">Stage 01 · Briefing</span>
+              <span className="t-minus__big"><span>T</span>−1</span>
+              <span>Mission briefing.</span>
+            </div>
+            <div>
+              <div className="section-kicker">MISSION BRIEFING / FAQ</div>
+              <h2 className="section-title">Questions, <em>answered</em>.</h2>
+              <p className="section-lede">Everything you need to know before you hand Zerrow the keys to your inbox.</p>
+            </div>
+          </header>
+
+          <div className="faq">
+            <details className="faq-item" open>
+              <summary>
+                <span className="faq-num">Q.01</span>
+                <span>Does Zerrow store my emails?</span>
+                <span className="faq-toggle">+</span>
+              </summary>
+              <div className="faq-body">
+                Zerrow syncs message metadata and content so it can classify and summarize. Everything is <b>scoped to your account</b>, and you can disconnect Gmail at any time from Settings.
+              </div>
+            </details>
+            <details className="faq-item">
+              <summary>
+                <span className="faq-num">Q.02</span>
+                <span>Will it move emails in Gmail itself?</span>
+                <span className="faq-toggle">+</span>
+              </summary>
+              <div className="faq-body">
+                Yes — when Zerrow files an email into a folder, it applies the matching Gmail label so your <b>phone, web, and other clients stay in sync</b>.
+              </div>
+            </details>
+            <details className="faq-item">
+              <summary>
+                <span className="faq-num">Q.03</span>
+                <span>What if it gets it wrong?</span>
+                <span className="faq-toggle">+</span>
+              </summary>
+              <div className="faq-body">
+                Move the email to the correct folder and Zerrow learns from it. The next time a similar email arrives, it routes correctly. You can also hit <b>Reanalyze</b> on any single message.
+              </div>
+            </details>
+            <details className="faq-item">
+              <summary>
+                <span className="faq-num">Q.04</span>
+                <span>Which mail providers are supported?</span>
+                <span className="faq-toggle">+</span>
+              </summary>
+              <div className="faq-body">
+                <b>Gmail and Google Workspace</b> today. Other providers may come later.
+              </div>
+            </details>
+          </div>
+        </section>
+
+        {/* CTA */}
+        <section className="section" id="cta" data-screen-label="05 CTA">
+          <div className="liftoff">
+            <div className="liftoff__kicker">T−00 · LIFTOFF</div>
+            <h2 className="liftoff__title">Take your inbox <em>back</em>.</h2>
+            <p className="liftoff__sub">Connect Gmail in 30 seconds. Zerrow does the rest. Email shouldn't be a job — and Zerrow is the assistant that finally treats it like one.</p>
+            <div className="liftoff__cta">
+              <Link className="btn btn--primary btn--lg" to="/login">Get started — it's free <span aria-hidden="true">↗</span></Link>
+              <a className="btn btn--ghost btn--lg" href="#features">Review payload</a>
+            </div>
+            <div className="liftoff__readout">
+              <span>All systems</span><b>● NOMINAL</b><span>·</span><span>Awaiting handshake</span>
+            </div>
+          </div>
+        </section>
+
+        {/* FOOTER */}
+        <footer className="footer">
+          <div className="footer__inner">
+            <div>© 2026 Zerrow · An inbox that sorts itself</div>
+            <div className="footer__trail">
+              <span>●</span>
+              <span>MISSION ELAPSED</span>
+              <span id="footer-met">T+00:00:00</span>
+            </div>
+            <div className="footer__links">
+              <a href="#features">Features</a>
+              <Link to="/privacy">Privacy</Link>
+              <Link to="/terms">Terms</Link>
+              <Link to="/login">Sign in</Link>
+            </div>
+          </div>
+        </footer>
+      </main>
+    </>
   );
 }
