@@ -1,76 +1,36 @@
-## Goal
+# Match rocket to reference image
 
-Two coupled changes to the right-hand email reader pane:
+Keep the existing animation phases (idle → ignition → liftoff) and DOM structure intact. Only rework the rocket's visual shape, the flame style, and the smoke clouds so they look like the uploaded reference: a sharp orange arrowhead rocket with a vertical white-to-orange flame column and big rounded puffy smoke clouds at the base.
 
-1. Replace the always-visible Reply box with a **Reply button**. Clicking it slides a reply composer **up from the bottom of the email pane** (not the whole page, not a full-screen sheet). Clicking a close (×) button slides it back down.
-2. Lock the reader pane layout so the **page itself never scrolls** — only the email content area scrolls. Header (toolbar) stays pinned at top, reply drawer overlays the bottom of the pane.
+## 1. Rocket SVG (`src/routes/index.tsx`, lines 157–174)
 
-## Current state
+Replace the current SVG with a taller, sharper arrowhead silhouette matching the reference:
 
-`Reader` (`src/routes/_authenticated/inbox.tsx`, lines ~708–946) is already `flex h-full flex-col` with:
-- Header toolbar (lines 710–853)
-- Scrollable content `<div className="flex-1 overflow-y-auto p-4 md:p-6">` (lines 855–921)
-- **Always-on** reply panel at bottom (lines 923–946) with textarea + Suggest reply + Send
+- **Body:** single tall triangle from a high apex down to wide base shoulders, split vertically into a lit orange left half (`#ff5a2e`) and a darker shadow right half (`#b8341a`) with a thin near-black centerline crease.
+- **Fins:** two angular side fins flaring outward from roughly the lower third, each split into a lit face (`#ff5a2e`) and shadow face (`#8a2a14`); silhouette should read as wide, swept, and triangular like the reference.
+- **Nozzle recess:** small dark V/notch at the base center (`#0a0e1a`) where the flame emerges.
+- Keep viewBox proportions taller (e.g. `0 0 120 280`) so the rocket reads as slender and pointed.
 
-The outer reading pane wrapper is `<div className="h-full overflow-y-auto …">` (line 612) — this is what allows the whole pane to scroll when content is tall.
+## 2. Flame / exhaust (`public/zerrow-landing.css`, `.exhaust*` rules ~558–617)
 
-## Changes — `src/routes/_authenticated/inbox.tsx`
+Rework the plume to match the reference's tall, narrow, vertical column with a glowing white core:
 
-### 1. Stop the pane wrapper from scrolling (line 612)
+- Make `.exhaust` narrower (~28px wide) and taller (~200px).
+- `.exhaust__jet`: near-vertical bright white column (barely tapered), strong white center fading to pale yellow at edges.
+- `.exhaust__core`: slightly wider orange sheath around the white jet — saturated orange (`#ff7a2e`) fading to deep red-orange at the bottom, with a soft outer glow.
+- `.exhaust__halo`: warm orange radial glow hugging the top of the plume where it meets the nozzle.
+- Keep the existing flicker keyframes and phase-based opacity/scale transitions.
 
-Change `overflow-y-auto` → `overflow-hidden` on the reading-pane wrapper. The `Reader` already has its own internal scroll area (`flex-1 overflow-y-auto`), so only the email content scrolls; the header and the reply drawer stay pinned.
+## 3. Smoke clouds (`public/zerrow-landing.css`, `.smoke*` rules ~620–669)
 
-### 2. Convert the reply panel into a slide-up drawer
+Replace the soft blurred puffs with the reference's defined, rounded billowing cloud look:
 
-In `Reader`:
-- Add `relative` to the root `<div className="flex h-full flex-col">` (line 709) so the drawer can absolutely position against it.
-- Add new state: `const [replyOpen, setReplyOpen] = useState(false);`
-- **Remove** the existing always-on reply block (lines 923–946).
-- Add a **Reply button** in the header toolbar (line 722 area, next to the other ghost icon buttons) — `<Button size="sm" variant="ghost" onClick={() => setReplyOpen(true)}><Reply className="h-4 w-4" /></Button>` (import `Reply` from lucide-react). Place it as the first/most prominent action so it's easy to find.
-- Add a new slide-up drawer just before the closing `</div>` of the Reader, positioned `absolute inset-x-0 bottom-0` inside the reader pane:
+- Each `.smoke i` becomes a crisp rounded puff: less blur (~1–2px), brighter near-white center (`rgba(255,250,245,.95)`), softer gray edge, sharper falloff — reads as a distinct cloud ball, not a haze.
+- Cluster them in a wider, lower mound (broaden `.smoke` to ~380px, varied sizes from ~40px small outliers to ~120px central puffs) so the pile mirrors the reference's pyramid of clouds with a few small detached puffs to the sides.
+- Add a subtle warm underglow tint on the puffs closest to the flame (inner puffs pick up faint orange from the exhaust).
+- Keep the existing `smokeDrift` animation and per-phase timing; only restyle appearance and layout.
 
-  ```tsx
-  <div
-    className={`absolute inset-x-0 bottom-0 border-t border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
-      replyOpen ? "translate-y-0" : "translate-y-full"
-    }`}
-  >
-    <div className="flex items-center justify-between border-b border-border px-4 py-2">
-      <span className="text-xs uppercase tracking-widest text-muted-foreground">
-        Reply to {email.from_name || email.from_addr}
-      </span>
-      <div className="flex items-center gap-1">
-        <Button size="sm" variant="ghost" disabled={generating} onClick={…suggest…}>
-          <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-          {generating ? "Drafting…" : "Suggest reply"}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => setReplyOpen(false)} aria-label="Close reply">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-    <div className="p-4">
-      <Textarea rows={6} value={reply} onChange={…} placeholder="Write a reply…" />
-      <div className="mt-2 flex justify-end">
-        <Button size="sm" disabled={!reply.trim() || sending} onClick={async () => { …send…; setReplyOpen(false); }}>
-          <Send className="mr-1.5 h-3.5 w-3.5" />Send
-        </Button>
-      </div>
-    </div>
-  </div>
-  ```
+## 4. Out of scope
 
-- Both `Suggest reply` and `Send` move into the drawer; their handlers and state (`reply`, `generating`, `sending`, `genFn`, `sendFn`) are unchanged.
-- After a successful send, also call `setReplyOpen(false)` to slide the drawer back down.
-
-### 3. Detail: drawer height & content overlap
-
-The drawer is `absolute`, so it overlays the scrollable email content without resizing it. When open it covers the lower ~40–50% of the pane (its height is driven by content: header strip + 6-row textarea + send button). The email content area underneath remains scrollable — the user can still scroll the email behind the drawer if needed. This matches typical Gmail / Front behavior.
-
-No animation library required — pure Tailwind `translate-y-full` ↔ `translate-y-0` with `transition-transform`.
-
-## Files
-
-- `src/routes/_authenticated/inbox.tsx` — pane wrapper overflow change (line 612), Reader root `relative` (line 709), add Reply button in header toolbar (~line 722), remove always-on reply panel (lines 923–946), add slide-up drawer in its place, add `replyOpen` state, import `Reply` and `X` from `lucide-react` (already imports `X`).
-
-No other files, no backend/server changes.
+- No changes to launch sequencing, telemetry, JS, or surrounding layout.
+- No new assets or libraries; pure SVG + CSS.

@@ -154,23 +154,23 @@ function LandingPage() {
               <div className="sparks"><b></b><b></b><b></b><b></b><b></b></div>
 
               <div className="rocket-wrap" id="rocket">
-                <svg className="rocket" viewBox="0 0 120 240" xmlns="http://www.w3.org/2000/svg">
-                  {/* Left (lit) body half */}
-                  <path d="M60 8 L92 178 L60 178 Z" fill="#ff6b3d" />
+                <svg className="rocket" viewBox="0 0 120 280" xmlns="http://www.w3.org/2000/svg">
+                  {/* Left (lit) body half — tall sharp arrowhead */}
+                  <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
                   {/* Right (shadow) body half */}
-                  <path d="M60 8 L28 178 L60 178 Z" fill="#c94a22" />
-                  {/* Dark nozzle / center recess */}
-                  <path d="M50 158 L70 158 L62 192 L58 192 Z" fill="#0a0e1a" />
-                  {/* Left fin — lit face */}
-                  <path d="M40 140 L18 196 L40 192 Z" fill="#ff6b3d" />
-                  {/* Left fin — shadow face */}
-                  <path d="M40 140 L40 192 L32 196 Z" fill="#a83a18" />
+                  <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
+                  {/* Center crease — thin dark vertical seam */}
+                  <path d="M60 6 L62 210 L58 210 Z" fill="#0a0e1a" opacity=".55" />
+                  {/* Left fin — lit face (swept outward) */}
+                  <path d="M42 150 L12 226 L42 218 Z" fill="#ff5a2e" />
+                  {/* Left fin — shadow face (inner) */}
+                  <path d="M42 150 L42 218 L34 226 Z" fill="#8a2a14" />
                   {/* Right fin — lit face */}
-                  <path d="M80 140 L102 196 L80 192 Z" fill="#ff6b3d" />
-                  {/* Right fin — shadow face */}
-                  <path d="M80 140 L80 192 L88 196 Z" fill="#c94a22" />
-                  {/* Small dark center fin behind nozzle */}
-                  <path d="M54 178 L66 178 L60 202 Z" fill="#0a0e1a" />
+                  <path d="M78 150 L108 226 L78 218 Z" fill="#ff5a2e" />
+                  {/* Right fin — shadow face (inner) */}
+                  <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
+                  {/* Dark nozzle V at base */}
+                  <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
                 </svg>
 
                 <div className="exhaust">
