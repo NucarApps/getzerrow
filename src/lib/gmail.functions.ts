@@ -1126,3 +1126,31 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
       override_added,
     };
   });
+
+export const addInboxOverride = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { value: string; match_type: "email" | "domain" }) =>
+    z.object({
+      value: z.string().min(1).max(320),
+      match_type: z.enum(["email", "domain"]),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const value = data.value.trim().toLowerCase().replace(/^@/, "");
+    if (!value) throw new Error("Empty value");
+    const { data: existing } = await supabaseAdmin
+      .from("inbox_overrides")
+      .select("id")
+      .eq("user_id", context.userId)
+      .eq("match_type", data.match_type)
+      .eq("value", value)
+      .maybeSingle();
+    if (existing) return { ok: true, value, match_type: data.match_type, already: true };
+    const { error } = await supabaseAdmin.from("inbox_overrides").insert({
+      user_id: context.userId,
+      match_type: data.match_type,
+      value,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true, value, match_type: data.match_type, already: false };
+  });
