@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   listMyGmailAccounts, startConnectGmail, disconnectGmailAccount,
-  triggerBackfill, triggerSync, renewGmailWatch,
+  triggerBackfill, triggerWeekBackfill, triggerSync, renewGmailWatch,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,6 +23,7 @@ function SettingsPage() {
   const connect = useServerFn(startConnectGmail);
   const disconnect = useServerFn(disconnectGmailAccount);
   const backfill = useServerFn(triggerBackfill);
+  const weekBackfill = useServerFn(triggerWeekBackfill);
   const sync = useServerFn(triggerSync);
   const renew = useServerFn(renewGmailWatch);
 
@@ -31,7 +32,7 @@ function SettingsPage() {
 
   async function run(key: string, fn: () => Promise<any>, msg: string) {
     setBusy(key);
-    try { await fn(); toast.success(msg); qc.invalidateQueries({ queryKey: ["gmail-accounts"] }); qc.invalidateQueries({ queryKey: ["emails"] }); }
+    try { await fn(); if (msg) toast.success(msg); qc.invalidateQueries({ queryKey: ["gmail-accounts"] }); qc.invalidateQueries({ queryKey: ["emails"] }); }
     catch (e: any) { toast.error(e.message); }
     setBusy(null);
   }
@@ -104,6 +105,12 @@ function SettingsPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" onClick={() => run(`bf-${a.id}`, () => backfill({ data: { account_id: a.id, count: 30 } }), "Backfilled latest 30")} disabled={busy !== null}>
                           {busy === `bf-${a.id}` ? "Backfilling…" : "Backfill recent 30"}
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => run(`week-${a.id}`, async () => {
+                          const r: any = await weekBackfill({ data: { account_id: a.id, days: 7, max: 1000 } });
+                          toast.success(`Pulled ${r?.processed ?? 0} new messages from the last 7 days (${r?.alreadyHad ?? 0} already in sync)`);
+                        }, "")} disabled={busy !== null}>
+                          {busy === `week-${a.id}` ? "Catching up…" : "Catch up last 7 days"}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => run(`sync-${a.id}`, () => sync({ data: { account_id: a.id } }), "Synced")} disabled={busy !== null}>
                           <RefreshCw className="mr-1.5 h-3 w-3" />{busy === `sync-${a.id}` ? "Syncing…" : "Sync now"}
