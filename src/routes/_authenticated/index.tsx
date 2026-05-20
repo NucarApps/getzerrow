@@ -230,8 +230,8 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        <h1 className="font-display text-3xl leading-tight">{email.subject || "(no subject)"}</h1>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <h1 className="font-display text-2xl leading-tight md:text-3xl">{email.subject || "(no subject)"}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
           {email.from_name && email.from_addr ? ` <${email.from_addr}>` : ""}
