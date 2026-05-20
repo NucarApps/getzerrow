@@ -879,11 +879,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
         <div className="mt-6">
           {email.body_html ? (
-            <div
-              className="rounded-lg bg-white p-4 text-sm leading-relaxed text-neutral-900 [&_*]:max-w-full [&_a]:text-blue-600 [&_img]:h-auto [&_img]:max-w-full"
-              style={{ colorScheme: "light" }}
-              dangerouslySetInnerHTML={{ __html: email.body_html }}
-            />
+            <EmailBodyFrame html={email.body_html} />
           ) : (
             <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{email.body_text}</pre>
           )}
