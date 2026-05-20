@@ -512,6 +512,15 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           folders={folders}
         />
       )}
+      {alwaysInbox && (
+        <AlwaysInboxDialog
+          open={!!alwaysInbox}
+          onOpenChange={(v) => { if (!v) setAlwaysInbox(null); }}
+          emailId={email.id}
+          fromAddr={alwaysInbox.fromAddr}
+          domain={alwaysInbox.domain}
+        />
+      )}
     </div>
   );
 }
