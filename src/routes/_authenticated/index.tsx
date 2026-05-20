@@ -222,11 +222,11 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     queryFn: async () => {
       const [folderRes, filtersRes] = await Promise.all([
         supabase.from("folders").select("id, name, ai_rule, gmail_label_id").eq("id", email.folder_id!).maybeSingle(),
-        supabase.from("folder_filters").select("field, op, value").eq("folder_id", email.folder_id!),
+        supabase.from("folder_filters").select("id, field, op, value").eq("folder_id", email.folder_id!),
       ]);
       return {
         folder: folderRes.data as { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null,
-        filters: (filtersRes.data ?? []) as Array<{ field: string; op: string; value: string }>,
+        filters: (filtersRes.data ?? []) as Array<{ id: string; field: string; op: string; value: string }>,
       };
     },
   });
