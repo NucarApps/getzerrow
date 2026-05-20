@@ -229,6 +229,10 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   const genFn = useServerFn(generateReply);
   const sendFn = useServerFn(sendReply);
   const moveFn = useServerFn(moveEmailToFolder);
+  const reanalyzeFn = useServerFn(reanalyzeEmail);
+  const inboxFn = useServerFn(moveEmailToInbox);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [alwaysInbox, setAlwaysInbox] = useState<null | { fromAddr: string | null; domain: string | null }>(null);
   const [reply, setReply] = useState("");
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
