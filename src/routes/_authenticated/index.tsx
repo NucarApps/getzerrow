@@ -77,7 +77,7 @@ function InboxPage() {
     queryFn: async () => {
       // Include archived rows so folder views can show labeled mail that isn't in INBOX.
       // The All inbox / Unsorted views filter is_archived in-memory below.
-      const { data } = await supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(500);
+      const { data } = await supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(2000);
       return (data ?? []) as Email[];
     },
   });
@@ -86,8 +86,7 @@ function InboxPage() {
     const ch = supabase
       .channel("emails-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "emails" }, () => {
-        qc.invalidateQueries({ queryKey: ["emails"] });
-        qc.invalidateQueries({ queryKey: ["emails-summary"] });
+        qc.refetchQueries({ queryKey: ["emails"] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "folders" }, () => {
         qc.invalidateQueries({ queryKey: ["folders"] });
