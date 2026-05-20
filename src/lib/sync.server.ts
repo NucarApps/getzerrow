@@ -290,7 +290,10 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
     return { skipped: true };
   }
 
-  if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
+  const labels = parsed.raw_labels ?? [];
+  const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
+  if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return { skipped: true };
+  const inInbox = labels.includes("INBOX");
 
   // 1) Insert the email row FIRST with no folder so it shows up in Inbox
   //    immediately, even if classification (AI Gateway) is slow or fails.
@@ -314,6 +317,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       has_attachment: parsed.has_attachment,
       raw_labels: parsed.raw_labels,
       folder_id: null,
+      is_archived: !inInbox,
       classified_by: "pending",
       processed_at: new Date().toISOString(),
     })
@@ -359,11 +363,11 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       const removeLabels: string[] = [];
       if (folder.gmail_label_id && !parsed.raw_labels?.includes(folder.gmail_label_id)) addLabels.push(folder.gmail_label_id);
       if (folder.auto_mark_read) removeLabels.push("UNREAD");
-      if (folder.auto_archive) removeLabels.push("INBOX");
+      if (inInbox && folder.auto_archive) removeLabels.push("INBOX");
       if (addLabels.length || removeLabels.length) {
         try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
       }
-      if (folder.auto_archive) {
+      if (inInbox && folder.auto_archive) {
         await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", inserted.id);
       }
       if (folder.auto_mark_read) {

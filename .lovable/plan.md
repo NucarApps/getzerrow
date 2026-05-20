@@ -1,43 +1,57 @@
-# Fix: email HTML leaking styles into the app chrome
+# Fix: emails Gmail auto-archives never enter Zerrow's DB
 
-## Problem
+## Why this email is missing
 
-In `src/routes/_authenticated/inbox.tsx` (lines 881–886), the selected email's HTML is injected directly into the page via `dangerouslySetInnerHTML`:
+The Nissan Dealer Communications email exists in your Gmail (with the label `Inbox Zero/Factory`) but is not in Zerrow's database. I checked:
 
-```tsx
-<div
-  className="... [&_*]:max-w-full [&_a]:text-blue-600 [&_img]:h-auto [&_img]:max-w-full"
-  dangerouslySetInnerHTML={{ __html: email.body_html }}
-/>
+- `gmail_accounts` shows your account is syncing — last poll 2026-05-20 22:36:37 UTC, history_id `144636391`, watch active until May 27.
+- `pubsub_events` shows the push for this email did arrive (`history_id 144636370`, `synced_count = 1`).
+- `message_jobs` is empty (jobs were processed and cleared).
+- `emails` table has **zero** rows matching the Nissan VP letter — `subject ILIKE '%Letter from Nissan Vice President%'` and `from_addr ILIKE '%NissanDealerCommunications%'` both return 0.
+
+The root cause is in `src/lib/sync.server.ts` line 293, inside `processOneMessage`:
+
+```ts
+if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
 ```
 
-Marketing / school / digest emails (like the Dover-Sherborn ParentSquare one in the screenshot) ship `<style>` blocks with **global selectors** — e.g. `h1 { font-size: 96px }`, `img { width: 100% !important }`, `body { font-family: ... }`. Because the email is rendered inline in the same document, those rules cascade onto the sidebar and header — that's why the "Zerrow" wordmark and the message subject blow up to hero-banner size when you open this email.
+You almost certainly have a Gmail-side filter (or Gmail itself) that strips `INBOX` from Nissan dealer mail before Zerrow gets a chance to process it. When the pubsub push arrives, Zerrow fetches the message, sees no `INBOX` label, and silently drops it. That's why **every** historical Nissan row in the DB has `is_archived = true` — those were ingested earlier through a different code path (the gmail-label-watch flow in `pullMessagesByLabel` at line ~514, which DOES insert non-INBOX messages as lightweight rows). The realtime path doesn't.
 
-Tailwind's `[&_*]:max-w-full` only constrains descendants of the wrapper; it can't stop a `<style>` tag inside the email from targeting `h1`, `img`, `body`, etc. globally. There is also a small XSS surface for the same reason (inline `<script>` blocks would execute in the app's origin).
+This is exactly the gap the new "All mail" folder is meant to close. Right now "All mail" can only show what's already in the `emails` table, so it can't show messages we never inserted.
 
 ## Fix
 
-Render the email body inside a sandboxed `<iframe srcDoc={...} sandbox="allow-popups allow-popups-to-escape-sandbox">` instead of inlining the HTML. That:
+In `src/lib/sync.server.ts`, change `processOneMessage` so that non-INBOX messages are **inserted as archived** instead of skipped, while still excluding mail classes Zerrow has no business showing.
 
-- Gives the email its own document, so its `<style>` rules can't touch the app.
-- Disables scripts and same-origin access via `sandbox`.
-- Keeps links clickable (`allow-popups` opens them in a new tab; we'll also inject a `<base target="_blank">` so anchors don't try to navigate the iframe itself).
+### Specifics
 
-### Changes (scope: presentation only, single file)
+1. **Replace the hard skip at line 293** with a category filter:
 
-`src/routes/_authenticated/inbox.tsx`
+   ```ts
+   const labels = parsed.raw_labels ?? [];
+   const EXCLUDED = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
+   if (EXCLUDED.some((l) => labels.includes(l))) return { skipped: true };
+   const inInbox = labels.includes("INBOX");
+   ```
 
-1. Add a small `EmailBodyFrame` component (same file, above the message-pane component) that:
-   - Builds `srcDoc` by wrapping `email.body_html` with `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><style>html,body{margin:0;padding:16px;background:#fff;color:#111;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;} img{max-width:100%;height:auto;} a{color:#2563eb;}</style></head><body>…</body></html>`.
-   - Renders `<iframe srcDoc={…} sandbox="allow-popups allow-popups-to-escape-sandbox" className="w-full rounded-lg bg-white" />`.
-   - Auto-sizes height: on `iframe.onLoad`, read `contentDocument.documentElement.scrollHeight` and set the iframe's `style.height` (with a small `ResizeObserver` on the inner body so emails that load images later grow correctly). Cap at something sane (e.g. `min(scrollHeight, 4000)`).
+   We keep dropping mail the user clearly didn't "receive in their inbox" sense (sent items, drafts, trash, spam, chat). Everything else gets persisted.
 
-2. Replace the inline `<div dangerouslySetInnerHTML=… />` (lines 881–886) with `<EmailBodyFrame html={email.body_html} />`. Keep the `<pre>` fallback for `body_text`.
+2. **Set `is_archived` on insert based on `inInbox`** so auto-archived mail goes straight to its archived state instead of polluting the unread inbox counter. In the existing `.insert({ … })` at line 300, add `is_archived: !inInbox`. (Today the column defaults to `false`, and we rely on a later branch to flip it.)
 
-No changes to data fetching, sync, AI summarization, sidebar, or styles elsewhere. No DB or server-function changes.
+3. **Leave classification (filters / domain rules / AI) running for these rows**. This is what makes the Nissan email show up under the Factory folder pill in "All mail" — same labelling pipeline, just without the INBOX gate.
 
-## Out of scope
+4. **Skip the "auto-archive to Gmail" side-effect** at lines ~362–367 when `!inInbox`. The message is already not in Gmail's inbox; we don't need to call `modifyMessage(removeLabelIds: ["INBOX"])` again. Wrap that block in `if (inInbox && folder.auto_archive) { … }`.
 
-- Sanitizing email HTML (e.g. DOMPurify) — the iframe sandbox already neutralizes the practical risks here. Can be added later if we want defense-in-depth.
-- Reworking the reply composer, attachments, or any sidebar/header behavior.
-- Changing how `body_html` is stored.
+5. **Counters**: in `src/routes/_authenticated.tsx` `counts` memo, the "All inbox" / "No rules" totals already filter by `!e.is_archived`, so newly-ingested archived rows won't inflate those badges. The "All mail" badge correctly shows the full row count. No changes needed there.
+
+### Out of scope
+
+- No DB schema changes; no migration.
+- No changes to the gmail-label-watch path (`pullMessagesByLabel`) — it already does the right thing.
+- No backfill of historically-missed mail in this change. If you want to pull missing recent messages after the fix lands, you can run "Backfill recent 30" in Settings; we can also add a one-shot wider backfill in a follow-up.
+- Folder rule editor, UI, and the email reader are untouched.
+
+## What you should see after this ships
+
+- The Nissan VP letter (and similar Gmail-filter-archived mail) will appear in **All mail**, tagged with the **Factory** label pill, but won't bump the **All inbox** unread count.
+- Going forward, anything that lands in your Gmail account — except sent / draft / trash / spam / chat — will be in Zerrow.
