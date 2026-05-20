@@ -354,6 +354,24 @@ export const triggerBackfill = createServerFn({ method: "POST" })
     return backfillRecent(data.account_id, context.userId, data.count ?? 30);
   });
 
+export const triggerWeekBackfill = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { account_id: string; days?: number; max?: number }) =>
+    z.object({
+      account_id: z.string().uuid(),
+      days: z.number().int().min(1).max(30).optional(),
+      max: z.number().int().min(1).max(2000).optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    await getOwnedAccount(context.userId, data.account_id);
+    const days = data.days ?? 7;
+    return backfillWindow(data.account_id, context.userId, {
+      query: `-in:chats -in:trash -in:spam newer_than:${days}d`,
+      maxMessages: data.max ?? 1000,
+    });
+  });
+
 export const triggerSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
