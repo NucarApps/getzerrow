@@ -1665,18 +1665,55 @@ export const resyncMessage = createServerFn({ method: "POST" })
     return { in_inbox: inInbox, unread, labels };
   });
 
-/** POST a synthetic empty envelope to our own Pub/Sub webhook to prove the endpoint is reachable. */
+/**
+ * POST a synthetic envelope to our own Pub/Sub webhook to prove the endpoint
+ * is reachable. Tagged with `x-zerrow-test: 1` so the webhook logs it as
+ * `webhook_test` and it does NOT pollute real push diagnostics.
+ *
+ * If `realistic` is true and the user has a connected account, builds a
+ * Pub/Sub-shaped envelope using that account's email + current history_id
+ * so the test also exercises account matching + sync code.
+ */
 export const pingPubsubWebhook = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
+  .inputValidator((d) => z.object({ realistic: z.boolean().optional() }).parse(d ?? {}))
+  .handler(async ({ data, context }) => {
     const host = getRequestHost();
     const url = `https://${host}/api/public/gmail-webhook`;
+
+    let envelope: Record<string, unknown> = { message: {} };
+    let mode: "empty" | "realistic" = "empty";
+    let account_email: string | null = null;
+    if (data.realistic) {
+      const { data: acc } = await supabaseAdmin
+        .from("gmail_accounts")
+        .select("email_address, history_id")
+        .eq("user_id", context.userId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (acc?.email_address && acc.history_id) {
+        const payload = { emailAddress: acc.email_address, historyId: acc.history_id };
+        const dataB64 = Buffer.from(JSON.stringify(payload), "utf-8").toString("base64");
+        envelope = {
+          message: {
+            data: dataB64,
+            messageId: `zerrow-test-${Date.now()}`,
+            publishTime: new Date().toISOString(),
+          },
+          subscription: "zerrow-app-side-test",
+        };
+        mode = "realistic";
+        account_email = acc.email_address;
+      }
+    }
+
     const started = Date.now();
     try {
       const r = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: {} }),
+        headers: { "Content-Type": "application/json", "x-zerrow-test": "1" },
+        body: JSON.stringify(envelope),
       });
       return {
         url,
@@ -1684,6 +1721,8 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         status: r.status,
         elapsed_ms: Date.now() - started,
         topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
+        mode,
+        account_email,
       };
     } catch (e: any) {
       return {
@@ -1692,6 +1731,8 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         status: 0,
         elapsed_ms: Date.now() - started,
         topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
+        mode,
+        account_email,
         error: e?.message ?? String(e),
       };
     }
