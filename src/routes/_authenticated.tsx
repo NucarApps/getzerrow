@@ -28,9 +28,51 @@ function AuthedLayout() {
 
   return (
     <FolderSelectionProvider>
-      <div className="flex h-screen bg-background text-foreground">
+      <div className="relative flex h-screen overflow-hidden bg-background text-foreground">
+        {/* Mission Control atmospheric backdrop */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,107,61,0.10), transparent 70%)," +
+              "radial-gradient(ellipse 70% 50% at 80% 40%, rgba(107,209,224,0.05), transparent 70%)," +
+              "linear-gradient(180deg, #0a0e1a, #070912 60%, #0a0e1a)",
+          }}
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px)," +
+              "linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
+            backgroundSize: "64px 64px",
+            maskImage:
+              "radial-gradient(ellipse 90% 70% at 50% 30%, #000 30%, transparent 80%)",
+            WebkitMaskImage:
+              "radial-gradient(ellipse 90% 70% at 50% 30%, #000 30%, transparent 80%)",
+          }}
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0 opacity-90"
+          style={{
+            backgroundImage: [
+              "radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.7), transparent 60%)",
+              "radial-gradient(1px 1px at 78% 9%, rgba(255,255,255,0.5), transparent 60%)",
+              "radial-gradient(1.2px 1.2px at 42% 84%, rgba(255,255,255,0.6), transparent 60%)",
+              "radial-gradient(1px 1px at 92% 62%, rgba(255,255,255,0.4), transparent 60%)",
+              "radial-gradient(1px 1px at 26% 71%, rgba(255,255,255,0.45), transparent 60%)",
+              "radial-gradient(1.2px 1.2px at 65% 32%, rgba(255,255,255,0.55), transparent 60%)",
+              "radial-gradient(1px 1px at 6% 52%, rgba(255,255,255,0.35), transparent 60%)",
+              "radial-gradient(1px 1px at 53% 12%, rgba(255,255,255,0.5), transparent 60%)",
+            ].join(","),
+          }}
+        />
+
         {/* Desktop sidebar */}
-        <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
+        <aside className="relative z-10 hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar/80 backdrop-blur-sm md:flex md:flex-col">
           <SidebarInner />
         </aside>
 
@@ -41,9 +83,9 @@ function AuthedLayout() {
           </SheetContent>
         </Sheet>
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Mobile top bar */}
-          <div className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur md:hidden">
+          <div className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/70 px-3 py-2 backdrop-blur md:hidden">
             <button
               onClick={() => setMobileOpen(true)}
               className="grid h-9 w-9 place-items-center rounded-md hover:bg-accent"
