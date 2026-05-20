@@ -426,7 +426,8 @@ function ClassifiedChip({ by }: { by: string | null }) {
 function opLabel(op: string) {
   const m: Record<string, string> = {
     contains: "contains", equals: "equals", starts_with: "starts with",
-    ends_with: "ends with", regex: "matches regex", not_contains: "does not contain",
+    ends_with: "ends with", regex: "matches regex",
+    not_contains: "does not contain", not_equals: "does not equal",
   };
   return m[op] ?? op;
 }
