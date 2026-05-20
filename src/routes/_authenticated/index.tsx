@@ -330,16 +330,15 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
             </button>
           </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 rounded-md border border-border bg-card/30 p-3 text-sm">
-            {email.classification_reason ? (
-              <p className="text-foreground/90">{email.classification_reason}</p>
-            ) : (
-              <p className="italic text-muted-foreground">
-                No reasoning recorded for this email. Newly synced emails will include one.
-              </p>
-            )}
+          <CollapsibleContent className="mt-2 space-y-3 rounded-md border border-border bg-card/30 p-3 text-sm">
+            <TriggeredBy
+              classifiedBy={email.classified_by}
+              reason={email.classification_reason}
+              folder={folderRulesQ.data?.folder ?? null}
+              filters={folderRulesQ.data?.filters ?? []}
+            />
             {email.classified_by === "ai" && email.ai_confidence != null && (
-              <div className="mt-3">
+              <div>
                 <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">AI confidence</div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div className="h-full bg-primary" style={{ width: `${Math.round(email.ai_confidence * 100)}%` }} />
