@@ -12,6 +12,7 @@ import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
+import zerrowLogo from "@/assets/zerrow-logo.png";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
@@ -50,6 +51,7 @@ function AuthedLayout() {
             >
               <Menu className="h-5 w-5" />
             </button>
+            <img src={zerrowLogo} alt="" className="h-6 w-auto" />
             <span className="font-display text-xl">Zerrow</span>
           </div>
           <div className="min-h-0 flex-1">
@@ -129,7 +131,10 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col p-4">
       <div className="mb-6 px-2">
-        <h1 className="font-display text-3xl tracking-tight text-foreground">Zerrow</h1>
+        <div className="flex items-center gap-2">
+          <img src={zerrowLogo} alt="" className="h-7 w-auto" />
+          <h1 className="font-display text-3xl tracking-tight text-foreground">Zerrow</h1>
+        </div>
         <p className="text-[11px] uppercase tracking-widest text-muted-foreground">AI inbox</p>
       </div>
 
