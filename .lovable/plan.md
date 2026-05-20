@@ -1,45 +1,17 @@
-## What's already there
+## Problem
 
-`Reader` in `src/routes/_authenticated/index.tsx` already calls `markEmailRead` on open:
+The layout root in `src/routes/_authenticated.tsx` uses `min-h-screen`, so when the message list grows tall, the whole page (sidebar included) stretches with it. The sidebar's own internal scroll (`overflow-y-auto` on the folder list at line 176) never kicks in because the aside has no bounded height.
 
-```tsx
-useEffect(() => {
-  if (!email.is_read) {
-    markFn({ data: { id: email.id, read: true } })
-      .then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
-  }
-}, [email.id]);
-```
+## Fix
 
-So functionally it does mark as read. The problem you're feeling is the **delay**: the row stays bold and the sidebar count stays elevated until the server round-trip + refetch completes (typically 200–800ms). If you click back quickly, it still looks unread.
+One-line change in `src/routes/_authenticated.tsx` (line 42):
 
-## Fix — optimistic update
+- `min-h-screen` → `h-screen`
 
-Patch the `["emails"]` cache locally the moment a user opens an unread email, then let the server confirm.
+That pins the root flex container to the viewport. The aside (already `md:flex md:flex-col`) becomes full viewport height, its inner folder list (`flex-1 overflow-y-auto`) starts scrolling when it overflows, and `<main className="flex min-w-0 flex-1 flex-col overflow-hidden">` keeps the message list as the only thing that scrolls.
 
-In `src/routes/_authenticated/index.tsx` `Reader`, replace the existing effect with:
-
-```tsx
-useEffect(() => {
-  if (email.is_read) return;
-  // 1. Optimistic: flip the row in cache immediately
-  qc.setQueryData<Email[]>(["emails"], (prev) =>
-    prev?.map((e) => (e.id === email.id ? { ...e, is_read: true } : e)),
-  );
-  // 2. Persist + sync Gmail
-  markFn({ data: { id: email.id, read: true } })
-    .catch(() => qc.invalidateQueries({ queryKey: ["emails"] })); // rollback on failure
-}, [email.id]);
-```
-
-This makes the row de-bold and the sidebar count drop **instantly** when the email opens. The server call still runs in the background to update Gmail and the DB row; if it fails, we re-fetch to restore the truth.
-
-## Out of scope
-
-- No backend, schema, or other UI changes.
-- No change to manual read/unread toggle behavior (existing button still works).
-- No change to mark-as-read behavior in the list (still requires opening — same as before).
+No changes needed in `src/routes/_authenticated/index.tsx` — the inbox already manages its own scroll inside the `<main>` area.
 
 ## Files
 
-- `src/routes/_authenticated/index.tsx` — swap one `useEffect` body.
+- `src/routes/_authenticated.tsx` — swap `min-h-screen` to `h-screen` on the root `<div>`.

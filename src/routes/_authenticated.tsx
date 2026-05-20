@@ -39,7 +39,7 @@ function AuthedLayout() {
   }, [qc]);
   return (
     <FolderSelectionProvider>
-      <div className="flex min-h-screen bg-background text-foreground">
+      <div className="flex h-screen bg-background text-foreground">
         {/* Desktop sidebar */}
         <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
           <SidebarInner />
