@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
   moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
-  loadOlderFromGmail,
+  loadOlderFromGmail, searchGmailAndIngest,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -129,6 +129,30 @@ function InboxPage() {
     refetchOnWindowFocus: true,
     refetchInterval: 30_000,
   });
+
+  // When searching, also ask Gmail for matching messages and ingest any we
+  // don't have locally — then refetch so they appear in the results.
+  const searchGmailFn = useServerFn(searchGmailAndIngest);
+  const [gmailSearching, setGmailSearching] = useState(false);
+  useEffect(() => {
+    const qstr = query.trim();
+    if (qstr.length < 3) return;
+    const handle = setTimeout(async () => {
+      setGmailSearching(true);
+      try {
+        const r: any = await searchGmailFn({ data: { query: qstr } });
+        if (r?.ingested > 0) {
+          await qc.refetchQueries({ queryKey: ["emails"] });
+          toast.success(`Pulled ${r.ingested} email${r.ingested === 1 ? "" : "s"} from Gmail.`);
+        }
+      } catch (e: any) {
+        console.error("gmail search failed", e);
+      } finally {
+        setGmailSearching(false);
+      }
+    }, 500);
+    return () => clearTimeout(handle);
+  }, [query, searchGmailFn, qc]);
 
   const rawEmails = emailsQ.data ?? [];
   const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
@@ -257,7 +281,7 @@ function InboxPage() {
           </div>
           {isSearching && (
             <div className="mt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              Searching all folders, including archived
+              {gmailSearching ? "Checking Gmail…" : "Searching all folders, including archived"}
             </div>
           )}
         </div>

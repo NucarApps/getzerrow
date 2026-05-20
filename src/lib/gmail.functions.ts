@@ -10,6 +10,9 @@ import {
   sendMessage,
   ensureWatch,
   stopWatch,
+  listMessages,
+  getMessageMetadata,
+  parseMessage,
 } from "./gmail.server";
 import { suggestReply, suggestRuleUpdates } from "./ai.server";
 import { computeNextRun, runFolderSummary } from "./summaries.server";
@@ -1308,5 +1311,123 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
 
     return { ok: true, stripped_count };
   });
+
+/**
+ * Search Gmail directly and ingest any matching messages we don't already
+ * have locally. Used as a fallback when the local search corpus is missing
+ * recent or older messages.
+ */
+export const searchGmailAndIngest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { query: string; account_id?: string }) =>
+    z.object({
+      query: z.string().min(1).max(200),
+      account_id: z.string().uuid().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    // Resolve the gmail account.
+    let accountId = data.account_id ?? null;
+    if (!accountId) {
+      const { data: acct } = await supabaseAdmin
+        .from("gmail_accounts")
+        .select("id")
+        .eq("user_id", context.userId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (!acct) return { ingested: 0, found: 0, reason: "no_account" as const };
+      accountId = acct.id;
+    } else {
+      await getOwnedAccount(context.userId, accountId);
+    }
+
+    // Build a Gmail query. If it looks like an email address or domain, use
+    // `from:` so we hit sender matches across the entire mailbox; otherwise
+    // pass the raw text and let Gmail's full-text search work.
+    const raw = data.query.trim();
+    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw);
+    const looksLikeDomain = /^@?[a-z0-9.-]+\.[a-z]{2,}$/i.test(raw) && !raw.includes(" ");
+    let q: string;
+    if (looksLikeEmail) q = `from:${raw}`;
+    else if (looksLikeDomain) q = `from:${raw.replace(/^@/, "")}`;
+    else q = raw;
+
+    const list = await listMessages(accountId!, { q, maxResults: 50 });
+    const ids = (list.messages ?? []).map((m) => m.id);
+    if (ids.length === 0) return { ingested: 0, found: 0 };
+
+    const { data: existing } = await supabaseAdmin
+      .from("emails")
+      .select("gmail_message_id")
+      .eq("user_id", context.userId)
+      .in("gmail_message_id", ids);
+    const known = new Set((existing ?? []).map((r) => r.gmail_message_id));
+    const todo = ids.filter((id) => !known.has(id));
+
+    // Cache folder label → folder_id mapping for this account.
+    const { data: folders } = await supabaseAdmin
+      .from("folders")
+      .select("id, gmail_label_id")
+      .eq("user_id", context.userId)
+      .eq("gmail_account_id", accountId!);
+    const labelToFolder = new Map<string, string>();
+    for (const f of folders ?? []) {
+      if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
+    }
+
+    let ingested = 0;
+    const CONCURRENCY = 8;
+    let i = 0;
+    async function worker() {
+      while (i < todo.length) {
+        const id = todo[i++];
+        try {
+          const raw = await getMessageMetadata(accountId!, id);
+          const p = parseMessage(raw);
+          // Pick a folder if Gmail has one of our linked labels.
+          let folder_id: string | null = null;
+          let classified_by: string = "gmail_search_ingest";
+          let classification_reason: string | null = "Pulled from Gmail via search";
+          for (const lbl of p.raw_labels ?? []) {
+            const fid = labelToFolder.get(lbl);
+            if (fid) {
+              folder_id = fid;
+              classified_by = "gmail_label";
+              classification_reason = "Matched Gmail label";
+              break;
+            }
+          }
+          const { error } = await supabaseAdmin.from("emails").insert({
+            user_id: context.userId,
+            gmail_account_id: accountId!,
+            gmail_message_id: p.gmail_message_id,
+            thread_id: p.thread_id,
+            from_addr: p.from_addr,
+            from_name: p.from_name,
+            to_addrs: p.to_addrs,
+            subject: p.subject,
+            snippet: p.snippet,
+            received_at: p.received_at,
+            is_read: p.is_read,
+            is_archived: !(p.raw_labels ?? []).includes("INBOX"),
+            has_attachment: p.has_attachment,
+            raw_labels: p.raw_labels,
+            folder_id,
+            classified_by,
+            ai_confidence: folder_id ? 1 : null,
+            classification_reason,
+          });
+          if (!error) ingested++;
+        } catch (e) {
+          console.error("searchGmailAndIngest one failed", id, e);
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
+
+    return { ingested, found: ids.length };
+  });
+
 
 

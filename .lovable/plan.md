@@ -1,28 +1,28 @@
-I found the likely cause: the “remove label” action strips the folder from matching past emails, but the current folder view is paginated and filtered by `folder_id`. After removal, those emails disappear from that folder, but they may not be visible in the current UI because:
-
-- folder-specific views show only `folder_id = current folder`
-- the All/Unsorted views currently exclude archived emails
-- many folder-labeled Gmail messages are stored as archived, so after `folder_id` becomes null they can become hard to find
-- search only scans the most recent 500 stored emails, not Gmail directly
+I checked the database: only one `braund_erik@officeonkatmai.help` message exists locally, from May 18. There is no locally stored message from today around 9:28, so the current search can only show yesterday’s copy.
 
 Plan:
 
-1. **Make the right-click strip action update the visible list immediately**
-   - When “Remove folder label from past emails” succeeds, remove matching emails from the current folder cache right away.
-   - This makes the current folder view reflect the action without waiting for a refetch.
+1. Add a Gmail-backed search fallback
+- Keep the existing fast local search first.
+- If the search text looks like an email address or sender/domain and local results are incomplete, call Gmail directly for matching messages.
+- Insert any Gmail matches into the local `emails` table so they become searchable and visible afterward.
 
-2. **Keep stripped emails findable**
-   - When stripping a folder label, also set `is_archived = false` for those emails in the local database.
-   - This puts them back into the app’s All/Unsorted views without re-applying a folder label.
-   - It will still not “move to Inbox” as a rule for future mail; it only makes the stripped past email visible outside the folder.
+2. Make search results show newly pulled Gmail matches immediately
+- Add a server function like `searchGmailAndIngest` using the connected Gmail account.
+- Search Gmail with a query such as `from:braund_erik@officeonkatmai.help newer_than:30d`.
+- Fetch up to 50 matching Gmail messages, parse metadata/content, and upsert them locally.
+- Re-run/refetch the search after ingestion so today’s email appears without a manual sync.
 
-3. **Improve search visibility for the missing email**
-   - Increase search so it checks a larger recent local corpus, and include archived/stripped emails.
-   - This helps find messages like the 9:28 email even after label changes.
+3. Preserve folder behavior
+- If the Gmail message has a label linked to one of the app folders, assign that local `folder_id`.
+- If it has no linked folder label, store it as unfiled/inbox depending on Gmail labels.
+- Do not re-apply labels that the user manually stripped.
 
-4. **Add a direct fallback for linked Gmail folders**
-   - If a folder view reaches the end of local results, keep pulling the next 50 from Gmail for that linked label.
-   - This preserves the “always load the next 50 from Gmail” behavior for Gmail-synced folders.
+4. Improve the UI feedback
+- While searching, show a small “checking Gmail…” state after local results load.
+- If Gmail returns nothing, show that no matching Gmail messages were found locally or in Gmail.
 
-5. **Validate with the database**
-   - Re-check the sender/time window after the change to confirm whether the 9:28 email is now stored, visible, or genuinely not yet ingested from Gmail.
+Technical notes:
+- This will use the existing Gmail connector helpers and TanStack server functions.
+- No new database tables are needed.
+- This directly addresses the reason you only see yesterday’s email: today’s message is not currently ingested into the app database.
