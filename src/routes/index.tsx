@@ -371,17 +371,17 @@ function CTA() {
         style={{ background: GOLD, color: "#1a1405" }}
       >
         <h2 className="text-4xl font-bold tracking-tight md:text-6xl" style={sora}>
-          Take your inbox back.
+          Ready for liftoff?
         </h2>
         <p className="mx-auto mt-6 max-w-xl text-lg" style={{ color: "#3a2d08" }}>
-          Connect Gmail in 30 seconds. Zerrow does the rest.
+          Connect Gmail in 30 seconds. Zerrow handles the countdown.
         </p>
         <Link
           to="/login"
           className="mt-10 inline-block rounded-full px-8 py-4 text-base font-medium transition hover:opacity-90"
           style={{ background: "#0c0c14", color: GOLD, ...sora }}
         >
-          Get started — it's free
+          Start the countdown
         </Link>
       </div>
     </section>
