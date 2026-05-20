@@ -669,7 +669,7 @@ function ReasonBlock({ email, folderName, filters }: { email: HistoryEmail; fold
   const Icon = meta.Icon;
 
   let title = "";
-  let body: React.ReactNode = null;
+  let body: ReactNode = null;
 
   if (by === "ai") {
     const conf = email.ai_confidence != null ? Math.round(email.ai_confidence * 100) : null;
