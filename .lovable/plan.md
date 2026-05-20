@@ -1,36 +1,49 @@
-# Match rocket to reference image
+# Tracking view after liftoff
 
-Keep the existing animation phases (idle → ignition → liftoff) and DOM structure intact. Only rework the rocket's visual shape, the flame style, and the smoke clouds so they look like the uploaded reference: a sharp orange arrowhead rocket with a vertical white-to-orange flame column and big rounded puffy smoke clouds at the base.
+Once the rocket clears the launchpad viewport, swap the launchpad scene for a downrange tracking view inside the same `.launchpad__viewport` panel. Telemetry stays live (it already updates after liftoff) and gains a few tracking-only readouts.
 
-## 1. Rocket SVG (`src/routes/index.tsx`, lines 157–174)
+## Trigger
 
-Replace the current SVG with a taller, sharper arrowhead silhouette matching the reference:
+In `src/components/landing/useMissionTelemetry.ts`, ~1.6s after `setPhase("liftoff")` (matches the existing 1.6s liftoff transform), add a `tracking` class to the `.launchpad__viewport` element. CSS handles the rest of the scene swap. Clear the timeout in the cleanup.
 
-- **Body:** single tall triangle from a high apex down to wide base shoulders, split vertically into a lit orange left half (`#ff5a2e`) and a darker shadow right half (`#b8341a`) with a thin near-black centerline crease.
-- **Fins:** two angular side fins flaring outward from roughly the lower third, each split into a lit face (`#ff5a2e`) and shadow face (`#8a2a14`); silhouette should read as wide, swept, and triangular like the reference.
-- **Nozzle recess:** small dark V/notch at the base center (`#0a0e1a`) where the flame emerges.
-- Keep viewBox proportions taller (e.g. `0 0 120 280`) so the rocket reads as slender and pointed.
+## DOM additions (`src/routes/index.tsx`, inside `.launchpad__viewport`)
 
-## 2. Flame / exhaust (`public/zerrow-landing.css`, `.exhaust*` rules ~558–617)
+Add a sibling block `.tracking` next to the existing smoke / sparks / rocket-wrap. It contains:
 
-Rework the plume to match the reference's tall, narrow, vertical column with a glowing white core:
+- `.tracking__sky` — deep-space gradient background with faint star dots.
+- `.tracking__earth` — curved earth horizon arc anchored to the bottom of the viewport (CSS radial / large circle clipped at bottom).
+- `.tracking__arc` — inline SVG with a single dashed/glowing trajectory path arcing from lower-left up across to upper-right. A second solid path layered on top is clip-revealed left→right via `stroke-dasharray` animation so the trajectory "draws" as the rocket flies it.
+- `.tracking__icon` — a small SVG rocket (reuse the same arrowhead silhouette, scaled to ~28px) that moves along the arc using CSS `offset-path` set to the same cubic-bezier curve, with `offset-rotate: auto` so it tilts naturally along the tangent. Animation loops slowly (e.g. 14s) so the rocket appears to continually progress downrange.
+- `.tracking__hud` — two small corner overlays:
+  - top-left badge: `TRACKING · DOWNRANGE` with a blinking dot.
+  - bottom-right mini readout: `DOWNRANGE` (km) and `APOGEE` (km), driven by the existing telemetry interval (new IDs `t-downrange`, `t-apogee`).
+- Keep the existing `.viewport-telemetry` and `.viewport-counter` panels visible (they already show altitude/velocity/etc), but reposition slightly if they overlap the arc — handled in CSS.
 
-- Make `.exhaust` narrower (~28px wide) and taller (~200px).
-- `.exhaust__jet`: near-vertical bright white column (barely tapered), strong white center fading to pale yellow at edges.
-- `.exhaust__core`: slightly wider orange sheath around the white jet — saturated orange (`#ff7a2e`) fading to deep red-orange at the bottom, with a soft outer glow.
-- `.exhaust__halo`: warm orange radial glow hugging the top of the plume where it meets the nozzle.
-- Keep the existing flicker keyframes and phase-based opacity/scale transitions.
+The existing `.smoke`, `.sparks`, `.rocket-wrap`, `.viewport-crosshair`, and `.viewport-grid` are hidden via CSS when `.launchpad__viewport.tracking` is set, with a short fade.
 
-## 3. Smoke clouds (`public/zerrow-landing.css`, `.smoke*` rules ~620–669)
+## CSS (`public/zerrow-landing.css`)
 
-Replace the soft blurred puffs with the reference's defined, rounded billowing cloud look:
+New section near the existing viewport rules:
 
-- Each `.smoke i` becomes a crisp rounded puff: less blur (~1–2px), brighter near-white center (`rgba(255,250,245,.95)`), softer gray edge, sharper falloff — reads as a distinct cloud ball, not a haze.
-- Cluster them in a wider, lower mound (broaden `.smoke` to ~380px, varied sizes from ~40px small outliers to ~120px central puffs) so the pile mirrors the reference's pyramid of clouds with a few small detached puffs to the sides.
-- Add a subtle warm underglow tint on the puffs closest to the flame (inner puffs pick up faint orange from the exhaust).
-- Keep the existing `smokeDrift` animation and per-phase timing; only restyle appearance and layout.
+- `.launchpad__viewport.tracking` — adds the deep-space background gradient (dark navy → near-black) and triggers child reveal transitions.
+- `.tracking` block hidden by default (`opacity: 0; pointer-events: none`), fades in over ~600ms when parent has `.tracking`.
+- `.tracking__sky` — radial subtle vignette + a few `::before/::after` pseudo-elements or small `<i>` star dots with gentle twinkle keyframes.
+- `.tracking__earth` — large circle (e.g. 1600px) positioned so only the top sliver shows at the bottom of the viewport, with a soft blue atmospheric glow above the rim.
+- `.tracking__arc svg` — absolutely positioned to fill the viewport; trajectory path styled with thin orange dashed stroke + a brighter solid stroke animated via `stroke-dasharray` / `stroke-dashoffset` keyframes (draws across, then resets).
+- `.tracking__icon` — uses `offset-path: path("…same curve…")` with `offset-distance` keyframed 0% → 100% and `offset-rotate: auto`. Drop shadow + small flame trail (a short tapered orange streak behind the icon using a pseudo-element).
+- `.tracking__hud` overlays: small badges using the existing telemetry typography tokens.
+- Hide pre-launch elements when tracking is active:
+  `.tracking ~ .rocket-wrap`, `.smoke`, `.sparks`, `.viewport-crosshair` → opacity 0.
 
-## 4. Out of scope
+## Telemetry tie-in (`useMissionTelemetry.ts`)
 
-- No changes to launch sequencing, telemetry, JS, or surrounding layout.
-- No new assets or libraries; pure SVG + CSS.
+Inside the existing post-launch branch of `updateTelemetry`:
+
+- Compute `downrange = vel * elapsedSinceLaunch / 1000` (rough km) and `apogee = max(alt seen)`.
+- Write to new `#t-downrange` and `#t-apogee` text nodes if present.
+
+## Out of scope
+
+- No new routes, no backend, no libraries — pure SVG/CSS + the existing RAF.
+- Pre-launch scene (rocket, smoke, flame, launchpad base) is untouched.
+- Mobile scaling: reuse the existing `@media` rules; the tracking view simply inherits viewport size.
