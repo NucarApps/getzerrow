@@ -28,6 +28,7 @@ import { useFolderSelection } from "@/lib/folder-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
+import { TelemetryStandby } from "@/components/inbox/TelemetryStandby";
 
 
 export const Route = createFileRoute("/_authenticated/inbox")({ component: InboxPage });
