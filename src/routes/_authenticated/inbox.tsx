@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-export const Route = createFileRoute("/_authenticated/inbox")({ component: InboxRoute });
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
