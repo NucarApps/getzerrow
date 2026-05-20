@@ -10,7 +10,7 @@ export const Route = createFileRoute("/api/public/gmail-process-jobs")({
         const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "25", 10) || 25, 100);
         try {
           const r = await runMessageJobs(limit);
-          return Response.json({ ok: true, ...r });
+          return Response.json({ ...r, ok: true });
         } catch (e: any) {
           return Response.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
         }
