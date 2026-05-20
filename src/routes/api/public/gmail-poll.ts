@@ -31,7 +31,10 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         const lastPushAt = lastPush?.received_at ? new Date(lastPush.received_at).getTime() : 0;
         const silent = Date.now() - lastPushAt > SILENCE_MS;
 
-        const results: Array<{ id: string; email: string; ok: boolean; error?: string; rearmed?: boolean }> = [];
+        const results: Array<{ id: string; email: string; ok: boolean; error?: string; rearmed?: boolean; synced?: number }> = [];
+        let totalAccounts = 0;
+        let totalSynced = 0;
+        let firstError: string | null = null;
         for (const acc of accounts ?? []) {
           let rearmed = false;
           if (silent && acc.watch_expiration && new Date(acc.watch_expiration).getTime() > Date.now()) {
@@ -43,6 +46,13 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
                   watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
                 }).eq("id", acc.id);
                 rearmed = true;
+                try {
+                  await supabaseAdmin.from("pubsub_events").insert({
+                    event_type: "watch_rearm_auto",
+                    email_address: acc.email_address,
+                    history_id: w.historyId,
+                  });
+                } catch (e) { console.error("pubsub_events log failed", e); }
               }
             } catch (e) {
               console.error("self-heal watch re-arm failed", acc.email_address, e);
@@ -50,12 +60,29 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
           }
           try {
             const r = await syncSinceHistory(acc.id);
+            const synced = (r as { synced?: number })?.synced ?? 0;
+            totalAccounts++;
+            totalSynced += synced;
             results.push({ id: acc.id, email: acc.email_address, ok: true, rearmed, ...r });
           } catch (e: unknown) {
             const err = e as Error;
             console.error("poll failed for", acc.email_address, err);
-            results.push({ id: acc.id, email: acc.email_address, ok: false, rearmed, error: err?.message ?? String(e) });
+            const msg = err?.message ?? String(e);
+            if (!firstError) firstError = msg;
+            results.push({ id: acc.id, email: acc.email_address, ok: false, rearmed, error: msg });
           }
+        }
+
+        // Record this poll run so the Sync activity panel reflects it.
+        try {
+          await supabaseAdmin.from("pubsub_events").insert({
+            event_type: "poll",
+            accounts_matched: totalAccounts,
+            synced_count: totalSynced,
+            error: firstError,
+          });
+        } catch (e) {
+          console.error("pubsub_events poll log failed", e);
         }
 
         // Drain a small batch of due jobs so processing keeps moving even
