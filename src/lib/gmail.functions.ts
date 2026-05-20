@@ -592,14 +592,14 @@ export const applyRecategorization = createServerFn({ method: "POST" })
     let target_updated = false;
     const now = new Date().toISOString();
     if (data.apply_source) {
-      const patch: Record<string, any> = { last_learned_at: now };
+      const patch: { last_learned_at: string; ai_rule?: string | null; learned_profile?: string | null } = { last_learned_at: now };
       if (data.source_rule !== undefined) patch.ai_rule = data.source_rule;
       if (data.source_profile !== undefined) patch.learned_profile = data.source_profile;
       await supabaseAdmin.from("folders").update(patch).eq("id", fromFolderId);
       source_updated = true;
     }
     if (data.apply_target) {
-      const patch: Record<string, any> = { last_learned_at: now };
+      const patch: { last_learned_at: string; ai_rule?: string | null; learned_profile?: string | null } = { last_learned_at: now };
       if (data.target_rule !== undefined) patch.ai_rule = data.target_rule;
       if (data.target_profile !== undefined) patch.learned_profile = data.target_profile;
       await supabaseAdmin.from("folders").update(patch).eq("id", data.to_folder_id);
