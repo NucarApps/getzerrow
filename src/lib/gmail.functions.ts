@@ -1333,7 +1333,7 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
 
     let q = supabaseAdmin
       .from("emails")
-      .select("id, gmail_message_id, gmail_account_id, folder_id, from_addr")
+      .select("id, gmail_message_id, gmail_account_id, folder_id, from_addr, raw_labels")
       .eq("user_id", context.userId)
       .not("folder_id", "is", null);
     if (data.match_type === "email") {
