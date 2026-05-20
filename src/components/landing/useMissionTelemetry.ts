@@ -172,6 +172,7 @@ export function useMissionTelemetry() {
       cancelAnimationFrame(rafId);
       clearInterval(tickInterval);
       clearInterval(teleInterval);
+      clearTimeout(trackingTimeout);
       handlers.forEach(({ d, h }) => d.removeEventListener("toggle", h));
     };
   }, []);
