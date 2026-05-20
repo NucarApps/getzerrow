@@ -269,7 +269,12 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
     if (ids.length > 0) {
       const { error: upErr } = await supabaseAdmin
         .from("emails")
-        .update({ folder_id: data.to_folder_id, classified_by: "domain_rule", ai_confidence: 1 })
+        .update({
+          folder_id: data.to_folder_id,
+          classified_by: "domain_rule",
+          ai_confidence: 1,
+          classification_reason: `Domain rule: ${domain} → ${to.name}`,
+        })
         .in("id", ids);
       if (upErr) throw new Error(upErr.message);
 
