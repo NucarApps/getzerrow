@@ -492,40 +492,49 @@ export function PubsubActivity() {
           ))}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pinging}
-            onClick={async () => {
-              setPinging(true);
-              setPingResult(null);
-              try {
-                const r = await pingFn();
-                setPingResult(r);
-                if (r.ok) toast.success(`Webhook reachable (${r.status} in ${r.elapsed_ms}ms)`);
-                else toast.error(`Webhook returned ${r.status}`);
-                q.refetch();
-              } catch (e: any) {
-                toast.error(e.message);
-              } finally {
-                setPinging(false);
-              }
-            }}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${pinging ? "animate-spin" : ""}`} />
-            Send test request to webhook
-          </Button>
+          {(["empty", "realistic"] as const).map((mode) => (
+            <Button
+              key={mode}
+              size="sm"
+              variant="outline"
+              disabled={pinging !== null}
+              onClick={async () => {
+                setPinging(mode);
+                setPingResult(null);
+                try {
+                  const r = await pingFn({ data: { realistic: mode === "realistic" } });
+                  setPingResult(r);
+                  if (r.ok) toast.success(`Webhook reachable (${r.status} in ${r.elapsed_ms}ms)`);
+                  else toast.error(`Webhook returned ${r.status}`);
+                  q.refetch();
+                } catch (e: any) {
+                  toast.error(e.message);
+                } finally {
+                  setPinging(null);
+                }
+              }}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${pinging === mode ? "animate-spin" : ""}`} />
+              {mode === "empty" ? "Test webhook reachable" : "Test with connected account"}
+            </Button>
+          ))}
           {pingResult && (
             <div className="text-xs text-muted-foreground">
               <span className={pingResult.ok ? "text-foreground" : "text-destructive"}>
                 {pingResult.ok ? "✓" : "✗"} {pingResult.status} · {pingResult.elapsed_ms}ms
               </span>
+              {pingResult.mode && <> · mode: <span className="font-mono">{pingResult.mode}</span></>}
+              {pingResult.account_email && <> · {pingResult.account_email}</>}
               {" · "}
               GMAIL_PUBSUB_TOPIC: {pingResult.topic_set ? "set" : <span className="text-destructive">not set</span>}
               {pingResult.error && <span className="text-destructive"> · {pingResult.error}</span>}
             </div>
           )}
         </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          These are app-side tests, logged as <span className="font-mono">webhook_test</span> — they prove our endpoint works but do NOT prove the Google Cloud Pub/Sub subscription is delivering. Only a real <span className="font-mono">push</span> row from Google does that.
+          {lastWebhookTest && <> · Last test: {relTime(lastWebhookTest.received_at)}</>}
+        </p>
 
         <div className="mt-4 rounded border bg-card p-3 text-xs">
           <div className="font-medium">Google Cloud Pub/Sub setup checklist</div>
