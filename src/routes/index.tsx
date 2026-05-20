@@ -63,7 +63,7 @@ function LandingPage() {
             <img src={zerrowLogo} alt="" style={{ height: 26, width: "auto", display: "block" }} />
           </span>
           <span className="brand__word">Zerrow<i>.</i></span>
-          <span className="brand__sub">[for&nbsp;Gmail]</span>
+          
         </a>
         <nav className="nav__links">
           <a href="#features">Features</a>
