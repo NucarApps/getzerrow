@@ -161,7 +161,7 @@ export const loadOlderFromGmail = createServerFn({ method: "POST" })
     z
       .object({
         folder_id: z.string().uuid(),
-        before_received_at: z.string().datetime().nullable(),
+        before_received_at: z.string().datetime({ offset: true }).nullable(),
       })
       .parse(d)
   )
