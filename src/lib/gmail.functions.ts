@@ -1530,7 +1530,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
     z.object({
-      event_type: z.enum(["push", "push_empty", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error"]).optional(),
+      event_type: z.enum(["push", "push_empty", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error", "webhook_test"]).optional(),
       only_errors: z.boolean().optional(),
       limit: z.number().min(1).max(500).optional(),
     }).parse(input ?? {})
@@ -1577,27 +1577,25 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       if (r.error) errors24++;
     }
 
-    // Most recent push (matched or not). Prefer rows logged by the new
-    // instrumented webhook (payload IS NOT NULL); fall back to the truly
-    // latest push if no instrumented one exists yet.
+    // Most recent REAL push from Google (synthetic webhook_test rows are
+    // excluded — they're app-side tests, not proof of GCP delivery).
     const cols = "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details";
-    const { data: instrumentedPushRows } = await supabaseAdmin
+    const { data: anyPushRows } = await supabaseAdmin
       .from("pubsub_events")
       .select(cols)
       .in("event_type", ["push", "push_empty"])
-      .not("payload", "is", null)
       .order("received_at", { ascending: false })
       .limit(1);
-    let lastPush: any = instrumentedPushRows?.[0] ?? null;
-    if (!lastPush) {
-      const { data: anyPushRows } = await supabaseAdmin
-        .from("pubsub_events")
-        .select(cols)
-        .in("event_type", ["push", "push_empty"])
-        .order("received_at", { ascending: false })
-        .limit(1);
-      lastPush = anyPushRows?.[0] ?? null;
-    }
+    const lastPush: any = anyPushRows?.[0] ?? null;
+
+    // Most recent webhook self-test (separate from real pushes).
+    const { data: lastTestRows } = await supabaseAdmin
+      .from("pubsub_events")
+      .select(cols)
+      .eq("event_type", "webhook_test")
+      .order("received_at", { ascending: false })
+      .limit(1);
+    const lastWebhookTest = lastTestRows?.[0] ?? null;
 
     const { data: lastRenewRows } = await supabaseAdmin
       .from("pubsub_events")
