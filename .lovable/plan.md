@@ -1,73 +1,20 @@
-# Backfill the last 7 days of all mail
+## Problem
 
-## Why this works now
+The white email-body card shrinks to fit its content (currently `minHeight: 120px`). For short emails like the Nissan/NuCarPulse "Daily Sales Report", that produces a thin white sliver at the top of the reading pane with a large empty dark void below — making the reader feel "way too small".
 
-You already have `backfillRecent` in `src/lib/sync.server.ts` (line 575). It calls Gmail with the query `-in:chats -in:trash -in:spam newer_than:7d` — so it asks for everything in the last week except chats, trash, and spam, **including mail that was auto-archived past the inbox**. Each message is run through `processGmailMessage` → `processOneMessage`, which (after the fix we just shipped) now persists non-INBOX mail as archived and runs the same filter / domain / AI classification on it.
-
-The two gaps today:
-
-1. The existing UI button "Backfill recent 30" caps at 30 messages (max 100 per the validator) and only fetches one Gmail page.
-2. `backfillRecent` itself doesn't paginate — it only reads `list.messages` from the first response.
-
-A real week-long catch-up needs pagination because a busy week can be hundreds or thousands of messages.
+The card already spans the full width of the right pane; the issue is purely vertical.
 
 ## Fix
 
-### 1. `src/lib/sync.server.ts` — add a paginating helper
+In `src/routes/_authenticated/inbox.tsx`, update `EmailBodyFrame` so the iframe always fills the available vertical space when the email's natural height is small:
 
-Add a new exported function `backfillWindow(accountId, userId, opts)` that:
+1. Change the iframe's `minHeight` from `120` to something like `60vh` (or `500px` as a safe absolute floor).
+2. In the `resize()` function, keep growing the iframe to fit tall emails as today, but never shrink below that new minimum — i.e. use `Math.max(naturalHeight + 4, minHeight)` where `minHeight` matches the CSS value.
 
-- Accepts `{ query: string; maxMessages?: number; concurrency?: number }`. Default `maxMessages = 1000`, `concurrency = 4`.
-- Loops `listMessages(accountId, { q: query, maxResults: 100, pageToken })` until `nextPageToken` is undefined or we've accumulated `maxMessages` IDs.
-- De-dupes IDs across pages (Gmail can repeat under load).
-- Pre-filters out IDs already in `emails` for this account (one batched `select gmail_message_id from emails where gmail_account_id = $1 and gmail_message_id = any($ids)`) so we don't re-pull and re-classify what we already have. This makes the button safely re-runnable.
-- Runs the remaining IDs through `processGmailMessage` with a small concurrency pool (4 at a time) to keep within Gmail's per-user quota and avoid AI-gateway thrash.
-- Returns `{ found, alreadyHad, processed, failed, durationMs }`.
+Result: short emails render in a generously sized white card that fills most of the pane; long emails still expand normally up to the existing 4000px cap.
 
-Leave `backfillRecent` alone — `triggerSync`'s safety-net path still uses it and 30 messages is fine there.
+No other layout changes (middle list stays 400px, right pane stays `1fr`, reply box stays anchored at the bottom).
 
-### 2. `src/lib/gmail.functions.ts` — expose it
+## Files
 
-Add a new server function:
-
-```ts
-export const triggerWeekBackfill = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string; days?: number; max?: number }) =>
-    z.object({
-      account_id: z.string().uuid(),
-      days: z.number().int().min(1).max(30).optional(),
-      max: z.number().int().min(1).max(2000).optional(),
-    }).parse(d)
-  )
-  .handler(async ({ data, context }) => {
-    await getOwnedAccount(context.userId, data.account_id);
-    const days = data.days ?? 7;
-    return backfillWindow(data.account_id, context.userId, {
-      query: `-in:chats -in:trash -in:spam newer_than:${days}d`,
-      maxMessages: data.max ?? 1000,
-    });
-  });
-```
-
-### 3. `src/routes/_authenticated/settings.tsx` — add the button
-
-Next to "Backfill recent 30" on each connected account, add a second button "**Catch up last 7 days**" wired to `triggerWeekBackfill`. Reuse the same busy/toast pattern as the existing backfill button. Toast wording: `Pulled N new messages from the last 7 days (M already in sync).` Disable while running. No other UI changes.
-
-### Run a one-shot for the current account immediately
-
-After the code lands, run the new button once for your account so the Nissan letter (and any other auto-archived mail from this week) backfills. The next plan step (cron) makes this self-healing going forward, but this catches today's gap.
-
-## Out of scope
-
-- No schema changes, no migrations, no new tables. `emails.gmail_message_id` is already unique-by-account via the existing insert path; the de-dupe select is purely a performance/cost optimization.
-- No changes to the realtime push/poll/jobs path — that already inserts everything correctly after our last fix.
-- No scheduled/cron version yet. The button is a manual catch-up. If you want a recurring nightly "last 24h" sweep as belt-and-braces, that's a tiny follow-up (pg_cron → `triggerWeekBackfill` with `days:1`), worth doing but separate from this change.
-- No changes to `backfillRecent`, `triggerSync`, or `triggerBackfill` — keeping the existing 30-message safety net so behavior elsewhere doesn't shift.
-
-## What to watch after running it
-
-- `select count(*) from emails where gmail_account_id = $you and received_at > now() - interval '7 days'` before and after — should jump.
-- Your **All mail** folder badge should grow accordingly, with the missing Nissan letter showing up tagged with the **Factory** pill.
-- `message_jobs` should stay empty (we're calling the synchronous path, not enqueuing).
-- AI Gateway usage: 1000 cap × your classification cost; raise/lower via the `max` param if needed.
+- `src/routes/_authenticated/inbox.tsx` — `EmailBodyFrame` (lines ~79–110): update `style.minHeight` and the `resize()` math.
