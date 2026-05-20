@@ -86,7 +86,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               message_id: messageId,
               publish_time: publishTime,
               subscription,
-              payload: payload ?? null,
+              payload: (payload ?? null) as never,
               details,
             });
           } catch (logErr) {
