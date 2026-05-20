@@ -12,10 +12,11 @@ export const Route = createFileRoute("/privacy")({
   component: PrivacyPage,
 });
 
-const PAPER = "#f5f3ee";
-const PAPER_DEEP = "#e8e4dd";
-const INK = "#0d0d0d";
-const INK_SOFT = "#2d2d2d";
+const PAPER = "#0c0c14";
+const PAPER_DEEP = "#26262f";
+const INK = "#f4f3ee";
+const INK_SOFT = "#9a9aa8";
+const GOLD = "#e0b54a";
 const sora = { fontFamily: "'Sora', ui-sans-serif, system-ui, sans-serif" };
 const manrope = { fontFamily: "'Manrope', ui-sans-serif, system-ui, sans-serif" };
 
