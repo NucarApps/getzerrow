@@ -378,9 +378,9 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
   .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
-    const { data: acc } = await supabaseAdmin
+    const { data: accRow } = await supabaseAdmin
       .from("gmail_accounts")
-      .select("watch_expiration")
+      .select("email_address")
       .eq("id", data.account_id)
       .single();
     // Force renewal by passing null
@@ -390,8 +390,17 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
       history_id: watch.historyId,
       watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
     }).eq("id", data.account_id);
-    return { expiration: watch.expiration };
+    try {
+      await supabaseAdmin.from("pubsub_events").insert({
+        event_type: "watch_renew",
+        email_address: accRow?.email_address ?? null,
+        history_id: watch.historyId,
+        details: `Watch armed against topic ${process.env.GMAIL_PUBSUB_TOPIC ?? "(unset)"} — expires ${new Date(parseInt(watch.expiration, 10)).toISOString()}`,
+      });
+    } catch (e) { console.error("watch_renew log failed", e); }
+    return { expiration: watch.expiration, topic: process.env.GMAIL_PUBSUB_TOPIC ?? null };
   });
+
 
 export const markEmailRead = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1521,7 +1530,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
     z.object({
-      event_type: z.enum(["push", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error"]).optional(),
+      event_type: z.enum(["push", "push_empty", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error"]).optional(),
       only_errors: z.boolean().optional(),
       limit: z.number().min(1).max(500).optional(),
     }).parse(input ?? {})
@@ -1530,7 +1539,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     const limit = data.limit ?? 100;
     let q = supabaseAdmin
       .from("pubsub_events")
-      .select("id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error")
+      .select("id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details")
       .order("received_at", { ascending: false })
       .limit(limit);
     if (data.event_type) q = q.eq("event_type", data.event_type);
@@ -1545,13 +1554,16 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .gte("received_at", since)
       .limit(5000);
 
-    let push24 = 0, poll24 = 0, renew24 = 0, accounts24 = 0, synced24 = 0, errors24 = 0, gmailErrors24 = 0;
+    let push24 = 0, poll24 = 0, renew24 = 0, accounts24 = 0, synced24 = 0, errors24 = 0, gmailErrors24 = 0, pushEmpty24 = 0, pushUnmatched24 = 0;
     let lastPollAt: string | null = null;
     let lastPushAt: string | null = null;
     for (const r of agg ?? []) {
       if (r.event_type === "push") {
         push24++;
         if (!lastPushAt || r.received_at > lastPushAt) lastPushAt = r.received_at;
+        if ((r.accounts_matched ?? 0) === 0) pushUnmatched24++;
+      } else if (r.event_type === "push_empty") {
+        pushEmpty24++;
       } else if (r.event_type === "poll") {
         poll24++;
         if (!lastPollAt || r.received_at > lastPollAt) lastPollAt = r.received_at;
@@ -1565,16 +1577,35 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       if (r.error) errors24++;
     }
 
+    // Most recent push (matched or not) so the UI can show "Last push details"
+    const { data: lastPushRows } = await supabaseAdmin
+      .from("pubsub_events")
+      .select("id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details")
+      .in("event_type", ["push", "push_empty"])
+      .order("received_at", { ascending: false })
+      .limit(1);
+    const lastPush = lastPushRows?.[0] ?? null;
+
+    const host = getRequestHost();
+    const webhookUrl = `https://${host}/api/public/gmail-webhook`;
+
     return {
       events: rows ?? [],
       stats: {
         push24, poll24, renew24, accounts24, synced24, errors24, gmailErrors24,
+        pushEmpty24, pushUnmatched24,
         lastReceivedAt: rows?.[0]?.received_at ?? null,
         lastPollAt,
         lastPushAt,
       },
+      diagnostics: {
+        lastPush,
+        webhookUrl,
+        pubsubTopic: process.env.GMAIL_PUBSUB_TOPIC ?? null,
+      },
     };
   });
+
 
 /** Re-pull the current Gmail label state for a single message and reconcile our row. */
 export const resyncMessage = createServerFn({ method: "POST" })

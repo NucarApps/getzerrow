@@ -438,32 +438,47 @@ export type Database = {
       pubsub_events: {
         Row: {
           accounts_matched: number | null
+          details: string | null
           email_address: string | null
           error: string | null
           event_type: string
           history_id: string | null
           id: string
+          message_id: string | null
+          payload: Json | null
+          publish_time: string | null
           received_at: string
+          subscription: string | null
           synced_count: number | null
         }
         Insert: {
           accounts_matched?: number | null
+          details?: string | null
           email_address?: string | null
           error?: string | null
           event_type?: string
           history_id?: string | null
           id?: string
+          message_id?: string | null
+          payload?: Json | null
+          publish_time?: string | null
           received_at?: string
+          subscription?: string | null
           synced_count?: number | null
         }
         Update: {
           accounts_matched?: number | null
+          details?: string | null
           email_address?: string | null
           error?: string | null
           event_type?: string
           history_id?: string | null
           id?: string
+          message_id?: string | null
+          payload?: Json | null
+          publish_time?: string | null
           received_at?: string
+          subscription?: string | null
           synced_count?: number | null
         }
         Relationships: []

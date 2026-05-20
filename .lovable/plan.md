@@ -1,50 +1,70 @@
-## Short answer
+# Why your new email isn't in Pub/Sub activity
 
-**Maybe — but not as much as you'd think.** Most `MailboxService.GetMessage` errors you see in GCP are transient (HTTP 429/500/503). Here's how they map to actual delays in your app:
+I checked the database and here's what actually happened with your "Test 2" email:
 
-| Where GetMessage is called | What happens on failure today | Delay impact |
-|---|---|---|
-| `runMessageJobs` worker (queue path — most messages) | Already retries with exponential backoff (30s → 2m → 10m → 30m → 2h); 5 fails → DLQ | Low — by design |
-| `syncSinceHistory` inline during poll/push (line 758, 819) | Throws, whole poll cycle errors, retried in 2 min | Medium — one bad message kills a whole cycle |
-| `reconcileLocalInbox` (line 854, 894) | Single row skipped, continues | Low |
-| Folder backfill (line 1012) | Aborts that page | Medium for backfills |
+- **Email arrived in Gmail:** 18:13:48
+- **It DID get synced into the app at 18:16:00**, but via the **2-minute poll fallback** — not via a Google push.
+- The last (and only) push event we've ever received was at **18:12:05**, and even that one had `email_address = NULL` and `accounts_matched = 0` — meaning Google's Pub/Sub message did not contain a usable payload, so we couldn't match it to your account.
 
-Three real weaknesses worth fixing:
+So the user-visible symptom ("it's not in pub/sub activity") is real and correct: **Google is not pushing notifications for new messages on this account.** Polling is the only thing keeping the inbox up to date right now, which is why you see a ~2 minute delay.
 
-1. **No fetch timeout in `gmailFetch`.** A hung GetMessage call can stall the entire poll/worker batch indefinitely. The 5-minute job lock eventually frees it, but you lose minutes per stuck call.
-2. **429 (rate limit) is treated like any failure** — it burns an attempt and applies long backoff, when it should use short jittered backoff and not count toward the DLQ limit.
-3. **You can't see GetMessage error rate from the UI.** Sync activity shows poll runs but doesn't break out 5xx/429 vs other failures, so you have no way to correlate GCP console spikes with app delays.
+## Root-cause hypotheses (in order of likelihood)
+
+1. **Pub/Sub topic / subscription mis-wired.** The Gmail watch we re-arm points at the topic in `GMAIL_PUBSUB_TOPIC`, but the push subscription on that topic may not point at `https://getzerrow.com/api/public/gmail-webhook` (or the dev URL). Symptom matches exactly: watch is "alive" (expires 5/27) but pushes never reach us.
+2. **Watch is registered against the wrong topic / different Google project** than the one whose subscription targets our webhook. Same symptom.
+3. **Subscription is paused or has an ack-deadline / dead-letter problem** in GCP, so Google stops re-delivering after the one bad push at 18:12.
+4. **Webhook is rejecting the body** — ruled out, our handler always returns 200 and we have a `push_empty` row proving Google reached us once.
 
 ## Plan
 
-### 1. Add a request timeout + classify Gmail errors (`src/lib/gmail.server.ts`)
+### 1. Make push diagnosable from the app (no GCP console needed)
 
-Update `gmailFetch` to:
-- Use `AbortSignal.timeout(20_000)` so no single call hangs the worker.
-- Throw a typed error including `status` (number) and `retryable` (boolean) so the worker can branch.
-- Classify `429`, `500`, `502`, `503`, `504`, and abort/network errors as retryable; `400`, `401`, `403`, `404` as terminal.
+- Extend `pubsub_events` logging in `src/routes/api/public/gmail-webhook.ts` to also store:
+  - raw `message.messageId` and `message.publishTime` from the Pub/Sub envelope
+  - the decoded payload as JSON (so we can see when `emailAddress` is missing)
+  - the `subscription` field GCP includes on every push
+- In `src/components/settings/PubsubActivity.tsx`, add a **"Last push details"** expandable row showing those fields for the most recent `push` / `push_empty` event. This immediately tells you whether the push that arrived was malformed vs not arriving at all.
 
-### 2. Smarter worker retry policy (`src/lib/sync.server.ts` `runMessageJobs`)
+### 2. Surface the right diagnosis banner
 
-- On retryable errors (429/5xx/timeout): use short jittered backoff (`30s + jitter`, `90s + jitter`, `5m`, `15m`, `1h`), AND don't increment `attempt` for the first 2 retryable failures — only count "real" failures toward DLQ.
-- On terminal errors (400/403): go straight to DLQ instead of retrying 5 times.
-- Keep the existing 404 → delete row behavior.
+Right now the panel shows generic banners. Replace with one of:
+- **Red — "Google is not pushing for your account"**: shown when `last push > 10 min ago` AND polling has synced ≥1 message in that window. Includes a one-click **"Re-arm watch"** button (already wired) and a copy-to-clipboard of the **exact webhook URL** the GCP push subscription should target.
+- **Amber — "Push received but payload didn't match your account"**: shown when most recent push has `accounts_matched = 0`. Tells the user the watch was probably created against a different Google project / topic than the subscription forwarding to us.
+- **Green — "Push is healthy"**: when a `push` event with `accounts_matched ≥ 1` arrived in the last 10 minutes.
 
-### 3. Surface Gmail-side errors in the Sync activity panel
+### 3. Re-arm with stricter verification
 
-- Extend `pubsub_events` logging in poll and worker to include an `error` row when a GetMessage call hits 429/5xx, so the panel's "Errors" tile reflects what you see in GCP.
-- Add a small **"Gmail API errors (24h)"** tile next to the existing 6 tiles, counting events whose `error` field matches `Gmail API 4\d\d|5\d\d`.
-- When that count is non-zero, show a neutral info banner: "Some Gmail GetMessage calls are failing on Google's side (429/503). The worker is retrying them — see the Processing queue panel for DLQ items."
+In `renewGmailWatch` (server fn), after calling `users.watch`:
+- Log the `topicName` and `historyId` that Google returned into a new `gmail_watch_log` table (or just into `pubsub_events` as `event_type = 'watch_rearm'` with the topic embedded in `error`/a new `details` column).
+- Surface that topic name in the activity panel so it's obvious whether watch and subscription are on the same topic.
 
-### 4. Out of scope
+### 4. (Optional, do not touch yet) GCP-side checklist for the user
 
-- The actual GCP console errors. Those are on Google's side; we can only make our retry behavior bulletproof and the visibility better.
-- Schema changes. `pubsub_events.error` is already free-form text.
-- The classifier, folder rules, or processing logic.
+Add a small collapsible **"Pub/Sub setup checklist"** in the panel listing:
+- Topic name must equal `GMAIL_PUBSUB_TOPIC` (we'll display the current value)
+- A push subscription on that topic must POST to the webhook URL we display
+- `gmail-api-push@system.gserviceaccount.com` must have `roles/pubsub.publisher` on the topic
+- Subscription must not be paused and ack deadline ≥ 10s
 
-### Files
+No code is changed for #4 beyond rendering static text — it just gives you a one-screen verification.
 
-- `src/lib/gmail.server.ts` — timeout + typed error class
-- `src/lib/sync.server.ts` — branch on `error.retryable` in `runMessageJobs`; log a `pubsub_events` row when GetMessage fails inside `syncSinceHistory`
-- `src/lib/gmail.functions.ts` — extend `listPubsubEvents` stats with `gmailErrors24`
-- `src/components/settings/PubsubActivity.tsx` — new tile + info banner
+## Files to touch
+
+- `src/routes/api/public/gmail-webhook.ts` — richer logging
+- `src/lib/gmail.functions.ts` — extend `listPubsubEvents` return shape, expose `lastPush`, `lastPushPayload`, `webhookUrl`, `pubsubTopic`
+- `src/components/settings/PubsubActivity.tsx` — new banners, "Last push details" row, checklist
+- `supabase/migrations/*.sql` — add `payload jsonb`, `message_id text`, `publish_time timestamptz`, `subscription text` columns to `pubsub_events`
+
+## Out of scope
+
+- Anything inside Google Cloud Console — we'll give you the values to check, but won't (and can't) edit the subscription.
+- Changing how polling works. Polling is already covering for push and successfully synced your "Test 2".
+- Folder / classifier / job worker changes.
+
+## What you'll see after this lands
+
+Within 1 next push (or the next time you click "Send test push"):
+- A red banner saying *"Google delivered a push but `emailAddress` was missing — your watch is probably on a different topic than the subscription forwarding to us. Topic the watch returned: `projects/.../topics/X`. Webhook URL the subscription should target: `https://getzerrow.com/api/public/gmail-webhook`."*
+- Or, if pushes still don't arrive at all: an amber banner saying *"No push received in 12 min, polling synced 3 messages in that window — the subscription almost certainly isn't pointed at our webhook."*
+
+Either way you'll know in one glance which knob to turn in GCP.
