@@ -91,9 +91,13 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   });
 
   const emailsQ = useQuery({
-    queryKey: ["emails"],
+    queryKey: ["emails", "counts"],
     queryFn: async () => {
-      const { data } = await supabase.from("emails").select("*").order("received_at", { ascending: false }).limit(2000);
+      const { data } = await supabase
+        .from("emails")
+        .select("id,folder_id,is_read,is_archived")
+        .eq("is_read", false)
+        .limit(5000);
       return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean; is_archived: boolean }>;
     },
   });
