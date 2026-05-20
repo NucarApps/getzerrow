@@ -45,7 +45,7 @@ export function MoveSimilarDialog({
   const [moving, setMoving] = useState(false);
 
   const fromFolderName = useMemo(
-    () => folders.find((f) => f.id === fromFolderId)?.name ?? "Unsorted",
+    () => folders.find((f) => f.id === fromFolderId)?.name ?? "No rules",
     [folders, fromFolderId],
   );
 

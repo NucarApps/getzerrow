@@ -115,17 +115,22 @@ function InboxPage() {
           .limit(2000);
         return (data ?? []) as Email[];
       }
+      const isNoRules = selectedFolder === "no_rules";
       let q = supabase
         .from("emails")
         .select("*")
         .order("received_at", { ascending: false, nullsFirst: false })
-        .limit(PAGE_SIZE + 1);
+        .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
       if (cursor) q = q.lt("received_at", cursor);
       if (selectedFolder === "all") q = q.eq("is_archived", false);
-      else if (selectedFolder === "unsorted") q = q.eq("is_archived", false).is("folder_id", null);
+      else if (isNoRules) q = q.is("folder_id", null);
       else q = q.eq("folder_id", selectedFolder);
       const { data } = await q;
-      return (data ?? []) as Email[];
+      let rows = (data ?? []) as Email[];
+      if (isNoRules) {
+        rows = rows.filter((e) => !(e as any).raw_labels?.some((l: string) => l.startsWith("Label_")));
+      }
+      return rows;
     },
     refetchOnWindowFocus: true,
     refetchInterval: 30_000,
@@ -541,9 +546,9 @@ function InboxPage() {
   );
 }
 
-function labelForFolder(sel: string | "all" | "unsorted", folders: Folder[]) {
+function labelForFolder(sel: string | "all" | "no_rules", folders: Folder[]) {
   if (sel === "all") return "All inbox";
-  if (sel === "unsorted") return "Unsorted";
+  if (sel === "no_rules") return "No rules";
   return folders.find((f) => f.id === sel)?.name ?? "Folder";
 }
 

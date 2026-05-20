@@ -1,30 +1,67 @@
-## What's happening
+## Goal
 
-Clicking "Next" on a Gmail-linked folder (e.g. School) calls `loadOlderFromGmail` with `before_received_at` set to the last row's `received_at`. That value comes from Postgres/PostgREST and looks like `2025-05-20T14:50:33.123456+00:00` — it has a timezone offset (and often microseconds).
+Rename the sidebar entry **Unsorted** → **No rules** and change its meaning to: every email that has **no folder assigned** in the app AND **no user-created Gmail label** in `raw_labels`, regardless of read/archived state. These are emails Gmail just dropped into the archive with nothing routed to them.
 
-The server validator is:
+## Definition of "no user labels"
 
-```ts
-before_received_at: z.string().datetime().nullable()
+Gmail system label ids: `INBOX`, `UNREAD`, `STARRED`, `IMPORTANT`, `SENT`, `DRAFT`, `SPAM`, `TRASH`, `CHAT`, `CATEGORY_*`. User-created labels always have ids that start with `Label_`.
+
+So a row qualifies for "No rules" when:
+
+```
+folder_id IS NULL
+AND NOT EXISTS l ∈ raw_labels WHERE l LIKE 'Label\_%'
 ```
 
-`z.string().datetime()` only accepts `Z`-suffixed ISO strings by default. Anything with a `+00:00` offset is rejected → the Zod error you saw (`invalid_format / datetime` on path `before_received_at`).
+## Changes
 
-## Fix
-
-In `src/lib/gmail.functions.ts` (`loadOlderFromGmail`, line 164), allow timezone offsets:
-
+### 1. `src/lib/folder-selection.tsx`
+Change the union type:
 ```ts
-before_received_at: z.string().datetime({ offset: true }).nullable()
+export type FolderSelection = string | "all" | "no_rules";
 ```
+(Renaming `"unsorted"` → `"no_rules"` everywhere — it's an internal key, no migration needed.)
 
-That's the only required change. No client changes, no schema changes.
+### 2. `src/routes/_authenticated.tsx` (sidebar)
+- Replace the `"Unsorted"` `FolderRow` with `label="No rules"`, key `"no_rules"`, same muted color.
+- Update the counts builder (~line 106–120): a row counts toward `no_rules` when `folder_id IS NULL` AND `!raw_labels?.some(l => l.startsWith("Label_"))`. Include both read and unread.
+  - Also update `emailsQ` (~line 93–103) to fetch `raw_labels` and drop the `is_read=false` filter so the count reflects read + unread. (Bump `limit` only if needed; 5000 stays.)
+- The "All inbox" total stays as today (unread, not archived).
 
-## Quick audit while there
+### 3. `src/routes/_authenticated/index.tsx` (email list query)
+Line 125 currently does:
+```ts
+else if (selectedFolder === "unsorted") q = q.eq("is_archived", false).is("folder_id", null);
+```
+Replace with the `no_rules` branch:
+```ts
+else if (selectedFolder === "no_rules") {
+  q = q.is("folder_id", null);
+  // user-label filter applied client-side (see below)
+}
+```
+Postgres array filtering with a `LIKE` predicate isn't expressible through PostgREST, so after `await q` we filter the returned rows:
+```ts
+let rows = (data ?? []) as Email[];
+if (selectedFolder === "no_rules") {
+  rows = rows.filter(e => !(e as any).raw_labels?.some((l: string) => l.startsWith("Label_")));
+}
+```
+To keep pagination predictable, bump the per-page fetch when on `no_rules` (e.g. `limit(PAGE_SIZE * 3 + 1)`) and slice to `PAGE_SIZE` after filtering. Cursor still uses the last returned row's `received_at`. Acceptable trade-off — most users have very few user labels, so filter loss is small.
 
-Grep the rest of `gmail.functions.ts` / other server fns for `z.string().datetime()` used on values that originate from Postgres timestamps, and apply the same `{ offset: true }` fix wherever it appears (read-only check — only patch ones actually fed by DB values).
+Also update `labelForFolder` (~line 544–548): `if (sel === "no_rules") return "No rules";`.
 
-## Out of scope
+### 4. Search for any other `"unsorted"` references
+`MoveSimilarDialog.tsx` line 48 uses the string `"Unsorted"` as a display fallback for "no folder assigned" — change that copy to `"No rules"` so the label stays consistent across the UI.
 
-- Pagination logic itself (cursor handling in `index.tsx`) — it's correct, only the validator was wrong.
-- Normalizing timestamps to `Z` on the client — not worth it; accepting offsets is the standard fix.
+## Not changing
+
+- No DB schema changes, no migrations.
+- No server functions added — the existing `supabase.from("emails")` query path stays.
+- Sync / classification logic unchanged.
+- "All inbox" semantics unchanged.
+
+## Risk / edge cases
+
+- Client-side label filtering means a heavily-labeled mailbox could see fewer than `PAGE_SIZE` rows per page even after the 3× overfetch. If that turns out to matter we can promote this to a `createServerFn` with a raw SQL `NOT EXISTS (SELECT 1 FROM unnest(raw_labels) l WHERE l LIKE 'Label\_%')`. Left out for now to keep the change small.
+- Sidebar count is approximate — it's bounded by the existing 5000-row `emailsQ` fetch, same as today.
