@@ -220,6 +220,13 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           count={counts.total}
         />
         <FolderRow
+          active={selected === "all_mail"}
+          onSelect={() => pick("all_mail")}
+          color="#d4d4d8"
+          label="All mail"
+          count={emailsQ.data?.length ?? 0}
+        />
+        <FolderRow
           active={selected === "no_rules"}
           onSelect={() => pick("no_rules")}
           color="#71717a"
