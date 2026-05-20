@@ -193,6 +193,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   let confidence = 0;
   let summary = "";
   let classification_reason: string | null = null;
+  let matched_filter_ids: string[] = [];
   let aiSkipped = false;
 
   const labeledFolder = folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
