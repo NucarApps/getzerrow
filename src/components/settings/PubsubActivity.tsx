@@ -38,7 +38,11 @@ export function PubsubActivity() {
     queryFn: () =>
       fetchEvents({
         data: {
-          event_type: filter === "push" ? "push" : filter === "watch_renew" ? "watch_renew" : undefined,
+          event_type:
+            filter === "push" ? "push" :
+            filter === "poll" ? "poll" :
+            filter === "watch_renew" ? "watch_renew" :
+            undefined,
           only_errors: filter === "errors" ? true : undefined,
           limit: 100,
         },
