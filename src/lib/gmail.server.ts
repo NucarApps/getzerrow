@@ -53,6 +53,13 @@ export async function getMessage(accountId: string, id: string) {
   return gmailFetch<any>(accountId, `/users/me/messages/${id}?format=full`);
 }
 
+export async function getThread(accountId: string, threadId: string) {
+  return gmailFetch<{ id: string; messages?: any[] }>(
+    accountId,
+    `/users/me/threads/${threadId}?format=full`
+  );
+}
+
 /** Headers-only fetch: From + Subject + snippet. ~10x smaller than format=full. */
 export async function getMessageMetadata(accountId: string, id: string) {
   return gmailFetch<any>(

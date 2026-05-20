@@ -11,7 +11,9 @@ import {
   ensureWatch,
   stopWatch,
   listMessages,
+  getMessage,
   getMessageMetadata,
+  getThread,
   parseMessage,
 } from "./gmail.server";
 import { suggestReply, suggestRuleUpdates } from "./ai.server";
@@ -357,8 +359,17 @@ export const triggerSync = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const histResult = await syncSinceHistory(data.account_id);
+    // Safety net: history events can be missed (webhook drops, expired
+    // historyId, etc.), so always do a small recent backfill on manual sync.
+    let recent_synced = 0;
+    try {
+      const r = await backfillRecent(data.account_id, context.userId, 30);
+      recent_synced = r?.processed ?? 0;
+    } catch (e) {
+      console.error("manual sync recent backfill failed", e);
+    }
     const recon = await reconcileLocalInbox(data.account_id, 100);
-    return { ...histResult, reconciled: recon };
+    return { ...histResult, recent_synced, reconciled: recon };
   });
 
 export const renewGmailWatch = createServerFn({ method: "POST" })
@@ -1354,16 +1365,41 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     else q = raw;
 
     const list = await listMessages(accountId!, { q, maxResults: 50 });
-    const ids = (list.messages ?? []).map((m) => m.id);
-    if (ids.length === 0) return { ingested: 0, found: 0 };
+    const hits = list.messages ?? [];
+    if (hits.length === 0) return { ingested: 0, found: 0 };
 
+    // Expand each hit to its full thread so replies that aren't direct hits
+    // also get pulled in (e.g. a "Re: ..." reply in a thread we already have).
+    const threadIds = Array.from(new Set(hits.map((m) => m.threadId).filter(Boolean)));
+    const allMessageIds = new Set<string>(hits.map((m) => m.id));
+
+    const THREAD_CONCURRENCY = 6;
+    let ti = 0;
+    async function threadWorker() {
+      while (ti < threadIds.length) {
+        const tid = threadIds[ti++];
+        try {
+          const t = await getThread(accountId!, tid);
+          for (const m of t.messages ?? []) {
+            if (m?.id) allMessageIds.add(m.id);
+          }
+        } catch (e) {
+          console.error("searchGmailAndIngest thread fetch failed", tid, e);
+        }
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(THREAD_CONCURRENCY, threadIds.length) }, threadWorker)
+    );
+
+    const idsArr = Array.from(allMessageIds);
     const { data: existing } = await supabaseAdmin
       .from("emails")
       .select("gmail_message_id")
       .eq("user_id", context.userId)
-      .in("gmail_message_id", ids);
+      .in("gmail_message_id", idsArr);
     const known = new Set((existing ?? []).map((r) => r.gmail_message_id));
-    const todo = ids.filter((id) => !known.has(id));
+    const todo = idsArr.filter((id) => !known.has(id));
 
     // Cache folder label → folder_id mapping for this account.
     const { data: folders } = await supabaseAdmin
@@ -1383,7 +1419,9 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
       while (i < todo.length) {
         const id = todo[i++];
         try {
-          const raw = await getMessageMetadata(accountId!, id);
+          // Full fetch so body_text/body_html land too — these messages
+          // bypass the normal sync pipeline that would otherwise repair them.
+          const raw = await getMessage(accountId!, id);
           const p = parseMessage(raw);
           // Pick a folder if Gmail has one of our linked labels.
           let folder_id: string | null = null;
@@ -1408,6 +1446,8 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
             to_addrs: p.to_addrs,
             subject: p.subject,
             snippet: p.snippet,
+            body_text: p.body_text,
+            body_html: p.body_html,
             received_at: p.received_at,
             is_read: p.is_read,
             is_archived: !(p.raw_labels ?? []).includes("INBOX"),
@@ -1419,6 +1459,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
             classification_reason,
           });
           if (!error) ingested++;
+          else console.error("searchGmailAndIngest insert failed", id, error);
         } catch (e) {
           console.error("searchGmailAndIngest one failed", id, e);
         }
@@ -1426,7 +1467,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
 
-    return { ingested, found: ids.length };
+    return { ingested, found: idsArr.length };
   });
 
 
