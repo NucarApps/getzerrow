@@ -708,7 +708,11 @@ export const updateFolderSummary = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const existing = await getOwnedSchedule(context.userId, data.id);
-    const patch: Record<string, unknown> = {};
+    const patch: {
+      name?: string; instructions?: string;
+      hour?: number; minute?: number; timezone?: string;
+      enabled?: boolean; next_run_at?: string;
+    } = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.instructions !== undefined) patch.instructions = data.instructions;
     if (data.hour !== undefined) patch.hour = data.hour;
