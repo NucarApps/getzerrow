@@ -339,6 +339,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               reason={email.classification_reason}
               folder={folderRulesQ.data?.folder ?? null}
               filters={folderRulesQ.data?.filters ?? []}
+              email={email}
             />
             {email.classified_by === "ai" && email.ai_confidence != null && (
               <div>
