@@ -290,7 +290,10 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
     return { skipped: true };
   }
 
-  if (!parsed.raw_labels?.includes("INBOX")) return { skipped: true };
+  const labels = parsed.raw_labels ?? [];
+  const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
+  if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return { skipped: true };
+  const inInbox = labels.includes("INBOX");
 
   // 1) Insert the email row FIRST with no folder so it shows up in Inbox
   //    immediately, even if classification (AI Gateway) is slow or fails.
