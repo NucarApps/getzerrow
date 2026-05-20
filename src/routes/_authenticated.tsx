@@ -62,7 +62,7 @@ function AuthedLayout() {
 }
 
 function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
-  const qc = useQueryClient();
+  
   const { selected, setSelected } = useFolderSelection();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<Folder | null>(null);
