@@ -487,6 +487,27 @@ function InboxPage() {
                       <ContextMenuItem
                         onSelect={async () => {
                           const sender = (e.from_addr || "").toLowerCase();
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                            prev?.filter((x) => (x.from_addr || "").toLowerCase() !== sender),
+                          );
+                          try {
+                            await addOverrideFn({ data: { value: e.from_addr!, match_type: "email" } });
+                            const r = await stripLabelFn({ data: { value: e.from_addr!, match_type: "email" } });
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                            toast.success(`Added to inbox list · cleaned ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
+                          } catch (err: any) {
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            toast.error(err.message);
+                          }
+                        }}
+                      >
+                        Future and past emails
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          const sender = (e.from_addr || "").toLowerCase();
                           // Optimistically remove all rows from this sender across cached email pages.
                           qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
                             prev?.filter((x) => (x.from_addr || "").toLowerCase() !== sender),
@@ -504,6 +525,7 @@ function InboxPage() {
                       >
                         Remove folder label from past emails
                       </ContextMenuItem>
+
 
                     </ContextMenuSubContent>
                   </ContextMenuSub>
@@ -535,6 +557,27 @@ function InboxPage() {
                             prev?.filter((x) => ((x.from_addr || "").toLowerCase().split("@")[1] || "") !== d),
                           );
                           try {
+                            await addOverrideFn({ data: { value: domain, match_type: "domain" } });
+                            const r = await stripLabelFn({ data: { value: domain, match_type: "domain" } });
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+                            toast.success(`Added to inbox list · cleaned ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
+                          } catch (err: any) {
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            toast.error(err.message);
+                          }
+                        }}
+                      >
+                        Future and past emails
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          const d = domain.toLowerCase();
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                            prev?.filter((x) => ((x.from_addr || "").toLowerCase().split("@")[1] || "") !== d),
+                          );
+                          try {
                             const r = await stripLabelFn({ data: { value: domain, match_type: "domain" } });
                             qc.invalidateQueries({ queryKey: ["emails"] });
                             qc.invalidateQueries({ queryKey: ["emails-summary"] });
@@ -547,6 +590,7 @@ function InboxPage() {
                       >
                         Remove folder label from past emails
                       </ContextMenuItem>
+
 
                     </ContextMenuSubContent>
                   </ContextMenuSub>
