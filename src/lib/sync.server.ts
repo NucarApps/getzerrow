@@ -960,7 +960,6 @@ export async function syncSinceHistory(accountId: string) {
  * actual current labels. Catches messages whose history events we missed.
  */
 export async function reconcileLocalInbox(accountId: string, limit = 100) {
-  const noAutoRead = await loadNoAutoReadFolderIds(accountId);
   const { data: rows } = await supabaseAdmin
     .from("emails")
     .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
