@@ -344,10 +344,17 @@ export function TrackingStandby() {
         {/* Ships */}
         {ships.map((s) => {
           const flashing = s.hitUntil > now;
+          const age = now - s.spawnedAt;
+          const remaining = s.lifespan - age;
+          const fadeIn = Math.min(1, age / 250);
+          const fadeOut = Math.min(1, Math.max(0, remaining) / 250);
+          const opacity = Math.min(fadeIn, fadeOut);
+          const scale = 0.6 + 0.4 * opacity;
           return (
             <g
               key={s.id}
-              transform={`translate(${s.x} ${s.y}) scale(${s.dir === -1 ? -1 : 1} 1)`}
+              transform={`translate(${s.x} ${s.y}) scale(${scale})`}
+              opacity={opacity}
               className="ufo-wrap"
               style={{ cursor: "crosshair", pointerEvents: "auto" }}
               onPointerDown={(e) => handleShipClick(e, s.id)}
@@ -368,6 +375,7 @@ export function TrackingStandby() {
             </g>
           );
         })}
+
       </svg>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 text-center text-[11px] tracking-[0.2em] text-muted-foreground">
