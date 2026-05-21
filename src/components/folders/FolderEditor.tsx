@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   learnFolderFromLabel,
+  applyFolderLabelToLocal,
   listFolderDomainSuggestions,
   addDomainFilter,
   reassignDomainToFolder,
@@ -65,6 +66,7 @@ export function FolderEditor({
 }) {
   const qc = useQueryClient();
   const learnFn = useServerFn(learnFolderFromLabel);
+  const applyLabelFn = useServerFn(applyFolderLabelToLocal);
   const listDomainsFn = useServerFn(listFolderDomainSuggestions);
   const addDomainFn = useServerFn(addDomainFilter);
   const reassignFn = useServerFn(reassignDomainToFolder);
@@ -75,6 +77,7 @@ export function FolderEditor({
   const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);
+  const [syncingLabel, setSyncingLabel] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
@@ -188,7 +191,7 @@ export function FolderEditor({
       if (r.learned) bits.push(`learned from ${r.learned}`);
       if (r.ingested) bits.push(`imported ${r.ingested}`);
       if (r.claimed) bits.push(`tagged ${r.claimed}`);
-      if (bits.length === 0) toast.warning("No emails found under linked label in the past 30 days.");
+      if (bits.length === 0) toast.warning("No new examples found. Already up to date.");
       else toast.success(bits.join(" · "));
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       qc.invalidateQueries({ queryKey: ["folder-example-count", folder.id] });
@@ -196,6 +199,18 @@ export function FolderEditor({
       qc.invalidateQueries({ queryKey: ["emails"] });
     } catch (e: any) { toast.error(e.message ?? "Failed to learn"); }
     finally { setLearning(false); }
+  }
+
+  async function syncLabel() {
+    if (!folder.gmail_label_id) { toast.error("Link a Gmail label first, then save."); return; }
+    setSyncingLabel(true);
+    try {
+      const r = await applyLabelFn({ data: { folder_id: folder.id } });
+      if (r.total === 0) toast.success("All emails in this folder already carry the Gmail label.");
+      else toast.success(`Synced ${r.synced} of ${r.total} email${r.total === 1 ? "" : "s"} to Gmail${r.failed ? ` · ${r.failed} failed` : ""}.`);
+      qc.invalidateQueries({ queryKey: ["emails"] });
+    } catch (e: any) { toast.error(e.message ?? "Failed to sync labels"); }
+    finally { setSyncingLabel(false); }
   }
 
   return (
@@ -245,9 +260,14 @@ export function FolderEditor({
               <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3" /> Learned profile
               </div>
-              <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
-                {learning ? "Learning from up to 200 emails…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={syncLabel} disabled={syncingLabel || !folder.gmail_label_id} title="Apply this folder's Gmail label to all emails Zerrow has routed here">
+                  {syncingLabel ? "Syncing…" : "Sync to Gmail"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
+                  {learning ? "Learning from up to 200 emails…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
+                </Button>
+              </div>
             </div>
             <p className="mt-2 text-sm text-foreground/80">
               {folder.learned_profile || <span className="text-muted-foreground italic">Not learned yet. {linkedLabel ? `Linked to "${linkedLabel.name}".` : "Link a Gmail label and save first."}</span>}
