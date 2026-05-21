@@ -251,7 +251,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         )}
         {!accountId && !accountsQ.isLoading && (
           <p className="px-3 py-3 text-xs text-muted-foreground">
-            Connect Gmail in <Link to="/settings" className="underline" onClick={() => onNavigate?.()}>Settings</Link>.
+            Connect Gmail in <button type="button" className="underline" onClick={() => { navigate({ to: "/settings" }); onNavigate?.(); }}>Settings</button>.
           </p>
         )}
       </div>
