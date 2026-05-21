@@ -116,6 +116,17 @@ export function AddFolderDialog({
               ))}
             </SelectContent>
           </Select>
+          {labelChoice === NEW_LABEL && (
+            <Select value={parentLabelId || NONE} onValueChange={(v) => setParentLabelId(v === NONE ? "" : v)}>
+              <SelectTrigger><SelectValue placeholder="Parent label (optional)" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>None (top level)</SelectItem>
+                {zerrowLabels.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>Under: {labelPath(l.name)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
