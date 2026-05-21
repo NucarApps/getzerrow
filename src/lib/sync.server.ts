@@ -999,7 +999,8 @@ export async function runMessageJobs(limit = 100, concurrency = 8) {
     .limit(limit);
 
   const results: Array<{ id: string; ok: boolean; error?: string; dlq?: boolean; retryable?: boolean }> = [];
-  for (const job of candidates ?? []) {
+
+  const processOne = async (job: NonNullable<typeof candidates>[number]) => {
     const { data: claimed } = await supabaseAdmin
       .from("message_jobs")
       .update({ status: "running", locked_at: new Date().toISOString() })
