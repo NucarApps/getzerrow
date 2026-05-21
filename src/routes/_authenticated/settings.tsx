@@ -5,7 +5,9 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   listMyGmailAccounts, startConnectGmail, disconnectGmailAccount,
   triggerBackfill, triggerWeekBackfill, triggerSync, renewGmailWatch,
+  startDeepBackfill, cancelDeepBackfill, getBackfillStatus,
 } from "@/lib/gmail.functions";
+
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -26,9 +28,18 @@ function SettingsPage() {
   const weekBackfill = useServerFn(triggerWeekBackfill);
   const sync = useServerFn(triggerSync);
   const renew = useServerFn(renewGmailWatch);
+  const startDeep = useServerFn(startDeepBackfill);
+  const cancelDeep = useServerFn(cancelDeepBackfill);
+  const getStatus = useServerFn(getBackfillStatus);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
+  const backfillQ = useQuery({
+    queryKey: ["backfill-status"],
+    queryFn: async () => (await getStatus({ data: {} })).job as any,
+    refetchInterval: 5000,
+  });
   const [busy, setBusy] = useState<string | null>(null);
+
 
   async function run(key: string, fn: () => Promise<any>, msg: string) {
     setBusy(key);
@@ -84,6 +95,8 @@ function SettingsPage() {
                 {accounts.map((a) => {
                   const exp = a.watch_expiration ? new Date(a.watch_expiration) : null;
                   const watchActive = exp && exp > new Date();
+                  const bf = backfillQ.data && backfillQ.data.gmail_account_id === a.id ? backfillQ.data : null;
+                  const bfActive = bf && (bf.status === "listing" || bf.status === "processing");
                   return (
                     <div key={a.id} className="rounded-md border border-border p-4">
                       <div className="flex items-center justify-between">
@@ -112,6 +125,23 @@ function SettingsPage() {
                         }, "")} disabled={busy !== null}>
                           {busy === `week-${a.id}` ? "Catching up…" : "Catch up last 7 days"}
                         </Button>
+                        {!bfActive ? (
+                          <Button size="sm" variant="default" onClick={() => run(`deep-${a.id}`, async () => {
+                            const r: any = await startDeep({ data: { account_id: a.id, months: 6 } });
+                            qc.invalidateQueries({ queryKey: ["backfill-status"] });
+                            toast.success(r?.reused ? "Import already running — banner will update with progress" : "Started importing your last 6 months of email");
+                          }, "")} disabled={busy !== null}>
+                            {busy === `deep-${a.id}` ? "Starting…" : "Pull last 6 months"}
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="destructive" onClick={() => run(`cancel-${a.id}`, async () => {
+                            await cancelDeep({ data: { job_id: bf!.id } });
+                            qc.invalidateQueries({ queryKey: ["backfill-status"] });
+                            toast.success("Import canceled — already-pulled emails are kept");
+                          }, "")} disabled={busy !== null}>
+                            {busy === `cancel-${a.id}` ? "Canceling…" : "Cancel import"}
+                          </Button>
+                        )}
                         <Button size="sm" variant="outline" onClick={() => run(`sync-${a.id}`, () => sync({ data: { account_id: a.id } }), "Synced")} disabled={busy !== null}>
                           <RefreshCw className="mr-1.5 h-3 w-3" />{busy === `sync-${a.id}` ? "Syncing…" : "Sync now"}
                         </Button>
@@ -119,9 +149,17 @@ function SettingsPage() {
                           {busy === `watch-${a.id}` ? "Renewing…" : "Renew push watch"}
                         </Button>
                       </div>
+                      {bfActive && (
+                        <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                          {bf!.status === "listing"
+                            ? `Finding messages… ${bf!.total_found.toLocaleString()} found so far`
+                            : `Importing ${bf!.months} months — ${Math.max(0, bf!.total_enqueued - bf!.remaining).toLocaleString()} of ${bf!.total_enqueued.toLocaleString()} done`}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
+
               </div>
             </Card>
           </TabsContent>

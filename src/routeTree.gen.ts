@@ -22,6 +22,7 @@ import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/g
 import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
 import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/public/gmail-process-jobs'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
+import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 
 const TermsRoute = TermsRouteImport.update({
@@ -91,6 +92,12 @@ const ApiPublicGmailPollRoute = ApiPublicGmailPollRouteImport.update({
   path: '/api/public/gmail-poll',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGmailBackfillTickRoute =
+  ApiPublicGmailBackfillTickRouteImport.update({
+    id: '/api/public/gmail-backfill-tick',
+    path: '/api/public/gmail-backfill-tick',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksRunFolderSummariesRoute =
   ApiPublicHooksRunFolderSummariesRouteImport.update({
     id: '/api/public/hooks/run-folder-summaries',
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
@@ -121,6 +129,7 @@ export interface FileRoutesByTo {
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
@@ -138,6 +147,7 @@ export interface FileRoutesById {
   '/_authenticated/folders': typeof AuthenticatedFoldersRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/folders'
     | '/inbox'
     | '/settings'
+    | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-renew-watches'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '/folders'
     | '/inbox'
     | '/settings'
+    | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-renew-watches'
@@ -186,6 +198,7 @@ export interface FileRouteTypes {
     | '/_authenticated/folders'
     | '/_authenticated/inbox'
     | '/_authenticated/settings'
+    | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-renew-watches'
@@ -200,6 +213,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
+  ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
   ApiPublicGmailProcessJobsRoute: typeof ApiPublicGmailProcessJobsRoute
   ApiPublicGmailRenewWatchesRoute: typeof ApiPublicGmailRenewWatchesRoute
@@ -301,6 +315,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailPollRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/gmail-backfill-tick': {
+      id: '/api/public/gmail-backfill-tick'
+      path: '/api/public/gmail-backfill-tick'
+      fullPath: '/api/public/gmail-backfill-tick'
+      preLoaderRoute: typeof ApiPublicGmailBackfillTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/run-folder-summaries': {
       id: '/api/public/hooks/run-folder-summaries'
       path: '/api/public/hooks/run-folder-summaries'
@@ -333,6 +354,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
+  ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
   ApiPublicGmailProcessJobsRoute: ApiPublicGmailProcessJobsRoute,
   ApiPublicGmailRenewWatchesRoute: ApiPublicGmailRenewWatchesRoute,
