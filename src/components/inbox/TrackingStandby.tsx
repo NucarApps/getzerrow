@@ -21,6 +21,8 @@ export function TrackingStandby() {
   const [t, setT] = useState({ downrange: 0, apogee: 0, pitch: 90, alt: 0, vel: 0 });
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const arcPathRef = useRef<SVGPathElement | null>(null);
+  const mountTimeRef = useRef<number>(performance.now());
   const idRef = useRef(1);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const reducedMotionRef = useRef(false);
