@@ -248,7 +248,15 @@ export function TrackingStandby() {
 
   // Keyboard
   useEffect(() => {
+    const isEditableTarget = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return false;
+      const tag = t.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable;
+    };
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isEditableTarget(e)) return;
       const k = e.key;
       const isGameKey = ["ArrowLeft", "ArrowRight", "ArrowUp", "a", "A", "d", "D", "w", "W", " ", "p", "P", "Enter"].includes(k);
       if (!isGameKey) return;
@@ -267,6 +275,7 @@ export function TrackingStandby() {
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      if (isEditableTarget(e)) return;
       const k = e.key;
       if (k === "ArrowLeft" || k === "a" || k === "A") keysRef.current.left = false;
       if (k === "ArrowRight" || k === "d" || k === "D") keysRef.current.right = false;
