@@ -1447,110 +1447,119 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     else if (looksLikeDomain) q = `from:${raw.replace(/^@/, "")}`;
     else q = raw;
 
-    const list = await listMessages(accountId!, { q, maxResults: 50 });
-    const hits = list.messages ?? [];
-    if (hits.length === 0) return { ingested: 0, found: 0 };
+    let totalIngested = 0;
+    let totalFound = 0;
 
-    // Expand each hit to its full thread so replies that aren't direct hits
-    // also get pulled in (e.g. a "Re: ..." reply in a thread we already have).
-    const threadIds = Array.from(new Set(hits.map((m) => m.threadId).filter(Boolean)));
-    const allMessageIds = new Set<string>(hits.map((m) => m.id));
+    for (const accountId of accountIds) {
+      try {
+        const list = await listMessages(accountId, { q, maxResults: 50 });
+        const hits = list.messages ?? [];
+        if (hits.length === 0) continue;
 
-    const THREAD_CONCURRENCY = 6;
-    let ti = 0;
-    async function threadWorker() {
-      while (ti < threadIds.length) {
-        const tid = threadIds[ti++];
-        try {
-          const t = await getThread(accountId!, tid);
-          for (const m of t.messages ?? []) {
-            if (m?.id) allMessageIds.add(m.id);
-          }
-        } catch (e) {
-          console.error("searchGmailAndIngest thread fetch failed", tid, e);
-        }
-      }
-    }
-    await Promise.all(
-      Array.from({ length: Math.min(THREAD_CONCURRENCY, threadIds.length) }, threadWorker)
-    );
+        // Expand each hit to its full thread so replies that aren't direct hits
+        // also get pulled in (e.g. a "Re: ..." reply in a thread we already have).
+        const threadIds = Array.from(new Set(hits.map((m) => m.threadId).filter(Boolean)));
+        const allMessageIds = new Set<string>(hits.map((m) => m.id));
 
-    const idsArr = Array.from(allMessageIds);
-    const { data: existing } = await supabaseAdmin
-      .from("emails")
-      .select("gmail_message_id")
-      .eq("user_id", context.userId)
-      .in("gmail_message_id", idsArr);
-    const known = new Set((existing ?? []).map((r) => r.gmail_message_id));
-    const todo = idsArr.filter((id) => !known.has(id));
-
-    // Cache folder label → folder_id mapping for this account.
-    const { data: folders } = await supabaseAdmin
-      .from("folders")
-      .select("id, gmail_label_id")
-      .eq("user_id", context.userId)
-      .eq("gmail_account_id", accountId!);
-    const labelToFolder = new Map<string, string>();
-    for (const f of folders ?? []) {
-      if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
-    }
-
-    let ingested = 0;
-    const CONCURRENCY = 8;
-    let i = 0;
-    async function worker() {
-      while (i < todo.length) {
-        const id = todo[i++];
-        try {
-          // Full fetch so body_text/body_html land too — these messages
-          // bypass the normal sync pipeline that would otherwise repair them.
-          const raw = await getMessage(accountId!, id);
-          const p = parseMessage(raw);
-          // Pick a folder if Gmail has one of our linked labels.
-          let folder_id: string | null = null;
-          let classified_by: string = "gmail_search_ingest";
-          let classification_reason: string | null = "Pulled from Gmail via search";
-          for (const lbl of p.raw_labels ?? []) {
-            const fid = labelToFolder.get(lbl);
-            if (fid) {
-              folder_id = fid;
-              classified_by = "gmail_label";
-              classification_reason = "Matched Gmail label";
-              break;
+        const THREAD_CONCURRENCY = 6;
+        let ti = 0;
+        async function threadWorker() {
+          while (ti < threadIds.length) {
+            const tid = threadIds[ti++];
+            try {
+              const t = await getThread(accountId, tid);
+              for (const m of t.messages ?? []) {
+                if (m?.id) allMessageIds.add(m.id);
+              }
+            } catch (e) {
+              console.error("searchGmailAndIngest thread fetch failed", tid, e);
             }
           }
-          const { error } = await supabaseAdmin.from("emails").insert({
-            user_id: context.userId,
-            gmail_account_id: accountId!,
-            gmail_message_id: p.gmail_message_id,
-            thread_id: p.thread_id,
-            from_addr: p.from_addr,
-            from_name: p.from_name,
-            to_addrs: p.to_addrs,
-            subject: p.subject,
-            snippet: p.snippet,
-            body_text: p.body_text,
-            body_html: p.body_html,
-            received_at: p.received_at,
-            is_read: p.is_read,
-            is_archived: !(p.raw_labels ?? []).includes("INBOX"),
-            has_attachment: p.has_attachment,
-            raw_labels: p.raw_labels,
-            folder_id,
-            classified_by,
-            ai_confidence: folder_id ? 1 : null,
-            classification_reason,
-          });
-          if (!error) ingested++;
-          else console.error("searchGmailAndIngest insert failed", id, error);
-        } catch (e) {
-          console.error("searchGmailAndIngest one failed", id, e);
         }
+        await Promise.all(
+          Array.from({ length: Math.min(THREAD_CONCURRENCY, threadIds.length) }, threadWorker)
+        );
+
+        const idsArr = Array.from(allMessageIds);
+        totalFound += idsArr.length;
+        const { data: existing } = await supabaseAdmin
+          .from("emails")
+          .select("gmail_message_id")
+          .eq("user_id", context.userId)
+          .in("gmail_message_id", idsArr);
+        const known = new Set((existing ?? []).map((r) => r.gmail_message_id));
+        const todo = idsArr.filter((id) => !known.has(id));
+
+        // Cache folder label → folder_id mapping for this account.
+        const { data: folders } = await supabaseAdmin
+          .from("folders")
+          .select("id, gmail_label_id")
+          .eq("user_id", context.userId)
+          .eq("gmail_account_id", accountId);
+        const labelToFolder = new Map<string, string>();
+        for (const f of folders ?? []) {
+          if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
+        }
+
+        const CONCURRENCY = 8;
+        let i = 0;
+        async function worker() {
+          while (i < todo.length) {
+            const id = todo[i++];
+            try {
+              // Full fetch so body_text/body_html land too — these messages
+              // bypass the normal sync pipeline that would otherwise repair them.
+              const raw = await getMessage(accountId, id);
+              const p = parseMessage(raw);
+              // Pick a folder if Gmail has one of our linked labels.
+              let folder_id: string | null = null;
+              let classified_by: string = "gmail_search_ingest";
+              let classification_reason: string | null = "Pulled from Gmail via search";
+              for (const lbl of p.raw_labels ?? []) {
+                const fid = labelToFolder.get(lbl);
+                if (fid) {
+                  folder_id = fid;
+                  classified_by = "gmail_label";
+                  classification_reason = "Matched Gmail label";
+                  break;
+                }
+              }
+              const { error } = await supabaseAdmin.from("emails").insert({
+                user_id: context.userId,
+                gmail_account_id: accountId,
+                gmail_message_id: p.gmail_message_id,
+                thread_id: p.thread_id,
+                from_addr: p.from_addr,
+                from_name: p.from_name,
+                to_addrs: p.to_addrs,
+                subject: p.subject,
+                snippet: p.snippet,
+                body_text: p.body_text,
+                body_html: p.body_html,
+                received_at: p.received_at,
+                is_read: p.is_read,
+                is_archived: !(p.raw_labels ?? []).includes("INBOX"),
+                has_attachment: p.has_attachment,
+                raw_labels: p.raw_labels,
+                folder_id,
+                classified_by,
+                ai_confidence: folder_id ? 1 : null,
+                classification_reason,
+              });
+              if (!error) totalIngested++;
+              else console.error("searchGmailAndIngest insert failed", id, error);
+            } catch (e) {
+              console.error("searchGmailAndIngest one failed", id, e);
+            }
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
+      } catch (e) {
+        console.error("searchGmailAndIngest account failed", accountId, e);
       }
     }
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
 
-    return { ingested, found: idsArr.length };
+    return { ingested: totalIngested, found: totalFound };
   });
 
 
