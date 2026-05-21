@@ -853,10 +853,10 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 md:px-6">
-        <h1 className="font-display text-xl leading-tight md:text-2xl">{email.subject || "(no subject)"}</h1>
+        <h1 className="font-display text-lg leading-tight line-clamp-3 md:line-clamp-none md:text-2xl">{email.subject || "(no subject)"}</h1>
         <p className="mt-1 text-xs text-muted-foreground">
           <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
-          {email.from_name && email.from_addr ? ` <${email.from_addr}>` : ""}
+          {email.from_name && email.from_addr ? <span className="hidden md:inline">{` <${email.from_addr}>`}</span> : null}
           {email.received_at && ` · ${new Date(email.received_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`}
         </p>
         {email.ai_summary && (
