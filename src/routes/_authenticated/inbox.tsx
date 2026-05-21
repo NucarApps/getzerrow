@@ -545,7 +545,8 @@ function InboxPage() {
                           }
                         }}
                       >
-                        Remove folder label from past emails
+                        Remove folder label from past emails (keep archived)
+
                       </ContextMenuItem>
 
 
@@ -610,7 +611,8 @@ function InboxPage() {
                           }
                         }}
                       >
-                        Remove folder label from past emails
+                        Remove folder label from past emails (keep archived)
+
                       </ContextMenuItem>
 
 
