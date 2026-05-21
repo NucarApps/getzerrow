@@ -49,7 +49,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
                   history_id: w.historyId,
                   watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
                 }).eq("id", acc.id);
-                rearmed = true;
+                rearmedCount++;
                 try {
                   await supabaseAdmin.from("pubsub_events").insert({
                     event_type: "watch_rearm_auto",
@@ -67,13 +67,13 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
             const synced = (r as { synced?: number })?.synced ?? 0;
             totalAccounts++;
             totalSynced += synced;
-            results.push({ id: acc.id, email: acc.email_address, ok: true, rearmed, ...r });
+            ok++;
           } catch (e: unknown) {
             const err = e as Error;
             console.error("poll failed for", acc.email_address, err);
             const msg = err?.message ?? String(e);
             if (!firstError) firstError = msg;
-            results.push({ id: acc.id, email: acc.email_address, ok: false, rearmed, error: msg });
+            failed++;
           }
         }
 
