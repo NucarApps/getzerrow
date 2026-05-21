@@ -1553,11 +1553,43 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       limit: z.number().min(1).max(500).optional(),
     }).parse(input ?? {})
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const limit = data.limit ?? 100;
+
+    // Scope all diagnostics to the caller's own Gmail accounts to avoid
+    // leaking other users' email addresses / sync metadata.
+    const { data: myAccounts } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("id, email_address")
+      .eq("user_id", context.userId);
+    const myEmails = (myAccounts ?? []).map((a) => a.email_address).filter(Boolean) as string[];
+    const myAccountIds = (myAccounts ?? []).map((a) => a.id);
+
+    // If the user has no connected accounts, return an empty diagnostics shape.
+    if (myEmails.length === 0) {
+      const host = getRequestHost();
+      return {
+        events: [],
+        stats: {
+          push24: 0, poll24: 0, renew24: 0, accounts24: 0, synced24: 0,
+          errors24: 0, gmailErrors24: 0, pushEmpty24: 0, pushUnmatched24: 0,
+          lastReceivedAt: null, lastPollAt: null, lastPushAt: null,
+        },
+        diagnostics: {
+          lastPush: null,
+          lastWatchRenew: null,
+          lastWebhookTest: null,
+          webhookUrl: `https://${host}/api/public/gmail-webhook`,
+          pubsubTopic: process.env.GMAIL_PUBSUB_TOPIC ?? null,
+          stuckJobs: [],
+        },
+      };
+    }
+
     let q = supabaseAdmin
       .from("pubsub_events")
       .select("id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details")
+      .in("email_address", myEmails)
       .order("received_at", { ascending: false })
       .limit(limit);
     if (data.event_type) q = q.eq("event_type", data.event_type);
@@ -1569,6 +1601,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     const { data: agg } = await supabaseAdmin
       .from("pubsub_events")
       .select("event_type, accounts_matched, synced_count, error, received_at")
+      .in("email_address", myEmails)
       .gte("received_at", since)
       .limit(5000);
 
@@ -1601,6 +1634,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     const { data: anyPushRows } = await supabaseAdmin
       .from("pubsub_events")
       .select(cols)
+      .in("email_address", myEmails)
       .in("event_type", ["push", "push_empty"])
       .order("received_at", { ascending: false })
       .limit(1);
@@ -1610,6 +1644,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     const { data: lastTestRows } = await supabaseAdmin
       .from("pubsub_events")
       .select(cols)
+      .in("email_address", myEmails)
       .eq("event_type", "webhook_test")
       .order("received_at", { ascending: false })
       .limit(1);
@@ -1618,6 +1653,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     const { data: lastRenewRows } = await supabaseAdmin
       .from("pubsub_events")
       .select("received_at, details, email_address, history_id")
+      .in("email_address", myEmails)
       .in("event_type", ["watch_renew", "watch_rearm_auto"])
       .order("received_at", { ascending: false })
       .limit(1);
@@ -1631,10 +1667,12 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     const { data: stuckJobs } = await supabaseAdmin
       .from("message_jobs")
       .select("id, gmail_message_id, gmail_account_id, attempt, locked_at, from_addr, subject")
+      .in("gmail_account_id", myAccountIds)
       .eq("status", "running")
       .lt("locked_at", stuckCutoff)
       .order("locked_at", { ascending: true })
       .limit(25);
+
 
     return {
       events: rows ?? [],
