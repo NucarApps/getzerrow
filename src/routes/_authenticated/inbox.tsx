@@ -869,12 +869,12 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         <Collapsible open={whyOpen} onOpenChange={setWhyOpen} className="mt-1.5">
           <CollapsibleTrigger asChild>
             <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1 text-left text-sm hover:bg-accent/40">
-              <span className="flex items-center gap-2">
-                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">Why this folder?</span>
-                <ClassifiedChip by={email.classified_by} />
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate text-muted-foreground">Why this folder?</span>
+                <span className="hidden sm:inline-flex"><ClassifiedChip by={email.classified_by} /></span>
               </span>
-              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
+              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 space-y-3 rounded-md border border-border bg-card/30 p-3 text-sm">
