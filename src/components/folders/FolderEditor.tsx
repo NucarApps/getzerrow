@@ -191,7 +191,7 @@ export function FolderEditor({
       if (r.learned) bits.push(`learned from ${r.learned}`);
       if (r.ingested) bits.push(`imported ${r.ingested}`);
       if (r.claimed) bits.push(`tagged ${r.claimed}`);
-      if (bits.length === 0) toast.warning("No emails found under linked label in the past 30 days.");
+      if (bits.length === 0) toast.warning("No new examples found. Already up to date.");
       else toast.success(bits.join(" · "));
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       qc.invalidateQueries({ queryKey: ["folder-example-count", folder.id] });
@@ -199,6 +199,18 @@ export function FolderEditor({
       qc.invalidateQueries({ queryKey: ["emails"] });
     } catch (e: any) { toast.error(e.message ?? "Failed to learn"); }
     finally { setLearning(false); }
+  }
+
+  async function syncLabel() {
+    if (!folder.gmail_label_id) { toast.error("Link a Gmail label first, then save."); return; }
+    setSyncingLabel(true);
+    try {
+      const r = await applyLabelFn({ data: { folder_id: folder.id } });
+      if (r.total === 0) toast.success("All emails in this folder already carry the Gmail label.");
+      else toast.success(`Synced ${r.synced} of ${r.total} email${r.total === 1 ? "" : "s"} to Gmail${r.failed ? ` · ${r.failed} failed` : ""}.`);
+      qc.invalidateQueries({ queryKey: ["emails"] });
+    } catch (e: any) { toast.error(e.message ?? "Failed to sync labels"); }
+    finally { setSyncingLabel(false); }
   }
 
   return (
