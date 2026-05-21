@@ -931,9 +931,12 @@ export async function enqueueMessageJob(
   accountId: string,
   userId: string,
   gmailMessageId: string,
+  priority: number = 0,
 ) {
   // Upsert so the same message is never queued twice. If a job already exists
   // (pending or dlq), do nothing — the worker / retry button owns it from here.
+  // priority: 0 = live (push/poll), 10 = backfill. Worker orders by priority ASC
+  // so live mail always jumps ahead of the backfill backlog.
   await supabaseAdmin
     .from("message_jobs")
     .upsert(
@@ -942,6 +945,7 @@ export async function enqueueMessageJob(
         gmail_message_id: gmailMessageId,
         user_id: userId,
         status: "pending",
+        priority,
         next_run_at: new Date().toISOString(),
       },
       { onConflict: "gmail_account_id,gmail_message_id", ignoreDuplicates: true },
