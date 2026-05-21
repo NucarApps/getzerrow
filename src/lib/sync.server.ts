@@ -1008,7 +1008,7 @@ export async function runMessageJobs(limit = 100, concurrency = 8) {
       .neq("status", "dlq")
       .select("id")
       .maybeSingle();
-    if (!claimed) continue;
+    if (!claimed) return;
 
     try {
       // Hard timeout so the worker always reaches the catch block before the
