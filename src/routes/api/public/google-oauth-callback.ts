@@ -31,7 +31,8 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
         try {
           userId = verifyState(state);
         } catch (e: any) {
-          return new Response(`Invalid state: ${e.message}`, { status: 400 });
+          console.error("oauth: invalid state", e);
+          return new Response("Invalid or expired authorization state. Please try connecting again.", { status: 400 });
         }
 
         try {
@@ -62,7 +63,8 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
             .single();
 
           if (error || !account) {
-            return new Response(`Failed to save account: ${error?.message}`, { status: 500 });
+            console.error("oauth: failed to save account", error);
+            return new Response("Something went wrong saving your account. Please try again.", { status: 500 });
           }
 
           // Start Gmail push watch if topic is configured
@@ -81,7 +83,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           return new Response(null, { status: 302, headers: { Location: "/settings?connected=1" } });
         } catch (e: any) {
           console.error("oauth callback failed", e);
-          return new Response(`OAuth failed: ${e.message}`, { status: 500 });
+          return new Response("Something went wrong completing sign-in. Please try again.", { status: 500 });
         }
       },
     },

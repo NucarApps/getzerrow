@@ -7,13 +7,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { ensureWatch } from "@/lib/gmail.server";
+import { isAuthorizedCron, unauthorizedResponse } from "@/lib/cron-auth.server";
 
 const SILENCE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 export const Route = createFileRoute("/api/public/gmail-poll")({
   server: {
     handlers: {
-      POST: async () => {
+      POST: async ({ request }) => {
+        if (!isAuthorizedCron(request)) return unauthorizedResponse();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
           .select("id, email_address, watch_expiration");
@@ -31,12 +33,14 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         const lastPushAt = lastPush?.received_at ? new Date(lastPush.received_at).getTime() : 0;
         const silent = Date.now() - lastPushAt > SILENCE_MS;
 
-        const results: Array<{ id: string; email: string; ok: boolean; error?: string; rearmed?: boolean; synced?: number }> = [];
+        let ok = 0;
+        let failed = 0;
+        let rearmedCount = 0;
         let totalAccounts = 0;
         let totalSynced = 0;
         let firstError: string | null = null;
         for (const acc of accounts ?? []) {
-          let rearmed = false;
+          
           if (silent && acc.watch_expiration && new Date(acc.watch_expiration).getTime() > Date.now()) {
             try {
               const w = await ensureWatch(acc.id, null);
@@ -45,7 +49,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
                   history_id: w.historyId,
                   watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
                 }).eq("id", acc.id);
-                rearmed = true;
+                rearmedCount++;
                 try {
                   await supabaseAdmin.from("pubsub_events").insert({
                     event_type: "watch_rearm_auto",
@@ -63,13 +67,13 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
             const synced = (r as { synced?: number })?.synced ?? 0;
             totalAccounts++;
             totalSynced += synced;
-            results.push({ id: acc.id, email: acc.email_address, ok: true, rearmed, ...r });
+            ok++;
           } catch (e: unknown) {
             const err = e as Error;
             console.error("poll failed for", acc.email_address, err);
             const msg = err?.message ?? String(e);
             if (!firstError) firstError = msg;
-            results.push({ id: acc.id, email: acc.email_address, ok: false, rearmed, error: msg });
+            failed++;
           }
         }
 
@@ -94,7 +98,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
           console.error("drain jobs failed", e);
         }
 
-        return Response.json({ ok: true, count: results.length, silent, results, jobs });
+        return Response.json({ ok: true, count: ok + failed, accounts: ok + failed, succeeded: ok, failed, rearmed: rearmedCount, synced: totalSynced, silent, jobs });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
     },

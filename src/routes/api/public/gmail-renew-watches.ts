@@ -2,19 +2,26 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { ensureWatch } from "@/lib/gmail.server";
+import { isAuthorizedCron, unauthorizedResponse } from "@/lib/cron-auth.server";
 
 export const Route = createFileRoute("/api/public/gmail-renew-watches")({
   server: {
     handlers: {
-      POST: async () => {
+      POST: async ({ request }) => {
+        if (!isAuthorizedCron(request)) return unauthorizedResponse();
         const cutoff = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
           .select("id, email_address, watch_expiration")
           .or(`watch_expiration.is.null,watch_expiration.lt.${cutoff}`);
-        if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+        if (error) {
+          console.error("renew-watches: query failed", error);
+          return Response.json({ ok: false, error: "Query failed" }, { status: 500 });
+        }
 
-        const results: Array<{ id: string; email: string; ok: boolean; error?: string }> = [];
+        let ok = 0;
+        let failed = 0;
+        const errorSummaries: string[] = [];
         for (const acc of accounts ?? []) {
           try {
             const w = await ensureWatch(acc.id, null); // force renew
@@ -24,20 +31,23 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
                 watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
               }).eq("id", acc.id);
             }
-            results.push({ id: acc.id, email: acc.email_address, ok: true });
-          } catch (e: any) {
-            results.push({ id: acc.id, email: acc.email_address, ok: false, error: e?.message ?? String(e) });
+            ok++;
+          } catch (e: unknown) {
+            const msg = (e as Error)?.message ?? String(e);
+            console.error("renew failed for", acc.email_address, msg);
+            failed++;
+            if (errorSummaries.length < 5) errorSummaries.push(msg);
           }
         }
         try {
           await supabaseAdmin.from("pubsub_events").insert({
             event_type: "watch_renew",
-            accounts_matched: results.length,
-            synced_count: results.filter((r) => r.ok).length,
-            error: results.filter((r) => !r.ok).map((r) => `${r.email}: ${r.error}`).join("; ") || null,
+            accounts_matched: ok + failed,
+            synced_count: ok,
+            error: errorSummaries.join("; ") || null,
           });
         } catch (e) { console.error("pubsub_events log failed", e); }
-        return Response.json({ ok: true, count: results.length, results });
+        return Response.json({ ok: true, count: ok + failed, succeeded: ok, failed });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
     },
