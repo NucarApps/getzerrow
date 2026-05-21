@@ -1558,6 +1558,50 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
           if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
         }
 
+        // Load folder_filters for this user so newly-ingested messages
+        // honor existing domain / sender / subject rules instead of
+        // landing as un-classified gmail_search_ingest rows.
+        const folderIds = (folders ?? []).map((f) => f.id);
+        type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
+        let filters: Filter[] = [];
+        if (folderIds.length > 0) {
+          const { data: ff } = await supabaseAdmin
+            .from("folder_filters")
+            .select("id, folder_id, field, op, value")
+            .in("folder_id", folderIds);
+          filters = (ff ?? []) as Filter[];
+        }
+        function matchFilters(parsed: {
+          from_addr: string; from_name: string; to_addrs: string;
+          subject: string; body_text: string; has_attachment: boolean;
+        }): { folder_id: string; field: string; value: string } | null {
+          for (const f of filters) {
+            const v = (f.value || "").toLowerCase();
+            const fieldVal = (() => {
+              switch (f.field) {
+                case "from": return `${parsed.from_addr} ${parsed.from_name}`.toLowerCase();
+                case "to": return (parsed.to_addrs || "").toLowerCase();
+                case "subject": return (parsed.subject || "").toLowerCase();
+                case "body": return (parsed.body_text || "").toLowerCase();
+                case "domain": return (parsed.from_addr.split("@")[1] || "").toLowerCase();
+                case "has_attachment": return parsed.has_attachment ? "true" : "false";
+                default: return "";
+              }
+            })();
+            const hit = (() => {
+              switch (f.op) {
+                case "contains": return fieldVal.includes(v);
+                case "equals": return fieldVal === v;
+                case "regex":
+                  try { return new RegExp(f.value, "i").test(fieldVal); } catch { return false; }
+                default: return false;
+              }
+            })();
+            if (hit) return { folder_id: f.folder_id, field: f.field, value: v };
+          }
+          return null;
+        }
+
         const CONCURRENCY = 8;
         let i = 0;
         async function worker() {
@@ -1579,6 +1623,25 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                   classified_by = "gmail_label";
                   classification_reason = "Matched Gmail label";
                   break;
+                }
+              }
+              // Fall back to user's folder rules.
+              if (!folder_id) {
+                const m = matchFilters({
+                  from_addr: p.from_addr ?? "",
+                  from_name: p.from_name ?? "",
+                  to_addrs: p.to_addrs ?? "",
+                  subject: p.subject ?? "",
+                  body_text: p.body_text ?? "",
+                  has_attachment: !!p.has_attachment,
+                });
+                if (m) {
+                  folder_id = m.folder_id;
+                  classified_by = m.field === "domain" ? "domain_rule" : "filter";
+                  classification_reason =
+                    m.field === "domain"
+                      ? `Domain rule: ${m.value}`
+                      : `Folder rule: ${m.field} ${m.value}`;
                 }
               }
               const { error } = await supabaseAdmin.from("emails").insert({
