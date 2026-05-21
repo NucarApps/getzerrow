@@ -76,43 +76,48 @@ export function TrackingStandby() {
       const dt = Math.min(64, now - last);
       last = now;
 
-      // Spawn
+      // Spawn at random spot
       if (!reducedMotionRef.current) {
         if (now - lastSpawnRef.current > nextSpawnGapRef.current) {
           lastSpawnRef.current = now;
           nextSpawnGapRef.current = 3500 + Math.random() * 2500;
           setShips((cur) => {
             if (cur.length >= MAX_SHIPS) return cur;
-            const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
-            const crossSec = 18 + Math.random() * 10; // 18–28s
-            const speed = 100 / crossSec / 1000; // % per ms
             return [
               ...cur,
               {
                 id: idRef.current++,
-                y: 15 + Math.random() * 50, // 15–65%
-                dir,
-                x: dir === 1 ? -8 : 108,
+                x: 12 + Math.random() * 76, // 12–88%
+                y: 18 + Math.random() * 44, // 18–62%
+                vx: (Math.random() - 0.5) * 0.0012, // % per ms (±0.6%/s)
+                vy: (Math.random() - 0.5) * 0.0012,
                 hp: 2,
                 hitUntil: 0,
-                speed,
+                spawnedAt: now,
+                lifespan: 6000 + Math.random() * 4000, // 6–10s
               },
             ];
           });
         }
       }
 
-      // Move ships, despawn off-screen
+      // Drift ships, despawn after lifespan
       setShips((cur) => {
         if (cur.length === 0) return cur;
         const next: Ship[] = [];
         for (const s of cur) {
-          const nx = s.x + s.dir * s.speed * dt;
-          if (nx < -12 || nx > 112) continue;
-          next.push({ ...s, x: nx });
+          if (now - s.spawnedAt > s.lifespan) continue;
+          let nx = s.x + s.vx * dt;
+          let ny = s.y + s.vy * dt;
+          let nvx = s.vx;
+          let nvy = s.vy;
+          if (nx < 10 || nx > 90) { nvx = -nvx; nx = Math.max(10, Math.min(90, nx)); }
+          if (ny < 16 || ny > 64) { nvy = -nvy; ny = Math.max(16, Math.min(64, ny)); }
+          next.push({ ...s, x: nx, y: ny, vx: nvx, vy: nvy });
         }
         return next;
       });
+
 
       // Prune lasers + bursts
       setLasers((cur) => (cur.length === 0 ? cur : cur.filter((l) => now - l.startedAt < LASER_MS)));
