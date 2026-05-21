@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { backfillRecent, backfillWindow, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox, loadOlderFromLabel, runMessageJobs, retryMessageJob, enqueueMessageJob } from "./sync.server";
+import { backfillRecent, backfillWindow, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox, loadOlderFromLabel, runMessageJobs, retryMessageJob, enqueueMessageJob, startBackfillJob, cancelBackfillJob } from "./sync.server";
 import {
   listLabels,
   createLabel,
