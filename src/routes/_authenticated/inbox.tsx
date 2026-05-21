@@ -388,7 +388,7 @@ function InboxPage() {
               <ContextMenuTrigger asChild>
                 <button
                   onClick={() => setSelectedId(e.id)}
-                  className={`relative block w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
+                  className={`relative block w-full border-b border-border px-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
                 >
                   {!e.is_read && (
                     <span className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
@@ -400,40 +400,13 @@ function InboxPage() {
                     </span>
                   </div>
                   <div className={`truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}>{decodeEntities(e.subject) || "(no subject)"}</div>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    {rowFolder && (
-                      <span
-                        className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
-                        style={{
-                          backgroundColor: `color-mix(in oklab, ${rowFolder.color} 18%, transparent)`,
-                          color: rowFolder.color,
-                        }}
-                      >
-                        {rowFolder.name}
-                      </span>
-                    )}
-                    <ClassifiedChip by={e.classified_by} />
-                    {e.classified_by === "ai" && e.ai_confidence != null && (
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        {Math.round(e.ai_confidence * 100)}%
-                      </span>
-                    )}
-                  </div>
-                  {reasonText && (
-                    <div
-                      className="mt-1 line-clamp-1 text-[11px] italic text-muted-foreground"
-                      title={`${reasonText}\n\nRight-click the email to move or reanalyze.`}
-                    >
-                      {reasonText}
-                    </div>
-                  )}
                   {e.ai_summary ? (
                     <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
                       <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
-                      <span className="line-clamp-2">{decodeEntities(e.ai_summary)}</span>
+                      <span className="line-clamp-1">{decodeEntities(e.ai_summary)}</span>
                     </div>
                   ) : (
-                    !reasonText && <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{decodeEntities(e.snippet)}</div>
+                    <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{decodeEntities(e.snippet)}</div>
                   )}
                 </button>
               </ContextMenuTrigger>
