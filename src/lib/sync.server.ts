@@ -1087,7 +1087,19 @@ export async function runMessageJobs(limit = 100, concurrency = 8) {
         } catch { /* best-effort */ }
       }
     }
-  }
+  };
+
+  // Bounded-concurrency pool: each job is dominated by Gmail + Supabase I/O
+  // wait, so parallelizing turns ~50 jobs/min into ~400+ jobs/min.
+  const queue = [...(candidates ?? [])];
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const job = queue.shift();
+      if (!job) return;
+      await processOne(job);
+    }
+  });
+  await Promise.all(workers);
   return {
     processed: results.length,
     ok: results.filter(r => r.ok).length,
