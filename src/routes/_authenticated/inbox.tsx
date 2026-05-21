@@ -753,7 +753,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" disabled={moving} title="Move to folder">
+              <Button size="sm" variant="ghost" className="h-8 px-1.5" disabled={moving} title="Move to folder">
                 <FolderInput className="h-4 w-4" />
                 <ChevronDown className="ml-0.5 h-3 w-3 opacity-60" />
               </Button>
