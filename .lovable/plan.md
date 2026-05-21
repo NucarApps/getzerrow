@@ -1,24 +1,41 @@
-## Goal
+## Goals
 
-Add a third option to the right-click "Always send to inbox" submenus so the user can apply the rule to **future and past emails** in one click — alongside the existing "Future emails only" and "Remove folder label from past emails".
+1. Add a top-level **Move to Inbox** action in the right-click menu so any email — including archived ones surfaced from search or a folder view — can be pulled back into the Inbox in one click.
+2. Make the existing past-emails behavior more obvious: the "Remove folder label from past emails" option already removes the folder label without re-adding `INBOX` (archived mail stays archived, just unlabeled). Reword it so the intent is clear.
 
 ## Changes — `src/routes/_authenticated/inbox.tsx`
 
-In both `Just {from_addr}` and `Anyone @{domain}` submenus (around lines 469–553), add a new `ContextMenuItem` labeled **"Future and past emails"** between the two existing items.
+### 1. Add a top-level "Move to Inbox" menu item
 
-Its handler does the same work as the two current items combined, in sequence:
-1. Call `addOverrideFn({ value, match_type })` — adds the inbox override for future mail.
-2. Optimistically remove matching rows from the cached email lists (same filter the strip handler uses).
-3. Call `stripLabelFn({ value, match_type })` — strips folder labels from past matching mail.
-4. Invalidate `["emails"]`, `["emails-summary"]`, `["inbox-overrides"]`.
-5. Toast a combined message, e.g. `Added to inbox list · cleaned {n} past email(s)`.
-6. On error, invalidate queries and toast the error.
+Today the only way to move an email to the inbox is **Move to folder → Inbox (no folder)**, and that sub-item only renders when `currentFolderId` is set. From the global Inbox view, an archived/foldered email shown via search has no visible path back to the inbox.
 
-Apply to both the email-address submenu and the domain submenu. No backend changes — both server functions (`addInboxOverride`, `stripFolderLabelPast`) already exist and accept the same input shape.
+Add a new `ContextMenuItem` at the top of `ContextMenuContent` (above the **Move to folder** submenu) labeled **Move to Inbox**, using the `Inbox` icon. Show it only when the email is archived OR has a `folder_id` (otherwise it's already in the inbox). Handler:
+
+- Optimistically update the cached row to `{ folder_id: null, is_archived: false, classified_by: "manual_inbox" }`.
+- Call `moveEmailToInbox({ email_id: e.id })` (already imported, server fn already removes the old Gmail label and adds `INBOX`).
+- Toast "Moved to inbox" on success; invalidate `["emails"]`.
+
+### 2. Reword the past-emails strip option
+
+The label "Remove folder label from past emails" is ambiguous — users worry it might also re-inbox the messages. The current server fn `stripFolderLabelPast` deliberately preserves archived state (`is_archived: !raw_labels.includes("INBOX")`), which is exactly the "looks like it was inboxed then archived" behavior the user wants.
+
+Rename the two menu items (sender and domain submenus) from:
+
+> Remove folder label from past emails
+
+to:
+
+> Remove folder label from past emails (keep archived)
+
+No backend change.
+
+## What stays the same
+
+- **Future emails only** and **Future and past emails** options are untouched.
+- `moveEmailToInbox` and `stripFolderLabelPast` server functions are unchanged.
+- `Move to folder → Inbox (no folder)` inside folder views still works.
 
 ## Result
 
-Right-click → Always send to inbox → Just {sender} (or Anyone @{domain}) now shows three options:
-- Future emails only
-- Future and past emails  ← new
-- Remove folder label from past emails
+- Right-click any email anywhere → **Move to Inbox** appears whenever the email isn't already in the inbox.
+- The past-emails option clearly states it keeps mail archived, not re-inboxed.
