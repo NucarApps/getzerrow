@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getBackfillStatus } from "@/lib/gmail.functions";
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type BackfillJob = {
   id: string;
@@ -20,6 +20,7 @@ type BackfillJob = {
 export function BackfillBanner() {
   const getStatus = useServerFn(getBackfillStatus);
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const q = useQuery({
     queryKey: ["backfill-status"],
@@ -34,7 +35,14 @@ export function BackfillBanner() {
 
   const job = q.data;
 
-  // Auto-show "Finished" briefly, then suppress until next active job.
+  // Tick once a second while listing so the "elapsed" hint can appear.
+  useEffect(() => {
+    if (!job || job.status !== "listing") return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [job]);
+
+  // Auto-suppress the "done" banner after a short delay.
   useEffect(() => {
     if (!job) return;
     if (job.status === "done" && dismissed !== job.id) {
@@ -43,20 +51,33 @@ export function BackfillBanner() {
     }
   }, [job, dismissed]);
 
+  const elapsedSec = useMemo(() => {
+    if (!job) return 0;
+    return Math.max(0, Math.floor((now - new Date(job.started_at).getTime()) / 1000));
+  }, [job, now]);
+
   if (!job) return null;
   if (job.status === "canceled" || job.status === "error") return null;
   if (job.status === "done" && dismissed === job.id) return null;
 
-  const active = job.status === "listing" || job.status === "processing";
-  const totalDone = Math.max(0, job.total_enqueued - job.remaining);
-  const denom = job.total_enqueued || job.total_found || 1;
-  const pct = active ? Math.min(99, Math.round((totalDone / denom) * 100)) : 100;
+  const listing = job.status === "listing";
+  const processing = job.status === "processing";
+  const active = listing || processing;
 
-  const label = active
-    ? job.status === "listing"
-      ? `Finding messages from the last ${job.months} months — ${job.total_found.toLocaleString()} found so far`
-      : `Importing your last ${job.months} months of email — ${totalDone.toLocaleString()} of ${job.total_enqueued.toLocaleString()} done`
-    : `Import finished — ${job.total_enqueued.toLocaleString()} new messages added`;
+  const totalDone = Math.max(0, job.total_enqueued - job.remaining);
+  const denom = job.total_enqueued || 1;
+  const pct = processing ? Math.min(99, Math.round((totalDone / denom) * 100)) : 100;
+
+  let label: string;
+  if (listing) {
+    label = `Scanning your last ${job.months} months — ${job.total_found.toLocaleString()} messages found so far. We'll start importing as soon as the scan finishes.`;
+  } else if (processing) {
+    label = `Importing your last ${job.months} months of email — ${totalDone.toLocaleString()} of ${job.total_enqueued.toLocaleString()} done`;
+  } else {
+    label = `Import finished — ${job.total_enqueued.toLocaleString()} new messages added`;
+  }
+
+  const showSlowHint = listing && elapsedSec > 60;
 
   return (
     <div className="border-b border-border bg-primary/10 px-4 py-2 text-sm">
@@ -68,7 +89,12 @@ export function BackfillBanner() {
         )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-foreground">{label}</div>
-          {active && (
+          {listing && (
+            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-background/60">
+              <div className="h-full w-1/3 animate-[backfill-marquee_1.4s_linear_infinite] rounded-full bg-primary" />
+            </div>
+          )}
+          {processing && (
             <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-background/60">
               <div
                 className="h-full bg-primary transition-all"
@@ -78,7 +104,9 @@ export function BackfillBanner() {
           )}
           {active && (
             <div className="mt-0.5 text-[11px] text-muted-foreground">
-              You can keep using Zerrow — new emails are still coming in live.
+              {showSlowHint
+                ? "Large mailbox — this can take a few minutes. You can keep using Zerrow; new emails are still coming in live."
+                : "You can keep using Zerrow — new emails are still coming in live."}
             </div>
           )}
         </div>
@@ -92,6 +120,7 @@ export function BackfillBanner() {
           </button>
         )}
       </div>
+      <style>{`@keyframes backfill-marquee { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }`}</style>
     </div>
   );
 }

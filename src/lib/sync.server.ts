@@ -727,7 +727,7 @@ type BackfillJob = {
   already_had: number;
 };
 
-const BACKFILL_LIST_PAGES_PER_TICK = 10; // ~1000 IDs per tick
+const BACKFILL_LIST_PAGES_PER_TICK = 20; // ~2000 IDs per tick
 const BACKFILL_PAGE_SIZE = 100;
 
 export async function startBackfillJob(
