@@ -30,7 +30,17 @@ export function AddFolderDialog({
   const learnFn = useServerFn(learnFolderFromLabel);
   const [name, setName] = useState("");
   const [labelChoice, setLabelChoice] = useState<string>(NEW_LABEL);
+  const [parentLabelId, setParentLabelId] = useState<string>("");
   const [busy, setBusy] = useState(false);
+
+  const NONE = "__none__";
+  const zerrowLabels = labels
+    .filter((l) => l.name === "Zerrow" || l.name.startsWith("Zerrow/"))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const labelPath = (n: string) => {
+    const parts = n.split("/");
+    return parts.length === 1 ? "Zerrow (root)" : parts.slice(1).join(" / ");
+  };
 
   async function submit() {
     if (!name.trim() || !accountId) return;
