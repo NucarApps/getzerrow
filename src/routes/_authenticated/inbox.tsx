@@ -658,7 +658,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   const [sending, setSending] = useState(false);
   const [moving, setMoving] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
-  const [whyOpen, setWhyOpen] = useState(false);
+  const [whyOpen, setWhyOpen] = useState(true);
   const [similarPrompt, setSimilarPrompt] = useState<null | {
     fromFolderId: string | null;
     fromAddr: string | null;
