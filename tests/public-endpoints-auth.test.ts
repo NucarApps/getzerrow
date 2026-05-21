@@ -1,11 +1,16 @@
 // Live integration tests against the deployed public endpoints. These verify
 // that cron and webhook endpoints reject requests without the correct secrets.
 //
-// Default target is the stable published URL. Override with
-// PUBLIC_BASE_URL=https://... before running.
+// These tests hit a real URL and are skipped unless PUBLIC_BASE_URL is set.
+// Run against the preview (latest build):
+//   PUBLIC_BASE_URL=https://project--9ca78824-55f5-4897-b74d-b5b1d219918a-dev.lovable.app bun run test:integration
+// Run against production after publishing:
+//   PUBLIC_BASE_URL=https://getzerrow.lovable.app bun run test:integration
 import { describe, it, expect } from "vitest";
 
-const BASE = (process.env.PUBLIC_BASE_URL ?? "https://getzerrow.lovable.app").replace(/\/$/, "");
+const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
+const runIf = BASE ? describe : describe.skip;
+
 
 const CRON_ENDPOINTS = [
   "/api/public/gmail-poll",
