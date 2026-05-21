@@ -100,23 +100,19 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   errorMsg = (e as Error)?.message ?? String(e);
                 }
               }
-              // Immediately drain newly-enqueued message_jobs so the email row
-              // lands in `emails` (and the Inbox realtime subscription fires)
-              // within this same push request. When there's a visible backlog
-              // (e.g. cron was down or a burst arrived), drain more aggressively
-              // up to a hard cap so a single push can catch us up.
+              // Drain ONLY the jobs we just enqueued (small + bounded) so the
+              // Inbox realtime subscription fires quickly for this push. The
+              // background worker (gmail-process-jobs cron, every minute) owns
+              // the rest of the queue — don't let one push request try to
+              // process the whole backlog, that's what made activity look hung.
               try {
-                const { count: pendingCount } = await supabaseAdmin
-                  .from("message_jobs")
-                  .select("id", { count: "exact", head: true })
-                  .eq("status", "pending");
-                const backlog = pendingCount ?? 0;
-                const target = Math.max(enqueuedCount + 5, backlog);
-                const limit = Math.min(Math.max(target, 0), 100);
+                const limit = Math.min(Math.max(enqueuedCount, 0), 10);
                 if (limit > 0) await runMessageJobs(limit);
               } catch (e) {
                 console.error("inline runMessageJobs failed", e);
               }
+
+
 
             }
           }
