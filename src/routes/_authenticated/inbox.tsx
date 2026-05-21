@@ -31,7 +31,12 @@ import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
 
 
-export const Route = createFileRoute("/_authenticated/inbox")({ component: InboxPage });
+export const Route = createFileRoute("/_authenticated/inbox")({
+  component: InboxPage,
+  head: () => ({
+    links: [{ rel: "stylesheet", href: "/zerrow-landing.css" }],
+  }),
+});
 
 const NAMED_ENTITIES: Record<string, string> = {
   amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
