@@ -102,16 +102,22 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               }
               // Immediately drain newly-enqueued message_jobs so the email row
               // lands in `emails` (and the Inbox realtime subscription fires)
-              // within this same push request, instead of waiting for the
-              // 30s/60s job cron or the next poll. Best-effort: any failure
-              // here falls back to the existing retry/poll path.
-              if (enqueuedCount > 0) {
-                try {
-                  await runMessageJobs(Math.min(enqueuedCount + 5, 25));
-                } catch (e) {
-                  console.error("inline runMessageJobs failed", e);
-                }
+              // within this same push request. When there's a visible backlog
+              // (e.g. cron was down or a burst arrived), drain more aggressively
+              // up to a hard cap so a single push can catch us up.
+              try {
+                const { count: pendingCount } = await supabaseAdmin
+                  .from("message_jobs")
+                  .select("id", { count: "exact", head: true })
+                  .eq("status", "pending");
+                const backlog = pendingCount ?? 0;
+                const target = Math.max(enqueuedCount + 5, backlog);
+                const limit = Math.min(Math.max(target, 0), 100);
+                if (limit > 0) await runMessageJobs(limit);
+              } catch (e) {
+                console.error("inline runMessageJobs failed", e);
               }
+
             }
           }
         } catch (e: unknown) {
