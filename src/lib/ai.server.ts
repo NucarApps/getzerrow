@@ -26,18 +26,20 @@ export async function classifyEmail(email: {
 }, folders: ClassifyFolder[]) {
   if (folders.length === 0) return { folder_id: null as string | null, confidence: 0, summary: "", reason: "" };
 
-  const folderList = folders
-    .map((f, i) => {
-      const parts = [`${i + 1}. "${f.name}"`];
-      if (f.ai_rule) parts.push(`Rule: ${f.ai_rule}`);
-      if (f.learned_profile) parts.push(`Learned profile: ${f.learned_profile}`);
-      if (f.examples && f.examples.length) {
-        const ex = f.examples.slice(0, 5).map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`).join("\n");
-        parts.push(`Recent examples:\n${ex}`);
-      }
-      return parts.join("\n   ");
-    })
-    .join("\n\n");
+  function buildFolderList(includeExamples: boolean) {
+    return folders
+      .map((f, i) => {
+        const parts = [`${i + 1}. "${f.name}"`];
+        if (f.ai_rule) parts.push(`Rule: ${f.ai_rule}`);
+        if (f.learned_profile) parts.push(`Learned profile: ${f.learned_profile}`);
+        if (includeExamples && f.examples && f.examples.length) {
+          const ex = f.examples.slice(0, 5).map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`).join("\n");
+          parts.push(`Recent examples:\n${ex}`);
+        }
+        return parts.join("\n   ");
+      })
+      .join("\n\n");
+  }
 
   const folderNames = folders.map((f) => f.name);
   const schema = z.object({
@@ -47,40 +49,54 @@ export async function classifyEmail(email: {
     reason: z.string().max(200).describe("Short explanation of WHY this folder was chosen — cite the folder rule, profile, or example pattern that matched. If 'NONE', explain why nothing fit."),
   });
 
-  const basePrompt = `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
+  function buildPrompt(opts: { trim: boolean }) {
+    const bodyLimit = opts.trim ? 2000 : 4000;
+    return `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
 
 Folders:
-${folderList}
+${buildFolderList(!opts.trim)}
 
 Email:
 From: ${email.from_name} <${email.from_addr}>
 Subject: ${email.subject}
 Body:
-${(email.body_text || email.snippet || "").slice(0, 4000)}
+${(email.body_text || email.snippet || "").slice(0, bodyLimit)}
 
 Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line summary AND a short reason explaining the match.`;
+  }
 
   type Out = z.infer<typeof schema>;
+  let lastError = "";
 
-  async function tryStructured(modelId: string): Promise<Out | null> {
+  function describeError(e: any): string {
+    const parts: string[] = [];
+    if (e?.name) parts.push(e.name);
+    if (typeof e?.status === "number") parts.push(`status=${e.status}`);
+    if (e?.message) parts.push(e.message);
+    if (e?.responseBody) parts.push(`body=${String(e.responseBody).slice(0, 200)}`);
+    return parts.join(" | ").slice(0, 400) || "unknown error";
+  }
+
+  async function tryStructured(modelId: string, trim: boolean): Promise<Out | null> {
     try {
       const { output } = await generateText({
         model: getModel(modelId),
         output: Output.object({ schema }),
-        prompt: basePrompt,
+        prompt: buildPrompt({ trim }),
       });
       return output as Out;
     } catch (e) {
-      console.error(`classify structured failed (${modelId})`, (e as Error)?.message);
+      lastError = describeError(e);
+      console.error(`classify structured failed (${modelId})`, lastError);
       return null;
     }
   }
 
-  async function tryTextJson(modelId: string): Promise<Out | null> {
+  async function tryTextJson(modelId: string, trim: boolean): Promise<Out | null> {
     try {
       const { text } = await generateText({
         model: getModel(modelId),
-        prompt: `${basePrompt}
+        prompt: `${buildPrompt({ trim })}
 
 Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
 {"folder_name":"<one of: ${folderNames.map((n) => `"${n}"`).join(", ")} or \\"NONE\\">","confidence":<0..1>,"summary":"<<=140 chars>","reason":"<<=200 chars>"}`,
@@ -88,22 +104,29 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
       const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
       const start = cleaned.indexOf("{");
       const end = cleaned.lastIndexOf("}");
-      if (start < 0 || end <= start) return null;
+      if (start < 0 || end <= start) {
+        lastError = `empty/non-JSON response (len=${text.length})`;
+        console.error(`classify text-json failed (${modelId})`, lastError);
+        return null;
+      }
       const parsed = JSON.parse(cleaned.slice(start, end + 1));
       return schema.parse(parsed);
     } catch (e) {
-      console.error(`classify text-json failed (${modelId})`, (e as Error)?.message);
+      lastError = describeError(e);
+      console.error(`classify text-json failed (${modelId})`, lastError);
       return null;
     }
   }
 
   let output =
-    (await tryStructured("google/gemini-2.5-flash")) ||
-    (await tryTextJson("google/gemini-2.5-flash")) ||
-    (await tryStructured("google/gemini-2.5-flash-lite")) ||
-    (await tryTextJson("google/gemini-2.5-flash-lite"));
+    (await tryStructured("google/gemini-2.5-flash", false)) ||
+    (await tryTextJson("google/gemini-2.5-flash", false)) ||
+    (await tryStructured("google/gemini-2.5-flash-lite", false)) ||
+    (await tryTextJson("google/gemini-2.5-flash-lite", false)) ||
+    (await tryTextJson("openai/gpt-5-mini", true)) ||
+    (await tryTextJson("openai/gpt-5-nano", true));
 
-  if (!output) throw new Error("AI classifier returned no parseable response");
+  if (!output) throw new Error(`AI classifier returned no parseable response (last error: ${lastError || "unknown"})`);
 
   const match = folders.find((f) => f.name.toLowerCase() === output!.folder_name.toLowerCase());
   return {
