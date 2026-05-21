@@ -12,7 +12,9 @@ import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
+import { BackfillBanner } from "@/components/inbox/BackfillBanner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
