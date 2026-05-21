@@ -66,6 +66,7 @@ export function FolderEditor({
 }) {
   const qc = useQueryClient();
   const learnFn = useServerFn(learnFolderFromLabel);
+  const applyLabelFn = useServerFn(applyFolderLabelToLocal);
   const listDomainsFn = useServerFn(listFolderDomainSuggestions);
   const addDomainFn = useServerFn(addDomainFilter);
   const reassignFn = useServerFn(reassignDomainToFolder);
@@ -76,6 +77,7 @@ export function FolderEditor({
   const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);
+  const [syncingLabel, setSyncingLabel] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
