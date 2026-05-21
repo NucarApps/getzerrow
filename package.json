@@ -10,8 +10,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run src/",
-    "test:integration": "vitest run tests/public-endpoints-auth.test.ts"
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
