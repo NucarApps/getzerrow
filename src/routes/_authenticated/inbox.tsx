@@ -376,8 +376,8 @@ function InboxPage() {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
             const folderList = foldersQ.data ?? [];
             const currentFolderId = e.folder_id;
-            const showFolderPill = isSearching || selectedFolder === "all" || selectedFolder === "all_mail" || selectedFolder === "no_rules";
-            const rowFolder = showFolderPill && currentFolderId ? folderList.find((f) => f.id === currentFolderId) : null;
+            const rowFolder = currentFolderId ? folderList.find((f) => f.id === currentFolderId) : null;
+            const reasonText = e.classification_reason?.trim() || null;
             return (
             <ContextMenu key={e.id}>
               <ContextMenuTrigger asChild>
@@ -392,8 +392,8 @@ function InboxPage() {
                     </span>
                   </div>
                   <div className="truncate text-sm text-foreground/90">{decodeEntities(e.subject) || "(no subject)"}</div>
-                  {rowFolder && (
-                    <div className="mt-1">
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {rowFolder && (
                       <span
                         className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
                         style={{
@@ -403,6 +403,20 @@ function InboxPage() {
                       >
                         {rowFolder.name}
                       </span>
+                    )}
+                    <ClassifiedChip by={e.classified_by} />
+                    {e.classified_by === "ai" && e.ai_confidence != null && (
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {Math.round(e.ai_confidence * 100)}%
+                      </span>
+                    )}
+                  </div>
+                  {reasonText && (
+                    <div
+                      className="mt-1 line-clamp-1 text-[11px] italic text-muted-foreground"
+                      title={`${reasonText}\n\nRight-click the email to move or reanalyze.`}
+                    >
+                      {reasonText}
                     </div>
                   )}
                   {e.ai_summary ? (
@@ -411,7 +425,7 @@ function InboxPage() {
                       <span className="line-clamp-2">{decodeEntities(e.ai_summary)}</span>
                     </div>
                   ) : (
-                    <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{decodeEntities(e.snippet)}</div>
+                    !reasonText && <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{decodeEntities(e.snippet)}</div>
                   )}
                 </button>
               </ContextMenuTrigger>
@@ -644,7 +658,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   const [sending, setSending] = useState(false);
   const [moving, setMoving] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
-  const [whyOpen, setWhyOpen] = useState(false);
+  const [whyOpen, setWhyOpen] = useState(true);
   const [similarPrompt, setSimilarPrompt] = useState<null | {
     fromFolderId: string | null;
     fromAddr: string | null;
