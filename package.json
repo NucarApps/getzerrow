@@ -10,8 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run",
-    "test:unit": "vitest run src/lib/cron-auth.server.test.ts",
+    "test": "vitest run src/",
     "test:integration": "vitest run tests/public-endpoints-auth.test.ts"
   },
   "dependencies": {
