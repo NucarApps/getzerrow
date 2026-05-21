@@ -410,6 +410,28 @@ function InboxPage() {
                 </button>
               </ContextMenuTrigger>
               <ContextMenuContent className="w-64">
+                {(e.is_archived || e.folder_id) && (
+                  <>
+                    <ContextMenuItem
+                      onSelect={async () => {
+                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, classified_by: "manual_inbox" } : x)));
+                        try {
+                          await moveInboxFn({ data: { email_id: e.id } });
+                          toast.success("Moved to inbox");
+                          qc.invalidateQueries({ queryKey: ["emails"] });
+                        } catch (err: any) {
+                          qc.invalidateQueries({ queryKey: ["emails"] });
+                          toast.error(err.message);
+                        }
+                      }}
+                    >
+                      <Inbox className="mr-2 h-4 w-4" />
+                      Move to Inbox
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                  </>
+                )}
+
                 <ContextMenuSub>
                   <ContextMenuSubTrigger>
                     <FolderInput className="mr-2 h-4 w-4" />
