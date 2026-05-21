@@ -379,10 +379,7 @@ function InboxPage() {
           )}
           {filtered.map((e) => {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
-            const folderList = foldersQ.data ?? [];
-            const currentFolderId = e.folder_id;
-            const rowFolder = currentFolderId ? folderList.find((f) => f.id === currentFolderId) : null;
-            const reasonText = e.classification_reason?.trim() || null;
+            
             return (
             <ContextMenu key={e.id}>
               <ContextMenuTrigger asChild>
