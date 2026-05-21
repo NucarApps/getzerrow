@@ -678,15 +678,6 @@ async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   }
 }
 
-/** Returns the set of folder IDs (for this user/account) where auto_mark_read is false. */
-async function loadNoAutoReadFolderIds(accountId: string): Promise<Set<string>> {
-  const { data } = await supabaseAdmin
-    .from("folders")
-    .select("id, auto_mark_read")
-    .eq("gmail_account_id", accountId);
-  return new Set((data ?? []).filter((f) => !f.auto_mark_read).map((f) => f.id));
-}
-
 async function applyLabelChange(
   accountId: string,
   messageId: string,
@@ -705,20 +696,6 @@ async function applyLabelChange(
       .eq("gmail_account_id", accountId)
       .eq("gmail_message_id", messageId);
     return;
-  }
-  // Honor folder's auto_mark_read=false: don't mirror Gmail's "read" state
-  // for messages classified into such a folder.
-  if (patch.is_read === true) {
-    const { data: row } = await supabaseAdmin
-      .from("emails")
-      .select("folder_id")
-      .eq("gmail_account_id", accountId)
-      .eq("gmail_message_id", messageId)
-      .maybeSingle();
-    if (row?.folder_id) {
-      const noAutoRead = await loadNoAutoReadFolderIds(accountId);
-      if (noAutoRead.has(row.folder_id)) delete patch.is_read;
-    }
   }
   if (Object.keys(patch).length === 0) return;
   await supabaseAdmin.from("emails").update(patch)
