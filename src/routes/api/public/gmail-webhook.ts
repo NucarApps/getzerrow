@@ -14,6 +14,15 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
     handlers: {
       POST: async ({ request }) => {
         const isTest = request.headers.get("x-zerrow-test") === "1";
+        // Verify Pub/Sub push token (configure on the subscription's push endpoint
+        // as ?token=<GMAIL_WEBHOOK_TOKEN>). Test calls from the app are exempt.
+        if (!isTest) {
+          const expected = process.env.GMAIL_WEBHOOK_TOKEN;
+          const provided = new URL(request.url).searchParams.get("token");
+          if (!expected || provided !== expected) {
+            return new Response("Unauthorized", { status: 401 });
+          }
+        }
         let emailAddress: string | null = null;
         let historyId: string | null = null;
         let accountsMatched = 0;
