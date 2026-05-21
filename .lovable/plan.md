@@ -1,51 +1,17 @@
+# Brighten read emails in the inbox list
+
 ## Problem
+Read items in the inbox list look too dull because the whole row is dimmed via `opacity-70`. Unread vs read should still be obvious, but read rows should read clearly.
 
-Two issues with the standby tracking view:
+## Change
+In `src/routes/_authenticated/inbox.tsx` (the list row around line 391):
 
-1. **Rocket is off the arc.** The trajectory `<path>` lives inside an SVG with `viewBox="0 0 600 400"` and `preserveAspectRatio="none"`, so it stretches to fill the container (e.g. ~1900×900). The rocket icon uses CSS `offset-path: path("M 30 370 Q 300 -120 570 90")`, which is evaluated in **raw CSS pixels** — a 600×400 coordinate space. The rocket therefore travels a tiny path in the top-left while the visible arc is stretched across the full pane.
-2. **Animation is too fast.** The arc draw + rocket fly are both 14s loops.
+- Remove `opacity-70` from the read state on the row container. Read rows then render at full brightness.
+- Keep unread distinction via weight + a small accent dot (already font-semibold for sender on unread). Strengthen it so the difference is unambiguous without dimming:
+  - Sender (line 394): unread stays `font-semibold text-foreground`; read becomes `font-medium text-foreground` (no muted color).
+  - Subject line: unread `text-foreground`; read `text-foreground/85` (subtle, not dull).
+  - Snippet (line 433): keep `text-muted-foreground` for both — the snippet was never the signal.
+  - Add a 6px primary dot on the left of unread rows so unread is identifiable at a glance without relying on dimming.
 
-## Fix
-
-Edit `public/zerrow-landing.css` and `src/components/inbox/TrackingStandby.tsx` (plus the matching landing markup if it shares the same arc).
-
-### a) Put the rocket inside the SVG so it scales with the arc
-
-Replace the absolutely-positioned `.tracking__icon` div + CSS `offset-path` with an inline `<g>` inside the existing `<svg className="tracking__arc">`, animated via SVG `<animateMotion>` referencing the same path. Because the rocket now lives in the same `viewBox="0 0 600 400"` and uses the same path geometry, it sits exactly on the curve at every container size.
-
-Sketch:
-
-```tsx
-<svg className="tracking__arc" viewBox="0 0 600 400" preserveAspectRatio="none">
-  <defs>…gradient…
-    <path id="arcPath" d="M 30 370 Q 300 -120 570 90" />
-  </defs>
-  <use href="#arcPath" className="tracking__arc-ghost" fill="none" />
-  <use href="#arcPath" className="tracking__arc-live"  fill="none" stroke="url(#arcGradStandby)" />
-  <g className="tracking__rocket">
-    <g transform="translate(-6,-14) scale(0.12)">
-      …existing rocket paths…
-    </g>
-    <animateMotion dur="28s" repeatCount="indefinite" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.4 0 0.6 1">
-      <mpath href="#arcPath" />
-    </animateMotion>
-  </g>
-</svg>
-```
-
-Note: `preserveAspectRatio="none"` stretches the path non-uniformly, which would visibly squash the rocket sprite at wide aspect ratios. Switch the SVG to `preserveAspectRatio="xMidYMid meet"` so both the arc and the rocket keep proportions. The visible arc shape will be unchanged conceptually (still spans the pane) but no longer squashed.
-
-Delete the now-unused `.tracking__icon`, `.tracking__icon::before`, `@keyframes iconFly`, and `@keyframes iconFlame` rules.
-
-### b) Slow the motion
-
-- `.tracking__arc-live` `animation: arcDraw 14s ...` → **28s**.
-- `<animateMotion dur="28s">` matches it so the rocket reaches apogee as the arc finishes drawing.
-
-### c) Apply to the landing page too
-
-The same arc + rocket markup exists on the landing page (driven by `useMissionTelemetry`). Make the same SVG-embedded-rocket change there so both views stay consistent.
-
-## Verification
-
-After the change: on any container size, the rocket sprite sits precisely on the live orange arc as it sweeps from launchpad to apogee, completing the loop in ~28s instead of 14s. No more drift to the upper-left corner.
+## Result
+Read rows are bright and legible. Unread rows pop via bold sender + colored dot, not via making read rows feel disabled.

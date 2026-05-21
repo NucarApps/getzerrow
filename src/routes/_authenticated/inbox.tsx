@@ -388,15 +388,18 @@ function InboxPage() {
               <ContextMenuTrigger asChild>
                 <button
                   onClick={() => setSelectedId(e.id)}
-                  className={`block w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${e.is_read ? "opacity-70" : ""}`}
+                  className={`relative block w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
                 >
+                  {!e.is_read && (
+                    <span className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
+                  )}
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className={`truncate text-sm ${e.is_read ? "" : "font-semibold"}`}>{decodeEntities(e.from_name) || e.from_addr || "Unknown"}</span>
+                    <span className={`truncate text-sm text-foreground ${e.is_read ? "font-medium" : "font-semibold"}`}>{decodeEntities(e.from_name) || e.from_addr || "Unknown"}</span>
                     <span className="shrink-0 text-[11px] text-muted-foreground">
                       {e.received_at ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false }) : ""}
                     </span>
                   </div>
-                  <div className="truncate text-sm text-foreground/90">{decodeEntities(e.subject) || "(no subject)"}</div>
+                  <div className={`truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}>{decodeEntities(e.subject) || "(no subject)"}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     {rowFolder && (
                       <span
