@@ -40,7 +40,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         let totalSynced = 0;
         let firstError: string | null = null;
         for (const acc of accounts ?? []) {
-          let rearmed = false;
+          let _rearmed = false;
           if (silent && acc.watch_expiration && new Date(acc.watch_expiration).getTime() > Date.now()) {
             try {
               const w = await ensureWatch(acc.id, null);
