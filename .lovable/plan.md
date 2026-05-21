@@ -1,48 +1,35 @@
-# Fix login-page flash on refresh when signed in
+# Slow the standby telemetry arc + remove the slow start
 
-## Root cause
-`src/routes/_authenticated.tsx` does the auth check in `beforeLoad`:
+## Scope
+Only the **inbox standby** view (`TrackingStandby.tsx`, shown when no email is selected). The landing page rocket stays as it is.
 
-```ts
-beforeLoad: async () => {
-  const { data } = await supabase.auth.getSession();
-  if (!data.session) throw redirect({ to: "/login" });
-}
-```
+## Current behavior
+- Rocket: `<animateMotion dur="28s" calcMode="spline" keySplines="0.4 0 0.6 1">` — eases in (slow start) and finishes in 28s.
+- Arc draw: shared CSS `.tracking__arc-live { animation: arcDraw 28s ease-in-out infinite }`.
 
-This runs during SSR too. The Supabase session is stored in browser `localStorage`, which doesn't exist on the server, so `getSession()` always returns `null` on the server. Result: the server renders/redirects to `/login`, ships that HTML, then the client hydrates, finds the real session, and finally navigates to `/inbox`. The user sees `/login` for a beat.
+Two problems: (1) far too fast, (2) the ease-in spline + ease-in-out arc make the rocket sit still for the first few seconds.
 
 ## Fix
-Skip the auth gate during SSR and run it only on the client, where the session actually exists. Also add a symmetric guard on `/login` so a logged-in user landing on the login page gets sent to `/inbox` without a flash.
 
-### `src/routes/_authenticated.tsx`
-Change `beforeLoad` to no-op on the server:
+### 1. `src/components/inbox/TrackingStandby.tsx`
+- Change `<animateMotion>` to `dur="180s"` (3 minutes) and switch `calcMode="spline"` + `keySplines` to `calcMode="linear"` so the rocket moves at constant pace from the very first frame (no slow start).
+- Add an extra class to the live arc `<use>`: `className="tracking__arc-live tracking__arc-live--standby"` so we can override the draw timing without touching the landing page.
 
-```ts
-beforeLoad: async () => {
-  if (typeof window === "undefined") return; // session lives in localStorage
-  const { data } = await supabase.auth.getSession();
-  if (!data.session) throw redirect({ to: "/login" });
-},
-```
-
-### `src/routes/login.tsx`
-Add a `beforeLoad` that redirects authenticated users straight to `/inbox` on the client, so even on a hard refresh of `/login` they don't see the form:
-
-```ts
-export const Route = createFileRoute("/login")({
-  beforeLoad: async () => {
-    if (typeof window === "undefined") return;
-    const { data } = await supabase.auth.getSession();
-    if (data.session) throw redirect({ to: "/inbox" });
-  },
-  component: LoginPage,
-});
-```
-
-The existing `onAuthStateChange` effect in `LoginPage` stays as-is for the OAuth callback path.
+### 2. `public/zerrow-landing.css`
+- Add a scoped override:
+  ```css
+  .tracking__arc-live.tracking__arc-live--standby {
+    animation: arcDrawStandby 180s linear infinite;
+  }
+  @keyframes arcDrawStandby {
+    0%   { stroke-dashoffset: 900; }
+    95%  { stroke-dashoffset: 0; opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
+  ```
+  Linear draw paced to match the 180s rocket motion, so the trail keeps up with the rocket immediately and the whole loop takes ~3 minutes end-to-end.
 
 ## Result
-- Refreshing `/inbox` while signed in: SSR renders the inbox shell, client hydrates with the real session, no detour through `/login`.
-- Refreshing `/login` while signed in: client redirect to `/inbox` before render.
-- Signed-out users on protected routes still get redirected to `/login` on the client (the brief shell render is acceptable — they're unauthenticated and have no data to leak).
+- Rocket starts moving the instant the standby view appears.
+- It crawls along the arc, reaching the end at ~3 minutes, with the glowing trail drawing in lockstep.
+- Landing page animation is untouched.

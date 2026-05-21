@@ -71,7 +71,7 @@ export function TrackingStandby() {
               <path id="arcPathStandby" d="M 30 370 Q 300 -120 570 90" />
             </defs>
             <use href="#arcPathStandby" className="tracking__arc-ghost" fill="none" />
-            <use href="#arcPathStandby" className="tracking__arc-live"  fill="none" stroke="url(#arcGradStandby)" />
+            <use href="#arcPathStandby" className="tracking__arc-live tracking__arc-live--standby"  fill="none" stroke="url(#arcGradStandby)" />
             <g className="tracking__rocket">
               <g transform="rotate(90) scale(0.09) translate(-60 -118)">
                 <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
@@ -82,9 +82,7 @@ export function TrackingStandby() {
                 <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
                 <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
               </g>
-              <animateMotion dur="28s" repeatCount="indefinite" rotate="auto"
-                keyPoints="0;1" keyTimes="0;1"
-                calcMode="spline" keySplines="0.4 0 0.6 1">
+              <animateMotion dur="180s" repeatCount="indefinite" rotate="auto" calcMode="linear">
                 <mpath href="#arcPathStandby" />
               </animateMotion>
             </g>
