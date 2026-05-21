@@ -1,26 +1,22 @@
-# Condense the email-detail summary + "Why this folder?" area
+# Condense inbox list rows
 
-The Summary card and the "Why this folder?" trigger stack into a tall block. Tighten both so the email body shows higher on the page, without removing functionality.
+Keep: sender, subject, time, AI summary. Drop the visual chrome between them.
 
-## Changes in `src/routes/_authenticated/inbox.tsx`
+## Changes in `src/routes/_authenticated/inbox.tsx` (rows ~389–438)
 
-**1. Summary card (lines 888–893)** — inline the "Summary" label with the text on a single row and reduce padding:
+1. **Reduce row padding**: `py-3` → `py-2` on the row button (line 391).
+2. **Remove the chips row entirely** (lines 403–421): folder pill, ClassifiedChip, AI confidence %. Folder context already shows in the sidebar/header; chip is redundant.
+3. **Remove the reason text line** (lines 422–429) — `"Global inbox list: domain ..."`. It moves to the detail pane's "Why this folder?" section already.
+4. **Keep AI summary as-is** but tighten: `line-clamp-2` → `line-clamp-1` so each row stays at most one line of summary. Snippet fallback stays unchanged for rows without an AI summary.
 
-```tsx
-{email.ai_summary && (
-  <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
-    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-    <span><span className="font-medium text-primary">Summary · </span>{email.ai_summary}</span>
-  </div>
-)}
+Result rows become:
+```
+Sender                                   12h
+Subject line
+✨ One-line AI summary
 ```
 
-**2. "Why this folder?" trigger (lines 895–905)** — tighten vertical padding and top margin:
+Three tight lines, no chips, no reason text. Roughly halves row height.
 
-- Outer `<Collapsible>`: `mt-3` → `mt-2`.
-- Trigger button: `py-2` → `py-1.5`.
-
-No other changes — content/behavior of the collapsible body stays identical.
-
-## Result
-The two-row Summary card collapses into one tighter row, and the trigger row shrinks slightly. Email body moves up by roughly 30–40px on desktop. Nothing removed.
+## Cleanup
+- `rowFolder`, `reasonText`, `ClassifiedChip` in this row scope become unused locally — leave the variables alone if they're computed inline (low risk) or remove if it's a clean delete. The detail pane still uses ClassifiedChip and reason text, so no shared component is removed.
