@@ -909,7 +909,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           </CollapsibleContent>
         </Collapsible>
 
-        <div className="mt-6">
+        <div className="mt-4">
           {email.body_html ? (
             <EmailBodyFrame html={email.body_html} />
           ) : (
