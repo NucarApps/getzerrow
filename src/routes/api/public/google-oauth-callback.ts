@@ -63,7 +63,8 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
             .single();
 
           if (error || !account) {
-            return new Response(`Failed to save account: ${error?.message}`, { status: 500 });
+            console.error("oauth: failed to save account", error);
+            return new Response("Something went wrong saving your account. Please try again.", { status: 500 });
           }
 
           // Start Gmail push watch if topic is configured
