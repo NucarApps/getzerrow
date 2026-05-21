@@ -166,7 +166,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   const pick = (s: FolderSelection) => {
     setSelected(s);
     if (pathname !== "/inbox") navigate({ to: "/inbox" });
-    onNavigate?.();
+    queueMicrotask(() => onNavigate?.());
   };
 
   return (

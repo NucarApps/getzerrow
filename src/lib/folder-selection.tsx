@@ -9,8 +9,22 @@ type Ctx = {
 
 const FolderSelectionContext = createContext<Ctx | null>(null);
 
+const STORAGE_KEY = "zerrow.selectedFolder";
+
 export function FolderSelectionProvider({ children }: { children: ReactNode }) {
-  const [selected, setSelected] = useState<FolderSelection>("all");
+  const [selected, setSelectedState] = useState<FolderSelection>(() => {
+    if (typeof window === "undefined") return "all";
+    try {
+      const v = window.localStorage.getItem(STORAGE_KEY);
+      return (v as FolderSelection) || "all";
+    } catch {
+      return "all";
+    }
+  });
+  const setSelected = (v: FolderSelection) => {
+    setSelectedState(v);
+    try { window.localStorage.setItem(STORAGE_KEY, v); } catch { /* ignore */ }
+  };
   return (
     <FolderSelectionContext.Provider value={{ selected, setSelected }}>
       {children}
