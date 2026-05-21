@@ -1,37 +1,43 @@
-## What happened
+## Goal
 
-You hit Reanalyze and saw:
-> AI classifier failed: AI classifier returned no parseable response
+Make Zerrow's read/unread state simple and predictable:
 
-In `src/lib/ai.server.ts`, `classifyEmail` tries 4 attempts in order (gemini‑2.5‑flash structured → text‑json → gemini‑2.5‑flash‑lite structured → text‑json). If all 4 return nothing parseable, it throws that generic message. `sync.server.ts` catches it and stores it as `classification_reason`, which the inbox toast surfaces verbatim.
+- Folder has **auto-mark-read = ON** → mark the email read in Zerrow (and tell Gmail to mark it read). Unchanged.
+- Folder has **auto-mark-read = OFF** (or no folder) → **just mirror Gmail's actual read state.** No forcing to unread.
 
-The most likely causes for all 4 attempts coming back empty on this specific email (long VC pitch with financials):
-1. Gemini safety/finish-reason cutoff returning empty text — common on long fundraising / financial bodies.
-2. Transient 429/5xx from the gateway where all 4 retries hit the same upstream.
-3. Body too large after concatenating folder profiles + examples + 4000 chars of body.
+This undoes the earlier "Factory keeps everything unread regardless of Gmail" behavior, which is what's causing Zerrow to show a huge unread count while Gmail shows them read.
 
-The current code logs only `e.message` and offers no escape hatch outside the Gemini family.
+## Changes — `src/lib/sync.server.ts`
 
-## Plan
+1. **Classification path (lines 375–379)** — delete the `else if (parsed.is_read)` branch that forces `is_read = false` when the assigned folder has `auto_mark_read=false`. New mail just keeps whatever read state Gmail reports.
 
-### 1. Add a non‑Gemini fallback tier (`src/lib/ai.server.ts`)
-Extend the fallback chain with `openai/gpt-5-mini` (text‑json) and then `openai/gpt-5-nano` (text‑json) after the existing 4 Gemini attempts. Different provider sidesteps Gemini-specific safety cutoffs and gateway hiccups.
+2. **`applyLabelChange` (lines 713–726)** — delete the guard that suppresses `patch.is_read = true` for no-auto-read folders. Always mirror Gmail's UNREAD label change.
 
-### 2. Improve diagnostics
-- On each failed attempt, log `e.name`, `e.message`, and (if present) `e.responseBody` / `e.status` so server logs show *why* (safety block vs 429 vs parse error). Today we lose all of that.
-- When all attempts fail, throw an error that includes the last attempt's underlying message, e.g. `AI classifier returned no parseable response (last error: 429 rate limited)`. That message flows straight to the toast.
+3. **`reconcileLocalInbox` (lines 1070–1074)** — always set `patch.is_read = gmailRead`. Drop the `noAutoRead` check.
 
-### 3. Trim the prompt on retry
-For the final 2 fallback attempts, truncate `body_text` to 2000 chars (down from 4000) and drop the per-folder `Recent examples` block. This shrinks the request and removes the most common safety-trigger surface (quoted email bodies inside examples).
+4. **Archived reconcile pass (lines 1115–1120)** — same: always set `patch.is_read = !unread`.
 
-### 4. No behavior change on success
-- Successful classification path is unchanged.
-- `reanalyzeEmail` in `gmail.functions.ts` already keeps the current folder when the classifier abstains — that stays as-is. The fix only makes the abstain‑because‑error case much rarer and its message more actionable.
+5. **Cleanup** — remove the now-unused `loadNoAutoReadFolderIds` helper and the `folder_id` columns added solely for that gating (keep them if they're still referenced elsewhere — quick check during the edit).
 
-### Files touched
-- `src/lib/ai.server.ts` — only file modified.
+## Backfill (one-off migration)
 
-### Out of scope
-- No DB changes.
-- No UI changes (the toast just gets a better message via the existing path).
-- Email body / classification logic itself unchanged.
+Sync the current backlog so the Inbox unread count immediately matches Gmail:
+
+```sql
+UPDATE public.emails
+SET is_read = NOT ('UNREAD' = ANY(raw_labels))
+WHERE is_read = false
+  AND NOT ('UNREAD' = ANY(COALESCE(raw_labels, '{}')));
+```
+
+This flips every row Zerrow currently shows as unread but Gmail considers read (no UNREAD label) to read. Rows that are genuinely unread in Gmail stay unread.
+
+## What stays the same
+
+- Folders with **auto-mark-read = ON** still mark mail read in both Zerrow and Gmail.
+- Manual mark read / unread in Zerrow still pushes to Gmail.
+- Archive, trash, label sync — untouched.
+
+## Result
+
+After this change + backfill, the Zerrow unread badge will match Gmail's unread count. Going forward, Gmail is the source of truth for read state unless a folder explicitly opts in to auto-mark-read.

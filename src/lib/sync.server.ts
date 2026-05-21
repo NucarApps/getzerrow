@@ -372,10 +372,6 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       }
       if (folder.auto_mark_read) {
         await supabaseAdmin.from("emails").update({ is_read: true }).eq("id", inserted.id);
-      } else if (parsed.is_read) {
-        // Gmail-side filter may have pre-marked this read. The folder is
-        // configured to NOT mark as read, so force unread in Zerrow.
-        await supabaseAdmin.from("emails").update({ is_read: false }).eq("id", inserted.id);
       }
     }
   }
