@@ -1,23 +1,20 @@
-## Goal
+## Problem
 
-Simplify both "Always send to inbox" submenus (sender + domain) to just two options:
+On `/settings`, the tab strip renders as a wide light-grey block with only the "Accounts" pill highlighted. The other two triggers ("Inbox filters", "Activity") sit inside the strip but their muted-foreground text on the muted background creates that awkward grey slab in the screenshot.
 
-- Future emails only
-- Future and past emails
+Root cause: `src/components/ui/tabs.tsx` `TabsList` uses the default shadcn styling — `bg-muted p-1 rounded-lg` with active trigger `bg-background shadow`. On the Zerrow deep-space palette, `--muted` is a low-contrast near-background grey that reads as a floating grey rectangle rather than a tab container.
 
-Remove the third "Remove folder label from past emails (keep archived)" item. The "Future and past emails" handler already does exactly that — adds the override AND strips the folder label without re-inboxing — so no behavior change is needed for the kept option.
+## Fix
 
-## Changes — `src/routes/_authenticated/inbox.tsx`
+Scope the change to the Settings page only (don't touch the global `TabsList` primitive — other surfaces may rely on the filled pill look).
 
-Delete the third `ContextMenuItem` ("Remove folder label from past emails (keep archived)") in both submenus:
+In `src/routes/_authenticated/settings.tsx`, override the `TabsList` className with an underline-style strip that fits the dark editorial aesthetic:
 
-- The `Just {from_addr}` submenu — remove the trailing strip-only item.
-- The `Anyone @{domain}` submenu — remove the trailing strip-only item.
+- Remove the muted background and pill padding by passing `className="bg-transparent p-0 h-auto gap-6 border-b border-border rounded-none w-full justify-start"` on `<TabsList>`.
+- Override each `<TabsTrigger>` with `className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none"` so the active tab is marked by an orange underline instead of a filled pill.
 
-No backend change. The `stripFolderLabelPast` server fn stays as-is (still used by the "Future and past emails" handler).
+Result: a clean underlined tab strip (Accounts · Inbox filters · Activity) with the active tab underlined in the NASA-orange primary, no grey slab.
 
-## What stays the same
+## Files
 
-- Top-level **Move to Inbox** action.
-- **Future emails only** — adds override, no past cleanup.
-- **Future and past emails** — adds override + strips folder label from past matches (keeps archived state).
+- `src/routes/_authenticated/settings.tsx` — add `className` overrides on the existing `<TabsList>` and three `<TabsTrigger>` elements. No other files change.
