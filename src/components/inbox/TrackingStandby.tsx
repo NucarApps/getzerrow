@@ -589,9 +589,11 @@ export function TrackingStandby() {
         {powerupsRef.current.map((p) => {
           const color = POWERUP_COLORS[p.kind];
           return (
-            <g key={p.id} transform={`translate(${p.x} ${p.y})`} className="powerup">
-              <rect x="-1.6" y="-1.2" width="3.2" height="2.4" rx="1.1" fill="#0a0e1a" stroke={color} strokeWidth="0.22" />
-              <text x="0" y="0.55" textAnchor="middle" fontFamily="JetBrains Mono, ui-monospace, monospace" fontWeight="700" fontSize="1.8" fill={color}>{POWERUP_LABEL[p.kind]}</text>
+            <g key={p.id} transform={`translate(${p.x} ${p.y})`}>
+              <g className="powerup">
+                <rect x="-1.6" y="-1.2" width="3.2" height="2.4" rx="1.1" fill="#0a0e1a" stroke={color} strokeWidth="0.22" />
+                <text x="0" y="0.55" textAnchor="middle" fontFamily="JetBrains Mono, ui-monospace, monospace" fontWeight="700" fontSize="1.8" fill={color}>{POWERUP_LABEL[p.kind]}</text>
+              </g>
             </g>
           );
         })}

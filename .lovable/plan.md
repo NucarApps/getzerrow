@@ -1,62 +1,42 @@
-## Three changes to the Space Invaders standby pane
+# Fix: Power-ups stuck in the top-left corner
 
-All in `src/components/inbox/TrackingStandby.tsx`. No other files, no backend.
+## Root cause
 
-### 1. Redraw aliens as proper email envelopes
+In `src/components/inbox/TrackingStandby.tsx`, each falling power-up is rendered as:
 
-Today the enemy SVG is ~3 units wide with a tiny envelope-plus-antenna squashed inside a `scale(0.055)` group — at small sizes it reads as a flat orange smudge.
-
-Replace the enemy art with a recognizable envelope drawn directly in playfield units (no inner downscale), then bump grid spacing so the bigger sprites still fit:
-
-- Envelope body: `5.4 × 3.6` rounded rect, dark-card fill, orange stroke.
-- Triangular flap on top: two strokes from upper corners meeting at center (slight `flap` offset already toggles every 500ms — keep it, increases the "marching" read).
-- Stamp: tiny `1 × 1` orange square in the top-right of the body.
-- Subject lines: two thin horizontal lines inside the body.
-- Drop the antenna + glow ellipse — they were what made it look UFO-ish; now it should read clearly as an email envelope.
-- Hit-flash: invert fill (white body) for `hitUntil` window (already wired).
-- Constants: `ENEMY_W = 5.4`, `ENEMY_H = 3.6`, `ENEMY_HALF_W = 2.7`, `ENEMY_HALF_H = 1.8`. Update collision from circle (`ENEMY_R`) to AABB using these.
-- Grid gaps: `COL_GAP = 8.5`, `ROW_GAP = 6.5` so 8 columns × 5 rows still fit horizontally with margins.
-- Update `formationBounds` to account for envelope width (clamp uses `minX - ENEMY_HALF_W` < 4 / `maxX + ENEMY_HALF_W` > 96).
-
-### 2. Faster firing baseline + rapid-fire feel
-
-- Lower `PLAYER_FIRE_COOLDOWN` from 280ms → **180ms**. Bullet speed up from 95 → 110.
-- Add `playerCooldownMs` derived value: `activePowerup === "rapid" ? 80 : 180`.
-- Multi-shot powerup also widens fire output (see below).
-
-### 3. Power-ups
-
-State additions (mostly refs):
-- `powerupsRef: { id, x, y, kind: "rapid" | "multi" | "shield" | "life" }[]` — falling drops.
-- `activePowerupRef: { kind, expiresAt } | null` — applies for ~8s after pickup; only one stackable buff at a time (later pickup replaces earlier). `shield` grants the invuln window directly (sets `invulnUntilRef = now + 6000`) and doesn't occupy the active slot. `life` is instant `setLives(l => Math.min(5, l + 1))` and doesn't occupy the slot. So only `rapid` and `multi` live in `activePowerupRef`.
-- `[activePowerup, setActivePowerup]` React state mirror for HUD, updated whenever the ref changes.
-
-Spawn rules:
-- On each enemy kill, 14% chance to spawn a powerup at the dead enemy's `(x, y)`.
-- Kind weights: `rapid 40%`, `multi 35%`, `shield 15%`, `life 10%`.
-- Powerups fall at 22 units/sec. Despawn if `y > PLAYER_Y + 6`.
-- Pickup: AABB vs player (`|dx| < PLAYER_HALF_W + 2`, `|dy| < 3`). On pickup → `playPickup` (short rising chirp) + apply effect.
-
-Effects:
-- `rapid`: 8s of 80ms cooldown.
-- `multi`: 8s of triple-shot — fire emits 3 bullets at angles `[-8°, 0°, +8°]` from the player nose; same cooldown as base (180ms) so it doesn't double-stack with `rapid`.
-- `shield`: 6s of `invuln` (reuses existing `invuln` blink class).
-- `life`: +1 life, capped at 5.
-
-Visual: glowing rounded pill, color-coded by kind, 1-letter label in mono — `R` orange, `M` cyan-orange `#67ffb8` for fresh-energy contrast, `S` blue `#7cc4ff`, `+` pink-amber `#ffb74d`. Gentle vertical bob.
-
-HUD: add a second mini chip just under the LEVEL / SCORE chip when `activePowerup` is set:
-`RAPID 4.3s` or `MULTI 2.1s` — countdown updates on the same RAF re-render.
-
-Start overlay subtitle gains a line: `POWER-UPS DROP FROM EMAILS — CATCH THEM`.
-
-### Type updates
-
-```ts
-type Powerup = { id: number; x: number; y: number; kind: "rapid" | "multi" | "shield" | "life" };
-type ActiveBuff = { kind: "rapid" | "multi"; expiresAt: number };
+```tsx
+<g transform={`translate(${p.x} ${p.y})`} className="powerup">
 ```
 
-### Sound
+The `.powerup` class has a CSS keyframe animation that sets `transform: translateY(...)`. On SVG elements, a CSS `transform` **overrides** the `transform=""` attribute, so `translate(p.x, p.y)` is discarded and every power-up renders at (0, 0) — the top-left of the playfield. That matches the symptom ("kind of showing in the top-left, can't see them").
 
-Add `playPickup` (square wave, 660→990Hz over 80ms, gain 0.05). Reuse existing helpers otherwise.
+Enemies/bullets work fine because they don't have a CSS transform animation on their positioned `<g>`.
+
+## Fix
+
+Wrap the bobbing animation on an **inner** `<g>`, so the outer `<g>` keeps its positional `transform` attribute intact and the CSS animation only nudges the inner group.
+
+```tsx
+{powerupsRef.current.map((p) => {
+  const color = POWERUP_COLORS[p.kind];
+  return (
+    <g key={p.id} transform={`translate(${p.x} ${p.y})`}>
+      <g className="powerup">
+        <rect x="-1.6" y="-1.2" width="3.2" height="2.4" rx="1.1"
+              fill="#0a0e1a" stroke={color} strokeWidth="0.22" />
+        <text x="0" y="0.55" textAnchor="middle"
+              fontFamily="JetBrains Mono, ui-monospace, monospace"
+              fontWeight="700" fontSize="1.8" fill={color}>
+          {POWERUP_LABEL[p.kind]}
+        </text>
+      </g>
+    </g>
+  );
+})}
+```
+
+No other logic changes — drop chance, fall speed, pickup, and buff application are all working; they just weren't visible because the sprites were drawing off-screen at the origin.
+
+## Files
+
+- `src/components/inbox/TrackingStandby.tsx` — split the power-up `<g>` into outer (position) + inner (bob animation).
