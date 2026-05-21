@@ -1,50 +1,35 @@
-## What's actually happening
+# Speed up the 6-month backfill
 
-Severin's email **is** in the system — it was enqueued as a `message_jobs` row at 21:49 UTC for tpercoco@nucar.com (gmail_message_id `19e4c83c27dc9726`). It just hasn't been *processed* yet, which is why:
+## Where the time is going
 
-- Gmail still shows it in the inbox → the app hasn't applied the `Factory` label yet
-- The app's inbox doesn't show it → the `emails` row hasn't been written yet
+- Backfill **listing** (paginating Gmail to enqueue message jobs) is fast — that part already shows tens of thousands "found".
+- Backfill **processing** (fetch each message + write to DB + apply Gmail labels) is the bottleneck. That's the "300 of 37,000" number you see.
+- Today the worker (`runMessageJobs` in `src/lib/sync.server.ts`) processes jobs **one at a time in a `for…of` loop**. Each job does a Gmail GET + a few Supabase writes, ~500ms–1s wall time. At 25 jobs per 30s tick = ~50/min = ~3,000/hr, 37k messages takes ~12 hours.
+- Almost all of that time is **network I/O waiting** (Gmail API + Supabase). Cloudflare Workers don't bill wall-clock for I/O, so we can safely run many jobs in parallel inside one tick.
 
-**Why it's stuck:** The job queue has **39,599 pending jobs** ahead of it, almost all from the in-flight backfill (42,180 found / 39,873 enqueued, still listing). The worker pulls FIFO by `next_run_at`, and the backfill jobs were enqueued at 20:52 — earlier than Severin's 21:49 push job. At ~25 jobs/min, live mail is hours behind.
+## What I'll change
 
-There's also one job stuck in `running` for ~56 min (from 20:58) that the self-heal should have reclaimed — worth checking the process-jobs cron is actually firing.
+1. **Parallelize the worker** (`runMessageJobs` in `src/lib/sync.server.ts`)
+   - Replace the sequential `for (const job of candidates)` loop with a bounded-concurrency pool (concurrency ~8). Each worker independently claims (compare-and-set update on `status=pending → running`), processes, and finalizes its own job. The existing per-job try/catch, timeout, DLQ, and backoff logic stays intact — we just run N of them at once.
+   - Keep the 25s per-job hard timeout so a slow Gmail call can't stall the whole batch.
 
-## Plan
+2. **Bigger per-tick batch**
+   - Bump the default `limit` in `runMessageJobs` from 50 → 100, and the cap in `/api/public/gmail-process-jobs` from 100 → 200.
+   - Update the `gmail-process-jobs-30s` cron to call `?limit=100`.
 
-### 1. Prioritize live (push/poll) mail over backfill — primary fix
+3. **Keep live mail prioritized**
+   - The existing `ORDER BY priority, next_run_at` already keeps live pushes ahead of backfill — no change needed.
 
-Give backfill-enqueued jobs a deprioritized `next_run_at` so push/poll jobs always jump the line.
+4. **Verify**
+   - After deploy, watch `message_jobs` count drop and `backfill_jobs.processed` climb. Expected throughput: ~400–800 jobs/min (vs 50/min today), finishing 37k in roughly 1–2 hours instead of ~12.
+   - Confirm no spike in DLQ or rate-limit errors. If Gmail starts returning 429s, dial concurrency from 8 → 5.
 
-- In `enqueueMessageJob` (`src/lib/sync.server.ts`), add an optional `source: "live" | "backfill"` arg.
-- For `"backfill"`, set `next_run_at = now() + 24h` (or use a separate sort key — see Technical notes).
-- Update the backfill tick (`gmail-backfill-tick.ts` / `sync.server.ts` backfill path) to pass `"backfill"`.
-- Leave webhook/poll callers as default `"live"` (now).
+## Files touched
 
-Result: any newly pushed message is claimed by the worker on the next tick (≤60s), regardless of backfill backlog depth.
+- `src/lib/sync.server.ts` — concurrency pool in `runMessageJobs`, raise default limit
+- `src/routes/api/public/gmail-process-jobs.ts` — raise max `limit` cap
+- One SQL call (not a migration) to update the `gmail-process-jobs-30s` cron URL to `?limit=100`
 
-### 2. Unblock and verify the worker
+## Out of scope
 
-- Check the `gmail-process-jobs` cron schedule exists and is firing every minute (the 56-min stuck `running` row suggests it may not be).
-- Manually kick `/api/public/gmail-process-jobs?limit=50` once to clear the head of the queue and confirm Severin's job processes.
-- Bump per-tick `limit` from 25 → 50 so backfill still drains in reasonable time.
-
-### 3. Verify the fix
-
-- Confirm Severin's job moves from `pending` → processed.
-- Confirm an `emails` row exists with `folder_id = Factory` and `is_archived = true`.
-- Confirm Gmail-side: `INBOX` label removed, `Factory` label applied.
-- Send a fresh test email from an hmausa.com address and confirm it routes within ~1 min while backfill continues in the background.
-
-## Technical notes
-
-- Two implementation choices for prioritization:
-  - **Simple:** push backfill jobs to `next_run_at = now() + 24h`. Live jobs (`now()`) always sort first. Backfill still processes when live queue is empty because the worker's `lte("next_run_at", now())` filter will pick them up after 24h — so we'd instead need to make the worker run a "live-first, then backfill" two-pass query, OR
-  - **Cleaner:** add a `priority smallint` column (0 = live, 10 = backfill), `ORDER BY priority ASC, next_run_at ASC`. Requires a small migration + index `(status, priority, next_run_at)`.
-- Recommend the cleaner option — one migration, no semantic abuse of `next_run_at`.
-- No UI changes. Backfill banner continues to work as-is.
-
-## Files to change
-
-- `supabase/migrations/<new>.sql` — add `priority` column + index on `message_jobs`.
-- `src/lib/sync.server.ts` — `enqueueMessageJob` accepts `source`/`priority`; `runMessageJobs` orders by `(priority, next_run_at)`; bump default limit.
-- `src/routes/api/public/gmail-backfill-tick.ts` (or wherever backfill enqueues) — pass backfill priority.
+- No schema changes, no new tables, no UI changes. The BackfillBanner progress bar will simply move faster.

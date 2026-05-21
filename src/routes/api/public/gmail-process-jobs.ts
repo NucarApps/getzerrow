@@ -9,7 +9,7 @@ export const Route = createFileRoute("/api/public/gmail-process-jobs")({
       POST: async ({ request }) => {
         if (!isAuthorizedCron(request)) return unauthorizedResponse();
         const url = new URL(request.url);
-        const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "25", 10) || 25, 100);
+        const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 200);
         try {
           const r = await runMessageJobs(limit);
           return Response.json({ ...r, ok: true });

@@ -952,7 +952,7 @@ export async function enqueueMessageJob(
     );
 }
 
-export async function runMessageJobs(limit = 50) {
+export async function runMessageJobs(limit = 100, concurrency = 8) {
   const STUCK_MS = 90 * 1000; // jobs in 'running' for >90s are presumed dead (worker timeout)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
 
@@ -999,7 +999,8 @@ export async function runMessageJobs(limit = 50) {
     .limit(limit);
 
   const results: Array<{ id: string; ok: boolean; error?: string; dlq?: boolean; retryable?: boolean }> = [];
-  for (const job of candidates ?? []) {
+
+  const processOne = async (job: NonNullable<typeof candidates>[number]) => {
     const { data: claimed } = await supabaseAdmin
       .from("message_jobs")
       .update({ status: "running", locked_at: new Date().toISOString() })
@@ -1007,7 +1008,7 @@ export async function runMessageJobs(limit = 50) {
       .neq("status", "dlq")
       .select("id")
       .maybeSingle();
-    if (!claimed) continue;
+    if (!claimed) return;
 
     try {
       // Hard timeout so the worker always reaches the catch block before the
@@ -1031,7 +1032,7 @@ export async function runMessageJobs(limit = 50) {
       if (status === 404 || (typeof msg === "string" && msg.includes(" 404 "))) {
         await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
         results.push({ id: job.id, ok: true });
-        continue;
+        return;
       }
 
       // 400/401/403 — terminal. Straight to DLQ.
@@ -1086,7 +1087,19 @@ export async function runMessageJobs(limit = 50) {
         } catch { /* best-effort */ }
       }
     }
-  }
+  };
+
+  // Bounded-concurrency pool: each job is dominated by Gmail + Supabase I/O
+  // wait, so parallelizing turns ~50 jobs/min into ~400+ jobs/min.
+  const queue = [...(candidates ?? [])];
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const job = queue.shift();
+      if (!job) return;
+      await processOne(job);
+    }
+  });
+  await Promise.all(workers);
   return {
     processed: results.length,
     ok: results.filter(r => r.ok).length,
