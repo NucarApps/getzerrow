@@ -31,7 +31,8 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
         try {
           userId = verifyState(state);
         } catch (e: any) {
-          return new Response(`Invalid state: ${e.message}`, { status: 400 });
+          console.error("oauth: invalid state", e);
+          return new Response("Invalid or expired authorization state. Please try connecting again.", { status: 400 });
         }
 
         try {
