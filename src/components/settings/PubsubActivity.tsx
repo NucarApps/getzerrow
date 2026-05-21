@@ -106,6 +106,24 @@ export function PubsubActivity() {
     Date.now() - lastRenewMs > 60_000 &&
     lastPushMs < lastRenewMs;
 
+  // Processing backlog: push arrived but message_jobs aren't draining fast enough.
+  const pendingJobs = (diag as any)?.pendingJobs ?? 0;
+  const oldestPendingAt = (diag as any)?.oldestPendingAt ?? null;
+  const oldestPendingAgeMin = oldestPendingAt
+    ? Math.floor((Date.now() - new Date(oldestPendingAt).getTime()) / 60000)
+    : 0;
+  const processingBacklog = pendingJobs >= 5 || oldestPendingAgeMin >= 2;
+
+  // Poll cron has stalled — no poll event in the last 10 minutes despite
+  // it being scheduled every 2 minutes. This is the silent killer: when
+  // push has a hiccup, there's no safety net.
+  const lastPollMs = stats?.lastPollAt ? new Date(stats.lastPollAt).getTime() : 0;
+  const pollSilentMin = stats?.lastPollAt
+    ? Math.floor((Date.now() - lastPollMs) / 60000)
+    : null;
+  const pollStalled = pollSilentMin === null || pollSilentMin >= 10;
+
+
 
   const renewBtn = (
     <Button
