@@ -448,6 +448,63 @@ export const triggerWeekBackfill = createServerFn({ method: "POST" })
     });
   });
 
+export const startDeepBackfill = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { account_id: string; months?: number }) =>
+    z.object({
+      account_id: z.string().uuid(),
+      months: z.number().int().min(1).max(120).optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    await getOwnedAccount(context.userId, data.account_id);
+    return startBackfillJob(data.account_id, context.userId, { months: data.months ?? 6 });
+  });
+
+export const getBackfillStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { account_id?: string }) =>
+    z.object({ account_id: z.string().uuid().optional() }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    let q = supabaseAdmin
+      .from("backfill_jobs")
+      .select("id, gmail_account_id, status, months, total_found, total_enqueued, already_had, started_at, finished_at, last_error")
+      .eq("user_id", context.userId);
+    if (data.account_id) q = q.eq("gmail_account_id", data.account_id);
+
+    // Prefer an active job; fall back to most recent finished one.
+    const { data: active } = await q
+      .in("status", ["listing", "processing"])
+      .order("started_at", { ascending: false })
+      .limit(1);
+    let job = active?.[0] ?? null;
+    if (!job) {
+      const { data: recent } = await q
+        .order("started_at", { ascending: false })
+        .limit(1);
+      job = recent?.[0] ?? null;
+    }
+    if (!job) return { job: null };
+
+    // Compute remaining = un-drained message_jobs for that account.
+    const { count } = await supabaseAdmin
+      .from("message_jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("gmail_account_id", job.gmail_account_id)
+      .neq("status", "dlq");
+
+    return { job: { ...job, remaining: count ?? 0 } };
+  });
+
+export const cancelDeepBackfill = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { job_id: string }) => z.object({ job_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    return cancelBackfillJob(data.job_id, context.userId);
+  });
+
+
 export const triggerSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
