@@ -1694,6 +1694,21 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .order("locked_at", { ascending: true })
       .limit(25);
 
+    // Pending jobs count + oldest pending — surfaces "push fired, processing backlogged"
+    const { count: pendingCount } = await supabaseAdmin
+      .from("message_jobs")
+      .select("id", { count: "exact", head: true })
+      .in("gmail_account_id", myAccountIds)
+      .eq("status", "pending");
+    const { data: oldestPendingRow } = await supabaseAdmin
+      .from("message_jobs")
+      .select("created_at")
+      .in("gmail_account_id", myAccountIds)
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
 
     return {
       events: rows ?? [],
@@ -1711,9 +1726,12 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
         webhookUrl,
         pubsubTopic: process.env.GMAIL_PUBSUB_TOPIC ?? null,
         stuckJobs: stuckJobs ?? [],
+        pendingJobs: pendingCount ?? 0,
+        oldestPendingAt: oldestPendingRow?.created_at ?? null,
       },
     };
   });
+
 
 
 

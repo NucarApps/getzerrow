@@ -106,6 +106,24 @@ export function PubsubActivity() {
     Date.now() - lastRenewMs > 60_000 &&
     lastPushMs < lastRenewMs;
 
+  // Processing backlog: push arrived but message_jobs aren't draining fast enough.
+  const pendingJobs = (diag as any)?.pendingJobs ?? 0;
+  const oldestPendingAt = (diag as any)?.oldestPendingAt ?? null;
+  const oldestPendingAgeMin = oldestPendingAt
+    ? Math.floor((Date.now() - new Date(oldestPendingAt).getTime()) / 60000)
+    : 0;
+  const processingBacklog = pendingJobs >= 5 || oldestPendingAgeMin >= 2;
+
+  // Poll cron has stalled — no poll event in the last 10 minutes despite
+  // it being scheduled every 2 minutes. This is the silent killer: when
+  // push has a hiccup, there's no safety net.
+  const lastPollMs = stats?.lastPollAt ? new Date(stats.lastPollAt).getTime() : 0;
+  const pollSilentMin = stats?.lastPollAt
+    ? Math.floor((Date.now() - lastPollMs) / 60000)
+    : null;
+  const pollStalled = pollSilentMin === null || pollSilentMin >= 10;
+
+
 
   const renewBtn = (
     <Button
@@ -247,6 +265,53 @@ export function PubsubActivity() {
           </div>
         </div>
       )}
+
+      {/* AMBER: push is arriving, but message_jobs aren't draining */}
+      {processingBacklog && (
+        <div className="mt-4 flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div className="text-xs">
+              <div className="font-medium text-amber-700 dark:text-amber-400">
+                Processing delay — {pendingJobs} message{pendingJobs === 1 ? "" : "s"} waiting{oldestPendingAgeMin > 0 ? ` (oldest ${oldestPendingAgeMin}m)` : ""}.
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                Gmail is delivering, but the background worker hasn't drained the queue yet. This usually means the per-minute job cron didn't fire recently. Click below to drain now — new mail will appear in your inbox within seconds.
+              </div>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="self-start md:self-auto shrink-0"
+            onClick={async () => {
+              try {
+                const r = await runJobsFn({ data: { limit: 100 } });
+                toast.success(`Drained ${r.ok} (${r.failed} failed, ${r.dlq} DLQ)`);
+                q.refetch();
+              } catch (e: any) { toast.error(e.message); }
+            }}
+          >
+            Drain queue now
+          </Button>
+        </div>
+      )}
+
+      {/* AMBER: fallback poll cron has stopped firing */}
+      {pollStalled && stats && stats.push24 > 0 && (
+        <div className="mt-4 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="text-xs">
+            <div className="font-medium text-amber-700 dark:text-amber-400">
+              Fallback poll hasn't run in {pollSilentMin === null ? "24h+" : `${pollSilentMin}m`}.
+            </div>
+            <div className="mt-1 text-muted-foreground">
+              The 2-minute poll is your safety net for missed Gmail pushes. Push is currently working, so new mail still arrives — but if push drops, there's nothing catching it. The scheduled job that calls <span className="font-mono">/api/public/gmail-poll</span> may be paused.
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* RED: push completely silent but poll is working */}
       {stats && stats.push24 === 0 && stats.poll24 > 0 && watchActive && (
