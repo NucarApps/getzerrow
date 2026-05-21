@@ -50,7 +50,13 @@ export function AddFolderDialog({
       let labelId: string | null = null;
       if (labelChoice === NEW_LABEL) {
         try {
-          const r = await createLabel({ data: { account_id: accountId, name: name.trim() } });
+          const r = await createLabel({
+            data: {
+              account_id: accountId,
+              name: name.trim(),
+              ...(parentLabelId && parentLabelId !== NONE ? { parent_label_id: parentLabelId } : {}),
+            },
+          });
           labelId = r.id;
         } catch {
           toast.warning("Couldn't create Gmail label. Folder created locally.");
