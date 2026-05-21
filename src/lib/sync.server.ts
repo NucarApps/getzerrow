@@ -994,6 +994,7 @@ export async function runMessageJobs(limit = 25) {
     .neq("status", "dlq")
     .lte("next_run_at", new Date().toISOString())
     .or(`locked_at.is.null,locked_at.lt.${lockCutoff}`)
+    .order("priority", { ascending: true })
     .order("next_run_at", { ascending: true })
     .limit(limit);
 
