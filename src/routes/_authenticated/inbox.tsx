@@ -802,21 +802,21 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="sm" variant="ghost" onClick={() => {
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => {
             const next = !email.is_read;
             qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)));
             markFn({ data: { id: email.id, read: next } }).catch(() => qc.invalidateQueries({ queryKey: ["emails"] }));
           }}>
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
-          <Button size="sm" variant="ghost" onClick={async () => {
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={async () => {
             qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
             try { await archFn({ data: { id: email.id } }); toast.success("Archived"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
           }}>
             <Archive className="h-4 w-4" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={async () => {
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={async () => {
             qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((e) => e.id !== email.id));
             try { await trashFn({ data: { id: email.id } }); toast.success("Trashed"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
