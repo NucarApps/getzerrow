@@ -14,6 +14,57 @@ export type Database = {
   }
   public: {
     Tables: {
+      backfill_jobs: {
+        Row: {
+          already_had: number
+          finished_at: string | null
+          gmail_account_id: string
+          id: string
+          last_error: string | null
+          months: number
+          next_page_token: string | null
+          query: string
+          started_at: string
+          status: string
+          total_enqueued: number
+          total_found: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          already_had?: number
+          finished_at?: string | null
+          gmail_account_id: string
+          id?: string
+          last_error?: string | null
+          months?: number
+          next_page_token?: string | null
+          query: string
+          started_at?: string
+          status?: string
+          total_enqueued?: number
+          total_found?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          already_had?: number
+          finished_at?: string | null
+          gmail_account_id?: string
+          id?: string
+          last_error?: string | null
+          months?: number
+          next_page_token?: string | null
+          query?: string
+          started_at?: string
+          status?: string
+          total_enqueued?: number
+          total_found?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       emails: {
         Row: {
           ai_confidence: number | null
