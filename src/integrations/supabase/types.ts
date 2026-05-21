@@ -449,6 +449,7 @@ export type Database = {
           last_error: string | null
           locked_at: string | null
           next_run_at: string
+          priority: number
           status: string
           subject: string | null
           updated_at: string
@@ -464,6 +465,7 @@ export type Database = {
           last_error?: string | null
           locked_at?: string | null
           next_run_at?: string
+          priority?: number
           status?: string
           subject?: string | null
           updated_at?: string
@@ -479,6 +481,7 @@ export type Database = {
           last_error?: string | null
           locked_at?: string | null
           next_run_at?: string
+          priority?: number
           status?: string
           subject?: string | null
           updated_at?: string
