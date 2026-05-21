@@ -169,6 +169,59 @@ export const learnFolderFromLabel = createServerFn({ method: "POST" })
     return learnFromLinkedLabel(data.folder_id, context.userId);
   });
 
+export const applyFolderLabelToLocal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, name, gmail_label_id, gmail_account_id")
+      .eq("id", data.folder_id)
+      .maybeSingle();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Folder not found");
+    if (!folder.gmail_label_id) throw new Error("Folder is not linked to a Gmail label");
+
+    // Pull local emails in this folder that don't already carry the label.
+    const { data: rows } = await supabaseAdmin
+      .from("emails")
+      .select("id, gmail_message_id, gmail_account_id, raw_labels")
+      .eq("folder_id", folder.id)
+      .eq("user_id", context.userId)
+      .limit(1000);
+
+    let synced = 0;
+    let failed = 0;
+    const CONCURRENCY = 8;
+    const todo = (rows ?? []).filter(
+      (r) => !Array.isArray(r.raw_labels) || !r.raw_labels.includes(folder.gmail_label_id!),
+    );
+    const newLabels = [folder.gmail_label_id!];
+
+    async function one(r: typeof todo[number]) {
+      try {
+        await modifyMessage(r.gmail_account_id, r.gmail_message_id, newLabels, ["INBOX"]);
+        const merged = Array.from(new Set([...(r.raw_labels ?? []), folder.gmail_label_id!])).filter(
+          (l) => l !== "INBOX",
+        );
+        await supabaseAdmin
+          .from("emails")
+          .update({ raw_labels: merged, is_archived: true })
+          .eq("id", r.id);
+        synced++;
+      } catch (e) {
+        console.error("applyFolderLabelToLocal failed for", r.gmail_message_id, e);
+        failed++;
+      }
+    }
+
+    for (let i = 0; i < todo.length; i += CONCURRENCY) {
+      await Promise.all(todo.slice(i, i + CONCURRENCY).map(one));
+    }
+    return { total: todo.length, synced, failed };
+  });
+
+
 export const loadOlderFromGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; before_received_at: string | null }) =>
