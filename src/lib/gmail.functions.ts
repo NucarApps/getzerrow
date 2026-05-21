@@ -1421,20 +1421,19 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    // Resolve the gmail account.
-    let accountId = data.account_id ?? null;
-    if (!accountId) {
-      const { data: acct } = await supabaseAdmin
+    // Resolve the gmail accounts to search across.
+    const accountIds: string[] = [];
+    if (data.account_id) {
+      await getOwnedAccount(context.userId, data.account_id);
+      accountIds.push(data.account_id);
+    } else {
+      const { data: accts } = await supabaseAdmin
         .from("gmail_accounts")
         .select("id")
         .eq("user_id", context.userId)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (!acct) return { ingested: 0, found: 0, reason: "no_account" as const };
-      accountId = acct.id;
-    } else {
-      await getOwnedAccount(context.userId, accountId);
+        .order("created_at", { ascending: true });
+      for (const a of accts ?? []) accountIds.push(a.id);
+      if (accountIds.length === 0) return { ingested: 0, found: 0, reason: "no_account" as const };
     }
 
     // Build a Gmail query. If it looks like an email address or domain, use
