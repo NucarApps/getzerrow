@@ -179,21 +179,23 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        <Link
-          to="/inbox"
-          className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/60"
+        <button
+          type="button"
+          className="flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60"
           onClick={() => pick("all")}
         >
           <Inbox className="h-4 w-4" /> Inbox
-        </Link>
-        <Link
-          to="/settings"
-          activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
-          className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/60"
-          onClick={() => onNavigate?.()}
+        </button>
+        <button
+          type="button"
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/settings" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          onClick={() => {
+            navigate({ to: "/settings" });
+            onNavigate?.();
+          }}
         >
           <Settings className="h-4 w-4" /> Settings
-        </Link>
+        </button>
       </nav>
 
       <div className="mt-6 flex items-center justify-between px-2">
@@ -249,7 +251,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         )}
         {!accountId && !accountsQ.isLoading && (
           <p className="px-3 py-3 text-xs text-muted-foreground">
-            Connect Gmail in <Link to="/settings" className="underline" onClick={() => onNavigate?.()}>Settings</Link>.
+            Connect Gmail in <button type="button" className="underline" onClick={() => { navigate({ to: "/settings" }); onNavigate?.(); }}>Settings</button>.
           </p>
         )}
       </div>
