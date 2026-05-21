@@ -53,10 +53,10 @@ function SettingsPage() {
         <h1 className="font-display text-3xl md:text-4xl">Settings</h1>
 
         <Tabs defaultValue="accounts" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="accounts">Accounts</TabsTrigger>
-            <TabsTrigger value="filters">Inbox filters</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsList className="bg-transparent p-0 h-auto gap-6 border-b border-border rounded-none w-full justify-start">
+            <TabsTrigger value="accounts" className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none">Accounts</TabsTrigger>
+            <TabsTrigger value="filters" className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none">Inbox filters</TabsTrigger>
+            <TabsTrigger value="activity" className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none">Activity</TabsTrigger>
           </TabsList>
 
           <TabsContent value="accounts" className="space-y-6">
