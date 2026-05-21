@@ -1032,7 +1032,7 @@ export async function runMessageJobs(limit = 100, concurrency = 8) {
       if (status === 404 || (typeof msg === "string" && msg.includes(" 404 "))) {
         await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
         results.push({ id: job.id, ok: true });
-        continue;
+        return;
       }
 
       // 400/401/403 — terminal. Straight to DLQ.
