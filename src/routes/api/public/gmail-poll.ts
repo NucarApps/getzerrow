@@ -33,7 +33,9 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         const lastPushAt = lastPush?.received_at ? new Date(lastPush.received_at).getTime() : 0;
         const silent = Date.now() - lastPushAt > SILENCE_MS;
 
-        const results: Array<{ id: string; email: string; ok: boolean; error?: string; rearmed?: boolean; synced?: number }> = [];
+        let ok = 0;
+        let failed = 0;
+        let rearmedCount = 0;
         let totalAccounts = 0;
         let totalSynced = 0;
         let firstError: string | null = null;
