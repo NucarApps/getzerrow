@@ -3,28 +3,56 @@ import { useEffect, useRef, useState, useCallback } from "react";
 /**
  * Inbox empty state — Space Invaders mini-game.
  * The rocket is the player; alien email envelopes descend in waves;
- * arrow keys move, space fires. Telemetry HUD chips and starfield
- * remain as cosmic backdrop.
+ * arrow keys move, space fires; killed emails sometimes drop power-ups.
  */
 
-type Bullet = { id: number; x: number; y: number };
+type Bullet = { id: number; x: number; y: number; vx?: number };
 type Enemy = { id: number; col: number; row: number; alive: boolean; hitUntil: number };
 type Burst = { id: number; x: number; y: number; startedAt: number };
+type PowerupKind = "rapid" | "multi" | "shield" | "life";
+type Powerup = { id: number; x: number; y: number; kind: PowerupKind };
+type ActiveBuff = { kind: "rapid" | "multi"; expiresAt: number };
 
-const FIELD_W = 100;
 const FIELD_H = 100;
 const PLAYER_Y = 90;
-const PLAYER_SPEED = 55;          // units / sec
-const BULLET_SPEED = 95;
+const PLAYER_SPEED = 58;
+const BULLET_SPEED = 110;
 const ENEMY_BULLET_BASE = 38;
 const BURST_MS = 600;
-const PLAYER_FIRE_COOLDOWN = 280; // ms
+const BASE_COOLDOWN = 180;
+const RAPID_COOLDOWN = 80;
+const POWERUP_DURATION = 8000;
+const SHIELD_DURATION = 6000;
 const FORMATION_TOP = 14;
-const ROW_GAP = 8;
-const COL_GAP = 10;
-const ENEMY_R = 3.2;               // collision radius
+const ROW_GAP = 6.5;
+const COL_GAP = 8.5;
+const ENEMY_HALF_W = 2.7;
+const ENEMY_HALF_H = 1.8;
 const PLAYER_HALF_W = 3.2;
 const INVULN_MS = 900;
+const POWERUP_FALL = 22; // units/sec
+const POWERUP_DROP_CHANCE = 0.14;
+
+const POWERUP_COLORS: Record<PowerupKind, string> = {
+  rapid: "#ff8a3d",
+  multi: "#67ffb8",
+  shield: "#7cc4ff",
+  life: "#ffb74d",
+};
+const POWERUP_LABEL: Record<PowerupKind, string> = {
+  rapid: "R",
+  multi: "M",
+  shield: "S",
+  life: "+",
+};
+
+function pickPowerupKind(): PowerupKind {
+  const r = Math.random();
+  if (r < 0.4) return "rapid";
+  if (r < 0.75) return "multi";
+  if (r < 0.9) return "shield";
+  return "life";
+}
 
 function spawnWave(level: number): Enemy[] {
   const rows = Math.min(5, 3 + Math.floor(level / 2));
@@ -62,7 +90,6 @@ export function TrackingStandby() {
   const reducedMotionRef = useRef(false);
   const idRef = useRef(1);
 
-  // HUD-relevant React state
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
@@ -70,7 +97,10 @@ export function TrackingStandby() {
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
-  // Per-frame mutable game state
+  const [activeBuff, setActiveBuff] = useState<ActiveBuff | null>(null);
+  const activeBuffRef = useRef<ActiveBuff | null>(null);
+
+  // Per-frame refs
   const playerXRef = useRef(50);
   const playerCooldownRef = useRef(0);
   const invulnUntilRef = useRef(0);
@@ -79,20 +109,18 @@ export function TrackingStandby() {
   const enemyBulletsRef = useRef<Bullet[]>([]);
   const enemiesRef = useRef<Enemy[]>(spawnWave(1));
   const burstsRef = useRef<Burst[]>([]);
-  // Formation origin + direction
-  const formationXRef = useRef(10);          // x of leftmost-col enemy
+  const powerupsRef = useRef<Powerup[]>([]);
+  const formationXRef = useRef(10);
   const formationYRef = useRef(FORMATION_TOP);
   const marchDirRef = useRef<1 | -1>(1);
   const marchSpeedRef = useRef(6);
   const levelRef = useRef(1);
   const stepBlipAtRef = useRef(0);
   const flapTickRef = useRef(0);
-  const [flap, setFlap] = useState(0); // forces re-render for wing-flap
-
-  // Force re-render at ~30fps for HUD visuals that don't change React state.
+  const [flap, setFlap] = useState(0);
   const [, setFrameTick] = useState(0);
 
-  // Telemetry tick (unchanged)
+  // Telemetry tick
   useEffect(() => {
     const LIFT_DURATION = 22;
     const tick = () => {
@@ -143,11 +171,11 @@ export function TrackingStandby() {
     const o = ctx.createOscillator(); const g = ctx.createGain();
     o.type = "sine"; const t0 = ctx.currentTime;
     o.frequency.setValueAtTime(880, t0);
-    o.frequency.exponentialRampToValueAtTime(220, t0 + 0.08);
+    o.frequency.exponentialRampToValueAtTime(220, t0 + 0.07);
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.04, t0 + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
-    o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.035, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.08);
+    o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + 0.09);
   }, [ensureAudio]);
   const playBoom = useCallback(() => {
     const ctx = ensureAudio(); if (!ctx) return;
@@ -170,6 +198,32 @@ export function TrackingStandby() {
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.06);
     o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + 0.07);
   }, [ensureAudio]);
+  const playPickup = useCallback(() => {
+    const ctx = ensureAudio(); if (!ctx) return;
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type = "square"; const t0 = ctx.currentTime;
+    o.frequency.setValueAtTime(660, t0);
+    o.frequency.exponentialRampToValueAtTime(990, t0 + 0.08);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+    o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + 0.13);
+  }, [ensureAudio]);
+
+  const applyPowerup = useCallback((kind: PowerupKind, now: number) => {
+    playPickup();
+    if (kind === "shield") {
+      invulnUntilRef.current = now + SHIELD_DURATION;
+      return;
+    }
+    if (kind === "life") {
+      setLives((l) => Math.min(5, l + 1));
+      return;
+    }
+    const buff: ActiveBuff = { kind, expiresAt: now + POWERUP_DURATION };
+    activeBuffRef.current = buff;
+    setActiveBuff(buff);
+  }, [playPickup]);
 
   const resetGame = useCallback(() => {
     levelRef.current = 1;
@@ -177,6 +231,7 @@ export function TrackingStandby() {
     bulletsRef.current = [];
     enemyBulletsRef.current = [];
     burstsRef.current = [];
+    powerupsRef.current = [];
     formationXRef.current = 10;
     formationYRef.current = FORMATION_TOP;
     marchDirRef.current = 1;
@@ -184,6 +239,8 @@ export function TrackingStandby() {
     playerXRef.current = 50;
     playerCooldownRef.current = 0;
     invulnUntilRef.current = 0;
+    activeBuffRef.current = null;
+    setActiveBuff(null);
     setScore(0);
     setLives(3);
     setLevel(1);
@@ -197,11 +254,9 @@ export function TrackingStandby() {
       if (!isGameKey) return;
       e.preventDefault();
       ensureAudio();
-
       if (k === "ArrowLeft" || k === "a" || k === "A") keysRef.current.left = true;
       if (k === "ArrowRight" || k === "d" || k === "D") keysRef.current.right = true;
       if (k === " " || k === "ArrowUp" || k === "w" || k === "W") keysRef.current.fire = true;
-
       if (k === " " || k === "Enter") {
         if (phaseRef.current === "ready") setPhase("playing");
         else if (phaseRef.current === "over") { resetGame(); setPhase("playing"); }
@@ -225,7 +280,7 @@ export function TrackingStandby() {
     };
   }, [ensureAudio, resetGame]);
 
-  // Game RAF loop
+  // Game RAF
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
@@ -233,18 +288,20 @@ export function TrackingStandby() {
       const dt = Math.min(64, now - last);
       last = now;
 
-      if (reducedMotionRef.current) {
-        raf = requestAnimationFrame(loop);
-        return;
-      }
+      if (reducedMotionRef.current) { raf = requestAnimationFrame(loop); return; }
       if (phaseRef.current !== "playing") {
-        raf = requestAnimationFrame(loop);
-        // still tick re-render so overlays update
         if (now - flapTickRef.current > 250) { flapTickRef.current = now; setFrameTick((x) => (x + 1) % 1_000_000); }
+        raf = requestAnimationFrame(loop);
         return;
       }
 
       const dts = dt / 1000;
+
+      // Expire buff
+      if (activeBuffRef.current && now >= activeBuffRef.current.expiresAt) {
+        activeBuffRef.current = null;
+        setActiveBuff(null);
+      }
 
       // Player movement
       let px = playerXRef.current;
@@ -255,21 +312,30 @@ export function TrackingStandby() {
 
       // Player firing
       playerCooldownRef.current = Math.max(0, playerCooldownRef.current - dt);
+      const buffKind = activeBuffRef.current?.kind;
+      const cooldown = buffKind === "rapid" ? RAPID_COOLDOWN : BASE_COOLDOWN;
       if (keysRef.current.fire && playerCooldownRef.current === 0) {
-        bulletsRef.current.push({ id: idRef.current++, x: px, y: PLAYER_Y - 4 });
-        playerCooldownRef.current = PLAYER_FIRE_COOLDOWN;
+        const y0 = PLAYER_Y - 4;
+        if (buffKind === "multi") {
+          // 3-shot spread
+          bulletsRef.current.push({ id: idRef.current++, x: px, y: y0, vx: 0 });
+          bulletsRef.current.push({ id: idRef.current++, x: px - 0.7, y: y0 + 0.4, vx: -14 });
+          bulletsRef.current.push({ id: idRef.current++, x: px + 0.7, y: y0 + 0.4, vx: 14 });
+        } else {
+          bulletsRef.current.push({ id: idRef.current++, x: px, y: y0, vx: 0 });
+        }
+        playerCooldownRef.current = cooldown;
         playPew();
       }
 
-      // Move player bullets up
+      // Player bullets
       bulletsRef.current = bulletsRef.current
-        .map((b) => ({ ...b, y: b.y - BULLET_SPEED * dts }))
-        .filter((b) => b.y > -2);
+        .map((b) => ({ ...b, x: b.x + (b.vx ?? 0) * dts, y: b.y - BULLET_SPEED * dts }))
+        .filter((b) => b.y > -2 && b.x > -2 && b.x < 102);
 
-      // Enemy formation march
+      // Formation march
       const bounds = formationBounds(enemiesRef.current, formationXRef.current, formationYRef.current);
       if (!bounds.anyAlive) {
-        // wave clear
         const nextLvl = levelRef.current + 1;
         levelRef.current = nextLvl;
         setLevel(nextLvl);
@@ -285,17 +351,14 @@ export function TrackingStandby() {
         const dir = marchDirRef.current;
         let nextX = formationXRef.current + dir * marchSpeedRef.current * dts;
         const nextBounds = formationBounds(enemiesRef.current, nextX, formationYRef.current);
-        if (nextBounds.minX < 4 || nextBounds.maxX > 96) {
-          // Drop a row and reverse
+        if (nextBounds.minX - ENEMY_HALF_W < 2 || nextBounds.maxX + ENEMY_HALF_W > 98) {
           marchDirRef.current = (dir === 1 ? -1 : 1);
           formationYRef.current += 4 + Math.min(levelRef.current, 6);
           marchSpeedRef.current = Math.min(30, marchSpeedRef.current * 1.15);
-          // clamp x so formation doesn't escape
-          if (nextBounds.minX < 4) nextX = formationXRef.current + (4 - nextBounds.minX);
-          if (nextBounds.maxX > 96) nextX = formationXRef.current - (nextBounds.maxX - 96);
+          if (nextBounds.minX - ENEMY_HALF_W < 2) nextX = formationXRef.current + ((2 + ENEMY_HALF_W) - nextBounds.minX);
+          if (nextBounds.maxX + ENEMY_HALF_W > 98) nextX = formationXRef.current - (nextBounds.maxX - (98 - ENEMY_HALF_W));
         }
         formationXRef.current = nextX;
-        // step blip cadence ~ tied to speed
         const stepInterval = Math.max(180, 700 - marchSpeedRef.current * 18);
         if (now - stepBlipAtRef.current > stepInterval) {
           stepBlipAtRef.current = now;
@@ -316,13 +379,12 @@ export function TrackingStandby() {
         }
       }
 
-      // Move enemy bullets down
       const eBulletSpeed = Math.min(70, ENEMY_BULLET_BASE + lvl * 3);
       enemyBulletsRef.current = enemyBulletsRef.current
         .map((b) => ({ ...b, y: b.y + eBulletSpeed * dts }))
         .filter((b) => b.y < FIELD_H + 2);
 
-      // Collisions: player bullets vs enemies
+      // Player bullets vs enemies (AABB)
       const remainingBullets: Bullet[] = [];
       for (const b of bulletsRef.current) {
         let hit = false;
@@ -330,13 +392,16 @@ export function TrackingStandby() {
           if (!e.alive) continue;
           const ex = formationXRef.current + e.col * COL_GAP;
           const ey = formationYRef.current + e.row * ROW_GAP;
-          const dx = b.x - ex, dy = b.y - ey;
-          if (dx * dx + dy * dy < ENEMY_R * ENEMY_R) {
+          if (Math.abs(b.x - ex) < ENEMY_HALF_W && Math.abs(b.y - ey) < ENEMY_HALF_H) {
             e.alive = false;
             hit = true;
             burstsRef.current.push({ id: idRef.current++, x: ex, y: ey, startedAt: now });
             setScore((s) => s + 10 * lvl);
             playBoom();
+            // Powerup drop
+            if (Math.random() < POWERUP_DROP_CHANCE) {
+              powerupsRef.current.push({ id: idRef.current++, x: ex, y: ey, kind: pickPowerupKind() });
+            }
             break;
           }
         }
@@ -344,13 +409,25 @@ export function TrackingStandby() {
       }
       bulletsRef.current = remainingBullets;
 
-      // Collisions: enemy bullets vs player
-      const safeBullets: Bullet[] = [];
+      // Powerups fall + pickup
+      const newPowerups: Powerup[] = [];
       const isInvuln = now < invulnUntilRef.current;
+      for (const p of powerupsRef.current) {
+        const ny = p.y + POWERUP_FALL * dts;
+        if (ny > PLAYER_Y + 6) continue;
+        // pickup test
+        if (Math.abs(p.x - px) < PLAYER_HALF_W + 2 && Math.abs(ny - PLAYER_Y) < 3) {
+          applyPowerup(p.kind, now);
+          continue;
+        }
+        newPowerups.push({ ...p, y: ny });
+      }
+      powerupsRef.current = newPowerups;
+
+      // Enemy bullets vs player
+      const safeBullets: Bullet[] = [];
       for (const b of enemyBulletsRef.current) {
-        const dx = b.x - px;
-        const dy = b.y - PLAYER_Y;
-        if (!isInvuln && Math.abs(dx) < PLAYER_HALF_W && Math.abs(dy) < 3.5) {
+        if (!isInvuln && Math.abs(b.x - px) < PLAYER_HALF_W && Math.abs(b.y - PLAYER_Y) < 3.5) {
           burstsRef.current.push({ id: idRef.current++, x: px, y: PLAYER_Y, startedAt: now });
           playBoom();
           invulnUntilRef.current = now + INVULN_MS;
@@ -365,15 +442,10 @@ export function TrackingStandby() {
       }
       enemyBulletsRef.current = safeBullets;
 
-      // Formation reached player?
-      if (bounds.maxY >= PLAYER_Y - 4) {
-        setPhase("over");
-      }
+      if (bounds.maxY >= PLAYER_Y - 4) setPhase("over");
 
-      // Prune bursts
       burstsRef.current = burstsRef.current.filter((b) => now - b.startedAt < BURST_MS);
 
-      // Wing flap toggle
       if (now - flapTickRef.current > 500) {
         flapTickRef.current = now;
         setFlap((f) => (f + 1) % 2);
@@ -384,7 +456,7 @@ export function TrackingStandby() {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [playPew, playBoom, playStep]);
+  }, [playPew, playBoom, playStep, applyPowerup]);
 
   const startOrRestart = () => {
     ensureAudio();
@@ -392,13 +464,10 @@ export function TrackingStandby() {
     else if (phase === "over") { resetGame(); setPhase("playing"); }
     else if (phase === "paused") setPhase("playing");
   };
-
-  // Touch chip handlers
-  const holdKey = (key: "left" | "right" | "fire", val: boolean) => () => {
-    keysRef.current[key] = val;
-  };
+  const holdKey = (key: "left" | "right" | "fire", val: boolean) => () => { keysRef.current[key] = val; };
 
   const now = performance.now();
+  const buffRemaining = activeBuff ? Math.max(0, (activeBuff.expiresAt - now) / 1000) : 0;
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-[#02030a]" tabIndex={0}>
@@ -407,13 +476,11 @@ export function TrackingStandby() {
         .thruster { transform-origin:center top; animation: thruster .12s linear infinite; }
         @keyframes invuln { 0%,100%{opacity:.25} 50%{opacity:1} }
         .invuln { animation: invuln .12s linear infinite; }
-        .alien { transition: transform .08s linear; }
+        @keyframes powerup-bob { 0%,100%{transform:translateY(-.4px)} 50%{transform:translateY(.4px)} }
+        .powerup { animation: powerup-bob 1.1s ease-in-out infinite; }
       `}</style>
 
-      <div
-        className="launchpad__viewport is-tracking"
-        style={{ position: "absolute", inset: 0, minHeight: 0 }}
-      >
+      <div className="launchpad__viewport is-tracking" style={{ position: "absolute", inset: 0, minHeight: 0 }}>
         <div className="tracking" aria-hidden="true" style={{ opacity: 1 }}>
           <div className="tracking__sky">
             <i style={{ left: "8%",  top: "18%" }}></i>
@@ -427,7 +494,6 @@ export function TrackingStandby() {
             <i style={{ left: "92%", top: "14%" }}></i>
             <i style={{ left: "14%", top: "60%" }}></i>
           </div>
-
           <div className="tracking__hud tracking__hud--tl">
             <span className="tracking__dot"></span>
             TRACKING · DOWNRANGE
@@ -442,10 +508,7 @@ export function TrackingStandby() {
                 <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,138,61,.35)" strokeWidth="1" />
                 <line x1="3" y1="20" x2="37" y2="20" stroke="rgba(255,138,61,.25)" strokeWidth="1" strokeDasharray="2 2" />
               </svg>
-              <div
-                className="attitude__needle"
-                style={{ transform: `translate(-50%, -100%) rotate(${90 - t.pitch}deg)` }}
-              ></div>
+              <div className="attitude__needle" style={{ transform: `translate(-50%, -100%) rotate(${90 - t.pitch}deg)` }}></div>
             </div>
             <div className="tele-row"><span className="k">Pitch</span><span className="v orange">{t.pitch.toFixed(0)}°</span></div>
           </div>
@@ -459,23 +522,30 @@ export function TrackingStandby() {
       >
         LEVEL {String(level).padStart(2, "0")} · SCORE {String(score).padStart(5, "0")} · {"♥".repeat(Math.max(0, lives))}{"♡".repeat(Math.max(0, 3 - lives))}
       </div>
+      {activeBuff && (
+        <div
+          className="pointer-events-none absolute left-1/2 top-9 z-20 -translate-x-1/2 rounded-sm border px-2 py-0.5 text-[10px] tracking-[0.22em] backdrop-blur"
+          style={{
+            fontFamily: "JetBrains Mono, ui-monospace, monospace",
+            color: POWERUP_COLORS[activeBuff.kind],
+            borderColor: POWERUP_COLORS[activeBuff.kind] + "66",
+            background: "rgba(10,14,26,.65)",
+          }}
+        >
+          {activeBuff.kind.toUpperCase()} · {buffRemaining.toFixed(1)}s
+        </div>
+      )}
 
       {/* Game layer */}
-      <svg
-        className="absolute inset-0 z-10"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        style={{ width: "100%", height: "100%" }}
-      >
-        {/* Ground line */}
-        <line x1="0" y1={PLAYER_Y + 4} x2="100" y2={PLAYER_Y + 4} stroke="#ff8a3d" strokeOpacity="0.35" strokeWidth="0.3" />
-        <rect x="0" y={PLAYER_Y + 4} width="100" height={100 - (PLAYER_Y + 4)} fill="url(#horizonGlow)" />
+      <svg className="absolute inset-0 z-10" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
         <defs>
           <linearGradient id="horizonGlow" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#ff5a2e" stopOpacity="0.18" />
             <stop offset="100%" stopColor="#ff5a2e" stopOpacity="0" />
           </linearGradient>
         </defs>
+        <line x1="0" y1={PLAYER_Y + 4} x2="100" y2={PLAYER_Y + 4} stroke="#ff8a3d" strokeOpacity="0.35" strokeWidth="0.3" />
+        <rect x="0" y={PLAYER_Y + 4} width="100" height={100 - (PLAYER_Y + 4)} fill="url(#horizonGlow)" />
 
         {/* Player bullets */}
         {bulletsRef.current.map((b) => (
@@ -487,21 +557,41 @@ export function TrackingStandby() {
           <rect key={b.id} x={b.x - 0.3} y={b.y - 1.2} width="0.6" height="2.4" fill="#ff5a2e" />
         ))}
 
-        {/* Enemies */}
+        {/* Enemies — proper email envelopes */}
         {enemiesRef.current.map((e) => {
           if (!e.alive) return null;
           const ex = formationXRef.current + e.col * COL_GAP;
           const ey = formationYRef.current + e.row * ROW_GAP;
-          const flapY = flap === 0 ? 0 : -0.6;
+          const flapY = flap === 0 ? 0 : -0.4;
+          const flashing = e.hitUntil > now;
+          const bodyFill = flashing ? "#fff5e0" : "#131826";
           return (
-            <g key={e.id} className="alien" transform={`translate(${ex} ${ey + flapY})`}>
-              <ellipse cx="0" cy="0" rx="3" ry="1.3" fill="#ff8a3d" opacity="0.3" />
-              <g transform="scale(0.055)">
-                <rect x="-24" y="-14" width="48" height="28" rx="3" fill="#1a1f2e" stroke="#ff8a3d" strokeWidth="2" />
-                <path d="M -24 -14 L 0 6 L 24 -14" fill="none" stroke="#ff8a3d" strokeWidth="2" />
-                <line x1="0" y1="-14" x2="0" y2="-22" stroke="#ff8a3d" strokeWidth="1.5" />
-                <circle cx="0" cy="-23" r="2" fill="#ffd089" />
-              </g>
+            <g key={e.id} transform={`translate(${ex} ${ey + flapY})`}>
+              {/* envelope body */}
+              <rect x={-ENEMY_HALF_W} y={-ENEMY_HALF_H} width={ENEMY_HALF_W * 2} height={ENEMY_HALF_H * 2} rx="0.35" fill={bodyFill} stroke="#ff8a3d" strokeWidth="0.18" />
+              {/* flap (V) */}
+              <path
+                d={`M ${-ENEMY_HALF_W} ${-ENEMY_HALF_H} L 0 ${flap === 0 ? -ENEMY_HALF_H + 1.6 : -ENEMY_HALF_H + 1.9} L ${ENEMY_HALF_W} ${-ENEMY_HALF_H}`}
+                fill="none"
+                stroke="#ff8a3d"
+                strokeWidth="0.18"
+              />
+              {/* subject lines */}
+              <line x1={-ENEMY_HALF_W + 0.6} y1={ENEMY_HALF_H - 1.1} x2={ENEMY_HALF_W - 0.6} y2={ENEMY_HALF_H - 1.1} stroke="#ff8a3d" strokeOpacity="0.55" strokeWidth="0.14" />
+              <line x1={-ENEMY_HALF_W + 0.6} y1={ENEMY_HALF_H - 0.45} x2={ENEMY_HALF_W - 1.6} y2={ENEMY_HALF_H - 0.45} stroke="#ff8a3d" strokeOpacity="0.4" strokeWidth="0.14" />
+              {/* stamp */}
+              <rect x={ENEMY_HALF_W - 1.2} y={-ENEMY_HALF_H + 0.3} width="0.85" height="0.85" fill="#ff5a2e" />
+            </g>
+          );
+        })}
+
+        {/* Powerups */}
+        {powerupsRef.current.map((p) => {
+          const color = POWERUP_COLORS[p.kind];
+          return (
+            <g key={p.id} transform={`translate(${p.x} ${p.y})`} className="powerup">
+              <rect x="-1.6" y="-1.2" width="3.2" height="2.4" rx="1.1" fill="#0a0e1a" stroke={color} strokeWidth="0.22" />
+              <text x="0" y="0.55" textAnchor="middle" fontFamily="JetBrains Mono, ui-monospace, monospace" fontWeight="700" fontSize="1.8" fill={color}>{POWERUP_LABEL[p.kind]}</text>
             </g>
           );
         })}
@@ -515,14 +605,7 @@ export function TrackingStandby() {
                 const a = (i / 8) * Math.PI * 2;
                 const r = 3 + age * 4;
                 return (
-                  <circle
-                    key={i}
-                    cx={Math.cos(a) * r}
-                    cy={Math.sin(a) * r}
-                    r="0.55"
-                    fill="#ff8a3d"
-                    opacity={1 - age}
-                  />
+                  <circle key={i} cx={Math.cos(a) * r} cy={Math.sin(a) * r} r="0.55" fill="#ff8a3d" opacity={1 - age} />
                 );
               })}
               <circle r="1" fill="#fff5e0" opacity={1 - age} />
@@ -532,15 +615,10 @@ export function TrackingStandby() {
 
         {/* Player rocket */}
         {(phase !== "over" || lives > 0) && (
-          <g
-            transform={`translate(${playerXRef.current} ${PLAYER_Y})`}
-            className={now < invulnUntilRef.current ? "invuln" : undefined}
-          >
-            {/* thruster */}
+          <g transform={`translate(${playerXRef.current} ${PLAYER_Y})`} className={now < invulnUntilRef.current ? "invuln" : undefined}>
             {(keysRef.current.left || keysRef.current.right) && (
               <polygon points="-0.8,3 0.8,3 0,5.5" fill="#ff8a3d" className="thruster" />
             )}
-            {/* rocket body (pointed up) */}
             <g transform="scale(0.045) translate(-60, -110)">
               <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
               <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
@@ -561,10 +639,7 @@ export function TrackingStandby() {
           onClick={startOrRestart}
           className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-[rgba(2,3,10,0.55)] text-center backdrop-blur-sm focus:outline-none"
         >
-          <div
-            className="text-[11px] tracking-[0.32em] text-[#ffd089]"
-            style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
-          >
+          <div className="text-[11px] tracking-[0.32em] text-[#ffd089]" style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}>
             {phase === "ready" && "READY"}
             {phase === "paused" && "PAUSED"}
             {phase === "over" && "GAME OVER"}
@@ -574,52 +649,25 @@ export function TrackingStandby() {
             {phase === "paused" && "Standby"}
             {phase === "over" && `Level ${level} · ${score} pts`}
           </div>
-          <div
-            className="mt-1 text-[10px] tracking-[0.28em] text-muted-foreground"
-            style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
-          >
+          <div className="mt-1 text-[10px] tracking-[0.28em] text-muted-foreground" style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}>
             {phase === "ready" && "PRESS SPACE OR ENTER TO LAUNCH"}
             {phase === "paused" && "PRESS P TO RESUME"}
             {phase === "over" && "PRESS ENTER OR TAP TO RESTART"}
           </div>
-          <div
-            className="mt-3 text-[10px] tracking-[0.28em] text-muted-foreground/70"
-            style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
-          >
+          <div className="mt-1 text-[10px] tracking-[0.28em] text-muted-foreground/80" style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}>
+            POWER-UPS DROP FROM EMAILS — CATCH THEM
+          </div>
+          <div className="mt-3 text-[10px] tracking-[0.28em] text-muted-foreground/70" style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}>
             ← → MOVE   ·   SPACE FIRE   ·   P PAUSE
           </div>
         </button>
       )}
 
-      {/* Touch fallback chips (coarse pointer only) */}
-      <div
-        className="pointer-events-auto absolute inset-x-0 bottom-2 z-20 hidden items-center justify-center gap-3 px-4 [@media(pointer:coarse)]:flex"
-      >
-        <button
-          aria-label="Left"
-          onTouchStart={holdKey("left", true)}
-          onTouchEnd={holdKey("left", false)}
-          onPointerDown={holdKey("left", true)}
-          onPointerUp={holdKey("left", false)}
-          className="rounded-md border border-[rgba(255,138,61,.4)] bg-[rgba(10,14,26,.7)] px-4 py-2 text-[#ffd089]"
-        >◀</button>
-        <button
-          aria-label="Fire"
-          onTouchStart={holdKey("fire", true)}
-          onTouchEnd={holdKey("fire", false)}
-          onPointerDown={holdKey("fire", true)}
-          onPointerUp={holdKey("fire", false)}
-          className="rounded-md border border-[rgba(255,138,61,.4)] bg-[rgba(255,90,46,.18)] px-5 py-2 text-[#ffd089]"
-          style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
-        >FIRE</button>
-        <button
-          aria-label="Right"
-          onTouchStart={holdKey("right", true)}
-          onTouchEnd={holdKey("right", false)}
-          onPointerDown={holdKey("right", true)}
-          onPointerUp={holdKey("right", false)}
-          className="rounded-md border border-[rgba(255,138,61,.4)] bg-[rgba(10,14,26,.7)] px-4 py-2 text-[#ffd089]"
-        >▶</button>
+      {/* Touch chips */}
+      <div className="pointer-events-auto absolute inset-x-0 bottom-2 z-20 hidden items-center justify-center gap-3 px-4 [@media(pointer:coarse)]:flex">
+        <button aria-label="Left" onTouchStart={holdKey("left", true)} onTouchEnd={holdKey("left", false)} onPointerDown={holdKey("left", true)} onPointerUp={holdKey("left", false)} className="rounded-md border border-[rgba(255,138,61,.4)] bg-[rgba(10,14,26,.7)] px-4 py-2 text-[#ffd089]">◀</button>
+        <button aria-label="Fire" onTouchStart={holdKey("fire", true)} onTouchEnd={holdKey("fire", false)} onPointerDown={holdKey("fire", true)} onPointerUp={holdKey("fire", false)} className="rounded-md border border-[rgba(255,138,61,.4)] bg-[rgba(255,90,46,.18)] px-5 py-2 text-[#ffd089]" style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}>FIRE</button>
+        <button aria-label="Right" onTouchStart={holdKey("right", true)} onTouchEnd={holdKey("right", false)} onPointerDown={holdKey("right", true)} onPointerUp={holdKey("right", false)} className="rounded-md border border-[rgba(255,138,61,.4)] bg-[rgba(10,14,26,.7)] px-4 py-2 text-[#ffd089]">▶</button>
       </div>
 
       {phase === "playing" && (

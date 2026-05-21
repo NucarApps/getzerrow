@@ -1,73 +1,62 @@
-## Turn the standby pane into Space Invaders
+## Three changes to the Space Invaders standby pane
 
-Replace the current drifting-UFO + click-to-shoot game in `src/components/inbox/TrackingStandby.tsx` with a full Space Invaders clone. The rocket becomes the player ship at the bottom; alien email envelopes descend in waves; arrow keys move, space fires. Telemetry HUD chips and the starfield stay as backdrop, but the trajectory arc + autonomous rocket animation are removed (the rocket is now the player).
+All in `src/components/inbox/TrackingStandby.tsx`. No other files, no backend.
 
-### Controls
+### 1. Redraw aliens as proper email envelopes
 
-- `←` / `→` or `A` / `D` — move player horizontally.
-- `Space` (or `↑` / `W`) — fire. Cooldown ~280ms.
-- `P` — pause/resume.
-- `Enter` — start / restart after game over.
-- Capture keys via a window listener while the component is mounted; `preventDefault` only for those keys so the rest of the app keeps normal scroll/tab behavior.
-- Inline touch fallback: three small chips at the bottom (`◀`, `FIRE`, `▶`) shown only on coarse pointers (`@media (pointer: coarse)`), so mobile users aren't locked out.
+Today the enemy SVG is ~3 units wide with a tiny envelope-plus-antenna squashed inside a `scale(0.055)` group — at small sizes it reads as a flat orange smudge.
 
-### Game model (single RAF loop, fixed virtual playfield 100×100)
+Replace the enemy art with a recognizable envelope drawn directly in playfield units (no inner downscale), then bump grid spacing so the bigger sprites still fit:
 
-State held in `useRef` (not React state) for per-frame mutation; React state only for HUD (`score`, `lives`, `level`, `paused`, `gameOver`). One `useEffect` owns the RAF loop and reads/writes the refs.
+- Envelope body: `5.4 × 3.6` rounded rect, dark-card fill, orange stroke.
+- Triangular flap on top: two strokes from upper corners meeting at center (slight `flap` offset already toggles every 500ms — keep it, increases the "marching" read).
+- Stamp: tiny `1 × 1` orange square in the top-right of the body.
+- Subject lines: two thin horizontal lines inside the body.
+- Drop the antenna + glow ellipse — they were what made it look UFO-ish; now it should read clearly as an email envelope.
+- Hit-flash: invert fill (white body) for `hitUntil` window (already wired).
+- Constants: `ENEMY_W = 5.4`, `ENEMY_H = 3.6`, `ENEMY_HALF_W = 2.7`, `ENEMY_HALF_H = 1.8`. Update collision from circle (`ENEMY_R`) to AABB using these.
+- Grid gaps: `COL_GAP = 8.5`, `ROW_GAP = 6.5` so 8 columns × 5 rows still fit horizontally with margins.
+- Update `formationBounds` to account for envelope width (clamp uses `minX - ENEMY_HALF_W` < 4 / `maxX + ENEMY_HALF_W` > 96).
 
-- `player`: `{ x: number; cooldown: number }`, y fixed near bottom (~88). Move speed ~55 units/sec, clamped 6–94.
-- `bullets`: `{ id, x, y }[]`. Player bullets travel up at ~95 units/sec; despawn off-top.
-- `enemies`: grid `{ id, x, y, alive, hitUntil }[]`. Spawned per wave (see below). March left↔right at `marchSpeed`, drop one row when the formation hits an edge — classic Space Invaders sweep.
-- `enemyBullets`: `{ id, x, y }[]`. Random alive enemies fire downward; rate scales with level. Bullets travel ~40 units/sec.
-- `bursts`: existing particle-burst struct reused for kills + player death.
+### 2. Faster firing baseline + rapid-fire feel
 
-### Waves and escalating difficulty
+- Lower `PLAYER_FIRE_COOLDOWN` from 280ms → **180ms**. Bullet speed up from 95 → 110.
+- Add `playerCooldownMs` derived value: `activePowerup === "rapid" ? 80 : 180`.
+- Multi-shot powerup also widens fire output (see below).
 
-`level` starts at 1. Each cleared wave: `level++`, spawn next wave.
+### 3. Power-ups
 
-Per level:
-- `rows = min(5, 3 + floor(level / 2))`
-- `cols = min(8, 5 + floor(level / 3))`
-- `marchSpeed = 6 + level * 1.8` (units/sec horizontal); doubles after each row drop, capped at `30`.
-- `enemyFireChancePerSec = 0.35 + level * 0.18`, capped at `2.5`.
-- `enemyBulletSpeed = 38 + level * 3`, capped at `70`.
-- Drop step on edge contact: `4 + min(level, 6)` units.
+State additions (mostly refs):
+- `powerupsRef: { id, x, y, kind: "rapid" | "multi" | "shield" | "life" }[]` — falling drops.
+- `activePowerupRef: { kind, expiresAt } | null` — applies for ~8s after pickup; only one stackable buff at a time (later pickup replaces earlier). `shield` grants the invuln window directly (sets `invulnUntilRef = now + 6000`) and doesn't occupy the active slot. `life` is instant `setLives(l => Math.min(5, l + 1))` and doesn't occupy the slot. So only `rapid` and `multi` live in `activePowerupRef`.
+- `[activePowerup, setActivePowerup]` React state mirror for HUD, updated whenever the ref changes.
 
-Game over when an enemy reaches `y >= player.y - 4` OR `lives` hits 0.
+Spawn rules:
+- On each enemy kill, 14% chance to spawn a powerup at the dead enemy's `(x, y)`.
+- Kind weights: `rapid 40%`, `multi 35%`, `shield 15%`, `life 10%`.
+- Powerups fall at 22 units/sec. Despawn if `y > PLAYER_Y + 6`.
+- Pickup: AABB vs player (`|dx| < PLAYER_HALF_W + 2`, `|dy| < 3`). On pickup → `playPickup` (short rising chirp) + apply effect.
 
-### Scoring + lives
+Effects:
+- `rapid`: 8s of 80ms cooldown.
+- `multi`: 8s of triple-shot — fire emits 3 bullets at angles `[-8°, 0°, +8°]` from the player nose; same cooldown as base (180ms) so it doesn't double-stack with `rapid`.
+- `shield`: 6s of `invuln` (reuses existing `invuln` blink class).
+- `life`: +1 life, capped at 5.
 
-- Score: 10 × `level` per kill, +50 bonus on wave clear.
-- Player starts with 3 lives. On hit: lose 1 life, brief invuln flash (700ms), respawn at center; if `lives === 0` → game over.
-- HUD chip top-center: `LEVEL 03 · SCORE 1240 · ♥♥♥`. Replaces the current `INTRUDERS NEUTRALIZED` chip.
+Visual: glowing rounded pill, color-coded by kind, 1-letter label in mono — `R` orange, `M` cyan-orange `#67ffb8` for fresh-energy contrast, `S` blue `#7cc4ff`, `+` pink-amber `#ffb74d`. Gentle vertical bob.
 
-### Player ship visual
+HUD: add a second mini chip just under the LEVEL / SCORE chip when `activePowerup` is set:
+`RAPID 4.3s` or `MULTI 2.1s` — countdown updates on the same RAF re-render.
 
-Reuse the existing rocket SVG paths but pointed up and scaled for the new role (~5 units wide in the 100×100 playfield). Small orange thruster flicker beneath when moving. The arc, `<animateMotion>`, and earth curvature are removed — replaced by a thin orange ground line near the bottom and faint horizon glow.
+Start overlay subtitle gains a line: `POWER-UPS DROP FROM EMAILS — CATCH THEM`.
 
-### Enemy visual
+### Type updates
 
-Keep the envelope-with-antenna UFO (no flipping, no drift). Add a subtle 2-frame "wing flap" via toggling a CSS class every 600ms so the formation reads as marching, à la Space Invaders sprites.
+```ts
+type Powerup = { id: number; x: number; y: number; kind: "rapid" | "multi" | "shield" | "life" };
+type ActiveBuff = { kind: "rapid" | "multi"; expiresAt: number };
+```
 
 ### Sound
 
-Keep `playPew` for player shots; add `playInvaderStep` (short low blip on each formation step) and reuse `playBoom` for kills and player death. All gated by `prefers-reduced-motion`.
-
-### Reduced motion
-
-If `prefers-reduced-motion`, render a static "PAUSED — REDUCED MOTION" overlay with the score chip and skip the game loop entirely; the user can still see HUD telemetry on the sides.
-
-### Start / pause / game-over overlays
-
-Three overlay states, centered, semi-transparent:
-- Start (initial): `READY · PRESS SPACE TO LAUNCH`.
-- Paused: `PAUSED · PRESS P TO RESUME`.
-- Game over: `GAME OVER · LEVEL {n} · SCORE {s}` + `PRESS ENTER TO RESTART`.
-
-The bottom caption (`AWAITING PAYLOAD…`) stays during gameplay as a faint label so the pane still reads as the inbox empty state.
-
-### Files touched
-
-- `src/components/inbox/TrackingStandby.tsx` — rewrite the game portion of the component (the telemetry tick, starfield, side HUD chips, and `playPew`/`playBoom` helpers stay; the click-to-shoot UFO drift logic, arc path, and `<animateMotion>` rocket are removed and replaced with the Space Invaders model described above). Inline `<style>` block for new keyframes (`thruster-flicker`, `enemy-step`, `invuln-blink`).
-
-No new dependencies, no backend, no other files.
+Add `playPickup` (square wave, 660→990Hz over 80ms, gain 0.05). Reuse existing helpers otherwise.
