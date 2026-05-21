@@ -850,23 +850,23 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-6">
-        <h1 className="font-display text-2xl leading-tight md:text-3xl">{email.subject || "(no subject)"}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 md:px-6">
+        <h1 className="font-display text-xl leading-tight md:text-2xl">{email.subject || "(no subject)"}</h1>
+        <p className="mt-1 text-xs text-muted-foreground">
           <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
           {email.from_name && email.from_addr ? ` <${email.from_addr}>` : ""}
-          {email.received_at && ` · ${new Date(email.received_at).toLocaleString()}`}
+          {email.received_at && ` · ${new Date(email.received_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`}
         </p>
         {email.ai_summary && (
-          <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+          <div className="mt-2 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-sm">
             <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
             <span><span className="font-medium text-primary">Summary · </span>{email.ai_summary}</span>
           </div>
         )}
 
-        <Collapsible open={whyOpen} onOpenChange={setWhyOpen} className="mt-2">
+        <Collapsible open={whyOpen} onOpenChange={setWhyOpen} className="mt-1.5">
           <CollapsibleTrigger asChild>
-            <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1.5 text-left text-sm hover:bg-accent/40">
+            <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1 text-left text-sm hover:bg-accent/40">
               <span className="flex items-center gap-2">
                 <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-muted-foreground">Why this folder?</span>
