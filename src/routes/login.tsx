@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
-export const Route = createFileRoute("/login")({ component: LoginPage });
+export const Route = createFileRoute("/login")({
+  beforeLoad: async () => {
+    if (typeof window === "undefined") return;
+    const { data } = await supabase.auth.getSession();
+    if (data.session) throw redirect({ to: "/inbox" });
+  },
+  component: LoginPage,
+});
 
 const GMAIL_SCOPES = [
   "openid",

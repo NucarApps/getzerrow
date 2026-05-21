@@ -16,6 +16,7 @@ import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
+    if (typeof window === "undefined") return; // session lives in localStorage
     const { data } = await supabase.auth.getSession();
     if (!data.session) throw redirect({ to: "/login" });
   },
