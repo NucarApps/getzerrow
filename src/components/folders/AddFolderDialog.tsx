@@ -78,6 +78,7 @@ export function AddFolderDialog({
       if (error) { toast.error(error.message); return; }
       setName("");
       setLabelChoice(NEW_LABEL);
+      setParentLabelId("");
       qc.invalidateQueries({ queryKey: ["folders"] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       onOpenChange(false);
