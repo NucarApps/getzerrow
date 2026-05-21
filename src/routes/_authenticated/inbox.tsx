@@ -201,13 +201,18 @@ function InboxPage() {
   // don't have locally — then refetch so they appear in the results.
   const searchGmailFn = useServerFn(searchGmailAndIngest);
   const [gmailSearching, setGmailSearching] = useState(false);
+  const [lastGmailResult, setLastGmailResult] = useState<
+    | { query: string; ingested: number; found: number; reason?: string }
+    | null
+  >(null);
   useEffect(() => {
     const qstr = query.trim();
-    if (qstr.length < 3) return;
+    if (qstr.length < 3) { setLastGmailResult(null); return; }
     const handle = setTimeout(async () => {
       setGmailSearching(true);
       try {
         const r: any = await searchGmailFn({ data: { query: qstr } });
+        setLastGmailResult({ query: qstr, ingested: r?.ingested ?? 0, found: r?.found ?? 0, reason: r?.reason });
         if (r?.ingested > 0) {
           await qc.refetchQueries({ queryKey: ["emails"] });
           toast.success(`Pulled ${r.ingested} email${r.ingested === 1 ? "" : "s"} from Gmail.`);
@@ -227,18 +232,27 @@ function InboxPage() {
 
   const filtered = useMemo(() => {
     if (isSearching) {
+      // Trust the server-side search corpus (last 2000 messages) plus any
+      // freshly-ingested Gmail hits. Avoid a local substring filter so
+      // body-text matches from Gmail don't get hidden.
       const qstr = query.trim().toLowerCase();
-      return pageRows.filter((e) => {
-        return (
-          (e.from_name && decodeEntities(e.from_name).toLowerCase().includes(qstr)) ||
-          (e.from_addr && e.from_addr.toLowerCase().includes(qstr)) ||
-          (e.subject && decodeEntities(e.subject).toLowerCase().includes(qstr)) ||
-          (e.snippet && decodeEntities(e.snippet).toLowerCase().includes(qstr))
-        );
+      const scored = pageRows.map((e) => {
+        const hay =
+          (e.from_name ? decodeEntities(e.from_name).toLowerCase() : "") +
+          " " +
+          (e.from_addr ? e.from_addr.toLowerCase() : "") +
+          " " +
+          (e.subject ? decodeEntities(e.subject).toLowerCase() : "") +
+          " " +
+          (e.snippet ? decodeEntities(e.snippet).toLowerCase() : "");
+        return { e, hit: hay.includes(qstr) };
       });
+      // Show metadata matches first, then everything else (covers body-only Gmail hits).
+      return [...scored.filter((s) => s.hit), ...scored.filter((s) => !s.hit)].map((s) => s.e);
     }
     return pageRows;
   }, [pageRows, isSearching, query]);
+
 
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
@@ -373,10 +387,29 @@ function InboxPage() {
           {!emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
               <img src={cobwebInbox} alt="" className="h-32 w-auto opacity-90" />
-              <p className="text-sm">Nothing here yet.</p>
-              <p className="text-xs">Hit refresh, or connect Gmail in Settings.</p>
+              {isSearching ? (
+                gmailSearching ? (
+                  <p className="text-sm">Checking Gmail for "{query.trim()}"…</p>
+                ) : lastGmailResult?.reason === "no_account" ? (
+                  <>
+                    <p className="text-sm">No matches found.</p>
+                    <p className="text-xs">Connect a Gmail account in Settings to search your full mailbox.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm">No matches in your inbox or Gmail for "{query.trim()}".</p>
+                    <p className="text-xs">Try a different search term.</p>
+                  </>
+                )
+              ) : (
+                <>
+                  <p className="text-sm">Nothing here yet.</p>
+                  <p className="text-xs">Hit refresh, or connect Gmail in Settings.</p>
+                </>
+              )}
             </div>
           )}
+
           {filtered.map((e) => {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
             const folderList = foldersQ.data ?? [];
