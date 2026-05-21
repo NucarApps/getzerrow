@@ -1085,7 +1085,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
   let unarchived = 0;
   const { data: archivedRows } = await supabaseAdmin
     .from("emails")
-    .select("id, gmail_message_id, raw_labels, is_read")
+    .select("id, gmail_message_id, raw_labels, is_read, folder_id")
     .eq("gmail_account_id", accountId)
     .eq("is_archived", true)
     .order("received_at", { ascending: false, nullsFirst: false })
