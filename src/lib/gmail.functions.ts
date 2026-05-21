@@ -181,6 +181,7 @@ export const applyFolderLabelToLocal = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!folder || folder.user_id !== context.userId) throw new Error("Folder not found");
     if (!folder.gmail_label_id) throw new Error("Folder is not linked to a Gmail label");
+    const labelId = folder.gmail_label_id;
 
     // Pull local emails in this folder that don't already carry the label.
     const { data: rows } = await supabaseAdmin
@@ -194,14 +195,14 @@ export const applyFolderLabelToLocal = createServerFn({ method: "POST" })
     let failed = 0;
     const CONCURRENCY = 8;
     const todo = (rows ?? []).filter(
-      (r) => !Array.isArray(r.raw_labels) || !r.raw_labels.includes(folder.gmail_label_id!),
+      (r) => !Array.isArray(r.raw_labels) || !r.raw_labels.includes(labelId),
     );
-    const newLabels = [folder.gmail_label_id!];
+    const newLabels = [labelId];
 
     async function one(r: typeof todo[number]) {
       try {
         await modifyMessage(r.gmail_account_id, r.gmail_message_id, newLabels, ["INBOX"]);
-        const merged = Array.from(new Set([...(r.raw_labels ?? []), folder.gmail_label_id!])).filter(
+        const merged = Array.from(new Set([...(r.raw_labels ?? []), labelId])).filter(
           (l) => l !== "INBOX",
         );
         await supabaseAdmin
