@@ -1,48 +1,37 @@
-## Goal
+## Problem
 
-Make the AI-assigned category and the rule that placed each email visible at a glance in the inbox list, and make correcting it a one-click action — without rebuilding what already works in the detail pane.
+On mobile, opening the drawer and tapping **Settings** does nothing — the drawer closes (or doesn't) and the route never changes to `/settings`.
 
-## What's already there (keeping as-is)
+## Cause
 
-- **Detail pane** (per email): folder pill, "Why this folder?" collapsible with the classifier badge (`ai`, `filter`, `domain_rule`, `gmail_label`, `global_exclude`, `manual_move`, etc.), the human-readable `classification_reason`, AI confidence bar, "Move similar", "Always inbox", "Reanalyze", and "Remove folder label from past emails".
-- **Backend**: `classified_by`, `classification_reason`, `matched_filter_ids`, `ai_confidence` are already written by `sync.server.ts` for every email.
+In `src/routes/_authenticated.tsx` the Settings link inside the mobile `Sheet` does:
 
-## What this plan adds
+```tsx
+<Link to="/settings" onClick={() => onNavigate?.()}>
+```
 
-### 1. Show the rule on every list row
+`onNavigate` calls `setMobileOpen(false)` synchronously. Radix's `Sheet` (Dialog) starts its close transition immediately, which unmounts the link's portal-adjacent focus trap and, on touch devices, can swallow the click before TanStack Router's own `onClick` handler runs. Net effect on mobile: the sheet closes and navigation is dropped. The Inbox link "works" only because it also calls `pick("all")` which calls `navigate({ to: "/inbox" })` programmatically — so navigation happens regardless of the Link click.
 
-In `src/routes/_authenticated/inbox.tsx`, on each list row, add next to the folder pill:
+## Fix
 
-- A small `ClassifiedChip` (already exists — reuse it) so users see *how* it was categorised: AI, Filter, Domain, Gmail label, Manual, Excluded.
-- The first ~60 chars of `classification_reason` as muted text under the chip, truncated with `line-clamp-1`. Full text on hover via `title`.
-- Show the folder pill on **all** views (not only "all"/"all_mail"/"no_rules") so the row always tells you where it landed.
+Make navigation explicit and run it before closing the sheet, mirroring the pattern already used by the folder rows.
 
-### 2. Quick-correct action on the row
+In `src/routes/_authenticated.tsx`, change the Settings entry from a `<Link>` to a button that calls `navigate({ to: "/settings" })` and then `onNavigate?.()`. Keep the active styling by reading `pathname` (already available via `useRouterState`) and applying the active class manually.
 
-Add a tiny "Wrong?" affordance on each row (icon-only, shows on hover) that opens a popover with:
-- Move to a different folder (folder picker, same logic as existing context menu)
-- Move to inbox (no folder)
-- "Reanalyze with AI"
-
-This duplicates context-menu actions but makes them discoverable without right-click. No new server functions — wires straight into the existing `moveEmailToFolder`, `moveEmailToInbox`, `reanalyzeEmail`.
-
-### 3. Open the "Why" panel by default
-
-Default `whyOpen` to `true` in the detail pane so the rule is visible without an extra click. User can still collapse it.
-
-## What this plan does NOT change
-
-- No schema changes — all fields exist.
-- No new server functions — corrections already work.
-- No changes to classification logic in `sync.server.ts`.
-- No changes to settings/folders pages.
+Apply the same treatment to the Inbox link for consistency (it already navigates via `pick`, but moving it off `<Link>` removes the latent race) — and to the inline "Connect Gmail in Settings" link further down, which has the same bug.
 
 ## Files touched
 
-- `src/routes/_authenticated/inbox.tsx` — list row rendering, default `whyOpen=true`, small inline "Wrong?" popover. ~60 lines changed/added.
+- `src/routes/_authenticated.tsx` — replace the two sidebar `<Link>` items and the inline Settings link with button/`onClick` navigations. ~15 lines changed.
 
-## Result
+## Out of scope
 
-- Scanning the inbox: each row shows `[Folder pill]` `[AI / Filter / Domain chip]` with a one-line reason. No clicks required.
-- Correcting a mistake: hover a row → click "Wrong?" → pick the right folder, or click reanalyze. Two clicks instead of right-click → submenu.
-- Detail view: the rule is open by default, so the reason and confidence are immediately visible.
+- No styling redesign of the sidebar.
+- No changes to desktop behavior (works the same because there is no sheet to close).
+- No changes to routes, server functions, or auth.
+
+## Verification
+
+1. On mobile viewport, open the drawer, tap **Settings** → drawer closes and `/settings` loads.
+2. On mobile, tap **Inbox** → drawer closes and `/inbox` loads.
+3. On desktop, both links still work and show the active state on the current route.
