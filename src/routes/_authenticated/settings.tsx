@@ -5,7 +5,9 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   listMyGmailAccounts, startConnectGmail, disconnectGmailAccount,
   triggerBackfill, triggerWeekBackfill, triggerSync, renewGmailWatch,
+  startDeepBackfill, cancelDeepBackfill, getBackfillStatus,
 } from "@/lib/gmail.functions";
+
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
