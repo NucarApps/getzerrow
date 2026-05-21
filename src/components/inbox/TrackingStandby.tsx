@@ -61,17 +61,35 @@ export function TrackingStandby() {
             <i style={{ left: "14%", top: "60%" }}></i>
           </div>
           <div className="tracking__earth"></div>
-          <svg className="tracking__arc" viewBox="0 0 600 400" preserveAspectRatio="none">
+          <svg className="tracking__arc" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid slice">
             <defs>
               <linearGradient id="arcGradStandby" x1="0" y1="1" x2="1" y2="0">
                 <stop offset="0%" stopColor="#ff5a2e" stopOpacity=".15" />
                 <stop offset="50%" stopColor="#ff8a3d" stopOpacity=".9" />
                 <stop offset="100%" stopColor="#ffd089" stopOpacity=".4" />
               </linearGradient>
+              <path id="arcPathStandby" d="M 30 370 Q 300 -120 570 90" />
             </defs>
-            <path className="tracking__arc-ghost" d="M 30 370 Q 300 -120 570 90" fill="none" />
-            <path className="tracking__arc-live"  d="M 30 370 Q 300 -120 570 90" fill="none" stroke="url(#arcGradStandby)" />
+            <use href="#arcPathStandby" className="tracking__arc-ghost" fill="none" />
+            <use href="#arcPathStandby" className="tracking__arc-live"  fill="none" stroke="url(#arcGradStandby)" />
+            <g className="tracking__rocket">
+              <g transform="rotate(90) scale(0.09) translate(-60 -118)">
+                <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
+                <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
+                <path d="M42 150 L12 226 L42 218 Z" fill="#ff5a2e" />
+                <path d="M42 150 L42 218 L34 226 Z" fill="#8a2a14" />
+                <path d="M78 150 L108 226 L78 218 Z" fill="#ff5a2e" />
+                <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
+                <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
+              </g>
+              <animateMotion dur="28s" repeatCount="indefinite" rotate="auto"
+                keyPoints="0;1" keyTimes="0;1"
+                calcMode="spline" keySplines="0.4 0 0.6 1">
+                <mpath href="#arcPathStandby" />
+              </animateMotion>
+            </g>
           </svg>
+
           <div className="tracking__icon" aria-hidden="true">
             <svg viewBox="0 0 120 280">
               <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
