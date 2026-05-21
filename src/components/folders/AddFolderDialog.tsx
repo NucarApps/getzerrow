@@ -30,7 +30,17 @@ export function AddFolderDialog({
   const learnFn = useServerFn(learnFolderFromLabel);
   const [name, setName] = useState("");
   const [labelChoice, setLabelChoice] = useState<string>(NEW_LABEL);
+  const [parentLabelId, setParentLabelId] = useState<string>("");
   const [busy, setBusy] = useState(false);
+
+  const NONE = "__none__";
+  const zerrowLabels = labels
+    .filter((l) => l.name === "Zerrow" || l.name.startsWith("Zerrow/"))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const labelPath = (n: string) => {
+    const parts = n.split("/");
+    return parts.length === 1 ? "Zerrow (root)" : parts.slice(1).join(" / ");
+  };
 
   async function submit() {
     if (!name.trim() || !accountId) return;
@@ -40,7 +50,13 @@ export function AddFolderDialog({
       let labelId: string | null = null;
       if (labelChoice === NEW_LABEL) {
         try {
-          const r = await createLabel({ data: { account_id: accountId, name: name.trim() } });
+          const r = await createLabel({
+            data: {
+              account_id: accountId,
+              name: name.trim(),
+              ...(parentLabelId && parentLabelId !== NONE ? { parent_label_id: parentLabelId } : {}),
+            },
+          });
           labelId = r.id;
         } catch {
           toast.warning("Couldn't create Gmail label. Folder created locally.");
@@ -62,6 +78,7 @@ export function AddFolderDialog({
       if (error) { toast.error(error.message); return; }
       setName("");
       setLabelChoice(NEW_LABEL);
+      setParentLabelId("");
       qc.invalidateQueries({ queryKey: ["folders"] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       onOpenChange(false);
@@ -99,6 +116,17 @@ export function AddFolderDialog({
               ))}
             </SelectContent>
           </Select>
+          {labelChoice === NEW_LABEL && (
+            <Select value={parentLabelId || NONE} onValueChange={(v) => setParentLabelId(v === NONE ? "" : v)}>
+              <SelectTrigger><SelectValue placeholder="Parent label (optional)" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>None (top level)</SelectItem>
+                {zerrowLabels.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>Under: {labelPath(l.name)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>

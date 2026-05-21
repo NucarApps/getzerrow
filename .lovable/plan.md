@@ -1,42 +1,38 @@
-# Fix: Power-ups stuck in the top-left corner
+# Add sublabel support to "New folder"
 
-## Root cause
+Gmail represents nested labels by putting `/` in the label name (e.g. `Zerrow/Newsletters/Promotions` is "Promotions" under "Newsletters" under "Zerrow"). Today `createGmailLabel` always creates a top-level `Zerrow/<name>` label, and the New Folder dialog has no way to say "this should live under another label."
 
-In `src/components/inbox/TrackingStandby.tsx`, each falling power-up is rendered as:
+## What changes (user-facing)
 
-```tsx
-<g transform={`translate(${p.x} ${p.y})`} className="powerup">
-```
+In the **New folder** dialog (`AddFolderDialog`), when the user picks **"Create new Gmail label"**, show one extra control:
 
-The `.powerup` class has a CSS keyframe animation that sets `transform: translateY(...)`. On SVG elements, a CSS `transform` **overrides** the `transform=""` attribute, so `translate(p.x, p.y)` is discarded and every power-up renders at (0, 0) — the top-left of the playfield. That matches the symptom ("kind of showing in the top-left, can't see them").
+- **Parent label** dropdown
+  - Default: `None (top level)` → behaves exactly like today, creates `Zerrow/<name>`.
+  - Other options: every existing user label under `Zerrow/…` (the same `labels` list already passed into the dialog), shown with their nested path so the user can see the hierarchy (e.g. `Zerrow / Newsletters`, `Zerrow / Newsletters / Promotions`).
+  - Hidden when the user chose "Link to: <existing label>" (parent only applies to newly-created labels).
 
-Enemies/bullets work fine because they don't have a CSS transform animation on their positioned `<g>`.
+On submit, if a parent is selected, the new Gmail label is created as `<parent full name>/<new name>` (e.g. `Zerrow/Newsletters/Promotions`). Otherwise it stays `Zerrow/<new name>`.
 
-## Fix
+The local `folders` row stores the resulting `gmail_label_id` exactly as today — no schema change.
 
-Wrap the bobbing animation on an **inner** `<g>`, so the outer `<g>` keeps its positional `transform` attribute intact and the CSS animation only nudges the inner group.
+## What changes (technical)
 
-```tsx
-{powerupsRef.current.map((p) => {
-  const color = POWERUP_COLORS[p.kind];
-  return (
-    <g key={p.id} transform={`translate(${p.x} ${p.y})`}>
-      <g className="powerup">
-        <rect x="-1.6" y="-1.2" width="3.2" height="2.4" rx="1.1"
-              fill="#0a0e1a" stroke={color} strokeWidth="0.22" />
-        <text x="0" y="0.55" textAnchor="middle"
-              fontFamily="JetBrains Mono, ui-monospace, monospace"
-              fontWeight="700" fontSize="1.8" fill={color}>
-          {POWERUP_LABEL[p.kind]}
-        </text>
-      </g>
-    </g>
-  );
-})}
-```
+1. **`src/lib/gmail.functions.ts` → `createGmailLabel`**
+   - Add optional `parent_label_id: string` to the input validator.
+   - In the handler, when `parent_label_id` is provided, look up that label in `listLabels(...)`, verify its name starts with `Zerrow/` (so we only nest inside our own namespace), and build the full name as `${parent.name}/${data.name}`. Otherwise keep the existing `Zerrow/${data.name}`.
+   - Reuse the existing "label already exists → return its id" short-circuit against the computed full name.
 
-No other logic changes — drop chance, fall speed, pickup, and buff application are all working; they just weren't visible because the sprites were drawing off-screen at the origin.
+2. **`src/components/folders/AddFolderDialog.tsx`**
+   - Add `parentLabelId` state (default `""` = none).
+   - Render a second `<Select>` directly under the existing one, shown only when `labelChoice === NEW_LABEL`.
+   - Populate options from the `labels` prop, filtered to names starting with `Zerrow/`, sorted alphabetically, with the display formatted as the path after `Zerrow/` joined by ` / ` (e.g. `Newsletters / Promotions`). Include a `None (top level)` option at the top.
+   - Pass `parent_label_id` to `createLabel({ data: { account_id, name, parent_label_id } })` when set.
+   - Reset `parentLabelId` alongside `name` / `labelChoice` after a successful create.
 
-## Files
+3. No DB migration, no changes to `FolderEditor` / `EditFolderDialog` (rename/move of existing labels is out of scope for this request).
 
-- `src/components/inbox/TrackingStandby.tsx` — split the power-up `<g>` into outer (position) + inner (bob animation).
+## Out of scope
+
+- Renaming or re-parenting an existing Gmail label.
+- Auto-creating intermediate parents that don't exist yet (the dropdown only lists labels that already exist, so this can't happen).
+- Showing the nested hierarchy elsewhere in the app's folder sidebar.
