@@ -709,13 +709,13 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               <ChevronLeft className="h-4 w-4" />
             </button>
           )}
-          {folder && <Badge variant="outline" className="gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />{folder.name}</Badge>}
+          {folder && <Badge variant="outline" className="hidden gap-1.5 md:inline-flex"><span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />{folder.name}</Badge>}
           {email.ai_confidence != null && email.ai_summary && (
-            <Badge variant="outline" className="gap-1 text-xs"><Sparkles className="h-3 w-3" />AI · {Math.round(email.ai_confidence * 100)}%</Badge>
+            <Badge variant="outline" className="hidden gap-1 text-xs md:inline-flex"><Sparkles className="h-3 w-3" />AI · {Math.round(email.ai_confidence * 100)}%</Badge>
           )}
         </div>
-        <div className="flex gap-1">
-          <Button size="sm" variant="default" onClick={() => setReplyOpen(true)} className="h-8">
+        <div className="flex flex-nowrap gap-0.5 overflow-x-auto md:gap-1">
+          <Button size="sm" variant="default" onClick={() => setReplyOpen(true)} className="h-8 px-2.5">
             <Reply className="mr-1.5 h-3.5 w-3.5" />Reply
           </Button>
           <Button
