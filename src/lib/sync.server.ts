@@ -952,7 +952,7 @@ export async function enqueueMessageJob(
     );
 }
 
-export async function runMessageJobs(limit = 50) {
+export async function runMessageJobs(limit = 100, concurrency = 8) {
   const STUCK_MS = 90 * 1000; // jobs in 'running' for >90s are presumed dead (worker timeout)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
 
