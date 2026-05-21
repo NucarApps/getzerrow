@@ -1005,19 +1005,76 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
 
 export const bulkMoveEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_ids: string[]; to_folder_id: string }) =>
+  .inputValidator((d: {
+    email_ids: string[];
+    to_folder_id: string;
+    create_rule?: { field: "domain" | "from"; value: string } | null;
+  }) =>
     z.object({
       email_ids: z.array(z.string().uuid()).min(1).max(100),
       to_folder_id: z.string().uuid(),
+      create_rule: z
+        .object({
+          field: z.enum(["domain", "from"]),
+          value: z.string().min(1).max(253),
+        })
+        .nullable()
+        .optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    // If asked, persist a folder rule on the destination so future mail
+    // auto-routes. Verify ownership of the destination folder first.
+    let ruleReason: string | undefined;
+    if (data.create_rule) {
+      const { data: folder } = await supabaseAdmin
+        .from("folders")
+        .select("id, user_id, name")
+        .eq("id", data.to_folder_id)
+        .single();
+      if (!folder || folder.user_id !== context.userId) {
+        throw new Error("Target folder not found");
+      }
+      const value = data.create_rule.value.toLowerCase();
+      const field = data.create_rule.field;
+      const { data: existing } = await supabaseAdmin
+        .from("folder_filters")
+        .select("id")
+        .eq("folder_id", data.to_folder_id)
+        .eq("field", field)
+        .eq("op", "contains")
+        .eq("value", value)
+        .maybeSingle();
+      if (!existing) {
+        await supabaseAdmin.from("folder_filters").insert({
+          folder_id: data.to_folder_id,
+          field,
+          op: "contains",
+          value,
+        });
+      }
+      ruleReason =
+        field === "domain"
+          ? `Domain rule: ${value} → ${folder.name}`
+          : `Sender rule: ${value} → ${folder.name}`;
+    }
+
     let moved = 0;
     let failed = 0;
     for (const id of data.email_ids) {
-      const r = await performMove(context.userId, id, data.to_folder_id);
+      const r = await performMove(context.userId, id, data.to_folder_id, ruleReason);
       if (r.ok) moved++;
       else failed++;
+    }
+    // When the move came from a rule, retag the rows so audit/badge reflects it.
+    if (data.create_rule && moved > 0) {
+      const classifiedBy = data.create_rule.field === "domain" ? "domain_rule" : "filter";
+      await supabaseAdmin
+        .from("emails")
+        .update({ classified_by: classifiedBy })
+        .eq("user_id", context.userId)
+        .in("id", data.email_ids)
+        .eq("folder_id", data.to_folder_id);
     }
     return { moved, failed };
   });
