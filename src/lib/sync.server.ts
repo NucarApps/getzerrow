@@ -1039,11 +1039,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
         archived++;
       }
       patch.raw_labels = labels;
-      const gmailRead = !labels.includes("UNREAD");
-      // Honor auto_mark_read=false: never let Gmail flip a row back to read.
-      if (!(gmailRead && row.folder_id && noAutoRead.has(row.folder_id))) {
-        patch.is_read = gmailRead;
-      }
+      patch.is_read = !labels.includes("UNREAD");
       await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
       if (!patch.is_archived) updated++;
     } catch (e) {
