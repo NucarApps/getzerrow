@@ -1112,7 +1112,12 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
         patch.is_archived = false;
         unarchived++;
       }
-      if (row.is_read !== !unread) patch.is_read = !unread;
+      if (row.is_read !== !unread) {
+        // Honor auto_mark_read=false: don't flip a row back to read.
+        if (!(!unread && row.folder_id && noAutoRead.has(row.folder_id))) {
+          patch.is_read = !unread;
+        }
+      }
       await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
     } catch (e) {
       failed++;
