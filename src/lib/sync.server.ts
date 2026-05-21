@@ -372,10 +372,6 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
       }
       if (folder.auto_mark_read) {
         await supabaseAdmin.from("emails").update({ is_read: true }).eq("id", inserted.id);
-      } else if (parsed.is_read) {
-        // Gmail-side filter may have pre-marked this read. The folder is
-        // configured to NOT mark as read, so force unread in Zerrow.
-        await supabaseAdmin.from("emails").update({ is_read: false }).eq("id", inserted.id);
       }
     }
   }
@@ -682,15 +678,6 @@ async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   }
 }
 
-/** Returns the set of folder IDs (for this user/account) where auto_mark_read is false. */
-async function loadNoAutoReadFolderIds(accountId: string): Promise<Set<string>> {
-  const { data } = await supabaseAdmin
-    .from("folders")
-    .select("id, auto_mark_read")
-    .eq("gmail_account_id", accountId);
-  return new Set((data ?? []).filter((f) => !f.auto_mark_read).map((f) => f.id));
-}
-
 async function applyLabelChange(
   accountId: string,
   messageId: string,
@@ -709,20 +696,6 @@ async function applyLabelChange(
       .eq("gmail_account_id", accountId)
       .eq("gmail_message_id", messageId);
     return;
-  }
-  // Honor folder's auto_mark_read=false: don't mirror Gmail's "read" state
-  // for messages classified into such a folder.
-  if (patch.is_read === true) {
-    const { data: row } = await supabaseAdmin
-      .from("emails")
-      .select("folder_id")
-      .eq("gmail_account_id", accountId)
-      .eq("gmail_message_id", messageId)
-      .maybeSingle();
-    if (row?.folder_id) {
-      const noAutoRead = await loadNoAutoReadFolderIds(accountId);
-      if (noAutoRead.has(row.folder_id)) delete patch.is_read;
-    }
   }
   if (Object.keys(patch).length === 0) return;
   await supabaseAdmin.from("emails").update(patch)
@@ -987,7 +960,6 @@ export async function syncSinceHistory(accountId: string) {
  * actual current labels. Catches messages whose history events we missed.
  */
 export async function reconcileLocalInbox(accountId: string, limit = 100) {
-  const noAutoRead = await loadNoAutoReadFolderIds(accountId);
   const { data: rows } = await supabaseAdmin
     .from("emails")
     .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
@@ -1067,11 +1039,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
         archived++;
       }
       patch.raw_labels = labels;
-      const gmailRead = !labels.includes("UNREAD");
-      // Honor auto_mark_read=false: never let Gmail flip a row back to read.
-      if (!(gmailRead && row.folder_id && noAutoRead.has(row.folder_id))) {
-        patch.is_read = gmailRead;
-      }
+      patch.is_read = !labels.includes("UNREAD");
       await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
       if (!patch.is_archived) updated++;
     } catch (e) {
@@ -1113,10 +1081,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
         unarchived++;
       }
       if (row.is_read !== !unread) {
-        // Honor auto_mark_read=false: don't flip a row back to read.
-        if (!(!unread && row.folder_id && noAutoRead.has(row.folder_id))) {
-          patch.is_read = !unread;
-        }
+        patch.is_read = !unread;
       }
       await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
     } catch (e) {
