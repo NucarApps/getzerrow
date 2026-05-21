@@ -98,9 +98,11 @@ function AuthedLayout() {
             </button>
             <img src={zerrowLogo} alt="Zerrow" className="h-12 w-auto" />
           </div>
+          <BackfillBanner />
           <div className="min-h-0 flex-1">
             <Outlet />
           </div>
+
         </main>
       </div>
     </FolderSelectionProvider>
