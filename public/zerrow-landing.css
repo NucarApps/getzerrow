@@ -1266,6 +1266,15 @@ main, .nav, .status-bar { position: relative; z-index: 1; }
   100% { stroke-dashoffset: 900; opacity: 1; }
 }
 
+.tracking__arc-live.tracking__arc-live--standby {
+  animation: arcDrawStandby 180s linear infinite;
+}
+@keyframes arcDrawStandby {
+  0%   { stroke-dashoffset: 900; opacity: 1; }
+  95%  { stroke-dashoffset: 0;   opacity: 1; }
+  100% { stroke-dashoffset: 0;   opacity: 1; }
+}
+
 /* Rocket rides the arc inside the SVG (animateMotion + mpath). */
 .tracking__rocket {
   filter: drop-shadow(0 0 6px rgba(255,120,50,.7));
