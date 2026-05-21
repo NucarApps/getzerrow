@@ -886,15 +886,15 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           {email.received_at && ` · ${new Date(email.received_at).toLocaleString()}`}
         </p>
         {email.ai_summary && (
-          <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs uppercase tracking-wider text-primary"><Sparkles className="h-3 w-3" />Summary</div>
-            {email.ai_summary}
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+            <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+            <span><span className="font-medium text-primary">Summary · </span>{email.ai_summary}</span>
           </div>
         )}
 
-        <Collapsible open={whyOpen} onOpenChange={setWhyOpen} className="mt-3">
+        <Collapsible open={whyOpen} onOpenChange={setWhyOpen} className="mt-2">
           <CollapsibleTrigger asChild>
-            <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-2 text-left text-sm hover:bg-accent/40">
+            <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1.5 text-left text-sm hover:bg-accent/40">
               <span className="flex items-center gap-2">
                 <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-muted-foreground">Why this folder?</span>
