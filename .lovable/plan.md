@@ -1,50 +1,53 @@
 ## Diagnosis
 
-Tony's Factory-Nissan folder has **zero** `folder_filters` rows, even though he intended to set up a "@nissan-usa.com → Factory-Nissan" rule. He has 84 emails from `@nissan-usa.com` sitting un-foldered (`classified_by = gmail_search_ingest`, `folder_id = NULL`).
+The Relearn button calls `learnFromLinkedLabel(folder_id, user_id)` in `src/lib/sync.server.ts`. That function asks **Gmail** for messages with the folder's linked label (`labelIds: [folder.gmail_label_id]`) and seeds `folder_examples` from those.
 
-Root cause: the "Move similar — same domain" flow (`MoveSimilarDialog` → `bulkMoveEmails`) only moves the matched emails as `manual_move`. It **never inserts a `folder_filter` row** on the destination folder. So:
+For Tony's Factory-Nissan folder:
+- It's linked to Gmail label `Label_24`.
+- The 84 nissan-usa.com emails sit in the folder *inside Zerrow* (`emails.folder_id = ...`), but they were never tagged with `Label_24` in Gmail because:
+  - The previous fix's data migration could only touch Postgres, not Gmail.
+  - The new `bulkMoveEmails(create_rule)` path moves the local rows but only `modifyMessage`'s individual rows one at a time through `performMove`, not on the rule-driven path.
 
-1. The one-time move worked for whatever was in his Inbox at that moment.
-2. The bulk Gmail backfill (`searchGmailAndIngest`, which pulls older mail by domain) does not consult `folder_filters` — it only honors Gmail labels — so the 84 backfilled rows landed un-foldered.
-3. Future inbound mail won't auto-route because the classifier in `sync.server.ts` requires a `folder_filter` row to produce a `domain_rule` classification.
-
-Net effect: from the user's perspective, "Move similar by domain" looks like it sets up a rule, but it's actually a one-off bulk move.
+So Gmail's label has ~0 messages, Relearn fetches nothing, and the UI reports "no emails" — even though Zerrow clearly shows 84.
 
 ## Fix
 
-### 1. Persist the rule when moving by domain/sender
-Extend `bulkMoveEmails` (in `src/lib/gmail.functions.ts`) with an optional `create_rule?: { field: "domain" | "email"; value: string }` input. When present:
-- Idempotently insert a `folder_filters` row (`field`, `op="contains"`, `value`) on the destination folder.
-- Tag the moved rows as `classified_by = "domain_rule"` (or `"filter"` for sender) with reason `"Domain rule: <value> → <folder>"` instead of `"manual_move"`, so the audit trail matches the new rule.
+### 1. Relearn should use local folder emails as the source of truth
 
-Update `MoveSimilarDialog.tsx` `confirmMove()` to pass `create_rule` derived from current `mode` (`domain` → field `domain`/value `domain`; `sender` → field `email`/value `fromAddr`).
+Modify `learnFromLinkedLabel` so the example seed comes from the **union** of:
 
-### 2. Apply existing folder rules during Gmail search ingest
-In `searchGmailAndIngest` (same file, ~line 1493), after loading folders, also load this user's `folder_filters` and reuse the same matching logic that `sync.server.ts` uses (already a small helper `matchFilter`). When a parsed message matches a filter, set `folder_id`, `classified_by = "domain_rule"` / `"filter"`, and `ai_confidence = 1` instead of the current `gmail_search_ingest` default. This closes the loop so the user's rules apply consistently to fresh sync, push events, and backfill.
+- The current Gmail-label query (unchanged behavior — catches mail labeled directly in Gmail but not yet synced locally).
+- The folder's local `emails` rows (`SELECT id, gmail_message_id, from_addr, subject, snippet FROM emails WHERE folder_id = X LIMIT 200 ORDER BY received_at DESC`).
 
-### 3. Backfill Tony's data
-One-shot migration:
-- Insert `folder_filters(folder_id = Factory-Nissan, field='domain', op='contains', value='nissan-usa.com')`.
-- Update the 84 stuck rows: `folder_id = Factory-Nissan`, `classified_by = 'domain_rule'`, `ai_confidence = 1`, `classification_reason = 'Domain rule: nissan-usa.com → Factory-Nissan'`, `is_archived = true` (matches folder semantics).
+For local rows we already have `from_addr`, `subject`, `snippet` in the DB — no Gmail round-trip needed, so this also makes Relearn *faster*. Upsert into `folder_examples` with `source = "seed"` (or `"correction"` for rows already labeled `manual_move` / `domain_rule`).
 
-Note: this migration won't add the Gmail `Label_24` label or remove `INBOX` on those 84 messages in Gmail itself, because migrations can't call the Gmail API. Two options:
-- (a) leave Gmail alone — Zerrow shows them in the folder, Gmail still shows them in Inbox. Acceptable since the going-forward rule will sync labels for new mail.
-- (b) Add a small server route Tony triggers once ("Sync 84 Nissan emails to Gmail label"), which iterates and calls `modifyMessage`. Recommend (a) for simplicity; flag (b) only if Tony cares about Gmail-side cleanup.
+This means: any email the user has put into a folder via any path (manual move, domain rule, Gmail label) is included in the learned profile.
+
+### 2. Make rule-driven moves also push the Gmail label (best-effort)
+
+In the new `bulkMoveEmails` create_rule branch, also call `modifyMessage` for each moved email to add the destination folder's `gmail_label_id` and remove `INBOX` — same as `performMove` already does for single moves. (Currently `performMove` does the per-email label sync, so this is actually already handled inside the loop. Verify by reading `performMove` — if so, no change here.)
+
+Result of (1) alone is sufficient to fix the immediate complaint; (2) is just defensive verification — no plan to change behavior unless we find a gap.
+
+### 3. One-off Gmail label backfill for Tony's 84 emails (optional)
+
+Add a small server action `applyFolderLabelToLocal({ folder_id })` that iterates `emails WHERE folder_id = X AND <label not in raw_labels>` and calls `modifyMessage` to push `gmail_label_id` + remove `INBOX` for each. Surface it in `FolderEditor` as a button "Sync folder labels to Gmail" so Tony (and any future user in this situation) can align Gmail state on demand. This is the same logic that runs inline during `performMove`, just batched.
+
+Recommend including this since Tony explicitly clicked Relearn expecting Gmail to know about these emails. Without it, his Gmail Inbox keeps showing the 84 as un-labeled even though Zerrow has sorted them.
 
 ## Files to change
 
-- `src/lib/gmail.functions.ts` — extend `bulkMoveEmails`, update `searchGmailAndIngest`.
-- `src/components/emails/MoveSimilarDialog.tsx` — pass `create_rule`.
-- New migration — insert filter row + reclassify the 84 emails for Tony.
+- `src/lib/sync.server.ts` — extend `learnFromLinkedLabel` to seed from local `emails` rows in addition to Gmail label results.
+- `src/lib/gmail.functions.ts` — add `applyFolderLabelToLocal` server fn.
+- `src/components/folders/FolderEditor.tsx` — add "Sync folder labels to Gmail" button next to Relearn; surface count synced in a toast.
 
 ## Verification
 
-- Tony's `folder_filters` shows the new nissan-usa.com row.
-- His 84 nissan emails appear under Factory-Nissan with badge "Domain rule".
-- New nissan-usa.com email triggers a `domain_rule` classification on push (visible in Activity panel).
-- A fresh "Move similar — same domain" by any user creates both the filter row and the moved emails in one action.
+- Tony clicks Relearn on Factory-Nissan → toast says "learned from N emails" (N ≥ 84) and `folders.learned_profile` becomes populated.
+- Tony clicks "Sync folder labels to Gmail" → 84 messages get `Label_24` applied in Gmail and INBOX removed; next Relearn returns from both sources without duplication.
+- A fresh future "Move similar by domain" still creates the rule, moves the matched local emails, and the per-email label sync inside `performMove` keeps Gmail in sync — so this never regresses for new users.
 
 ## Out of scope
 
-- Gmail label sync for the 84 backfilled emails (Plan B above).
-- UI to manage `folder_filters` directly (folder editor already has rule chips).
+- Reworking the learned-profile prompt itself (`regenerateFolderProfile`).
+- Renaming or reorganizing the Relearn UI beyond adding the sync button.
