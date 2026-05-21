@@ -112,6 +112,15 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
       console.error("backfill failed during auto-connect", e);
     }
 
+    // Kick off a deep 6-month background import. Idempotent — won't spawn
+    // duplicates if the user re-signs in while one is still active.
+    try {
+      await startBackfillJob(account.id, context.userId, { months: 6 });
+    } catch (e) {
+      console.error("startBackfillJob failed during auto-connect", e);
+    }
+
+
     return { account_id: account.id };
   });
 
