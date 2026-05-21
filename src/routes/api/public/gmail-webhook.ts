@@ -18,8 +18,31 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
         // as ?token=<GMAIL_WEBHOOK_TOKEN>). Test calls from the app are exempt.
         if (!isTest) {
           const expected = process.env.GMAIL_WEBHOOK_TOKEN;
-          const provided = new URL(request.url).searchParams.get("token");
+          const url = new URL(request.url);
+          const provided = url.searchParams.get("token");
           if (!expected || provided !== expected) {
+            // Log a diagnostic row so misconfigured Pub/Sub pushes are visible
+            // in Settings → Activity. Never logs the secret values themselves —
+            // only lengths and a short fingerprint so we can compare safely.
+            const fp = (s: string | null | undefined) =>
+              s ? `${s.slice(0, 2)}…${s.slice(-2)}` : "(none)";
+            let details: string;
+            if (!expected) {
+              details = "Server missing GMAIL_WEBHOOK_TOKEN secret";
+            } else if (!provided) {
+              details = `Push had no ?token= query param (expected length ${expected.length}, fp ${fp(expected)})`;
+            } else {
+              details = `Token mismatch (provided length ${provided.length} fp ${fp(provided)}, expected length ${expected.length} fp ${fp(expected)})`;
+            }
+            try {
+              await supabaseAdmin.from("pubsub_events").insert({
+                event_type: "push_unauthorized",
+                subscription: `${url.pathname}${url.search}`,
+                details,
+              });
+            } catch (logErr) {
+              console.error("pubsub_events unauthorized log failed", logErr);
+            }
             return new Response("Unauthorized", { status: 401 });
           }
         }
