@@ -835,7 +835,7 @@ async function tickBackfillJob(job: BackfillJob): Promise<{ phase: string; added
 
         for (const id of todo) {
           try {
-            await enqueueMessageJob(job.gmail_account_id, job.user_id, id);
+            await enqueueMessageJob(job.gmail_account_id, job.user_id, id, 10);
             enqueuedDelta++;
           } catch (e) {
             console.error("backfill enqueue failed", id, e);
