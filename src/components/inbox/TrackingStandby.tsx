@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useCallback, PointerEvent as RPointerEvent
  * to neutralize. Telemetry + rocket arc remain as backdrop.
  */
 
-type Ship = { id: number; y: number; dir: 1 | -1; x: number; hp: number; hitUntil: number; speed: number };
+type Ship = { id: number; x: number; y: number; vx: number; vy: number; hp: number; hitUntil: number; spawnedAt: number; lifespan: number };
 type Laser = { id: number; fromX: number; fromY: number; toX: number; toY: number; startedAt: number };
 type Burst = { id: number; x: number; y: number; startedAt: number };
 
