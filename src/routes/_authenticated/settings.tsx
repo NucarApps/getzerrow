@@ -28,9 +28,18 @@ function SettingsPage() {
   const weekBackfill = useServerFn(triggerWeekBackfill);
   const sync = useServerFn(triggerSync);
   const renew = useServerFn(renewGmailWatch);
+  const startDeep = useServerFn(startDeepBackfill);
+  const cancelDeep = useServerFn(cancelDeepBackfill);
+  const getStatus = useServerFn(getBackfillStatus);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
+  const backfillQ = useQuery({
+    queryKey: ["backfill-status"],
+    queryFn: async () => (await getStatus({ data: {} })).job as any,
+    refetchInterval: 5000,
+  });
   const [busy, setBusy] = useState<string | null>(null);
+
 
   async function run(key: string, fn: () => Promise<any>, msg: string) {
     setBusy(key);
