@@ -260,9 +260,14 @@ export function FolderEditor({
               <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3" /> Learned profile
               </div>
-              <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
-                {learning ? "Learning from up to 200 emails…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={syncLabel} disabled={syncingLabel || !folder.gmail_label_id} title="Apply this folder's Gmail label to all emails Zerrow has routed here">
+                  {syncingLabel ? "Syncing…" : "Sync to Gmail"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
+                  {learning ? "Learning from up to 200 emails…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
+                </Button>
+              </div>
             </div>
             <p className="mt-2 text-sm text-foreground/80">
               {folder.learned_profile || <span className="text-muted-foreground italic">Not learned yet. {linkedLabel ? `Linked to "${linkedLabel.name}".` : "Link a Gmail label and save first."}</span>}
