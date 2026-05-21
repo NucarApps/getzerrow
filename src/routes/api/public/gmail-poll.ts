@@ -7,6 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { ensureWatch } from "@/lib/gmail.server";
+import { isAuthorizedCron, unauthorizedResponse } from "@/lib/cron-auth.server";
 
 const SILENCE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
