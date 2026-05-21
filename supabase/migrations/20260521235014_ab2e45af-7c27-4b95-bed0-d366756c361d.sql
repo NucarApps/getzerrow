@@ -1,0 +1,9 @@
+SELECT cron.alter_job(
+  job_id := (SELECT jobid FROM cron.job WHERE jobname = 'gmail-process-jobs-30s'),
+  command := $cmd$
+  select net.http_post(url:='https://project--9ca78824-55f5-4897-b74d-b5b1d219918a.lovable.app/api/public/gmail-process-jobs?limit=100', headers:='{"Content-Type":"application/json","apikey":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aWxjaW5sbmF1anh5a3NmamluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDUwMDYsImV4cCI6MjA5NDc4MTAwNn0.G_LCsns9WKBptWkWdjDzDx7jzcXGBK0R8Pa_ESs7sZ4"}'::jsonb, body:='{}'::jsonb);
+  select net.http_post(url:='https://project--9ca78824-55f5-4897-b74d-b5b1d219918a.lovable.app/api/public/gmail-process-jobs?limit=100', headers:='{"Content-Type":"application/json","apikey":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aWxjaW5sbmF1anh5a3NmamluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDUwMDYsImV4cCI6MjA5NDc4MTAwNn0.G_LCsns9WKBptWkWdjDzDx7jzcXGBK0R8Pa_ESs7sZ4"}'::jsonb, body:='{}'::jsonb);
+  select net.http_post(url:='https://project--9ca78824-55f5-4897-b74d-b5b1d219918a.lovable.app/api/public/gmail-process-jobs?limit=100', headers:='{"Content-Type":"application/json","apikey":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aWxjaW5sbmF1anh5a3NmamluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDUwMDYsImV4cCI6MjA5NDc4MTAwNn0.G_LCsns9WKBptWkWdjDzDx7jzcXGBK0R8Pa_ESs7sZ4"}'::jsonb, body:='{}'::jsonb);
+  select net.http_post(url:='https://project--9ca78824-55f5-4897-b74d-b5b1d219918a.lovable.app/api/public/gmail-process-jobs?limit=100', headers:='{"Content-Type":"application/json","apikey":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aWxjaW5sbmF1anh5a3NmamluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDUwMDYsImV4cCI6MjA5NDc4MTAwNn0.G_LCsns9WKBptWkWdjDzDx7jzcXGBK0R8Pa_ESs7sZ4"}'::jsonb, body:='{}'::jsonb);
+  $cmd$
+);
