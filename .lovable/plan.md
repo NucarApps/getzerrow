@@ -1,17 +1,48 @@
-# Brighten read emails in the inbox list
+# Fix login-page flash on refresh when signed in
 
-## Problem
-Read items in the inbox list look too dull because the whole row is dimmed via `opacity-70`. Unread vs read should still be obvious, but read rows should read clearly.
+## Root cause
+`src/routes/_authenticated.tsx` does the auth check in `beforeLoad`:
 
-## Change
-In `src/routes/_authenticated/inbox.tsx` (the list row around line 391):
+```ts
+beforeLoad: async () => {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) throw redirect({ to: "/login" });
+}
+```
 
-- Remove `opacity-70` from the read state on the row container. Read rows then render at full brightness.
-- Keep unread distinction via weight + a small accent dot (already font-semibold for sender on unread). Strengthen it so the difference is unambiguous without dimming:
-  - Sender (line 394): unread stays `font-semibold text-foreground`; read becomes `font-medium text-foreground` (no muted color).
-  - Subject line: unread `text-foreground`; read `text-foreground/85` (subtle, not dull).
-  - Snippet (line 433): keep `text-muted-foreground` for both — the snippet was never the signal.
-  - Add a 6px primary dot on the left of unread rows so unread is identifiable at a glance without relying on dimming.
+This runs during SSR too. The Supabase session is stored in browser `localStorage`, which doesn't exist on the server, so `getSession()` always returns `null` on the server. Result: the server renders/redirects to `/login`, ships that HTML, then the client hydrates, finds the real session, and finally navigates to `/inbox`. The user sees `/login` for a beat.
+
+## Fix
+Skip the auth gate during SSR and run it only on the client, where the session actually exists. Also add a symmetric guard on `/login` so a logged-in user landing on the login page gets sent to `/inbox` without a flash.
+
+### `src/routes/_authenticated.tsx`
+Change `beforeLoad` to no-op on the server:
+
+```ts
+beforeLoad: async () => {
+  if (typeof window === "undefined") return; // session lives in localStorage
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) throw redirect({ to: "/login" });
+},
+```
+
+### `src/routes/login.tsx`
+Add a `beforeLoad` that redirects authenticated users straight to `/inbox` on the client, so even on a hard refresh of `/login` they don't see the form:
+
+```ts
+export const Route = createFileRoute("/login")({
+  beforeLoad: async () => {
+    if (typeof window === "undefined") return;
+    const { data } = await supabase.auth.getSession();
+    if (data.session) throw redirect({ to: "/inbox" });
+  },
+  component: LoginPage,
+});
+```
+
+The existing `onAuthStateChange` effect in `LoginPage` stays as-is for the OAuth callback path.
 
 ## Result
-Read rows are bright and legible. Unread rows pop via bold sender + colored dot, not via making read rows feel disabled.
+- Refreshing `/inbox` while signed in: SSR renders the inbox shell, client hydrates with the real session, no detour through `/login`.
+- Refreshing `/login` while signed in: client redirect to `/inbox` before render.
+- Signed-out users on protected routes still get redirected to `/login` on the client (the brief shell render is acceptable — they're unauthenticated and have no data to leak).
