@@ -98,7 +98,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
           console.error("drain jobs failed", e);
         }
 
-        return Response.json({ ok: true, count: results.length, silent, results, jobs });
+        return Response.json({ ok: true, count: ok + failed, accounts: ok + failed, succeeded: ok, failed, rearmed: rearmedCount, synced: totalSynced, silent, jobs });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
     },
