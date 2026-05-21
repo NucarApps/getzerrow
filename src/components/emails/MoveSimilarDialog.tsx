@@ -86,14 +86,23 @@ export function MoveSimilarDialog({
     if (selected.size === 0) return;
     setMoving(true);
     try {
+      const create_rule =
+        mode === "domain" && domain
+          ? { field: "domain" as const, value: domain }
+          : mode === "sender" && fromAddr
+          ? { field: "from" as const, value: fromAddr }
+          : null;
       const r = await moveFn({
-        data: { email_ids: Array.from(selected), to_folder_id: toFolder.id },
+        data: { email_ids: Array.from(selected), to_folder_id: toFolder.id, create_rule },
       });
       toast.success(
-        `Moved ${r.moved} to ${toFolder.name}${r.failed ? ` · ${r.failed} failed` : ""}`,
+        `Moved ${r.moved} to ${toFolder.name}${r.failed ? ` · ${r.failed} failed` : ""}${
+          create_rule ? " · rule saved" : ""
+        }`,
       );
       qc.invalidateQueries({ queryKey: ["emails"] });
       qc.invalidateQueries({ queryKey: ["emails-summary"] });
+      qc.invalidateQueries({ queryKey: ["folder-filters"] });
       onOpenChange(false);
     } catch (e: any) {
       toast.error(e.message);
