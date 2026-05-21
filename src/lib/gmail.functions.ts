@@ -137,15 +137,28 @@ export const listGmailLabels = createServerFn({ method: "POST" })
 
 export const createGmailLabel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string; name: string }) =>
-    z.object({ account_id: z.string().uuid(), name: z.string().min(1).max(100) }).parse(d)
+  .inputValidator((d: { account_id: string; name: string; parent_label_id?: string }) =>
+    z.object({
+      account_id: z.string().uuid(),
+      name: z.string().min(1).max(100),
+      parent_label_id: z.string().min(1).optional(),
+    }).parse(d)
   )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const labels = await listLabels(data.account_id);
-    const existing = labels.labels?.find((l) => l.name === `Zerrow/${data.name}`);
+    let fullName = `Zerrow/${data.name}`;
+    if (data.parent_label_id) {
+      const parent = labels.labels?.find((l) => l.id === data.parent_label_id);
+      if (!parent) throw new Error("Parent label not found");
+      if (!parent.name.startsWith("Zerrow/") && parent.name !== "Zerrow") {
+        throw new Error("Parent label must be within Zerrow namespace");
+      }
+      fullName = `${parent.name}/${data.name}`;
+    }
+    const existing = labels.labels?.find((l) => l.name === fullName);
     if (existing) return { id: existing.id };
-    const created = await createLabel(data.account_id, `Zerrow/${data.name}`);
+    const created = await createLabel(data.account_id, fullName);
     return { id: created.id };
   });
 
