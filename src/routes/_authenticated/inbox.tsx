@@ -721,6 +721,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           <Button
             size="sm"
             variant="ghost"
+            className="h-8 w-8 p-0"
             disabled={reanalyzing}
             title="Re-analyze with current folders & rules"
             onClick={async () => {
