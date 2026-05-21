@@ -9,7 +9,10 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:unit": "vitest run src/lib/cron-auth.server.test.ts",
+    "test:integration": "vitest run tests/public-endpoints-auth.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
