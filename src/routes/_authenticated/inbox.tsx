@@ -387,10 +387,29 @@ function InboxPage() {
           {!emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
               <img src={cobwebInbox} alt="" className="h-32 w-auto opacity-90" />
-              <p className="text-sm">Nothing here yet.</p>
-              <p className="text-xs">Hit refresh, or connect Gmail in Settings.</p>
+              {isSearching ? (
+                gmailSearching ? (
+                  <p className="text-sm">Checking Gmail for "{query.trim()}"…</p>
+                ) : lastGmailResult?.reason === "no_account" ? (
+                  <>
+                    <p className="text-sm">No matches found.</p>
+                    <p className="text-xs">Connect a Gmail account in Settings to search your full mailbox.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm">No matches in your inbox or Gmail for "{query.trim()}".</p>
+                    <p className="text-xs">Try a different search term.</p>
+                  </>
+                )
+              ) : (
+                <>
+                  <p className="text-sm">Nothing here yet.</p>
+                  <p className="text-xs">Hit refresh, or connect Gmail in Settings.</p>
+                </>
+              )}
             </div>
           )}
+
           {filtered.map((e) => {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
             const folderList = foldersQ.data ?? [];
