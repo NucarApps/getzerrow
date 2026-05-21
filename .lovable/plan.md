@@ -1,19 +1,34 @@
-Condense the top of the email pane (above the body) so subject, sender, summary, and "Why this folder?" trigger take less vertical space.
+## Mobile email view cleanup
 
-Changes to `src/routes/_authenticated/inbox.tsx`:
+Two problems visible in the screenshot:
+1. The action toolbar overflows at 402px — Reply + 6 icon buttons + AI badge don't fit, so Reply overlaps the resync icon.
+2. The subject renders ~6 lines tall for long forwarded subjects, eating the screen.
 
-1. **Container padding** (line 853): `p-4 md:p-6` → `px-4 md:px-6 pt-3 pb-4` — cut top padding roughly in half.
+### Changes to `src/routes/_authenticated/inbox.tsx`
 
-2. **Subject** (line 854): `text-2xl md:text-3xl` → `text-xl md:text-2xl` so the title is still prominent but not oversized.
+**1. Toolbar (lines 705–849)** — make it fit on mobile
+- Hide the `AI · NN%` badge on mobile (line 713–715): add `hidden md:inline-flex`. Same info is in the Summary card below.
+- Hide the folder badge on mobile when `onBack` is shown (line 712): add `hidden md:inline-flex`. Folder is implied by the list you came from.
+- Shrink ghost icon buttons on mobile to `h-8 w-8 p-0` (reanalyze, move, mark-read, archive, trash, resync).
+- Reduce gap on mobile: `gap-1` → `gap-0.5`.
+- Reply button stays prominent but compact: `h-8 px-2.5`.
+- Safety net: add `flex-nowrap overflow-x-auto` on the right-side button row so anything still tight scrolls instead of overlapping.
 
-3. **Sender line** (lines 855-859): drop to `mt-1 text-xs` (from `mt-2 text-sm`) and shorten the timestamp to a localized date+short time (e.g. `5/20/26, 8:51 PM` via `toLocaleString([], { dateStyle: "short", timeStyle: "short" })`).
+**2. Subject (line 854)** — cap height on mobile
+- `text-xl md:text-2xl` → `text-lg md:text-2xl`.
+- Add `line-clamp-3 md:line-clamp-none` so long forwarded subjects stop eating the screen.
 
-4. **Summary card** (lines 860-865): drop `mt-3` to `mt-2`, and trim padding `px-3 py-2` → `px-2.5 py-1.5`. Keep the sparkles + "Summary ·" + text inline.
+**3. Sender line (lines 855–859)** — drop the `<addr>` on mobile
+- Wrap the `<…@…>` portion in `<span className="hidden md:inline">`.
+- Mobile shows: `Alyssa Quinn · 5/20/26, 1:27 PM`.
 
-5. **"Why this folder?" trigger** (lines 867-877): drop `mt-2` to `mt-1.5`, and `py-1.5` → `py-1`. Keep the chip and chevron.
+**4. "Why this folder?" trigger (lines 867–877)**
+- Hide the `ClassifiedChip` on mobile (`hidden sm:inline-flex`) so the row stays single-line.
+- Make the label span `min-w-0 flex-1 truncate`.
 
-6. **Body spacing** (line 912): `mt-6` → `mt-4`.
+### Result
+- Toolbar fits cleanly at 390–414px; Reply no longer overlaps.
+- Subject capped at 3 lines on mobile (~half the height).
+- Header block ~40% shorter on mobile, desktop unchanged.
 
-Result: the header block shrinks ~30–40% in height while keeping subject, sender, time, summary, and the why-this-folder collapsible all visible.
-
-No changes to the collapsible content, the message list, or any business logic.
+No business logic changes.

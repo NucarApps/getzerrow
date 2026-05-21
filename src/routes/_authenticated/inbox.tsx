@@ -709,18 +709,19 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               <ChevronLeft className="h-4 w-4" />
             </button>
           )}
-          {folder && <Badge variant="outline" className="gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />{folder.name}</Badge>}
+          {folder && <Badge variant="outline" className="hidden gap-1.5 md:inline-flex"><span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />{folder.name}</Badge>}
           {email.ai_confidence != null && email.ai_summary && (
-            <Badge variant="outline" className="gap-1 text-xs"><Sparkles className="h-3 w-3" />AI · {Math.round(email.ai_confidence * 100)}%</Badge>
+            <Badge variant="outline" className="hidden gap-1 text-xs md:inline-flex"><Sparkles className="h-3 w-3" />AI · {Math.round(email.ai_confidence * 100)}%</Badge>
           )}
         </div>
-        <div className="flex gap-1">
-          <Button size="sm" variant="default" onClick={() => setReplyOpen(true)} className="h-8">
+        <div className="flex flex-nowrap gap-0.5 overflow-x-auto md:gap-1">
+          <Button size="sm" variant="default" onClick={() => setReplyOpen(true)} className="h-8 px-2.5">
             <Reply className="mr-1.5 h-3.5 w-3.5" />Reply
           </Button>
           <Button
             size="sm"
             variant="ghost"
+            className="h-8 w-8 p-0"
             disabled={reanalyzing}
             title="Re-analyze with current folders & rules"
             onClick={async () => {
@@ -752,7 +753,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" disabled={moving} title="Move to folder">
+              <Button size="sm" variant="ghost" className="h-8 px-1.5" disabled={moving} title="Move to folder">
                 <FolderInput className="h-4 w-4" />
                 <ChevronDown className="ml-0.5 h-3 w-3 opacity-60" />
               </Button>
@@ -801,21 +802,21 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="sm" variant="ghost" onClick={() => {
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => {
             const next = !email.is_read;
             qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)));
             markFn({ data: { id: email.id, read: next } }).catch(() => qc.invalidateQueries({ queryKey: ["emails"] }));
           }}>
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
-          <Button size="sm" variant="ghost" onClick={async () => {
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={async () => {
             qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
             try { await archFn({ data: { id: email.id } }); toast.success("Archived"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
           }}>
             <Archive className="h-4 w-4" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={async () => {
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={async () => {
             qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((e) => e.id !== email.id));
             try { await trashFn({ data: { id: email.id } }); toast.success("Trashed"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
@@ -825,6 +826,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           <Button
             size="sm"
             variant="ghost"
+            className="h-8 w-8 p-0"
             disabled={resyncing}
             title="Resync labels from Gmail"
             onClick={async () => {
@@ -851,10 +853,10 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 md:px-6">
-        <h1 className="font-display text-xl leading-tight md:text-2xl">{email.subject || "(no subject)"}</h1>
+        <h1 className="font-display text-lg leading-tight line-clamp-3 md:line-clamp-none md:text-2xl">{email.subject || "(no subject)"}</h1>
         <p className="mt-1 text-xs text-muted-foreground">
           <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
-          {email.from_name && email.from_addr ? ` <${email.from_addr}>` : ""}
+          {email.from_name && email.from_addr ? <span className="hidden md:inline">{` <${email.from_addr}>`}</span> : null}
           {email.received_at && ` · ${new Date(email.received_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`}
         </p>
         {email.ai_summary && (
@@ -867,12 +869,12 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         <Collapsible open={whyOpen} onOpenChange={setWhyOpen} className="mt-1.5">
           <CollapsibleTrigger asChild>
             <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1 text-left text-sm hover:bg-accent/40">
-              <span className="flex items-center gap-2">
-                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">Why this folder?</span>
-                <ClassifiedChip by={email.classified_by} />
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate text-muted-foreground">Why this folder?</span>
+                <span className="hidden sm:inline-flex"><ClassifiedChip by={email.classified_by} /></span>
               </span>
-              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
+              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 space-y-3 rounded-md border border-border bg-card/30 p-3 text-sm">
