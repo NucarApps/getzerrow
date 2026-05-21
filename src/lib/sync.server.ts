@@ -470,28 +470,63 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   // Cap the on-click learn at 200 (profile uses latest 50; 200 gives headroom).
   const MAX_MESSAGES = 200;
 
-  // Single page is enough at this cap (Gmail returns up to 500 ids per page).
+  // Source A: Gmail messages currently bearing the linked label.
   const list = await listMessages(accountId, {
     maxResults: MAX_MESSAGES,
     labelIds: [folder.gmail_label_id],
   });
-  const allIds = (list.messages ?? []).map((m) => m.id).slice(0, MAX_MESSAGES);
+  const gmailIds = (list.messages ?? []).map((m) => m.id).slice(0, MAX_MESSAGES);
 
-  // Skip ids we already have as examples for this folder — re-learn becomes near-instant.
-  let idsToFetch = allIds;
-  if (allIds.length > 0) {
+  // Source B: local emails already routed to this folder by rules / manual move.
+  // We already have from_addr/subject/snippet here — no Gmail fetch needed.
+  const { data: localRows } = await supabaseAdmin
+    .from("emails")
+    .select("gmail_message_id, from_addr, subject, snippet")
+    .eq("folder_id", folderId)
+    .order("received_at", { ascending: false })
+    .limit(MAX_MESSAGES);
+
+  // Skip ids we already have as examples for this folder.
+  const candidateIds = Array.from(new Set([...gmailIds, ...(localRows ?? []).map((r) => r.gmail_message_id)]));
+  let knownSet = new Set<string>();
+  if (candidateIds.length > 0) {
     const { data: known } = await supabaseAdmin
       .from("folder_examples")
       .select("gmail_message_id")
       .eq("folder_id", folderId)
-      .in("gmail_message_id", allIds);
-    const knownSet = new Set((known ?? []).map((r) => r.gmail_message_id));
-    idsToFetch = allIds.filter((id) => !knownSet.has(id));
+      .in("gmail_message_id", candidateIds);
+    knownSet = new Set((known ?? []).map((r) => r.gmail_message_id));
   }
 
   let learned = 0;
   let ingested = 0;
   let claimed = 0;
+
+  // Seed from local rows first (cheap — no Gmail roundtrip).
+  const seededFromLocal = new Set<string>();
+  for (const row of localRows ?? []) {
+    if (knownSet.has(row.gmail_message_id)) continue;
+    const { error } = await supabaseAdmin.from("folder_examples").upsert(
+      {
+        folder_id: folderId,
+        gmail_account_id: accountId,
+        user_id: userId,
+        gmail_message_id: row.gmail_message_id,
+        from_addr: row.from_addr,
+        subject: row.subject,
+        snippet: row.snippet,
+        source: "seed",
+      },
+      { onConflict: "folder_id,gmail_message_id" },
+    );
+    if (!error) {
+      learned++;
+      seededFromLocal.add(row.gmail_message_id);
+    }
+  }
+
+  // Fetch from Gmail only for label-only ids we haven't already seeded.
+  const idsToFetch = gmailIds.filter((id) => !knownSet.has(id) && !seededFromLocal.has(id));
 
   // Parallel pool of 10 — biggest wall-clock win.
   const CONCURRENCY = 10;
