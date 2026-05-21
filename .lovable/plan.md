@@ -1,73 +1,50 @@
-# Plan: eliminate Gmail processing delays
+## Diagnosis
 
-## What the evidence shows
+Tony's Factory-Nissan folder has **zero** `folder_filters` rows, even though he intended to set up a "@nissan-usa.com → Factory-Nissan" rule. He has 84 emails from `@nissan-usa.com` sitting un-foldered (`classified_by = gmail_search_ingest`, `folder_id = NULL`).
 
-The issue was not that Pub/Sub was completely down. Gmail push events were arriving, but processing was delayed/hung:
+Root cause: the "Move similar — same domain" flow (`MoveSimilarDialog` → `bulkMoveEmails`) only moves the matched emails as `manual_move`. It **never inserts a `folder_filter` row** on the destination folder. So:
 
-- Gmail push events were arriving around the time of the email.
-- The email itself arrived in Gmail at `19:05:28` but only appeared in Zerrow around `19:11:04`.
-- The fallback poll job has not recorded a successful `poll` event since `01:02 UTC`, so if inline push processing stalls, there is no reliable 2-minute safety net.
-- The webhook currently tries to both sync Gmail history and drain up to 100 message jobs inside the same push request. During bursts or slow Gmail/AI calls, that can cause the request to spend too long doing work and make activity look stale.
+1. The one-time move worked for whatever was in his Inbox at that moment.
+2. The bulk Gmail backfill (`searchGmailAndIngest`, which pulls older mail by domain) does not consult `folder_filters` — it only honors Gmail labels — so the 84 backfilled rows landed un-foldered.
+3. Future inbound mail won't auto-route because the classifier in `sync.server.ts` requires a `folder_filter` row to produce a `domain_rule` classification.
 
-## Fix 1: make the Gmail push webhook fast and non-blocking
+Net effect: from the user's perspective, "Move similar by domain" looks like it sets up a rule, but it's actually a one-off bulk move.
 
-Change `/api/public/gmail-webhook` so it only does the minimum work needed when Gmail pushes:
+## Fix
 
-1. Verify and decode the push payload.
-2. Find the matching Gmail account.
-3. Run `syncSinceHistory` to enqueue message jobs.
-4. Return quickly.
+### 1. Persist the rule when moving by domain/sender
+Extend `bulkMoveEmails` (in `src/lib/gmail.functions.ts`) with an optional `create_rule?: { field: "domain" | "email"; value: string }` input. When present:
+- Idempotently insert a `folder_filters` row (`field`, `op="contains"`, `value`) on the destination folder.
+- Tag the moved rows as `classified_by = "domain_rule"` (or `"filter"` for sender) with reason `"Domain rule: <value> → <folder>"` instead of `"manual_move"`, so the audit trail matches the new rule.
 
-Instead of draining the whole queue inline, it will only run a very small immediate drain for newly enqueued jobs, capped at a low number, so the UI can still feel realtime without letting a webhook request become a long-running worker.
+Update `MoveSimilarDialog.tsx` `confirmMove()` to pass `create_rule` derived from current `mode` (`domain` → field `domain`/value `domain`; `sender` → field `email`/value `fromAddr`).
 
-This prevents one Gmail burst or slow message from making the whole push path look hung.
+### 2. Apply existing folder rules during Gmail search ingest
+In `searchGmailAndIngest` (same file, ~line 1493), after loading folders, also load this user's `folder_filters` and reuse the same matching logic that `sync.server.ts` uses (already a small helper `matchFilter`). When a parsed message matches a filter, set `folder_id`, `classified_by = "domain_rule"` / `"filter"`, and `ai_confidence = 1` instead of the current `gmail_search_ingest` default. This closes the loop so the user's rules apply consistently to fresh sync, push events, and backfill.
 
-## Fix 2: make the background worker the primary processor
+### 3. Backfill Tony's data
+One-shot migration:
+- Insert `folder_filters(folder_id = Factory-Nissan, field='domain', op='contains', value='nissan-usa.com')`.
+- Update the 84 stuck rows: `folder_id = Factory-Nissan`, `classified_by = 'domain_rule'`, `ai_confidence = 1`, `classification_reason = 'Domain rule: nissan-usa.com → Factory-Nissan'`, `is_archived = true` (matches folder semantics).
 
-The durable `message_jobs` queue already exists. We should rely on it more heavily:
+Note: this migration won't add the Gmail `Label_24` label or remove `INBOX` on those 84 messages in Gmail itself, because migrations can't call the Gmail API. Two options:
+- (a) leave Gmail alone — Zerrow shows them in the folder, Gmail still shows them in Inbox. Acceptable since the going-forward rule will sync labels for new mail.
+- (b) Add a small server route Tony triggers once ("Sync 84 Nissan emails to Gmail label"), which iterates and calls `modifyMessage`. Recommend (a) for simplicity; flag (b) only if Tony cares about Gmail-side cleanup.
 
-- `/api/public/gmail-process-jobs?limit=50` should run frequently and drain queued message jobs.
-- `/api/public/gmail-poll` should keep acting as the safety net for missed push events.
-- The worker already reclaims stuck `running` jobs after timeout; keep that behavior.
+## Files to change
 
-## Fix 3: repair cron authentication so fallback polling actually runs
-
-The scheduled cron jobs currently depend on a Vault-based helper that was never populated, so the scheduled calls are not reliably authenticating.
-
-I’ll replace that schedule with the standard Lovable Cloud scheduled-route pattern:
-
-- Scheduled requests send the public `apikey` header.
-- The existing cron endpoints accept either:
-  - the existing `Authorization: Bearer CRON_SECRET`, or
-  - the `apikey` header.
-- Recreate the two schedules:
-  - process jobs every minute, or fastest supported interval in the current database scheduler
-  - poll Gmail every 2 minutes
-
-This removes the manual Vault step and makes cron survive republish/remix better.
-
-## Fix 4: improve Gmail activity visibility for delays
-
-Update the Gmail sync activity panel so this exact failure mode is obvious:
-
-- Show “push received but processing delayed” when pushes are arriving but jobs are pending/running.
-- Show last successful poll time and warn if polling has not run recently.
-- Keep the existing “Run worker now” action for stuck jobs.
+- `src/lib/gmail.functions.ts` — extend `bulkMoveEmails`, update `searchGmailAndIngest`.
+- `src/components/emails/MoveSimilarDialog.tsx` — pass `create_rule`.
+- New migration — insert filter row + reclassify the 84 emails for Tony.
 
 ## Verification
 
-After implementation:
+- Tony's `folder_filters` shows the new nissan-usa.com row.
+- His 84 nissan emails appear under Factory-Nissan with badge "Domain rule".
+- New nissan-usa.com email triggers a `domain_rule` classification on push (visible in Activity panel).
+- A fresh "Move similar — same domain" by any user creates both the filter row and the moved emails in one action.
 
-1. Confirm recent `poll` events resume.
-2. Confirm `message_jobs` stays near zero after new mail arrives.
-3. Confirm a test email creates a push event quickly and appears in Zerrow without a multi-minute stall.
-4. Confirm the activity panel reports whether the delay is push, poll, or processing queue related.
+## Out of scope
 
-## Files expected to change
-
-- `src/routes/api/public/gmail-webhook.ts`
-- `src/routes/api/public/gmail-process-jobs.ts`
-- `src/routes/api/public/gmail-poll.ts`
-- `src/lib/cron-auth.server.ts`
-- `src/components/settings/PubsubActivity.tsx`
-- New database migration to replace the Gmail cron schedules
+- Gmail label sync for the 84 backfilled emails (Plan B above).
+- UI to manage `folder_filters` directly (folder editor already has rule chips).
