@@ -1,20 +1,30 @@
-## Problem
+## Concept
 
-On `/settings`, the tab strip renders as a wide light-grey block with only the "Accounts" pill highlighted. The other two triggers ("Inbox filters", "Activity") sit inside the strip but their muted-foreground text on the muted background creates that awkward grey slab in the screenshot.
+Turn the inbox-empty `TrackingStandby` view into a lightweight ambient mini-game while keeping the existing telemetry + rocket arc as the backdrop. The rocket slows down, and "alien email" ships drift across the sky. Click one to fire a laser; a couple of hits and it explodes with a little burst + score tick.
 
-Root cause: `src/components/ui/tabs.tsx` `TabsList` uses the default shadcn styling — `bg-muted p-1 rounded-lg` with active trigger `bg-background shadow`. On the Zerrow deep-space palette, `--muted` is a low-contrast near-background grey that reads as a floating grey rectangle rather than a tab container.
+This stays purely cosmetic — no backend, no email data, no router changes. Only `src/components/inbox/TrackingStandby.tsx` and a small CSS additions block in `public/zerrow-landing.css` (or a scoped `<style>` in the component) for keyframes the existing stylesheet doesn't already cover.
 
-## Fix
+## Behavior
 
-Scope the change to the Settings page only (don't touch the global `TabsList` primitive — other surfaces may rely on the filled pill look).
+- Rocket: change `<animateMotion dur="180s">` to ~`420s` so the arc traversal is slow + meditative instead of zippy.
+- Alien ships: spawn every 3.5–6s at a random Y (15%–65% of pane height), drifting left→right or right→left at 18–28s per crossing. Cap at 3 on-screen at once. Despawn when off-screen.
+- Ship visual: a small envelope-shaped SVG (≈28×20px) with a faint orange glow ring so it reads as "email + UFO". Slight bob via CSS `@keyframes ufo-bob`.
+- Hit points: 2 per ship. First click → flash white + small shake. Second click → explode (particle burst of 6–8 orange dots animating outward + fade), then remove.
+- Laser: on click, draw a 180ms line from bottom-center of the pane to the click point using an absolutely-positioned thin div with `transform: scaleY` from 0→1 and a quick fade. Plays a short WebAudio "pew" (sine sweep 880→220Hz, 80ms, gain 0.04) — no asset files needed, generated inline via `AudioContext`. First click anywhere initializes audio (browsers require user gesture).
+- Score HUD: add a third HUD chip top-center: `INTRUDERS NEUTRALIZED · 003`. Increments on each kill. Resets only on remount.
+- Pointer: ships have `cursor: crosshair`; the rest of the pane keeps `pointer-events-none` on existing decorative layers so telemetry stays read-only.
 
-In `src/routes/_authenticated/settings.tsx`, override the `TabsList` className with an underline-style strip that fits the dark editorial aesthetic:
+## Implementation notes
 
-- Remove the muted background and pill padding by passing `className="bg-transparent p-0 h-auto gap-6 border-b border-border rounded-none w-full justify-start"` on `<TabsList>`.
-- Override each `<TabsTrigger>` with `className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none"` so the active tab is marked by an orange underline instead of a filled pill.
+- Keep all game state in `useState`/`useRef` inside `TrackingStandby` — `ships: {id, y, dir, x, hp, hitFlashUntil}[]`, `bursts: {id, x, y, startedAt}[]`, `lasers: {id, x, y, startedAt}[]`, `score: number`.
+- Single `requestAnimationFrame` loop drives ship X position and prunes expired lasers/bursts; the existing 600ms `setInterval` telemetry tick stays untouched.
+- Click handler on each ship (`onPointerDown`, `stopPropagation`) decrements HP, pushes a laser from `(50% bottom)` to the ship's current `(x, y)`, and on kill pushes a burst + `score++`.
+- Respect `prefers-reduced-motion`: if set, skip ship spawning and audio, leave the slowed rocket + telemetry only.
+- The bottom caption changes from `AWAITING PAYLOAD — SELECT A TRANSMISSION` to `AWAITING PAYLOAD — NEUTRALIZE INTRUDERS WHILE YOU WAIT` to hint at the interaction without nagging.
 
-Result: a clean underlined tab strip (Accounts · Inbox filters · Activity) with the active tab underlined in the NASA-orange primary, no grey slab.
+## Files touched
 
-## Files
+- `src/components/inbox/TrackingStandby.tsx` — state, RAF loop, ship/laser/burst SVG layers, click handlers, audio helper, slowed `animateMotion`, score HUD, updated caption.
+- Inline `<style>` block inside the same component for `@keyframes ufo-bob`, `.laser`, `.burst-particle`, `.ufo-hit-flash` — keeps the change self-contained and avoids editing the shared landing CSS.
 
-- `src/routes/_authenticated/settings.tsx` — add `className` overrides on the existing `<TabsList>` and three `<TabsTrigger>` elements. No other files change.
+No new dependencies.
