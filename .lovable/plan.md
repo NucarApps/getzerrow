@@ -1,34 +1,65 @@
-## Mobile email view cleanup
+## Why Factory emails are all showing as read
 
-Two problems visible in the screenshot:
-1. The action toolbar overflows at 402px — Reply + 6 icon buttons + AI badge don't fit, so Reply overlaps the resync icon.
-2. The subject renders ~6 lines tall for long forwarded subjects, eating the screen.
+I checked the database. Every email in Factory arrives with these Gmail labels:
+`{Label_347, CATEGORY_PERSONAL, Label_5898701622091638806}` — **no `UNREAD`, no `INBOX`**.
 
-### Changes to `src/routes/_authenticated/inbox.tsx`
+That means a **Gmail filter on your account** (almost certainly the same filter that's applying the Factory label and skipping the inbox) is also checking "Mark as read". So by the time Zerrow ingests the message, Gmail itself already considers it read.
 
-**1. Toolbar (lines 705–849)** — make it fit on mobile
-- Hide the `AI · NN%` badge on mobile (line 713–715): add `hidden md:inline-flex`. Same info is in the Summary card below.
-- Hide the folder badge on mobile when `onBack` is shown (line 712): add `hidden md:inline-flex`. Folder is implied by the list you came from.
-- Shrink ghost icon buttons on mobile to `h-8 w-8 p-0` (reanalyze, move, mark-read, archive, trash, resync).
-- Reduce gap on mobile: `gap-1` → `gap-0.5`.
-- Reply button stays prominent but compact: `h-8 px-2.5`.
-- Safety net: add `flex-nowrap overflow-x-auto` on the right-side button row so anything still tight scrolls instead of overlapping.
+Zerrow's `auto_mark_read=false` setting on the folder is being honored — our code only strips `UNREAD` when that flag is true (`sync.server.ts:365`). But Zerrow currently *mirrors* whatever read-state Gmail reports, so a pre-read message comes in already read.
 
-**2. Subject (line 854)** — cap height on mobile
-- `text-xl md:text-2xl` → `text-lg md:text-2xl`.
-- Add `line-clamp-3 md:line-clamp-none` so long forwarded subjects stop eating the screen.
+## Two ways to fix it
 
-**3. Sender line (lines 855–859)** — drop the `<addr>` on mobile
-- Wrap the `<…@…>` portion in `<span className="hidden md:inline">`.
-- Mobile shows: `Alyssa Quinn · 5/20/26, 1:27 PM`.
+### Option A (recommended) — Zerrow overrides Gmail's read state for that folder
 
-**4. "Why this folder?" trigger (lines 867–877)**
-- Hide the `ClassifiedChip` on mobile (`hidden sm:inline-flex`) so the row stays single-line.
-- Make the label span `min-w-0 flex-1 truncate`.
+When a folder has `auto_mark_read = false`, treat every newly-ingested message as **unread in Zerrow**, regardless of Gmail's `UNREAD` label. Opening the email in Zerrow still marks it read in both places (existing behavior at `inbox.tsx:664`).
 
-### Result
-- Toolbar fits cleanly at 390–414px; Reply no longer overlaps.
-- Subject capped at 3 lines on mobile (~half the height).
-- Header block ~40% shorter on mobile, desktop unchanged.
+Trade-off: Zerrow and Gmail's read counts diverge for that folder until you open the message. This matches what you asked for ("I set it to not mark as read").
 
-No business logic changes.
+### Option B — fix it at the source
+
+Edit the Gmail filter that routes Factory mail and uncheck "Mark as read". Zerrow needs no changes. Cleanest semantically, but requires you to go into Gmail Settings → Filters.
+
+---
+
+## Plan for Option A (one file, ~15 lines)
+
+**`src/lib/sync.server.ts`**
+
+1. In `processGmailMessage` (around line 301), after we have `parsed` and before insert, look up the folder this message will land in (we already do this inside `classifyParsedEmail`). Simpler: do the override **after** classification, inside the existing `if (folder_id)` block at line 355 — we already load the folder there with `auto_mark_read`. Add:
+
+   ```ts
+   if (!folder.auto_mark_read && !inserted_is_read_from_gmail_is_already_true_only_flip_to_unread) {
+     await supabaseAdmin.from("emails").update({ is_read: false }).eq("id", inserted.id);
+   }
+   ```
+
+   Cleaner shape:
+
+   ```ts
+   if (!folder.auto_mark_read) {
+     // Honor the folder setting even if a Gmail filter pre-marked it read.
+     await supabaseAdmin.from("emails").update({ is_read: false }).eq("id", inserted.id);
+   }
+   ```
+
+2. In `reconcileAccount` (lines 1040 and 1081), don't blindly mirror `UNREAD` removal for emails whose folder has `auto_mark_read = false`. Otherwise the next reconcile pass would re-flip them back to read. Add a small per-row check: if `row.folder_id` belongs to a folder with `auto_mark_read=false`, skip setting `is_read = true` (only allow `is_read = false`).
+
+   Implementation: fetch a small `Map<folderId, auto_mark_read>` once per `reconcileAccount` call, then guard the two `patch.is_read = ...` lines.
+
+3. **Backfill the existing 179 rows in Factory:** one-time SQL via migration to set `is_read = false` on every email currently in Factory.
+
+   ```sql
+   UPDATE emails
+   SET is_read = false
+   WHERE folder_id = '3384a10d-1e0b-4b1a-942a-d064ddbc9df3';
+   ```
+
+   (Or generalize: any folder where `auto_mark_read=false`.)
+
+No frontend changes. No Gmail API writes — we deliberately do not strip Gmail's read-state, because the user's Gmail filter wants them read in Gmail.
+
+---
+
+## Which option do you want?
+
+If you want **Option A**, I'll implement it. If you'd rather fix the Gmail filter (**Option B**), no code change is needed — just edit the filter in Gmail Settings.
