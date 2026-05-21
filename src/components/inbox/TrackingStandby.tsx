@@ -90,17 +90,6 @@ export function TrackingStandby() {
             </g>
           </svg>
 
-          <div className="tracking__icon" aria-hidden="true">
-            <svg viewBox="0 0 120 280">
-              <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
-              <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
-              <path d="M42 150 L12 226 L42 218 Z" fill="#ff5a2e" />
-              <path d="M42 150 L42 218 L34 226 Z" fill="#8a2a14" />
-              <path d="M78 150 L108 226 L78 218 Z" fill="#ff5a2e" />
-              <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
-              <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
-            </svg>
-          </div>
           <div className="tracking__hud tracking__hud--tl">
             <span className="tracking__dot"></span>
             TRACKING · DOWNRANGE
