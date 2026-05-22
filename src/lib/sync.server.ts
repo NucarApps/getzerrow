@@ -426,7 +426,10 @@ export async function processGmailMessage(
   // 3) Apply Gmail label / auto-archive / auto-mark-read for the assigned folder.
   //    Use the prefetched folder list when available to avoid an extra round trip.
   if (folder_id) {
-    let folder: { id: string; gmail_label_id: string | null; auto_archive: boolean; auto_mark_read: boolean } | null = null;
+    let folder: {
+      id: string; gmail_label_id: string | null; auto_archive: boolean;
+      auto_mark_read: boolean; auto_star: boolean; hide_from_inbox: boolean;
+    } | null = null;
     const cached = opts.context?.folders.find((f) => f.id === folder_id);
     if (cached) {
       folder = {
@@ -434,25 +437,30 @@ export async function processGmailMessage(
         gmail_label_id: cached.gmail_label_id,
         auto_archive: cached.auto_archive,
         auto_mark_read: cached.auto_mark_read,
+        auto_star: cached.auto_star,
+        hide_from_inbox: cached.hide_from_inbox,
       };
     } else {
       const { data } = await supabaseAdmin
         .from("folders")
-        .select("id, gmail_label_id, auto_archive, auto_mark_read")
+        .select("id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox")
         .eq("id", folder_id)
         .maybeSingle();
       folder = data ?? null;
     }
     if (folder) {
+      // hide_from_inbox behaves like auto_archive for the inbox view.
+      const effectiveArchive = folder.auto_archive || folder.hide_from_inbox;
       const addLabels: string[] = [];
       const removeLabels: string[] = [];
       if (folder.gmail_label_id && !parsed.raw_labels?.includes(folder.gmail_label_id)) addLabels.push(folder.gmail_label_id);
       if (folder.auto_mark_read) removeLabels.push("UNREAD");
-      if (inInbox && folder.auto_archive) removeLabels.push("INBOX");
+      if (folder.auto_star && !parsed.raw_labels?.includes("STARRED")) addLabels.push("STARRED");
+      if (inInbox && effectiveArchive) removeLabels.push("INBOX");
       if (addLabels.length || removeLabels.length) {
         try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
       }
-      if (inInbox && folder.auto_archive) {
+      if (inInbox && effectiveArchive) {
         await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", inserted.id);
       }
       if (folder.auto_mark_read) {
