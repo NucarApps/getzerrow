@@ -475,11 +475,14 @@ export async function processGmailMessage(
   // 2) Classify. If this throws or times out, the email is already in Inbox.
   let folder_id: string | null = null;
   try {
+    const _tAi = performance.now();
     const c = await classifyParsedEmail(parsed, userId, accountId, {
       context: opts.context,
       skipAi: opts.skipAi,
     });
+    if (t) t.ai += performance.now() - _tAi;
     folder_id = c.folder_id ?? null;
+    const _tDb = performance.now();
     await supabaseAdmin.from("emails").update({
       folder_id,
       ai_summary: c.ai_summary || null,
@@ -489,6 +492,7 @@ export async function processGmailMessage(
       matched_filter_ids: c.matched_filter_ids,
       matched_folder_ids: c.matched_folder_ids,
     }).eq("id", inserted.id);
+    if (t) t.db += performance.now() - _tDb;
   } catch (e) {
     console.error("classify failed (email already visible in Inbox)", e);
     await supabaseAdmin.from("emails").update({
@@ -497,6 +501,7 @@ export async function processGmailMessage(
     }).eq("id", inserted.id);
     return { id: inserted.id, classify_failed: true };
   }
+
 
   // 3) Apply Gmail label / auto-archive / auto-mark-read for the assigned folder.
   //    Use the prefetched folder list when available to avoid an extra round trip.
