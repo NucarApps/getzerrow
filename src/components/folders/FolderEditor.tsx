@@ -43,6 +43,9 @@ export type Folder = {
   priority: number;
   gmail_account_id: string;
   filter_logic?: "any" | "all";
+  auto_star?: boolean;
+  hide_from_inbox?: boolean;
+  skip_ai?: boolean;
 };
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
