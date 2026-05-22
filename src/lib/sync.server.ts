@@ -1156,18 +1156,21 @@ export async function runMessageJobs(
   concurrency = 16,
   opts: { priority?: number } = {},
 ) {
-  const STUCK_MS = 90 * 1000; // jobs in 'running' for >90s are presumed dead (worker timeout)
+  const STUCK_MS = 35 * 1000; // jobs in 'running' for >35s are presumed dead (worker timeout is 25s)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
 
   // ─── Self-heal: reclaim any 'running' jobs whose worker died mid-execution.
+  // Don't burn an attempt on the first reclaim — only count as a failure if the
+  // last_error is already a reclaim marker (i.e. it died twice in a row).
   const stuckCutoff = new Date(Date.now() - STUCK_MS).toISOString();
   const { data: stuck } = await supabaseAdmin
     .from("message_jobs")
-    .select("id, attempt")
+    .select("id, attempt, last_error")
     .eq("status", "running")
     .lt("locked_at", stuckCutoff);
   for (const s of stuck ?? []) {
-    const nextAttempt = (s.attempt ?? 0) + 1;
+    const wasReclaimed = typeof s.last_error === "string" && s.last_error.startsWith("stuck (worker timeout)");
+    const nextAttempt = wasReclaimed ? (s.attempt ?? 0) + 1 : (s.attempt ?? 0);
     if (nextAttempt >= MAX_JOB_ATTEMPTS) {
       await supabaseAdmin.from("message_jobs").update({
         status: "dlq",
@@ -1176,13 +1179,13 @@ export async function runMessageJobs(
         locked_at: null,
       }).eq("id", s.id);
     } else {
-      const backoff = jitter(BACKOFF_SECONDS[Math.min(nextAttempt - 1, BACKOFF_SECONDS.length - 1)]);
       await supabaseAdmin.from("message_jobs").update({
         status: "pending",
         attempt: nextAttempt,
         last_error: "stuck (worker timeout) — auto-reclaimed",
         locked_at: null,
-        next_run_at: new Date(Date.now() + backoff * 1000).toISOString(),
+        next_run_at: new Date().toISOString(),
+
       }).eq("id", s.id);
     }
   }
