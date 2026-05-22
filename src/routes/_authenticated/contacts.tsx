@@ -205,8 +205,9 @@ function ContactsPage() {
               </div>
             ) : filtered.length === 0 ? (
               <p className="py-12 text-center text-sm text-muted-foreground">
-                {query ? "No matches." : "No contacts in this view yet."}
+                {query ? "No matches." : "No contacts yet. Scan a card or add one manually."}
               </p>
+
             ) : (
               <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
                 {filtered.map((c) => {
