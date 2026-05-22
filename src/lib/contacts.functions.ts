@@ -390,7 +390,11 @@ ${body}`,
       }
     }
 
-    const patch: Record<string, string | null> = { enriched_at: new Date().toISOString() };
+    const patch: {
+      enriched_at: string;
+      name?: string | null; title?: string | null; company?: string | null;
+      phone?: string | null; website?: string | null; linkedin?: string | null; twitter?: string | null;
+    } = { enriched_at: new Date().toISOString() };
     for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
       const v = extracted[k];
       if (v && !(base as any)[k]) patch[k] = v;
