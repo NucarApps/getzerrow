@@ -16,6 +16,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
 import { Route as AuthenticatedContactsRouteImport } from './routes/_authenticated/contacts'
@@ -61,6 +62,11 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedMyCardRoute = AuthenticatedMyCardRouteImport.update({
+  id: '/my-card',
+  path: '/my-card',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/contacts': typeof AuthenticatedContactsRouteWithChildren
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/contacts': typeof AuthenticatedContactsRouteWithChildren
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
@@ -180,6 +188,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts': typeof AuthenticatedContactsRouteWithChildren
   '/_authenticated/folders': typeof AuthenticatedFoldersRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
+  '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
@@ -202,6 +211,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/folders'
     | '/inbox'
+    | '/my-card'
     | '/reports'
     | '/settings'
     | '/contacts/$id'
@@ -222,6 +232,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/folders'
     | '/inbox'
+    | '/my-card'
     | '/reports'
     | '/settings'
     | '/contacts/$id'
@@ -243,6 +254,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts'
     | '/_authenticated/folders'
     | '/_authenticated/inbox'
+    | '/_authenticated/my-card'
     | '/_authenticated/reports'
     | '/_authenticated/settings'
     | '/_authenticated/contacts/$id'
@@ -320,6 +332,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/my-card': {
+      id: '/_authenticated/my-card'
+      path: '/my-card'
+      fullPath: '/my-card'
+      preLoaderRoute: typeof AuthenticatedMyCardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/inbox': {
@@ -428,6 +447,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedContactsRoute: typeof AuthenticatedContactsRouteWithChildren
   AuthenticatedFoldersRoute: typeof AuthenticatedFoldersRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
+  AuthenticatedMyCardRoute: typeof AuthenticatedMyCardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
 }
@@ -436,6 +456,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedContactsRoute: AuthenticatedContactsRouteWithChildren,
   AuthenticatedFoldersRoute: AuthenticatedFoldersRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
+  AuthenticatedMyCardRoute: AuthenticatedMyCardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
 }
