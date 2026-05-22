@@ -42,6 +42,7 @@ export type Folder = {
   auto_mark_read: boolean;
   priority: number;
   gmail_account_id: string;
+  filter_logic?: "any" | "all";
 };
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
