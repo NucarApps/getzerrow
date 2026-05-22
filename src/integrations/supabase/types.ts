@@ -71,24 +71,30 @@ export type Database = {
           ai_summary: string | null
           body_html: string | null
           body_text: string | null
+          cc: string | null
           classification_reason: string | null
           classified_by: string | null
           created_at: string
           folder_id: string | null
+          forwarded_at: string | null
+          forwarded_to: string | null
           from_addr: string | null
           from_name: string | null
           gmail_account_id: string
           gmail_message_id: string
           has_attachment: boolean
           id: string
+          in_reply_to: string | null
           is_archived: boolean
           is_read: boolean
+          list_id: string | null
           matched_filter_ids: string[]
           matched_folder_ids: string[]
           processed_at: string | null
           raw_labels: string[] | null
           received_at: string | null
           snippet: string | null
+          snoozed_until: string | null
           subject: string | null
           thread_id: string | null
           to_addrs: string | null
@@ -99,24 +105,30 @@ export type Database = {
           ai_summary?: string | null
           body_html?: string | null
           body_text?: string | null
+          cc?: string | null
           classification_reason?: string | null
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
+          forwarded_at?: string | null
+          forwarded_to?: string | null
           from_addr?: string | null
           from_name?: string | null
           gmail_account_id: string
           gmail_message_id: string
           has_attachment?: boolean
           id?: string
+          in_reply_to?: string | null
           is_archived?: boolean
           is_read?: boolean
+          list_id?: string | null
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
           processed_at?: string | null
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
+          snoozed_until?: string | null
           subject?: string | null
           thread_id?: string | null
           to_addrs?: string | null
@@ -127,24 +139,30 @@ export type Database = {
           ai_summary?: string | null
           body_html?: string | null
           body_text?: string | null
+          cc?: string | null
           classification_reason?: string | null
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
+          forwarded_at?: string | null
+          forwarded_to?: string | null
           from_addr?: string | null
           from_name?: string | null
           gmail_account_id?: string
           gmail_message_id?: string
           has_attachment?: boolean
           id?: string
+          in_reply_to?: string | null
           is_archived?: boolean
           is_read?: boolean
+          list_id?: string | null
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
           processed_at?: string | null
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
+          snoozed_until?: string | null
           subject?: string | null
           thread_id?: string | null
           to_addrs?: string | null
@@ -320,6 +338,7 @@ export type Database = {
           created_at: string
           filter_logic: string
           filter_tree: Json | null
+          forward_to: string | null
           gmail_account_id: string
           gmail_backfill_oldest_received_at: string | null
           gmail_backfill_page_token: string | null
@@ -328,9 +347,11 @@ export type Database = {
           id: string
           last_learned_at: string | null
           learned_profile: string | null
+          min_ai_confidence: number
           name: string
           priority: number
           skip_ai: boolean
+          snooze_hours: number
           user_id: string
         }
         Insert: {
@@ -342,6 +363,7 @@ export type Database = {
           created_at?: string
           filter_logic?: string
           filter_tree?: Json | null
+          forward_to?: string | null
           gmail_account_id: string
           gmail_backfill_oldest_received_at?: string | null
           gmail_backfill_page_token?: string | null
@@ -350,9 +372,11 @@ export type Database = {
           id?: string
           last_learned_at?: string | null
           learned_profile?: string | null
+          min_ai_confidence?: number
           name: string
           priority?: number
           skip_ai?: boolean
+          snooze_hours?: number
           user_id: string
         }
         Update: {
@@ -364,6 +388,7 @@ export type Database = {
           created_at?: string
           filter_logic?: string
           filter_tree?: Json | null
+          forward_to?: string | null
           gmail_account_id?: string
           gmail_backfill_oldest_received_at?: string | null
           gmail_backfill_page_token?: string | null
@@ -372,9 +397,11 @@ export type Database = {
           id?: string
           last_learned_at?: string | null
           learned_profile?: string | null
+          min_ai_confidence?: number
           name?: string
           priority?: number
           skip_ai?: boolean
+          snooze_hours?: number
           user_id?: string
         }
         Relationships: [
