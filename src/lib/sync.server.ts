@@ -268,6 +268,7 @@ export async function classifyParsedEmail(
         classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
         confidence = 1;
         matched_filter_ids = m.matched_filters.map((f) => f.id);
+        matched_folder_ids = m.all_matched_folder_ids;
         classification_reason =
           classified_by === "domain_rule"
             ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
