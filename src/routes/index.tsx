@@ -2,6 +2,7 @@ import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useMissionTelemetry } from "@/components/landing/useMissionTelemetry";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+import shipUrl from "@/assets/zerrow-ship.png";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -162,13 +163,7 @@ function LandingPage() {
                   <use href="#arcPathLanding" className="tracking__arc-live"  fill="none" stroke="url(#arcGrad)" />
                   <g className="tracking__rocket">
                     <g transform="rotate(90) scale(0.09) translate(-60 -118)">
-                      <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
-                      <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
-                      <path d="M42 150 L12 226 L42 218 Z" fill="#ff5a2e" />
-                      <path d="M42 150 L42 218 L34 226 Z" fill="#8a2a14" />
-                      <path d="M78 150 L108 226 L78 218 Z" fill="#ff5a2e" />
-                      <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
-                      <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
+                      <image href={shipUrl} x="10" y="0" width="100" height="240" preserveAspectRatio="xMidYMid meet" />
                     </g>
                     <animateMotion dur="28s" repeatCount="indefinite" rotate="auto"
                       keyPoints="0;1" keyTimes="0;1"
@@ -219,22 +214,7 @@ function LandingPage() {
 
               <div className="rocket-wrap" id="rocket">
                 <svg className="rocket" viewBox="0 0 120 280" xmlns="http://www.w3.org/2000/svg">
-                  {/* Left (lit) body half — tall sharp arrowhead */}
-                  <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
-                  {/* Right (shadow) body half */}
-                  <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
-                  {/* Center crease — thin dark vertical seam */}
-                  <path d="M60 6 L62 210 L58 210 Z" fill="#0a0e1a" opacity=".55" />
-                  {/* Left fin — lit face (swept outward) */}
-                  <path d="M42 150 L12 226 L42 218 Z" fill="#ff5a2e" />
-                  {/* Left fin — shadow face (inner) */}
-                  <path d="M42 150 L42 218 L34 226 Z" fill="#8a2a14" />
-                  {/* Right fin — lit face */}
-                  <path d="M78 150 L108 226 L78 218 Z" fill="#ff5a2e" />
-                  {/* Right fin — shadow face (inner) */}
-                  <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
-                  {/* Dark nozzle V at base */}
-                  <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
+                  <image href={shipUrl} x="10" y="0" width="100" height="260" preserveAspectRatio="xMidYMid meet" />
                 </svg>
 
                 <div className="exhaust">
