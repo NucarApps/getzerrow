@@ -303,6 +303,7 @@ export const updateContact = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { id, ...patch } = data;
+    if ("name" in patch) patch.name = normalizeName(patch.name ?? null);
     const { data: updated, error } = await supabase
       .from("contacts")
       .update(patch)
