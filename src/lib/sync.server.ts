@@ -4,6 +4,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch, buildFolderProfile, type ClassifyFolder } from "./ai.server";
 
+type RuleNode =
+  | { type: "group"; op: "and" | "or"; children: RuleNode[] }
+  | { type: "cond"; field: string; op: string; value: string };
+
 type Folder = {
   id: string;
   name: string;
@@ -19,6 +23,7 @@ type Folder = {
   priority: number;
   gmail_account_id: string;
   filter_logic: "any" | "all";
+  filter_tree: RuleNode | null;
 };
 
 type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
@@ -70,8 +75,23 @@ function applyFilter(
 
 const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
 
+function evalNode(
+  email: Parameters<typeof applyFilter>[0],
+  node: RuleNode,
+): boolean {
+  if (node.type === "cond") {
+    return applyFilter(email, { id: "", folder_id: "", field: node.field, op: node.op, value: node.value });
+  }
+  if (node.op === "and") return node.children.every((c) => evalNode(email, c));
+  return node.children.some((c) => evalNode(email, c));
+}
+
+function countConds(node: RuleNode): number {
+  return node.type === "cond" ? 1 : node.children.reduce((n, c) => n + countConds(c), 0);
+}
+
 type FolderMatch =
-  | { kind: "match"; folder_id: string; filter: Filter; matched_filters: Filter[]; all_matched_folder_ids: string[] }
+  | { kind: "match"; folder_id: string; filter: Filter | null; matched_filters: Filter[]; all_matched_folder_ids: string[]; tree_used: boolean }
   | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
 
 function matchByFilters(
@@ -84,26 +104,40 @@ function matchByFilters(
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
     byFolder.get(f.folder_id)!.push(f);
   }
-  const matched: Array<{ folder: Folder; filter: Filter; allMatches: Filter[] }> = [];
+  const matched: Array<{ folder: Folder; filter: Filter | null; allMatches: Filter[]; treeUsed: boolean }> = [];
   const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
   for (const folder of folders) {
     const fs = byFolder.get(folder.id) || [];
-    if (fs.length === 0) continue;
-    const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
     const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
-    if (includes.length === 0) continue;
-    const includeHits = includes.filter((f) => applyFilter(email, f));
-    const logic = folder.filter_logic === "all" ? "all" : "any";
-    const passes = logic === "all"
-      ? includeHits.length === includes.length
-      : includeHits.length > 0;
+    const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
+
+    // Tree takes precedence when present and non-empty.
+    const tree = folder.filter_tree;
+    const hasTree = !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
+
+    let passes = false;
+    let includeHits: Filter[] = [];
+    if (hasTree) {
+      passes = evalNode(email, tree!);
+    } else {
+      if (includes.length === 0) continue;
+      includeHits = includes.filter((f) => applyFilter(email, f));
+      const logic = folder.filter_logic === "all" ? "all" : "any";
+      passes = logic === "all" ? includeHits.length === includes.length : includeHits.length > 0;
+    }
     if (!passes) continue;
+
     const excludeHit = excludes.find((f) => applyFilter(email, f));
     if (excludeHit) {
       excludedFolders.push({ folder, exclude: excludeHit });
       continue;
     }
-    matched.push({ folder, filter: includeHits[0], allMatches: includeHits });
+    matched.push({
+      folder,
+      filter: hasTree ? null : (includeHits[0] ?? null),
+      allMatches: hasTree ? [] : includeHits,
+      treeUsed: hasTree,
+    });
   }
   if (matched.length > 0) {
     // Sort: highest priority first, then folder name asc for stable tiebreak.
@@ -116,6 +150,7 @@ function matchByFilters(
       filter: matched[0].filter,
       matched_filters: matched[0].allMatches,
       all_matched_folder_ids: matched.map((m) => m.folder.id),
+      tree_used: matched[0].treeUsed,
     };
   }
   if (excludedFolders.length > 0) {
@@ -268,14 +303,19 @@ export async function classifyParsedEmail(
       const m = matchByFilters(parsed, folderList, filterList);
       if (m?.kind === "match") {
         folder_id = m.folder_id;
-        classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
-        confidence = 1;
-        matched_filter_ids = m.matched_filters.map((f) => f.id);
         matched_folder_ids = m.all_matched_folder_ids;
-        classification_reason =
-          classified_by === "domain_rule"
-            ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
-            : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+        confidence = 1;
+        if (m.tree_used) {
+          classified_by = "filter";
+          classification_reason = `Rule group matched for "${labelOf(folderList, m.folder_id)}"`;
+        } else if (m.filter) {
+          classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
+          matched_filter_ids = m.matched_filters.map((f) => f.id);
+          classification_reason =
+            classified_by === "domain_rule"
+              ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
+              : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+        }
       } else if (m?.kind === "excluded") {
         classified_by = "excluded";
         classification_reason = `Would match "${m.folder_name}" but excluded by rule: ${m.exclude.field} ${m.exclude.op} "${m.exclude.value}"`;

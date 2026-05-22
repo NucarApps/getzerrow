@@ -319,6 +319,7 @@ export type Database = {
           color: string
           created_at: string
           filter_logic: string
+          filter_tree: Json | null
           gmail_account_id: string
           gmail_backfill_oldest_received_at: string | null
           gmail_backfill_page_token: string | null
@@ -340,6 +341,7 @@ export type Database = {
           color?: string
           created_at?: string
           filter_logic?: string
+          filter_tree?: Json | null
           gmail_account_id: string
           gmail_backfill_oldest_received_at?: string | null
           gmail_backfill_page_token?: string | null
@@ -361,6 +363,7 @@ export type Database = {
           color?: string
           created_at?: string
           filter_logic?: string
+          filter_tree?: Json | null
           gmail_account_id?: string
           gmail_backfill_oldest_received_at?: string | null
           gmail_backfill_page_token?: string | null
