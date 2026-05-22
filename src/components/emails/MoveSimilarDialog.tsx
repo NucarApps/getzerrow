@@ -24,6 +24,7 @@ export function MoveSimilarDialog({
   domain,
   toFolder,
   folders,
+  defaultMode = "sender",
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -33,12 +34,13 @@ export function MoveSimilarDialog({
   domain: string | null;
   toFolder: Folder;
   folders: Folder[];
+  defaultMode?: "sender" | "domain";
 }) {
   const qc = useQueryClient();
   const findFn = useServerFn(findSimilarEmails);
   const moveFn = useServerFn(bulkMoveEmails);
 
-  const [mode, setMode] = useState<"sender" | "domain">("sender");
+  const [mode, setMode] = useState<"sender" | "domain">(defaultMode);
   const [matches, setMatches] = useState<Match[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -51,8 +53,8 @@ export function MoveSimilarDialog({
 
   useEffect(() => {
     if (!open) return;
-    setMode("sender");
-  }, [open, emailId]);
+    setMode(defaultMode);
+  }, [open, emailId, defaultMode]);
 
   useEffect(() => {
     if (!open) return;

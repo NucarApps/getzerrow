@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
   moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
-  loadOlderFromGmail, searchGmailAndIngest, resyncMessage,
+  loadOlderFromGmail, searchGmailAndIngest, resyncMessage, addFolderRule,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -123,11 +123,20 @@ function InboxPage() {
   const moveInboxFn = useServerFn(moveEmailToInbox);
   const addOverrideFn = useServerFn(addInboxOverride);
   const stripLabelFn = useServerFn(stripFolderLabelPast);
+  const addFolderRuleFn = useServerFn(addFolderRule);
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [folderRulePrompt, setFolderRulePrompt] = useState<null | {
+    emailId: string;
+    fromFolderId: string | null;
+    fromAddr: string | null;
+    domain: string | null;
+    toFolder: Folder;
+    mode: "sender" | "domain";
+  }>(null);
 
   const accountQ = useQuery({
     queryKey: ["gmail_account"],
@@ -619,6 +628,101 @@ function InboxPage() {
                   </ContextMenuSub>
                 )}
 
+                {(e.from_addr || domain) && folderList.length > 0 && (
+                  <>
+                    <ContextMenuSeparator />
+                    <ContextMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      Always send to folder
+                    </ContextMenuLabel>
+                    {e.from_addr && (
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                          <AtSign className="mr-2 h-4 w-4" />
+                          <span className="truncate">Just {e.from_addr}</span>
+                        </ContextMenuSubTrigger>
+                        <ContextMenuSubContent className="max-h-72 overflow-y-auto">
+                          {folderList.map((f) => (
+                            <ContextMenuSub key={f.id}>
+                              <ContextMenuSubTrigger disabled={f.id === currentFolderId}>
+                                <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                                <span className="truncate">{f.name}{f.id === currentFolderId ? " (current)" : ""}</span>
+                              </ContextMenuSubTrigger>
+                              <ContextMenuSubContent>
+                                <ContextMenuItem
+                                  onSelect={async () => {
+                                    try {
+                                      const r = await addFolderRuleFn({ data: { folder_id: f.id, field: "from", value: e.from_addr! } });
+                                      qc.invalidateQueries({ queryKey: ["folder-filters"] });
+                                      toast.success(r.already ? `${e.from_addr} already routed to ${f.name}` : `Future mail from ${e.from_addr} → ${f.name}`);
+                                    } catch (err: any) { toast.error(err.message); }
+                                  }}
+                                >
+                                  Future emails only
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onSelect={() => setFolderRulePrompt({
+                                    emailId: e.id,
+                                    fromFolderId: e.folder_id ?? null,
+                                    fromAddr: e.from_addr,
+                                    domain,
+                                    toFolder: f,
+                                    mode: "sender",
+                                  })}
+                                >
+                                  Future and past
+                                </ContextMenuItem>
+                              </ContextMenuSubContent>
+                            </ContextMenuSub>
+                          ))}
+                        </ContextMenuSubContent>
+                      </ContextMenuSub>
+                    )}
+                    {domain && (
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                          <Globe className="mr-2 h-4 w-4" />
+                          <span className="truncate">Anyone @{domain}</span>
+                        </ContextMenuSubTrigger>
+                        <ContextMenuSubContent className="max-h-72 overflow-y-auto">
+                          {folderList.map((f) => (
+                            <ContextMenuSub key={f.id}>
+                              <ContextMenuSubTrigger disabled={f.id === currentFolderId}>
+                                <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                                <span className="truncate">{f.name}{f.id === currentFolderId ? " (current)" : ""}</span>
+                              </ContextMenuSubTrigger>
+                              <ContextMenuSubContent>
+                                <ContextMenuItem
+                                  onSelect={async () => {
+                                    try {
+                                      const r = await addFolderRuleFn({ data: { folder_id: f.id, field: "domain", value: domain } });
+                                      qc.invalidateQueries({ queryKey: ["folder-filters"] });
+                                      toast.success(r.already ? `@${domain} already routed to ${f.name}` : `Future mail from @${domain} → ${f.name}`);
+                                    } catch (err: any) { toast.error(err.message); }
+                                  }}
+                                >
+                                  Future emails only
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onSelect={() => setFolderRulePrompt({
+                                    emailId: e.id,
+                                    fromFolderId: e.folder_id ?? null,
+                                    fromAddr: e.from_addr,
+                                    domain,
+                                    toFolder: f,
+                                    mode: "domain",
+                                  })}
+                                >
+                                  Future and past
+                                </ContextMenuItem>
+                              </ContextMenuSubContent>
+                            </ContextMenuSub>
+                          ))}
+                        </ContextMenuSubContent>
+                      </ContextMenuSub>
+                    )}
+                  </>
+                )}
+
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   onSelect={async () => {
@@ -675,6 +779,20 @@ function InboxPage() {
           <TrackingStandby />
         )}
       </div>
+
+      {folderRulePrompt && (
+        <MoveSimilarDialog
+          open={!!folderRulePrompt}
+          onOpenChange={(v) => { if (!v) setFolderRulePrompt(null); }}
+          emailId={folderRulePrompt.emailId}
+          fromFolderId={folderRulePrompt.fromFolderId}
+          fromAddr={folderRulePrompt.fromAddr}
+          domain={folderRulePrompt.domain}
+          toFolder={folderRulePrompt.toFolder}
+          folders={foldersQ.data ?? []}
+          defaultMode={folderRulePrompt.mode}
+        />
+      )}
     </div>
   );
 }
