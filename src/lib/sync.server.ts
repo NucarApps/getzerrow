@@ -529,7 +529,13 @@ export async function processGmailMessage(
       if (addLabels.length || removeLabels.length) {
         try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
       }
-      const patch: Record<string, unknown> = {};
+      const patch: {
+        is_archived?: boolean;
+        is_read?: boolean;
+        snoozed_until?: string;
+        forwarded_to?: string;
+        forwarded_at?: string;
+      } = {};
       if (inInbox && effectiveArchive) patch.is_archived = true;
       if (folder.auto_mark_read) patch.is_read = true;
       if (folder.snooze_hours && folder.snooze_hours > 0) {
