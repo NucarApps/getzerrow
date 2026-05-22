@@ -1,45 +1,25 @@
-## Fix empty/short emails rendering as a big white box on mobile
+# Smarter Re-enrich: scan more emails, prefer ones with signatures
 
-Single file: `src/routes/_authenticated/inbox.tsx` → `EmailBodyFrame`.
+## Problem
+Today `enrichContact` only looks at the **5 most recent** emails from the person and feeds them all to the model. If those happen to be phone replies ("Sent from my iPhone", no signature), we get nothing useful — even when older desktop emails from the same person have a full signature block.
 
-### 1. Drop the artificial tall minimum height
+## Change (single file: `src/lib/contacts.functions.ts`, `enrichContact` handler)
 
-Replace:
-```ts
-const minPx = Math.max(500, Math.round(window.innerHeight * 0.6));
-```
-with a small floor:
-```ts
-const MIN_PX = 60;
-```
-Use `MIN_PX` in both `resize()` and the iframe `minHeight` style. Short emails will render at their natural height instead of a 500–700 px white slab.
+1. **Pull a larger candidate pool** — fetch up to **40** most recent emails from `from_addr = contact.email` (still `body_text`, `snippet`, `subject`), instead of 5.
 
-### 2. Fall back to text when `body_html` is effectively empty
+2. **Score & pick the best ~8 for the prompt**, favoring emails that are likely to contain a real signature:
+   - Strong negative signal: body contains "Sent from my iPhone / iPad / Android / mobile device / BlackBerry / Samsung" → deprioritize.
+   - Positive signals: longer `body_text` (>400 chars), presence of typical signature tokens (a phone-number regex, `linkedin.com/in/`, `http(s)://`, "—", "--", "Best,", "Regards,", "Thanks,", "Cheers,", a line that looks like a job title with a company).
+   - Sort candidates by score desc, take top 8. Always include at least 1–2 of the longest emails even if scoring is tied.
 
-Before mounting the iframe, strip tags/whitespace from `body_html`:
-```ts
-const hasVisibleHtml = (html ?? "")
-  .replace(/<style[\s\S]*?<\/style>/gi, "")
-  .replace(/<script[\s\S]*?<\/script>/gi, "")
-  .replace(/<[^>]+>/g, "")
-  .replace(/&nbsp;|\s/g, "")
-  .length > 0;
-```
-At the render site (line ~1164):
-```tsx
-{email.body_html && hasVisibleHtml(email.body_html) ? (
-  <EmailBodyFrame html={email.body_html} />
-) : (
-  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-    {email.body_text || email.snippet || ""}
-  </pre>
-)}
-```
-(Move `hasVisibleHtml` to module scope so both call sites can use it.)
+3. **Per-email signature trimming** — instead of sending 2,500 chars of each body, take the **tail** of each email (last ~1,500 chars) where the signature lives, and strip obvious quoted-reply blocks (`^>` lines, `On <date> ... wrote:` and everything after). This lets us fit more distinct emails into the prompt without blowing context.
 
-### 3. Re-measure after a tick
+4. **Prompt tweak** — tell the model it's looking across multiple emails from the same sender and should merge fields, preferring values that appear in more than one email; still return `null` when not clearly present. Sender email stays pinned so it never invents an address.
 
-iOS Safari sometimes reports `scrollHeight = 0` on the first `onLoad` for `srcDoc` iframes. After the existing `resize()` call, schedule a second resize on `requestAnimationFrame` and a third at `setTimeout(…, 250)` so late layout (web fonts, images) settles before we lock the height.
+5. **Merge behavior unchanged** — same `patch` logic: fill empty fields, or overwrite all fields when `force = true` (the "Re-enrich" button already passes `force: true`).
 
-### Out of scope
-- No styling changes elsewhere on the email view, no changes to list/sync.
+No DB schema changes. No UI changes. No new dependencies.
+
+## Out of scope
+- Scanning emails **to** this person (only `from_addr` is used, same as today).
+- Parsing HTML signatures from `body_html` — keeping `body_text`/`snippet` only to match current behavior. Can add later if results are still thin.
