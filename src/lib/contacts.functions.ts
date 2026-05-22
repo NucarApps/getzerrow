@@ -97,10 +97,67 @@ export const enrichContact = createServerFn({ method: "POST" })
       .select("subject,body_text,snippet")
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
-      .limit(5);
+      .limit(40);
 
-    const sample = (emails ?? [])
-      .map((e, i) => `--- Email ${i + 1} ---\nSubject: ${e.subject ?? ""}\n${(e.body_text || e.snippet || "").slice(0, 2500)}`)
+    // Strip quoted-reply blocks and take the tail (where signatures live).
+    const cleanTail = (raw: string): string => {
+      let s = raw || "";
+      const cutMarkers = [
+        /\n[ \t]*On .{1,120}wrote:\s*\n/i,
+        /\n[ \t]*-+\s*Original Message\s*-+/i,
+        /\n[ \t]*From:\s.+\nSent:\s/i,
+        /\n[ \t]*From:\s.+\nDate:\s/i,
+      ];
+      for (const re of cutMarkers) {
+        const m = s.match(re);
+        if (m && m.index !== undefined) s = s.slice(0, m.index);
+      }
+      s = s.split("\n").filter((l) => !/^\s*>/.test(l)).join("\n");
+      return s.slice(-1500);
+    };
+
+    const MOBILE_RE = /sent from my (iphone|ipad|android|mobile|blackberry|samsung|phone)|get outlook for (ios|android)/i;
+    const PHONE_RE = /(\+?\d[\d\s().-]{7,}\d)/;
+    const URL_RE = /https?:\/\/[^\s)>\]]+/i;
+    const LINKEDIN_RE = /linkedin\.com\/in\//i;
+    const SIGNOFF_RE = /\b(best|regards|thanks|cheers|sincerely|kind regards|warmly|cordially|talk soon)[,!.\s]/i;
+    const SIG_SEP_RE = /(^|\n)\s*(--|—|–)\s*\n/;
+
+    const scoreEmail = (tail: string): number => {
+      let s = 0;
+      if (MOBILE_RE.test(tail)) s -= 50;
+      if (tail.length > 400) s += 10;
+      if (tail.length > 1000) s += 5;
+      if (PHONE_RE.test(tail)) s += 15;
+      if (LINKEDIN_RE.test(tail)) s += 20;
+      if (URL_RE.test(tail)) s += 5;
+      if (SIGNOFF_RE.test(tail)) s += 8;
+      if (SIG_SEP_RE.test(tail)) s += 12;
+      return s;
+    };
+
+    type Cand = { subject: string; tail: string; score: number; len: number };
+    const candidates: Cand[] = (emails ?? [])
+      .map((e) => {
+        const tail = cleanTail(e.body_text || e.snippet || "");
+        return { subject: e.subject ?? "", tail, score: scoreEmail(tail), len: tail.length };
+      })
+      .filter((c) => c.tail.trim().length > 0);
+
+    const byScore = [...candidates].sort((a, b) => b.score - a.score).slice(0, 8);
+    const byLen = [...candidates].sort((a, b) => b.len - a.len).slice(0, 2);
+    const picked: Cand[] = [];
+    const seen = new Set<string>();
+    for (const c of [...byScore, ...byLen]) {
+      const key = c.subject + "::" + c.tail.slice(0, 60);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      picked.push(c);
+      if (picked.length >= 8) break;
+    }
+
+    const sample = picked
+      .map((e, i) => `--- Email ${i + 1} ---\nSubject: ${e.subject}\n${e.tail}`)
       .join("\n\n");
 
     if (!sample.trim()) {
@@ -115,10 +172,11 @@ export const enrichContact = createServerFn({ method: "POST" })
       const { output } = await generateText({
         model: getModel("google/gemini-2.5-flash"),
         output: Output.object({ schema: EXTRACT_SCHEMA }),
-        prompt: `Extract contact details for the sender of the emails below from their signatures.
-Sender email: ${contact.email}
+        prompt: `You are extracting contact details for a single sender across MULTIPLE emails they sent. Signatures may appear in only some emails (desktop-sent); phone-sent emails often have none. Merge across all emails. If a value appears in multiple emails, prefer it. Return null for any field not clearly present — do NOT guess.
 
-For each field, return the value or null if not clearly present. Do NOT guess.
+Sender email (fixed, do not change): ${contact.email}
+
+Fields:
 - name: full name
 - title: job title
 - company: company / organization name
@@ -127,7 +185,7 @@ For each field, return the value or null if not clearly present. Do NOT guess.
 - linkedin: full LinkedIn profile URL
 - twitter: full Twitter/X profile URL
 
-Emails:
+Emails (most-signature-likely first):
 ${sample}`,
       });
       extracted = output as z.infer<typeof EXTRACT_SCHEMA>;
