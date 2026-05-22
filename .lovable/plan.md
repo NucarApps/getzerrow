@@ -1,17 +1,22 @@
-## Replace home-page rocket with the Zerrow ship asset
+## Fix the Space Invaders ship aspect ratio
 
-Swap the hand-drawn SVG rocket on the landing page Launchpad with the same `src/assets/zerrow-ship.png` used in the Space Invaders game, so the brand ship is consistent across the app.
+The game's outer `<svg>` is set to `viewBox="0 0 100 100"` with `preserveAspectRatio="none"` and stretches to fill the (wider-than-tall) game container, so every child — including the ship `<image>` — is non-uniformly stretched horizontally. The PNG asset itself is correct (187×265, portrait). The fix is to compensate for that horizontal stretch on the ship element only, so its rendered aspect matches the source PNG.
 
-### Changes
+### Change — `src/components/inbox/TrackingStandby.tsx`
 
-**`src/routes/index.tsx`**
+1. Add a `containerRef` on the game's root wrapper `<div>` (the parent of the `<svg viewBox="0 0 100 100">`).
+2. Track `{ w, h }` of that container with a `ResizeObserver` in a `useEffect`, stored in `useState`.
+3. Derive a corrective ship box every render:
+   - Source aspect (W/H) `SRC = 187 / 265 ≈ 0.706`.
+   - Effective stretch factor `S = (containerW / containerH)` (because viewBox is square 100×100).
+   - Render the ship `<image>` with `height = 9` (unchanged) and `width = 9 * SRC / S`, then re-center: `x = -width / 2`, `y = -5.2`.
+   - Keep `preserveAspectRatio="xMidYMid meet"`.
+4. Fallback: if `containerH === 0` (first paint before observer fires), use the current `width={7}` as before so nothing flashes broken.
 
-1. Add `import shipUrl from "@/assets/zerrow-ship.png"` at the top.
-2. **Main launchpad rocket (lines ~220–238)** — replace the 7 `<path>` elements inside `<svg className="rocket" viewBox="0 0 120 280">` with a single `<image href={shipUrl} x="10" y="0" width="100" height="260" preserveAspectRatio="xMidYMid meet" />`. Keep the surrounding `.rocket-wrap`, `.exhaust`, `.smoke`, and `.sparks` markup untouched so the existing liftoff animation, exhaust glow, and smoke effects continue to work.
-3. **Tracking-arc mini rocket (lines ~163–172)** — replace the 7 `<path>` elements inside `<g className="tracking__rocket">` with a single `<image href={shipUrl} x="20" y="0" width="80" height="230" preserveAspectRatio="xMidYMid meet" />` so the small rocket that travels the arc also uses the brand ship.
+This makes the ship render with the same proportions as the uploaded PNG regardless of game container size, without touching gameplay coordinates (`PLAYER_Y`, `PLAYER_HALF_W`, collision math) or the rest of the SVG.
 
 ### Out of scope
 
-- No CSS / animation changes (rocket-wrap, exhaust, smoke, arc motion all stay).
-- No new asset generation — reuses the existing `src/assets/zerrow-ship.png`.
-- Telemetry numbers, Launchpad chrome, and copy unchanged.
+- No change to the home-page rockets (their SVGs use a proper square-ish viewBox and `preserveAspectRatio="meet"`, so they already render correctly).
+- No change to the PNG asset, gameplay logic, or hit-box constants.
+- Thruster polygon stays as-is (small, symmetric — stretching is visually negligible).
