@@ -779,6 +779,20 @@ function InboxPage() {
           <TrackingStandby />
         )}
       </div>
+
+      {folderRulePrompt && (
+        <MoveSimilarDialog
+          open={!!folderRulePrompt}
+          onOpenChange={(v) => { if (!v) setFolderRulePrompt(null); }}
+          emailId={folderRulePrompt.emailId}
+          fromFolderId={folderRulePrompt.fromFolderId}
+          fromAddr={folderRulePrompt.fromAddr}
+          domain={folderRulePrompt.domain}
+          toFolder={folderRulePrompt.toFolder}
+          folders={foldersQ.data ?? []}
+          defaultMode={folderRulePrompt.mode}
+        />
+      )}
     </div>
   );
 }
