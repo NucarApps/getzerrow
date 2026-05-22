@@ -1131,9 +1131,12 @@ function ScheduleForm({
 const FIELD_OPTS = [
   { value: "from", label: "from" },
   { value: "to", label: "to" },
+  { value: "cc", label: "cc" },
   { value: "subject", label: "subject" },
   { value: "body", label: "body" },
   { value: "domain", label: "domain" },
+  { value: "list_id", label: "list-id (newsletter)" },
+  { value: "is_reply", label: "is reply" },
   { value: "has_attachment", label: "has attachment" },
 ];
 const OP_OPTS = [
