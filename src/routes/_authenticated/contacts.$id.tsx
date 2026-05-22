@@ -225,6 +225,9 @@ function ContactDetail() {
           <Button size="sm" onClick={send} disabled={sending} className="flex-1 sm:flex-none">
             <Send className="mr-2 h-4 w-4" /> {sending ? "Sending…" : "Send my card"}
           </Button>
+          <Button size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={() => setShareOpen(true)}>
+            <Share2 className="mr-2 h-4 w-4" /> Share contact
+          </Button>
           <Button size="sm" variant="ghost" className="text-destructive w-full sm:w-auto sm:ml-auto" onClick={remove}>
             <Trash2 className="mr-2 h-4 w-4" /> Delete
           </Button>
