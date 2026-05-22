@@ -74,7 +74,7 @@ function ContactDetail() {
         twitter: c.twitter ?? "", notes: c.notes ?? "",
       });
     }
-  }, [q.data?.contact?.id]);
+  }, [q.data?.contact?.id, q.data?.contact?.enriched_at, q.data?.contact?.updated_at]);
 
   // Auto-enrich on first visit if never enriched.
   useEffect(() => {
@@ -91,7 +91,8 @@ function ContactDetail() {
       const r = await enrich({ data: { id, force } });
       if (r.skipped) toast.info("Already enriched recently");
       else toast.success("Enriched from email signatures");
-      qc.invalidateQueries({ queryKey: ["contact", id] });
+      await qc.invalidateQueries({ queryKey: ["contact", id] });
+      await q.refetch();
     } catch (e: any) {
       toast.error(e?.message ?? "Enrich failed");
     } finally {
