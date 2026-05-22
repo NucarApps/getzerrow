@@ -87,7 +87,7 @@ function ContactsPage() {
   }, [q.data, contactGroupMap]);
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <header className="mb-6 flex items-center gap-2 sm:gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
@@ -109,13 +109,11 @@ function ContactsPage() {
               <ScanLine className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Scan card</span>
             </Link>
           </Button>
-          <Button variant="ghost" size="sm" onClick={rebuild} disabled={building} className="px-2 sm:px-3" aria-label="Refresh" title="Refresh">
-            <RefreshCw className={`h-4 w-4 sm:mr-2 ${building ? "animate-spin" : ""}`} /><span className="hidden sm:inline">Refresh</span>
-          </Button>
         </header>
 
         {/* Mobile groups: horizontal pill scroller */}
-        <div className="mb-4 -mx-4 px-4 md:hidden">
+        <div className="mb-4 -mx-4 px-4 md:hidden max-w-full overflow-hidden">
+
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <GroupPill active={filter === "all"} color="#a3a3a3" label="All" count={q.data?.contacts.length ?? 0} onClick={() => setFilter("all")} />
             <GroupPill active={filter === "ungrouped"} color="#71717a" label="Ungrouped" count={ungroupedCount} onClick={() => setFilter("ungrouped")} />
@@ -139,7 +137,7 @@ function ContactsPage() {
           </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-[220px_1fr]">
+        <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)] min-w-0">
           {/* Groups rail (desktop) */}
           <aside className="hidden md:block md:sticky md:top-2 md:self-start">
             <div className="mb-2 flex items-center justify-between px-2">
@@ -187,7 +185,7 @@ function ContactsPage() {
           </aside>
 
           {/* Main list */}
-          <div>
+          <div className="min-w-0">
             <div className="mb-4 relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -198,7 +196,8 @@ function ContactsPage() {
               />
             </div>
 
-            {q.isLoading || building ? (
+            {q.isLoading ? (
+
               <div className="grid gap-2">
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div key={i} className="h-14 animate-pulse rounded-md border border-border bg-card/40" />
