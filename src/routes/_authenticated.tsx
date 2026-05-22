@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
-import { Inbox, Settings, LogOut, Plus, Pencil, Menu } from "lucide-react";
+import { Inbox, Settings, LogOut, Plus, Pencil, Menu, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
@@ -190,6 +190,16 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           onClick={() => pick("all")}
         >
           <Inbox className="h-4 w-4" /> Inbox
+        </button>
+        <button
+          type="button"
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/reports" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          onClick={() => {
+            navigate({ to: "/reports" });
+            onNavigate?.();
+          }}
+        >
+          <BarChart3 className="h-4 w-4" /> Reports
         </button>
         <button
           type="button"
