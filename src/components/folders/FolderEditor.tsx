@@ -30,6 +30,10 @@ import { Plus, Trash2, X, Sparkles, Link2, ArrowRight, History, Loader2, MoveRig
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
+export type RuleNode =
+  | { type: "group"; op: "and" | "or"; children: RuleNode[] }
+  | { type: "cond"; field: string; op: string; value: string };
+
 export type Folder = {
   id: string;
   name: string;
@@ -46,6 +50,7 @@ export type Folder = {
   auto_star?: boolean;
   hide_from_inbox?: boolean;
   skip_ai?: boolean;
+  filter_tree?: RuleNode | null;
 };
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
