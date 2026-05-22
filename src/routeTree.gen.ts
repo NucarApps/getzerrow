@@ -14,6 +14,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CHandleRouteImport } from './routes/c.$handle'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
@@ -52,6 +53,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CHandleRoute = CHandleRouteImport.update({
+  id: '/c/$handle',
+  path: '/c/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -147,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/c/$handle': typeof CHandleRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByTo {
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/c/$handle': typeof CHandleRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
@@ -191,6 +199,7 @@ export interface FileRoutesById {
   '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/c/$handle': typeof CHandleRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
@@ -214,6 +223,7 @@ export interface FileRouteTypes {
     | '/my-card'
     | '/reports'
     | '/settings'
+    | '/c/$handle'
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/public/gmail-backfill-tick'
@@ -235,6 +245,7 @@ export interface FileRouteTypes {
     | '/my-card'
     | '/reports'
     | '/settings'
+    | '/c/$handle'
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/public/gmail-backfill-tick'
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-card'
     | '/_authenticated/reports'
     | '/_authenticated/settings'
+    | '/c/$handle'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
     | '/api/public/gmail-backfill-tick'
@@ -274,6 +286,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
+  CHandleRoute: typeof CHandleRoute
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
   ApiPublicGmailProcessJobsRoute: typeof ApiPublicGmailProcessJobsRoute
@@ -318,6 +331,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/c/$handle': {
+      id: '/c/$handle'
+      path: '/c/$handle'
+      fullPath: '/c/$handle'
+      preLoaderRoute: typeof CHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/settings': {
@@ -471,6 +491,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
+  CHandleRoute: CHandleRoute,
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
   ApiPublicGmailProcessJobsRoute: ApiPublicGmailProcessJobsRoute,
