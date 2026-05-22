@@ -51,6 +51,9 @@ export type Folder = {
   hide_from_inbox?: boolean;
   skip_ai?: boolean;
   filter_tree?: RuleNode | null;
+  forward_to?: string | null;
+  min_ai_confidence?: number;
+  snooze_hours?: number;
 };
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
