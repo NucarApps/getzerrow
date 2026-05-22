@@ -318,14 +318,16 @@ function GroupEditorDialog({
   }, [state]);
 
   if (!state) return null;
-  const editing = state.mode === "edit";
+  const s = state;
+  const editing = s.mode === "edit";
+  const editGroup = s.mode === "edit" ? s.group : null;
 
   async function save() {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      if (editing && state.mode === "edit") {
-        await update({ data: { id: state.group.id, name: name.trim(), color } });
+      if (editGroup) {
+        await update({ data: { id: editGroup.id, name: name.trim(), color } });
         toast.success("Group updated");
       } else {
         await create({ data: { name: name.trim(), color } });
@@ -341,11 +343,11 @@ function GroupEditorDialog({
   }
 
   async function remove() {
-    if (state.mode !== "edit") return;
-    if (!confirm(`Delete the “${state.group.name}” group? Contacts won't be deleted.`)) return;
+    if (!editGroup) return;
+    if (!confirm(`Delete the “${editGroup.name}” group? Contacts won't be deleted.`)) return;
     setSaving(true);
     try {
-      await del({ data: { id: state.group.id } });
+      await del({ data: { id: editGroup.id } });
       toast.success("Group deleted");
       onChanged();
       onClose();
