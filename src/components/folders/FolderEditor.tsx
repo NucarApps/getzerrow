@@ -129,6 +129,9 @@ export function FolderEditor({
       gmail_label_id: local.gmail_label_id,
       auto_archive: local.auto_archive, auto_mark_read: local.auto_mark_read, priority: local.priority,
       filter_logic: local.filter_logic ?? "any",
+      auto_star: local.auto_star ?? false,
+      hide_from_inbox: local.hide_from_inbox ?? false,
+      skip_ai: local.skip_ai ?? false,
     }).eq("id", folder.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Saved");
