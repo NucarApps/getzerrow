@@ -601,7 +601,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_message_jobs: {
+        Args: { p_limit: number; p_priority?: number }
+        Returns: {
+          attempt: number
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          priority: number
+          user_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

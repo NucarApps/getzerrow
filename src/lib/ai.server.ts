@@ -137,6 +137,118 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
   };
 }
 
+/**
+ * Batch-classify multiple emails sharing the same folder set in a single
+ * Gemini call. Returns one result per input email (in order). Used by the
+ * backfill worker to amortize LLM round-trip latency across many messages.
+ */
+export async function classifyEmailsBatch(
+  emails: Array<{
+    from_addr: string;
+    from_name: string;
+    subject: string;
+    snippet: string;
+    body_text: string;
+  }>,
+  folders: ClassifyFolder[],
+): Promise<Array<{ folder_id: string | null; confidence: number; summary: string; reason: string }>> {
+  if (emails.length === 0) return [];
+  if (folders.length === 0) {
+    return emails.map(() => ({ folder_id: null, confidence: 0, summary: "", reason: "" }));
+  }
+
+  const folderList = folders
+    .map((f, i) => {
+      const parts = [`${i + 1}. "${f.name}"`];
+      if (f.ai_rule) parts.push(`Rule: ${f.ai_rule}`);
+      if (f.learned_profile) parts.push(`Learned profile: ${f.learned_profile}`);
+      if (f.examples?.length) {
+        const ex = f.examples.slice(0, 3).map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`).join("\n");
+        parts.push(`Recent examples:\n${ex}`);
+      }
+      return parts.join("\n   ");
+    })
+    .join("\n\n");
+
+  const emailBlocks = emails
+    .map((e, i) => `--- EMAIL ${i + 1} ---
+From: ${e.from_name} <${e.from_addr}>
+Subject: ${e.subject}
+Body:
+${(e.body_text || e.snippet || "").slice(0, 1500)}`)
+    .join("\n\n");
+
+  const itemSchema = z.object({
+    index: z.number().int().min(1),
+    folder_name: z.string(),
+    confidence: z.number().min(0).max(1),
+    summary: z.string().max(140),
+    reason: z.string().max(200),
+  });
+  const schema = z.object({ results: z.array(itemSchema) });
+
+  const prompt = `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
+
+Folders:
+${folderList}
+
+You are given ${emails.length} emails. For EACH one return an object with:
+- index: the email number (1..${emails.length})
+- folder_name: exact folder name, or "NONE" if no folder fits
+- confidence: 0..1
+- summary: one-line summary of THAT email (max 140 chars)
+- reason: short explanation citing the rule/profile/example that matched (max 200 chars)
+
+Emails:
+${emailBlocks}
+
+Return ONE result per email, in any order, with the correct \`index\`.`;
+
+  type Out = z.infer<typeof schema>;
+  let parsed: Out | null = null;
+  let lastError = "";
+
+  const describe = (e: any): string => {
+    const parts: string[] = [];
+    if (e?.name) parts.push(e.name);
+    if (typeof e?.status === "number") parts.push(`status=${e.status}`);
+    if (e?.message) parts.push(e.message);
+    return parts.join(" | ").slice(0, 300) || "unknown";
+  };
+
+  for (const modelId of ["google/gemini-2.5-flash-lite", "google/gemini-2.5-flash"]) {
+    try {
+      const { output } = await generateText({
+        model: getModel(modelId),
+        output: Output.object({ schema }),
+        prompt,
+      });
+      parsed = output as Out;
+      break;
+    } catch (e) {
+      lastError = describe(e);
+      console.error(`classifyEmailsBatch structured failed (${modelId})`, lastError);
+    }
+  }
+
+  if (!parsed) throw new Error(`Batch classifier failed: ${lastError || "no parseable response"}`);
+
+  const byIndex = new Map<number, z.infer<typeof itemSchema>>();
+  for (const r of parsed.results) byIndex.set(r.index, r);
+
+  return emails.map((_, i) => {
+    const r = byIndex.get(i + 1);
+    if (!r) return { folder_id: null, confidence: 0, summary: "", reason: "No batch result for this email" };
+    const match = folders.find((f) => f.name.toLowerCase() === r.folder_name.toLowerCase());
+    return {
+      folder_id: match?.id ?? null,
+      confidence: r.confidence,
+      summary: r.summary,
+      reason: r.reason,
+    };
+  });
+}
+
 export async function summarizeEmail(email: {
   from_name: string;
   from_addr: string;
