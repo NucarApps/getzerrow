@@ -13,6 +13,9 @@ type Folder = {
   last_learned_at: string | null;
   auto_archive: boolean;
   auto_mark_read: boolean;
+  auto_star: boolean;
+  hide_from_inbox: boolean;
+  skip_ai: boolean;
   priority: number;
   gmail_account_id: string;
   filter_logic: "any" | "all";
