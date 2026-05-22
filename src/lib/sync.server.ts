@@ -1007,14 +1007,15 @@ export async function enqueueMessageJob(
     );
 }
 
-export async function runMessageJobs(limit = 100, concurrency = 16) {
+export async function runMessageJobs(
+  limit = 100,
+  concurrency = 16,
+  opts: { priority?: number } = {},
+) {
   const STUCK_MS = 90 * 1000; // jobs in 'running' for >90s are presumed dead (worker timeout)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
 
   // ─── Self-heal: reclaim any 'running' jobs whose worker died mid-execution.
-  // Without this, a Cloudflare Worker that's killed mid-processGmailMessage
-  // leaves the row in 'running' forever because the catch block never ran,
-  // so attempt is never incremented and the job never reaches the DLQ.
   const stuckCutoff = new Date(Date.now() - STUCK_MS).toISOString();
   const { data: stuck } = await supabaseAdmin
     .from("message_jobs")
@@ -1042,111 +1043,157 @@ export async function runMessageJobs(limit = 100, concurrency = 16) {
     }
   }
 
-  const lockCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-  const { data: candidates } = await supabaseAdmin
-    .from("message_jobs")
-    .select("id, gmail_account_id, gmail_message_id, user_id, attempt")
-    .neq("status", "dlq")
-    .lte("next_run_at", new Date().toISOString())
-    .or(`locked_at.is.null,locked_at.lt.${lockCutoff}`)
-    .order("priority", { ascending: true })
-    .order("next_run_at", { ascending: true })
-    .limit(limit);
+  // ─── Atomic claim: single round-trip, parallel workers can't collide.
+  const { data: claimedRows, error: claimErr } = await supabaseAdmin.rpc("claim_message_jobs", {
+    p_limit: limit,
+    p_priority: opts.priority ?? null,
+  });
+  if (claimErr) {
+    console.error("claim_message_jobs RPC failed", claimErr);
+    return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0, error: claimErr.message };
+  }
+  type ClaimedJob = {
+    id: string;
+    gmail_account_id: string;
+    gmail_message_id: string;
+    user_id: string;
+    attempt: number;
+    priority: number;
+  };
+  const claimed = (claimedRows ?? []) as ClaimedJob[];
+  if (claimed.length === 0) {
+    return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0 };
+  }
+
+  // ─── Prefetch per-account context once for the whole batch.
+  const accountIds = Array.from(new Set(claimed.map((j) => j.gmail_account_id)));
+  const userByAccount = new Map<string, string>();
+  for (const j of claimed) if (!userByAccount.has(j.gmail_account_id)) userByAccount.set(j.gmail_account_id, j.user_id);
+  const contextByAccount = new Map<string, AccountContext>();
+  await Promise.all(
+    accountIds.map(async (aid) => {
+      try {
+        contextByAccount.set(aid, await loadAccountContext(aid, userByAccount.get(aid)!));
+      } catch (e) {
+        console.error("loadAccountContext failed", aid, e);
+      }
+    }),
+  );
 
   const results: Array<{ id: string; ok: boolean; error?: string; dlq?: boolean; retryable?: boolean }> = [];
 
-  const processOne = async (job: NonNullable<typeof candidates>[number]) => {
-    const { data: claimed } = await supabaseAdmin
-      .from("message_jobs")
-      .update({ status: "running", locked_at: new Date().toISOString() })
-      .eq("id", job.id)
-      .neq("status", "dlq")
-      .select("id")
-      .maybeSingle();
-    if (!claimed) return;
+  // After the first per-message pass, backfill messages still needing AI
+  // are queued here for a single batched LLM call per account.
+  type PendingAi = {
+    job: ClaimedJob;
+    emailRowId: string;
+    parsed: Parameters<typeof classifyParsedEmail>[0];
+  };
+  const pendingAi: PendingAi[] = [];
 
-    try {
-      // Hard timeout so the worker always reaches the catch block before the
-      // Cloudflare Worker is killed for exceeding wall time.
-      await Promise.race([
-        processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`job timeout after ${JOB_TIMEOUT_MS}ms`)), JOB_TIMEOUT_MS),
-        ),
-      ]);
+  const handleError = async (job: ClaimedJob, e: any) => {
+    const msg = e?.message ?? String(e);
+    const status: number | undefined = e instanceof GmailApiError ? e.status : undefined;
+    const retryable: boolean = e instanceof GmailApiError
+      ? e.retryable
+      : (typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg));
+
+    if (status === 404 || (typeof msg === "string" && msg.includes(" 404 "))) {
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
       results.push({ id: job.id, ok: true });
-    } catch (e: any) {
-      const msg = e?.message ?? String(e);
-      const status: number | undefined = e instanceof GmailApiError ? e.status : undefined;
-      const retryable: boolean = e instanceof GmailApiError
-        ? e.retryable
-        : (typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg));
+      return;
+    }
 
-      // 404 — message gone from Gmail. Drop the job.
-      if (status === 404 || (typeof msg === "string" && msg.includes(" 404 "))) {
-        await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
-        results.push({ id: job.id, ok: true });
-        return;
-      }
+    const terminal = status === 400 || status === 401 || status === 403;
+    const currentAttempt = job.attempt ?? 0;
+    const nextAttempt = retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS
+      ? currentAttempt
+      : currentAttempt + 1;
 
-      // 400/401/403 — terminal. Straight to DLQ.
-      const terminal = status === 400 || status === 401 || status === 403;
-      const currentAttempt = job.attempt ?? 0;
-      // Retryable failures get RETRYABLE_FREE_ATTEMPTS "free" retries before
-      // they start incrementing the attempt counter that pushes toward DLQ.
-      const nextAttempt = retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS
-        ? currentAttempt
-        : currentAttempt + 1;
+    if (terminal || nextAttempt >= MAX_JOB_ATTEMPTS) {
+      let from_addr: string | null = null;
+      let subject: string | null = null;
+      try {
+        const meta = await getMessageMetadata(job.gmail_account_id, job.gmail_message_id);
+        const p = parseMessage(meta);
+        from_addr = p.from_addr ?? null;
+        subject = p.subject ?? null;
+      } catch { /* best-effort */ }
+      await supabaseAdmin.from("message_jobs").update({
+        status: "dlq",
+        attempt: nextAttempt,
+        last_error: msg.slice(0, 1000),
+        locked_at: null,
+        from_addr,
+        subject,
+      }).eq("id", job.id);
+      results.push({ id: job.id, ok: false, dlq: true, error: msg });
+    } else {
+      const table = retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
+      const idx = retryable ? Math.min(currentAttempt, table.length - 1) : Math.min(nextAttempt - 1, table.length - 1);
+      const backoff = jitter(table[idx]);
+      await supabaseAdmin.from("message_jobs").update({
+        status: "pending",
+        attempt: nextAttempt,
+        last_error: msg.slice(0, 1000),
+        locked_at: null,
+        next_run_at: new Date(Date.now() + backoff * 1000).toISOString(),
+      }).eq("id", job.id);
+      results.push({ id: job.id, ok: false, retryable, error: msg });
+    }
 
-      if (terminal || nextAttempt >= MAX_JOB_ATTEMPTS) {
-        let from_addr: string | null = null;
-        let subject: string | null = null;
-        try {
-          const meta = await getMessageMetadata(job.gmail_account_id, job.gmail_message_id);
-          const p = parseMessage(meta);
-          from_addr = p.from_addr ?? null;
-          subject = p.subject ?? null;
-        } catch { /* best-effort */ }
-        await supabaseAdmin.from("message_jobs").update({
-          status: "dlq",
-          attempt: nextAttempt,
-          last_error: msg.slice(0, 1000),
-          locked_at: null,
-          from_addr,
-          subject,
-        }).eq("id", job.id);
-        results.push({ id: job.id, ok: false, dlq: true, error: msg });
-      } else {
-        const table = retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
-        const idx = retryable ? Math.min(currentAttempt, table.length - 1) : Math.min(nextAttempt - 1, table.length - 1);
-        const backoff = jitter(table[idx]);
-        await supabaseAdmin.from("message_jobs").update({
-          status: "pending",
-          attempt: nextAttempt,
-          last_error: msg.slice(0, 1000),
-          locked_at: null,
-          next_run_at: new Date(Date.now() + backoff * 1000).toISOString(),
-        }).eq("id", job.id);
-        results.push({ id: job.id, ok: false, retryable, error: msg });
-      }
-
-      // Log retryable Gmail-side failures so the Sync activity panel surfaces them.
-      if (retryable && status && status !== 0) {
-        try {
-          await supabaseAdmin.from("pubsub_events").insert({
-            event_type: "gmail_api_error",
-            history_id: null,
-            error: `Gmail API ${status}: ${msg.slice(0, 300)}`,
-          });
-        } catch { /* best-effort */ }
-      }
+    if (retryable && status && status !== 0) {
+      try {
+        await supabaseAdmin.from("pubsub_events").insert({
+          event_type: "gmail_api_error",
+          history_id: null,
+          error: `Gmail API ${status}: ${msg.slice(0, 300)}`,
+        });
+      } catch { /* best-effort */ }
     }
   };
 
-  // Bounded-concurrency pool: each job is dominated by Gmail + Supabase I/O
-  // wait, so parallelizing turns ~50 jobs/min into ~400+ jobs/min.
-  const queue = [...(candidates ?? [])];
+  const processOne = async (job: ClaimedJob) => {
+    const ctx = contextByAccount.get(job.gmail_account_id);
+    // For backfill jobs (priority>=10) defer AI to the batched pass below.
+    const deferAi = job.priority >= 10;
+    try {
+      const result = (await Promise.race([
+        processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id, {
+          context: ctx,
+          skipAi: deferAi,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`job timeout after ${JOB_TIMEOUT_MS}ms`)), JOB_TIMEOUT_MS),
+        ),
+      ])) as Awaited<ReturnType<typeof processGmailMessage>>;
+
+      // Queue for batched AI if this backfill row landed in Inbox (no folder yet)
+      // and AI was deferred. We use classified_by check via the parsed result.
+      if (
+        deferAi &&
+        result &&
+        "email_id" in result &&
+        result.email_id &&
+        !result.folder_id &&
+        result.parsed &&
+        ctx &&
+        ctx.folders.length > 0
+      ) {
+        pendingAi.push({ job, emailRowId: result.email_id, parsed: result.parsed });
+        // Don't delete the job row yet — finalize after batch AI completes.
+        return;
+      }
+
+      await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
+      results.push({ id: job.id, ok: true });
+    } catch (e: any) {
+      await handleError(job, e);
+    }
+  };
+
+  // ─── Pool of N workers draining the claimed queue.
+  const queue = [...claimed];
   const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
     while (queue.length > 0) {
       const job = queue.shift();
@@ -1155,6 +1202,70 @@ export async function runMessageJobs(limit = 100, concurrency = 16) {
     }
   });
   await Promise.all(workers);
+
+  // ─── Second pass: batched AI classification for backfill messages.
+  // Group by account, chunk into batches of 8 emails per Gemini call.
+  const BATCH_SIZE = 8;
+  if (pendingAi.length > 0) {
+    const byAccount = new Map<string, PendingAi[]>();
+    for (const p of pendingAi) {
+      if (!byAccount.has(p.job.gmail_account_id)) byAccount.set(p.job.gmail_account_id, []);
+      byAccount.get(p.job.gmail_account_id)!.push(p);
+    }
+    await Promise.all(
+      Array.from(byAccount.entries()).map(async ([aid, items]) => {
+        const ctx = contextByAccount.get(aid);
+        if (!ctx) return;
+        for (let i = 0; i < items.length; i += BATCH_SIZE) {
+          const chunk = items.slice(i, i + BATCH_SIZE);
+          try {
+            const out = await classifyEmailsBatch(chunk.map((c) => c.parsed), ctx.enrichedFolders);
+            await Promise.all(
+              chunk.map(async (c, idx) => {
+                const r = out[idx];
+                await supabaseAdmin.from("emails").update({
+                  folder_id: r?.folder_id ?? null,
+                  ai_summary: r?.summary || null,
+                  ai_confidence: r?.confidence ?? 0,
+                  classified_by: r?.folder_id ? "ai" : "ai",
+                  classification_reason: r?.reason || null,
+                }).eq("id", c.emailRowId);
+                await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                results.push({ id: c.job.id, ok: true });
+              }),
+            );
+          } catch (e: any) {
+            // Batch failed — fall back to per-message classify so the queue still drains.
+            console.error("batch AI classify failed, falling back per-message", e?.message ?? e);
+            await Promise.all(
+              chunk.map(async (c) => {
+                try {
+                  const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
+                  await supabaseAdmin.from("emails").update({
+                    folder_id: single.folder_id,
+                    ai_summary: single.summary || null,
+                    ai_confidence: single.confidence,
+                    classified_by: "ai",
+                    classification_reason: single.reason || null,
+                  }).eq("id", c.emailRowId);
+                  await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  results.push({ id: c.job.id, ok: true });
+                } catch (innerErr: any) {
+                  await supabaseAdmin.from("emails").update({
+                    classified_by: "unclassified",
+                    classification_reason: `AI classifier failed: ${(innerErr?.message ?? "unknown").slice(0, 200)}`,
+                  }).eq("id", c.emailRowId);
+                  await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  results.push({ id: c.job.id, ok: true });
+                }
+              }),
+            );
+          }
+        }
+      }),
+    );
+  }
+
   return {
     processed: results.length,
     ok: results.filter(r => r.ok).length,
