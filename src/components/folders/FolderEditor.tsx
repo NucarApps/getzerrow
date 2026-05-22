@@ -381,6 +381,45 @@ export function FolderEditor({
             </label>
           </div>
 
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-border p-3 text-sm">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Auto-forward to</Label>
+              <Input
+                className="mt-1.5 h-8"
+                type="email"
+                placeholder="someone@example.com"
+                value={local.forward_to ?? ""}
+                onChange={(e) => setLocal({ ...local, forward_to: e.target.value })}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Forwards each matching email once, on arrival.</p>
+            </div>
+            <div className="rounded-md border border-border p-3 text-sm">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Snooze on arrival (hours)</Label>
+              <Input
+                className="mt-1.5 h-8"
+                type="number"
+                min={0}
+                max={720}
+                value={local.snooze_hours ?? 0}
+                onChange={(e) => setLocal({ ...local, snooze_hours: parseInt(e.target.value) || 0 })}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Hides matched emails until the snooze expires.</p>
+            </div>
+            <div className="rounded-md border border-border p-3 text-sm">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Min AI confidence (%)</Label>
+              <Input
+                className="mt-1.5 h-8"
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                value={Math.round((local.min_ai_confidence ?? 0) * 100)}
+                onChange={(e) => setLocal({ ...local, min_ai_confidence: (parseInt(e.target.value) || 0) / 100 })}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Reject AI assignment below this confidence.</p>
+            </div>
+          </div>
+
           <div className="mt-4">
             <div className="flex items-center justify-between">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
