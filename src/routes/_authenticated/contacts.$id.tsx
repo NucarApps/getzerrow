@@ -1,15 +1,19 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
-import { ArrowLeft, Sparkles, Send, Save, Trash2, Mail, Phone, Globe, Linkedin, Twitter, Building2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Sparkles, Send, Save, Trash2, Mail, Phone, Globe, Linkedin, Twitter, Building2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { getContact, enrichContact, updateContact, deleteContact } from "@/lib/contacts.functions";
+import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { toast } from "sonner";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_authenticated/contacts/$id")({
   component: ContactDetail,
@@ -24,8 +28,30 @@ function ContactDetail() {
   const update = useServerFn(updateContact);
   const del = useServerFn(deleteContact);
   const sendCard = useServerFn(sendMyCard);
+  const listGroups = useServerFn(listContactGroups);
+  const setGroups = useServerFn(setContactGroups);
 
   const q = useQuery({ queryKey: ["contact", id], queryFn: () => fetchOne({ data: { id } }) });
+  const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
+
+  const myGroupIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of gq.data?.memberships ?? []) {
+      if (m.contact_id === id) ids.add(m.group_id);
+    }
+    return ids;
+  }, [gq.data, id]);
+
+  async function toggleGroup(gid: string) {
+    const next = new Set(myGroupIds);
+    if (next.has(gid)) next.delete(gid); else next.add(gid);
+    try {
+      await setGroups({ data: { contactId: id, groupIds: [...next] } });
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    }
+  }
 
   const [form, setForm] = useState({
     name: "", title: "", company: "", phone: "",
@@ -142,6 +168,50 @@ function ContactDetail() {
             </p>
           </div>
         </header>
+
+        <div className="mb-6">
+          <Label className="mb-2 block text-xs uppercase tracking-widest text-muted-foreground">Groups</Label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(gq.data?.groups ?? []).filter((g) => myGroupIds.has(g.id)).map((g) => (
+              <span
+                key={g.id}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 py-0.5 pl-2 pr-1 text-xs"
+              >
+                <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                {g.name}
+                <button
+                  onClick={() => toggleGroup(g.id)}
+                  className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label={`Remove from ${g.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs">
+                  <Plus className="h-3.5 w-3.5" /> Add to group
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
+                {(gq.data?.groups ?? []).length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    No groups yet. Create one from the Contacts page.
+                  </div>
+                )}
+                {(gq.data?.groups ?? []).map((g) => (
+                  <DropdownMenuItem key={g.id} onClick={() => toggleGroup(g.id)} className="gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                    <span className="flex-1">{g.name}</span>
+                    {myGroupIds.has(g.id) && <span className="text-xs text-muted-foreground">✓</span>}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
 
         <div className="mb-6 flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => runEnrich(true)} disabled={enriching}>
