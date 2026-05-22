@@ -2152,3 +2152,42 @@ export const enqueueGmailMessage = createServerFn({ method: "POST" })
     await enqueueMessageJob(data.gmail_account_id, context.userId, data.gmail_message_id);
     return { ok: true };
   });
+
+export const addFolderRule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string; field: "from" | "domain"; value: string }) =>
+    z.object({
+      folder_id: z.string().uuid(),
+      field: z.enum(["from", "domain"]),
+      value: z.string().min(1).max(320),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const value = data.value.trim().toLowerCase().replace(/^@/, "");
+    if (!value) throw new Error("Empty value");
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, name")
+      .eq("id", data.folder_id)
+      .maybeSingle();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Folder not found");
+
+    const { data: existing } = await supabaseAdmin
+      .from("folder_filters")
+      .select("id")
+      .eq("folder_id", data.folder_id)
+      .eq("field", data.field)
+      .eq("value", value)
+      .maybeSingle();
+    const already = !!existing;
+    if (!already) {
+      const { error } = await supabaseAdmin.from("folder_filters").insert({
+        folder_id: data.folder_id,
+        field: data.field,
+        op: "contains",
+        value,
+      });
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true, already, folder_name: folder.name };
+  });
