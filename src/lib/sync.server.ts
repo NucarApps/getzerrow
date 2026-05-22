@@ -238,6 +238,7 @@ export async function classifyParsedEmail(
   let summary = "";
   let classification_reason: string | null = null;
   let matched_filter_ids: string[] = [];
+  let matched_folder_ids: string[] = [];
   let aiSkipped = false;
 
   const fromAddr = (parsed.from_addr || "").toLowerCase();
