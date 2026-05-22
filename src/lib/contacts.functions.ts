@@ -288,7 +288,11 @@ ${sample}`,
     } = { enriched_at: new Date().toISOString() };
     for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
       let v = extracted[k];
-      if (k === "name") v = normalizeName(v);
+      if (k === "name") {
+        const better = pickBetterName(contact.name, v);
+        if (better && better !== contact.name) patch.name = better;
+        continue;
+      }
       if (v && (!contact[k] || data.force)) patch[k] = v;
     }
 
