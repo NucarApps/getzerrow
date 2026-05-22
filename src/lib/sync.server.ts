@@ -286,7 +286,12 @@ export async function classifyParsedEmail(
   };
 }
 
-export async function processGmailMessage(accountId: string, gmailId: string, userId: string) {
+export async function processGmailMessage(
+  accountId: string,
+  gmailId: string,
+  userId: string,
+  opts: { context?: AccountContext; skipAi?: boolean } = {},
+) {
 
   const { data: existing } = await supabaseAdmin
     .from("emails")
@@ -366,7 +371,10 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   // 2) Classify. If this throws or times out, the email is already in Inbox.
   let folder_id: string | null = null;
   try {
-    const c = await classifyParsedEmail(parsed, userId, accountId);
+    const c = await classifyParsedEmail(parsed, userId, accountId, {
+      context: opts.context,
+      skipAi: opts.skipAi,
+    });
     folder_id = c.folder_id ?? null;
     await supabaseAdmin.from("emails").update({
       folder_id,
@@ -386,12 +394,25 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   }
 
   // 3) Apply Gmail label / auto-archive / auto-mark-read for the assigned folder.
+  //    Use the prefetched folder list when available to avoid an extra round trip.
   if (folder_id) {
-    const { data: folder } = await supabaseAdmin
-      .from("folders")
-      .select("id, gmail_label_id, auto_archive, auto_mark_read")
-      .eq("id", folder_id)
-      .maybeSingle();
+    let folder: { id: string; gmail_label_id: string | null; auto_archive: boolean; auto_mark_read: boolean } | null = null;
+    const cached = opts.context?.folders.find((f) => f.id === folder_id);
+    if (cached) {
+      folder = {
+        id: cached.id,
+        gmail_label_id: cached.gmail_label_id,
+        auto_archive: cached.auto_archive,
+        auto_mark_read: cached.auto_mark_read,
+      };
+    } else {
+      const { data } = await supabaseAdmin
+        .from("folders")
+        .select("id, gmail_label_id, auto_archive, auto_mark_read")
+        .eq("id", folder_id)
+        .maybeSingle();
+      folder = data ?? null;
+    }
     if (folder) {
       const addLabels: string[] = [];
       const removeLabels: string[] = [];
@@ -411,7 +432,7 @@ export async function processGmailMessage(accountId: string, gmailId: string, us
   }
 
 
-  return { id: inserted.id };
+  return { id: inserted.id, email_id: inserted.id, folder_id, parsed };
 }
 
 async function recordManualMove(
