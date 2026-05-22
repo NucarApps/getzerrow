@@ -412,3 +412,44 @@ ${body}`,
     return { contact: updated };
   });
 
+/** Share a saved contact's info with someone via the user's connected Gmail. */
+export const shareContactByEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: any) =>
+    z.object({
+      contactId: z.string().uuid(),
+      toEmail: z.string().email(),
+      note: z.string().max(2000).optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { userId, supabase } = context;
+
+    const { data: contact, error } = await supabase
+      .from("contacts")
+      .select("name,title,company,email,phone,website,linkedin,twitter")
+      .eq("id", data.contactId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!contact) throw new Error("Contact not found");
+
+    const { data: account } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("id, email_address")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!account) throw new Error("Connect your Gmail account in Settings first.");
+
+    await sendContactShareEmail({
+      accountId: account.id,
+      fromEmail: account.email_address,
+      toEmail: data.toEmail,
+      contact,
+      note: data.note ?? null,
+    });
+
+    return { ok: true };
+  });
+
