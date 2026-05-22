@@ -44,23 +44,33 @@ export const getInboxReport = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<InboxReport> => {
     const { supabase } = context;
     const ROW_CAP = 20000;
+    const PAGE_SIZE = 1000;
     const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: rows } = await supabase
-      .from("emails")
-      .select("from_addr,from_name,received_at,folder_id,is_read,has_attachment")
-      .gte("received_at", since)
-      .order("received_at", { ascending: false })
-      .limit(ROW_CAP);
-
-    const emails = (rows ?? []) as Array<{
+    type EmailRow = {
       from_addr: string | null;
       from_name: string | null;
       received_at: string | null;
       folder_id: string | null;
       is_read: boolean;
       has_attachment: boolean;
-    }>;
+    };
+
+    const emails: EmailRow[] = [];
+    for (let from = 0; from < ROW_CAP; from += PAGE_SIZE) {
+      const to = Math.min(from + PAGE_SIZE - 1, ROW_CAP - 1);
+      const { data, error } = await supabase
+        .from("emails")
+        .select("from_addr,from_name,received_at,folder_id,is_read,has_attachment")
+        .gte("received_at", since)
+        .order("received_at", { ascending: false })
+        .range(from, to);
+      if (error) break;
+      const batch = (data ?? []) as EmailRow[];
+      emails.push(...batch);
+      if (batch.length < PAGE_SIZE) break;
+    }
+
 
     const folderIds = Array.from(new Set(emails.map((e) => e.folder_id).filter((x): x is string => !!x)));
     let folders: FolderInfo[] = [];

@@ -1,22 +1,33 @@
-## Fix the Space Invaders ship aspect ratio
+## Fix Inbox Report 1000-row cap
 
-The game's outer `<svg>` is set to `viewBox="0 0 100 100"` with `preserveAspectRatio="none"` and stretches to fill the (wider-than-tall) game container, so every child — including the ship `<image>` — is non-uniformly stretched horizontally. The PNG asset itself is correct (187×265, portrait). The fix is to compensate for that horizontal stretch on the ship element only, so its rendered aspect matches the source PNG.
+The PostgREST backend caps each response at 1000 rows regardless of `.limit()`, so `getInboxReport` only ever sees the most recent 1000 emails — that's why all the stats are stuck at ~1000.
 
-### Change — `src/components/inbox/TrackingStandby.tsx`
+### Change — `src/lib/reports.functions.ts`
 
-1. Add a `containerRef` on the game's root wrapper `<div>` (the parent of the `<svg viewBox="0 0 100 100">`).
-2. Track `{ w, h }` of that container with a `ResizeObserver` in a `useEffect`, stored in `useState`.
-3. Derive a corrective ship box every render:
-   - Source aspect (W/H) `SRC = 187 / 265 ≈ 0.706`.
-   - Effective stretch factor `S = (containerW / containerH)` (because viewBox is square 100×100).
-   - Render the ship `<image>` with `height = 9` (unchanged) and `width = 9 * SRC / S`, then re-center: `x = -width / 2`, `y = -5.2`.
-   - Keep `preserveAspectRatio="xMidYMid meet"`.
-4. Fallback: if `containerH === 0` (first paint before observer fires), use the current `width={7}` as before so nothing flashes broken.
+Replace the single `.from("emails").select(...).limit(ROW_CAP)` call with a paginated loop using `.range(from, to)`:
 
-This makes the ship render with the same proportions as the uploaded PNG regardless of game container size, without touching gameplay coordinates (`PLAYER_Y`, `PLAYER_HALF_W`, collision math) or the rest of the SVG.
+1. Keep the existing `ROW_CAP = 20000` and 90-day `since` filter.
+2. Page in chunks of `PAGE_SIZE = 1000` ordered by `received_at desc`:
+   ```ts
+   for (let from = 0; from < ROW_CAP; from += PAGE_SIZE) {
+     const to = Math.min(from + PAGE_SIZE - 1, ROW_CAP - 1);
+     const { data, error } = await supabase
+       .from("emails")
+       .select("from_addr,from_name,received_at,folder_id,is_read,has_attachment")
+       .gte("received_at", since)
+       .order("received_at", { ascending: false })
+       .range(from, to);
+     if (error) break;
+     const batch = data ?? [];
+     emails.push(...batch);
+     if (batch.length < PAGE_SIZE) break; // no more rows
+   }
+   ```
+3. `truncated` stays `emails.length >= ROW_CAP` so the UI can still flag it.
+4. No other logic changes — aggregation, folder lookup, response shape all stay the same.
 
 ### Out of scope
 
-- No change to the home-page rockets (their SVGs use a proper square-ish viewBox and `preserveAspectRatio="meet"`, so they already render correctly).
-- No change to the PNG asset, gameplay logic, or hit-box constants.
-- Thruster polygon stays as-is (small, symmetric — stretching is visually negligible).
+- No UI changes to `src/routes/_authenticated/reports.tsx`.
+- No schema or RLS changes.
+- ROW_CAP stays at 20k (sane upper bound for a 90-day window; can be raised later if needed).
