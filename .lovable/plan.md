@@ -1,36 +1,25 @@
-# Normalize contact names + sort by first name
+# Fix: enrich loses last name + UI doesn't update after enrich
 
-## Problem
-Names on contacts come from many sources (email `from_name`, AI signature extraction, manual entry) in inconsistent formats: `"Smith, John"`, `"JOHN SMITH"`, `"john smith"`, `"\"John Smith\""`. The list is currently sorted by raw `name` in Postgres, so `"Smith, John"` sorts under S instead of J.
+## Two separate bugs
 
-## Change
+### Bug 1 — Last name disappears on Re-enrich
+In `enrichContact` (`src/lib/contacts.functions.ts`), when the user clicks Re-enrich (`force: true`), we overwrite `name` with whatever the AI returned. If signatures in the sampled emails only contain a first name (e.g. they sign off `"— John"` even though Gmail's `from_name` was `"John Federici"`), the AI returns `"John"` and we replace the better existing name `"John Federici"` with `"John"`.
 
-### 1. Add `normalizeName()` helper in `src/lib/contacts.functions.ts`
-A single pure function used everywhere we write a contact name:
-- Trim, strip surrounding quotes and angle brackets.
-- Collapse whitespace.
-- Drop common email-noise suffixes in parens (e.g. `"John Smith (via Acme)"` → `"John Smith"`).
-- If the string matches `Last, First [Middle]` (one comma, no parens), reorder to `First [Middle] Last`.
-- If the string is ALL CAPS or all lowercase and has no diacritics-only tokens, title-case it.
-- Return `null` for empty/garbage.
+**Fix (server-side):** when comparing a candidate `name` against the existing one, prefer the more complete value:
+- Compute token count for both (split on whitespace).
+- If the existing name has more tokens **and** the new name is a prefix/subset of the existing (e.g. existing `"John Federici"`, new `"John"` or `"john"`), keep existing.
+- Otherwise, prefer the candidate that has more tokens. Only fall through to "overwrite because force=true" when the new value is genuinely at least as complete.
 
-Plus a tiny `firstNameKey(name, email)` helper used for sorting: returns the first token of the normalized name, lowercased; falls back to the email local-part.
+Same guard applied in `addContactFromEmail` extraction (which already only fills empty fields, but we'll add the prefix check for consistency).
 
-### 2. Apply normalization at every write site (same file)
-- `enrichContact` — wrap the `name` field in the `patch` through `normalizeName`.
-- `scanContactFromEmail` — wrap `email.from_name` and the AI-extracted `name`.
-- `createContact` and `updateContact` — wrap incoming `name` before insert/update.
-No DB migration; we only normalize new writes. Existing rows get cleaned up the next time they're enriched or edited (acceptable — re-enrich also rewrites name when `force: true`).
+### Bug 2 — Contact detail page doesn't refresh until manual reload
+In `src/routes/_authenticated/contacts.$id.tsx`, the form is seeded from `q.data.contact` inside a `useEffect` whose dependency array is `[q.data?.contact?.id]`. After Re-enrich:
+- `qc.invalidateQueries({ queryKey: ["contact", id] })` does refetch the contact.
+- But the contact's `id` hasn't changed, so the effect never re-runs and the form keeps showing the pre-enrich values.
 
-### 3. Sort by first name in `listContacts`
-Sorting "first token of a normalized string" isn't clean in Postgres, so:
-- Keep the query as-is (no `.order` on name) and sort the returned array in JS by `firstNameKey(c.name, c.email)` ascending, case-insensitive, with empty keys last.
-- List is capped at 2000 rows, so JS sort is trivial.
-
-### 4. (Optional, included) One-time normalization of existing rows
-On the next `Re-enrich` click for any contact, the name is already overwritten. To avoid waiting for users to click each one, also normalize the **existing** `contact.name` at the top of `enrichContact` (before any AI work) and write it back if it changed — so opening a contact's page once fixes its display.
+**Fix (client-side, single file):** widen the effect's dependency to also include `q.data?.contact?.enriched_at` (and `q.data?.contact?.updated_at` if present) so the form re-syncs whenever the row is refetched with new data. Also call `await q.refetch()` after `enrich(...)` (in addition to the invalidate) so the UI updates without waiting for the next render tick.
 
 ## Out of scope
-- No UI changes (list rendering, search, group filter all untouched).
-- No DB schema change, no migration, no bulk SQL rewrite of historical names.
-- We are not splitting `name` into separate `first_name`/`last_name` columns — keeping a single normalized `"First Last"` string.
+- No realtime subscription wiring — point invalidation + refetch on the action that caused the change is enough here.
+- No DB schema change.
+- No changes to the list page (already sorts client-side from the server response).
