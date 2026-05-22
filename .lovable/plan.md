@@ -1,25 +1,36 @@
-# Smarter Re-enrich: scan more emails, prefer ones with signatures
+# Normalize contact names + sort by first name
 
 ## Problem
-Today `enrichContact` only looks at the **5 most recent** emails from the person and feeds them all to the model. If those happen to be phone replies ("Sent from my iPhone", no signature), we get nothing useful — even when older desktop emails from the same person have a full signature block.
+Names on contacts come from many sources (email `from_name`, AI signature extraction, manual entry) in inconsistent formats: `"Smith, John"`, `"JOHN SMITH"`, `"john smith"`, `"\"John Smith\""`. The list is currently sorted by raw `name` in Postgres, so `"Smith, John"` sorts under S instead of J.
 
-## Change (single file: `src/lib/contacts.functions.ts`, `enrichContact` handler)
+## Change
 
-1. **Pull a larger candidate pool** — fetch up to **40** most recent emails from `from_addr = contact.email` (still `body_text`, `snippet`, `subject`), instead of 5.
+### 1. Add `normalizeName()` helper in `src/lib/contacts.functions.ts`
+A single pure function used everywhere we write a contact name:
+- Trim, strip surrounding quotes and angle brackets.
+- Collapse whitespace.
+- Drop common email-noise suffixes in parens (e.g. `"John Smith (via Acme)"` → `"John Smith"`).
+- If the string matches `Last, First [Middle]` (one comma, no parens), reorder to `First [Middle] Last`.
+- If the string is ALL CAPS or all lowercase and has no diacritics-only tokens, title-case it.
+- Return `null` for empty/garbage.
 
-2. **Score & pick the best ~8 for the prompt**, favoring emails that are likely to contain a real signature:
-   - Strong negative signal: body contains "Sent from my iPhone / iPad / Android / mobile device / BlackBerry / Samsung" → deprioritize.
-   - Positive signals: longer `body_text` (>400 chars), presence of typical signature tokens (a phone-number regex, `linkedin.com/in/`, `http(s)://`, "—", "--", "Best,", "Regards,", "Thanks,", "Cheers,", a line that looks like a job title with a company).
-   - Sort candidates by score desc, take top 8. Always include at least 1–2 of the longest emails even if scoring is tied.
+Plus a tiny `firstNameKey(name, email)` helper used for sorting: returns the first token of the normalized name, lowercased; falls back to the email local-part.
 
-3. **Per-email signature trimming** — instead of sending 2,500 chars of each body, take the **tail** of each email (last ~1,500 chars) where the signature lives, and strip obvious quoted-reply blocks (`^>` lines, `On <date> ... wrote:` and everything after). This lets us fit more distinct emails into the prompt without blowing context.
+### 2. Apply normalization at every write site (same file)
+- `enrichContact` — wrap the `name` field in the `patch` through `normalizeName`.
+- `scanContactFromEmail` — wrap `email.from_name` and the AI-extracted `name`.
+- `createContact` and `updateContact` — wrap incoming `name` before insert/update.
+No DB migration; we only normalize new writes. Existing rows get cleaned up the next time they're enriched or edited (acceptable — re-enrich also rewrites name when `force: true`).
 
-4. **Prompt tweak** — tell the model it's looking across multiple emails from the same sender and should merge fields, preferring values that appear in more than one email; still return `null` when not clearly present. Sender email stays pinned so it never invents an address.
+### 3. Sort by first name in `listContacts`
+Sorting "first token of a normalized string" isn't clean in Postgres, so:
+- Keep the query as-is (no `.order` on name) and sort the returned array in JS by `firstNameKey(c.name, c.email)` ascending, case-insensitive, with empty keys last.
+- List is capped at 2000 rows, so JS sort is trivial.
 
-5. **Merge behavior unchanged** — same `patch` logic: fill empty fields, or overwrite all fields when `force = true` (the "Re-enrich" button already passes `force: true`).
-
-No DB schema changes. No UI changes. No new dependencies.
+### 4. (Optional, included) One-time normalization of existing rows
+On the next `Re-enrich` click for any contact, the name is already overwritten. To avoid waiting for users to click each one, also normalize the **existing** `contact.name` at the top of `enrichContact` (before any AI work) and write it back if it changed — so opening a contact's page once fixes its display.
 
 ## Out of scope
-- Scanning emails **to** this person (only `from_addr` is used, same as today).
-- Parsing HTML signatures from `body_html` — keeping `body_text`/`snippet` only to match current behavior. Can add later if results are still thin.
+- No UI changes (list rendering, search, group filter all untouched).
+- No DB schema change, no migration, no bulk SQL rewrite of historical names.
+- We are not splitting `name` into separate `first_name`/`last_name` columns — keeping a single normalized `"First Last"` string.

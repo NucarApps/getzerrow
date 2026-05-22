@@ -36,6 +36,55 @@ function isLikelyHuman(addr: string | null): boolean {
   return /@/.test(lower);
 }
 
+/** Normalize a contact display name to "First Last" form. Returns null for garbage. */
+export function normalizeName(input: string | null | undefined): string | null {
+  if (!input) return null;
+  let s = String(input).trim();
+  // Strip surrounding quotes / angle brackets
+  s = s.replace(/^["'`<\s]+|["'`>\s]+$/g, "");
+  // Drop trailing parenthetical noise like "(via Acme)" or "[External]"
+  s = s.replace(/\s*[\(\[][^)\]]*[\)\]]\s*$/g, "");
+  // Collapse whitespace
+  s = s.replace(/\s+/g, " ").trim();
+  if (!s) return null;
+  // Reject if it's actually an email address
+  if (/@/.test(s) && /\.[a-z]{2,}$/i.test(s)) return null;
+
+  // "Last, First [Middle]" → "First [Middle] Last" (single comma, no extra commas)
+  const commaCount = (s.match(/,/g) ?? []).length;
+  if (commaCount === 1) {
+    const [last, rest] = s.split(",").map((x) => x.trim());
+    if (last && rest && /^[\p{L}'’\-\. ]+$/u.test(last) && /^[\p{L}'’\-\. ]+$/u.test(rest)) {
+      s = `${rest} ${last}`.replace(/\s+/g, " ").trim();
+    }
+  }
+
+  // Title-case if ALL CAPS or all lowercase
+  const isAllCaps = s === s.toUpperCase() && /[A-Z]/.test(s);
+  const isAllLower = s === s.toLowerCase() && /[a-z]/.test(s);
+  if (isAllCaps || isAllLower) {
+    s = s
+      .toLowerCase()
+      .split(" ")
+      .map((tok) =>
+        tok
+          .split("-")
+          .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : p))
+          .join("-")
+      )
+      .join(" ");
+  }
+
+  return s || null;
+}
+
+/** Sort key: first token of normalized name, falling back to email local-part. */
+function firstNameKey(name: string | null | undefined, email: string): string {
+  const n = normalizeName(name ?? null);
+  const tok = n ? n.split(" ")[0] : (email.split("@")[0] || "");
+  return tok.toLowerCase();
+}
+
 /** List contacts for the current user. */
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -44,10 +93,17 @@ export const listContacts = createServerFn({ method: "GET" })
     const { data, error } = await supabase
       .from("contacts")
       .select("id,email,name,title,company,phone,avatar_url,source,enriched_at,created_at")
-      .order("name", { ascending: true, nullsFirst: false })
       .limit(2000);
     if (error) throw new Error(error.message);
-    return { contacts: data ?? [] };
+    const rows = (data ?? []).slice().sort((a, b) => {
+      const ka = firstNameKey(a.name, a.email);
+      const kb = firstNameKey(b.name, b.email);
+      if (!ka && kb) return 1;
+      if (ka && !kb) return -1;
+      return ka.localeCompare(kb);
+    });
+    return { contacts: rows };
+
   });
 
 /** Get a single contact + their last few emails. */
@@ -86,6 +142,15 @@ export const enrichContact = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .single();
     if (error || !contact) throw new Error("Contact not found");
+
+    // One-time normalize of existing name so opening a contact cleans it up.
+    {
+      const normalized = normalizeName(contact.name);
+      if (normalized && normalized !== contact.name) {
+        await supabase.from("contacts").update({ name: normalized }).eq("id", contact.id);
+        (contact as any).name = normalized;
+      }
+    }
 
     if (!data.force && contact.enriched_at) {
       const age = Date.now() - new Date(contact.enriched_at).getTime();
@@ -204,7 +269,8 @@ ${sample}`,
       twitter?: string | null;
     } = { enriched_at: new Date().toISOString() };
     for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
-      const v = extracted[k];
+      let v = extracted[k];
+      if (k === "name") v = normalizeName(v);
       if (v && (!contact[k] || data.force)) patch[k] = v;
     }
 
@@ -237,6 +303,7 @@ export const updateContact = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { id, ...patch } = data;
+    if ("name" in patch) patch.name = normalizeName(patch.name ?? null);
     const { data: updated, error } = await supabase
       .from("contacts")
       .update(patch)
@@ -319,10 +386,11 @@ export const createContactFromScan = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const email = data.email.trim().toLowerCase();
+    const payload = { ...data, name: normalizeName(data.name ?? null) };
     const { data: row, error } = await supabaseAdmin
       .from("contacts")
       .upsert(
-        { user_id: userId, ...data, email, source: "scan", enriched_at: new Date().toISOString() },
+        { user_id: userId, ...payload, email, source: "scan", enriched_at: new Date().toISOString() },
         { onConflict: "user_id,email" }
       )
       .select("*")
@@ -357,7 +425,7 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
         {
           user_id: userId,
           email: addr,
-          name: email.from_name?.trim() || null,
+          name: normalizeName(email.from_name) ?? null,
           source: "email" as const,
         },
         { onConflict: "user_id,email" }
@@ -404,7 +472,8 @@ ${body}`,
       phone?: string | null; website?: string | null; linkedin?: string | null; twitter?: string | null;
     } = { enriched_at: new Date().toISOString() };
     for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
-      const v = extracted[k];
+      let v = extracted[k];
+      if (k === "name") v = normalizeName(v);
       if (v && !(base as any)[k]) patch[k] = v;
     }
 
