@@ -152,6 +152,36 @@ export function FolderEditor({
     qc.invalidateQueries({ queryKey: ["folders"] });
     qc.invalidateQueries({ queryKey: ["folders-full"] });
   }
+
+  // Auto-save a single toggle column immediately, then optionally retroactively apply it.
+  async function toggleBehavior(
+    column: "auto_mark_read" | "auto_archive" | "auto_star" | "hide_from_inbox" | "skip_ai",
+    value: boolean,
+    retro: "mark_read" | "archive" | "star" | null,
+  ) {
+    const prev = local;
+    setLocal({ ...local, [column]: value });
+    const { error } = await supabase.from("folders").update({ [column]: value }).eq("id", folder.id);
+    if (error) {
+      setLocal(prev);
+      toast.error(error.message);
+      return;
+    }
+    qc.invalidateQueries({ queryKey: ["folders"] });
+    qc.invalidateQueries({ queryKey: ["folders-full"] });
+    if (value && retro) {
+      try {
+        const res = await applyBehaviorFn({ data: { folderId: folder.id, behavior: retro } });
+        if (res.count > 0) {
+          const noun = retro === "mark_read" ? "marked read" : retro === "archive" ? "archived" : "starred";
+          toast.success(`${res.count} existing email${res.count === 1 ? "" : "s"} ${noun}`);
+        }
+      } catch (e) {
+        toast.error(`Saved, but couldn't update existing emails: ${(e as Error).message}`);
+      }
+    }
+  }
+
   async function remove() {
     if (!confirm(`Delete "${folder.name}"?`)) return;
     await supabase.from("folders").delete().eq("id", folder.id);
