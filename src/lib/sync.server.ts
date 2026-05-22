@@ -378,22 +378,31 @@ export async function classifyParsedEmail(
   };
 }
 
+export type ProcessTimings = { fetch: number; ai: number; db: number };
+
 export async function processGmailMessage(
   accountId: string,
   gmailId: string,
   userId: string,
-  opts: { context?: AccountContext; skipAi?: boolean } = {},
+  opts: { context?: AccountContext; skipAi?: boolean; timings?: ProcessTimings } = {},
 ) {
+  const t = opts.timings;
 
+
+  const _t0 = performance.now();
   const { data: existing } = await supabaseAdmin
     .from("emails")
     .select("id, from_addr, subject, body_text, body_html, received_at")
     .eq("gmail_message_id", gmailId)
     .eq("gmail_account_id", accountId)
     .maybeSingle();
+  if (t) t.db += performance.now() - _t0;
 
+  const _t1 = performance.now();
   const raw = await getMessage(accountId, gmailId);
   const parsed = parseMessage(raw);
+  if (t) t.fetch += performance.now() - _t1;
+
 
   if (existing) {
     // Repair rows that were inserted with missing/blank metadata.
@@ -466,11 +475,14 @@ export async function processGmailMessage(
   // 2) Classify. If this throws or times out, the email is already in Inbox.
   let folder_id: string | null = null;
   try {
+    const _tAi = performance.now();
     const c = await classifyParsedEmail(parsed, userId, accountId, {
       context: opts.context,
       skipAi: opts.skipAi,
     });
+    if (t) t.ai += performance.now() - _tAi;
     folder_id = c.folder_id ?? null;
+    const _tDb = performance.now();
     await supabaseAdmin.from("emails").update({
       folder_id,
       ai_summary: c.ai_summary || null,
@@ -480,6 +492,7 @@ export async function processGmailMessage(
       matched_filter_ids: c.matched_filter_ids,
       matched_folder_ids: c.matched_folder_ids,
     }).eq("id", inserted.id);
+    if (t) t.db += performance.now() - _tDb;
   } catch (e) {
     console.error("classify failed (email already visible in Inbox)", e);
     await supabaseAdmin.from("emails").update({
@@ -488,6 +501,7 @@ export async function processGmailMessage(
     }).eq("id", inserted.id);
     return { id: inserted.id, classify_failed: true };
   }
+
 
   // 3) Apply Gmail label / auto-archive / auto-mark-read for the assigned folder.
   //    Use the prefetched folder list when available to avoid an extra round trip.
@@ -1142,18 +1156,21 @@ export async function runMessageJobs(
   concurrency = 16,
   opts: { priority?: number } = {},
 ) {
-  const STUCK_MS = 90 * 1000; // jobs in 'running' for >90s are presumed dead (worker timeout)
+  const STUCK_MS = 35 * 1000; // jobs in 'running' for >35s are presumed dead (worker timeout is 25s)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
 
   // ─── Self-heal: reclaim any 'running' jobs whose worker died mid-execution.
+  // Don't burn an attempt on the first reclaim — only count as a failure if the
+  // last_error is already a reclaim marker (i.e. it died twice in a row).
   const stuckCutoff = new Date(Date.now() - STUCK_MS).toISOString();
   const { data: stuck } = await supabaseAdmin
     .from("message_jobs")
-    .select("id, attempt")
+    .select("id, attempt, last_error")
     .eq("status", "running")
     .lt("locked_at", stuckCutoff);
   for (const s of stuck ?? []) {
-    const nextAttempt = (s.attempt ?? 0) + 1;
+    const wasReclaimed = typeof s.last_error === "string" && s.last_error.startsWith("stuck (worker timeout)");
+    const nextAttempt = wasReclaimed ? (s.attempt ?? 0) + 1 : (s.attempt ?? 0);
     if (nextAttempt >= MAX_JOB_ATTEMPTS) {
       await supabaseAdmin.from("message_jobs").update({
         status: "dlq",
@@ -1162,13 +1179,13 @@ export async function runMessageJobs(
         locked_at: null,
       }).eq("id", s.id);
     } else {
-      const backoff = jitter(BACKOFF_SECONDS[Math.min(nextAttempt - 1, BACKOFF_SECONDS.length - 1)]);
       await supabaseAdmin.from("message_jobs").update({
         status: "pending",
         attempt: nextAttempt,
         last_error: "stuck (worker timeout) — auto-reclaimed",
         locked_at: null,
-        next_run_at: new Date(Date.now() + backoff * 1000).toISOString(),
+        next_run_at: new Date().toISOString(),
+
       }).eq("id", s.id);
     }
   }
@@ -1287,14 +1304,21 @@ export async function runMessageJobs(
     const ctx = contextByAccount.get(job.gmail_account_id);
     // For backfill jobs (priority>=10) defer AI to the batched pass below.
     const deferAi = job.priority >= 10;
+    const timings: ProcessTimings = { fetch: 0, ai: 0, db: 0 };
     try {
       const result = (await Promise.race([
         processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id, {
           context: ctx,
           skipAi: deferAi,
+          timings,
         }),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`job timeout after ${JOB_TIMEOUT_MS}ms`)), JOB_TIMEOUT_MS),
+          setTimeout(
+            () => reject(new Error(
+              `job timeout after ${JOB_TIMEOUT_MS}ms (fetch=${timings.fetch.toFixed(0)} ai=${timings.ai.toFixed(0)} db=${timings.db.toFixed(0)})`,
+            )),
+            JOB_TIMEOUT_MS,
+          ),
         ),
       ])) as Awaited<ReturnType<typeof processGmailMessage>>;
 
@@ -1321,6 +1345,7 @@ export async function runMessageJobs(
       await handleError(job, e);
     }
   };
+
 
   // ─── Pool of N workers draining the claimed queue.
   const queue = [...claimed];

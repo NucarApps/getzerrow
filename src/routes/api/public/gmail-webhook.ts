@@ -100,17 +100,17 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   errorMsg = (e as Error)?.message ?? String(e);
                 }
               }
-              // Drain ONLY the jobs we just enqueued (small + bounded) so the
-              // Inbox realtime subscription fires quickly for this push. The
-              // background worker (gmail-process-jobs cron, every minute) owns
-              // the rest of the queue — don't let one push request try to
-              // process the whole backlog, that's what made activity look hung.
+              // Drain up to 50 live-priority jobs after enqueueing so a burst
+              // of pushes doesn't have to wait for the next cron tick. Scoped
+              // to priority=0 (live mail) so a backfill backlog can't starve
+              // newly-arrived messages. The background worker
+              // (gmail-process-jobs cron) still owns the rest of the queue.
               try {
-                const limit = Math.min(Math.max(enqueuedCount, 0), 10);
-                if (limit > 0) await runMessageJobs(limit);
+                await runMessageJobs(50, 16, { priority: 0 });
               } catch (e) {
                 console.error("inline runMessageJobs failed", e);
               }
+
 
 
 
