@@ -1,38 +1,17 @@
-## Reports page — inbox stats & top domains
+## Replace home-page rocket with the Zerrow ship asset
 
-Add a new authenticated route `/reports` linked in the sidebar right under Inbox. It surfaces fun, glanceable stats computed from the `emails` table for the current user.
+Swap the hand-drawn SVG rocket on the landing page Launchpad with the same `src/assets/zerrow-ship.png` used in the Space Invaders game, so the brand ship is consistent across the app.
 
-### Route
-- New file: `src/routes/_authenticated/reports.tsx` (protected by existing `_authenticated` layout).
-- Sidebar entry in `src/routes/_authenticated.tsx`, directly under the Inbox button, using a `BarChart3` Lucide icon. Active-state styling matches existing buttons.
+### Changes
 
-### Data
-- Single server fn `getInboxReport` in `src/lib/reports.functions.ts` using `requireSupabaseAuth`.
-- Pulls last 90 days of emails (`from_addr`, `received_at`, `folder_id`, `is_read`, `has_attachment`, `raw_labels`) for the user, capped to a sensible row limit (e.g. 20k).
-- Computes server-side:
-  - Total received (90d / 30d / 7d)
-  - Average emails per day (last 30d)
-  - Busiest day of week + busiest hour of day (histograms)
-  - Top 10 sender domains (parsed from `from_addr`) with counts + % share
-  - Top 10 individual senders
-  - Read vs unread split
-  - % with attachments
-  - Per-folder breakdown (join `folders` for name + color)
-  - 30-day sparkline of daily volume
+**`src/routes/index.tsx`**
 
-### UI
-- Header: "Inbox Report" + subhead "Last 90 days".
-- Stat cards row: total, avg/day, busiest day, busiest hour, unread %, attachment %.
-- Two-column section:
-  - Top domains list (bar-style rows with count + share).
-  - Top senders list (same treatment).
-- Daily volume sparkline (simple inline SVG, no new deps).
-- Folder breakdown bars using folder color.
-- Empty state when zero emails.
-- Uses existing semantic tokens; no new colors. Loading via TanStack Query + skeletons matching existing pages.
+1. Add `import shipUrl from "@/assets/zerrow-ship.png"` at the top.
+2. **Main launchpad rocket (lines ~220–238)** — replace the 7 `<path>` elements inside `<svg className="rocket" viewBox="0 0 120 280">` with a single `<image href={shipUrl} x="10" y="0" width="100" height="260" preserveAspectRatio="xMidYMid meet" />`. Keep the surrounding `.rocket-wrap`, `.exhaust`, `.smoke`, and `.sparks` markup untouched so the existing liftoff animation, exhaust glow, and smoke effects continue to work.
+3. **Tracking-arc mini rocket (lines ~163–172)** — replace the 7 `<path>` elements inside `<g className="tracking__rocket">` with a single `<image href={shipUrl} x="20" y="0" width="80" height="230" preserveAspectRatio="xMidYMid meet" />` so the small rocket that travels the arc also uses the brand ship.
 
 ### Out of scope
-- No date range picker (fixed 90d window v1).
-- No CSV export.
-- No per-day filtering / drill-through.
-- No new tables or migrations.
+
+- No CSS / animation changes (rocket-wrap, exhaust, smoke, arc motion all stay).
+- No new asset generation — reuses the existing `src/assets/zerrow-ship.png`.
+- Telemetry numbers, Launchpad chrome, and copy unchanged.
