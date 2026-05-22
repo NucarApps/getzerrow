@@ -63,6 +63,7 @@ function ContactDetail() {
   });
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     if (q.data?.contact) {
