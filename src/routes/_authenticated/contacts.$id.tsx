@@ -28,8 +28,30 @@ function ContactDetail() {
   const update = useServerFn(updateContact);
   const del = useServerFn(deleteContact);
   const sendCard = useServerFn(sendMyCard);
+  const listGroups = useServerFn(listContactGroups);
+  const setGroups = useServerFn(setContactGroups);
 
   const q = useQuery({ queryKey: ["contact", id], queryFn: () => fetchOne({ data: { id } }) });
+  const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
+
+  const myGroupIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of gq.data?.memberships ?? []) {
+      if (m.contact_id === id) ids.add(m.group_id);
+    }
+    return ids;
+  }, [gq.data, id]);
+
+  async function toggleGroup(gid: string) {
+    const next = new Set(myGroupIds);
+    if (next.has(gid)) next.delete(gid); else next.add(gid);
+    try {
+      await setGroups({ data: { contactId: id, groupIds: [...next] } });
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    }
+  }
 
   const [form, setForm] = useState({
     name: "", title: "", company: "", phone: "",
