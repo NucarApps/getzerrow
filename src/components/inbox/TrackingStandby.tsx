@@ -646,14 +646,23 @@ export function TrackingStandby() {
             {(keysRef.current.left || keysRef.current.right) && (
               <polygon points="-0.8,3 0.8,3 0,5.5" fill="#ff8a3d" className="thruster" />
             )}
-            <image
-              href={shipUrl}
-              x={-3.5}
-              y={-5.2}
-              width={7}
-              height={9}
-              preserveAspectRatio="xMidYMid meet"
-            />
+            {(() => {
+              const SHIP_SRC_RATIO = 187 / 265; // native W/H of the PNG
+              const shipH = 9;
+              const stretch = containerSize.h > 0 ? containerSize.w / containerSize.h : 1;
+              const shipW = stretch > 0 ? (shipH * SHIP_SRC_RATIO) / stretch : 7;
+              return (
+                <image
+                  href={shipUrl}
+                  x={-shipW / 2}
+                  y={-5.2}
+                  width={shipW}
+                  height={shipH}
+                  preserveAspectRatio="xMidYMid meet"
+                />
+              );
+            })()}
+
           </g>
         )}
       </svg>
