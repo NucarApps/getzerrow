@@ -150,6 +150,7 @@ function matchByFilters(
       filter: matched[0].filter,
       matched_filters: matched[0].allMatches,
       all_matched_folder_ids: matched.map((m) => m.folder.id),
+      tree_used: matched[0].treeUsed,
     };
   }
   if (excludedFolders.length > 0) {
