@@ -91,8 +91,14 @@ function ContactDetail() {
       const r = await enrich({ data: { id, force } });
       if (r.skipped) toast.info("Already enriched recently");
       else toast.success("Enriched from email signatures");
+      if (r.contact) {
+        qc.setQueryData(["contact", id], (prev: any) => ({
+          contact: r.contact,
+          recentEmails: prev?.recentEmails ?? [],
+        }));
+      }
       await qc.invalidateQueries({ queryKey: ["contact", id] });
-      await q.refetch();
+      await qc.invalidateQueries({ queryKey: ["contacts"] });
     } catch (e: any) {
       toast.error(e?.message ?? "Enrich failed");
     } finally {
