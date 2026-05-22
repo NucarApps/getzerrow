@@ -445,3 +445,243 @@ function GroupEditorDialog({
     </Dialog>
   );
 }
+
+function AddContactsDialog({
+  open, onOpenChange, onAdded,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onAdded: () => void;
+}) {
+  const createManual = useServerFn(createContactManual);
+  const listFolders = useServerFn(listFoldersForPicker);
+  const listSenders = useServerFn(listUniqueInboxSenders);
+  const bulkAdd = useServerFn(bulkCreateContactsFromEmails);
+
+  const [tab, setTab] = useState<"manual" | "inbox">("manual");
+
+  // Manual form state
+  const [m, setM] = useState({ email: "", name: "", title: "", company: "", phone: "", website: "", linkedin: "", twitter: "" });
+  const [saving, setSaving] = useState(false);
+
+  // Inbox tab state
+  const [folderIds, setFolderIds] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    if (!open) {
+      setM({ email: "", name: "", title: "", company: "", phone: "", website: "", linkedin: "", twitter: "" });
+      setFolderIds([]); setSearch(""); setDebounced(""); setSelected(new Set()); setTab("manual");
+    }
+  }, [open]);
+
+  const foldersQ = useQuery({
+    queryKey: ["folders-picker"],
+    queryFn: () => listFolders(),
+    enabled: open,
+  });
+
+  const sendersQ = useQuery({
+    queryKey: ["inbox-senders", folderIds.join(","), debounced],
+    queryFn: () => listSenders({ data: { folderIds: folderIds.length ? folderIds : undefined, search: debounced || undefined } }),
+    enabled: open && tab === "inbox",
+  });
+
+  async function submitManual() {
+    if (!/.+@.+\..+/.test(m.email)) { toast.error("Enter a valid email"); return; }
+    setSaving(true);
+    try {
+      await createManual({ data: {
+        email: m.email,
+        name: m.name || null, title: m.title || null, company: m.company || null,
+        phone: m.phone || null, website: m.website || null, linkedin: m.linkedin || null, twitter: m.twitter || null,
+      } });
+      toast.success("Contact added");
+      onAdded();
+      onOpenChange(false);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Couldn't add contact");
+    } finally { setSaving(false); }
+  }
+
+  function toggleFolder(id: string) {
+    setFolderIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  }
+
+  function toggleSender(email: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email); else next.add(email);
+      return next;
+    });
+  }
+
+  const senders = sendersQ.data?.senders ?? [];
+  const allVisibleSelected = senders.length > 0 && senders.every((s) => selected.has(s.email));
+
+  function selectAllVisible() {
+    if (allVisibleSelected) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const s of senders) next.delete(s.email);
+        return next;
+      });
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const s of senders) next.add(s.email);
+        return next;
+      });
+    }
+  }
+
+  async function submitBulk() {
+    if (selected.size === 0) return;
+    const items = senders
+      .filter((s) => selected.has(s.email))
+      .map((s) => ({ email: s.email, name: s.name }));
+    if (items.length === 0) return;
+    setAdding(true);
+    try {
+      const r = await bulkAdd({ data: { items } });
+      toast.success(`Added ${r.created} ${r.created === 1 ? "contact" : "contacts"}`);
+      onAdded();
+      onOpenChange(false);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Couldn't add contacts");
+    } finally { setAdding(false); }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Add contacts</DialogTitle>
+          <DialogDescription>Enter someone manually or pick from senders in your inbox.</DialogDescription>
+        </DialogHeader>
+
+        <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="flex-1 flex flex-col min-h-0">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="manual"><UserPlus className="mr-2 h-4 w-4" /> Manual</TabsTrigger>
+            <TabsTrigger value="inbox"><Inbox className="mr-2 h-4 w-4" /> From inbox</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="manual" className="space-y-3 pt-3 overflow-y-auto">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Email *"><Input type="email" value={m.email} onChange={(e) => setM({ ...m, email: e.target.value })} placeholder="person@example.com" autoFocus /></Field>
+              <Field label="Name"><Input value={m.name} onChange={(e) => setM({ ...m, name: e.target.value })} placeholder="Jane Doe" /></Field>
+              <Field label="Title"><Input value={m.title} onChange={(e) => setM({ ...m, title: e.target.value })} /></Field>
+              <Field label="Company"><Input value={m.company} onChange={(e) => setM({ ...m, company: e.target.value })} /></Field>
+              <Field label="Phone"><Input value={m.phone} onChange={(e) => setM({ ...m, phone: e.target.value })} /></Field>
+              <Field label="Website"><Input value={m.website} onChange={(e) => setM({ ...m, website: e.target.value })} /></Field>
+              <Field label="LinkedIn"><Input value={m.linkedin} onChange={(e) => setM({ ...m, linkedin: e.target.value })} /></Field>
+              <Field label="Twitter / X"><Input value={m.twitter} onChange={(e) => setM({ ...m, twitter: e.target.value })} /></Field>
+            </div>
+            <DialogFooter className="pt-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+              <Button onClick={submitManual} disabled={saving || !m.email}>{saving ? "Adding…" : "Add contact"}</Button>
+            </DialogFooter>
+          </TabsContent>
+
+          <TabsContent value="inbox" className="flex flex-col min-h-0 pt-3 gap-3">
+            <div>
+              <Label className="mb-1.5 block text-xs uppercase tracking-widest text-muted-foreground">Search in folders</Label>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => setFolderIds([])}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${folderIds.length === 0 ? "border-foreground/40 bg-accent text-accent-foreground" : "border-border bg-card/60 text-muted-foreground hover:text-foreground"}`}
+                >
+                  All folders
+                </button>
+                {(foldersQ.data?.folders ?? []).map((f: any) => {
+                  const on = folderIds.includes(f.id);
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => toggleFolder(f.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${on ? "border-foreground/40 bg-accent text-accent-foreground" : "border-border bg-card/60 text-foreground hover:bg-accent/40"}`}
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ background: f.color }} />
+                      {f.name}
+                      {on && <Check className="h-3 w-3" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Search senders by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <button onClick={selectAllVisible} disabled={senders.length === 0} className="underline-offset-2 hover:underline disabled:opacity-50">
+                {allVisibleSelected ? "Unselect all" : "Select all visible"}
+              </button>
+              <span>{selected.size} selected</span>
+            </div>
+
+            <div className="flex-1 min-h-[200px] max-h-[40vh] overflow-y-auto rounded-md border border-border bg-card/40">
+              {sendersQ.isLoading ? (
+                <div className="p-4 text-sm text-muted-foreground">Loading senders…</div>
+              ) : senders.length === 0 ? (
+                <div className="p-4 text-sm text-muted-foreground">No new senders found in this scope.</div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {senders.map((s) => {
+                    const checked = selected.has(s.email);
+                    return (
+                      <li key={s.email}>
+                        <button
+                          onClick={() => toggleSender(s.email)}
+                          className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/40"
+                        >
+                          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}>
+                            {checked && <Check className="h-3.5 w-3.5" />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-foreground">{s.name || s.email}</div>
+                            <div className="truncate text-xs text-muted-foreground">{s.email}</div>
+                          </div>
+                          <div className="text-right text-[11px] text-muted-foreground shrink-0">
+                            <div>{s.count} {s.count === 1 ? "msg" : "msgs"}</div>
+                            {s.lastReceivedAt && <div>{new Date(s.lastReceivedAt).toLocaleDateString()}</div>}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={adding}>Cancel</Button>
+              <Button onClick={submitBulk} disabled={adding || selected.size === 0}>
+                {adding ? "Adding…" : `Add ${selected.size || ""} ${selected.size === 1 ? "contact" : "contacts"}`}
+              </Button>
+            </DialogFooter>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <Label className="mb-1 block text-xs text-muted-foreground">{label}</Label>
+      {children}
+    </div>
+  );
+}
