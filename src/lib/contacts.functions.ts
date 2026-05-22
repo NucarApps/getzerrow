@@ -36,6 +36,55 @@ function isLikelyHuman(addr: string | null): boolean {
   return /@/.test(lower);
 }
 
+/** Normalize a contact display name to "First Last" form. Returns null for garbage. */
+export function normalizeName(input: string | null | undefined): string | null {
+  if (!input) return null;
+  let s = String(input).trim();
+  // Strip surrounding quotes / angle brackets
+  s = s.replace(/^["'`<\s]+|["'`>\s]+$/g, "");
+  // Drop trailing parenthetical noise like "(via Acme)" or "[External]"
+  s = s.replace(/\s*[\(\[][^)\]]*[\)\]]\s*$/g, "");
+  // Collapse whitespace
+  s = s.replace(/\s+/g, " ").trim();
+  if (!s) return null;
+  // Reject if it's actually an email address
+  if (/@/.test(s) && /\.[a-z]{2,}$/i.test(s)) return null;
+
+  // "Last, First [Middle]" → "First [Middle] Last" (single comma, no extra commas)
+  const commaCount = (s.match(/,/g) ?? []).length;
+  if (commaCount === 1) {
+    const [last, rest] = s.split(",").map((x) => x.trim());
+    if (last && rest && /^[\p{L}'’\-\. ]+$/u.test(last) && /^[\p{L}'’\-\. ]+$/u.test(rest)) {
+      s = `${rest} ${last}`.replace(/\s+/g, " ").trim();
+    }
+  }
+
+  // Title-case if ALL CAPS or all lowercase
+  const isAllCaps = s === s.toUpperCase() && /[A-Z]/.test(s);
+  const isAllLower = s === s.toLowerCase() && /[a-z]/.test(s);
+  if (isAllCaps || isAllLower) {
+    s = s
+      .toLowerCase()
+      .split(" ")
+      .map((tok) =>
+        tok
+          .split("-")
+          .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : p))
+          .join("-")
+      )
+      .join(" ");
+  }
+
+  return s || null;
+}
+
+/** Sort key: first token of normalized name, falling back to email local-part. */
+function firstNameKey(name: string | null | undefined, email: string): string {
+  const n = normalizeName(name ?? null);
+  const tok = n ? n.split(" ")[0] : (email.split("@")[0] || "");
+  return tok.toLowerCase();
+}
+
 /** List contacts for the current user. */
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -44,10 +93,17 @@ export const listContacts = createServerFn({ method: "GET" })
     const { data, error } = await supabase
       .from("contacts")
       .select("id,email,name,title,company,phone,avatar_url,source,enriched_at,created_at")
-      .order("name", { ascending: true, nullsFirst: false })
       .limit(2000);
     if (error) throw new Error(error.message);
-    return { contacts: data ?? [] };
+    const rows = (data ?? []).slice().sort((a, b) => {
+      const ka = firstNameKey(a.name, a.email);
+      const kb = firstNameKey(b.name, b.email);
+      if (!ka && kb) return 1;
+      if (ka && !kb) return -1;
+      return ka.localeCompare(kb);
+    });
+    return { contacts: rows };
+
   });
 
 /** Get a single contact + their last few emails. */
