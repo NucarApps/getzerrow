@@ -386,10 +386,11 @@ export const createContactFromScan = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const email = data.email.trim().toLowerCase();
+    const payload = { ...data, name: normalizeName(data.name ?? null) };
     const { data: row, error } = await supabaseAdmin
       .from("contacts")
       .upsert(
-        { user_id: userId, ...data, email, source: "scan", enriched_at: new Date().toISOString() },
+        { user_id: userId, ...payload, email, source: "scan", enriched_at: new Date().toISOString() },
         { onConflict: "user_id,email" }
       )
       .select("*")
