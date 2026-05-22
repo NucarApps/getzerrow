@@ -351,7 +351,8 @@ function GroupPill({
       )}
     </div>
   );
-}
+
+function GroupEditorDialog({
   state, onClose, onChanged,
 }: {
   state: null | { mode: "create" } | { mode: "edit"; group: GroupRow };
