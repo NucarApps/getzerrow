@@ -296,8 +296,9 @@ ${sample}`,
     for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
       let v = extracted[k];
       if (k === "name") {
-        const better = pickBetterName(contact.name, v);
-        if (better && better !== contact.name) patch.name = better;
+        let best = pickBetterName(contact.name, fromNameCandidate);
+        best = pickBetterName(best, v);
+        if (best && best !== contact.name) patch.name = best;
         continue;
       }
       if (v && (!contact[k] || data.force)) patch[k] = v;
