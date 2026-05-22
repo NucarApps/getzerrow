@@ -208,10 +208,10 @@ function Sparkline({ daily }: { daily: Array<{ date: string; count: number }> })
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="h-32 w-full" preserveAspectRatio="none">
-      <path d={area} fill="hsl(var(--primary) / 0.15)" />
-      <path d={path} fill="none" stroke="hsl(var(--primary))" strokeWidth={1.5} />
+      <path d={area} fill="var(--primary)" opacity={0.18} />
+      <path d={path} fill="none" stroke="var(--primary)" strokeWidth={1.5} />
       {pts.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={1.5} fill="hsl(var(--primary))" />
+        <circle key={i} cx={x} cy={y} r={1.5} fill="var(--primary)" />
       ))}
     </svg>
   );
