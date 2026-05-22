@@ -148,6 +148,50 @@ export type ClassificationResult = {
   matched_filter_ids: string[];
 };
 
+/**
+ * Per-account context shared across a batch of jobs so we don't re-fetch
+ * folders / filters / overrides / examples for every single message. Build
+ * once at the top of a worker invocation with `loadAccountContext`.
+ */
+export type AccountContext = {
+  folders: Folder[];
+  filters: Filter[];
+  overrides: Array<{ match_type: string; value: string }>;
+  enrichedFolders: ClassifyFolder[];
+};
+
+const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
+const ACCOUNT_CONTEXT_TTL_MS = 30_000;
+
+export async function loadAccountContext(accountId: string, userId: string): Promise<AccountContext> {
+  const cached = accountContextCache.get(accountId);
+  if (cached && cached.expires > Date.now()) return cached.ctx;
+
+  const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
+    supabaseAdmin
+      .from("folders")
+      .select("*")
+      .eq("gmail_account_id", accountId)
+      .order("priority", { ascending: false }),
+    supabaseAdmin.from("folder_filters").select("id, folder_id, field, op, value"),
+    supabaseAdmin.from("inbox_overrides").select("match_type, value").eq("user_id", userId),
+  ]);
+
+  const folderList = (folders ?? []) as Folder[];
+  const folderIds = new Set(folderList.map((f) => f.id));
+  const filterList = ((filters ?? []) as Filter[]).filter((f) => folderIds.has(f.folder_id));
+  const enrichedFolders = await loadFoldersWithExamples(folderList);
+
+  const ctx: AccountContext = {
+    folders: folderList,
+    filters: filterList,
+    overrides: overrides ?? [],
+    enrichedFolders,
+  };
+  accountContextCache.set(accountId, { ctx, expires: Date.now() + ACCOUNT_CONTEXT_TTL_MS });
+  return ctx;
+}
+
 export async function classifyParsedEmail(
   parsed: {
     from_addr: string;
@@ -163,17 +207,12 @@ export async function classifyParsedEmail(
   },
   userId: string,
   accountId: string,
-  opts: { skipGmailLabelMatch?: boolean } = {},
+  opts: { skipGmailLabelMatch?: boolean; context?: AccountContext; skipAi?: boolean } = {},
 ): Promise<ClassificationResult> {
-  const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
-    supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId).order("priority", { ascending: false }),
-    supabaseAdmin.from("folder_filters").select("id, folder_id, field, op, value"),
-    supabaseAdmin.from("inbox_overrides").select("match_type, value").eq("user_id", userId),
-  ]);
-
-  const folderList = (folders ?? []) as Folder[];
-  const folderIds = new Set(folderList.map((f) => f.id));
-  const filterList = ((filters ?? []) as Filter[]).filter((f) => folderIds.has(f.folder_id));
+  const context = opts.context ?? (await loadAccountContext(accountId, userId));
+  const folderList = context.folders;
+  const filterList = context.filters;
+  const overrides = context.overrides;
 
   let folder_id: string | null = null;
   let classified_by = "none";
@@ -185,7 +224,7 @@ export async function classifyParsedEmail(
 
   const fromAddr = (parsed.from_addr || "").toLowerCase();
   const fromDomain = fromAddr.split("@")[1] || "";
-  const overrideHit = (overrides ?? []).find((o) => {
+  const overrideHit = overrides.find((o) => {
     const val = (o.value || "").toLowerCase();
     return o.match_type === "email" ? val === fromAddr : val === fromDomain;
   });
@@ -195,10 +234,6 @@ export async function classifyParsedEmail(
     classification_reason = `Global inbox list: ${overrideHit.match_type} "${overrideHit.value}"`;
     aiSkipped = true;
   } else {
-    // Gmail label match always wins — if the message already has one of our
-    // folder labels at sync time, that's either a manual move in Gmail or a
-    // label we previously applied. Either way, we should NOT re-attribute it
-    // to a domain/filter rule that happens to also match.
     const labeledFolder = opts.skipGmailLabelMatch
       ? undefined
       : folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
@@ -226,10 +261,9 @@ export async function classifyParsedEmail(
     }
   }
 
-  if (!folder_id && !aiSkipped && folderList.length > 0) {
+  if (!folder_id && !aiSkipped && !opts.skipAi && folderList.length > 0) {
     try {
-      const enriched = await loadFoldersWithExamples(folderList);
-      const r = await classifyEmail(parsed, enriched);
+      const r = await classifyEmail(parsed, context.enrichedFolders);
       folder_id = r.folder_id;
       confidence = r.confidence;
       summary = r.summary;
