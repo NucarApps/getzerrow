@@ -391,28 +391,29 @@ export function FolderEditor({
           <div className="mt-4 grid grid-cols-2 gap-3">
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto-archive
-              <Switch checked={local.auto_archive} onCheckedChange={(v) => setLocal({ ...local, auto_archive: v })} />
+              <Switch checked={local.auto_archive} onCheckedChange={(v) => toggleBehavior("auto_archive", v, "archive")} />
             </label>
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto mark-read
-              <Switch checked={local.auto_mark_read} onCheckedChange={(v) => setLocal({ ...local, auto_mark_read: v })} />
+              <Switch checked={local.auto_mark_read} onCheckedChange={(v) => toggleBehavior("auto_mark_read", v, "mark_read")} />
             </label>
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Star matching emails (also stars them in Gmail)">
               Auto-star
-              <Switch checked={local.auto_star ?? false} onCheckedChange={(v) => setLocal({ ...local, auto_star: v })} />
+              <Switch checked={local.auto_star ?? false} onCheckedChange={(v) => toggleBehavior("auto_star", v, "star")} />
             </label>
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Hide from main Inbox view (still visible inside this folder)">
               Hide from Inbox
-              <Switch checked={local.hide_from_inbox ?? false} onCheckedChange={(v) => setLocal({ ...local, hide_from_inbox: v })} />
+              <Switch checked={local.hide_from_inbox ?? false} onCheckedChange={(v) => toggleBehavior("hide_from_inbox", v, "archive")} />
             </label>
             <label className="col-span-2 flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Only use the rules below — never let AI assign emails to this folder">
               <div>
                 Rules only
                 <span className="ml-2 text-xs text-muted-foreground">(skip AI fallback for this folder)</span>
               </div>
-              <Switch checked={local.skip_ai ?? false} onCheckedChange={(v) => setLocal({ ...local, skip_ai: v })} />
+              <Switch checked={local.skip_ai ?? false} onCheckedChange={(v) => toggleBehavior("skip_ai", v, null)} />
             </label>
           </div>
+
 
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border p-3 text-sm">
