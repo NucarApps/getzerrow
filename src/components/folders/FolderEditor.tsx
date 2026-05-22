@@ -161,7 +161,8 @@ export function FolderEditor({
   ) {
     const prev = local;
     setLocal({ ...local, [column]: value });
-    const { error } = await supabase.from("folders").update({ [column]: value }).eq("id", folder.id);
+    const patch = { [column]: value } as Record<typeof column, boolean>;
+    const { error } = await supabase.from("folders").update(patch).eq("id", folder.id);
     if (error) {
       setLocal(prev);
       toast.error(error.message);
