@@ -274,9 +274,16 @@ function ContactsPage() {
         onClose={() => setGroupDialog(null)}
         onChanged={() => qc.invalidateQueries({ queryKey: ["contact-groups"] })}
       />
+
+      <AddContactsDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onAdded={() => qc.invalidateQueries({ queryKey: ["contacts"] })}
+      />
     </div>
   );
 }
+
 
 function GroupChip({
   active, color, label, count, onClick, onEdit,
