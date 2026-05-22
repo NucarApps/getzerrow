@@ -4,6 +4,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch, buildFolderProfile, type ClassifyFolder } from "./ai.server";
 
+type RuleNode =
+  | { type: "group"; op: "and" | "or"; children: RuleNode[] }
+  | { type: "cond"; field: string; op: string; value: string };
+
 type Folder = {
   id: string;
   name: string;
@@ -19,6 +23,7 @@ type Folder = {
   priority: number;
   gmail_account_id: string;
   filter_logic: "any" | "all";
+  filter_tree: RuleNode | null;
 };
 
 type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
