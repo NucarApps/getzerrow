@@ -315,6 +315,7 @@ export type Database = {
           ai_rule: string | null
           auto_archive: boolean
           auto_mark_read: boolean
+          auto_star: boolean
           color: string
           created_at: string
           filter_logic: string
@@ -322,17 +323,20 @@ export type Database = {
           gmail_backfill_oldest_received_at: string | null
           gmail_backfill_page_token: string | null
           gmail_label_id: string | null
+          hide_from_inbox: boolean
           id: string
           last_learned_at: string | null
           learned_profile: string | null
           name: string
           priority: number
+          skip_ai: boolean
           user_id: string
         }
         Insert: {
           ai_rule?: string | null
           auto_archive?: boolean
           auto_mark_read?: boolean
+          auto_star?: boolean
           color?: string
           created_at?: string
           filter_logic?: string
@@ -340,17 +344,20 @@ export type Database = {
           gmail_backfill_oldest_received_at?: string | null
           gmail_backfill_page_token?: string | null
           gmail_label_id?: string | null
+          hide_from_inbox?: boolean
           id?: string
           last_learned_at?: string | null
           learned_profile?: string | null
           name: string
           priority?: number
+          skip_ai?: boolean
           user_id: string
         }
         Update: {
           ai_rule?: string | null
           auto_archive?: boolean
           auto_mark_read?: boolean
+          auto_star?: boolean
           color?: string
           created_at?: string
           filter_logic?: string
@@ -358,11 +365,13 @@ export type Database = {
           gmail_backfill_oldest_received_at?: string | null
           gmail_backfill_page_token?: string | null
           gmail_label_id?: string | null
+          hide_from_inbox?: boolean
           id?: string
           last_learned_at?: string | null
           learned_profile?: string | null
           name?: string
           priority?: number
+          skip_ai?: boolean
           user_id?: string
         }
         Relationships: [
