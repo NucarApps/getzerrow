@@ -495,6 +495,7 @@ export async function processGmailMessage(
     let folder: {
       id: string; gmail_label_id: string | null; auto_archive: boolean;
       auto_mark_read: boolean; auto_star: boolean; hide_from_inbox: boolean;
+      forward_to: string | null; snooze_hours: number;
     } | null = null;
     const cached = opts.context?.folders.find((f) => f.id === folder_id);
     if (cached) {
@@ -505,11 +506,13 @@ export async function processGmailMessage(
         auto_mark_read: cached.auto_mark_read,
         auto_star: cached.auto_star,
         hide_from_inbox: cached.hide_from_inbox,
+        forward_to: cached.forward_to,
+        snooze_hours: cached.snooze_hours,
       };
     } else {
       const { data } = await supabaseAdmin
         .from("folders")
-        .select("id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox")
+        .select("id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours")
         .eq("id", folder_id)
         .maybeSingle();
       folder = data ?? null;
@@ -526,11 +529,28 @@ export async function processGmailMessage(
       if (addLabels.length || removeLabels.length) {
         try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
       }
-      if (inInbox && effectiveArchive) {
-        await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", inserted.id);
+      const patch: Record<string, unknown> = {};
+      if (inInbox && effectiveArchive) patch.is_archived = true;
+      if (folder.auto_mark_read) patch.is_read = true;
+      if (folder.snooze_hours && folder.snooze_hours > 0) {
+        patch.snoozed_until = new Date(Date.now() + folder.snooze_hours * 3600_000).toISOString();
       }
-      if (folder.auto_mark_read) {
-        await supabaseAdmin.from("emails").update({ is_read: true }).eq("id", inserted.id);
+      if (folder.forward_to) {
+        try {
+          await sendMessage(
+            accountId,
+            folder.forward_to,
+            `Fwd: ${parsed.subject || "(no subject)"}`,
+            `---------- Forwarded message ----------\nFrom: ${parsed.from_name || ""} <${parsed.from_addr}>\nDate: ${parsed.received_at}\nSubject: ${parsed.subject}\n\n${parsed.body_text || parsed.snippet || ""}`,
+          );
+          patch.forwarded_to = folder.forward_to;
+          patch.forwarded_at = new Date().toISOString();
+        } catch (e) {
+          console.error("auto-forward failed", e);
+        }
+      }
+      if (Object.keys(patch).length > 0) {
+        await supabaseAdmin.from("emails").update(patch).eq("id", inserted.id);
       }
     }
   }
