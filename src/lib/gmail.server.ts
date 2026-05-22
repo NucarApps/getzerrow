@@ -117,6 +117,26 @@ export async function modifyMessage(accountId: string, id: string, addLabelIds: 
   });
 }
 
+/** Batch-modify up to 1000 message ids at once. Chunks larger inputs. Returns total processed. */
+export async function batchModifyMessages(
+  accountId: string,
+  ids: string[],
+  addLabelIds: string[] = [],
+  removeLabelIds: string[] = [],
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  let processed = 0;
+  for (let i = 0; i < ids.length; i += 1000) {
+    const chunk = ids.slice(i, i + 1000);
+    await gmailFetch(accountId, `/users/me/messages/batchModify`, {
+      method: "POST",
+      body: JSON.stringify({ ids: chunk, addLabelIds, removeLabelIds }),
+    });
+    processed += chunk.length;
+  }
+  return processed;
+}
+
 export async function trashMessage(accountId: string, id: string) {
   return gmailFetch(accountId, `/users/me/messages/${id}/trash`, { method: "POST" });
 }
