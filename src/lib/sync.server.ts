@@ -285,17 +285,22 @@ export async function classifyParsedEmail(
   }
 
   if (!folder_id && !aiSkipped && !opts.skipAi && folderList.length > 0) {
-    try {
-      const r = await classifyEmail(parsed, context.enrichedFolders);
-      folder_id = r.folder_id;
-      confidence = r.confidence;
-      summary = r.summary;
-      classified_by = "ai";
-      classification_reason = r.reason || null;
-    } catch (e) {
-      console.error("AI classify failed", e);
-      classified_by = "ai_error";
-      classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
+    // Exclude folders flagged skip_ai from the AI candidate set.
+    const skipAiIds = new Set(folderList.filter((f) => f.skip_ai).map((f) => f.id));
+    const aiFolders = context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
+    if (aiFolders.length > 0) {
+      try {
+        const r = await classifyEmail(parsed, aiFolders);
+        folder_id = r.folder_id;
+        confidence = r.confidence;
+        summary = r.summary;
+        classified_by = "ai";
+        classification_reason = r.reason || null;
+      } catch (e) {
+        console.error("AI classify failed", e);
+        classified_by = "ai_error";
+        classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
+      }
     }
   }
 
