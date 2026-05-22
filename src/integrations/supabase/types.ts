@@ -65,6 +65,87 @@ export type Database = {
         }
         Relationships: []
       }
+      contact_cards_sent: {
+        Row: {
+          contact_id: string | null
+          id: string
+          sent_at: string
+          to_email: string
+          user_id: string
+        }
+        Insert: {
+          contact_id?: string | null
+          id?: string
+          sent_at?: string
+          to_email: string
+          user_id: string
+        }
+        Update: {
+          contact_id?: string | null
+          id?: string
+          sent_at?: string
+          to_email?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      contacts: {
+        Row: {
+          avatar_url: string | null
+          company: string | null
+          created_at: string
+          email: string
+          enriched_at: string | null
+          id: string
+          linkedin: string | null
+          name: string | null
+          notes: string | null
+          phone: string | null
+          source: string
+          title: string | null
+          twitter: string | null
+          updated_at: string
+          user_id: string
+          website: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          company?: string | null
+          created_at?: string
+          email: string
+          enriched_at?: string | null
+          id?: string
+          linkedin?: string | null
+          name?: string | null
+          notes?: string | null
+          phone?: string | null
+          source?: string
+          title?: string | null
+          twitter?: string | null
+          updated_at?: string
+          user_id: string
+          website?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          company?: string | null
+          created_at?: string
+          email?: string
+          enriched_at?: string | null
+          id?: string
+          linkedin?: string | null
+          name?: string | null
+          notes?: string | null
+          phone?: string | null
+          source?: string
+          title?: string | null
+          twitter?: string | null
+          updated_at?: string
+          user_id?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
       emails: {
         Row: {
           ai_confidence: number | null
@@ -531,6 +612,63 @@ export type Database = {
           subject?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      my_cards: {
+        Row: {
+          avatar_url: string | null
+          company: string | null
+          created_at: string
+          email: string | null
+          handle: string
+          id: string
+          linkedin: string | null
+          name: string | null
+          phone: string | null
+          tagline: string | null
+          theme: string
+          title: string | null
+          twitter: string | null
+          updated_at: string
+          user_id: string
+          website: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          company?: string | null
+          created_at?: string
+          email?: string | null
+          handle: string
+          id?: string
+          linkedin?: string | null
+          name?: string | null
+          phone?: string | null
+          tagline?: string | null
+          theme?: string
+          title?: string | null
+          twitter?: string | null
+          updated_at?: string
+          user_id: string
+          website?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          company?: string | null
+          created_at?: string
+          email?: string | null
+          handle?: string
+          id?: string
+          linkedin?: string | null
+          name?: string | null
+          phone?: string | null
+          tagline?: string | null
+          theme?: string
+          title?: string | null
+          twitter?: string | null
+          updated_at?: string
+          user_id?: string
+          website?: string | null
         }
         Relationships: []
       }
