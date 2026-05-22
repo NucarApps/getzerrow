@@ -177,10 +177,15 @@ export const enrichContact = createServerFn({ method: "POST" })
 
     const { data: emails } = await supabase
       .from("emails")
-      .select("subject,body_text,snippet")
+      .select("subject,body_text,snippet,from_name")
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
       .limit(40);
+
+    // Best candidate from the most recent non-empty from_name (handles "Last, First").
+    const fromNameCandidate = normalizeName(
+      (emails ?? []).map((e) => e.from_name).find((n) => n && n.trim().length > 0) ?? null
+    );
 
     // Strip quoted-reply blocks and take the tail (where signatures live).
     const cleanTail = (raw: string): string => {
