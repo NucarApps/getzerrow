@@ -1046,7 +1046,7 @@ export async function runMessageJobs(
   // ─── Atomic claim: single round-trip, parallel workers can't collide.
   const { data: claimedRows, error: claimErr } = await supabaseAdmin.rpc("claim_message_jobs", {
     p_limit: limit,
-    p_priority: opts.priority ?? null,
+    p_priority: opts.priority ?? undefined,
   });
   if (claimErr) {
     console.error("claim_message_jobs RPC failed", claimErr);
