@@ -378,25 +378,61 @@ export function FolderEditor({
           <div className="mt-4">
             <div className="flex items-center justify-between">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
-              <div className="inline-flex rounded-md border border-border text-xs overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setLocal({ ...local, filter_logic: "any" })}
-                  className={`px-2.5 py-1 ${ (local.filter_logic ?? "any") === "any" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50" }`}
-                  title="Match if ANY include rule passes (OR)"
+              <div className="flex items-center gap-2">
+                {!local.filter_tree && (
+                  <div className="inline-flex rounded-md border border-border text-xs overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setLocal({ ...local, filter_logic: "any" })}
+                      className={`px-2.5 py-1 ${ (local.filter_logic ?? "any") === "any" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50" }`}
+                      title="Match if ANY include rule passes (OR)"
+                    >
+                      Match any
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLocal({ ...local, filter_logic: "all" })}
+                      className={`px-2.5 py-1 border-l border-border ${ local.filter_logic === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50" }`}
+                      title="Match only if ALL include rules pass (AND)"
+                    >
+                      Match all
+                    </button>
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  variant={local.filter_tree ? "secondary" : "ghost"}
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    if (local.filter_tree) {
+                      if (!confirm("Switch back to the simple rule list? Your rule group will be discarded.")) return;
+                      setLocal({ ...local, filter_tree: null });
+                    } else {
+                      setLocal({
+                        ...local,
+                        filter_tree: { type: "group", op: (local.filter_logic === "all" ? "and" : "or"), children: [] },
+                      });
+                    }
+                  }}
                 >
-                  Match any
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLocal({ ...local, filter_logic: "all" })}
-                  className={`px-2.5 py-1 border-l border-border ${ local.filter_logic === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50" }`}
-                  title="Match only if ALL include rules pass (AND)"
-                >
-                  Match all
-                </button>
+                  {local.filter_tree ? "Use simple list" : "Use rule groups…"}
+                </Button>
               </div>
             </div>
+
+            {local.filter_tree ? (
+              <div className="mt-3">
+                <RuleGroupEditor
+                  node={local.filter_tree}
+                  onChange={(n) => setLocal({ ...local, filter_tree: n })}
+                  isRoot
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Rule groups override the simple list above. Exclude rules (below) still always block.
+                </p>
+              </div>
+            ) : null}
+
             <div className="mt-2 space-y-1.5">
               {filters.map((f) => {
                 const isExclude = f.op === "not_contains" || f.op === "not_equals";
