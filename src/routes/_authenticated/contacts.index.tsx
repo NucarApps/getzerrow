@@ -116,7 +116,11 @@ function ContactsPage() {
               <ScanLine className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Scan card</span>
             </Link>
           </Button>
+          <Button size="sm" onClick={() => setAddOpen(true)} className="px-2 sm:px-3" aria-label="Add contact" title="Add contact">
+            <Plus className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Add</span>
+          </Button>
         </header>
+
 
         {/* Mobile groups: horizontal pill scroller */}
         <div className="mb-4 -mx-4 px-4 md:hidden max-w-full overflow-hidden">
