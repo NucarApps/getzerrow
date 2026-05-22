@@ -340,11 +340,25 @@ export async function classifyParsedEmail(
     if (aiFolders.length > 0) {
       try {
         const r = await classifyEmail(parsed, aiFolders);
-        folder_id = r.folder_id;
-        confidence = r.confidence;
-        summary = r.summary;
-        classified_by = "ai";
-        classification_reason = r.reason || null;
+        const candidate = folderList.find((f) => f.id === r.folder_id);
+        const threshold = candidate?.min_ai_confidence ?? 0;
+        if (r.folder_id && r.confidence >= threshold) {
+          folder_id = r.folder_id;
+          confidence = r.confidence;
+          summary = r.summary;
+          classified_by = "ai";
+          classification_reason = r.reason || null;
+        } else if (r.folder_id) {
+          classified_by = "ai_low_confidence";
+          confidence = r.confidence;
+          summary = r.summary;
+          classification_reason = `AI suggested "${candidate?.name ?? "?"}" at ${(r.confidence * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`;
+        } else {
+          classified_by = "ai";
+          confidence = r.confidence;
+          summary = r.summary;
+          classification_reason = r.reason || null;
+        }
       } catch (e) {
         console.error("AI classify failed", e);
         classified_by = "ai_error";
