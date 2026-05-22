@@ -163,6 +163,7 @@ export type ClassificationResult = {
   ai_summary: string;
   classification_reason: string | null;
   matched_filter_ids: string[];
+  matched_folder_ids: string[];
 };
 
 /**
