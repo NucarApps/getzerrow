@@ -213,15 +213,15 @@ function ContactDetail() {
         </div>
 
 
-        <div className="mb-6 flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => runEnrich(true)} disabled={enriching}>
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => runEnrich(true)} disabled={enriching} className="flex-1 sm:flex-none">
             <Sparkles className={`mr-2 h-4 w-4 ${enriching ? "animate-pulse" : ""}`} />
-            {enriching ? "Reading signatures…" : "Re-enrich with AI"}
+            {enriching ? "Reading…" : "Re-enrich"}
           </Button>
-          <Button size="sm" onClick={send} disabled={sending}>
+          <Button size="sm" onClick={send} disabled={sending} className="flex-1 sm:flex-none">
             <Send className="mr-2 h-4 w-4" /> {sending ? "Sending…" : "Send my card"}
           </Button>
-          <Button size="sm" variant="ghost" className="text-destructive ml-auto" onClick={remove}>
+          <Button size="sm" variant="ghost" className="text-destructive w-full sm:w-auto sm:ml-auto" onClick={remove}>
             <Trash2 className="mr-2 h-4 w-4" /> Delete
           </Button>
         </div>
