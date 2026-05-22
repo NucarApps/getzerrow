@@ -1043,10 +1043,40 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 md:px-6">
         <h1 className="font-display text-lg leading-tight line-clamp-3 md:line-clamp-none md:text-2xl">{email.subject || "(no subject)"}</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
           <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
           {email.from_name && email.from_addr ? <span className="hidden md:inline">{` <${email.from_addr}>`}</span> : null}
-          {email.received_at && ` · ${new Date(email.received_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`}
+          {email.received_at && <span>{` · ${new Date(email.received_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`}</span>}
+          {email.from_addr && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-1 h-6 gap-1 px-2 text-xs"
+              disabled={addingContact}
+              onClick={async () => {
+                setAddingContact(true);
+                try {
+                  const r = await addContactFn({ data: { emailId: email.id } });
+                  qc.invalidateQueries({ queryKey: ["contacts"] });
+                  toast.success(
+                    <span>
+                      Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
+                      <Link to="/contacts/$id" params={{ id: r.contact.id }} className="underline">
+                        View
+                      </Link>
+                    </span>
+                  );
+                } catch (e: any) {
+                  toast.error(e.message);
+                } finally {
+                  setAddingContact(false);
+                }
+              }}
+            >
+              <UserPlus className={`h-3.5 w-3.5 ${addingContact ? "animate-pulse" : ""}`} />
+              {addingContact ? "Adding…" : "Add contact"}
+            </Button>
+          )}
         </p>
         {email.ai_summary && (
           <div className="mt-2 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-sm">
