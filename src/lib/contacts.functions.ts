@@ -84,6 +84,24 @@ function firstNameKey(name: string | null | undefined, email: string): string {
   const tok = n ? n.split(" ")[0] : (email.split("@")[0] || "");
   return tok.toLowerCase();
 }
+/** Pick the more complete name. Never replace a multi-token name with a prefix of itself. */
+function pickBetterName(existing: string | null | undefined, candidate: string | null | undefined): string | null {
+  const e = normalizeName(existing ?? null);
+  const c = normalizeName(candidate ?? null);
+  if (!c) return e ?? null;
+  if (!e) return c;
+  const eTokens = e.split(" ").filter(Boolean);
+  const cTokens = c.split(" ").filter(Boolean);
+  const eLower = e.toLowerCase();
+  const cLower = c.toLowerCase();
+  // Candidate is a prefix/subset of existing (e.g. "John" vs "John Federici") — keep existing.
+  if (cTokens.length < eTokens.length && (eLower.startsWith(cLower + " ") || eLower === cLower)) return e;
+  // Existing is a prefix of candidate — candidate is more complete.
+  if (eTokens.length < cTokens.length && (cLower.startsWith(eLower + " ") || cLower === eLower)) return c;
+  // Otherwise prefer the one with more tokens; tie → candidate.
+  return cTokens.length >= eTokens.length ? c : e;
+}
+
 
 /** List contacts for the current user. */
 export const listContacts = createServerFn({ method: "GET" })
