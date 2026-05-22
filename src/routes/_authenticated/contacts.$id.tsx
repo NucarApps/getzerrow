@@ -2,18 +2,22 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Sparkles, Send, Save, Trash2, Mail, Phone, Globe, Linkedin, Twitter, Building2, Plus, X } from "lucide-react";
+import { ArrowLeft, Sparkles, Send, Save, Trash2, Mail, Phone, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { getContact, enrichContact, updateContact, deleteContact } from "@/lib/contacts.functions";
+import { getContact, enrichContact, updateContact, deleteContact, shareContactByEmail } from "@/lib/contacts.functions";
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { toast } from "sonner";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/_authenticated/contacts/$id")({
   component: ContactDetail,
@@ -59,6 +63,7 @@ function ContactDetail() {
   });
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     if (q.data?.contact) {
@@ -221,6 +226,9 @@ function ContactDetail() {
           <Button size="sm" onClick={send} disabled={sending} className="flex-1 sm:flex-none">
             <Send className="mr-2 h-4 w-4" /> {sending ? "Sending…" : "Send my card"}
           </Button>
+          <Button size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={() => setShareOpen(true)}>
+            <Share2 className="mr-2 h-4 w-4" /> Share contact
+          </Button>
           <Button size="sm" variant="ghost" className="text-destructive w-full sm:w-auto sm:ml-auto" onClick={remove}>
             <Trash2 className="mr-2 h-4 w-4" /> Delete
           </Button>
@@ -283,7 +291,112 @@ function ContactDetail() {
           </section>
         )}
       </div>
+
+      <ShareContactDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        contactId={id}
+        contact={c}
+      />
     </div>
+  );
+}
+
+function ShareContactDialog({
+  open, onOpenChange, contactId, contact,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  contactId: string;
+  contact: { name: string | null; email: string; title: string | null; company: string | null; phone: string | null; website: string | null };
+}) {
+  const share = useServerFn(shareContactByEmail);
+  const [toEmail, setToEmail] = useState("");
+  const [note, setNote] = useState("");
+  const [toPhone, setToPhone] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const displayName = contact.name || contact.email;
+  const smsBody = [
+    `${displayName}${contact.title || contact.company ? ` — ${[contact.title, contact.company].filter(Boolean).join(", ")}` : ""}`,
+    contact.email ? `Email: ${contact.email}` : "",
+    contact.phone ? `Phone: ${contact.phone}` : "",
+    contact.website ? contact.website : "",
+    "— Shared from Zerrow",
+  ].filter(Boolean).join("\n");
+
+  async function sendEmail() {
+    setSending(true);
+    try {
+      await share({ data: { contactId, toEmail, note: note.trim() || undefined } });
+      toast.success(`Sent ${displayName}'s info to ${toEmail}`);
+      onOpenChange(false);
+      setToEmail(""); setNote("");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Couldn't send email");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function openMessages() {
+    const number = toPhone.replace(/[^\d+]/g, "");
+    const href = `sms:${number}${/iPhone|iPad|iPod|Mac/i.test(navigator.userAgent) ? "&" : "?"}body=${encodeURIComponent(smsBody)}`;
+    window.location.href = href;
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Share {displayName}</DialogTitle>
+          <DialogDescription>Send their contact details to someone via email or text.</DialogDescription>
+        </DialogHeader>
+
+        <Tabs defaultValue="email" className="mt-2">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="email"><Mail className="mr-2 h-4 w-4" /> Email</TabsTrigger>
+            <TabsTrigger value="sms"><MessageSquare className="mr-2 h-4 w-4" /> Text</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="email" className="space-y-3 pt-3">
+            <div>
+              <Label className="mb-1 block text-xs text-muted-foreground">Recipient email</Label>
+              <Input type="email" placeholder="friend@example.com" value={toEmail} onChange={(e) => setToEmail(e.target.value)} />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs text-muted-foreground">Personal note (optional)</Label>
+              <Textarea rows={3} placeholder="Thought you two should connect…" value={note} onChange={(e) => setNote(e.target.value)} />
+            </div>
+            <p className="text-xs text-muted-foreground">A .vcf attachment will be included so they can save the contact in one tap.</p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>Cancel</Button>
+              <Button onClick={sendEmail} disabled={sending || !/.+@.+\..+/.test(toEmail)}>
+                <Send className="mr-2 h-4 w-4" /> {sending ? "Sending…" : "Send email"}
+              </Button>
+            </DialogFooter>
+          </TabsContent>
+
+          <TabsContent value="sms" className="space-y-3 pt-3">
+            <div>
+              <Label className="mb-1 block text-xs text-muted-foreground">Send to phone number</Label>
+              <Input type="tel" placeholder="+1 555 123 4567" value={toPhone} onChange={(e) => setToPhone(e.target.value)} />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs text-muted-foreground">Message preview</Label>
+              <pre className="whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">{smsBody}</pre>
+            </div>
+            <p className="text-xs text-muted-foreground">Opens your phone's Messages app with the number and text prefilled.</p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button onClick={openMessages}>
+                <MessageSquare className="mr-2 h-4 w-4" /> Open Messages
+              </Button>
+            </DialogFooter>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
   );
 }
 
