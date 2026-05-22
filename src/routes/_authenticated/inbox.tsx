@@ -84,15 +84,25 @@ type Folder = { id: string; name: string; color: string; gmail_label_id: string 
 
 const PAGE_SIZE = 50;
 
+const MIN_PX = 60;
+
+function hasVisibleHtml(html: string | null | undefined): boolean {
+  return (html ?? "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;|\s/g, "")
+    .length > 0;
+}
+
 function EmailBodyFrame({ html }: { html: string }) {
   const ref = useMemo(() => ({ current: null as HTMLIFrameElement | null }), []);
   const srcDoc = `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;padding:16px;background:#fff;color:#111;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;word-wrap:break-word;overflow-wrap:break-word;}img{max-width:100%;height:auto;}a{color:#2563eb;}table{max-width:100%;}</style></head><body>${html}</body></html>`;
-  const minPx = typeof window !== "undefined" ? Math.max(500, Math.round(window.innerHeight * 0.6)) : 600;
   const resize = () => {
     const f = ref.current;
     if (!f || !f.contentDocument) return;
     const h = f.contentDocument.documentElement.scrollHeight;
-    f.style.height = Math.min(Math.max(h + 4, minPx), 4000) + "px";
+    f.style.height = Math.min(Math.max(h + 4, MIN_PX), 4000) + "px";
   };
   return (
     <iframe
@@ -102,6 +112,8 @@ function EmailBodyFrame({ html }: { html: string }) {
       sandbox="allow-popups allow-popups-to-escape-sandbox"
       onLoad={() => {
         resize();
+        requestAnimationFrame(resize);
+        setTimeout(resize, 250);
         const f = ref.current;
         if (!f || !f.contentDocument) return;
         const body = f.contentDocument.body;
@@ -113,10 +125,11 @@ function EmailBodyFrame({ html }: { html: string }) {
         });
       }}
       className="w-full rounded-lg bg-white"
-      style={{ border: 0, colorScheme: "light", minHeight: minPx }}
+      style={{ border: 0, colorScheme: "light", minHeight: MIN_PX }}
     />
   );
 }
+
 
 function InboxPage() {
   const qc = useQueryClient();
@@ -1161,12 +1174,13 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         </Collapsible>
 
         <div className="mt-4">
-          {email.body_html ? (
+          {email.body_html && hasVisibleHtml(email.body_html) ? (
             <EmailBodyFrame html={email.body_html} />
           ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{email.body_text}</pre>
+            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{email.body_text || email.snippet || ""}</pre>
           )}
         </div>
+
       </div>
 
       <div
