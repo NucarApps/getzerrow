@@ -6,6 +6,7 @@ import {
   listLabels,
   createLabel,
   modifyMessage,
+  batchModifyMessages,
   trashMessage,
   sendMessage,
   ensureWatch,
