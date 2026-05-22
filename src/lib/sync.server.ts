@@ -1304,14 +1304,21 @@ export async function runMessageJobs(
     const ctx = contextByAccount.get(job.gmail_account_id);
     // For backfill jobs (priority>=10) defer AI to the batched pass below.
     const deferAi = job.priority >= 10;
+    const timings: ProcessTimings = { fetch: 0, ai: 0, db: 0 };
     try {
       const result = (await Promise.race([
         processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id, {
           context: ctx,
           skipAi: deferAi,
+          timings,
         }),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`job timeout after ${JOB_TIMEOUT_MS}ms`)), JOB_TIMEOUT_MS),
+          setTimeout(
+            () => reject(new Error(
+              `job timeout after ${JOB_TIMEOUT_MS}ms (fetch=${timings.fetch.toFixed(0)} ai=${timings.ai.toFixed(0)} db=${timings.db.toFixed(0)})`,
+            )),
+            JOB_TIMEOUT_MS,
+          ),
         ),
       ])) as Awaited<ReturnType<typeof processGmailMessage>>;
 
@@ -1338,6 +1345,7 @@ export async function runMessageJobs(
       await handleError(job, e);
     }
   };
+
 
   // ─── Pool of N workers draining the claimed queue.
   const queue = [...claimed];
