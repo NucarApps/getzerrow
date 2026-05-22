@@ -20,7 +20,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
-import { Route as AuthenticatedContactsRouteImport } from './routes/_authenticated/contacts'
+import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
 import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
@@ -85,11 +85,12 @@ const AuthenticatedFoldersRoute = AuthenticatedFoldersRouteImport.update({
   path: '/folders',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedContactsRoute = AuthenticatedContactsRouteImport.update({
-  id: '/contacts',
-  path: '/contacts',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
+const AuthenticatedContactsIndexRoute =
+  AuthenticatedContactsIndexRouteImport.update({
+    id: '/contacts/',
+    path: '/contacts/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const ApiPublicGoogleOauthCallbackRoute =
   ApiPublicGoogleOauthCallbackRouteImport.update({
     id: '/api/public/google-oauth-callback',
@@ -126,14 +127,14 @@ const ApiPublicGmailBackfillTickRoute =
   } as any)
 const AuthenticatedContactsScanRoute =
   AuthenticatedContactsScanRouteImport.update({
-    id: '/scan',
-    path: '/scan',
-    getParentRoute: () => AuthenticatedContactsRoute,
+    id: '/contacts/scan',
+    path: '/contacts/scan',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AuthenticatedContactsRoute,
+  id: '/contacts/$id',
+  path: '/contacts/$id',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const ApiPublicHooksRunFolderSummariesRoute =
   ApiPublicHooksRunFolderSummariesRouteImport.update({
@@ -147,7 +148,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
-  '/contacts': typeof AuthenticatedContactsRouteWithChildren
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/my-card': typeof AuthenticatedMyCardRoute
@@ -162,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
 }
 export interface FileRoutesByTo {
@@ -169,7 +170,6 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
-  '/contacts': typeof AuthenticatedContactsRouteWithChildren
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/my-card': typeof AuthenticatedMyCardRoute
@@ -184,6 +184,7 @@ export interface FileRoutesByTo {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
 }
 export interface FileRoutesById {
@@ -193,7 +194,6 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
-  '/_authenticated/contacts': typeof AuthenticatedContactsRouteWithChildren
   '/_authenticated/folders': typeof AuthenticatedFoldersRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
   '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
@@ -208,6 +208,7 @@ export interface FileRoutesById {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
 }
 export interface FileRouteTypes {
@@ -217,7 +218,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/terms'
-    | '/contacts'
     | '/folders'
     | '/inbox'
     | '/my-card'
@@ -232,6 +232,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/contacts/'
     | '/api/public/hooks/run-folder-summaries'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -239,7 +240,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/terms'
-    | '/contacts'
     | '/folders'
     | '/inbox'
     | '/my-card'
@@ -254,6 +254,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/contacts'
     | '/api/public/hooks/run-folder-summaries'
   id:
     | '__root__'
@@ -262,7 +263,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/terms'
-    | '/_authenticated/contacts'
     | '/_authenticated/folders'
     | '/_authenticated/inbox'
     | '/_authenticated/my-card'
@@ -277,6 +277,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/_authenticated/contacts/'
     | '/api/public/hooks/run-folder-summaries'
   fileRoutesById: FileRoutesById
 }
@@ -375,11 +376,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedFoldersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/contacts': {
-      id: '/_authenticated/contacts'
+    '/_authenticated/contacts/': {
+      id: '/_authenticated/contacts/'
       path: '/contacts'
-      fullPath: '/contacts'
-      preLoaderRoute: typeof AuthenticatedContactsRouteImport
+      fullPath: '/contacts/'
+      preLoaderRoute: typeof AuthenticatedContactsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/api/public/google-oauth-callback': {
@@ -426,17 +427,17 @@ declare module '@tanstack/react-router' {
     }
     '/_authenticated/contacts/scan': {
       id: '/_authenticated/contacts/scan'
-      path: '/scan'
+      path: '/contacts/scan'
       fullPath: '/contacts/scan'
       preLoaderRoute: typeof AuthenticatedContactsScanRouteImport
-      parentRoute: typeof AuthenticatedContactsRoute
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/contacts/$id': {
       id: '/_authenticated/contacts/$id'
-      path: '/$id'
+      path: '/contacts/$id'
       fullPath: '/contacts/$id'
       preLoaderRoute: typeof AuthenticatedContactsIdRouteImport
-      parentRoute: typeof AuthenticatedContactsRoute
+      parentRoute: typeof AuthenticatedRoute
     }
     '/api/public/hooks/run-folder-summaries': {
       id: '/api/public/hooks/run-folder-summaries'
@@ -448,37 +449,26 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AuthenticatedContactsRouteChildren {
-  AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
-  AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
-}
-
-const AuthenticatedContactsRouteChildren: AuthenticatedContactsRouteChildren = {
-  AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
-  AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
-}
-
-const AuthenticatedContactsRouteWithChildren =
-  AuthenticatedContactsRoute._addFileChildren(
-    AuthenticatedContactsRouteChildren,
-  )
-
 interface AuthenticatedRouteChildren {
-  AuthenticatedContactsRoute: typeof AuthenticatedContactsRouteWithChildren
   AuthenticatedFoldersRoute: typeof AuthenticatedFoldersRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
   AuthenticatedMyCardRoute: typeof AuthenticatedMyCardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
+  AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
+  AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
-  AuthenticatedContactsRoute: AuthenticatedContactsRouteWithChildren,
   AuthenticatedFoldersRoute: AuthenticatedFoldersRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
   AuthenticatedMyCardRoute: AuthenticatedMyCardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
+  AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
+  AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

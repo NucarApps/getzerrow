@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
-export const Route = createFileRoute("/_authenticated/contacts")({
+export const Route = createFileRoute("/_authenticated/contacts/")({
   head: () => ({
     meta: [
       { title: "Contacts — Zerrow" },
