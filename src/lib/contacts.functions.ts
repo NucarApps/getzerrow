@@ -4,6 +4,7 @@ import { generateText, Output } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
+import { sendContactShareEmail } from "./cards.server";
 
 function getModel(modelId = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY;
