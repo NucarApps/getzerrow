@@ -2,7 +2,7 @@
 // persist, apply Gmail label/actions. Server-only.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels, GmailApiError } from "./gmail.server";
-import { classifyEmail, buildFolderProfile, type ClassifyFolder } from "./ai.server";
+import { classifyEmail, classifyEmailsBatch, buildFolderProfile, type ClassifyFolder } from "./ai.server";
 
 type Folder = {
   id: string;
