@@ -285,6 +285,8 @@ ${sample}`,
       website?: string | null;
       linkedin?: string | null;
       twitter?: string | null;
+      relationship_summary?: string | null;
+      summary_generated_at?: string | null;
     } = { enriched_at: new Date().toISOString() };
     for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
       let v = extracted[k];
@@ -294,6 +296,61 @@ ${sample}`,
         continue;
       }
       if (v && (!contact[k] || data.force)) patch[k] = v;
+    }
+
+    // === Relationship summary: who are they, what have you discussed? ===
+    try {
+      const addr = contact.email;
+      const { data: convo } = await supabase
+        .from("emails")
+        .select("subject,body_text,snippet,from_addr,to_addrs,received_at")
+        .or(`from_addr.eq.${addr},to_addrs.ilike.%${addr}%`)
+        .order("received_at", { ascending: false })
+        .limit(30);
+
+      const convoSample = (convo ?? [])
+        .map((e, i) => {
+          const inbound = (e.from_addr || "").toLowerCase() === addr.toLowerCase();
+          const tail = cleanTail(e.body_text || e.snippet || "").slice(-600);
+          const when = e.received_at ? new Date(e.received_at).toISOString().slice(0, 10) : "";
+          return `--- ${i + 1} [${inbound ? "THEY SENT" : "YOU SENT"}] ${when} ---\nSubject: ${e.subject ?? ""}\n${tail}`;
+        })
+        .join("\n\n");
+
+      if (convoSample.trim()) {
+        const mergedName = patch.name ?? contact.name ?? null;
+        const mergedTitle = patch.title ?? contact.title ?? null;
+        const mergedCompany = patch.company ?? contact.company ?? null;
+        const knownBits = [
+          mergedName ? `Name: ${mergedName}` : null,
+          mergedTitle ? `Title: ${mergedTitle}` : null,
+          mergedCompany ? `Company: ${mergedCompany}` : null,
+          `Email: ${addr}`,
+        ].filter(Boolean).join("\n");
+
+        const { text: summary } = await generateText({
+          model: getModel("google/gemini-2.5-flash"),
+          prompt: `Write a concise 3-5 sentence briefing about this contact for the account owner ("you"). Cover:
+1) Who they are — name, role, company if known.
+2) The nature of your relationship (client, vendor, colleague, recruiter, friend, etc.) — infer from tone and content.
+3) The main topics, projects, or recurring threads you've discussed.
+
+Be specific and reference actual topics from the emails. Use plain prose (no bullet points, no headings). If signal is thin, say so briefly. Do not invent facts.
+
+Known details:
+${knownBits}
+
+Recent correspondence (newest first; both directions):
+${convoSample}`,
+        });
+        const cleaned = (summary || "").trim();
+        if (cleaned) {
+          patch.relationship_summary = cleaned;
+          patch.summary_generated_at = new Date().toISOString();
+        }
+      }
+    } catch (e: any) {
+      console.error("relationship summary failed", e?.message ?? e);
     }
 
     const { data: updated, error: upErr } = await supabase
