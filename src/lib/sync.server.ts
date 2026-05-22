@@ -404,6 +404,7 @@ export async function processGmailMessage(
       classified_by: c.classified_by,
       classification_reason: c.classification_reason,
       matched_filter_ids: c.matched_filter_ids,
+      matched_folder_ids: c.matched_folder_ids,
     }).eq("id", inserted.id);
   } catch (e) {
     console.error("classify failed (email already visible in Inbox)", e);
