@@ -325,7 +325,33 @@ function GroupChip({
   );
 }
 
-function GroupEditorDialog({
+function GroupPill({
+  active, color, label, count, onClick, onEdit,
+}: {
+  active: boolean; color: string; label: string; count?: number;
+  onClick: () => void; onEdit?: () => void;
+}) {
+  return (
+    <div className={`inline-flex shrink-0 items-center rounded-full border text-xs ${active ? "border-foreground/30 bg-accent text-accent-foreground" : "border-border bg-card/60 text-foreground"}`}>
+      <button onClick={onClick} className="flex items-center gap-1.5 py-1.5 pl-2.5 pr-1.5">
+        <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+        <span className="max-w-[140px] truncate">{label}</span>
+        {typeof count === "number" && (
+          <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">{count}</span>
+        )}
+      </button>
+      {onEdit && active && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="mr-1 grid h-5 w-5 place-items-center rounded-full text-muted-foreground hover:bg-background/50 hover:text-foreground"
+          aria-label={`Edit ${label}`}
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
   state, onClose, onChanged,
 }: {
   state: null | { mode: "create" } | { mode: "edit"; group: GroupRow };
