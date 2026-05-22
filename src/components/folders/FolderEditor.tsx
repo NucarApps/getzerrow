@@ -343,7 +343,7 @@ export function FolderEditor({
 
           <SummariesPanel folderId={folder.id} />
 
-          <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="mt-4 grid grid-cols-2 gap-3">
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto-archive
               <Switch checked={local.auto_archive} onCheckedChange={(v) => setLocal({ ...local, auto_archive: v })} />
@@ -351,6 +351,21 @@ export function FolderEditor({
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto mark-read
               <Switch checked={local.auto_mark_read} onCheckedChange={(v) => setLocal({ ...local, auto_mark_read: v })} />
+            </label>
+            <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Star matching emails (also stars them in Gmail)">
+              Auto-star
+              <Switch checked={local.auto_star ?? false} onCheckedChange={(v) => setLocal({ ...local, auto_star: v })} />
+            </label>
+            <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Hide from main Inbox view (still visible inside this folder)">
+              Hide from Inbox
+              <Switch checked={local.hide_from_inbox ?? false} onCheckedChange={(v) => setLocal({ ...local, hide_from_inbox: v })} />
+            </label>
+            <label className="col-span-2 flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Only use the rules below — never let AI assign emails to this folder">
+              <div>
+                Rules only
+                <span className="ml-2 text-xs text-muted-foreground">(skip AI fallback for this folder)</span>
+              </div>
+              <Switch checked={local.skip_ai ?? false} onCheckedChange={(v) => setLocal({ ...local, skip_ai: v })} />
             </label>
           </div>
 
