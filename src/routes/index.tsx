@@ -163,13 +163,7 @@ function LandingPage() {
                   <use href="#arcPathLanding" className="tracking__arc-live"  fill="none" stroke="url(#arcGrad)" />
                   <g className="tracking__rocket">
                     <g transform="rotate(90) scale(0.09) translate(-60 -118)">
-                      <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
-                      <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
-                      <path d="M42 150 L12 226 L42 218 Z" fill="#ff5a2e" />
-                      <path d="M42 150 L42 218 L34 226 Z" fill="#8a2a14" />
-                      <path d="M78 150 L108 226 L78 218 Z" fill="#ff5a2e" />
-                      <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
-                      <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
+                      <image href={shipUrl} x="10" y="0" width="100" height="240" preserveAspectRatio="xMidYMid meet" />
                     </g>
                     <animateMotion dur="28s" repeatCount="indefinite" rotate="auto"
                       keyPoints="0;1" keyTimes="0;1"
