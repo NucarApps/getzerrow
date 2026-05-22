@@ -50,7 +50,7 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
 }
 
 function applyFilter(
-  email: { from_addr: string; from_name: string; to_addrs: string; subject: string; body_text: string; has_attachment: boolean },
+  email: { from_addr: string; from_name: string; to_addrs: string; cc?: string; list_id?: string; in_reply_to?: string; subject: string; body_text: string; has_attachment: boolean },
   f: Filter
 ): boolean {
   const v = f.value.toLowerCase();
@@ -58,6 +58,9 @@ function applyFilter(
     switch (f.field) {
       case "from": return `${email.from_addr} ${email.from_name}`.toLowerCase();
       case "to": return (email.to_addrs || "").toLowerCase();
+      case "cc": return (email.cc || "").toLowerCase();
+      case "list_id": return (email.list_id || "").toLowerCase();
+      case "is_reply": return (email.in_reply_to ? "true" : "false");
       case "subject": return (email.subject || "").toLowerCase();
       case "body": return (email.body_text || "").toLowerCase();
       case "domain": return (email.from_addr.split("@")[1] || "").toLowerCase();
