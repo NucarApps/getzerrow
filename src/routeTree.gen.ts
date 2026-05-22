@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
@@ -52,6 +53,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
@@ -112,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/_authenticated/folders': typeof AuthenticatedFoldersRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
+  '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/folders'
     | '/inbox'
+    | '/reports'
     | '/settings'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/folders'
     | '/inbox'
+    | '/reports'
     | '/settings'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/_authenticated/folders'
     | '/_authenticated/inbox'
+    | '/_authenticated/reports'
     | '/_authenticated/settings'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
@@ -264,6 +276,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/reports': {
+      id: '/_authenticated/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AuthenticatedReportsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/inbox': {
@@ -335,12 +354,14 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteChildren {
   AuthenticatedFoldersRoute: typeof AuthenticatedFoldersRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
+  AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedFoldersRoute: AuthenticatedFoldersRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
+  AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
 }
 
