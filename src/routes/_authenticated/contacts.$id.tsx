@@ -169,6 +169,50 @@ function ContactDetail() {
           </div>
         </header>
 
+        <div className="mb-6">
+          <Label className="mb-2 block text-xs uppercase tracking-widest text-muted-foreground">Groups</Label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(gq.data?.groups ?? []).filter((g) => myGroupIds.has(g.id)).map((g) => (
+              <span
+                key={g.id}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 py-0.5 pl-2 pr-1 text-xs"
+              >
+                <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                {g.name}
+                <button
+                  onClick={() => toggleGroup(g.id)}
+                  className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label={`Remove from ${g.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs">
+                  <Plus className="h-3.5 w-3.5" /> Add to group
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
+                {(gq.data?.groups ?? []).length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    No groups yet. Create one from the Contacts page.
+                  </div>
+                )}
+                {(gq.data?.groups ?? []).map((g) => (
+                  <DropdownMenuItem key={g.id} onClick={() => toggleGroup(g.id)} className="gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                    <span className="flex-1">{g.name}</span>
+                    {myGroupIds.has(g.id) && <span className="text-xs text-muted-foreground">✓</span>}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+
         <div className="mb-6 flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => runEnrich(true)} disabled={enriching}>
             <Sparkles className={`mr-2 h-4 w-4 ${enriching ? "animate-pulse" : ""}`} />
