@@ -425,7 +425,7 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
         {
           user_id: userId,
           email: addr,
-          name: email.from_name?.trim() || null,
+          name: normalizeName(email.from_name) ?? null,
           source: "email" as const,
         },
         { onConflict: "user_id,email" }
