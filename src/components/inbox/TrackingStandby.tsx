@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import shipUrl from "@/assets/zerrow-ship.png";
 
 /**
  * Inbox empty state — Space Invaders mini-game.
@@ -630,15 +631,14 @@ export function TrackingStandby() {
             {(keysRef.current.left || keysRef.current.right) && (
               <polygon points="-0.8,3 0.8,3 0,5.5" fill="#ff8a3d" className="thruster" />
             )}
-            <g transform="scale(0.045) translate(-60, -110)">
-              <path d="M60 6 L90 210 L60 210 Z" fill="#ff5a2e" />
-              <path d="M60 6 L30 210 L60 210 Z" fill="#b8341a" />
-              <path d="M42 150 L12 226 L42 218 Z" fill="#ff5a2e" />
-              <path d="M42 150 L42 218 L34 226 Z" fill="#8a2a14" />
-              <path d="M78 150 L108 226 L78 218 Z" fill="#ff5a2e" />
-              <path d="M78 150 L78 218 L86 226 Z" fill="#b8341a" />
-              <path d="M48 200 L72 200 L60 230 Z" fill="#0a0e1a" />
-            </g>
+            <image
+              href={shipUrl}
+              x={-3.5}
+              y={-5.2}
+              width={7}
+              height={9}
+              preserveAspectRatio="xMidYMid meet"
+            />
           </g>
         )}
       </svg>
