@@ -259,6 +259,9 @@ export async function classifyParsedEmail(
     from_addr: string;
     from_name: string;
     to_addrs: string;
+    cc?: string;
+    list_id?: string;
+    in_reply_to?: string;
     subject: string;
     snippet: string;
     body_text: string;
