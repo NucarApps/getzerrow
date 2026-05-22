@@ -68,7 +68,7 @@ function applyFilter(
 const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
 
 type FolderMatch =
-  | { kind: "match"; folder_id: string; filter: Filter; matched_filters: Filter[] }
+  | { kind: "match"; folder_id: string; filter: Filter; matched_filters: Filter[]; all_matched_folder_ids: string[] }
   | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
 
 function matchByFilters(
@@ -88,8 +88,13 @@ function matchByFilters(
     if (fs.length === 0) continue;
     const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
     const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
+    if (includes.length === 0) continue;
     const includeHits = includes.filter((f) => applyFilter(email, f));
-    if (includeHits.length === 0) continue;
+    const logic = folder.filter_logic === "all" ? "all" : "any";
+    const passes = logic === "all"
+      ? includeHits.length === includes.length
+      : includeHits.length > 0;
+    if (!passes) continue;
     const excludeHit = excludes.find((f) => applyFilter(email, f));
     if (excludeHit) {
       excludedFolders.push({ folder, exclude: excludeHit });
@@ -98,11 +103,22 @@ function matchByFilters(
     matched.push({ folder, filter: includeHits[0], allMatches: includeHits });
   }
   if (matched.length > 0) {
-    matched.sort((a, b) => b.folder.priority - a.folder.priority);
-    return { kind: "match", folder_id: matched[0].folder.id, filter: matched[0].filter, matched_filters: matched[0].allMatches };
+    // Sort: highest priority first, then folder name asc for stable tiebreak.
+    matched.sort((a, b) =>
+      b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name)
+    );
+    return {
+      kind: "match",
+      folder_id: matched[0].folder.id,
+      filter: matched[0].filter,
+      matched_filters: matched[0].allMatches,
+      all_matched_folder_ids: matched.map((m) => m.folder.id),
+    };
   }
   if (excludedFolders.length > 0) {
-    excludedFolders.sort((a, b) => b.folder.priority - a.folder.priority);
+    excludedFolders.sort((a, b) =>
+      b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name)
+    );
     return {
       kind: "excluded",
       folder_id: excludedFolders[0].folder.id,
