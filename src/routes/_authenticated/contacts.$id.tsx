@@ -74,7 +74,7 @@ function ContactDetail() {
         twitter: c.twitter ?? "", notes: c.notes ?? "",
       });
     }
-  }, [q.data?.contact?.id]);
+  }, [q.data?.contact?.id, q.data?.contact?.enriched_at, q.data?.contact?.updated_at]);
 
   // Auto-enrich on first visit if never enriched.
   useEffect(() => {
