@@ -2,18 +2,23 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2 } from "lucide-react";
+import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { listContacts } from "@/lib/contacts.functions";
+import {
+  listContacts, createContactManual, listFoldersForPicker,
+  listUniqueInboxSenders, bulkCreateContactsFromEmails,
+} from "@/lib/contacts.functions";
 import {
   listContactGroups, createContactGroup, updateContactGroup, deleteContactGroup,
 } from "@/lib/contact-groups.functions";
 import { toast } from "sonner";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
   head: () => ({
