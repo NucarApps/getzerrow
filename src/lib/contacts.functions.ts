@@ -249,8 +249,12 @@ export const enrichContact = createServerFn({ method: "POST" })
       .join("\n\n");
 
     if (!sample.trim()) {
-      await supabase.from("contacts").update({ enriched_at: new Date().toISOString() }).eq("id", contact.id);
-      return { contact, skipped: false as const };
+      const betterName = pickBetterName(contact.name, fromNameCandidate);
+      const earlyPatch: { enriched_at: string; name?: string } = { enriched_at: new Date().toISOString() };
+      if (betterName && betterName !== contact.name) earlyPatch.name = betterName;
+      const { data: updated } = await supabase
+        .from("contacts").update(earlyPatch).eq("id", contact.id).select("*").single();
+      return { contact: updated ?? contact, skipped: false as const };
     }
 
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
