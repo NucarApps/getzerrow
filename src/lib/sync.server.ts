@@ -24,6 +24,9 @@ type Folder = {
   gmail_account_id: string;
   filter_logic: "any" | "all";
   filter_tree: RuleNode | null;
+  forward_to: string | null;
+  min_ai_confidence: number;
+  snooze_hours: number;
 };
 
 type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
