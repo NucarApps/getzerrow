@@ -72,6 +72,7 @@ type Email = {
   classified_by: string | null;
   classification_reason: string | null;
   matched_filter_ids: string[] | null;
+  matched_folder_ids: string[] | null;
   to_addrs: string | null;
   has_attachment: boolean;
   processed_at: string | null;
