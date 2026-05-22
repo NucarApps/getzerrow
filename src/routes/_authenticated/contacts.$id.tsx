@@ -175,6 +175,22 @@ function ContactDetail() {
           </div>
         </header>
 
+        <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4">
+          <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5" /> Relationship summary
+          </div>
+          {(c as any).relationship_summary ? (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{(c as any).relationship_summary}</p>
+          ) : enriching ? (
+            <p className="text-sm italic text-muted-foreground">Reading past emails and writing a briefing…</p>
+          ) : c.enriched_at ? (
+            <p className="text-sm text-muted-foreground">Not enough signal in past emails yet. Click Re-enrich to try again.</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">No summary yet — click Re-enrich below.</p>
+          )}
+        </div>
+
+
         <div className="mb-6">
           <Label className="mb-2 block text-xs uppercase tracking-widest text-muted-foreground">Groups</Label>
           <div className="flex flex-wrap items-center gap-1.5">

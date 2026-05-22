@@ -164,7 +164,9 @@ export type Database = {
           name: string | null
           notes: string | null
           phone: string | null
+          relationship_summary: string | null
           source: string
+          summary_generated_at: string | null
           title: string | null
           twitter: string | null
           updated_at: string
@@ -182,7 +184,9 @@ export type Database = {
           name?: string | null
           notes?: string | null
           phone?: string | null
+          relationship_summary?: string | null
           source?: string
+          summary_generated_at?: string | null
           title?: string | null
           twitter?: string | null
           updated_at?: string
@@ -200,7 +204,9 @@ export type Database = {
           name?: string | null
           notes?: string | null
           phone?: string | null
+          relationship_summary?: string | null
           source?: string
+          summary_generated_at?: string | null
           title?: string | null
           twitter?: string | null
           updated_at?: string
