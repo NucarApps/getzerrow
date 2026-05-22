@@ -6,6 +6,7 @@ import {
   listLabels,
   createLabel,
   modifyMessage,
+  batchModifyMessages,
   trashMessage,
   sendMessage,
   ensureWatch,
@@ -2204,3 +2205,71 @@ export const addFolderRule = createServerFn({ method: "POST" })
     }
     return { ok: true, already, folder_name: folder.name };
   });
+
+/**
+ * Retroactively apply a folder's behavior toggle to emails already classified into it.
+ * Called when the user flips auto_mark_read, auto_archive/hide_from_inbox, or auto_star ON.
+ * Updates Zerrow DB + Gmail (via batchModify) in one pass. Capped at 10k emails per call.
+ */
+export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({
+      folderId: z.string().uuid(),
+      behavior: z.enum(["mark_read", "archive", "star"]),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const userId = context.userId;
+    const { data: folder, error: fErr } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, gmail_account_id")
+      .eq("id", data.folderId)
+      .single();
+    if (fErr || !folder) throw new Error("Folder not found");
+    if (folder.user_id !== userId) throw new Error("Not authorized");
+
+    // Pick rows that still need the change.
+    let query = supabaseAdmin
+      .from("emails")
+      .select("id, gmail_message_id")
+      .eq("folder_id", data.folderId)
+      .eq("user_id", userId)
+      .limit(10000);
+    if (data.behavior === "mark_read") query = query.eq("is_read", false);
+    else if (data.behavior === "archive") query = query.eq("is_archived", false);
+    // For "star" we can't tell from DB (no column) — let Gmail dedupe; just touch all rows.
+
+    const { data: rows, error: eErr } = await query;
+    if (eErr) throw new Error(eErr.message);
+    if (!rows || rows.length === 0) return { count: 0 };
+
+    const ids = rows.map((r) => r.gmail_message_id).filter(Boolean) as string[];
+
+    // Gmail side — fire and forget the per-chunk errors so partial success still updates DB.
+    try {
+      if (data.behavior === "mark_read") {
+        await batchModifyMessages(folder.gmail_account_id, ids, [], ["UNREAD"]);
+      } else if (data.behavior === "archive") {
+        await batchModifyMessages(folder.gmail_account_id, ids, [], ["INBOX"]);
+      } else if (data.behavior === "star") {
+        await batchModifyMessages(folder.gmail_account_id, ids, ["STARRED"], []);
+      }
+    } catch (e) {
+      console.error("batchModify failed during retroactive apply", e);
+    }
+
+    // DB side.
+    const patch: { is_read?: boolean; is_archived?: boolean } = {};
+    if (data.behavior === "mark_read") patch.is_read = true;
+    else if (data.behavior === "archive") patch.is_archived = true;
+    if (Object.keys(patch).length > 0) {
+      await supabaseAdmin
+        .from("emails")
+        .update(patch)
+        .in("id", rows.map((r) => r.id));
+    }
+
+    return { count: rows.length };
+  });
+
