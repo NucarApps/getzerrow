@@ -1046,8 +1046,21 @@ async function performMove(
     { onConflict: "folder_id,gmail_message_id" },
   );
 
+  // Retrain the destination folder's AI profile on every in-app move so
+  // similar mail starts routing here next time. Fire-and-forget — never
+  // fail the user's move on a profile-rebuild error.
+  try {
+    const { regenerateFolderProfile } = await import("./sync.server");
+    void regenerateFolderProfile(toFolderId).catch((e) =>
+      console.error("auto-retrain after in-app move failed", e),
+    );
+  } catch (e) {
+    console.error("auto-retrain import failed", e);
+  }
+
   return { ok: true };
 }
+
 
 export const moveEmailToFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
