@@ -84,6 +84,7 @@ export type Database = {
           is_archived: boolean
           is_read: boolean
           matched_filter_ids: string[]
+          matched_folder_ids: string[]
           processed_at: string | null
           raw_labels: string[] | null
           received_at: string | null
@@ -111,6 +112,7 @@ export type Database = {
           is_archived?: boolean
           is_read?: boolean
           matched_filter_ids?: string[]
+          matched_folder_ids?: string[]
           processed_at?: string | null
           raw_labels?: string[] | null
           received_at?: string | null
@@ -138,6 +140,7 @@ export type Database = {
           is_archived?: boolean
           is_read?: boolean
           matched_filter_ids?: string[]
+          matched_folder_ids?: string[]
           processed_at?: string | null
           raw_labels?: string[] | null
           received_at?: string | null
@@ -314,6 +317,7 @@ export type Database = {
           auto_mark_read: boolean
           color: string
           created_at: string
+          filter_logic: string
           gmail_account_id: string
           gmail_backfill_oldest_received_at: string | null
           gmail_backfill_page_token: string | null
@@ -331,6 +335,7 @@ export type Database = {
           auto_mark_read?: boolean
           color?: string
           created_at?: string
+          filter_logic?: string
           gmail_account_id: string
           gmail_backfill_oldest_received_at?: string | null
           gmail_backfill_page_token?: string | null
@@ -348,6 +353,7 @@ export type Database = {
           auto_mark_read?: boolean
           color?: string
           created_at?: string
+          filter_logic?: string
           gmail_account_id?: string
           gmail_backfill_oldest_received_at?: string | null
           gmail_backfill_page_token?: string | null
