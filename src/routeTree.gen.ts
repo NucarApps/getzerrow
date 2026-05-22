@@ -25,6 +25,7 @@ import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/pub
 import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/public/gmail-process-jobs'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
 import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
+import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 
@@ -111,6 +112,12 @@ const ApiPublicGmailBackfillTickRoute =
     path: '/api/public/gmail-backfill-tick',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthenticatedContactsScanRoute =
+  AuthenticatedContactsScanRouteImport.update({
+    id: '/scan',
+    path: '/scan',
+    getParentRoute: () => AuthenticatedContactsRoute,
+  } as any)
 const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -134,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
@@ -153,6 +161,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
@@ -174,6 +183,7 @@ export interface FileRoutesById {
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/contacts/$id'
+    | '/contacts/scan'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
@@ -214,6 +225,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/contacts/$id'
+    | '/contacts/scan'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
@@ -234,6 +246,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reports'
     | '/_authenticated/settings'
     | '/_authenticated/contacts/$id'
+    | '/_authenticated/contacts/scan'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
@@ -372,6 +385,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailBackfillTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/contacts/scan': {
+      id: '/_authenticated/contacts/scan'
+      path: '/scan'
+      fullPath: '/contacts/scan'
+      preLoaderRoute: typeof AuthenticatedContactsScanRouteImport
+      parentRoute: typeof AuthenticatedContactsRoute
+    }
     '/_authenticated/contacts/$id': {
       id: '/_authenticated/contacts/$id'
       path: '/$id'
@@ -391,10 +411,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedContactsRouteChildren {
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
+  AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
 }
 
 const AuthenticatedContactsRouteChildren: AuthenticatedContactsRouteChildren = {
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
+  AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
 }
 
 const AuthenticatedContactsRouteWithChildren =
