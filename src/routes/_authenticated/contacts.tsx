@@ -117,30 +117,59 @@ function ContactsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <header className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-md bg-primary/10 text-primary">
+        <header className="mb-6 flex items-center gap-2 sm:gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
             <Users className="h-5 w-5" />
           </div>
-          <div className="flex-1 min-w-[200px]">
-            <h1 className="font-display text-2xl text-foreground">Contacts</h1>
+          <div className="flex-1 min-w-0">
+            <h1 className="font-display text-xl sm:text-2xl text-foreground">Contacts</h1>
             <p className="text-xs text-muted-foreground">
               {q.data ? `${q.data.contacts.length} people` : "Loading…"}
             </p>
           </div>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/my-card"><IdCard className="mr-2 h-4 w-4" /> My card</Link>
+          <Button variant="outline" size="sm" asChild className="px-2 sm:px-3">
+            <Link to="/my-card" aria-label="My card" title="My card">
+              <IdCard className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">My card</span>
+            </Link>
           </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/contacts/scan"><ScanLine className="mr-2 h-4 w-4" /> Scan card</Link>
+          <Button variant="outline" size="sm" asChild className="px-2 sm:px-3">
+            <Link to="/contacts/scan" aria-label="Scan card" title="Scan card">
+              <ScanLine className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Scan card</span>
+            </Link>
           </Button>
-          <Button variant="ghost" size="sm" onClick={rebuild} disabled={building}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${building ? "animate-spin" : ""}`} /> Refresh
+          <Button variant="ghost" size="sm" onClick={rebuild} disabled={building} className="px-2 sm:px-3" aria-label="Refresh" title="Refresh">
+            <RefreshCw className={`h-4 w-4 sm:mr-2 ${building ? "animate-spin" : ""}`} /><span className="hidden sm:inline">Refresh</span>
           </Button>
         </header>
 
+        {/* Mobile groups: horizontal pill scroller */}
+        <div className="mb-4 -mx-4 px-4 md:hidden">
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <GroupPill active={filter === "all"} color="#a3a3a3" label="All" count={q.data?.contacts.length ?? 0} onClick={() => setFilter("all")} />
+            <GroupPill active={filter === "ungrouped"} color="#71717a" label="Ungrouped" count={ungroupedCount} onClick={() => setFilter("ungrouped")} />
+            {(gq.data?.groups ?? []).map((g) => (
+              <GroupPill
+                key={g.id}
+                active={filter === g.id}
+                color={g.color}
+                label={g.name}
+                count={g.count}
+                onClick={() => setFilter(g.id)}
+                onEdit={() => setGroupDialog({ mode: "edit", group: g })}
+              />
+            ))}
+            <button
+              onClick={() => setGroupDialog({ mode: "create" })}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+            >
+              <Plus className="h-3.5 w-3.5" /> New
+            </button>
+          </div>
+        </div>
+
         <div className="grid gap-6 md:grid-cols-[220px_1fr]">
-          {/* Groups rail */}
-          <aside className="md:sticky md:top-2 md:self-start">
+          {/* Groups rail (desktop) */}
+          <aside className="hidden md:block md:sticky md:top-2 md:self-start">
             <div className="mb-2 flex items-center justify-between px-2">
               <span className="text-[11px] uppercase tracking-widest text-muted-foreground">Groups</span>
               <button
@@ -290,6 +319,34 @@ function GroupChip({
           aria-label={`Edit ${label}`}
         >
           <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function GroupPill({
+  active, color, label, count, onClick, onEdit,
+}: {
+  active: boolean; color: string; label: string; count?: number;
+  onClick: () => void; onEdit?: () => void;
+}) {
+  return (
+    <div className={`inline-flex shrink-0 items-center rounded-full border text-xs ${active ? "border-foreground/30 bg-accent text-accent-foreground" : "border-border bg-card/60 text-foreground"}`}>
+      <button onClick={onClick} className="flex items-center gap-1.5 py-1.5 pl-2.5 pr-1.5">
+        <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+        <span className="max-w-[140px] truncate">{label}</span>
+        {typeof count === "number" && (
+          <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">{count}</span>
+        )}
+      </button>
+      {onEdit && active && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="mr-1 grid h-5 w-5 place-items-center rounded-full text-muted-foreground hover:bg-background/50 hover:text-foreground"
+          aria-label={`Edit ${label}`}
+        >
+          <Pencil className="h-3 w-3" />
         </button>
       )}
     </div>
