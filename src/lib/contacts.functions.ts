@@ -177,10 +177,15 @@ export const enrichContact = createServerFn({ method: "POST" })
 
     const { data: emails } = await supabase
       .from("emails")
-      .select("subject,body_text,snippet")
+      .select("subject,body_text,snippet,from_name")
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
       .limit(40);
+
+    // Best candidate from the most recent non-empty from_name (handles "Last, First").
+    const fromNameCandidate = normalizeName(
+      (emails ?? []).map((e) => e.from_name).find((n) => n && n.trim().length > 0) ?? null
+    );
 
     // Strip quoted-reply blocks and take the tail (where signatures live).
     const cleanTail = (raw: string): string => {
@@ -244,8 +249,12 @@ export const enrichContact = createServerFn({ method: "POST" })
       .join("\n\n");
 
     if (!sample.trim()) {
-      await supabase.from("contacts").update({ enriched_at: new Date().toISOString() }).eq("id", contact.id);
-      return { contact, skipped: false as const };
+      const betterName = pickBetterName(contact.name, fromNameCandidate);
+      const earlyPatch: { enriched_at: string; name?: string } = { enriched_at: new Date().toISOString() };
+      if (betterName && betterName !== contact.name) earlyPatch.name = betterName;
+      const { data: updated } = await supabase
+        .from("contacts").update(earlyPatch).eq("id", contact.id).select("*").single();
+      return { contact: updated ?? contact, skipped: false as const };
     }
 
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
@@ -291,8 +300,9 @@ ${sample}`,
     for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
       let v = extracted[k];
       if (k === "name") {
-        const better = pickBetterName(contact.name, v);
-        if (better && better !== contact.name) patch.name = better;
+        let best = pickBetterName(contact.name, fromNameCandidate);
+        best = pickBetterName(best, v);
+        if (best && best !== contact.name) patch.name = best;
         continue;
       }
       if (v && (!contact[k] || data.force)) patch[k] = v;
