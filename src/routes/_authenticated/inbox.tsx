@@ -183,10 +183,14 @@ function InboxPage() {
         .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
       if (cursor) q = q.lt("received_at", cursor);
       if (isAllMail) {
-        // no filter — show everything
-      } else if (selectedFolder === "all") q = q.eq("is_archived", false);
-      else if (isNoRules) q = q.is("folder_id", null);
-      else q = q.eq("folder_id", selectedFolder);
+        // no filter — show everything (including snoozed)
+      } else {
+        const nowIso = new Date().toISOString();
+        q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
+        if (selectedFolder === "all") q = q.eq("is_archived", false);
+        else if (isNoRules) q = q.is("folder_id", null);
+        else q = q.eq("folder_id", selectedFolder);
+      }
       const { data } = await q;
       let rows = (data ?? []) as Email[];
       if (isNoRules) {

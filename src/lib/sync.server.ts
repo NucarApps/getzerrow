@@ -1,7 +1,7 @@
 // Core sync pipeline: pull messages for a specific gmail_account, apply filters/AI,
 // persist, apply Gmail label/actions. Server-only.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels, GmailApiError } from "./gmail.server";
+import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels, sendMessage, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch, buildFolderProfile, type ClassifyFolder } from "./ai.server";
 
 type RuleNode =
@@ -24,6 +24,9 @@ type Folder = {
   gmail_account_id: string;
   filter_logic: "any" | "all";
   filter_tree: RuleNode | null;
+  forward_to: string | null;
+  min_ai_confidence: number;
+  snooze_hours: number;
 };
 
 type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
@@ -47,7 +50,7 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
 }
 
 function applyFilter(
-  email: { from_addr: string; from_name: string; to_addrs: string; subject: string; body_text: string; has_attachment: boolean },
+  email: { from_addr: string; from_name: string; to_addrs: string; cc?: string; list_id?: string; in_reply_to?: string; subject: string; body_text: string; has_attachment: boolean },
   f: Filter
 ): boolean {
   const v = f.value.toLowerCase();
@@ -55,6 +58,9 @@ function applyFilter(
     switch (f.field) {
       case "from": return `${email.from_addr} ${email.from_name}`.toLowerCase();
       case "to": return (email.to_addrs || "").toLowerCase();
+      case "cc": return (email.cc || "").toLowerCase();
+      case "list_id": return (email.list_id || "").toLowerCase();
+      case "is_reply": return (email.in_reply_to ? "true" : "false");
       case "subject": return (email.subject || "").toLowerCase();
       case "body": return (email.body_text || "").toLowerCase();
       case "domain": return (email.from_addr.split("@")[1] || "").toLowerCase();
@@ -253,6 +259,9 @@ export async function classifyParsedEmail(
     from_addr: string;
     from_name: string;
     to_addrs: string;
+    cc?: string;
+    list_id?: string;
+    in_reply_to?: string;
     subject: string;
     snippet: string;
     body_text: string;
@@ -331,11 +340,25 @@ export async function classifyParsedEmail(
     if (aiFolders.length > 0) {
       try {
         const r = await classifyEmail(parsed, aiFolders);
-        folder_id = r.folder_id;
-        confidence = r.confidence;
-        summary = r.summary;
-        classified_by = "ai";
-        classification_reason = r.reason || null;
+        const candidate = folderList.find((f) => f.id === r.folder_id);
+        const threshold = candidate?.min_ai_confidence ?? 0;
+        if (r.folder_id && r.confidence >= threshold) {
+          folder_id = r.folder_id;
+          confidence = r.confidence;
+          summary = r.summary;
+          classified_by = "ai";
+          classification_reason = r.reason || null;
+        } else if (r.folder_id) {
+          classified_by = "ai_low_confidence";
+          confidence = r.confidence;
+          summary = r.summary;
+          classification_reason = `AI suggested "${candidate?.name ?? "?"}" at ${(r.confidence * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`;
+        } else {
+          classified_by = "ai";
+          confidence = r.confidence;
+          summary = r.summary;
+          classification_reason = r.reason || null;
+        }
       } catch (e) {
         console.error("AI classify failed", e);
         classified_by = "ai_error";
@@ -416,6 +439,9 @@ export async function processGmailMessage(
       from_addr: parsed.from_addr,
       from_name: parsed.from_name,
       to_addrs: parsed.to_addrs,
+      cc: parsed.cc || null,
+      list_id: parsed.list_id || null,
+      in_reply_to: parsed.in_reply_to || null,
       subject: parsed.subject,
       snippet: parsed.snippet,
       body_text: parsed.body_text,
@@ -469,6 +495,7 @@ export async function processGmailMessage(
     let folder: {
       id: string; gmail_label_id: string | null; auto_archive: boolean;
       auto_mark_read: boolean; auto_star: boolean; hide_from_inbox: boolean;
+      forward_to: string | null; snooze_hours: number;
     } | null = null;
     const cached = opts.context?.folders.find((f) => f.id === folder_id);
     if (cached) {
@@ -479,11 +506,13 @@ export async function processGmailMessage(
         auto_mark_read: cached.auto_mark_read,
         auto_star: cached.auto_star,
         hide_from_inbox: cached.hide_from_inbox,
+        forward_to: cached.forward_to,
+        snooze_hours: cached.snooze_hours,
       };
     } else {
       const { data } = await supabaseAdmin
         .from("folders")
-        .select("id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox")
+        .select("id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours")
         .eq("id", folder_id)
         .maybeSingle();
       folder = data ?? null;
@@ -500,11 +529,34 @@ export async function processGmailMessage(
       if (addLabels.length || removeLabels.length) {
         try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
       }
-      if (inInbox && effectiveArchive) {
-        await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", inserted.id);
+      const patch: {
+        is_archived?: boolean;
+        is_read?: boolean;
+        snoozed_until?: string;
+        forwarded_to?: string;
+        forwarded_at?: string;
+      } = {};
+      if (inInbox && effectiveArchive) patch.is_archived = true;
+      if (folder.auto_mark_read) patch.is_read = true;
+      if (folder.snooze_hours && folder.snooze_hours > 0) {
+        patch.snoozed_until = new Date(Date.now() + folder.snooze_hours * 3600_000).toISOString();
       }
-      if (folder.auto_mark_read) {
-        await supabaseAdmin.from("emails").update({ is_read: true }).eq("id", inserted.id);
+      if (folder.forward_to) {
+        try {
+          await sendMessage(
+            accountId,
+            folder.forward_to,
+            `Fwd: ${parsed.subject || "(no subject)"}`,
+            `---------- Forwarded message ----------\nFrom: ${parsed.from_name || ""} <${parsed.from_addr}>\nDate: ${parsed.received_at}\nSubject: ${parsed.subject}\n\n${parsed.body_text || parsed.snippet || ""}`,
+          );
+          patch.forwarded_to = folder.forward_to;
+          patch.forwarded_at = new Date().toISOString();
+        } catch (e) {
+          console.error("auto-forward failed", e);
+        }
+      }
+      if (Object.keys(patch).length > 0) {
+        await supabaseAdmin.from("emails").update(patch).eq("id", inserted.id);
       }
     }
   }

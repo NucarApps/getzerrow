@@ -51,6 +51,9 @@ export type Folder = {
   hide_from_inbox?: boolean;
   skip_ai?: boolean;
   filter_tree?: RuleNode | null;
+  forward_to?: string | null;
+  min_ai_confidence?: number;
+  snooze_hours?: number;
 };
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
@@ -138,6 +141,9 @@ export function FolderEditor({
       hide_from_inbox: local.hide_from_inbox ?? false,
       skip_ai: local.skip_ai ?? false,
       filter_tree: local.filter_tree ?? null,
+      forward_to: local.forward_to?.trim() || null,
+      min_ai_confidence: Math.min(1, Math.max(0, local.min_ai_confidence ?? 0)),
+      snooze_hours: Math.max(0, local.snooze_hours ?? 0),
     }).eq("id", folder.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Saved");
@@ -375,6 +381,45 @@ export function FolderEditor({
             </label>
           </div>
 
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-border p-3 text-sm">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Auto-forward to</Label>
+              <Input
+                className="mt-1.5 h-8"
+                type="email"
+                placeholder="someone@example.com"
+                value={local.forward_to ?? ""}
+                onChange={(e) => setLocal({ ...local, forward_to: e.target.value })}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Forwards each matching email once, on arrival.</p>
+            </div>
+            <div className="rounded-md border border-border p-3 text-sm">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Snooze on arrival (hours)</Label>
+              <Input
+                className="mt-1.5 h-8"
+                type="number"
+                min={0}
+                max={720}
+                value={local.snooze_hours ?? 0}
+                onChange={(e) => setLocal({ ...local, snooze_hours: parseInt(e.target.value) || 0 })}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Hides matched emails until the snooze expires.</p>
+            </div>
+            <div className="rounded-md border border-border p-3 text-sm">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Min AI confidence (%)</Label>
+              <Input
+                className="mt-1.5 h-8"
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                value={Math.round((local.min_ai_confidence ?? 0) * 100)}
+                onChange={(e) => setLocal({ ...local, min_ai_confidence: (parseInt(e.target.value) || 0) / 100 })}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Reject AI assignment below this confidence.</p>
+            </div>
+          </div>
+
           <div className="mt-4">
             <div className="flex items-center justify-between">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
@@ -461,10 +506,13 @@ export function FolderEditor({
                   <SelectContent>
                     <SelectItem value="from">from</SelectItem>
                     <SelectItem value="to">to</SelectItem>
+                    <SelectItem value="cc">cc</SelectItem>
                     <SelectItem value="subject">subject</SelectItem>
                     <SelectItem value="body">body</SelectItem>
                     <SelectItem value="domain">domain</SelectItem>
-                    <SelectItem value="has_attachment">has_attachment</SelectItem>
+                    <SelectItem value="list_id">list-id (newsletter)</SelectItem>
+                    <SelectItem value="is_reply">is reply</SelectItem>
+                    <SelectItem value="has_attachment">has attachment</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
@@ -1131,9 +1179,12 @@ function ScheduleForm({
 const FIELD_OPTS = [
   { value: "from", label: "from" },
   { value: "to", label: "to" },
+  { value: "cc", label: "cc" },
   { value: "subject", label: "subject" },
   { value: "body", label: "body" },
   { value: "domain", label: "domain" },
+  { value: "list_id", label: "list-id (newsletter)" },
+  { value: "is_reply", label: "is reply" },
   { value: "has_attachment", label: "has attachment" },
 ];
 const OP_OPTS = [
