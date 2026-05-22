@@ -137,6 +137,7 @@ export function FolderEditor({
       auto_star: local.auto_star ?? false,
       hide_from_inbox: local.hide_from_inbox ?? false,
       skip_ai: local.skip_ai ?? false,
+      filter_tree: local.filter_tree ?? null,
     }).eq("id", folder.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Saved");
