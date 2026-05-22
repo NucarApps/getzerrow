@@ -2,10 +2,10 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Users, ScanLine, Search, IdCard, RefreshCw, Plus, Pencil, Trash2 } from "lucide-react";
+import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { listContacts, backfillContacts } from "@/lib/contacts.functions";
+import { listContacts } from "@/lib/contacts.functions";
 import {
   listContactGroups, createContactGroup, updateContactGroup, deleteContactGroup,
 } from "@/lib/contact-groups.functions";
@@ -35,30 +35,14 @@ function ContactsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const list = useServerFn(listContacts);
-  const build = useServerFn(backfillContacts);
   const listGroups = useServerFn(listContactGroups);
 
   const [query, setQuery] = useState("");
-  const [building, setBuilding] = useState(false);
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
   const [groupDialog, setGroupDialog] = useState<null | { mode: "create" } | { mode: "edit"; group: GroupRow }>(null);
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
-
-  useEffect(() => {
-    if (q.data && q.data.contacts.length === 0 && !building) {
-      setBuilding(true);
-      build()
-        .then((r) => {
-          if (r.added > 0) toast.success(`Built ${r.added} contacts from your inbox`);
-          qc.invalidateQueries({ queryKey: ["contacts"] });
-        })
-        .catch((e) => toast.error(e?.message ?? "Failed to build contacts"))
-        .finally(() => setBuilding(false));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q.data?.contacts.length]);
 
   // contact_id -> [group ids]
   const contactGroupMap = useMemo(() => {
@@ -94,18 +78,6 @@ function ContactsPage() {
     });
   }, [q.data, query, filter, contactGroupMap]);
 
-  async function rebuild() {
-    setBuilding(true);
-    try {
-      const r = await build();
-      toast.success(`Added ${r.added} new contacts`);
-      qc.invalidateQueries({ queryKey: ["contacts"] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
-    } finally {
-      setBuilding(false);
-    }
-  }
 
   const ungroupedCount = useMemo(() => {
     const all = q.data?.contacts ?? [];

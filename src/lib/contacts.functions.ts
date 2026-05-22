@@ -71,57 +71,6 @@ export const getContact = createServerFn({ method: "POST" })
     return { contact, recentEmails: emails ?? [] };
   });
 
-/** Build contacts from the user's inbox. Idempotent — upserts unique senders. */
-export const backfillContacts = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const PAGE = 1000;
-    const CAP = 10000;
-    const seen = new Map<string, { name: string | null; email: string }>();
-
-    for (let from = 0; from < CAP; from += PAGE) {
-      const { data, error } = await supabase
-        .from("emails")
-        .select("from_addr,from_name")
-        .order("received_at", { ascending: false })
-        .range(from, from + PAGE - 1);
-      if (error) break;
-      const batch = data ?? [];
-      for (const r of batch) {
-        const addr = (r.from_addr || "").trim().toLowerCase();
-        if (!isLikelyHuman(addr)) continue;
-        if (!seen.has(addr)) seen.set(addr, { name: r.from_name?.trim() || null, email: addr });
-      }
-      if (batch.length < PAGE) break;
-    }
-
-    if (seen.size === 0) return { added: 0, total: 0 };
-
-    const rows = [...seen.values()].map((s) => ({
-      user_id: userId,
-      email: s.email,
-      name: s.name,
-      source: "email" as const,
-    }));
-
-    // Chunked upsert to avoid huge payloads.
-    let added = 0;
-    for (let i = 0; i < rows.length; i += 500) {
-      const chunk = rows.slice(i, i + 500);
-      const { error, data: ins } = await supabaseAdmin
-        .from("contacts")
-        .upsert(chunk, { onConflict: "user_id,email", ignoreDuplicates: true })
-        .select("id");
-      if (!error) added += ins?.length ?? 0;
-    }
-
-    const { count: total } = await supabase
-      .from("contacts")
-      .select("id", { count: "exact", head: true });
-
-    return { added, total: total ?? 0 };
-  });
 
 /** AI-enrich a contact from their recent email bodies (signatures). */
 export const enrichContact = createServerFn({ method: "POST" })
