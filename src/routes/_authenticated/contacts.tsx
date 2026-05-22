@@ -351,6 +351,7 @@ function GroupPill({
       )}
     </div>
   );
+}
 
 function GroupEditorDialog({
   state, onClose, onChanged,
