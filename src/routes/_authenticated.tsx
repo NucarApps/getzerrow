@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
-import { Inbox, Settings, LogOut, Plus, Pencil, Menu, BarChart3 } from "lucide-react";
+import { Inbox, Settings, LogOut, Plus, Pencil, Menu, BarChart3, Users, IdCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
@@ -203,6 +203,26 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         </button>
         <button
           type="button"
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname.startsWith("/contacts") ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          onClick={() => {
+            navigate({ to: "/contacts" });
+            onNavigate?.();
+          }}
+        >
+          <Users className="h-4 w-4" /> Contacts
+        </button>
+        <button
+          type="button"
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/my-card" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          onClick={() => {
+            navigate({ to: "/my-card" });
+            onNavigate?.();
+          }}
+        >
+          <IdCard className="h-4 w-4" /> My card
+        </button>
+        <button
+          type="button"
           className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/settings" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
           onClick={() => {
             navigate({ to: "/settings" });
@@ -211,6 +231,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         >
           <Settings className="h-4 w-4" /> Settings
         </button>
+
       </nav>
 
       <div className="mt-6 flex items-center justify-between px-2">
