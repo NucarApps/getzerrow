@@ -1,31 +1,45 @@
-## 1. Fix contact rows not opening
+## Fix empty/short emails rendering as a big white box on mobile
 
-`src/routes/_authenticated/` currently has:
-- `contacts.tsx` (list)
-- `contacts.$id.tsx` (detail)
-- `contacts.scan.tsx` (scan)
+Single file: `src/routes/_authenticated/inbox.tsx` → `EmailBodyFrame`.
 
-With TanStack's flat dot routing, `contacts.tsx` is the **parent layout** for `contacts.$id` and `contacts.scan`. Because the list file doesn't render `<Outlet />`, navigating to `/contacts/:id` matches but only the list keeps rendering — so taps appear to do nothing.
+### 1. Drop the artificial tall minimum height
 
-**Fix:** rename `src/routes/_authenticated/contacts.tsx` → `src/routes/_authenticated/contacts.index.tsx`. That makes the three files siblings, and `/contacts/:id` will render the detail page on its own. No content changes to the list itself.
-
-## 2. Actually delete the 752 inbox-imported contacts
-
-Re-run the cleanup as three separate single-statement deletes (the previous combined statement didn't commit):
-
-```sql
-DELETE FROM contact_group_members
- WHERE contact_id IN (SELECT id FROM contacts WHERE source = 'email');
+Replace:
+```ts
+const minPx = Math.max(500, Math.round(window.innerHeight * 0.6));
 ```
-```sql
-DELETE FROM contact_cards_sent
- WHERE contact_id IN (SELECT id FROM contacts WHERE source = 'email');
+with a small floor:
+```ts
+const MIN_PX = 60;
 ```
-```sql
-DELETE FROM contacts WHERE source = 'email';
+Use `MIN_PX` in both `resize()` and the iframe `minHeight` style. Short emails will render at their natural height instead of a 500–700 px white slab.
+
+### 2. Fall back to text when `body_html` is effectively empty
+
+Before mounting the iframe, strip tags/whitespace from `body_html`:
+```ts
+const hasVisibleHtml = (html ?? "")
+  .replace(/<style[\s\S]*?<\/style>/gi, "")
+  .replace(/<script[\s\S]*?<\/script>/gi, "")
+  .replace(/<[^>]+>/g, "")
+  .replace(/&nbsp;|\s/g, "")
+  .length > 0;
 ```
+At the render site (line ~1164):
+```tsx
+{email.body_html && hasVisibleHtml(email.body_html) ? (
+  <EmailBodyFrame html={email.body_html} />
+) : (
+  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
+    {email.body_text || email.snippet || ""}
+  </pre>
+)}
+```
+(Move `hasVisibleHtml` to module scope so both call sites can use it.)
 
-Manually-added and scanned contacts (source `'scan'` or `'manual'`) are not touched.
+### 3. Re-measure after a tick
 
-## Out of scope
-- No other code or UI changes.
+iOS Safari sometimes reports `scrollHeight = 0` on the first `onLoad` for `srcDoc` iframes. After the existing `resize()` call, schedule a second resize on `requestAnimationFrame` and a third at `setTimeout(…, 250)` so late layout (web fonts, images) settles before we lock the height.
+
+### Out of scope
+- No styling changes elsewhere on the email view, no changes to list/sync.
