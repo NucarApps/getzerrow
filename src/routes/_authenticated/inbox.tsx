@@ -123,11 +123,20 @@ function InboxPage() {
   const moveInboxFn = useServerFn(moveEmailToInbox);
   const addOverrideFn = useServerFn(addInboxOverride);
   const stripLabelFn = useServerFn(stripFolderLabelPast);
+  const addFolderRuleFn = useServerFn(addFolderRule);
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [folderRulePrompt, setFolderRulePrompt] = useState<null | {
+    emailId: string;
+    fromFolderId: string | null;
+    fromAddr: string | null;
+    domain: string | null;
+    toFolder: Folder;
+    mode: "sender" | "domain";
+  }>(null);
 
   const accountQ = useQuery({
     queryKey: ["gmail_account"],
