@@ -612,3 +612,150 @@ export const shareContactByEmail = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+
+/** Manually create a contact. */
+export const createContactManual = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: any) =>
+    z.object({
+      email: z.string().trim().toLowerCase().email().max(255),
+      name: z.string().trim().max(200).optional().nullable(),
+      title: z.string().trim().max(200).optional().nullable(),
+      company: z.string().trim().max(200).optional().nullable(),
+      phone: z.string().trim().max(60).optional().nullable(),
+      website: z.string().trim().max(500).optional().nullable(),
+      linkedin: z.string().trim().max(500).optional().nullable(),
+      twitter: z.string().trim().max(500).optional().nullable(),
+      notes: z.string().trim().max(5000).optional().nullable(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const payload = {
+      user_id: userId,
+      email: data.email,
+      name: normalizeName(data.name ?? null),
+      title: data.title || null,
+      company: data.company || null,
+      phone: data.phone || null,
+      website: data.website || null,
+      linkedin: data.linkedin || null,
+      twitter: data.twitter || null,
+      notes: data.notes || null,
+      source: "manual",
+    };
+    const { data: row, error } = await supabaseAdmin
+      .from("contacts")
+      .upsert(payload, { onConflict: "user_id,email" })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return { contact: row };
+  });
+
+/** Lightweight folder list for the sender picker. */
+export const listFoldersForPicker = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase } = context;
+    const { data, error } = await supabase
+      .from("folders")
+      .select("id,name,color")
+      .order("priority", { ascending: false })
+      .order("name", { ascending: true });
+    if (error) throw new Error(error.message);
+    return { folders: data ?? [] };
+  });
+
+/** List unique sender addresses from the user's emails, optionally scoped to folders, excluding existing contacts. */
+export const listUniqueInboxSenders = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: any) =>
+    z.object({
+      folderIds: z.array(z.string().uuid()).max(50).optional(),
+      search: z.string().trim().max(200).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+    }).parse(d ?? {})
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // Pull a chunk of recent emails (cap at 5k to keep aggregation fast).
+    let q = supabase
+      .from("emails")
+      .select("from_addr,from_name,received_at,folder_id")
+      .eq("user_id", userId)
+      .not("from_addr", "is", null)
+      .order("received_at", { ascending: false })
+      .limit(5000);
+    if (data.folderIds && data.folderIds.length > 0) {
+      q = q.in("folder_id", data.folderIds);
+    }
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+
+    // Existing contact addresses (to exclude).
+    const { data: existing } = await supabaseAdmin
+      .from("contacts")
+      .select("email")
+      .eq("user_id", userId);
+    const existingSet = new Set((existing ?? []).map((c: any) => (c.email || "").toLowerCase()));
+
+    type Agg = { email: string; name: string | null; count: number; lastReceivedAt: string | null };
+    const agg = new Map<string, Agg>();
+    for (const r of rows ?? []) {
+      const addr = (r.from_addr || "").trim().toLowerCase();
+      if (!addr || !isLikelyHuman(addr)) continue;
+      if (existingSet.has(addr)) continue;
+      const cur = agg.get(addr);
+      const nm = normalizeName(r.from_name);
+      if (!cur) {
+        agg.set(addr, { email: addr, name: nm, count: 1, lastReceivedAt: r.received_at ?? null });
+      } else {
+        cur.count++;
+        if (nm && (!cur.name || nm.length > cur.name.length)) cur.name = nm;
+        if (r.received_at && (!cur.lastReceivedAt || r.received_at > cur.lastReceivedAt)) {
+          cur.lastReceivedAt = r.received_at;
+        }
+      }
+    }
+
+    let list = [...agg.values()];
+    const search = (data.search || "").toLowerCase().trim();
+    if (search) {
+      list = list.filter(
+        (x) => x.email.includes(search) || (x.name ?? "").toLowerCase().includes(search)
+      );
+    }
+    list.sort((a, b) => b.count - a.count);
+    const limit = data.limit ?? 200;
+    return { senders: list.slice(0, limit) };
+  });
+
+/** Bulk-create contacts from a list of {email, name?}. */
+export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: any) =>
+    z.object({
+      items: z.array(
+        z.object({
+          email: z.string().trim().toLowerCase().email().max(255),
+          name: z.string().trim().max(200).optional().nullable(),
+        })
+      ).min(1).max(200),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const rows = data.items.map((it) => ({
+      user_id: userId,
+      email: it.email,
+      name: normalizeName(it.name ?? null),
+      source: "email",
+    }));
+    const { error, count } = await supabaseAdmin
+      .from("contacts")
+      .upsert(rows, { onConflict: "user_id,email", count: "exact" });
+    if (error) throw new Error(error.message);
+    return { created: count ?? rows.length };
+  });
