@@ -378,12 +378,16 @@ export async function classifyParsedEmail(
   };
 }
 
+export type ProcessTimings = { fetch: number; ai: number; db: number };
+
 export async function processGmailMessage(
   accountId: string,
   gmailId: string,
   userId: string,
-  opts: { context?: AccountContext; skipAi?: boolean } = {},
+  opts: { context?: AccountContext; skipAi?: boolean; timings?: ProcessTimings } = {},
 ) {
+  const t = opts.timings;
+
 
   const { data: existing } = await supabaseAdmin
     .from("emails")
