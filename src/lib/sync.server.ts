@@ -303,14 +303,19 @@ export async function classifyParsedEmail(
       const m = matchByFilters(parsed, folderList, filterList);
       if (m?.kind === "match") {
         folder_id = m.folder_id;
-        classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
-        confidence = 1;
-        matched_filter_ids = m.matched_filters.map((f) => f.id);
         matched_folder_ids = m.all_matched_folder_ids;
-        classification_reason =
-          classified_by === "domain_rule"
-            ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
-            : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+        confidence = 1;
+        if (m.tree_used) {
+          classified_by = "filter";
+          classification_reason = `Rule group matched for "${labelOf(folderList, m.folder_id)}"`;
+        } else if (m.filter) {
+          classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
+          matched_filter_ids = m.matched_filters.map((f) => f.id);
+          classification_reason =
+            classified_by === "domain_rule"
+              ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
+              : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+        }
       } else if (m?.kind === "excluded") {
         classified_by = "excluded";
         classification_reason = `Would match "${m.folder_name}" but excluded by rule: ${m.exclude.field} ${m.exclude.op} "${m.exclude.value}"`;
