@@ -303,6 +303,7 @@ export async function classifyParsedEmail(
     ai_summary: summary,
     classification_reason,
     matched_filter_ids,
+    matched_folder_ids,
   };
 }
 
