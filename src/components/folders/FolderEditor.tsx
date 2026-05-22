@@ -43,6 +43,9 @@ export type Folder = {
   priority: number;
   gmail_account_id: string;
   filter_logic?: "any" | "all";
+  auto_star?: boolean;
+  hide_from_inbox?: boolean;
+  skip_ai?: boolean;
 };
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
@@ -126,6 +129,9 @@ export function FolderEditor({
       gmail_label_id: local.gmail_label_id,
       auto_archive: local.auto_archive, auto_mark_read: local.auto_mark_read, priority: local.priority,
       filter_logic: local.filter_logic ?? "any",
+      auto_star: local.auto_star ?? false,
+      hide_from_inbox: local.hide_from_inbox ?? false,
+      skip_ai: local.skip_ai ?? false,
     }).eq("id", folder.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Saved");
@@ -337,7 +343,7 @@ export function FolderEditor({
 
           <SummariesPanel folderId={folder.id} />
 
-          <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="mt-4 grid grid-cols-2 gap-3">
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto-archive
               <Switch checked={local.auto_archive} onCheckedChange={(v) => setLocal({ ...local, auto_archive: v })} />
@@ -345,6 +351,21 @@ export function FolderEditor({
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto mark-read
               <Switch checked={local.auto_mark_read} onCheckedChange={(v) => setLocal({ ...local, auto_mark_read: v })} />
+            </label>
+            <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Star matching emails (also stars them in Gmail)">
+              Auto-star
+              <Switch checked={local.auto_star ?? false} onCheckedChange={(v) => setLocal({ ...local, auto_star: v })} />
+            </label>
+            <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Hide from main Inbox view (still visible inside this folder)">
+              Hide from Inbox
+              <Switch checked={local.hide_from_inbox ?? false} onCheckedChange={(v) => setLocal({ ...local, hide_from_inbox: v })} />
+            </label>
+            <label className="col-span-2 flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Only use the rules below — never let AI assign emails to this folder">
+              <div>
+                Rules only
+                <span className="ml-2 text-xs text-muted-foreground">(skip AI fallback for this folder)</span>
+              </div>
+              <Switch checked={local.skip_ai ?? false} onCheckedChange={(v) => setLocal({ ...local, skip_ai: v })} />
             </label>
           </div>
 

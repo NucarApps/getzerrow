@@ -72,6 +72,7 @@ type Email = {
   classified_by: string | null;
   classification_reason: string | null;
   matched_filter_ids: string[] | null;
+  matched_folder_ids: string[] | null;
   to_addrs: string | null;
   has_attachment: boolean;
   processed_at: string | null;
@@ -168,7 +169,7 @@ function InboxPage() {
         // Exclude body_text/body_html — they're only needed when an email is opened.
         const { data } = await supabase
           .from("emails")
-          .select("id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,to_addrs,has_attachment,processed_at")
+          .select("id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at")
           .order("received_at", { ascending: false })
           .limit(2000);
         return (data ?? []) as Email[];
@@ -947,6 +948,36 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               filters={folderRulesQ.data?.filters ?? []}
               email={email}
             />
+            {(() => {
+              const winnerId = email.folder_id;
+              const others = (email.matched_folder_ids ?? [])
+                .filter((id) => id !== winnerId)
+                .map((id) => folders.find((f) => f.id === id))
+                .filter((f): f is Folder => !!f);
+              if (others.length === 0) return null;
+              return (
+                <div>
+                  <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
+                    Also matched
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {others.map((f) => (
+                      <span
+                        key={f.id}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
+                        title={`${f.name} rules also matched — lost on priority`}
+                      >
+                        <span className="h-2 w-2 rounded-full" style={{ background: f.color }} />
+                        <span className="truncate max-w-[10rem]">{f.name}</span>
+                      </span>
+                    ))}
+                    <span className="text-xs text-muted-foreground self-center">
+                      · winner chosen by priority
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
             {email.classified_by === "ai" && email.ai_confidence != null && (
               <div>
                 <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">AI confidence</div>
