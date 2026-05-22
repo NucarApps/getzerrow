@@ -461,10 +461,13 @@ export function FolderEditor({
                   <SelectContent>
                     <SelectItem value="from">from</SelectItem>
                     <SelectItem value="to">to</SelectItem>
+                    <SelectItem value="cc">cc</SelectItem>
                     <SelectItem value="subject">subject</SelectItem>
                     <SelectItem value="body">body</SelectItem>
                     <SelectItem value="domain">domain</SelectItem>
-                    <SelectItem value="has_attachment">has_attachment</SelectItem>
+                    <SelectItem value="list_id">list-id (newsletter)</SelectItem>
+                    <SelectItem value="is_reply">is reply</SelectItem>
+                    <SelectItem value="has_attachment">has attachment</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
