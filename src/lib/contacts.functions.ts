@@ -472,7 +472,8 @@ ${body}`,
       phone?: string | null; website?: string | null; linkedin?: string | null; twitter?: string | null;
     } = { enriched_at: new Date().toISOString() };
     for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
-      const v = extracted[k];
+      let v = extracted[k];
+      if (k === "name") v = normalizeName(v);
       if (v && !(base as any)[k]) patch[k] = v;
     }
 
