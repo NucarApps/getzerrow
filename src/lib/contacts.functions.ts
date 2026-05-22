@@ -322,3 +322,92 @@ export const createContactFromScan = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { contact: row };
   });
+
+/** Add a contact from a specific email and extract details from its signature. */
+export const addContactFromEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { emailId: string }) =>
+    z.object({ emailId: z.string().uuid() }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    const { data: email, error: emailErr } = await supabase
+      .from("emails")
+      .select("from_addr,from_name,subject,body_text,snippet")
+      .eq("id", data.emailId)
+      .single();
+    if (emailErr || !email) throw new Error("Email not found");
+
+    const addr = (email.from_addr || "").trim().toLowerCase();
+    if (!addr || !/@/.test(addr)) throw new Error("This email has no sender address");
+
+    // Upsert the base contact
+    const { data: base, error: upErr } = await supabaseAdmin
+      .from("contacts")
+      .upsert(
+        {
+          user_id: userId,
+          email: addr,
+          name: email.from_name?.trim() || null,
+          source: "email" as const,
+        },
+        { onConflict: "user_id,email" }
+      )
+      .select("*")
+      .single();
+    if (upErr || !base) throw new Error(upErr?.message ?? "Could not save contact");
+
+    // Extract from this specific email's body
+    const body = (email.body_text || email.snippet || "").slice(0, 6000);
+    let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
+      name: null, title: null, company: null, phone: null, website: null, linkedin: null, twitter: null,
+    };
+    if (body.trim()) {
+      try {
+        const { output } = await generateText({
+          model: getModel("google/gemini-2.5-flash"),
+          output: Output.object({ schema: EXTRACT_SCHEMA }),
+          prompt: `Extract contact details for the sender from their email signature below.
+Sender email: ${addr}
+
+For each field, return the value or null if not clearly present. Do NOT guess.
+- name: full name
+- title: job title
+- company: company / organization name
+- phone: primary phone number (E.164 if possible)
+- website: company or personal website URL
+- linkedin: full LinkedIn profile URL
+- twitter: full Twitter/X profile URL
+
+Email:
+Subject: ${email.subject ?? ""}
+${body}`,
+        });
+        extracted = output as z.infer<typeof EXTRACT_SCHEMA>;
+      } catch (e: any) {
+        console.error("addContactFromEmail extract failed", e?.message ?? e);
+      }
+    }
+
+    const patch: {
+      enriched_at: string;
+      name?: string | null; title?: string | null; company?: string | null;
+      phone?: string | null; website?: string | null; linkedin?: string | null; twitter?: string | null;
+    } = { enriched_at: new Date().toISOString() };
+    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
+      const v = extracted[k];
+      if (v && !(base as any)[k]) patch[k] = v;
+    }
+
+    const { data: updated, error: updErr } = await supabase
+      .from("contacts")
+      .update(patch)
+      .eq("id", base.id)
+      .select("*")
+      .single();
+    if (updErr) throw new Error(updErr.message);
+
+    return { contact: updated };
+  });
+
