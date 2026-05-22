@@ -389,15 +389,20 @@ export async function processGmailMessage(
   const t = opts.timings;
 
 
+  const _t0 = performance.now();
   const { data: existing } = await supabaseAdmin
     .from("emails")
     .select("id, from_addr, subject, body_text, body_html, received_at")
     .eq("gmail_message_id", gmailId)
     .eq("gmail_account_id", accountId)
     .maybeSingle();
+  if (t) t.db += performance.now() - _t0;
 
+  const _t1 = performance.now();
   const raw = await getMessage(accountId, gmailId);
   const parsed = parseMessage(raw);
+  if (t) t.fetch += performance.now() - _t1;
+
 
   if (existing) {
     // Repair rows that were inserted with missing/blank metadata.
