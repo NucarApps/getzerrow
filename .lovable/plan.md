@@ -1,25 +1,31 @@
-# Fix: enrich loses last name + UI doesn't update after enrich
+## Goal
 
-## Two separate bugs
+When a contact is opened or enriched, generate an AI "Relationship summary" — who they are (role, company) and what your past correspondence with them has been about (topics, recurring threads, last interaction). Display it on the contact detail page.
 
-### Bug 1 — Last name disappears on Re-enrich
-In `enrichContact` (`src/lib/contacts.functions.ts`), when the user clicks Re-enrich (`force: true`), we overwrite `name` with whatever the AI returned. If signatures in the sampled emails only contain a first name (e.g. they sign off `"— John"` even though Gmail's `from_name` was `"John Federici"`), the AI returns `"John"` and we replace the better existing name `"John Federici"` with `"John"`.
+## Changes
 
-**Fix (server-side):** when comparing a candidate `name` against the existing one, prefer the more complete value:
-- Compute token count for both (split on whitespace).
-- If the existing name has more tokens **and** the new name is a prefix/subset of the existing (e.g. existing `"John Federici"`, new `"John"` or `"john"`), keep existing.
-- Otherwise, prefer the candidate that has more tokens. Only fall through to "overwrite because force=true" when the new value is genuinely at least as complete.
+### 1. Database (migration)
+Add to `contacts`:
+- `relationship_summary text` — multi-sentence AI summary
+- `summary_generated_at timestamptz`
 
-Same guard applied in `addContactFromEmail` extraction (which already only fills empty fields, but we'll add the prefix check for consistency).
+### 2. `src/lib/contacts.functions.ts`
+Extend `enrichContact` (and run as part of the same flow so the existing "Re-enrich" button regenerates the summary too):
 
-### Bug 2 — Contact detail page doesn't refresh until manual reload
-In `src/routes/_authenticated/contacts.$id.tsx`, the form is seeded from `q.data.contact` inside a `useEffect` whose dependency array is `[q.data?.contact?.id]`. After Re-enrich:
-- `qc.invalidateQueries({ queryKey: ["contact", id] })` does refetch the contact.
-- But the contact's `id` hasn't changed, so the effect never re-runs and the form keeps showing the pre-enrich values.
+- After the existing field extraction, pull a broader sample of past emails for this sender — **both directions** of the conversation, not just inbound. Query `emails` for rows where `from_addr = contact.email` OR `to_addrs ILIKE %contact.email%`, ordered by `received_at desc`, limit ~30.
+- For each, keep subject, direction (they sent / you sent), date, and a trimmed body tail (reuse existing `cleanTail`, ~600 chars).
+- Send to Gemini 2.5 Flash with a prompt like: "Write a 3–5 sentence briefing for the user about this contact. Cover: who they are (name, role, company if known), the nature of your relationship (client, vendor, colleague, recruiter, friend, etc.), and the main topics / projects you've discussed. Use 'you' for the account owner. Be specific — reference actual topics from the emails. If there's not enough signal, say so briefly."
+- Save result to `relationship_summary` + `summary_generated_at` in the same UPDATE as the other enrichment fields.
+- Skip regeneration on the 30-day cache path unless `force=true` (same rule as field extraction).
 
-**Fix (client-side, single file):** widen the effect's dependency to also include `q.data?.contact?.enriched_at` (and `q.data?.contact?.updated_at` if present) so the form re-syncs whenever the row is refetched with new data. Also call `await q.refetch()` after `enrich(...)` (in addition to the invalidate) so the UI updates without waiting for the next render tick.
+### 3. `src/routes/_authenticated/contacts.$id.tsx`
+- Add a "Relationship summary" card directly under the header (above the action buttons), styled like an AI panel (subtle border, `Sparkles` icon, muted background).
+- Show `c.relationship_summary` when present; show a skeleton/"Generating summary…" line while `enriching` is true and no summary exists yet; show "No summary yet — click Re-enrich" if enriched but empty.
+- Update the auto-enrich effect (already runs on first visit for email-sourced contacts) — no change needed, the same call now also generates the summary.
+- Re-enrich button label stays the same; tooltip/helper text updated to "Re-read past emails and refresh summary."
 
 ## Out of scope
-- No realtime subscription wiring — point invalidation + refetch on the action that caused the change is enough here.
-- No DB schema change.
-- No changes to the list page (already sorts client-side from the server response).
+- No separate "regenerate summary only" button — piggybacks on Re-enrich.
+- No streaming UI.
+- No changes to list view.
+- No realtime updates.
