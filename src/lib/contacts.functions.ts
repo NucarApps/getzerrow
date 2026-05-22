@@ -108,11 +108,11 @@ export const backfillContacts = createServerFn({ method: "POST" })
     let added = 0;
     for (let i = 0; i < rows.length; i += 500) {
       const chunk = rows.slice(i, i + 500);
-      const { error, count } = await supabaseAdmin
+      const { error, data: ins } = await supabaseAdmin
         .from("contacts")
-        .upsert(chunk, { onConflict: "user_id,email", ignoreDuplicates: true, count: "exact" })
-        .select("id", { count: "exact", head: true });
-      if (!error) added += count ?? 0;
+        .upsert(chunk, { onConflict: "user_id,email", ignoreDuplicates: true })
+        .select("id");
+      if (!error) added += ins?.length ?? 0;
     }
 
     const { count: total } = await supabase
