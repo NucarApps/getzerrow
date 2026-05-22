@@ -169,7 +169,7 @@ function InboxPage() {
         // Exclude body_text/body_html — they're only needed when an email is opened.
         const { data } = await supabase
           .from("emails")
-          .select("id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,to_addrs,has_attachment,processed_at")
+          .select("id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at")
           .order("received_at", { ascending: false })
           .limit(2000);
         return (data ?? []) as Email[];
