@@ -312,8 +312,9 @@ function GroupEditorDialog({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (state?.mode === "edit") { setName(state.group.name); setColor(state.group.color); }
-    else if (state?.mode === "create") { setName(""); setColor(GROUP_COLORS[0]); }
+    if (!state) return;
+    if (state.mode === "edit") { setName(state.group.name); setColor(state.group.color); }
+    else { setName(""); setColor(GROUP_COLORS[0]); }
   }, [state]);
 
   if (!state) return null;
