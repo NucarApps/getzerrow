@@ -143,6 +143,15 @@ export const enrichContact = createServerFn({ method: "POST" })
       .single();
     if (error || !contact) throw new Error("Contact not found");
 
+    // One-time normalize of existing name so opening a contact cleans it up.
+    {
+      const normalized = normalizeName(contact.name);
+      if (normalized && normalized !== contact.name) {
+        await supabase.from("contacts").update({ name: normalized }).eq("id", contact.id);
+        (contact as any).name = normalized;
+      }
+    }
+
     if (!data.force && contact.enriched_at) {
       const age = Date.now() - new Date(contact.enriched_at).getTime();
       if (age < 30 * 24 * 60 * 60 * 1000) return { contact, skipped: true as const };
