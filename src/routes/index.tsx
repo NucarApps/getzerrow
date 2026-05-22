@@ -2,6 +2,7 @@ import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useMissionTelemetry } from "@/components/landing/useMissionTelemetry";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+import shipUrl from "@/assets/zerrow-ship.png";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
