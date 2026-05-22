@@ -101,6 +101,21 @@ export function TrackingStandby() {
   const [activeBuff, setActiveBuff] = useState<ActiveBuff | null>(null);
   const activeBuffRef = useRef<ActiveBuff | null>(null);
 
+  // Track container size to compensate for the game SVG's non-uniform stretch
+  // (viewBox 100x100, preserveAspectRatio="none") so the ship PNG keeps its
+  // native aspect ratio regardless of the container's shape.
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+
   // Per-frame refs
   const playerXRef = useRef(50);
   const playerCooldownRef = useRef(0);
