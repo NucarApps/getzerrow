@@ -349,7 +349,27 @@ export function FolderEditor({
           </div>
 
           <div className="mt-4">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
+              <div className="inline-flex rounded-md border border-border text-xs overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setLocal({ ...local, filter_logic: "any" })}
+                  className={`px-2.5 py-1 ${ (local.filter_logic ?? "any") === "any" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50" }`}
+                  title="Match if ANY include rule passes (OR)"
+                >
+                  Match any
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLocal({ ...local, filter_logic: "all" })}
+                  className={`px-2.5 py-1 border-l border-border ${ local.filter_logic === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50" }`}
+                  title="Match only if ALL include rules pass (AND)"
+                >
+                  Match all
+                </button>
+              </div>
+            </div>
             <div className="mt-2 space-y-1.5">
               {filters.map((f) => {
                 const isExclude = f.op === "not_contains" || f.op === "not_equals";
