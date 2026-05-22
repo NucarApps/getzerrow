@@ -1,42 +1,39 @@
-## Goal
+## What I found
 
-Make in-app folder moves train the destination folder's AI sort profile, and keep the existing Gmail-side manual-move learning. Net effect: every move you make — in our app or in Gmail — teaches the folder.
+The "$50K on the table" email from `justin.rank@stellantis.com` is **not in the database**. Pushes for `chris@nucar.com` arrived continuously (343 pushes in the last hour) and the job queue currently has **18 pending jobs**, including two stuck since 13:31 with `stuck (worker timeout) — auto-reclaimed` after multiple retries. So this isn't a "push didn't arrive" problem — it's a **processing-throughput** problem. New mail enqueues fine, but the worker can't keep up, and individual jobs occasionally hit the 25 s per-job timeout and cycle back as retries.
 
-## What already exists (no work needed)
+Three concrete causes:
 
-- **Gmail-side manual moves** are already detected in `syncSinceHistory` via `labelsAdded` history events.
-- `recordManualMove` saves a `folder_examples` row with `source: manual_move` and triggers `regenerateFolderProfile` once ≥3 manual moves have accumulated since `last_learned_at`.
-- `regenerateFolderProfile` rebuilds `folders.learned_profile` from the latest 50 examples via `buildFolderProfile` (the AI sort instructions the classifier reads).
-
-## What's missing
-
-- `performMove` (used by the in-app move and bulk-move flows) already upserts a `folder_examples` row with `source: "correction"` for the destination folder, but **never triggers a retrain**. So in-app moves don't update the AI profile.
+1. **Webhook drains too little inline.** `gmail-webhook.ts` only runs `Math.min(enqueuedCount, 10)` jobs after enqueueing. When a burst pushes many messages, the rest wait up to 30 s for the cron tick.
+2. **Stuck-job recovery is too lazy.** `runMessageJobs` only reclaims jobs whose `locked_at` is older than **90 s**, and the per-job timeout is 25 s. A worker that dies silently (Cloudflare request timeout, AI gateway hang) blocks that job for a minute and a half before any retry, and on retry it goes back to the end of the queue.
+3. **No visibility into which step is slow.** When a job hits the 25 s timeout we log `"job timeout after 25000ms"` but not which phase (Gmail fetch, AI classify, DB write). I can't tell whether to raise the timeout, lower concurrency, or shrink the AI prompt.
 
 ## Changes
 
-### 1. Auto-retrain on every in-app move (`src/lib/sync.server.ts`)
+### 1. Drain harder on every push (`src/routes/api/public/gmail-webhook.ts`)
+- Replace `Math.min(enqueuedCount, 10)` with `runMessageJobs(50, 16, { priority: 0 })` — i.e. always try to drain up to 50 high-priority (live) jobs after enqueueing, not just the ones we just added. This keeps the queue near empty during bursts instead of waiting for cron.
+- Keep it bounded to live-priority jobs so a backfill backlog doesn't starve new mail.
 
-- After the existing `folder_examples` upsert at the end of `performMove`, kick off `regenerateFolderProfile(toFolderId)` for the destination folder.
-- Wrap in `try/catch` and log on failure — a profile-rebuild error must not fail the user's move.
-- Fire-and-forget is fine (don't block the move response on the LLM call). The move itself already returns success once the row is updated and Gmail labels are synced.
-- This path covers both `moveEmailToFolder` (single right-click move) and `bulkMoveEmails` (multi-select / "move similar"), since both go through `performMove`.
+### 2. Faster stuck-job recovery (`src/lib/sync.server.ts`, `runMessageJobs`)
+- Drop `STUCK_MS` from **90 s → 35 s** (safely above the 25 s per-job timeout). A dead worker's job becomes claimable again on the next cron tick instead of ~90 s later.
+- When auto-reclaiming a stuck job, set `next_run_at = now()` and **don't** count the reclaim as a failed attempt unless it has been reclaimed twice in a row. Currently every reclaim burns one of 5 attempts, so two transient hiccups DLQ the message.
 
-### 2. No threshold gate for in-app moves
+### 3. Diagnostic timing (`src/lib/sync.server.ts`, `processGmailMessage` + `processOne`)
+- Wrap the three phases (Gmail fetch, AI classify, DB upsert) with `performance.now()` and include them in the `last_error` string when a job times out: `"job timeout after 25000ms (fetch=4200 ai=20100 db=0)"`.
+- Log nothing on success — only on timeout/error — so we don't add noise.
 
-- Per your answer, retrain after every move (no counter, no `last_learned_at` check on the in-app path).
-- The Gmail-side path keeps its existing ≥3 threshold in `recordManualMove` to avoid hammering the LLM on bulk Gmail reorganizations.
-
-### 3. No new rules, no UI changes
-
-- We do **not** insert hard `folder_filters` rows on in-app move — the existing right-click "Always send to folder" flow already covers explicit rule creation.
-- No schema changes, no new server functions, no UI changes.
-
-## Files touched
-
-- `src/lib/sync.server.ts` — one ~5-line addition at the end of `performMove`.
+### 4. Sanity check: confirm the $50K email
+- After deploying, re-query `emails` for `subject ilike '%50K on the table%'` to verify it now lands. If it's already in Gmail's INBOX but no `message_jobs` row exists, that means the push for that message never reached us — different problem (Gmail watch / Pub/Sub) and I'll dig into `pubsub_events` for that exact `historyId`. The current 487 push events in 2 h say the watch is healthy, so I expect the email to appear once the backlog clears.
 
 ## Out of scope
 
-- Surfacing a toast/badge when the profile is auto-refreshed.
-- Making the threshold configurable per folder.
-- Auto-editing the user-authored `ai_rule` field (we only refresh `learned_profile`).
+- Raising the 25 s per-job timeout (Cloudflare Worker subrequest budget makes this risky — fix the slow step instead).
+- Restructuring the AI call into a streaming or smaller-model path. The timing logs from change #3 will tell us if that's needed next.
+- UI changes to the Sync activity panel.
+
+## Files touched
+
+- `src/routes/api/public/gmail-webhook.ts` — one-line change to the inline drain.
+- `src/lib/sync.server.ts` — adjust `STUCK_MS`, reclaim-attempt logic, and add phase timings around `processGmailMessage`.
+
+No schema migration, no new endpoints.
