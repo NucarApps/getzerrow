@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { ImageCropUpload } from "@/components/cards/ImageCropUpload";
 import { ThemePicker } from "@/components/cards/themes";
+import { CardAnalytics } from "@/components/cards/CardAnalytics";
 
 export const Route = createFileRoute("/_authenticated/my-card")({
   head: () => ({ meta: [{ title: "My Card — Zerrow" }] }),
@@ -192,6 +193,11 @@ function MyCardPage() {
               <QRCodeSVG value={publicUrl} size={180} />
             </div>
             <code className="text-xs text-muted-foreground">{publicUrl}</code>
+          </div>
+        )}
+        {q.data?.card && (
+          <div className="mt-8">
+            <CardAnalytics />
           </div>
         )}
       </div>

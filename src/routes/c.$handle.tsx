@@ -1,7 +1,10 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { QRCodeSVG } from "qrcode.react";
 import { Mail, Phone, Globe, Linkedin, Twitter, Building2, Download, Share2 } from "lucide-react";
 import { getPublicCard, getPublicVCard } from "@/lib/cards.functions";
+import { logCardEvent } from "@/lib/card-analytics.functions";
 import { getTheme } from "@/components/cards/themes";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -56,10 +59,30 @@ export const Route = createFileRoute("/c/$handle")({
 
 function PublicCard() {
   const { card } = Route.useLoaderData();
+  const logEvent = useServerFn(logCardEvent);
+  const loggedView = useRef(false);
+
+  useEffect(() => {
+    if (!card || loggedView.current) return;
+    loggedView.current = true;
+    logEvent({
+      data: {
+        handle: card.handle,
+        event_type: "view",
+        referrer: typeof document !== "undefined" ? document.referrer.slice(0, 500) : undefined,
+      },
+    }).catch(() => {});
+  }, [card, logEvent]);
+
   if (!card) return null;
   const publicUrl = typeof window !== "undefined" ? window.location.href : "";
 
+  function track(kind: "email" | "phone" | "website" | "linkedin" | "twitter", url: string) {
+    logEvent({ data: { handle: card!.handle, event_type: "link_click", link_kind: kind, link_url: url.slice(0, 500) } }).catch(() => {});
+  }
+
   async function download() {
+    logEvent({ data: { handle: card!.handle, event_type: "vcard_download" } }).catch(() => {});
     const r = await getPublicVCard({ data: { handle: card!.handle, publicUrl } });
     const blob = new Blob([r.vcard], { type: "text/vcard" });
     const url = URL.createObjectURL(blob);
@@ -103,11 +126,11 @@ function PublicCard() {
 
             <ul className="mt-6 space-y-2 text-sm">
               {card.company && <Row icon={<Building2 className="h-4 w-4" />}>{card.company}</Row>}
-              {card.email && <Row icon={<Mail className="h-4 w-4" />}><a href={`mailto:${card.email}`} className="hover:underline">{card.email}</a></Row>}
-              {card.phone && <Row icon={<Phone className="h-4 w-4" />}><a href={`tel:${card.phone}`} className="hover:underline">{card.phone}</a></Row>}
-              {card.website && <Row icon={<Globe className="h-4 w-4" />}><a href={card.website} target="_blank" rel="noreferrer" className="hover:underline">{card.website}</a></Row>}
-              {card.linkedin && <Row icon={<Linkedin className="h-4 w-4" />}><a href={card.linkedin} target="_blank" rel="noreferrer" className="hover:underline">LinkedIn</a></Row>}
-              {card.twitter && <Row icon={<Twitter className="h-4 w-4" />}><a href={card.twitter} target="_blank" rel="noreferrer" className="hover:underline">Twitter / X</a></Row>}
+              {card.email && <Row icon={<Mail className="h-4 w-4" />}><a href={`mailto:${card.email}`} onClick={() => track("email", `mailto:${card.email}`)} className="hover:underline">{card.email}</a></Row>}
+              {card.phone && <Row icon={<Phone className="h-4 w-4" />}><a href={`tel:${card.phone}`} onClick={() => track("phone", `tel:${card.phone}`)} className="hover:underline">{card.phone}</a></Row>}
+              {card.website && <Row icon={<Globe className="h-4 w-4" />}><a href={card.website} target="_blank" rel="noreferrer" onClick={() => track("website", card.website!)} className="hover:underline">{card.website}</a></Row>}
+              {card.linkedin && <Row icon={<Linkedin className="h-4 w-4" />}><a href={card.linkedin} target="_blank" rel="noreferrer" onClick={() => track("linkedin", card.linkedin!)} className="hover:underline">LinkedIn</a></Row>}
+              {card.twitter && <Row icon={<Twitter className="h-4 w-4" />}><a href={card.twitter} target="_blank" rel="noreferrer" onClick={() => track("twitter", card.twitter!)} className="hover:underline">Twitter / X</a></Row>}
             </ul>
 
             <div className="mt-6 grid gap-2 sm:grid-cols-2">
@@ -127,8 +150,10 @@ function PublicCard() {
                   try {
                     if (typeof navigator !== "undefined" && navigator.share) {
                       await navigator.share(shareData);
+                      logEvent({ data: { handle: card!.handle, event_type: "share" } }).catch(() => {});
                     } else {
                       await navigator.clipboard.writeText(publicUrl);
+                      logEvent({ data: { handle: card!.handle, event_type: "share" } }).catch(() => {});
                       toast.success("Link copied");
                     }
                   } catch (e: any) {
