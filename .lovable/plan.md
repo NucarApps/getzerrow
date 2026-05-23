@@ -1,36 +1,22 @@
-## Diagnosis
+## Plan
 
-`https://img.logo.dev/{domain}` returns **HTTP 404** without a publishable API token (`?token=pk_…`). That's why no company logos appear — every `<img>` errors out and falls back to the monogram. The dominant‑color extraction also never runs (no image to sample).
+Replace the current DuckDuckGo-only logo loading with a more reliable multi-provider fallback so company cards show real logos whenever possible.
 
-## Fix
+### What I’ll change
 
-Switch to a **keyless** icon source: **DuckDuckGo's icon service**, which is free, requires no signup, and supports CORS:
+1. **Generate multiple logo candidates per domain**
+   - Try Google favicon first: `https://www.google.com/s2/favicons?domain=...&sz=...`
+   - Then DuckDuckGo icon: `https://icons.duckduckgo.com/ip3/...`
+   - Then Clearbit logo as a final public fallback: `https://logo.clearbit.com/...`
 
-```
-https://icons.duckduckgo.com/ip3/{domain}.ico
-```
+2. **Update `CompanyLogo` to fail over provider-by-provider**
+   - If one image fails or returns a blank/unusable icon, automatically try the next URL.
+   - Only show the monogram after all candidates fail.
+   - Reset retry state when the domain changes.
 
-It returns a real favicon (often a clean square logo) for almost every domain, and a generic placeholder otherwise. Verified working (HTTP 200) in tests.
+3. **Make color extraction use the same reliable source list**
+   - Try candidate logo URLs in order until one loads and can be sampled.
+   - Keep the card tint behavior, but don’t let color extraction failure prevent the logo from displaying.
 
-### Change
-
-- **`src/lib/company-domains.ts`** — rewrite `logoUrl(domain)`:
-  ```ts
-  export function logoUrl(domain: string, _size = 64): string {
-    return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`;
-  }
-  ```
-  (`size` arg kept for signature compatibility; DDG ignores it.)
-
-- **`src/components/contacts/CompanyLogo.tsx`** — no change needed; the existing `onError` → monogram fallback still handles the rare miss.
-
-- **`src/lib/logo-color.ts`** — no logic change. DDG serves with `Access-Control-Allow-Origin: *`, so the canvas read for dominant‑color extraction still works.
-
-### Why not logo.dev with a token
-
-Adding `logo.dev` properly would require the user to sign up at logo.dev, get a publishable key (safe to ship client‑side), and we'd wire it as a `VITE_LOGO_DEV_TOKEN` env var. Higher‑quality logos but adds friction. Happy to do that as a follow‑up if you want sharper brand marks — DDG is the zero‑setup fix.
-
-## Out of scope
-
-- A per‑domain manual logo override.
-- Pre‑fetching/caching logos server‑side.
+4. **Verify the result**
+   - Confirm sample domains like `mtb.com`, `presidio.com`, `withsift.ai`, and `littler.com` produce a visible logo or gracefully fall back only when no provider has one.

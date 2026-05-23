@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { logoUrl } from "@/lib/company-domains";
+import { useEffect, useMemo, useState } from "react";
+import { logoCandidates } from "@/lib/company-domains";
 import { getLogoDominantColor } from "@/lib/logo-color";
 
 type Props = {
@@ -10,20 +10,29 @@ type Props = {
   onColor?: (color: string | null) => void;
 };
 
-/** Company logo with monogram fallback on load error. */
+/** Company logo with multi-provider fallback, then monogram. */
 export function CompanyLogo({ domain, name, size = 32, className = "", onColor }: Props) {
-  const [failed, setFailed] = useState(false);
+  const candidates = useMemo(
+    () => (domain ? logoCandidates(domain, size * 2) : []),
+    [domain, size],
+  );
+  const [idx, setIdx] = useState(0);
   const initial = ((name || domain || "?").trim().charAt(0) || "?").toUpperCase();
   const px = `${size}px`;
 
+  // Reset retry index when domain changes.
+  useEffect(() => { setIdx(0); }, [domain]);
+
   useEffect(() => {
-    if (!onColor || !domain || failed) return;
+    if (!onColor || !domain) return;
     let cancelled = false;
     getLogoDominantColor(domain).then((c) => { if (!cancelled) onColor(c); });
     return () => { cancelled = true; };
-  }, [domain, failed, onColor]);
+  }, [domain, onColor]);
 
-  if (!domain || failed) {
+  const exhausted = idx >= candidates.length;
+
+  if (!domain || exhausted) {
     return (
       <div
         className={`grid shrink-0 place-items-center rounded-md bg-primary/15 font-semibold text-primary ${className}`}
@@ -37,14 +46,14 @@ export function CompanyLogo({ domain, name, size = 32, className = "", onColor }
 
   return (
     <img
-      src={logoUrl(domain, size * 2)}
+      src={candidates[idx]}
       width={size}
       height={size}
       alt={name ? `${name} logo` : `${domain} logo`}
       loading="lazy"
       crossOrigin="anonymous"
       referrerPolicy="no-referrer"
-      onError={() => { setFailed(true); onColor?.(null); }}
+      onError={() => setIdx((i) => i + 1)}
       className={`shrink-0 rounded-md bg-card object-contain ${className}`}
       style={{ width: px, height: px }}
     />

@@ -47,8 +47,18 @@ export function prettyCompanyName(domain: string): string {
   return core.charAt(0).toUpperCase() + core.slice(1);
 }
 
-/** Free logo endpoint; returns a transparent pixel when unknown. */
-/** Keyless favicon/logo endpoint (DuckDuckGo). Falls back to a generic icon for unknown domains. */
-export function logoUrl(domain: string, _size = 64): string {
-  return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`;
+/** Ordered list of public logo/favicon providers to try for a domain. */
+export function logoCandidates(domain: string, size = 64): string[] {
+  const d = encodeURIComponent(domain);
+  const s = Math.max(size, 64);
+  return [
+    `https://www.google.com/s2/favicons?domain=${d}&sz=${s}`,
+    `https://icons.duckduckgo.com/ip3/${d}.ico`,
+    `https://logo.clearbit.com/${d}`,
+  ];
+}
+
+/** First-choice logo URL (kept for back-compat). */
+export function logoUrl(domain: string, size = 64): string {
+  return logoCandidates(domain, size)[0];
 }

@@ -1,4 +1,4 @@
-import { logoUrl } from "./company-domains";
+import { logoCandidates } from "./company-domains";
 
 const memCache = new Map<string, string | null>();
 const STORAGE_PREFIX = "logoColor:";
@@ -86,23 +86,32 @@ export function getLogoDominantColor(domain: string): Promise<string | null> {
   const sess = readSession(domain);
   if (sess !== undefined) { memCache.set(domain, sess); return Promise.resolve(sess); }
 
+  const urls = logoCandidates(domain, 64);
   return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.decoding = "async";
-    img.referrerPolicy = "no-referrer";
+    let i = 0;
     let settled = false;
-    const done = (c: string | null) => {
+    const finish = (c: string | null) => {
       if (settled) return;
       settled = true;
       memCache.set(domain, c);
       writeSession(domain, c);
       resolve(c);
     };
-    img.onload = () => done(extractFromImage(img));
-    img.onerror = () => done(null);
-    img.src = logoUrl(domain, 64);
-    // Safety timeout
-    setTimeout(() => done(null), 5000);
+    const tryNext = () => {
+      if (i >= urls.length) return finish(null);
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.decoding = "async";
+      img.referrerPolicy = "no-referrer";
+      img.onload = () => {
+        const c = extractFromImage(img);
+        if (c) finish(c);
+        else { i++; tryNext(); }
+      };
+      img.onerror = () => { i++; tryNext(); };
+      img.src = urls[i];
+    };
+    tryNext();
+    setTimeout(() => finish(null), 6000);
   });
 }
