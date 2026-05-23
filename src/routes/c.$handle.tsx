@@ -59,10 +59,30 @@ export const Route = createFileRoute("/c/$handle")({
 
 function PublicCard() {
   const { card } = Route.useLoaderData();
+  const logEvent = useServerFn(logCardEvent);
+  const loggedView = useRef(false);
+
+  useEffect(() => {
+    if (!card || loggedView.current) return;
+    loggedView.current = true;
+    logEvent({
+      data: {
+        handle: card.handle,
+        event_type: "view",
+        referrer: typeof document !== "undefined" ? document.referrer.slice(0, 500) : undefined,
+      },
+    }).catch(() => {});
+  }, [card, logEvent]);
+
   if (!card) return null;
   const publicUrl = typeof window !== "undefined" ? window.location.href : "";
 
+  function track(kind: "email" | "phone" | "website" | "linkedin" | "twitter", url: string) {
+    logEvent({ data: { handle: card!.handle, event_type: "link_click", link_kind: kind, link_url: url.slice(0, 500) } }).catch(() => {});
+  }
+
   async function download() {
+    logEvent({ data: { handle: card!.handle, event_type: "vcard_download" } }).catch(() => {});
     const r = await getPublicVCard({ data: { handle: card!.handle, publicUrl } });
     const blob = new Blob([r.vcard], { type: "text/vcard" });
     const url = URL.createObjectURL(blob);
