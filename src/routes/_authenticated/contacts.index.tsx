@@ -139,6 +139,14 @@ function ContactsPage() {
       return next;
     });
   }
+  // Auto-collapse all buckets when toggling "By company" on.
+  useEffect(() => {
+    if (groupByCompany) {
+      setCollapsed(new Set(companyBuckets.map((b) => b.key)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupByCompany]);
+
 
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden">
