@@ -150,8 +150,10 @@ function PublicCard() {
                   try {
                     if (typeof navigator !== "undefined" && navigator.share) {
                       await navigator.share(shareData);
+                      logEvent({ data: { handle: card!.handle, event_type: "share" } }).catch(() => {});
                     } else {
                       await navigator.clipboard.writeText(publicUrl);
+                      logEvent({ data: { handle: card!.handle, event_type: "share" } }).catch(() => {});
                       toast.success("Link copied");
                     }
                   } catch (e: any) {
