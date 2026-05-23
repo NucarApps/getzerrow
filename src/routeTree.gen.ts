@@ -21,6 +21,7 @@ import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
+import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
 import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
@@ -93,6 +94,11 @@ const AuthenticatedContactsIndexRoute =
     path: '/contacts/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const ApiPublicLogoRoute = ApiPublicLogoRouteImport.update({
+  id: '/api/public/logo',
+  path: '/api/public/logo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicGoogleOauthCallbackRoute =
   ApiPublicGoogleOauthCallbackRouteImport.update({
     id: '/api/public/google-oauth-callback',
@@ -175,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/api/public/logo': typeof ApiPublicLogoRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
@@ -199,6 +206,7 @@ export interface FileRoutesByTo {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/api/public/logo': typeof ApiPublicLogoRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
@@ -225,6 +233,7 @@ export interface FileRoutesById {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
+  '/api/public/logo': typeof ApiPublicLogoRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/api/public/logo'
     | '/contacts/'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/og/card/$handle'
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/api/public/logo'
     | '/contacts'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/og/card/$handle'
@@ -300,6 +311,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
+    | '/api/public/logo'
     | '/_authenticated/contacts/'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/og/card/$handle'
@@ -319,6 +331,7 @@ export interface RootRouteChildren {
   ApiPublicGmailRenewWatchesRoute: typeof ApiPublicGmailRenewWatchesRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
+  ApiPublicLogoRoute: typeof ApiPublicLogoRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
   ApiPublicOgCardHandleRoute: typeof ApiPublicOgCardHandleRoute
 }
@@ -408,6 +421,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/contacts/'
       preLoaderRoute: typeof AuthenticatedContactsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/public/logo': {
+      id: '/api/public/logo'
+      path: '/api/public/logo'
+      fullPath: '/api/public/logo'
+      preLoaderRoute: typeof ApiPublicLogoRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/google-oauth-callback': {
       id: '/api/public/google-oauth-callback'
@@ -529,6 +549,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGmailRenewWatchesRoute: ApiPublicGmailRenewWatchesRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
+  ApiPublicLogoRoute: ApiPublicLogoRoute,
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
   ApiPublicOgCardHandleRoute: ApiPublicOgCardHandleRoute,
 }

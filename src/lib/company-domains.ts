@@ -74,11 +74,12 @@ export function contactLogoDomain(
   return null;
 }
 
-/** Ordered list of public logo/favicon providers to try for a domain. */
+/** Ordered list of logo URLs to try for a domain. First is our same-origin proxy. */
 export function logoCandidates(domain: string, size = 64): string[] {
   const d = encodeURIComponent(domain);
   const s = Math.max(size, 64);
   return [
+    `/api/public/logo?domain=${d}&size=${s}`,
     `https://www.google.com/s2/favicons?domain=${d}&sz=${s}`,
     `https://icons.duckduckgo.com/ip3/${d}.ico`,
     `https://logo.clearbit.com/${d}`,
