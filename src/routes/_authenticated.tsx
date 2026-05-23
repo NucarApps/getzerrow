@@ -31,7 +31,7 @@ function AuthedLayout() {
 
   return (
     <FolderSelectionProvider>
-      <div className="relative flex h-screen overflow-hidden bg-background text-foreground">
+      <div className="relative flex h-[100dvh] overflow-hidden bg-background text-foreground">
         {/* Mission Control atmospheric backdrop */}
         <div
           aria-hidden

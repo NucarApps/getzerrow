@@ -401,7 +401,7 @@ function InboxPage() {
     <div className="grid h-full min-h-0 md:grid-cols-[400px_1fr]">
       {/* List */}
       <div className={`h-full min-h-0 flex-col overflow-hidden border-r border-border ${selected && selectedListItem ? "hidden md:flex" : "flex"}`}>
-        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
             <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
@@ -410,7 +410,7 @@ function InboxPage() {
             <RefreshCw className={`h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
           </Button>
         </div>
-        <div className="border-b border-border px-3 py-2">
+        <div className="shrink-0 border-b border-border px-3 py-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -794,7 +794,7 @@ function InboxPage() {
           })}
         </div>
         {!isSearching && (
-          <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={goPrev} disabled={page === 1}>
               <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Prev
             </Button>
@@ -932,7 +932,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
   return (
     <div className="relative flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
         <div className="flex min-w-0 items-center gap-2">
           {onBack && (
             <button onClick={onBack} className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent md:hidden" aria-label="Back">
