@@ -341,8 +341,8 @@ function ContactsPage() {
               <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
                 {filtered.map((c) => {
                   const gids = contactGroupMap.get(c.id) ?? [];
-                  const dom = extractDomain(c.email);
-                  const showLogo = dom && !isPersonalDomain(dom);
+                  const dom = contactLogoDomain((c as any).website, c.email);
+                  const showLogo = !!dom;
                   return (
                     <li key={c.id}>
                       <button
