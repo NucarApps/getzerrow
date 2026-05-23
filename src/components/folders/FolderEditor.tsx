@@ -268,13 +268,13 @@ export function FolderEditor({
 
   return (
     <div>
-      <div className="flex items-center gap-3">
-        <input type="color" value={local.color} onChange={(e) => setLocal({ ...local, color: e.target.value })} className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent" />
-        <Input className="flex-1" value={local.name} onChange={(e) => setLocal({ ...local, name: e.target.value })} />
-        <Input type="number" className="w-20" value={local.priority} onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })} title="Priority (higher wins)" />
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <input type="color" value={local.color} onChange={(e) => setLocal({ ...local, color: e.target.value })} className="h-9 w-12 shrink-0 cursor-pointer rounded border border-border bg-transparent" />
+        <Input className="min-w-0 flex-1" value={local.name} onChange={(e) => setLocal({ ...local, name: e.target.value })} />
+        <Input type="number" className="w-20 shrink-0" value={local.priority} onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })} title="Priority (higher wins)" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="More actions"><MoreVertical className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="icon" className="shrink-0" aria-label="More actions"><MoreVertical className="h-4 w-4" /></Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={remove} className="text-destructive focus:text-destructive">
