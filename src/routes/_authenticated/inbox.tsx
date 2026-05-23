@@ -31,6 +31,8 @@ import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
+import { useIsMobile } from "@/hooks/use-mobile";
+import DOMPurify from "dompurify";
 
 
 export const Route = createFileRoute("/_authenticated/inbox")({
