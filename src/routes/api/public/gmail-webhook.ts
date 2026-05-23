@@ -60,6 +60,32 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
         try {
           const body = await request.json();
           messageId = body?.message?.messageId ?? body?.message?.message_id ?? null;
+
+          // Dedupe: Pub/Sub redelivers on slow ack. If we've already logged
+          // a `push` for this messageId within the last 60s, skip processing
+          // and just log a `push_duplicate` row for visibility.
+          if (messageId && !isTest) {
+            const { data: dup } = await supabaseAdmin
+              .from("pubsub_events")
+              .select("id")
+              .eq("message_id", messageId)
+              .eq("event_type", "push")
+              .gte("received_at", new Date(Date.now() - 60_000).toISOString())
+              .limit(1)
+              .maybeSingle();
+            if (dup) {
+              try {
+                await supabaseAdmin.from("pubsub_events").insert({
+                  event_type: "push_duplicate",
+                  message_id: messageId,
+                  details: `Duplicate Pub/Sub delivery within 60s (original ${dup.id})`,
+                });
+              } catch (logErr) {
+                console.error("pubsub_events duplicate log failed", logErr);
+              }
+              return new Response("ok (duplicate)", { status: 200 });
+            }
+          }
           publishTime = body?.message?.publishTime ?? body?.message?.publish_time ?? null;
           subscription = body?.subscription ?? null;
           const dataB64 = body?.message?.data;
