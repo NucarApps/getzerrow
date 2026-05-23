@@ -229,19 +229,27 @@ export async function loadAccountContext(accountId: string, userId: string): Pro
   const cached = accountContextCache.get(accountId);
   if (cached && cached.expires > Date.now()) return cached.ctx;
 
-  const [{ data: folders }, { data: filters }, { data: overrides }] = await Promise.all([
+  const [{ data: folders }, { data: overrides }] = await Promise.all([
     supabaseAdmin
       .from("folders")
       .select("*")
       .eq("gmail_account_id", accountId)
       .order("priority", { ascending: false }),
-    supabaseAdmin.from("folder_filters").select("id, folder_id, field, op, value"),
     supabaseAdmin.from("inbox_overrides").select("match_type, value").eq("user_id", userId),
   ]);
 
   const folderList = (folders ?? []) as Folder[];
-  const folderIds = new Set(folderList.map((f) => f.id));
-  const filterList = ((filters ?? []) as Filter[]).filter((f) => folderIds.has(f.folder_id));
+  const folderIds = folderList.map((f) => f.id);
+  // Scope filter fetch to this account's folders only — avoids pulling every
+  // user's filters (RLS doesn't apply with the admin client) and scales better.
+  let filterList: Filter[] = [];
+  if (folderIds.length > 0) {
+    const { data: filters } = await supabaseAdmin
+      .from("folder_filters")
+      .select("id, folder_id, field, op, value")
+      .in("folder_id", folderIds);
+    filterList = (filters ?? []) as Filter[];
+  }
   const enrichedFolders = await loadFoldersWithExamples(folderList);
 
   const ctx: AccountContext = {

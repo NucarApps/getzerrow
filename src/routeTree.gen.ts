@@ -24,6 +24,7 @@ import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authen
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
 import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
+import { Route as ApiPublicGmailReconcileRouteImport } from './routes/api/public/gmail-reconcile'
 import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/public/gmail-process-jobs'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
 import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
@@ -108,6 +109,11 @@ const ApiPublicGmailRenewWatchesRoute =
     path: '/api/public/gmail-renew-watches',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicGmailReconcileRoute = ApiPublicGmailReconcileRouteImport.update({
+  id: '/api/public/gmail-reconcile',
+  path: '/api/public/gmail-reconcile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicGmailProcessJobsRoute =
   ApiPublicGmailProcessJobsRouteImport.update({
     id: '/api/public/gmail-process-jobs',
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
+  '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
+  '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
@@ -205,6 +213,7 @@ export interface FileRoutesById {
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
+  '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
@@ -229,6 +238,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
+    | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
@@ -251,6 +261,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
+    | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
+    | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
@@ -291,6 +303,7 @@ export interface RootRouteChildren {
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
   ApiPublicGmailProcessJobsRoute: typeof ApiPublicGmailProcessJobsRoute
+  ApiPublicGmailReconcileRoute: typeof ApiPublicGmailReconcileRoute
   ApiPublicGmailRenewWatchesRoute: typeof ApiPublicGmailRenewWatchesRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
@@ -404,6 +417,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailRenewWatchesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/gmail-reconcile': {
+      id: '/api/public/gmail-reconcile'
+      path: '/api/public/gmail-reconcile'
+      fullPath: '/api/public/gmail-reconcile'
+      preLoaderRoute: typeof ApiPublicGmailReconcileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/gmail-process-jobs': {
       id: '/api/public/gmail-process-jobs'
       path: '/api/public/gmail-process-jobs'
@@ -485,6 +505,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
   ApiPublicGmailProcessJobsRoute: ApiPublicGmailProcessJobsRoute,
+  ApiPublicGmailReconcileRoute: ApiPublicGmailReconcileRoute,
   ApiPublicGmailRenewWatchesRoute: ApiPublicGmailRenewWatchesRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
