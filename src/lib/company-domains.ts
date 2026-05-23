@@ -74,16 +74,12 @@ export function contactLogoDomain(
   return null;
 }
 
-/** Ordered list of logo URLs to try for a domain. First is our same-origin proxy. */
+/** Ordered list of logo URLs to try for a domain. Only our same-origin proxy;
+ *  if it 404s, the UI falls through to a first-letter monogram. */
 export function logoCandidates(domain: string, size = 64): string[] {
   const d = encodeURIComponent(domain);
   const s = Math.max(size, 64);
-  return [
-    `/api/public/logo?domain=${d}&size=${s}`,
-    `https://www.google.com/s2/favicons?domain=${d}&sz=${s}`,
-    `https://icons.duckduckgo.com/ip3/${d}.ico`,
-    `https://logo.clearbit.com/${d}`,
-  ];
+  return [`/api/public/logo?domain=${d}&size=${s}`];
 }
 
 /** First-choice logo URL (kept for back-compat). */
