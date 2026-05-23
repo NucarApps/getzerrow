@@ -47,6 +47,33 @@ export function prettyCompanyName(domain: string): string {
   return core.charAt(0).toUpperCase() + core.slice(1);
 }
 
+/** Extract a clean domain from a website URL or raw domain string. */
+export function domainFromWebsite(website: string | null | undefined): string | null {
+  if (!website) return null;
+  let s = String(website).trim().toLowerCase();
+  if (!s) return null;
+  if (!/^https?:\/\//.test(s)) s = "http://" + s;
+  try {
+    const u = new URL(s);
+    const host = u.hostname.replace(/^www\./, "");
+    return host.includes(".") ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Best logo domain for a contact: prefer their website, fall back to email domain. */
+export function contactLogoDomain(
+  website: string | null | undefined,
+  email: string | null | undefined,
+): string | null {
+  const w = domainFromWebsite(website);
+  if (w && !isPersonalDomain(w)) return w;
+  const e = extractDomain(email);
+  if (e && !isPersonalDomain(e)) return e;
+  return null;
+}
+
 /** Ordered list of public logo/favicon providers to try for a domain. */
 export function logoCandidates(domain: string, size = 64): string[] {
   const d = encodeURIComponent(domain);

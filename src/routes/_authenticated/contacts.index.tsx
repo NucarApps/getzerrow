@@ -20,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
-import { extractDomain, isPersonalDomain, prettyCompanyName } from "@/lib/company-domains";
+import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain } from "@/lib/company-domains";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -107,6 +107,7 @@ function ContactsPage() {
     const OTHER_KEY = "__other__";
     for (const c of filtered) {
       const d = extractDomain(c.email);
+      const webDomain = contactLogoDomain((c as any).website, c.email);
       let key: string;
       let bucket: Bucket | undefined;
       if (!d) {
@@ -117,9 +118,9 @@ function ContactsPage() {
         bucket = map.get(key) ?? { key, domain: null, name: "Personal email", kind: "personal", contacts: [] };
       } else {
         key = d;
-        bucket = map.get(key) ?? { key, domain: d, name: prettyCompanyName(d), kind: "company", contacts: [] };
-        // Prefer a real company name from any contact in the bucket.
+        bucket = map.get(key) ?? { key, domain: webDomain ?? d, name: prettyCompanyName(d), kind: "company", contacts: [] };
         if (c.company && bucket.name === prettyCompanyName(d)) bucket.name = c.company;
+        if (webDomain && bucket.domain === d) bucket.domain = webDomain;
       }
       bucket.contacts.push(c);
       map.set(key, bucket);
@@ -340,8 +341,8 @@ function ContactsPage() {
               <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
                 {filtered.map((c) => {
                   const gids = contactGroupMap.get(c.id) ?? [];
-                  const dom = extractDomain(c.email);
-                  const showLogo = dom && !isPersonalDomain(dom);
+                  const dom = contactLogoDomain((c as any).website, c.email);
+                  const showLogo = !!dom;
                   return (
                     <li key={c.id}>
                       <button

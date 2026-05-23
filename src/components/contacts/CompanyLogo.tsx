@@ -46,12 +46,12 @@ export function CompanyLogo({ domain, name, size = 32, className = "", onColor }
 
   return (
     <img
+      key={candidates[idx]}
       src={candidates[idx]}
       width={size}
       height={size}
       alt={name ? `${name} logo` : `${domain} logo`}
       loading="lazy"
-      crossOrigin="anonymous"
       referrerPolicy="no-referrer"
       onError={() => setIdx((i) => i + 1)}
       className={`shrink-0 rounded-md bg-card object-contain ${className}`}
