@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check } from "lucide-react";
+import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check, Building2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { extractDomain, isPersonalDomain, prettyCompanyName } from "@/lib/company-domains";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -46,6 +48,8 @@ function ContactsPage() {
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
   const [groupDialog, setGroupDialog] = useState<null | { mode: "create" } | { mode: "edit"; group: GroupRow }>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [groupByCompany, setGroupByCompany] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
@@ -92,6 +96,48 @@ function ContactsPage() {
     for (const c of all) if ((contactGroupMap.get(c.id)?.length ?? 0) === 0) n++;
     return n;
   }, [q.data, contactGroupMap]);
+
+  type Contact = (typeof filtered)[number];
+  type Bucket = { key: string; domain: string | null; name: string; kind: "company" | "personal" | "other"; contacts: Contact[] };
+
+  const companyBuckets = useMemo<Bucket[]>(() => {
+    const map = new Map<string, Bucket>();
+    const PERSONAL_KEY = "__personal__";
+    const OTHER_KEY = "__other__";
+    for (const c of filtered) {
+      const d = extractDomain(c.email);
+      let key: string;
+      let bucket: Bucket | undefined;
+      if (!d) {
+        key = OTHER_KEY;
+        bucket = map.get(key) ?? { key, domain: null, name: "Other", kind: "other", contacts: [] };
+      } else if (isPersonalDomain(d)) {
+        key = PERSONAL_KEY;
+        bucket = map.get(key) ?? { key, domain: null, name: "Personal email", kind: "personal", contacts: [] };
+      } else {
+        key = d;
+        bucket = map.get(key) ?? { key, domain: d, name: prettyCompanyName(d), kind: "company", contacts: [] };
+        // Prefer a real company name from any contact in the bucket.
+        if (c.company && bucket.name === prettyCompanyName(d)) bucket.name = c.company;
+      }
+      bucket.contacts.push(c);
+      map.set(key, bucket);
+    }
+    const arr = Array.from(map.values());
+    const companies = arr.filter((b) => b.kind === "company")
+      .sort((a, b) => b.contacts.length - a.contacts.length || a.name.localeCompare(b.name));
+    const personal = arr.filter((b) => b.kind === "personal");
+    const other = arr.filter((b) => b.kind === "other");
+    return [...companies, ...personal, ...other];
+  }, [filtered]);
+
+  function toggleBucket(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden">
@@ -197,18 +243,30 @@ function ContactsPage() {
 
           {/* Main list */}
           <div className="min-w-0">
-            <div className="mb-4 relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, email, or company…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="pl-9"
-              />
+            <div className="mb-4 flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name, email, or company…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Button
+                variant={groupByCompany ? "default" : "outline"}
+                size="sm"
+                onClick={() => setGroupByCompany((v) => !v)}
+                title="Group by company"
+                aria-pressed={groupByCompany}
+                className="shrink-0 px-2 sm:px-3"
+              >
+                <Building2 className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">By company</span>
+              </Button>
             </div>
 
             {q.isLoading ? (
-
               <div className="grid gap-2">
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div key={i} className="h-14 animate-pulse rounded-md border border-border bg-card/40" />
@@ -218,20 +276,84 @@ function ContactsPage() {
               <p className="py-12 text-center text-sm text-muted-foreground">
                 {query ? "No matches." : "No contacts yet. Scan a card or add one manually."}
               </p>
-
+            ) : groupByCompany ? (
+              <div className="space-y-3">
+                {companyBuckets.map((b) => {
+                  const isCollapsed = collapsed.has(b.key);
+                  return (
+                    <section key={b.key} className="overflow-hidden rounded-md border border-border bg-card/40">
+                      <button
+                        onClick={() => toggleBucket(b.key)}
+                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-accent/40"
+                      >
+                        <CompanyLogo domain={b.domain} name={b.name} size={32} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-foreground">{b.name}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {b.domain ? `${b.domain} · ` : ""}{b.contacts.length} {b.contacts.length === 1 ? "contact" : "contacts"}
+                          </div>
+                        </div>
+                        <ChevronDown
+                          className={`h-4 w-4 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                        />
+                      </button>
+                      {!isCollapsed && (
+                        <ul className="divide-y divide-border border-t border-border">
+                          {b.contacts.map((c) => {
+                            const gids = contactGroupMap.get(c.id) ?? [];
+                            return (
+                              <li key={c.id}>
+                                <button
+                                  onClick={() => navigate({ to: "/contacts/$id", params: { id: c.id } })}
+                                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/40"
+                                >
+                                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                                    {(c.name || c.email).slice(0, 1).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate text-sm font-medium text-foreground">{c.name || c.email}</div>
+                                    <div className="truncate text-xs text-muted-foreground">{c.email}</div>
+                                  </div>
+                                  {gids.length > 0 && (
+                                    <div className="flex items-center gap-1">
+                                      {gids.slice(0, 4).map((gid) => {
+                                        const g = groupsById.get(gid);
+                                        if (!g) return null;
+                                        return (
+                                          <span key={gid} className="h-2 w-2 rounded-full" style={{ background: g.color }} title={g.name} />
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
             ) : (
               <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
                 {filtered.map((c) => {
                   const gids = contactGroupMap.get(c.id) ?? [];
+                  const dom = extractDomain(c.email);
+                  const showLogo = dom && !isPersonalDomain(dom);
                   return (
                     <li key={c.id}>
                       <button
                         onClick={() => navigate({ to: "/contacts/$id", params: { id: c.id } })}
                         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
                       >
-                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
-                          {(c.name || c.email).slice(0, 1).toUpperCase()}
-                        </div>
+                        {showLogo ? (
+                          <CompanyLogo domain={dom} name={c.company ?? prettyCompanyName(dom)} size={40} className="rounded-full" />
+                        ) : (
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+                            {(c.name || c.email).slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-medium text-foreground">{c.name || c.email}</div>
                           <div className="truncate text-xs text-muted-foreground">

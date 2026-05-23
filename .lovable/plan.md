@@ -1,39 +1,63 @@
-## Problem
+## Goal
 
-On mobile, the email body renders as a small blank white box. Both symptoms have the same root cause in `EmailBodyFrame` (`src/routes/_authenticated/inbox.tsx`, lines ~98–131).
+Add a "Group by company" toggle to the Contacts page. Companies are derived from each contact's email domain (e.g. `acme.com`), and each company gets a logo fetched from a public logo service. The existing manual groups (Work, Personal, etc.) stay as-is.
 
-The iframe uses `srcDoc` with `sandbox="allow-popups allow-popups-to-escape-sandbox"` — no `allow-same-origin`. Per the HTML spec (and enforced strictly by iOS Safari), a sandboxed iframe without `allow-same-origin` runs in an opaque origin, so the parent cannot read `iframe.contentDocument`. The `onLoad` resize handler does `f.contentDocument.documentElement.scrollHeight`, which throws / returns null on mobile → resize bails out → the iframe stays at the browser default (~150px) showing only blank white space. On desktop Chrome this sometimes works due to looser handling, masking the bug.
+## UX
 
-Adding `allow-same-origin` would fix sizing but is unsafe for arbitrary third-party email HTML (it would gain access to the app's localStorage, cookies, IndexedDB).
+On `/contacts`:
+- Add a toggle in the toolbar (next to the search box): **Group by company** (off by default).
+- When OFF: current flat list, unchanged.
+- When ON: contacts are bucketed by company. Each bucket renders as a collapsible section:
+  - Left: 32px rounded company **logo** (or a colored monogram fallback).
+  - Title: inferred company name (prefer `contact.company` if any contact in the bucket has one, else a prettified domain like `acme.com` → "Acme").
+  - Subtitle: domain + contact count.
+  - Click header to collapse/expand. Click a contact row to open the existing detail page.
+- Personal-mail domains (gmail.com, outlook.com, icloud.com, yahoo.com, hotmail.com, proton.me, etc.) collapse into a single **"Personal email"** bucket at the bottom so they don't pollute the company view.
+- Contacts with no email domain go into an **"Other"** bucket.
 
-## Fix
+The existing left rail (manual groups: All / Ungrouped / Work / …) keeps filtering the contact set first; the company grouping is applied on top of whatever is currently filtered.
 
-Switch to an **inside-out resize**: inject a tiny script inside the `srcDoc` that measures its own body and `postMessage`s the height to the parent. The parent listens for that message and sets the iframe height. This works without `allow-same-origin`, so security is preserved.
+Each contact row also gets a small company logo on the left (16–20px) when grouping is OFF, so the visual identity carries over to the flat view too.
 
-### Changes to `EmailBodyFrame` only
+## Logo source
 
-1. Add `allow-scripts` to the sandbox attribute (still no `allow-same-origin`, so the frame remains in an opaque origin with no access to app storage/cookies).
-2. Inside `srcDoc`, append a `<script>` that:
-   - Generates a random `frameId` (also passed in via a query-string-style token in the script).
-   - On load, on `ResizeObserver(body)`, on every `<img>` load, and on `window.resize`, calls `parent.postMessage({ __zerrowFrame: frameId, height }, "*")` with `document.documentElement.scrollHeight`.
-3. In the React component:
-   - Generate a stable `frameId` per mount (`useId()`).
-   - Pass it to the script via the srcDoc string.
-   - Add a `useEffect` that listens for `message` events, filters by `__zerrowFrame === frameId`, and sets the iframe height (clamped 200–4000px).
-   - Remove the `onLoad`-based contentDocument reads.
-4. Bump the loading minHeight from `60px` to `400px` so the pane is usable while the first message arrives (eliminates the "window too small" feel even on slow first paint).
-5. Keep the existing inline CSS reset (margins, viewport meta, img max-width, etc.).
+Use **logo.dev** public endpoint — no key required for unauthenticated `img` requests, returns a 1×1 transparent pixel for unknown domains (good fallback), and is free for this kind of use:
 
-### Files touched
+```
+https://img.logo.dev/{domain}?size=64&format=png&fallback=monogram
+```
 
-- `src/routes/_authenticated/inbox.tsx` — replace the `EmailBodyFrame` component (~lines 87–131). No other code paths change.
+Loaded directly in an `<img>` tag (no server call, no API key). On `onError`, fall back to a colored circle with the company's first initial (matching the existing avatar style).
 
-### Security note
+No new secrets, no new server functions, no new tables — purely client-side derivation and image loading.
 
-`allow-scripts` without `allow-same-origin` is the standard pattern used by Gmail/Superhuman/Hey for rendering untrusted email HTML. The frame can run its own JS but cannot read parent cookies, localStorage, or the DOM — only `postMessage` to the parent, which we validate by `frameId`.
+## Technical changes
 
-### Verification
+1. **`src/lib/company-domains.ts`** (new, tiny utility):
+   - `PERSONAL_DOMAINS` set.
+   - `extractDomain(email)` → lowercased domain or null.
+   - `prettyCompanyName(domain)` → `acme.com` → "Acme", `mail.acme.co.uk` → "Acme".
+   - `logoUrl(domain, size)` → logo.dev URL.
 
-- Open an HTML email on mobile preview → body renders with full height, no blank white box.
-- Open the same email on desktop → still renders correctly, height matches content.
-- Inspect: iframe sandbox = `allow-popups allow-popups-to-escape-sandbox allow-scripts` (no `allow-same-origin`).
+2. **`src/components/contacts/CompanyLogo.tsx`** (new):
+   - Props: `domain`, `name`, `size`.
+   - Renders `<img>` from logo.dev; on `onError` swaps to a monogram circle (reusing the existing primary/15 style).
+
+3. **`src/routes/_authenticated/contacts.index.tsx`**:
+   - Add `groupByCompany` boolean state and a `Toggle`/`Switch` button in the toolbar (lucide `Building2` icon).
+   - Compute `companyBuckets` with `useMemo` from `filtered`: map domain → `{ domain, name, contacts[] }`, sort by contact count desc, then alphabetically; route personal-mail domains to a single "Personal email" bucket and place it last along with "Other".
+   - Add a `Set<string>` of collapsed bucket keys; default all expanded.
+   - When `groupByCompany` is on, render the buckets in place of the flat `<ul>`. Each section: header row (logo + name + count + chevron) and the existing contact rows underneath.
+   - Add a small `<CompanyLogo>` to the flat row as well (replacing or sitting beside the current letter avatar).
+
+4. **No DB / no server-function changes.** No new dependencies.
+
+## Out of scope
+
+- Persisting the toggle across sessions (can add later via localStorage if you want).
+- Auto-filling `contacts.company` from the inferred name (kept as display-only so we don't overwrite scanned/edited data).
+- Bulk "create a manual group from this company" action (easy follow-up if useful).
+
+## Open question
+
+Want me to also **persist** the inferred company name back to each contact's `company` field when it's empty, so it shows up in the detail view and exports? Default plan above does not touch the DB.
