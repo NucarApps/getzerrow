@@ -97,6 +97,48 @@ function ContactsPage() {
     return n;
   }, [q.data, contactGroupMap]);
 
+  type Contact = (typeof filtered)[number];
+  type Bucket = { key: string; domain: string | null; name: string; kind: "company" | "personal" | "other"; contacts: Contact[] };
+
+  const companyBuckets = useMemo<Bucket[]>(() => {
+    const map = new Map<string, Bucket>();
+    const PERSONAL_KEY = "__personal__";
+    const OTHER_KEY = "__other__";
+    for (const c of filtered) {
+      const d = extractDomain(c.email);
+      let key: string;
+      let bucket: Bucket | undefined;
+      if (!d) {
+        key = OTHER_KEY;
+        bucket = map.get(key) ?? { key, domain: null, name: "Other", kind: "other", contacts: [] };
+      } else if (isPersonalDomain(d)) {
+        key = PERSONAL_KEY;
+        bucket = map.get(key) ?? { key, domain: null, name: "Personal email", kind: "personal", contacts: [] };
+      } else {
+        key = d;
+        bucket = map.get(key) ?? { key, domain: d, name: prettyCompanyName(d), kind: "company", contacts: [] };
+        // Prefer a real company name from any contact in the bucket.
+        if (c.company && bucket.name === prettyCompanyName(d)) bucket.name = c.company;
+      }
+      bucket.contacts.push(c);
+      map.set(key, bucket);
+    }
+    const arr = Array.from(map.values());
+    const companies = arr.filter((b) => b.kind === "company")
+      .sort((a, b) => b.contacts.length - a.contacts.length || a.name.localeCompare(b.name));
+    const personal = arr.filter((b) => b.kind === "personal");
+    const other = arr.filter((b) => b.kind === "other");
+    return [...companies, ...personal, ...other];
+  }, [filtered]);
+
+  function toggleBucket(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
