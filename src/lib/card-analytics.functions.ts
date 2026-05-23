@@ -18,7 +18,7 @@ export const logCardEvent = createServerFn({ method: "POST" })
       referrer: z.string().max(500).optional(),
     }).parse(d)
   )
-  .handler(async ({ data, request }) => {
+  .handler(async ({ data }) => {
     const { data: card } = await supabaseAdmin
       .from("my_cards")
       .select("id, user_id")
@@ -26,7 +26,7 @@ export const logCardEvent = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!card) return { ok: false };
 
-    const ua = request?.headers.get("user-agent")?.slice(0, 500) ?? null;
+    const ua = null;
 
     await supabaseAdmin.from("card_events").insert({
       card_id: card.id,
