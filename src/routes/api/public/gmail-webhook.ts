@@ -7,7 +7,7 @@
 // of `push` / `push_empty` and do NOT pollute real Google push diagnostics.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
+import { syncSinceHistory } from "@/lib/sync.server";
 
 export const Route = createFileRoute("/api/public/gmail-webhook")({
   server: {
@@ -100,20 +100,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   errorMsg = (e as Error)?.message ?? String(e);
                 }
               }
-              // Drain up to 50 live-priority jobs after enqueueing so a burst
-              // of pushes doesn't have to wait for the next cron tick. Scoped
-              // to priority=0 (live mail) so a backfill backlog can't starve
-              // newly-arrived messages. The background worker
-              // (gmail-process-jobs cron) still owns the rest of the queue.
-              try {
-                await runMessageJobs(50, 16, { priority: 0 });
-              } catch (e) {
-                console.error("inline runMessageJobs failed", e);
-              }
-
-
-
-
+              // Note: we intentionally do NOT drain message_jobs inline here.
+              // Pub/Sub requires fast 200 responses (slow webhooks → Google
+              // retries → duplicate work). The dedicated 5s `gmail-process-
+              // live-5s` cron already owns the priority=0 lane and drains
+              // newly-enqueued live mail within seconds.
             }
           }
         } catch (e: unknown) {

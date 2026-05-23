@@ -806,20 +806,23 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   return { learned, ingested, claimed, profile };
 }
 
-export async function backfillRecent(accountId: string, userId: string, maxResults = 30) {
-  // Include mail that filters auto-route past the inbox (e.g. Cold Email).
-  const list = await listMessages(accountId, { maxResults, q: "-in:chats -in:trash -in:spam newer_than:7d" });
+export async function backfillRecent(accountId: string, userId: string, maxResults = 100) {
+  // Used to bootstrap a fresh account / re-bootstrap after a history-too-old
+  // failure. Enqueue at priority=0 (live lane) so the dedicated live worker
+  // drains within seconds and we don't block the calling request (often the
+  // Pub/Sub webhook). Widened window to 30d to cover longer outages.
+  const list = await listMessages(accountId, { maxResults, q: "-in:chats -in:trash -in:spam newer_than:30d" });
   const ids = list.messages || [];
-  const results: any[] = [];
+  let enqueued = 0;
   for (const m of ids) {
     try {
-      const r = await processGmailMessage(accountId, m.id, userId);
-      results.push(r);
-    } catch (e: any) {
-      results.push({ error: e.message });
+      await enqueueMessageJob(accountId, userId, m.id, 0);
+      enqueued++;
+    } catch (e) {
+      console.error("backfillRecent enqueue failed", m.id, e);
     }
   }
-  return { processed: results.length };
+  return { processed: enqueued, enqueued };
 }
 
 export async function backfillWindow(
