@@ -178,6 +178,27 @@ function EmailBodyFrame({ html }: { html: string }) {
   );
 }
 
+function EmailBodyInline({ html }: { html: string }) {
+  const clean = useMemo(
+    () =>
+      DOMPurify.sanitize(html, {
+        USE_PROFILES: { html: true },
+        ADD_ATTR: ["target"],
+        FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "input", "meta", "link"],
+        FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
+      }),
+    [html],
+  );
+  return (
+    <div
+      className="email-body-inline rounded-lg bg-white p-4 text-[14px] leading-relaxed text-[#111]"
+      style={{ colorScheme: "light", wordWrap: "break-word", overflowWrap: "break-word" }}
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: clean }}
+    />
+  );
+}
+
 
 function InboxPage() {
   const qc = useQueryClient();
