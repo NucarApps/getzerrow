@@ -1,21 +1,15 @@
-## Problem
-`CompanyLogo` already falls back to a monogram when all providers fail, but in practice some providers return a generic placeholder (Google's globe favicon, DuckDuckGo's default) with a 200 + `image/*` content type. The proxy treats those as "found" and the UI never falls through to the first-letter monogram.
-
 ## Plan
-1. **Tighten the proxy's "real logo" check** in `src/routes/api/public/logo.ts`:
-   - Drop DuckDuckGo and direct `/favicon.ico` from `providersFor()` (both routinely return generic globes for unknown domains). Keep Clearbit, then Google as the only fallback.
-   - Raise the minimum byte threshold from 80 to ~600 bytes — Google's generic globe is ~500 bytes; real logos are much larger.
-   - Return 404 (not an image) when nothing qualifies, so `<img onError>` advances.
 
-2. **Simplify client candidates** in `src/lib/company-domains.ts`:
-   - `logoCandidates()` returns only `[ '/api/public/logo?...' ]`. No external fallbacks — if the proxy says no, we want the monogram, not a globe.
+Fix the blurry person-row logos by making the contact row request and render the same high-resolution logo asset strategy as the clearer business toggle.
 
-3. **Monogram already handled** in `CompanyLogo.tsx` — when the single candidate errors, `idx` exceeds `candidates.length` and the existing monogram block renders the first letter of `name || domain`. No change needed there.
+### Changes
 
-4. **Verify** by reloading `/contacts` and confirming companies without real logos (e.g. obscure domains) show a clean colored initial instead of a globe icon.
+1. Update `CompanyLogo` so the requested logo source size is based on the final rendered size plus a stronger retina multiplier, with a safe high-resolution floor.
+2. Add explicit image-rendering behavior for normal logos so browsers preserve smooth scaling while avoiding accidental low-resolution source reuse.
+3. Update the person contact row usage in `contacts.index.tsx` to request a larger backing image for the 40px circular avatar, without changing its visible size.
+4. Keep the existing first-letter fallback behavior when no real logo is found.
 
-### Technical notes
-- The monogram already uses `name` first, then `domain`, so "Acme Corp" shows "A".
-- Cache headers stay the same so previously-cached globes will refresh within a day; a hard reload shows the fix immediately.
+### Validation
 
-No DB, auth, or routing changes.
+- Check the contacts page visually and compare person-row logos against the business toggle logos.
+- Confirm companies without a real logo still fall back to the first letter.

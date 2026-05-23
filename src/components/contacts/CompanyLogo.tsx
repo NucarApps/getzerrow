@@ -13,7 +13,7 @@ type Props = {
 /** Company logo with multi-provider fallback, then monogram. */
 export function CompanyLogo({ domain, name, size = 32, className = "", onColor }: Props) {
   const candidates = useMemo(
-    () => (domain ? logoCandidates(domain, Math.max(128, size * 4)) : []),
+    () => (domain ? logoCandidates(domain, Math.max(256, size * 6)) : []),
     [domain, size],
   );
   const [idx, setIdx] = useState(0);
