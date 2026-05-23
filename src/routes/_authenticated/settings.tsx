@@ -16,6 +16,7 @@ import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react
 import { InboxOverrides } from "@/components/settings/InboxOverrides";
 import { PubsubActivity } from "@/components/settings/PubsubActivity";
 import { ProcessingJobs } from "@/components/settings/ProcessingJobs";
+import { AccountHealthPanel } from "@/components/settings/AccountHealthCard";
 
 export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
 
@@ -169,6 +170,13 @@ function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-6">
+            <Card className="p-4 md:p-6">
+              <h2 className="font-display text-2xl">Account health</h2>
+              <p className="mt-1 mb-4 text-sm text-muted-foreground">
+                Live status of each connected mailbox — auto-refreshes every 15 seconds.
+              </p>
+              <AccountHealthPanel />
+            </Card>
             <PubsubActivity />
             <ProcessingJobs />
           </TabsContent>
