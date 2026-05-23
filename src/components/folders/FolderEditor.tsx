@@ -550,17 +550,19 @@ export function FolderEditor({
                   </SelectContent>
                 </Select>
                 <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
-                  <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-36"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="contains">contains</SelectItem>
                     <SelectItem value="equals">equals</SelectItem>
+                    <SelectItem value="starts_with">starts with</SelectItem>
+                    <SelectItem value="ends_with">ends with</SelectItem>
                     <SelectItem value="not_contains">does not contain</SelectItem>
                     <SelectItem value="not_equals">does not equal</SelectItem>
                     <SelectItem value="regex">regex</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input className="flex-1" placeholder="value" value={newF.value} onChange={(e) => setNewF({ ...newF, value: e.target.value })} />
-                <Button size="sm" onClick={addFilter}>Add</Button>
+                <Input className="flex-1 min-w-0" placeholder="value" value={newF.value} onChange={(e) => setNewF({ ...newF, value: e.target.value })} />
+                <Button size="sm" className="w-full sm:w-auto" onClick={addFilter}>Add</Button>
               </div>
               <p className="text-xs text-muted-foreground">
                 Exclude rules keep matching emails in your inbox even if a domain or other rule would route them here.
