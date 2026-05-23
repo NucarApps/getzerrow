@@ -529,8 +529,8 @@ export function FolderEditor({
                     )}
                     <span className="text-muted-foreground">{f.field}</span>
                     <span className={isExclude ? "text-destructive" : "text-muted-foreground"}>{f.op}</span>
-                    <span className="flex-1 font-mono text-xs">{f.value}</span>
-                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
+                    <span className="flex-1 min-w-0 break-all font-mono text-xs">{f.value}</span>
+                    <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
                   </div>
                 );
               })}
