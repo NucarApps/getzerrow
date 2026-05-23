@@ -573,11 +573,19 @@ function InboxPage() {
             const currentFolderId = e.folder_id;
 
             return (
-            <ContextMenu key={e.id}>
+            <SwipeRow
+              key={e.id}
+              onArchive={async () => {
+                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
+                try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
+                catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
+              }}
+            >
+            <ContextMenu>
               <ContextMenuTrigger asChild>
                 <button
                   onClick={() => setSelectedId(e.id)}
-                  className={`relative block w-full border-b border-border px-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
+                  className={`relative block w-full px-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
                 >
                   {!e.is_read && (
                     <span className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
