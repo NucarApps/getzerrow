@@ -1,22 +1,23 @@
 ## Plan
 
-Replace the current DuckDuckGo-only logo loading with a more reliable multi-provider fallback so company cards show real logos whenever possible.
+The logo component is wired correctly, but no logo image requests are appearing in the preview, which means the cards are likely not getting usable logo domains in the rendered state. I’ll make the domain source more reliable and remove the image attributes that can block third-party favicon rendering.
 
 ### What I’ll change
 
-1. **Generate multiple logo candidates per domain**
-   - Try Google favicon first: `https://www.google.com/s2/favicons?domain=...&sz=...`
-   - Then DuckDuckGo icon: `https://icons.duckduckgo.com/ip3/...`
-   - Then Clearbit logo as a final public fallback: `https://logo.clearbit.com/...`
+1. **Add website-based logo domains**
+   - Include `website` in the contacts list query.
+   - Add a helper that extracts a clean domain from a website URL or raw domain.
+   - Prefer `contact.website` for company logos, then fall back to the email domain.
 
-2. **Update `CompanyLogo` to fail over provider-by-provider**
-   - If one image fails or returns a blank/unusable icon, automatically try the next URL.
-   - Only show the monogram after all candidates fail.
-   - Reset retry state when the domain changes.
+2. **Fix grouped company buckets**
+   - Store the best available logo domain on each company bucket.
+   - Keep sorting alphabetically by company name.
+   - Keep personal email buckets using initials instead of company logos.
 
-3. **Make color extraction use the same reliable source list**
-   - Try candidate logo URLs in order until one loads and can be sampled.
-   - Keep the card tint behavior, but don’t let color extraction failure prevent the logo from displaying.
+3. **Make image loading less fragile**
+   - Remove `crossOrigin="anonymous"` from the visible `<img>` so providers like Google favicons are not blocked by CORS behavior.
+   - Use a stable `key` on each logo candidate so provider fallback reliably reloads when it advances.
+   - Keep the existing provider fallback order and monogram fallback.
 
-4. **Verify the result**
-   - Confirm sample domains like `mtb.com`, `presidio.com`, `withsift.ai`, and `littler.com` produce a visible logo or gracefully fall back only when no provider has one.
+4. **Verify**
+   - Check the preview/network requests after implementation to confirm favicon/logo URLs are being requested and visible where available.
