@@ -1,9 +1,12 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { QRCodeSVG } from "qrcode.react";
-import { Mail, Phone, Globe, Linkedin, Twitter, Building2, Download } from "lucide-react";
+import { Mail, Phone, Globe, Linkedin, Twitter, Building2, Download, Share2 } from "lucide-react";
 import { getPublicCard, getPublicVCard } from "@/lib/cards.functions";
 import { getTheme } from "@/components/cards/themes";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
+const SITE_URL = "https://getzerrow.com";
 
 export const Route = createFileRoute("/c/$handle")({
   loader: async ({ params }) => {
@@ -11,14 +14,32 @@ export const Route = createFileRoute("/c/$handle")({
     if (!r.card) throw notFound();
     return r;
   },
-  head: ({ loaderData }) => ({
-    meta: loaderData?.card
-      ? [
-          { title: `${loaderData.card.name || loaderData.card.handle} — Contact card` },
-          { name: "description", content: loaderData.card.tagline || `${loaderData.card.name || ""} ${loaderData.card.title ? "· " + loaderData.card.title : ""}`.trim() },
-        ]
-      : [{ title: "Card not found" }],
-  }),
+  head: ({ loaderData, params }) => {
+    const card = loaderData?.card;
+    if (!card) return { meta: [{ title: "Card not found" }] };
+    const title = `${card.name || card.handle} — Contact card`;
+    const desc = card.tagline || `${card.name || ""}${card.title ? " · " + card.title : ""}${card.company ? " · " + card.company : ""}`.trim() || "View and save my contact info.";
+    const url = `${SITE_URL}/c/${params.handle}`;
+    const ogImage = `${SITE_URL}/api/public/og/card/${params.handle}`;
+    return {
+      meta: [
+        { title },
+        { name: "description", content: desc },
+        { property: "og:title", content: title },
+        { property: "og:description", content: desc },
+        { property: "og:url", content: url },
+        { property: "og:type", content: "profile" },
+        { property: "og:image", content: ogImage },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: title },
+        { name: "twitter:description", content: desc },
+        { name: "twitter:image", content: ogImage },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   notFoundComponent: () => (
     <div className="min-h-screen grid place-items-center bg-background text-foreground">
       <p className="text-sm text-muted-foreground">No card at this link.</p>
@@ -31,6 +52,7 @@ export const Route = createFileRoute("/c/$handle")({
   ),
   component: PublicCard,
 });
+
 
 function PublicCard() {
   const { card } = Route.useLoaderData();
