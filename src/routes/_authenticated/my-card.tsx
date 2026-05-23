@@ -159,8 +159,27 @@ function MyCardPage() {
                   <ExternalLink className="mr-2 h-4 w-4" /> View public card
                 </a>
               </Button>
-              <Button variant="ghost" onClick={() => { navigator.clipboard.writeText(publicUrl); toast.success("Link copied"); }}>
-                <Copy className="mr-2 h-4 w-4" /> Copy link
+              <Button
+                variant="ghost"
+                onClick={async () => {
+                  const shareData = {
+                    title: `${form.name || form.handle} — Contact card`,
+                    text: form.tagline || "My contact card",
+                    url: publicUrl,
+                  };
+                  try {
+                    if (typeof navigator !== "undefined" && navigator.share) {
+                      await navigator.share(shareData);
+                    } else {
+                      await navigator.clipboard.writeText(publicUrl);
+                      toast.success("Link copied");
+                    }
+                  } catch (e: any) {
+                    if (e?.name !== "AbortError") toast.error("Couldn't share");
+                  }
+                }}
+              >
+                <Share2 className="mr-2 h-4 w-4" /> Share
               </Button>
             </>
           )}
