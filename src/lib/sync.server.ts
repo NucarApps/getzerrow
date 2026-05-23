@@ -1381,12 +1381,20 @@ export async function runMessageJobs(
             await Promise.all(
               chunk.map(async (c, idx) => {
                 const r = out[idx];
+                // Honor each folder's min_ai_confidence — match live behavior.
+                const candidate = r?.folder_id ? ctx.folders.find((f) => f.id === r.folder_id) : null;
+                const threshold = candidate?.min_ai_confidence ?? 0;
+                const passes = r?.folder_id && (r.confidence ?? 0) >= threshold;
                 await supabaseAdmin.from("emails").update({
-                  folder_id: r?.folder_id ?? null,
+                  folder_id: passes ? r!.folder_id : null,
                   ai_summary: r?.summary || null,
                   ai_confidence: r?.confidence ?? 0,
-                  classified_by: r?.folder_id ? "ai" : "ai",
-                  classification_reason: r?.reason || null,
+                  classified_by: passes ? "ai" : (r?.folder_id ? "ai_low_confidence" : "ai"),
+                  classification_reason: passes
+                    ? (r?.reason || null)
+                    : (r?.folder_id
+                        ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
+                        : (r?.reason || null)),
                 }).eq("id", c.emailRowId);
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                 results.push({ id: c.job.id, ok: true });
