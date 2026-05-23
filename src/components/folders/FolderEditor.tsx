@@ -534,9 +534,9 @@ export function FolderEditor({
                   </div>
                 );
               })}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Select value={newF.field} onValueChange={(v) => setNewF({ ...newF, field: v })}>
-                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="from">from</SelectItem>
                     <SelectItem value="to">to</SelectItem>
