@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check, Building2, ChevronDown } from "lucide-react";
+import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,6 +19,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
 import { extractDomain, isPersonalDomain, prettyCompanyName } from "@/lib/company-domains";
 
 
@@ -138,6 +139,14 @@ function ContactsPage() {
       return next;
     });
   }
+  // Auto-collapse all buckets when toggling "By company" on.
+  useEffect(() => {
+    if (groupByCompany) {
+      setCollapsed(new Set(companyBuckets.map((b) => b.key)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupByCompany]);
+
 
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden">
@@ -281,24 +290,16 @@ function ContactsPage() {
                 {companyBuckets.map((b) => {
                   const isCollapsed = collapsed.has(b.key);
                   return (
-                    <section key={b.key} className="overflow-hidden rounded-md border border-border bg-card/40">
-                      <button
-                        onClick={() => toggleBucket(b.key)}
-                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-accent/40"
-                      >
-                        <CompanyLogo domain={b.domain} name={b.name} size={32} />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold text-foreground">{b.name}</div>
-                          <div className="truncate text-xs text-muted-foreground">
-                            {b.domain ? `${b.domain} · ` : ""}{b.contacts.length} {b.contacts.length === 1 ? "contact" : "contacts"}
-                          </div>
-                        </div>
-                        <ChevronDown
-                          className={`h-4 w-4 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
-                        />
-                      </button>
+                    <section key={b.key} className="overflow-hidden rounded-md">
+                      <CompanyBucketHeader
+                        domain={b.domain}
+                        name={b.name}
+                        count={b.contacts.length}
+                        collapsed={isCollapsed}
+                        onToggle={() => toggleBucket(b.key)}
+                      />
                       {!isCollapsed && (
-                        <ul className="divide-y divide-border border-t border-border">
+                        <ul className="divide-y divide-border border-x border-b border-border bg-card/40">
                           {b.contacts.map((c) => {
                             const gids = contactGroupMap.get(c.id) ?? [];
                             return (
