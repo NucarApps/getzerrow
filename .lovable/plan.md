@@ -1,36 +1,32 @@
-## Goal
+## Problem
 
-When a contact is added with a new company domain we don't have a logo for yet, fetch and show a logo automatically more often. Today the proxy only tries Clearbit then Google favicons; if Clearbit doesn't have the brand and Google's favicon is tiny/generic, the row falls back to the first-letter monogram. That's why only some of the 27 new contacts got a logo.
+On mobile, the entire inbox page scrolls — the title/search bar at the top and the pagination footer at the bottom move with the email list, instead of staying pinned while only the list scrolls in the middle.
+
+## Cause
+
+The inbox is laid out as a flex column (header → search → scrolling list → pagination footer) inside a `grid h-full` container. The middle list uses `flex-1 overflow-y-auto`, but it's missing `min-h-0`. In a flex column, children default to `min-height: auto`, which lets the list grow to fit all its rows instead of clipping at the parent's height. That pushes the footer below the viewport and makes the whole page scroll on mobile (where there's no separate reading pane absorbing the height).
+
+The reader pane has the same shape and the same latent issue.
 
 ## Changes
 
-### 1. Expand provider fallback chain in `src/routes/api/public/logo.ts`
+All in `src/routes/_authenticated/inbox.tsx` — CSS-only, no logic changes:
 
-Try providers in order, returning the first real image:
+1. **List scroll container (line 440)** — add `min-h-0` so it clips to the available space between the sticky header/search and the pagination footer.
+   - `className="flex-1 overflow-y-auto"` → `className="min-h-0 flex-1 overflow-y-auto"`
 
-1. **Clearbit Logo API** — `https://logo.clearbit.com/{domain}?size=512` (current)
-2. **Logo.dev (public, no key)** — `https://img.logo.dev/{domain}?size=512&format=png` (good coverage for SMBs Clearbit misses)
-3. **DuckDuckGo icon service** — `https://icons.duckduckgo.com/ip3/{domain}.ico` (works for many small/regional sites)
-4. **Direct site `/favicon.ico` and common apple-touch-icon paths** — fetched from the domain itself at a higher resolution (`/apple-touch-icon.png`, `/apple-touch-icon-precomposed.png`, then `/favicon.ico`)
-5. **Google s2 favicons** — `https://www.google.com/s2/favicons?domain={domain}&sz=256` (current last-resort)
+2. **List column wrapper (line 403)** — add `min-h-0` so the flex column itself can shrink inside the grid row on mobile.
+   - `h-full flex-col overflow-hidden ...` → `h-full min-h-0 flex-col overflow-hidden ...`
 
-Keep the `MIN_BYTES = 600` filter so we still reject the generic 1×1/grey-globe responses. Keep the 4s per-provider timeout but cap total work by short-circuiting on first success.
+3. **Reader column wrapper (line 820)** — same `min-h-0` for symmetry, so the open-email view also only scrolls its body, not the toolbar.
 
-### 2. Cache the resolved logo per domain
+4. **Reader body scroll (line 1085)** — add `min-h-0` to `flex-1 overflow-y-auto` for the same reason as #1.
 
-Add a tiny in-memory + edge-cache short-circuit on `?domain=` so repeat lookups across the 27 new contacts don't re-walk the chain. We already send `Cache-Control: public, s-maxage=604800, immutable` on hits; mirror that for 404 misses with a shorter TTL (e.g. 1 hour, already partly there) so we don't hammer providers, and bump the success TTL to 30 days.
-
-### 3. Make person-row UI prefer the site-derived domain consistently
-
-`CompanyLogo` already calls `/api/public/logo?domain=...`. Confirm the contact list passes the same `contactLogoDomain(website, email)` it uses for the bucket header so both rows and headers query the same domain (avoiding cases where the header has a logo but the row asks for a different domain and misses).
-
-## Out of scope
-
-- No DB schema changes; no `avatar_url` writeback. Logos stay as a derived/cached view from the proxy.
-- No background prefetch job — adding 27 contacts already triggers 27 first-paint requests, which will warm the cache for everyone after this change.
+5. **Outer grid (line 401)** — add `min-h-0` to `grid h-full` so the grid honors its parent's bounded height on mobile.
 
 ## Validation
 
-- Open the contacts page after this change and confirm the previously blank rows now show real logos.
-- Check 2–3 specific domains that failed before (Clearbit-only misses) and confirm the network panel shows `200` from `/api/public/logo?domain=...`.
-- Confirm domains with truly no online logo still fall back to the first-letter monogram (no broken images).
+- Open `/inbox` on the mobile viewport (402×716).
+- Confirm the title row + search bar stay pinned at the top, the Prev/Page/Next footer stays pinned at the bottom, and only the email list scrolls in between.
+- Open an email and confirm the toolbar header stays pinned while only the email body scrolls.
+- Re-check desktop (≥768px) to confirm nothing regressed.
