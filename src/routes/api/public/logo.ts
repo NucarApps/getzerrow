@@ -24,7 +24,7 @@ async function tryFetch(url: string): Promise<Response | null> {
     const ct = res.headers.get("content-type") || "";
     if (!ct.startsWith("image/")) return null;
     const len = Number(res.headers.get("content-length") || "0");
-    if (len && len < 80) return null; // skip tiny 1x1 placeholders
+    if (len && len < MIN_BYTES) return null;
     return res;
   } catch {
     return null;
