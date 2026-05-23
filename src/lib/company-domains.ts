@@ -48,6 +48,7 @@ export function prettyCompanyName(domain: string): string {
 }
 
 /** Free logo endpoint; returns a transparent pixel when unknown. */
-export function logoUrl(domain: string, size = 64): string {
-  return `https://img.logo.dev/${encodeURIComponent(domain)}?size=${size}&format=png&fallback=monogram`;
+/** Keyless favicon/logo endpoint (DuckDuckGo). Falls back to a generic icon for unknown domains. */
+export function logoUrl(domain: string, _size = 64): string {
+  return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`;
 }
