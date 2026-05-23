@@ -19,6 +19,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
 import { extractDomain, isPersonalDomain, prettyCompanyName } from "@/lib/company-domains";
 
 
