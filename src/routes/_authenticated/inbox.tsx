@@ -898,6 +898,7 @@ function InboxPage() {
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
+            </SwipeRow>
             );
           })}
         </div>
