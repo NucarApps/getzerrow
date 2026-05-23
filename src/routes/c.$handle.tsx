@@ -110,12 +110,38 @@ function PublicCard() {
               {card.twitter && <Row icon={<Twitter className="h-4 w-4" />}><a href={card.twitter} target="_blank" rel="noreferrer" className="hover:underline">Twitter / X</a></Row>}
             </ul>
 
-            <button
-              onClick={download}
-              className={cn("mt-6 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium hover:opacity-90", theme.accent)}
-            >
-              <Download className="h-4 w-4" /> Save to contacts (.vcf)
-            </button>
+            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+              <button
+                onClick={download}
+                className={cn("flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium hover:opacity-90", theme.accent)}
+              >
+                <Download className="h-4 w-4" /> Save (.vcf)
+              </button>
+              <button
+                onClick={async () => {
+                  const shareData = {
+                    title: `${card!.name || card!.handle} — Contact card`,
+                    text: card!.tagline || `${card!.name || ""}${card!.title ? " · " + card!.title : ""}`.trim() || "My contact card",
+                    url: publicUrl,
+                  };
+                  try {
+                    if (typeof navigator !== "undefined" && navigator.share) {
+                      await navigator.share(shareData);
+                    } else {
+                      await navigator.clipboard.writeText(publicUrl);
+                      toast.success("Link copied");
+                    }
+                  } catch (e: any) {
+                    if (e?.name !== "AbortError") toast.error("Couldn't share");
+                  }
+                }}
+                className="flex items-center justify-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent"
+              >
+                <Share2 className="h-4 w-4" /> Share card
+              </button>
+            </div>
+
+
 
 
             <div className="mt-6 flex flex-col items-center gap-2">
