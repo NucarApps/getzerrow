@@ -31,6 +31,8 @@ import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
+import { useIsMobile } from "@/hooks/use-mobile";
+import DOMPurify from "dompurify";
 
 
 export const Route = createFileRoute("/_authenticated/inbox")({
@@ -172,6 +174,27 @@ function EmailBodyFrame({ html }: { html: string }) {
       sandbox="allow-popups allow-popups-to-escape-sandbox allow-scripts"
       className="w-full rounded-lg bg-white"
       style={{ border: 0, colorScheme: "light", height: MIN_PX, minHeight: MIN_PX }}
+    />
+  );
+}
+
+function EmailBodyInline({ html }: { html: string }) {
+  const clean = useMemo(
+    () =>
+      DOMPurify.sanitize(html, {
+        USE_PROFILES: { html: true },
+        ADD_ATTR: ["target"],
+        FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "input", "meta", "link"],
+        FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
+      }),
+    [html],
+  );
+  return (
+    <div
+      className="email-body-inline rounded-lg bg-white p-4 text-[14px] leading-relaxed text-[#111]"
+      style={{ colorScheme: "light", wordWrap: "break-word", overflowWrap: "break-word" }}
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: clean }}
     />
   );
 }
@@ -866,6 +889,7 @@ function labelForFolder(sel: string | "all" | "all_mail" | "no_rules", folders: 
 }
 
 function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; onBack?: () => void }) {
+  const isMobile = useIsMobile();
   const qc = useQueryClient();
   const markFn = useServerFn(markEmailRead);
   const archFn = useServerFn(archiveEmail);
@@ -1221,7 +1245,11 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
         <div className="mt-4">
           {email.body_html && hasVisibleHtml(email.body_html) ? (
-            <EmailBodyFrame key={email.id} html={email.body_html} />
+            isMobile ? (
+              <EmailBodyInline key={email.id} html={email.body_html} />
+            ) : (
+              <EmailBodyFrame key={email.id} html={email.body_html} />
+            )
           ) : (
             <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{email.body_text || email.snippet || ""}</pre>
           )}
