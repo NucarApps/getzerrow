@@ -1,7 +1,10 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { QRCodeSVG } from "qrcode.react";
 import { Mail, Phone, Globe, Linkedin, Twitter, Building2, Download, Share2 } from "lucide-react";
 import { getPublicCard, getPublicVCard } from "@/lib/cards.functions";
+import { logCardEvent } from "@/lib/card-analytics.functions";
 import { getTheme } from "@/components/cards/themes";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
