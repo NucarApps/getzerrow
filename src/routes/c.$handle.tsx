@@ -126,11 +126,11 @@ function PublicCard() {
 
             <ul className="mt-6 space-y-2 text-sm">
               {card.company && <Row icon={<Building2 className="h-4 w-4" />}>{card.company}</Row>}
-              {card.email && <Row icon={<Mail className="h-4 w-4" />}><a href={`mailto:${card.email}`} className="hover:underline">{card.email}</a></Row>}
-              {card.phone && <Row icon={<Phone className="h-4 w-4" />}><a href={`tel:${card.phone}`} className="hover:underline">{card.phone}</a></Row>}
-              {card.website && <Row icon={<Globe className="h-4 w-4" />}><a href={card.website} target="_blank" rel="noreferrer" className="hover:underline">{card.website}</a></Row>}
-              {card.linkedin && <Row icon={<Linkedin className="h-4 w-4" />}><a href={card.linkedin} target="_blank" rel="noreferrer" className="hover:underline">LinkedIn</a></Row>}
-              {card.twitter && <Row icon={<Twitter className="h-4 w-4" />}><a href={card.twitter} target="_blank" rel="noreferrer" className="hover:underline">Twitter / X</a></Row>}
+              {card.email && <Row icon={<Mail className="h-4 w-4" />}><a href={`mailto:${card.email}`} onClick={() => track("email", `mailto:${card.email}`)} className="hover:underline">{card.email}</a></Row>}
+              {card.phone && <Row icon={<Phone className="h-4 w-4" />}><a href={`tel:${card.phone}`} onClick={() => track("phone", `tel:${card.phone}`)} className="hover:underline">{card.phone}</a></Row>}
+              {card.website && <Row icon={<Globe className="h-4 w-4" />}><a href={card.website} target="_blank" rel="noreferrer" onClick={() => track("website", card.website!)} className="hover:underline">{card.website}</a></Row>}
+              {card.linkedin && <Row icon={<Linkedin className="h-4 w-4" />}><a href={card.linkedin} target="_blank" rel="noreferrer" onClick={() => track("linkedin", card.linkedin!)} className="hover:underline">LinkedIn</a></Row>}
+              {card.twitter && <Row icon={<Twitter className="h-4 w-4" />}><a href={card.twitter} target="_blank" rel="noreferrer" onClick={() => track("twitter", card.twitter!)} className="hover:underline">Twitter / X</a></Row>}
             </ul>
 
             <div className="mt-6 grid gap-2 sm:grid-cols-2">
