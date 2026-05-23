@@ -55,7 +55,7 @@ export const Route = createFileRoute("/api/public/logo")({
             status: 200,
             headers: {
               "Content-Type": res.headers.get("content-type") || "image/png",
-              "Cache-Control": "public, max-age=86400, s-maxage=604800, immutable",
+              "Cache-Control": "public, max-age=2592000, s-maxage=2592000, immutable",
               "Access-Control-Allow-Origin": "*",
             },
           });
