@@ -1,4 +1,4 @@
-import { logoUrl } from "./company-domains";
+import { logoCandidates } from "./company-domains";
 
 const memCache = new Map<string, string | null>();
 const STORAGE_PREFIX = "logoColor:";
