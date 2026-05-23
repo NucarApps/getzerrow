@@ -48,6 +48,8 @@ function ContactsPage() {
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
   const [groupDialog, setGroupDialog] = useState<null | { mode: "create" } | { mode: "edit"; group: GroupRow }>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [groupByCompany, setGroupByCompany] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
