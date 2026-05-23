@@ -2,6 +2,8 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { QRCodeSVG } from "qrcode.react";
 import { Mail, Phone, Globe, Linkedin, Twitter, Building2, Download } from "lucide-react";
 import { getPublicCard, getPublicVCard } from "@/lib/cards.functions";
+import { getTheme } from "@/components/cards/themes";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/c/$handle")({
   loader: async ({ params }) => {
@@ -46,15 +48,33 @@ function PublicCard() {
     URL.revokeObjectURL(url);
   }
 
+  const theme = getTheme((card as any).theme);
+  const coverUrl = (card as any).cover_url as string | null;
+  const avatarUrl = (card as any).avatar_url as string | null;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-card text-foreground">
       <div className="mx-auto max-w-md px-4 py-12">
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-          <div className="h-24 bg-gradient-to-br from-primary to-primary/40" />
-          <div className="px-6 pb-6 -mt-12">
-            <div className="grid h-24 w-24 place-items-center rounded-full border-4 border-card bg-primary/30 text-3xl font-semibold text-primary-foreground">
-              {(card.name || card.handle).slice(0, 1).toUpperCase()}
+          {coverUrl ? (
+            <div className="h-32 w-full overflow-hidden">
+              <img src={coverUrl} alt="" className="h-full w-full object-cover" />
             </div>
+          ) : (
+            <div className={cn("h-32 bg-gradient-to-br", theme.gradient)} />
+          )}
+          <div className="px-6 pb-6 -mt-12">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={card.name ?? card.handle}
+                className="h-24 w-24 rounded-full border-4 border-card object-cover"
+              />
+            ) : (
+              <div className={cn("grid h-24 w-24 place-items-center rounded-full border-4 border-card text-3xl font-semibold bg-gradient-to-br", theme.gradient)}>
+                {(card.name || card.handle).slice(0, 1).toUpperCase()}
+              </div>
+            )}
             <h1 className="mt-4 font-display text-2xl text-foreground">{card.name || card.handle}</h1>
             {card.title && <p className="text-sm text-muted-foreground">{card.title}</p>}
             {card.tagline && <p className="mt-3 text-sm italic text-foreground/80">"{card.tagline}"</p>}
@@ -70,10 +90,11 @@ function PublicCard() {
 
             <button
               onClick={download}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+              className={cn("mt-6 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium hover:opacity-90", theme.accent)}
             >
               <Download className="h-4 w-4" /> Save to contacts (.vcf)
             </button>
+
 
             <div className="mt-6 flex flex-col items-center gap-2">
               <div className="rounded-md bg-white p-2">

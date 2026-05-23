@@ -30,6 +30,7 @@ export const upsertMyCard = createServerFn({ method: "POST" })
       linkedin: z.string().max(500).nullable().optional(),
       twitter: z.string().max(500).nullable().optional(),
       avatar_url: z.string().max(1000).nullable().optional(),
+      cover_url: z.string().max(1000).nullable().optional(),
       tagline: z.string().max(280).nullable().optional(),
       theme: z.string().max(40).optional(),
     }).parse(d)
@@ -65,7 +66,7 @@ export const getPublicCard = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const { data: card } = await supabaseAdmin
       .from("my_cards")
-      .select("handle,name,title,company,email,phone,website,linkedin,twitter,avatar_url,tagline,theme")
+      .select("handle,name,title,company,email,phone,website,linkedin,twitter,avatar_url,cover_url,tagline,theme")
       .eq("handle", data.handle.toLowerCase())
       .maybeSingle();
     if (!card) return { card: null };
