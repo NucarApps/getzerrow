@@ -20,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
-import { extractDomain, isPersonalDomain, prettyCompanyName } from "@/lib/company-domains";
+import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain } from "@/lib/company-domains";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
