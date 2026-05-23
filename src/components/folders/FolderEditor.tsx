@@ -309,16 +309,16 @@ export function FolderEditor({
           </div>
 
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3" /> Learned profile
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={syncLabel} disabled={syncingLabel || !folder.gmail_label_id} title="Apply this folder's Gmail label to all emails Zerrow has routed here">
                   {syncingLabel ? "Syncing…" : "Sync to Gmail"}
                 </Button>
                 <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
-                  {learning ? "Learning from up to 200 emails…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
+                  {learning ? "Learning…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
                 </Button>
               </div>
             </div>
