@@ -1246,28 +1246,30 @@ function RuleGroupEditor({
 }) {
   if (node.type === "cond") {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-sm">
+      <div className="flex flex-col gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-sm sm:flex-row sm:items-center">
         <Select value={node.field} onValueChange={(v) => onChange({ ...node, field: v })}>
-          <SelectTrigger className="h-7 w-32 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-7 w-full text-xs sm:w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             {FIELD_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={node.op} onValueChange={(v) => onChange({ ...node, op: v })}>
-          <SelectTrigger className="h-7 w-36 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-7 w-full text-xs sm:w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
             {OP_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Input
-          className="h-7 flex-1 text-xs"
-          placeholder="value"
-          value={node.value}
-          onChange={(e) => onChange({ ...node, value: e.target.value })}
-        />
-        {onRemove && (
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={onRemove}><X className="h-3 w-3" /></Button>
-        )}
+        <div className="flex items-center gap-2">
+          <Input
+            className="h-7 min-w-0 flex-1 text-xs"
+            placeholder="value"
+            value={node.value}
+            onChange={(e) => onChange({ ...node, value: e.target.value })}
+          />
+          {onRemove && (
+            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={onRemove}><X className="h-3 w-3" /></Button>
+          )}
+        </div>
       </div>
     );
   }
