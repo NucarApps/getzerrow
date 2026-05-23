@@ -268,13 +268,13 @@ export function FolderEditor({
 
   return (
     <div>
-      <div className="flex items-center gap-3">
-        <input type="color" value={local.color} onChange={(e) => setLocal({ ...local, color: e.target.value })} className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent" />
-        <Input className="flex-1" value={local.name} onChange={(e) => setLocal({ ...local, name: e.target.value })} />
-        <Input type="number" className="w-20" value={local.priority} onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })} title="Priority (higher wins)" />
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <input type="color" value={local.color} onChange={(e) => setLocal({ ...local, color: e.target.value })} className="h-9 w-12 shrink-0 cursor-pointer rounded border border-border bg-transparent" />
+        <Input className="min-w-0 flex-1" value={local.name} onChange={(e) => setLocal({ ...local, name: e.target.value })} />
+        <Input type="number" className="w-20 shrink-0" value={local.priority} onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })} title="Priority (higher wins)" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="More actions"><MoreVertical className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="icon" className="shrink-0" aria-label="More actions"><MoreVertical className="h-4 w-4" /></Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={remove} className="text-destructive focus:text-destructive">
@@ -309,16 +309,16 @@ export function FolderEditor({
           </div>
 
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3" /> Learned profile
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={syncLabel} disabled={syncingLabel || !folder.gmail_label_id} title="Apply this folder's Gmail label to all emails Zerrow has routed here">
                   {syncingLabel ? "Syncing…" : "Sync to Gmail"}
                 </Button>
                 <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
-                  {learning ? "Learning from up to 200 emails…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
+                  {learning ? "Learning…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
                 </Button>
               </div>
             </div>
@@ -529,14 +529,14 @@ export function FolderEditor({
                     )}
                     <span className="text-muted-foreground">{f.field}</span>
                     <span className={isExclude ? "text-destructive" : "text-muted-foreground"}>{f.op}</span>
-                    <span className="flex-1 font-mono text-xs">{f.value}</span>
-                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
+                    <span className="flex-1 min-w-0 break-all font-mono text-xs">{f.value}</span>
+                    <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
                   </div>
                 );
               })}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Select value={newF.field} onValueChange={(v) => setNewF({ ...newF, field: v })}>
-                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="from">from</SelectItem>
                     <SelectItem value="to">to</SelectItem>
@@ -550,17 +550,19 @@ export function FolderEditor({
                   </SelectContent>
                 </Select>
                 <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
-                  <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-36"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="contains">contains</SelectItem>
                     <SelectItem value="equals">equals</SelectItem>
+                    <SelectItem value="starts_with">starts with</SelectItem>
+                    <SelectItem value="ends_with">ends with</SelectItem>
                     <SelectItem value="not_contains">does not contain</SelectItem>
                     <SelectItem value="not_equals">does not equal</SelectItem>
                     <SelectItem value="regex">regex</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input className="flex-1" placeholder="value" value={newF.value} onChange={(e) => setNewF({ ...newF, value: e.target.value })} />
-                <Button size="sm" onClick={addFilter}>Add</Button>
+                <Input className="flex-1 min-w-0" placeholder="value" value={newF.value} onChange={(e) => setNewF({ ...newF, value: e.target.value })} />
+                <Button size="sm" className="w-full sm:w-auto" onClick={addFilter}>Add</Button>
               </div>
               <p className="text-xs text-muted-foreground">
                 Exclude rules keep matching emails in your inbox even if a domain or other rule would route them here.
@@ -1224,6 +1226,8 @@ const FIELD_OPTS = [
 const OP_OPTS = [
   { value: "contains", label: "contains" },
   { value: "equals", label: "equals" },
+  { value: "starts_with", label: "starts with" },
+  { value: "ends_with", label: "ends with" },
   { value: "not_contains", label: "does not contain" },
   { value: "not_equals", label: "does not equal" },
   { value: "regex", label: "regex" },
@@ -1242,28 +1246,30 @@ function RuleGroupEditor({
 }) {
   if (node.type === "cond") {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-sm">
+      <div className="flex flex-col gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-sm sm:flex-row sm:items-center">
         <Select value={node.field} onValueChange={(v) => onChange({ ...node, field: v })}>
-          <SelectTrigger className="h-7 w-32 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-7 w-full text-xs sm:w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             {FIELD_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={node.op} onValueChange={(v) => onChange({ ...node, op: v })}>
-          <SelectTrigger className="h-7 w-36 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-7 w-full text-xs sm:w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
             {OP_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Input
-          className="h-7 flex-1 text-xs"
-          placeholder="value"
-          value={node.value}
-          onChange={(e) => onChange({ ...node, value: e.target.value })}
-        />
-        {onRemove && (
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={onRemove}><X className="h-3 w-3" /></Button>
-        )}
+        <div className="flex items-center gap-2">
+          <Input
+            className="h-7 min-w-0 flex-1 text-xs"
+            placeholder="value"
+            value={node.value}
+            onChange={(e) => onChange({ ...node, value: e.target.value })}
+          />
+          {onRemove && (
+            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={onRemove}><X className="h-3 w-3" /></Button>
+          )}
+        </div>
       </div>
     );
   }
