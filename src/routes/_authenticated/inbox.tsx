@@ -84,7 +84,7 @@ type Folder = { id: string; name: string; color: string; gmail_label_id: string 
 
 const PAGE_SIZE = 50;
 
-const MIN_PX = 60;
+const MIN_PX = 400;
 
 function hasVisibleHtml(html: string | null | undefined): boolean {
   return (html ?? "")
@@ -96,36 +96,64 @@ function hasVisibleHtml(html: string | null | undefined): boolean {
 }
 
 function EmailBodyFrame({ html }: { html: string }) {
-  const ref = useMemo(() => ({ current: null as HTMLIFrameElement | null }), []);
-  const srcDoc = `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;padding:16px;background:#fff;color:#111;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;word-wrap:break-word;overflow-wrap:break-word;}img{max-width:100%;height:auto;}a{color:#2563eb;}table{max-width:100%;}</style></head><body>${html}</body></html>`;
-  const resize = () => {
-    const f = ref.current;
-    if (!f || !f.contentDocument) return;
-    const h = f.contentDocument.documentElement.scrollHeight;
-    f.style.height = Math.min(Math.max(h + 4, MIN_PX), 4000) + "px";
-  };
+  const frameId = useId();
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  const srcDoc = useMemo(() => {
+    const resizeScript = `
+<script>
+(function(){
+  var id = ${JSON.stringify(frameId)};
+  function post(){
+    try {
+      var h = Math.max(
+        document.documentElement.scrollHeight,
+        document.body ? document.body.scrollHeight : 0
+      );
+      parent.postMessage({ __zerrowFrame: id, height: h }, "*");
+    } catch(e){}
+  }
+  window.addEventListener("load", function(){
+    post();
+    requestAnimationFrame(post);
+    setTimeout(post, 250);
+    setTimeout(post, 1000);
+    if (typeof ResizeObserver !== "undefined" && document.body) {
+      try { new ResizeObserver(post).observe(document.body); } catch(e){}
+    }
+    var imgs = document.getElementsByTagName("img");
+    for (var i=0; i<imgs.length; i++) {
+      imgs[i].addEventListener("load", post);
+      imgs[i].addEventListener("error", post);
+    }
+  });
+  window.addEventListener("resize", post);
+})();
+</script>`;
+    return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;padding:16px;background:#fff;color:#111;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;word-wrap:break-word;overflow-wrap:break-word;}img{max-width:100%;height:auto;}a{color:#2563eb;}table{max-width:100%;}</style></head><body>${html}${resizeScript}</body></html>`;
+  }, [html, frameId]);
+
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      const d = e.data as { __zerrowFrame?: string; height?: number } | null;
+      if (!d || d.__zerrowFrame !== frameId || typeof d.height !== "number") return;
+      const f = iframeRef.current;
+      if (!f) return;
+      const clamped = Math.min(Math.max(d.height + 4, MIN_PX), 8000);
+      f.style.height = clamped + "px";
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [frameId]);
+
   return (
     <iframe
-      ref={(el) => { ref.current = el; }}
+      ref={iframeRef}
       title="Email body"
       srcDoc={srcDoc}
-      sandbox="allow-popups allow-popups-to-escape-sandbox"
-      onLoad={() => {
-        resize();
-        requestAnimationFrame(resize);
-        setTimeout(resize, 250);
-        const f = ref.current;
-        if (!f || !f.contentDocument) return;
-        const body = f.contentDocument.body;
-        if (body && typeof ResizeObserver !== "undefined") {
-          new ResizeObserver(resize).observe(body);
-        }
-        f.contentDocument.querySelectorAll("img").forEach((img) => {
-          img.addEventListener("load", resize);
-        });
-      }}
+      sandbox="allow-popups allow-popups-to-escape-sandbox allow-scripts"
       className="w-full rounded-lg bg-white"
-      style={{ border: 0, colorScheme: "light", minHeight: MIN_PX }}
+      style={{ border: 0, colorScheme: "light", height: MIN_PX, minHeight: MIN_PX }}
     />
   );
 }
