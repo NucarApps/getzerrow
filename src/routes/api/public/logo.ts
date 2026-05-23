@@ -4,11 +4,11 @@ const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 
 function providersFor(domain: string, size: number): string[] {
   const d = encodeURIComponent(domain);
-  const s = Math.max(16, Math.min(512, size));
+  const s = Math.max(128, Math.min(512, size));
   return [
-    `https://www.google.com/s2/favicons?domain=${d}&sz=${s}`,
+    `https://logo.clearbit.com/${d}?size=${s}`,
+    `https://www.google.com/s2/favicons?domain=${d}&sz=${Math.min(s, 256)}`,
     `https://icons.duckduckgo.com/ip3/${d}.ico`,
-    `https://logo.clearbit.com/${d}`,
     `https://${d}/favicon.ico`,
   ];
 }
