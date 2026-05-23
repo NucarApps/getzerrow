@@ -134,3 +134,70 @@ export const sendMyCard = createServerFn({ method: "POST" })
 
     return { ok: true };
   });
+
+/** Public — capture a lead from a public card. Creates a contact for the card owner. */
+export const submitCardLead = createServerFn({ method: "POST" })
+  .inputValidator((d: any) =>
+    z.object({
+      handle: z.string().regex(HANDLE_RE),
+      name: z.string().trim().min(1).max(120),
+      email: z.string().trim().email().max(255),
+      company: z.string().trim().max(160).optional().or(z.literal("")),
+      phone: z.string().trim().max(60).optional().or(z.literal("")),
+      message: z.string().trim().max(1000).optional().or(z.literal("")),
+    }).parse(d)
+  )
+  .handler(async ({ data }) => {
+    const handle = data.handle.toLowerCase();
+    const { data: card } = await supabaseAdmin
+      .from("my_cards")
+      .select("id, user_id")
+      .eq("handle", handle)
+      .maybeSingle();
+    if (!card) throw new Error("Card not found");
+
+    const email = data.email.toLowerCase();
+    const notes = data.message ? `Lead via /c/${handle}: ${data.message}` : `Lead via /c/${handle}`;
+
+    // Upsert-style: if a contact already exists for this owner+email, append a note.
+    const { data: existing } = await supabaseAdmin
+      .from("contacts")
+      .select("id, notes")
+      .eq("user_id", card.user_id)
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existing) {
+      const merged = existing.notes ? `${existing.notes}\n\n${notes}` : notes;
+      await supabaseAdmin
+        .from("contacts")
+        .update({
+          name: data.name,
+          company: data.company || null,
+          phone: data.phone || null,
+          notes: merged,
+          source: "card_lead",
+        })
+        .eq("id", existing.id);
+    } else {
+      await supabaseAdmin.from("contacts").insert({
+        user_id: card.user_id,
+        email,
+        name: data.name,
+        company: data.company || null,
+        phone: data.phone || null,
+        notes,
+        source: "card_lead",
+      });
+    }
+
+    // Log analytics event (best-effort).
+    await supabaseAdmin.from("card_events").insert({
+      card_id: card.id,
+      owner_user_id: card.user_id,
+      handle,
+      event_type: "lead",
+    });
+
+    return { ok: true };
+  });

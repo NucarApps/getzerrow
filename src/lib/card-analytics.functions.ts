@@ -4,7 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{2,30}$/;
-const EVENT_TYPES = ["view", "link_click", "vcard_download", "share"] as const;
+const EVENT_TYPES = ["view", "link_click", "vcard_download", "share", "lead"] as const;
 const LINK_KINDS = ["email", "phone", "website", "linkedin", "twitter", "other"] as const;
 
 /** Public — log an event on a card. No auth required. */
@@ -76,7 +76,7 @@ export const getMyCardAnalytics = createServerFn({ method: "GET" })
 
     const events = rows ?? [];
 
-    const totals: Record<string, number> = { view: 0, link_click: 0, vcard_download: 0, share: 0 };
+    const totals: Record<string, number> = { view: 0, link_click: 0, vcard_download: 0, share: 0, lead: 0 };
     const byDay = new Map<string, { views: number; clicks: number; downloads: number; shares: number }>();
     const linkCounts = new Map<string, { link_kind: string; link_url: string | null; count: number }>();
 

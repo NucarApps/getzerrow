@@ -6,6 +6,7 @@ import { Mail, Phone, Globe, Linkedin, Twitter, Building2, Download, Share2 } fr
 import { getPublicCard, getPublicVCard } from "@/lib/cards.functions";
 import { logCardEvent } from "@/lib/card-analytics.functions";
 import { getTheme } from "@/components/cards/themes";
+import { LeadForm } from "@/components/cards/LeadForm";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -165,6 +166,9 @@ function PublicCard() {
                 <Share2 className="h-4 w-4" /> Share card
               </button>
             </div>
+
+            <LeadForm handle={card.handle} accentClass={theme.accent} />
+
 
 
 
