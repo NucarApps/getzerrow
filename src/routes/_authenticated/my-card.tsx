@@ -10,6 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { getMyCard, upsertMyCard } from "@/lib/cards.functions";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { ImageCropUpload } from "@/components/cards/ImageCropUpload";
+import { ThemePicker } from "@/components/cards/themes";
 
 export const Route = createFileRoute("/_authenticated/my-card")({
   head: () => ({ meta: [{ title: "My Card — Zerrow" }] }),
@@ -22,20 +25,30 @@ function MyCardPage() {
   const save = useServerFn(upsertMyCard);
   const q = useQuery({ queryKey: ["my-card"], queryFn: () => fetchCard() });
 
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, []);
+
   const [form, setForm] = useState({
     handle: "", name: "", title: "", company: "", email: "", phone: "",
     website: "", linkedin: "", twitter: "", tagline: "",
+    avatar_url: "" as string | "",
+    cover_url: "" as string | "",
+    theme: "default",
   });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (q.data?.card) {
-      const c = q.data.card;
+      const c: any = q.data.card;
       setForm({
         handle: c.handle ?? "", name: c.name ?? "", title: c.title ?? "",
         company: c.company ?? "", email: c.email ?? "", phone: c.phone ?? "",
         website: c.website ?? "", linkedin: c.linkedin ?? "",
         twitter: c.twitter ?? "", tagline: c.tagline ?? "",
+        avatar_url: c.avatar_url ?? "", cover_url: c.cover_url ?? "",
+        theme: c.theme ?? "default",
       });
     }
   }, [q.data?.card?.handle]);
@@ -51,6 +64,9 @@ function MyCardPage() {
           phone: form.phone || null, website: form.website || null,
           linkedin: form.linkedin || null, twitter: form.twitter || null,
           tagline: form.tagline || null,
+          avatar_url: form.avatar_url || null,
+          cover_url: form.cover_url || null,
+          theme: form.theme || "default",
         },
       });
       toast.success("Card saved");
@@ -77,6 +93,41 @@ function MyCardPage() {
         <p className="mb-6 text-sm text-muted-foreground">
           This is what people see when you share your link or QR. Choose a handle — your card lives at <code className="text-foreground">/c/your-handle</code>.
         </p>
+
+        {/* Images */}
+        {userId && (
+          <div className="mb-6 space-y-4 rounded-lg border border-border bg-card/40 p-4">
+            <div>
+              <Label className="mb-2 block text-xs text-muted-foreground">Cover image (3:1)</Label>
+              <ImageCropUpload
+                userId={userId}
+                kind="cover"
+                value={form.cover_url || null}
+                onChange={(url) => setForm({ ...form, cover_url: url ?? "" })}
+                aspect={3 / 1}
+                shape="rect"
+              />
+            </div>
+            <div>
+              <Label className="mb-2 block text-xs text-muted-foreground">Photo</Label>
+              <ImageCropUpload
+                userId={userId}
+                kind="avatar"
+                value={form.avatar_url || null}
+                onChange={(url) => setForm({ ...form, avatar_url: url ?? "" })}
+                aspect={1}
+                shape="circle"
+                outputSize={512}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Theme */}
+        <div className="mb-6 rounded-lg border border-border bg-card/40 p-4">
+          <Label className="mb-3 block text-xs text-muted-foreground">Theme</Label>
+          <ThemePicker value={form.theme} onChange={(id) => setForm({ ...form, theme: id })} />
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Handle (URL)">
