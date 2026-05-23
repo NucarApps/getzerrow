@@ -1221,7 +1221,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
         <div className="mt-4">
           {email.body_html && hasVisibleHtml(email.body_html) ? (
-            <EmailBodyFrame html={email.body_html} />
+            <EmailBodyFrame key={email.id} html={email.body_html} />
           ) : (
             <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{email.body_text || email.snippet || ""}</pre>
           )}
