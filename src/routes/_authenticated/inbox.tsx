@@ -107,17 +107,17 @@ function EmailBodyFrame({ html }: { html: string }) {
   function post(){
     try {
       var h = Math.max(
-        document.documentElement.scrollHeight,
+        document.documentElement ? document.documentElement.scrollHeight : 0,
         document.body ? document.body.scrollHeight : 0
       );
       parent.postMessage({ __zerrowFrame: id, height: h }, "*");
     } catch(e){}
   }
-  window.addEventListener("load", function(){
+  // Post immediately and on every relevant lifecycle event so we never miss
+  // the parent's listener (which mounts after first paint).
+  post();
+  document.addEventListener("DOMContentLoaded", function(){
     post();
-    requestAnimationFrame(post);
-    setTimeout(post, 250);
-    setTimeout(post, 1000);
     if (typeof ResizeObserver !== "undefined" && document.body) {
       try { new ResizeObserver(post).observe(document.body); } catch(e){}
     }
@@ -127,13 +127,25 @@ function EmailBodyFrame({ html }: { html: string }) {
       imgs[i].addEventListener("error", post);
     }
   });
+  window.addEventListener("load", function(){
+    post();
+    requestAnimationFrame(post);
+    setTimeout(post, 100);
+    setTimeout(post, 400);
+    setTimeout(post, 1200);
+  });
   window.addEventListener("resize", post);
+  window.addEventListener("message", function(e){
+    if (e && e.data && e.data.__zerrowPing === id) post();
+  });
 })();
 </script>`;
-    return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;padding:16px;background:#fff;color:#111;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;word-wrap:break-word;overflow-wrap:break-word;}img{max-width:100%;height:auto;}a{color:#2563eb;}table{max-width:100%;}</style></head><body>${html}${resizeScript}</body></html>`;
+    // Force light scheme so emails authored with dark-mode CSS don't render
+    // white-on-white inside our white frame.
+    return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light only;}html,body{margin:0;padding:16px;background:#fff !important;color:#111 !important;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;word-wrap:break-word;overflow-wrap:break-word;}body *{color:inherit;}img{max-width:100%;height:auto;}a{color:#2563eb !important;}table{max-width:100%;}</style></head><body>${html}${resizeScript}</body></html>`;
   }, [html, frameId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     function onMessage(e: MessageEvent) {
       const d = e.data as { __zerrowFrame?: string; height?: number } | null;
       if (!d || d.__zerrowFrame !== frameId || typeof d.height !== "number") return;
@@ -146,11 +158,17 @@ function EmailBodyFrame({ html }: { html: string }) {
     return () => window.removeEventListener("message", onMessage);
   }, [frameId]);
 
+  function pingForHeight() {
+    const f = iframeRef.current;
+    try { f?.contentWindow?.postMessage({ __zerrowPing: frameId }, "*"); } catch {}
+  }
+
   return (
     <iframe
       ref={iframeRef}
       title="Email body"
       srcDoc={srcDoc}
+      onLoad={pingForHeight}
       sandbox="allow-popups allow-popups-to-escape-sandbox allow-scripts"
       className="w-full rounded-lg bg-white"
       style={{ border: 0, colorScheme: "light", height: MIN_PX, minHeight: MIN_PX }}
