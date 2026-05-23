@@ -1,69 +1,107 @@
-## Email Pipeline — Audit & Tune-Up
+# Email Pipeline — Operational Hardening (3 tracks)
 
-I traced the full path: Gmail Pub/Sub push → webhook → `syncSinceHistory` (history API) → `enqueueMessageJob` → `message_jobs` table → `runMessageJobs` worker → `processGmailMessage` (filters → Gmail label → AI) → Gmail side-effects. Polling, backfill, and watch renewal back this up via pg_cron.
+Three independent improvements to the email pipeline. Each is surgical and can ship in one pass.
 
-The architecture is solid (durable queue, priority lanes, retries with jitter, self-healing, watch re-arm, label echo suppression). But the live cron table has accumulated duplicates and a few correctness/quality bugs that are worth fixing.
+---
 
-### Findings
+## Track 1 — Per-account health card + DLQ retry UI
 
-**1. Duplicate cron jobs (wasted load, double Gmail quota burn).** Querying `cron.job` shows:
-```text
-gmail-poll-2m              */2 * * * *
-gmail-poll-fallback        */2 * * * *   ← duplicate of above
-gmail-renew-watches        0 */6 * * *
-gmail-renew-watches-daily  0 9 * * *     ← duplicate (6h cron already covers daily)
-run-folder-summaries           */5 * * * *
-run-folder-summaries-every-5min */5 * * * *  ← duplicate
-gmail-process-jobs-30s     30s (4× parallel POSTs, limit=100 each)
-gmail-process-live-5s      5s
-gmail-backfill-tick        1m
+Today there's no single place to see whether a connected Gmail account is healthy. Drift in `watch_expiration`, a stuck history, or a growing DLQ is invisible until the user notices missing mail.
+
+**Add to Settings (under the existing Gmail accounts list):**
+
+For each connected account, render a compact health card showing:
+- Last successful poll (`gmail_accounts.last_poll_at`)
+- Last webhook push received (latest `pubsub_events` row matching the account email)
+- Watch expiry countdown (`watch_expiration` → "renews in 4h 12m" or red if expired)
+- Pending jobs count (`message_jobs` where `user_id`, `status='pending'`)
+- Running jobs count (`status='running'`)
+- DLQ count (`status='dlq'`)
+- Last error (most recent `last_error` from `message_jobs` in the past hour)
+
+**DLQ retry action:**
+- "Retry failed (N)" button on the card → calls a new server function `retryDlqJobs({ accountId })` that resets the user's `status='dlq'` rows back to `pending`, `attempt=0`, `next_run_at=now()`, `locked_at=null`, `last_error=null`.
+- "Inspect" link opens a small drawer listing the DLQ rows (subject, from, last_error, attempts) with a per-row retry + delete.
+
+**Technical notes:**
+- New `getAccountHealth` server function (`requireSupabaseAuth`) returns a `{ accountId, lastPollAt, lastPushAt, watchExpiresAt, pending, running, dlq, lastError }[]` shape. Single round-trip: one CTE or 4 small queries via `supabase` (RLS-scoped).
+- New `retryDlqJobs` and `deleteDlqJob` server functions, both `requireSupabaseAuth` + scoped to the caller's `user_id`.
+- Auto-refresh the card every 15s via TanStack Query `refetchInterval`.
+- No schema changes.
+
+---
+
+## Track 2 — Webhook authentication: validate Pub/Sub OIDC JWT
+
+Today `gmail-webhook` only checks a shared `?token=GMAIL_WEBHOOK_TOKEN` query param. Anyone with that secret can forge pushes. Google's recommended scheme is to attach an OIDC bearer token signed by Google to each push, and to verify the JWT on receipt.
+
+**Changes to `src/routes/api/public/gmail-webhook.ts`:**
+
+1. Read `Authorization: Bearer <jwt>` header (Pub/Sub sets it when the subscription is configured with `pushConfig.oidcToken.serviceAccountEmail`).
+2. Verify the JWT:
+   - Fetch Google's public keys from `https://www.googleapis.com/oauth2/v3/certs` (cache in module scope for 1 hour).
+   - Validate signature (RS256), `iss=https://accounts.google.com`, `aud=<expected audience>` (the webhook URL or a value we configure on the subscription), `exp > now`.
+   - Optionally check `email` claim equals an allowlisted service account from a new `GMAIL_PUBSUB_SERVICE_ACCOUNT` secret.
+3. Keep the existing `?token=` check as a **fallback** for one release so an old subscription doesn't break; log `push_legacy_auth` events when only the token matches. After the user reconfigures the subscription, we can remove it.
+4. Test webhook (`x-zerrow-test: 1`) path stays unchanged.
+5. Log `push_unauthorized` with reason: `no_jwt`, `bad_signature`, `bad_iss`, `bad_aud`, `expired`, `bad_email`.
+
+**Tiny JWT verify helper** in `src/lib/google-jwt.server.ts` (no new deps — Web Crypto + `fetch`; the runtime is workerd-compatible). ~80 lines.
+
+**Subscription reconfig (manual, one-time, user-facing instructions):** in the Settings panel, surface a "Webhook auth: OIDC pending" warning until the first verified OIDC push lands. Tell the user to set `pushConfig.oidcToken.serviceAccountEmail` on the Pub/Sub subscription in GCP Console.
+
+**Secret needed:** `GMAIL_PUBSUB_SERVICE_ACCOUNT` (the service account email Pub/Sub will sign as). Optional — if unset, we accept any valid Google-issued JWT for the correct audience.
+
+---
+
+## Track 3 — Token refresh mutex + faster job reclaim
+
+Two correctness fixes in the queue runtime.
+
+**3a — Per-account refresh mutex in `getAccessToken`:**
+
+Today, if N concurrent jobs run for the same account around expiry, each one independently calls `refreshAccessToken`, which:
+- Wastes 3 round-trips to Google
+- Risks rate limiting on the OAuth endpoint
+- Races on the `update gmail_accounts` write — last writer wins, others' tokens become stale immediately
+
+**Change `src/lib/google-oauth.server.ts`:**
+- Add a module-level `Map<accountId, Promise<string>>` of in-flight refreshes.
+- In `getAccessToken`, if expiry < 2min away AND a refresh promise already exists for this account, `await` the existing one instead of starting a new one.
+- Delete the entry once the refresh resolves or rejects (in `finally`).
+- Per-worker process scope is correct here — different Workers can each refresh once; the worry is intra-process stampedes.
+
+**3b — Faster reclaim window in `claim_message_jobs`:**
+
+Today `claim_message_jobs` ignores rows locked < 5 min ago. Worker job timeout is 25s. A truly stuck row sits idle for ~4.5 min. Reduce to 60s.
+
+**Migration:**
+```sql
+CREATE OR REPLACE FUNCTION public.claim_message_jobs(p_limit int, p_priority int DEFAULT NULL)
+RETURNS TABLE(...) -- unchanged signature
+...
+WHERE j.status <> 'dlq'
+  AND j.next_run_at <= now()
+  AND (j.locked_at IS NULL OR j.locked_at < now() - interval '60 seconds')
+  AND (p_priority IS NULL OR j.priority = p_priority)
+...
 ```
-Every 2 minutes we hit `/gmail-poll` twice — that's 2× the Gmail history calls per account and 2× the `pubsub_events` "poll" rows. Same for renewals and summaries.
 
-**2. Hard-coded anon key + URL inside migration SQL.** `gmail-process-jobs-30s` and the duplicate jobs embed the full publishable key and `project--{id}.lovable.app` URL in `net.http_post`. Works, but if the project ID or anon key ever rotates, cron silently breaks. The other jobs use the `private.cron_post()` helper which reads from `private.cron_settings` — that's the pattern to standardize on.
+Risk: if a worker takes >60s on a single message (unlikely given the 25s timeout) a second worker could pick it up. Acceptable — `processGmailMessage` is idempotent (Gmail label-add is a no-op, `emails` write is `upsert` on `gmail_message_id`).
 
-**3. Webhook does heavy work inline.** `gmail-webhook` calls `syncSinceHistory` AND then `runMessageJobs(50, 16, {priority:0})` inside the same request. Pub/Sub expects fast 200s; a slow webhook causes Google to retry → duplicate sync work. The 5s `gmail-process-live-5s` cron already drains the priority-0 lane, so the inline drain is redundant and risks Worker CPU timeouts on bursts.
+---
 
-**4. `syncSinceHistory` rebootstrap loses messages.** When the Gmail History API returns "historyId too old", we `update gmail_accounts set history_id = null` and return `{error}`. The next sync calls `backfillRecent(accountId, 20)` which **processes inline** (not via the queue) and only covers `newer_than:7d` with `maxResults=20`. If a burst happened during the gap, only the most recent 20 messages from the past week are captured, and they're processed synchronously inside whatever request triggered the bootstrap (often the webhook).
+## Suggested rollout order
 
-**5. Backfill AI bypasses `min_ai_confidence`.** In `runMessageJobs`, the batched AI pass for backfill jobs (`pendingAi`) writes `folder_id: r?.folder_id` directly without checking each folder's `min_ai_confidence`. Live mail honors the threshold (`processGmailMessage` → `classifyParsedEmail`), but backfilled mail can land in a folder at, say, 40% confidence even if the user set min=80%. Also `classified_by: r?.folder_id ? "ai" : "ai"` is a dead ternary.
+1. **Track 3** — smallest blast radius, immediate quality lift.
+2. **Track 1** — gives us the visibility to verify Tracks 2 + 3 worked.
+3. **Track 2** — needs a coordinated Pub/Sub subscription change in GCP, so ship the dual-auth window first and remove the legacy `?token=` check in a follow-up.
 
-**6. `folder_filters` fetched globally.** `loadAccountContext` selects ALL `folder_filters` rows in the database, then filters in JS by `folderIds`. RLS doesn't apply (service role). Fine for now but scales poorly and risks cross-account leakage if a bug ever drops the JS filter.
+## Technical summary
 
-**7. No automated `reconcileLocalInbox`.** The safety-net function exists but is never scheduled. If a history event is ever missed (e.g. during the rebootstrap window), the local inbox can drift from Gmail until the user manually triggers a sync.
-
-**8. Webhook idempotency.** We don't dedupe by Pub/Sub `messageId`. `enqueueMessageJob` is upserted (safe), but `syncSinceHistory` re-runs end-to-end on Google's retry.
-
-### Plan (in priority order)
-
-**P0 — Clean up cron (migration):**
-- `cron.unschedule('gmail-poll-fallback')`, `cron.unschedule('gmail-renew-watches-daily')`, `cron.unschedule('run-folder-summaries-every-5min')`.
-- Rewrite `gmail-process-jobs-30s` to use `private.cron_post('/api/public/gmail-process-jobs?limit=100')` (4× in one command body, same as today, but no embedded keys).
-- Verify final job table: 1× poll/2m, 1× process-jobs/30s, 1× process-live/5s, 1× backfill-tick/1m, 1× renew-watches/6h, 1× summaries/5m.
-
-**P0 — Make webhook fast:**
-- In `gmail-webhook.ts` POST handler: keep `syncSinceHistory` (it's the enqueue step), drop the inline `runMessageJobs(50, ..., {priority:0})`. The 5s live-lane cron already handles drainage, and the webhook stops blocking Pub/Sub.
-
-**P1 — Fix rebootstrap (`sync.server.ts`):**
-- When history is too old, enqueue via `backfillRecent` rewritten to `enqueueMessageJob` (priority 0) for the recent IDs instead of inline `processGmailMessage`. Bump `maxResults` to 100 and widen the window to `newer_than:30d` so a longer outage doesn't drop mail.
-
-**P1 — Honor `min_ai_confidence` in batched backfill AI:**
-- In `runMessageJobs`'s `pendingAi` loop, look up the candidate folder's `min_ai_confidence` from `ctx.folders`. If `r.confidence < threshold`, set `folder_id: null` and `classified_by: "ai_low_confidence"` (matches live behavior in `classifyParsedEmail`). Remove the `r?.folder_id ? "ai" : "ai"` dead ternary.
-
-**P2 — Scope `folder_filters` query:**
-- Change `loadAccountContext` to fetch `folder_filters` joined/filtered to the account's folder IDs (`in("folder_id", folderIds)`).
-
-**P2 — Schedule `reconcileLocalInbox`:**
-- New cron `gmail-reconcile` every 15 min calling a new `/api/public/gmail-reconcile` route that iterates accounts and runs `reconcileLocalInbox(accountId, 100)`. Logs to `pubsub_events` as `event_type='reconcile'`.
-
-**P3 — Webhook dedupe (optional):**
-- Skip processing if we've already logged a `pubsub_events` row with the same `message_id` within the last 60s. Cheap insurance against Pub/Sub redeliveries.
-
-### Technical notes
-
-- All P0/P1 changes are surgical: 1 SQL migration (cleanup) + edits to `src/routes/api/public/gmail-webhook.ts` and `src/lib/sync.server.ts`. No schema changes.
-- P2 reconcile adds 1 new route file and 1 cron entry in the same migration as P0.
-- I'll leave the existing retry/backoff/DLQ machinery untouched — it's well-tuned (30s/2m/10m/30m/2h, free retries for transient Gmail errors, 25s job timeout, 35s stuck-worker reclaim).
-- After applying, I'll verify with `SELECT jobname, schedule FROM cron.job` and a manual webhook test, then watch `pubsub_events` and `message_jobs` for a few minutes.
-
-Want me to proceed with P0+P1 only, or include P2 (reconcile cron + scoped filters) and P3 (webhook dedupe) in the same pass?
+- Files created: `src/lib/google-jwt.server.ts`, `src/lib/account-health.functions.ts`, `src/components/settings/AccountHealthCard.tsx`, `src/components/settings/DlqDrawer.tsx`.
+- Files edited: `src/routes/api/public/gmail-webhook.ts`, `src/lib/google-oauth.server.ts`, `src/routes/_authenticated/settings.tsx`.
+- Migration: 1 file — replaces `claim_message_jobs` with the 60s reclaim window.
+- New secret (optional): `GMAIL_PUBSUB_SERVICE_ACCOUNT`.
+- No schema changes; no breaking API changes.
+- Verification: invoke each new server fn via the testing tool; force a token expiry to confirm only one refresh fires; send a Pub/Sub test push with and without a valid JWT; manually mark a job `dlq` and exercise the retry UI.

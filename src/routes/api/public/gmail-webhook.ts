@@ -8,44 +8,90 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory } from "@/lib/sync.server";
+import { verifyGoogleJwt } from "@/lib/google-jwt.server";
 
 export const Route = createFileRoute("/api/public/gmail-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         const isTest = request.headers.get("x-zerrow-test") === "1";
-        // Verify Pub/Sub push token (configure on the subscription's push endpoint
-        // as ?token=<GMAIL_WEBHOOK_TOKEN>). Test calls from the app are exempt.
+
+        // Authenticate Pub/Sub push. Preferred: OIDC bearer JWT signed by
+        // Google (set on the subscription via pushConfig.oidcToken). Fallback:
+        // legacy `?token=` shared secret. Test calls from the app are exempt.
+        let authMode: "jwt" | "legacy_token" | "none" = "none";
         if (!isTest) {
-          const expected = process.env.GMAIL_WEBHOOK_TOKEN;
           const url = new URL(request.url);
-          const provided = url.searchParams.get("token");
-          if (!expected || provided !== expected) {
-            // Log a diagnostic row so misconfigured Pub/Sub pushes are visible
-            // in Settings → Activity. Never logs the secret values themselves —
-            // only lengths and a short fingerprint so we can compare safely.
-            const fp = (s: string | null | undefined) =>
-              s ? `${s.slice(0, 2)}…${s.slice(-2)}` : "(none)";
-            let details: string;
-            if (!expected) {
-              details = "Server missing GMAIL_WEBHOOK_TOKEN secret";
-            } else if (!provided) {
-              details = `Push had no ?token= query param (expected length ${expected.length}, fp ${fp(expected)})`;
+          const authHeader = request.headers.get("authorization");
+          const bearer = authHeader?.toLowerCase().startsWith("bearer ")
+            ? authHeader.slice(7).trim()
+            : null;
+
+          if (bearer) {
+            // Accept any of: webhook URL (with or without query) as audience.
+            // Optional GMAIL_PUBSUB_SERVICE_ACCOUNT pins the signer's email.
+            const audiences = [
+              `${url.origin}${url.pathname}`,
+              `${url.origin}${url.pathname}${url.search}`,
+            ];
+            const expectedEmail = process.env.GMAIL_PUBSUB_SERVICE_ACCOUNT || undefined;
+            const result = await verifyGoogleJwt(bearer, { audiences, expectedEmail });
+            if (result.ok) {
+              authMode = "jwt";
             } else {
-              details = `Token mismatch (provided length ${provided.length} fp ${fp(provided)}, expected length ${expected.length} fp ${fp(expected)})`;
+              try {
+                await supabaseAdmin.from("pubsub_events").insert({
+                  event_type: "push_unauthorized",
+                  subscription: `${url.pathname}${url.search}`,
+                  details: `OIDC verify failed: ${result.reason}`,
+                });
+              } catch (logErr) {
+                console.error("pubsub_events unauthorized log failed", logErr);
+              }
+              return new Response("Unauthorized", { status: 401 });
             }
+          } else {
+            // Legacy fallback — single shared secret in ?token=. Removed once
+            // every subscription is migrated to OIDC.
+            const expected = process.env.GMAIL_WEBHOOK_TOKEN;
+            const provided = url.searchParams.get("token");
+            if (!expected || provided !== expected) {
+              const fp = (s: string | null | undefined) =>
+                s ? `${s.slice(0, 2)}…${s.slice(-2)}` : "(none)";
+              let details: string;
+              if (!expected) {
+                details = "Server missing GMAIL_WEBHOOK_TOKEN secret and no OIDC bearer";
+              } else if (!provided) {
+                details = `No Authorization bearer and no ?token= query param (expected length ${expected.length}, fp ${fp(expected)})`;
+              } else {
+                details = `Token mismatch (provided length ${provided.length} fp ${fp(provided)}, expected length ${expected.length} fp ${fp(expected)})`;
+              }
+              try {
+                await supabaseAdmin.from("pubsub_events").insert({
+                  event_type: "push_unauthorized",
+                  subscription: `${url.pathname}${url.search}`,
+                  details,
+                });
+              } catch (logErr) {
+                console.error("pubsub_events unauthorized log failed", logErr);
+              }
+              return new Response("Unauthorized", { status: 401 });
+            }
+            authMode = "legacy_token";
+            // Log so we can see which subscriptions still need OIDC migration.
             try {
               await supabaseAdmin.from("pubsub_events").insert({
-                event_type: "push_unauthorized",
+                event_type: "push_legacy_auth",
                 subscription: `${url.pathname}${url.search}`,
-                details,
+                details: "Authenticated via legacy ?token= — migrate subscription to OIDC",
               });
             } catch (logErr) {
-              console.error("pubsub_events unauthorized log failed", logErr);
+              console.error("pubsub_events legacy log failed", logErr);
             }
-            return new Response("Unauthorized", { status: 401 });
           }
         }
+        // Suppress unused-var lint while still capturing for future telemetry.
+        void authMode;
         let emailAddress: string | null = null;
         let historyId: string | null = null;
         let accountsMatched = 0;

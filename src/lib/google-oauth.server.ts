@@ -116,6 +116,13 @@ export async function fetchUserEmail(accessToken: string): Promise<string> {
   return data.email;
 }
 
+// Per-account in-flight refresh promises. Coalesces concurrent jobs for the
+// same account into a single OAuth refresh call. Scope is per-worker process,
+// which is the right granularity — we want to prevent intra-process stampedes
+// when N workers wake up around token expiry; different Workers each refreshing
+// once is fine.
+const inFlightRefresh = new Map<string, Promise<string>>();
+
 /** Returns a fresh access token for the given gmail account, refreshing if needed. */
 export async function getAccessToken(accountId: string): Promise<string> {
   const { data: acc, error } = await supabaseAdmin
@@ -128,13 +135,26 @@ export async function getAccessToken(accountId: string): Promise<string> {
   const expMs = new Date(acc.token_expires_at).getTime();
   if (expMs - Date.now() > 2 * 60 * 1000) return acc.access_token;
 
-  const refreshed = await refreshAccessToken(acc.refresh_token);
-  const newExp = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
-  await supabaseAdmin
-    .from("gmail_accounts")
-    .update({ access_token: refreshed.access_token, token_expires_at: newExp })
-    .eq("id", accountId);
-  return refreshed.access_token;
+  // If another caller is already refreshing this account, piggy-back.
+  const existing = inFlightRefresh.get(accountId);
+  if (existing) return existing;
+
+  const refreshPromise = (async () => {
+    const refreshed = await refreshAccessToken(acc.refresh_token);
+    const newExp = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({ access_token: refreshed.access_token, token_expires_at: newExp })
+      .eq("id", accountId);
+    return refreshed.access_token;
+  })();
+
+  inFlightRefresh.set(accountId, refreshPromise);
+  try {
+    return await refreshPromise;
+  } finally {
+    inFlightRefresh.delete(accountId);
+  }
 }
 
 export function getRedirectUri(origin: string): string {
