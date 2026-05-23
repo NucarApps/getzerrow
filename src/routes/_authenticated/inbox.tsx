@@ -398,9 +398,9 @@ function InboxPage() {
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
   return (
-    <div className="grid h-full md:grid-cols-[400px_1fr]">
+    <div className="grid h-full min-h-0 md:grid-cols-[400px_1fr]">
       {/* List */}
-      <div className={`h-full flex-col overflow-hidden border-r border-border ${selected && selectedListItem ? "hidden md:flex" : "flex"}`}>
+      <div className={`h-full min-h-0 flex-col overflow-hidden border-r border-border ${selected && selectedListItem ? "hidden md:flex" : "flex"}`}>
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
@@ -437,7 +437,7 @@ function InboxPage() {
           )}
         </div>
         <div
-          className="flex-1 overflow-y-auto"
+          className="min-h-0 flex-1 overflow-y-auto"
           onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
         >
           {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
@@ -817,7 +817,7 @@ function InboxPage() {
       </div>
 
       {/* Reading pane */}
-      <div className={`h-full overflow-hidden ${selected ? "block" : "hidden md:block"}`}>
+      <div className={`h-full min-h-0 overflow-hidden ${selected ? "block" : "hidden md:block"}`}>
         {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} onBack={() => setSelectedId(null)} /> : (
           <TrackingStandby />
         )}
@@ -1082,7 +1082,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 md:px-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 md:px-6">
         <h1 className="font-display text-lg leading-tight line-clamp-3 md:line-clamp-none md:text-2xl">{email.subject || "(no subject)"}</h1>
         <p className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
           <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
