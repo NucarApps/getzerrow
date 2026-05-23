@@ -65,6 +65,45 @@ export type Database = {
         }
         Relationships: []
       }
+      card_events: {
+        Row: {
+          card_id: string
+          created_at: string
+          event_type: string
+          handle: string
+          id: string
+          link_kind: string | null
+          link_url: string | null
+          owner_user_id: string
+          referrer: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          card_id: string
+          created_at?: string
+          event_type: string
+          handle: string
+          id?: string
+          link_kind?: string | null
+          link_url?: string | null
+          owner_user_id: string
+          referrer?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          card_id?: string
+          created_at?: string
+          event_type?: string
+          handle?: string
+          id?: string
+          link_kind?: string | null
+          link_url?: string | null
+          owner_user_id?: string
+          referrer?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       contact_cards_sent: {
         Row: {
           contact_id: string | null
