@@ -30,6 +30,7 @@ export const upsertMyCard = createServerFn({ method: "POST" })
       linkedin: z.string().max(500).nullable().optional(),
       twitter: z.string().max(500).nullable().optional(),
       avatar_url: z.string().max(1000).nullable().optional(),
+      cover_url: z.string().max(1000).nullable().optional(),
       tagline: z.string().max(280).nullable().optional(),
       theme: z.string().max(40).optional(),
     }).parse(d)
