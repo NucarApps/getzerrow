@@ -932,7 +932,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
 
   return (
     <div className="relative flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
         <div className="flex min-w-0 items-center gap-2">
           {onBack && (
             <button onClick={onBack} className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent md:hidden" aria-label="Back">
