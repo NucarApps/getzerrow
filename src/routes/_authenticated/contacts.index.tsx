@@ -107,6 +107,7 @@ function ContactsPage() {
     const OTHER_KEY = "__other__";
     for (const c of filtered) {
       const d = extractDomain(c.email);
+      const webDomain = contactLogoDomain((c as any).website, c.email);
       let key: string;
       let bucket: Bucket | undefined;
       if (!d) {
@@ -117,9 +118,9 @@ function ContactsPage() {
         bucket = map.get(key) ?? { key, domain: null, name: "Personal email", kind: "personal", contacts: [] };
       } else {
         key = d;
-        bucket = map.get(key) ?? { key, domain: d, name: prettyCompanyName(d), kind: "company", contacts: [] };
-        // Prefer a real company name from any contact in the bucket.
+        bucket = map.get(key) ?? { key, domain: webDomain ?? d, name: prettyCompanyName(d), kind: "company", contacts: [] };
         if (c.company && bucket.name === prettyCompanyName(d)) bucket.name = c.company;
+        if (webDomain && bucket.domain === d) bucket.domain = webDomain;
       }
       bucket.contacts.push(c);
       map.set(key, bucket);
