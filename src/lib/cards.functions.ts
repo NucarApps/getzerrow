@@ -66,7 +66,7 @@ export const getPublicCard = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const { data: card } = await supabaseAdmin
       .from("my_cards")
-      .select("handle,name,title,company,email,phone,website,linkedin,twitter,avatar_url,tagline,theme")
+      .select("handle,name,title,company,email,phone,website,linkedin,twitter,avatar_url,cover_url,tagline,theme")
       .eq("handle", data.handle.toLowerCase())
       .maybeSingle();
     if (!card) return { card: null };
