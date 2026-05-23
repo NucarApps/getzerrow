@@ -45,7 +45,7 @@ export const Route = createFileRoute("/api/public/logo")({
           const res = await tryFetch(candidate);
           if (!res) continue;
           const buf = await res.arrayBuffer();
-          if (buf.byteLength < 80) continue;
+          if (buf.byteLength < MIN_BYTES) continue;
           return new Response(buf, {
             status: 200,
             headers: {
