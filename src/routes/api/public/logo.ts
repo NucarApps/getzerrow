@@ -7,6 +7,11 @@ function providersFor(domain: string, size: number): string[] {
   const s = Math.max(256, Math.min(512, size));
   return [
     `https://logo.clearbit.com/${d}?size=${s}`,
+    `https://img.logo.dev/${d}?size=${s}&format=png`,
+    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+    `https://${domain}/apple-touch-icon.png`,
+    `https://${domain}/apple-touch-icon-precomposed.png`,
+    `https://${domain}/favicon.ico`,
     `https://www.google.com/s2/favicons?domain=${d}&sz=256`,
   ];
 }
@@ -50,7 +55,7 @@ export const Route = createFileRoute("/api/public/logo")({
             status: 200,
             headers: {
               "Content-Type": res.headers.get("content-type") || "image/png",
-              "Cache-Control": "public, max-age=86400, s-maxage=604800, immutable",
+              "Cache-Control": "public, max-age=2592000, s-maxage=2592000, immutable",
               "Access-Control-Allow-Origin": "*",
             },
           });
