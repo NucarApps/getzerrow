@@ -8,10 +8,10 @@ function providersFor(domain: string, size: number): string[] {
   return [
     `https://logo.clearbit.com/${d}?size=${s}`,
     `https://www.google.com/s2/favicons?domain=${d}&sz=${Math.min(s, 256)}`,
-    `https://icons.duckduckgo.com/ip3/${d}.ico`,
-    `https://${d}/favicon.ico`,
   ];
 }
+
+const MIN_BYTES = 600;
 
 async function tryFetch(url: string): Promise<Response | null> {
   try {
