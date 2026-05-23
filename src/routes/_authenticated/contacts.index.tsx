@@ -126,7 +126,7 @@ function ContactsPage() {
     }
     const arr = Array.from(map.values());
     const companies = arr.filter((b) => b.kind === "company")
-      .sort((a, b) => b.contacts.length - a.contacts.length || a.name.localeCompare(b.name));
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
     const personal = arr.filter((b) => b.kind === "personal");
     const other = arr.filter((b) => b.kind === "other");
     return [...companies, ...personal, ...other];
