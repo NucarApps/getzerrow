@@ -8,10 +8,10 @@ function providersFor(domain: string, size: number): string[] {
   return [
     `https://logo.clearbit.com/${d}?size=${s}`,
     `https://www.google.com/s2/favicons?domain=${d}&sz=${Math.min(s, 256)}`,
-    `https://icons.duckduckgo.com/ip3/${d}.ico`,
-    `https://${d}/favicon.ico`,
   ];
 }
+
+const MIN_BYTES = 600;
 
 async function tryFetch(url: string): Promise<Response | null> {
   try {
@@ -24,7 +24,7 @@ async function tryFetch(url: string): Promise<Response | null> {
     const ct = res.headers.get("content-type") || "";
     if (!ct.startsWith("image/")) return null;
     const len = Number(res.headers.get("content-length") || "0");
-    if (len && len < 80) return null; // skip tiny 1x1 placeholders
+    if (len && len < MIN_BYTES) return null;
     return res;
   } catch {
     return null;
@@ -45,7 +45,7 @@ export const Route = createFileRoute("/api/public/logo")({
           const res = await tryFetch(candidate);
           if (!res) continue;
           const buf = await res.arrayBuffer();
-          if (buf.byteLength < 80) continue;
+          if (buf.byteLength < MIN_BYTES) continue;
           return new Response(buf, {
             status: 200,
             headers: {

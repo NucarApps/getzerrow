@@ -1,10 +1,21 @@
 ## Problem
-Logos render but look blurry because we request small favicons (~80px) and upscale them. Google's favicon API caps quality; Clearbit returns much sharper logos at 128–256px.
+`CompanyLogo` already falls back to a monogram when all providers fail, but in practice some providers return a generic placeholder (Google's globe favicon, DuckDuckGo's default) with a 200 + `image/*` content type. The proxy treats those as "found" and the UI never falls through to the first-letter monogram.
 
 ## Plan
-1. **Request larger images** — In `CompanyLogo`, fetch at `size * 4` (min 128px) so the rendered 40px image has retina-quality pixels.
-2. **Prefer Clearbit for quality** — Update the `/api/public/logo` proxy to try Clearbit first (high-res brand logos), then fall back to Google/DuckDuckGo/direct favicon. Reject tiny images (<200 bytes) so we don't lock in a blurry default.
-3. **Add a min-size hint** — Pass `size` through to the proxy and request Clearbit with `?size=256` (it supports a size param) so even small contacts get crisp art.
-4. **Verify** — Reload contacts in the browser and confirm M&T, Presidio, Axalta logos render crisply.
+1. **Tighten the proxy's "real logo" check** in `src/routes/api/public/logo.ts`:
+   - Drop DuckDuckGo and direct `/favicon.ico` from `providersFor()` (both routinely return generic globes for unknown domains). Keep Clearbit, then Google as the only fallback.
+   - Raise the minimum byte threshold from 80 to ~600 bytes — Google's generic globe is ~500 bytes; real logos are much larger.
+   - Return 404 (not an image) when nothing qualifies, so `<img onError>` advances.
 
-No DB or UX changes.
+2. **Simplify client candidates** in `src/lib/company-domains.ts`:
+   - `logoCandidates()` returns only `[ '/api/public/logo?...' ]`. No external fallbacks — if the proxy says no, we want the monogram, not a globe.
+
+3. **Monogram already handled** in `CompanyLogo.tsx` — when the single candidate errors, `idx` exceeds `candidates.length` and the existing monogram block renders the first letter of `name || domain`. No change needed there.
+
+4. **Verify** by reloading `/contacts` and confirming companies without real logos (e.g. obscure domains) show a clean colored initial instead of a globe icon.
+
+### Technical notes
+- The monogram already uses `name` first, then `domain`, so "Acme Corp" shows "A".
+- Cache headers stay the same so previously-cached globes will refresh within a day; a hard reload shows the fix immediately.
+
+No DB, auth, or routing changes.
