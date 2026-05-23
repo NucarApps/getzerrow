@@ -31,6 +31,7 @@ import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/pub
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
+import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -148,6 +149,11 @@ const ApiPublicHooksRunFolderSummariesRoute =
     path: '/api/public/hooks/run-folder-summaries',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicOgCardHandleRoute = ApiPublicOgCardHandleRouteImport.update({
+  id: '/api/public/og/card/$handle',
+  path: '/api/public/og/card/$handle',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -171,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
+  '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
+  '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
+  '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -244,6 +253,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/contacts/'
     | '/api/public/hooks/run-folder-summaries'
+    | '/api/public/og/card/$handle'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -267,6 +277,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/contacts'
     | '/api/public/hooks/run-folder-summaries'
+    | '/api/public/og/card/$handle'
   id:
     | '__root__'
     | '/'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/_authenticated/contacts/'
     | '/api/public/hooks/run-folder-summaries'
+    | '/api/public/og/card/$handle'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -308,6 +320,7 @@ export interface RootRouteChildren {
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
+  ApiPublicOgCardHandleRoute: typeof ApiPublicOgCardHandleRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -466,6 +479,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksRunFolderSummariesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/og/card/$handle': {
+      id: '/api/public/og/card/$handle'
+      path: '/api/public/og/card/$handle'
+      fullPath: '/api/public/og/card/$handle'
+      preLoaderRoute: typeof ApiPublicOgCardHandleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -510,7 +530,18 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
+  ApiPublicOgCardHandleRoute: ApiPublicOgCardHandleRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
