@@ -1,28 +1,10 @@
 ## Problem
-The UI is still rendering monogram letters because the app is not reliably loading logo images. In the browser session I also saw the contacts page stuck in a skeleton/loading state, which means logo requests may never be mounted in some sessions.
+Logos render but look blurry because we request small favicons (~80px) and upscale them. Google's favicon API caps quality; Clearbit returns much sharper logos at 128–256px.
 
 ## Plan
-1. **Add a same-origin logo endpoint**
-   - Create `/api/public/logo` as a TanStack server route.
-   - Validate a `domain` query parameter.
-   - Server-side fetch a small ordered list of favicon/logo providers.
-   - Return the first successful image with image headers and cache it.
-   - This avoids browser-side third-party image/CORS/referrer/ad-block fragility.
+1. **Request larger images** — In `CompanyLogo`, fetch at `size * 4` (min 128px) so the rendered 40px image has retina-quality pixels.
+2. **Prefer Clearbit for quality** — Update the `/api/public/logo` proxy to try Clearbit first (high-res brand logos), then fall back to Google/DuckDuckGo/direct favicon. Reject tiny images (<200 bytes) so we don't lock in a blurry default.
+3. **Add a min-size hint** — Pass `size` through to the proxy and request Clearbit with `?size=256` (it supports a size param) so even small contacts get crisp art.
+4. **Verify** — Reload contacts in the browser and confirm M&T, Presidio, Axalta logos render crisply.
 
-2. **Point `CompanyLogo` at the proxy**
-   - Change `logoCandidates()` to use `/api/public/logo?domain=...&size=...` as the first visible image source.
-   - Keep a simple external fallback only if the proxy fails.
-   - Preserve the current letter fallback for companies with no available icon.
-
-3. **Fix loading/error visibility on contacts**
-   - Update the contacts page to stop showing endless skeleton rows when the contact query is idle/erroring.
-   - Show a clear empty/error state instead, so we can distinguish “contacts didn’t load” from “logos didn’t load.”
-
-4. **Verify**
-   - Use the browser network panel to confirm `/api/public/logo` requests are made.
-   - Confirm at least common domains like `mtb.com`, `presidio.com`, and `spglobal.com` render image icons when a provider has one.
-
-## Technical notes
-- No database changes are needed.
-- This keeps the existing contact grouping and monogram fallback behavior.
-- The endpoint will only fetch public image URLs and will reject invalid domains to avoid unsafe proxy behavior.
+No DB or UX changes.
