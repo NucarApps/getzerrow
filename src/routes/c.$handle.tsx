@@ -2,6 +2,8 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { QRCodeSVG } from "qrcode.react";
 import { Mail, Phone, Globe, Linkedin, Twitter, Building2, Download } from "lucide-react";
 import { getPublicCard, getPublicVCard } from "@/lib/cards.functions";
+import { getTheme } from "@/components/cards/themes";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/c/$handle")({
   loader: async ({ params }) => {
