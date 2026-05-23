@@ -71,6 +71,8 @@ function applyFilter(
   switch (f.op) {
     case "contains": return fieldVal.includes(v);
     case "equals": return fieldVal === v;
+    case "starts_with": return fieldVal.startsWith(v);
+    case "ends_with": return fieldVal.endsWith(v);
     case "not_contains": return !fieldVal.includes(v);
     case "not_equals": return fieldVal !== v;
     case "regex":
