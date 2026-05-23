@@ -199,6 +199,65 @@ function EmailBodyInline({ html }: { html: string }) {
   );
 }
 
+function SwipeRow({ onArchive, children }: { onArchive: () => void; children: React.ReactNode }) {
+  const [dx, setDx] = useState(0);
+  const [animating, setAnimating] = useState(false);
+  const startRef = useRef<{ x: number; y: number; active: boolean; locked: boolean } | null>(null);
+
+  function onTouchStart(e: React.TouchEvent) {
+    if (animating) return;
+    const t = e.touches[0];
+    startRef.current = { x: t.clientX, y: t.clientY, active: true, locked: false };
+  }
+  function onTouchMove(e: React.TouchEvent) {
+    const s = startRef.current;
+    if (!s || !s.active) return;
+    const t = e.touches[0];
+    const dxRaw = t.clientX - s.x;
+    const dyRaw = t.clientY - s.y;
+    if (!s.locked) {
+      if (Math.abs(dxRaw) < 8 && Math.abs(dyRaw) < 8) return;
+      if (Math.abs(dyRaw) > Math.abs(dxRaw)) { s.active = false; return; }
+      s.locked = true;
+    }
+    setDx(Math.min(0, dxRaw));
+  }
+  function onTouchEnd(e: React.TouchEvent) {
+    const s = startRef.current;
+    startRef.current = null;
+    if (!s || !s.locked) { setDx(0); return; }
+    const width = (e.currentTarget as HTMLElement).offsetWidth || 1;
+    if (-dx > width * 0.35) {
+      setAnimating(true);
+      setDx(-width);
+      setTimeout(() => onArchive(), 180);
+    } else {
+      setDx(0);
+    }
+  }
+
+  return (
+    <div className="relative overflow-hidden border-b border-border">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-end bg-destructive pr-6 text-destructive-foreground">
+        <Archive className="h-5 w-5" />
+      </div>
+      <div
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
+        style={{
+          transform: `translateX(${dx}px)`,
+          transition: dx === 0 || animating ? "transform 180ms ease-out" : "none",
+        }}
+        className="relative bg-background"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 
 function InboxPage() {
   const qc = useQueryClient();
@@ -514,11 +573,19 @@ function InboxPage() {
             const currentFolderId = e.folder_id;
 
             return (
-            <ContextMenu key={e.id}>
+            <SwipeRow
+              key={e.id}
+              onArchive={async () => {
+                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
+                try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
+                catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
+              }}
+            >
+            <ContextMenu>
               <ContextMenuTrigger asChild>
                 <button
                   onClick={() => setSelectedId(e.id)}
-                  className={`relative block w-full border-b border-border px-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
+                  className={`relative block w-full px-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
                 >
                   {!e.is_read && (
                     <span className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
@@ -831,6 +898,7 @@ function InboxPage() {
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
+            </SwipeRow>
             );
           })}
         </div>
