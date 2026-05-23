@@ -889,6 +889,7 @@ function labelForFolder(sel: string | "all" | "all_mail" | "no_rules", folders: 
 }
 
 function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; onBack?: () => void }) {
+  const isMobile = useIsMobile();
   const qc = useQueryClient();
   const markFn = useServerFn(markEmailRead);
   const archFn = useServerFn(archiveEmail);
