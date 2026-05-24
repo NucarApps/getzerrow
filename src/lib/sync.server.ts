@@ -79,7 +79,7 @@ function applyFilter(
     case "not_contains": return !fieldVal.includes(v);
     case "not_equals": return fieldVal !== v;
     case "regex":
-      try { return new RegExp(f.value, "i").test(fieldVal); } catch { return false; }
+      return safeRegexTest(f.value, fieldVal);
     default: return false;
   }
 }
