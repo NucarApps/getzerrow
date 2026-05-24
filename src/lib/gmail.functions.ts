@@ -18,7 +18,7 @@ import {
   getThread,
   parseMessage,
 } from "./gmail.server";
-import { suggestReply, suggestRuleUpdates } from "./ai.server";
+import { suggestReply, suggestRuleUpdates, suggestFolderFromEmails } from "./ai.server";
 import { computeNextRun, runFolderSummary } from "./summaries.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { signState, buildAuthorizeUrl, getRedirectUri } from "./google-oauth.server";
@@ -2273,3 +2273,162 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
     return { count: rows.length };
   });
 
+
+// ─── Bulk actions on the "No rules" view ────────────────────────────────────
+
+export const reclassifyEmails = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email_ids: string[] }) =>
+    z.object({ email_ids: z.array(z.string().uuid()).min(1).max(100) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { classifyParsedEmail } = await import("./sync.server");
+    const { data: rows } = await supabaseAdmin
+      .from("emails")
+      .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
+      .in("id", data.email_ids);
+    if (!rows) return { routed: 0, unchanged: 0, failed: 0 };
+
+    let routed = 0;
+    let unchanged = 0;
+    let failed = 0;
+
+    for (const email of rows) {
+      if (email.user_id !== context.userId) { failed++; continue; }
+      try {
+        const parsed = {
+          from_addr: email.from_addr ?? "",
+          from_name: email.from_name ?? "",
+          to_addrs: email.to_addrs ?? "",
+          subject: email.subject ?? "",
+          snippet: email.snippet ?? "",
+          body_text: email.body_text ?? "",
+          body_html: email.body_html ?? "",
+          has_attachment: !!email.has_attachment,
+          received_at: email.received_at ?? new Date().toISOString(),
+          raw_labels: (email.raw_labels as string[] | null) ?? null,
+        };
+        const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, { skipGmailLabelMatch: true });
+        if (result.folder_id && result.folder_id !== email.folder_id) {
+          await supabaseAdmin
+            .from("emails")
+            .update({
+              folder_id: result.folder_id,
+              classified_by: result.classified_by,
+              ai_confidence: result.ai_confidence,
+              classification_reason: result.classification_reason,
+              matched_filter_ids: result.matched_filter_ids,
+            })
+            .eq("id", email.id);
+          routed++;
+        } else {
+          unchanged++;
+        }
+      } catch (e) {
+        console.error("reclassifyEmails iter failed", email.id, e);
+        failed++;
+      }
+    }
+    return { routed, unchanged, failed };
+  });
+
+export const suggestFolderFromSelection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email_ids: string[] }) =>
+    z.object({ email_ids: z.array(z.string().uuid()).min(1).max(50) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: rows } = await supabaseAdmin
+      .from("emails")
+      .select("user_id, from_addr, from_name, subject, snippet")
+      .in("id", data.email_ids)
+      .limit(50);
+    const safe = (rows ?? []).filter((r) => r.user_id === context.userId);
+    if (safe.length === 0) throw new Error("No emails found");
+    const suggestion = await suggestFolderFromEmails(safe.map((r) => ({
+      from_addr: r.from_addr, from_name: r.from_name, subject: r.subject, snippet: r.snippet,
+    })));
+    return suggestion;
+  });
+
+export const createFolderAndAssign = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    account_id: string;
+    name: string;
+    color: string;
+    ai_rule: string;
+    filter?: { field: string; op: string; value: string } | null;
+    email_ids: string[];
+  }) => z.object({
+    account_id: z.string().uuid(),
+    name: z.string().min(1).max(80),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    ai_rule: z.string().max(500),
+    filter: z.object({
+      field: z.string().min(1).max(40),
+      op: z.string().min(1).max(20),
+      value: z.string().min(1).max(200),
+    }).nullable().optional(),
+    email_ids: z.array(z.string().uuid()).max(100),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    await getOwnedAccount(context.userId, data.account_id);
+    const { data: folder, error } = await supabaseAdmin
+      .from("folders")
+      .insert({
+        user_id: context.userId,
+        gmail_account_id: data.account_id,
+        name: data.name,
+        color: data.color,
+        ai_rule: data.ai_rule,
+      })
+      .select("id")
+      .single();
+    if (error || !folder) throw new Error(error?.message ?? "Could not create folder");
+
+    if (data.filter) {
+      await supabaseAdmin.from("folder_filters").insert({
+        folder_id: folder.id,
+        field: data.filter.field,
+        op: data.filter.op,
+        value: data.filter.value,
+      });
+    }
+
+    if (data.email_ids.length > 0) {
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          folder_id: folder.id,
+          classified_by: "manual_move",
+          ai_confidence: 1,
+          classification_reason: `Moved into new folder "${data.name}"`,
+        })
+        .eq("user_id", context.userId)
+        .in("id", data.email_ids);
+    }
+
+    return { folder_id: folder.id };
+  });
+
+export const setFolderAutoRelearn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string; auto_relearn: boolean; threshold?: number }) =>
+    z.object({
+      folder_id: z.string().uuid(),
+      auto_relearn: z.boolean(),
+      threshold: z.number().int().min(1).max(1000).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const patch: { auto_relearn: boolean; relearn_threshold?: number } = { auto_relearn: data.auto_relearn };
+    if (data.threshold !== undefined) patch.relearn_threshold = data.threshold;
+    const { error } = await supabaseAdmin
+      .from("folders")
+      .update(patch)
+      .eq("id", data.folder_id)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });

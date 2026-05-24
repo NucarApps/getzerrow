@@ -550,6 +550,7 @@ export async function processGmailMessage(
       matched_filter_ids: c.matched_filter_ids,
       matched_folder_ids: c.matched_folder_ids,
     }).eq("id", inserted.id);
+    if (folder_id) void bumpEmailsSinceLearn(folder_id);
     if (t) t.db += performance.now() - _tDb;
   } catch (e) {
     console.error("classify failed (email already visible in Inbox)", e);
@@ -711,9 +712,32 @@ export async function regenerateFolderProfile(folderId: string) {
   const profile = await buildFolderProfile(folder.name, folder.ai_rule, examples ?? []);
   await supabaseAdmin
     .from("folders")
-    .update({ learned_profile: profile, last_learned_at: new Date().toISOString() })
+    .update({ learned_profile: profile, last_learned_at: new Date().toISOString(), emails_since_learn: 0 })
     .eq("id", folderId);
   return profile;
+}
+
+/**
+ * Increment the "new emails since last learn" counter for a folder. Used by
+ * the live + batch classifier paths so the background re-learn worker knows
+ * when an opted-in folder has accumulated enough new mail to re-learn.
+ * Best-effort: errors are swallowed so they never block classification.
+ */
+export async function bumpEmailsSinceLearn(folderId: string) {
+  try {
+    const { data: row } = await supabaseAdmin
+      .from("folders")
+      .select("emails_since_learn")
+      .eq("id", folderId)
+      .maybeSingle();
+    if (!row) return;
+    await supabaseAdmin
+      .from("folders")
+      .update({ emails_since_learn: (row.emails_since_learn ?? 0) + 1 })
+      .eq("id", folderId);
+  } catch (e) {
+    console.error("bumpEmailsSinceLearn failed", folderId, e);
+  }
 }
 
 export async function learnFromLinkedLabel(folderId: string, userId: string) {
@@ -1454,6 +1478,7 @@ export async function runMessageJobs(
                         ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
                         : (r?.reason || null)),
                 }).eq("id", c.emailRowId);
+                if (passes && r?.folder_id) void bumpEmailsSinceLearn(r.folder_id);
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                 results.push({ id: c.job.id, ok: true });
               }),
@@ -1472,6 +1497,7 @@ export async function runMessageJobs(
                     classified_by: "ai",
                     classification_reason: single.reason || null,
                   }).eq("id", c.emailRowId);
+                  if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
                 } catch (innerErr: any) {

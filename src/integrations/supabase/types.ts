@@ -522,9 +522,11 @@ export type Database = {
           ai_rule: string | null
           auto_archive: boolean
           auto_mark_read: boolean
+          auto_relearn: boolean
           auto_star: boolean
           color: string
           created_at: string
+          emails_since_learn: number
           filter_logic: string
           filter_tree: Json | null
           forward_to: string | null
@@ -540,6 +542,7 @@ export type Database = {
           name: string
           overrides_inbox_override: boolean
           priority: number
+          relearn_threshold: number
           skip_ai: boolean
           snooze_hours: number
           user_id: string
@@ -548,9 +551,11 @@ export type Database = {
           ai_rule?: string | null
           auto_archive?: boolean
           auto_mark_read?: boolean
+          auto_relearn?: boolean
           auto_star?: boolean
           color?: string
           created_at?: string
+          emails_since_learn?: number
           filter_logic?: string
           filter_tree?: Json | null
           forward_to?: string | null
@@ -566,6 +571,7 @@ export type Database = {
           name: string
           overrides_inbox_override?: boolean
           priority?: number
+          relearn_threshold?: number
           skip_ai?: boolean
           snooze_hours?: number
           user_id: string
@@ -574,9 +580,11 @@ export type Database = {
           ai_rule?: string | null
           auto_archive?: boolean
           auto_mark_read?: boolean
+          auto_relearn?: boolean
           auto_star?: boolean
           color?: string
           created_at?: string
+          emails_since_learn?: number
           filter_logic?: string
           filter_tree?: Json | null
           forward_to?: string | null
@@ -592,6 +600,7 @@ export type Database = {
           name?: string
           overrides_inbox_override?: boolean
           priority?: number
+          relearn_threshold?: number
           skip_ai?: boolean
           snooze_hours?: number
           user_id?: string
