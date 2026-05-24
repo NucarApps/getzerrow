@@ -5,13 +5,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { reconcileLocalInbox } from "@/lib/sync.server";
-import { isAuthorizedCron, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 
 export const Route = createFileRoute("/api/public/gmail-reconcile")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!isAuthorizedCron(request)) return unauthorizedResponse();
+        if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
 
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")

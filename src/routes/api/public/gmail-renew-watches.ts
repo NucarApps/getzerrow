@@ -2,13 +2,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { ensureWatch } from "@/lib/gmail.server";
-import { isAuthorizedCron, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 
 export const Route = createFileRoute("/api/public/gmail-renew-watches")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!isAuthorizedCron(request)) return unauthorizedResponse();
+        if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         const cutoff = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")

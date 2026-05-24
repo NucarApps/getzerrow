@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runFolderSummary } from "@/lib/summaries.server";
-import { isAuthorizedCron, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 
 export const Route = createFileRoute("/api/public/hooks/run-folder-summaries")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!isAuthorizedCron(request)) return unauthorizedResponse();
+        if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
 
         const { data: due, error } = await supabaseAdmin
           .from("folder_summary_schedules")
