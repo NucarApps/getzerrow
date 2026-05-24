@@ -1,35 +1,50 @@
-## Two changes in `src/routes/_authenticated/inbox.tsx`
+## What's actually happening
 
-### 1. "Move to folder" via right-click doesn't leave the inbox
+Every cron-triggered HTTP call is returning **401 Unauthorized** right now. The last 10 minutes of `net._http_response` is a wall of 401s — `gmail-process-jobs-30s`, `gmail-process-live-5s`, `gmail-poll-2m`, `gmail-backfill-tick`, `relearn-folders` — none of them are reaching your worker successfully.
 
-**What's happening:** The server (`performMove`) already sets `is_archived: true` and removes the Gmail `INBOX` label, and the optimistic cache update flips the row to `is_archived: true`. The Inbox tab query filters `is_archived = false`, so the row should disappear immediately.
+That's why the queue piles up and only the **Drain queue now** button works: that button calls a server function from your logged-in session, which bypasses `isAuthorizedCron` entirely.
 
-The reason it appears to "stay" is the realtime channel: as soon as the server writes, a `postgres_changes` event fires and we call `qc.invalidateQueries(['emails'])`. The refetch races with the optimistic update, and if the Gmail label round-trip hasn't propagated to the sync worker yet, a subsequent reconcile can flip `is_archived` back to `false` (the message still has `INBOX` in `raw_labels` from the previous snapshot until the next push). Net effect: the row reappears in the Inbox view.
+## Root cause
 
-**Fix:**
+The recent security hardening rewrote `isAuthorizedCron` (`src/lib/cron-auth.server.ts`) to **only** accept `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`, where `CRON_SECRET` comes from `process.env.CRON_SECRET` on the worker.
 
-- In the right-click "Move to folder" handler (around line 779), keep the optimistic patch but **also remove the row from any non-matching folder query caches immediately**, the same way the swipe-archive handler does. Specifically, after the optimistic `setQueriesData`, drop the row from the `selectedFolder === "all"` cache so it disappears even if a stale realtime event arrives.
-- Skip the immediate `invalidateQueries(['emails'])` after a successful move and instead schedule it on a short delay (~1.5s) so the server-side label sync settles before the refetch runs. The realtime subscription will still pick up any later corrections.
-- Apply the same treatment to the "Move to folder" submenu's "Inbox (no folder)" item and the bulk-move path, for consistency.
+The pg_cron side has two different problems:
 
-This mirrors the pattern already used by the swipe-archive flow and removes the race that lets a moved email reappear in Inbox.
+1. **`gmail-process-live-5s` (jobid 14)** and **`relearn-folders-hourly` (jobid 16)** still only send the old `apikey: <anon-key>` header. With the anon-key branch removed, these now always 401.
 
-### 2. Show a folder chip on rows in Inbox and All mail
+2. **All the other jobs** (`gmail-process-jobs-30s`, `gmail-poll-2m`, `gmail-backfill-tick`, `gmail-reconcile-15m`, `gmail-renew-watches`, `run-folder-summaries`) DO send `Authorization: Bearer <cron_secret>` (via `private.cron_post`, which reads from `private.cron_settings`). They're **also** 401ing — which means the `cron_secret` stored in `private.cron_settings` does not match the `CRON_SECRET` env var on the deployed worker (or `CRON_SECRET` is missing on the worker entirely).
 
-Add a small color-dot + name pill rendered inside the row header, **only when** `selectedFolder === "all"` (Inbox) or `selectedFolder === "all_mail"` (All mail), and only when `e.folder_id` resolves to a folder in `folderList`.
+## Fix plan
 
-- Look up `const rowFolder = folderList.find(f => f.id === e.folder_id)`.
-- Render next to (or just under) the sender/subject line:
-  ```
-  <span class="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]">
-    <span class="h-1.5 w-1.5 rounded-full" style={{background: rowFolder.color}} />
-    {rowFolder.name}
-  </span>
-  ```
-- Tokenized: use `border-border`, `text-muted-foreground`, and the folder's own color for the dot only (folder colors are user-chosen and live outside the token system, which matches how the context menu already renders them).
-- Hidden on every other tab (folder view, No rules, search results) to avoid redundant noise where the folder is already implied by the view.
+Two coordinated changes, then verify.
 
-### Out of scope
+### 1. Sync the secret on both sides
 
-- No server changes; `performMove` already does the right thing.
-- No changes to swipe-archive, bulk select toolbar, or AI re-classify flows.
+- Confirm what value the worker's `process.env.CRON_SECRET` is currently set to. If it isn't set, set it via the Secrets tool to the same 64-char value that's already stored in `private.cron_settings.cron_secret` (or pick a fresh one and update both).
+- Update `private.cron_settings` so its `cron_secret` row matches the worker's `CRON_SECRET` exactly.
+
+### 2. Rewrite the two jobs that still use the anon key
+
+Reschedule `gmail-process-live-5s` and `relearn-folders-hourly` so they route through `private.cron_post(...)` like every other job (which already attaches `Authorization: Bearer <cron_secret>`). Drop the hard-coded `apikey: ...` headers from the job bodies — they're no longer accepted and shouldn't be in cron.job DDL anyway.
+
+End state for those two jobs:
+
+```sql
+-- gmail-process-live-5s
+SELECT private.cron_post('/api/public/gmail-process-jobs?limit=25&priority=0');
+
+-- relearn-folders-hourly
+SELECT private.cron_post('/api/public/hooks/relearn-folders');
+```
+
+### 3. Verify
+
+After the migration:
+- Watch `net._http_response` for ~30s and confirm new rows are 200, not 401.
+- Confirm `message_jobs` `pending` count drains on its own without touching the **Drain queue now** button.
+- The "Processing delay" and "Fallback poll hasn't run in 24h+" banners in the Sync activity panel should clear within a couple of minutes.
+
+## Out of scope
+
+- No changes to `isAuthorizedCron` — the stricter auth is correct and matches the integration tests in `tests/public-endpoints-auth.test.ts`.
+- No changes to the worker code itself, the UI, or any of the server functions. The endpoints are fine; only the cron-side credentials are broken.
