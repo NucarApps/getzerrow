@@ -668,23 +668,39 @@ function InboxPage() {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
             const folderList = foldersQ.data ?? [];
             const currentFolderId = e.folder_id;
+            const isChecked = selectedIds.has(e.id);
+            const toggleCheck = () => {
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(e.id)) next.delete(e.id);
+                else next.add(e.id);
+                return next;
+              });
+            };
 
-            return (
-            <SwipeRow
-              key={e.id}
-              onArchive={async () => {
-                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
-                try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
-                catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
-              }}
-            >
+            const rowInner = (
             <ContextMenu>
               <ContextMenuTrigger asChild>
                 <button
-                  onClick={() => setSelectedId(e.id)}
-                  className={`relative block w-full px-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
+                  onClick={(ev) => {
+                    if (isNoRules) {
+                      ev.preventDefault();
+                      toggleCheck();
+                      return;
+                    }
+                    setSelectedId(e.id);
+                  }}
+                  className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
                 >
-                  {!e.is_read && (
+                  {isNoRules && (
+                    <span
+                      className="absolute left-3 top-1/2 -translate-y-1/2"
+                      onClick={(ev) => { ev.stopPropagation(); toggleCheck(); }}
+                    >
+                      <Checkbox checked={isChecked} onCheckedChange={toggleCheck} />
+                    </span>
+                  )}
+                  {!e.is_read && !isNoRules && (
                     <span className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
                   )}
                   <div className="flex items-baseline justify-between gap-2">
