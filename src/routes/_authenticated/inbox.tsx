@@ -720,7 +720,7 @@ function InboxPage() {
                   ) : (
                     <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{decodeEntities(e.snippet)}</div>
                   )}
-                </button>
+                </RowTag>
               </ContextMenuTrigger>
               <ContextMenuContent className="w-64">
                 {(e.is_archived || e.folder_id) && (
