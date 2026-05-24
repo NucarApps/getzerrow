@@ -789,11 +789,23 @@ function InboxPage() {
                       <ContextMenuItem
                         key={f.id}
                         onSelect={async () => {
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, is_archived: true, classified_by: "manual_move" } : x)));
+                          // Optimistically remove from any view that wouldn't show an archived row in this folder.
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                            prev?.flatMap((x) => {
+                              if (x.id !== e.id) return [x];
+                              // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
+                              return [{ ...x, folder_id: f.id, is_archived: true, classified_by: "manual_move" }];
+                            }),
+                          );
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
+                            prev?.filter((x) => x.id !== e.id),
+                          );
                           try {
                             await moveFolderFn({ data: { email_id: e.id, to_folder_id: f.id } });
                             toast.success(`Moved to ${f.name}`);
-                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            // Defer refetch so the server-side Gmail label sync settles
+                            // before a stale reconcile flips is_archived back to false.
+                            setTimeout(() => qc.invalidateQueries({ queryKey: ["emails"] }), 1500);
                           } catch (err: any) {
                             qc.invalidateQueries({ queryKey: ["emails"] });
                             toast.error(err.message);
