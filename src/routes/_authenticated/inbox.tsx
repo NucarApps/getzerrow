@@ -521,7 +521,7 @@ function InboxPage() {
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
   return (
-    <div className="grid h-full min-h-0 md:grid-cols-[400px_1fr]">
+    <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
       {/* List */}
       <div className={`h-full min-h-0 flex-col overflow-hidden border-r border-border ${selected && selectedListItem ? "hidden md:flex" : "flex"}`}>
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
