@@ -956,6 +956,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      cron_secret_matches: { Args: { provided: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
