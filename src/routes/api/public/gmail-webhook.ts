@@ -9,16 +9,21 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory } from "@/lib/sync.server";
 import { verifyGoogleJwt } from "@/lib/google-jwt.server";
+import { isAuthorizedCron } from "@/lib/cron-auth.server";
 
 export const Route = createFileRoute("/api/public/gmail-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const isTest = request.headers.get("x-zerrow-test") === "1";
+        // Synthetic test requests must still be authenticated with the
+        // CRON_SECRET — otherwise anyone could trigger Gmail syncs for any
+        // known email address by setting the x-zerrow-test header.
+        const isTest =
+          request.headers.get("x-zerrow-test") === "1" && isAuthorizedCron(request);
 
         // Authenticate Pub/Sub push. Preferred: OIDC bearer JWT signed by
         // Google (set on the subscription via pushConfig.oidcToken). Fallback:
-        // legacy `?token=` shared secret. Test calls from the app are exempt.
+        // legacy `?token=` shared secret. Authenticated test calls are exempt.
         let authMode: "jwt" | "legacy_token" | "none" = "none";
         if (!isTest) {
           const url = new URL(request.url);
