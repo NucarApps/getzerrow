@@ -353,8 +353,7 @@ Guidelines:
     };
   }
 }
-
-
+export async function suggestReply(email: {
   from_name: string;
   subject: string;
   body_text: string;
