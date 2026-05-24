@@ -157,7 +157,7 @@ export function FolderEditor({
 
   // Auto-save a single toggle column immediately, then optionally retroactively apply it.
   async function toggleBehavior(
-    column: "auto_mark_read" | "auto_archive" | "auto_star" | "hide_from_inbox" | "skip_ai",
+    column: "auto_mark_read" | "auto_archive" | "auto_star" | "hide_from_inbox" | "skip_ai" | "overrides_inbox_override",
     value: boolean,
     retro: "mark_read" | "archive" | "star" | null,
   ) {
