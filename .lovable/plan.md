@@ -1,33 +1,29 @@
-## What I found
+# Fix inbox not filling height on mobile
 
-The Gmail push/webhook side is working: new push events are being received and message jobs are being created.
+## Problem
+On mobile, the inbox list stops after the visible emails and the "Page 1" footer floats up, leaving a large empty area below it.
 
-The scheduled cron side is still failing: recent cron HTTP calls are returning `401 Unauthorized`, so the queue only drains when you manually click **Drain queue now**.
+## Cause
+`src/routes/_authenticated/inbox.tsx` line 524 wraps the two panels in:
 
-## Important clarification
+```
+<div className="grid h-full min-h-0 md:grid-cols-[400px_1fr]">
+```
 
-You do **not** need to set this cron in Google Cloud. The app already has database-managed scheduled jobs configured. Adding the same schedule in Google Cloud can create duplicate calls and make debugging harder.
+On mobile there's no `grid-cols`/`grid-rows` set, so grid auto-rows size each child to its content. The list panel's `h-full` then resolves against an auto-sized row and collapses — so `flex-1` on the inner list never fills the viewport, and the pagination bar sits right under the last email.
 
-## Plan
+## Fix
+Make the container stretch its single visible child to full height on mobile, while keeping the existing 2-column desktop layout.
 
-1. **Confirm which cron caller is failing**
-   - Inspect the database-managed cron responses and commands.
-   - Check whether the `401` responses come from the app’s built-in scheduled jobs or any external Google Cloud scheduler calls.
+Change line 524 to use flex on mobile, grid on desktop:
 
-2. **Make the app’s scheduled jobs self-contained**
-   - Update the cron auth flow so the database-managed jobs and the app server use the same secret source.
-   - Keep the stricter security behavior: public endpoints must still reject unauthenticated calls.
+```
+<div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
+```
 
-3. **Reschedule cron jobs if needed**
-   - Ensure all Gmail processing jobs call the correct production URL.
-   - Ensure every job sends the accepted auth header.
-   - Remove or replace any remaining legacy `apikey`-only cron configuration.
+That's the only edit — both panels already use `h-full min-h-0` and the correct hidden/visible classes, so the desktop grid behavior is unchanged.
 
-4. **Verify the fix**
-   - Watch fresh cron responses until they return `200` instead of `401`.
-   - Confirm `message_jobs` pending rows drain without pressing **Drain queue now**.
-   - Confirm the sync activity panel stops showing processing delays.
-
-## What you should do in Google Cloud
-
-After this is fixed, disable the duplicate Google Cloud cron/scheduler entry for this same sync endpoint. The built-in scheduler should be the source of truth.
+## Verification
+- Mobile: list fills viewport, pagination bar pinned to bottom of the list panel above the Safari toolbar.
+- Mobile reader: opening an email still shows the reader full-height (it also has `h-full`).
+- Desktop (`md+`): unchanged 400px + 1fr two-pane layout.
