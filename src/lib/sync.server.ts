@@ -294,6 +294,7 @@ export async function classifyParsedEmail(
   const folderList = context.folders;
   const filterList = context.filters;
   const overrides = context.overrides;
+  const overrideExceptions = context.overrideExceptions;
 
   let folder_id: string | null = null;
   let classified_by = "none";
@@ -311,40 +312,81 @@ export async function classifyParsedEmail(
     return o.match_type === "email" ? val === fromAddr : val === fromDomain;
   });
 
+  // If override fired, check per-override exceptions (same applyFilter evaluator
+  // used by folder filters, including starts_with/ends_with/contains/regex).
+  let overrideExceptionHit: OverrideException | null = null;
   if (overrideHit) {
+    const exForThisOverride = overrideExceptions.filter((e) => e.override_id === overrideHit.id);
+    for (const ex of exForThisOverride) {
+      if (applyFilter(parsed, { id: "", folder_id: "", field: ex.field, op: ex.op, value: ex.value })) {
+        overrideExceptionHit = ex;
+        break;
+      }
+    }
+  }
+
+  // Folder match (computed up-front so we can let a folder beat the override
+  // when its `overrides_inbox_override` flag is on).
+  const labeledFolder = opts.skipGmailLabelMatch
+    ? undefined
+    : folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
+  const folderMatch = labeledFolder ? null : matchByFilters(parsed, folderList, filterList);
+  const beatingFolderId =
+    overrideHit && folderMatch?.kind === "match"
+      ? folderMatch.all_matched_folder_ids.find((fid) => {
+          const f = folderList.find((x) => x.id === fid);
+          return f?.overrides_inbox_override === true;
+        }) ?? null
+      : null;
+
+  const overrideWins = !!overrideHit && !overrideExceptionHit && !beatingFolderId;
+
+  if (overrideWins) {
     classified_by = "global_exclude";
-    classification_reason = `Global inbox list: ${overrideHit.match_type} "${overrideHit.value}"`;
+    classification_reason = `Global inbox list: ${overrideHit!.match_type} "${overrideHit!.value}"`;
     aiSkipped = true;
   } else {
-    const labeledFolder = opts.skipGmailLabelMatch
-      ? undefined
-      : folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
     if (labeledFolder) {
       folder_id = labeledFolder.id;
       classified_by = "gmail_label";
       confidence = 1;
       classification_reason = `Already labeled "${labeledFolder.name}" in Gmail at sync time`;
     } else {
-      const m = matchByFilters(parsed, folderList, filterList);
-      if (m?.kind === "match") {
-        folder_id = m.folder_id;
+      const m = folderMatch;
+      // If a beatingFolder forced us past the override, prefer that folder
+      // even if matchByFilters' priority sort picked a different one.
+      const winningFolderId = beatingFolderId ?? (m?.kind === "match" ? m.folder_id : null);
+      if (m?.kind === "match" && winningFolderId) {
+        folder_id = winningFolderId;
         matched_folder_ids = m.all_matched_folder_ids;
         confidence = 1;
         if (m.tree_used) {
           classified_by = "filter";
-          classification_reason = `Rule group matched for "${labelOf(folderList, m.folder_id)}"`;
+          classification_reason = `Rule group matched for "${labelOf(folderList, winningFolderId)}"`;
         } else if (m.filter) {
           classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
           matched_filter_ids = m.matched_filters.map((f) => f.id);
           classification_reason =
             classified_by === "domain_rule"
-              ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, m.folder_id)}`
+              ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, winningFolderId)}`
               : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+        }
+        if (beatingFolderId && overrideHit) {
+          classification_reason =
+            (classification_reason ?? "") +
+            ` (beat inbox override "${overrideHit.value}")`;
+        } else if (overrideExceptionHit && overrideHit) {
+          classification_reason =
+            (classification_reason ?? "") +
+            ` (exception to inbox override "${overrideHit.value}": ${overrideExceptionHit.field} ${overrideExceptionHit.op} "${overrideExceptionHit.value}")`;
         }
       } else if (m?.kind === "excluded") {
         classified_by = "excluded";
         classification_reason = `Would match "${m.folder_name}" but excluded by rule: ${m.exclude.field} ${m.exclude.op} "${m.exclude.value}"`;
         aiSkipped = true;
+      } else if (overrideExceptionHit && overrideHit) {
+        // Exception fired but no folder matched — fall through to AI; note it.
+        classification_reason = `Inbox override "${overrideHit.value}" bypassed by exception (${overrideExceptionHit.field} ${overrideExceptionHit.op} "${overrideExceptionHit.value}")`;
       }
     }
   }
