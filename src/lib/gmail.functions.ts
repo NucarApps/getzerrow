@@ -2058,10 +2058,16 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
     }
 
     const started = Date.now();
+    const cronSecret = process.env.CRON_SECRET;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "x-zerrow-test": "1",
+    };
+    if (cronSecret) headers["authorization"] = `Bearer ${cronSecret}`;
     try {
       const r = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-zerrow-test": "1" },
+        headers,
         body: JSON.stringify(envelope),
       });
       return {
