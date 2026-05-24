@@ -147,6 +147,7 @@ export function FolderEditor({
       forward_to: local.forward_to?.trim() || null,
       min_ai_confidence: Math.min(1, Math.max(0, local.min_ai_confidence ?? 0)),
       snooze_hours: Math.max(0, local.snooze_hours ?? 0),
+      overrides_inbox_override: local.overrides_inbox_override ?? false,
     }).eq("id", folder.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Saved");
