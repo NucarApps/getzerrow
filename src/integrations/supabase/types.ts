@@ -538,6 +538,7 @@ export type Database = {
           learned_profile: string | null
           min_ai_confidence: number
           name: string
+          overrides_inbox_override: boolean
           priority: number
           skip_ai: boolean
           snooze_hours: number
@@ -563,6 +564,7 @@ export type Database = {
           learned_profile?: string | null
           min_ai_confidence?: number
           name: string
+          overrides_inbox_override?: boolean
           priority?: number
           skip_ai?: boolean
           snooze_hours?: number
@@ -588,6 +590,7 @@ export type Database = {
           learned_profile?: string | null
           min_ai_confidence?: number
           name?: string
+          overrides_inbox_override?: boolean
           priority?: number
           skip_ai?: boolean
           snooze_hours?: number
@@ -644,6 +647,44 @@ export type Database = {
           watch_expiration?: string | null
         }
         Relationships: []
+      }
+      inbox_override_exceptions: {
+        Row: {
+          created_at: string
+          field: string
+          id: string
+          op: string
+          override_id: string
+          user_id: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          field: string
+          id?: string
+          op: string
+          override_id: string
+          user_id: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          field?: string
+          id?: string
+          op?: string
+          override_id?: string
+          user_id?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inbox_override_exceptions_override_id_fkey"
+            columns: ["override_id"]
+            isOneToOne: false
+            referencedRelation: "inbox_overrides"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       inbox_overrides: {
         Row: {
