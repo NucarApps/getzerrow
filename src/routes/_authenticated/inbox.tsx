@@ -7,7 +7,12 @@ import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
   moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
   loadOlderFromGmail, searchGmailAndIngest, resyncMessage, addFolderRule,
+  reclassifyEmails, suggestFolderFromSelection, createFolderAndAssign,
 } from "@/lib/gmail.functions";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -301,12 +306,26 @@ function InboxPage() {
   // cursors[i] is the `received_at <` cursor used to fetch page i+1 (cursors[0] = null).
   const [page, setPage] = useState(1);
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const isNoRules = selectedFolder === "no_rules";
   useEffect(() => {
     setPage(1);
     setCursors([null]);
     setSelectedId(null);
+    setSelectedIds(new Set());
   }, [selectedFolder]);
   const cursor = cursors[page - 1] ?? null;
+
+  const reclassifyFn = useServerFn(reclassifyEmails);
+  const suggestFolderFn = useServerFn(suggestFolderFromSelection);
+  const createFolderAndAssignFn = useServerFn(createFolderAndAssign);
+  const [suggestion, setSuggestion] = useState<null | {
+    name: string; color: string; ai_rule: string;
+    filter_field: string | null; filter_op: string | null; filter_value: string;
+    why: string; email_ids: string[];
+  }>(null);
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [reclassifyBusy, setReclassifyBusy] = useState(false);
 
   const loadOlderFn = useServerFn(loadOlderFromGmail);
 
@@ -533,6 +552,87 @@ function InboxPage() {
             </div>
           )}
         </div>
+        {isNoRules && (
+          <div className="shrink-0 border-b border-border bg-muted/30 px-3 py-2">
+            {selectedIds.size === 0 ? (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Select emails to re-classify or group into a new folder.</span>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-primary hover:underline"
+                  onClick={() => setSelectedIds(new Set(filtered.map((e) => e.id)))}
+                  disabled={filtered.length === 0}
+                >
+                  Select all
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-medium">{selectedIds.size} selected</span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground hover:underline"
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={reclassifyBusy}
+                    onClick={async () => {
+                      const ids = Array.from(selectedIds);
+                      setReclassifyBusy(true);
+                      try {
+                        const r: any = await reclassifyFn({ data: { email_ids: ids } });
+                        toast.success(`Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`);
+                        setSelectedIds(new Set());
+                        qc.invalidateQueries({ queryKey: ["emails"] });
+                      } catch (err: any) {
+                        toast.error(err?.message ?? "Re-classify failed");
+                      } finally {
+                        setReclassifyBusy(false);
+                      }
+                    }}
+                  >
+                    <RotateCw className={`mr-1.5 h-3.5 w-3.5 ${reclassifyBusy ? "animate-spin" : ""}`} />
+                    Re-classify
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7"
+                    disabled={suggestBusy}
+                    onClick={async () => {
+                      const ids = Array.from(selectedIds);
+                      setSuggestBusy(true);
+                      try {
+                        const s: any = await suggestFolderFn({ data: { email_ids: ids } });
+                        setSuggestion({
+                          name: s.name, color: s.color, ai_rule: s.ai_rule,
+                          filter_field: s.filter_field || null,
+                          filter_op: s.filter_op || null,
+                          filter_value: s.filter_value || "",
+                          why: s.why, email_ids: ids,
+                        });
+                      } catch (err: any) {
+                        toast.error(err?.message ?? "Couldn't suggest a folder");
+                      } finally {
+                        setSuggestBusy(false);
+                      }
+                    }}
+                  >
+                    <Sparkles className={`mr-1.5 h-3.5 w-3.5 ${suggestBusy ? "animate-pulse" : ""}`} />
+                    Suggest folder
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div
           className="min-h-0 flex-1 overflow-y-auto"
           onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
@@ -568,23 +668,39 @@ function InboxPage() {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
             const folderList = foldersQ.data ?? [];
             const currentFolderId = e.folder_id;
+            const isChecked = selectedIds.has(e.id);
+            const toggleCheck = () => {
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(e.id)) next.delete(e.id);
+                else next.add(e.id);
+                return next;
+              });
+            };
 
-            return (
-            <SwipeRow
-              key={e.id}
-              onArchive={async () => {
-                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
-                try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
-                catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
-              }}
-            >
+            const rowInner = (
             <ContextMenu>
               <ContextMenuTrigger asChild>
                 <button
-                  onClick={() => setSelectedId(e.id)}
-                  className={`relative block w-full px-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""}`}
+                  onClick={(ev) => {
+                    if (isNoRules) {
+                      ev.preventDefault();
+                      toggleCheck();
+                      return;
+                    }
+                    setSelectedId(e.id);
+                  }}
+                  className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
                 >
-                  {!e.is_read && (
+                  {isNoRules && (
+                    <span
+                      className="absolute left-3 top-1/2 -translate-y-1/2"
+                      onClick={(ev) => { ev.stopPropagation(); toggleCheck(); }}
+                    >
+                      <Checkbox checked={isChecked} onCheckedChange={toggleCheck} />
+                    </span>
+                  )}
+                  {!e.is_read && !isNoRules && (
                     <span className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
                   )}
                   <div className="flex items-baseline justify-between gap-2">
@@ -895,7 +1011,21 @@ function InboxPage() {
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
-            </SwipeRow>
+            );
+
+            return isNoRules ? (
+              <div key={e.id}>{rowInner}</div>
+            ) : (
+              <SwipeRow
+                key={e.id}
+                onArchive={async () => {
+                  qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
+                  try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
+                  catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
+                }}
+              >
+                {rowInner}
+              </SwipeRow>
             );
           })}
         </div>
@@ -942,6 +1072,73 @@ function InboxPage() {
           defaultMode={folderRulePrompt.mode}
         />
       )}
+      <Dialog open={!!suggestion} onOpenChange={(v) => { if (!v) setSuggestion(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create folder from selection</DialogTitle>
+            <DialogDescription>{suggestion?.why}</DialogDescription>
+          </DialogHeader>
+          {suggestion && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Folder name</label>
+                <Input
+                  value={suggestion.name}
+                  onChange={(ev) => setSuggestion({ ...suggestion, name: ev.target.value })}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">AI rule</label>
+                <Textarea
+                  rows={3}
+                  value={suggestion.ai_rule}
+                  onChange={(ev) => setSuggestion({ ...suggestion, ai_rule: ev.target.value })}
+                />
+              </div>
+              {suggestion.filter_field && suggestion.filter_op && suggestion.filter_value && (
+                <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                  Filter: <span className="font-mono">{suggestion.filter_field} {suggestion.filter_op} "{suggestion.filter_value}"</span>
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground">
+                {suggestion.email_ids.length} selected email{suggestion.email_ids.length === 1 ? "" : "s"} will be moved into this folder.
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSuggestion(null)}>Cancel</Button>
+            <Button
+              disabled={!suggestion?.name.trim() || !accountId}
+              onClick={async () => {
+                if (!suggestion || !accountId) return;
+                try {
+                  await createFolderAndAssignFn({
+                    data: {
+                      account_id: accountId,
+                      name: suggestion.name.trim(),
+                      color: suggestion.color,
+                      ai_rule: suggestion.ai_rule,
+                      filter: suggestion.filter_field && suggestion.filter_op && suggestion.filter_value
+                        ? { field: suggestion.filter_field, op: suggestion.filter_op, value: suggestion.filter_value }
+                        : null,
+                      email_ids: suggestion.email_ids,
+                    },
+                  });
+                  toast.success(`Folder "${suggestion.name}" created`);
+                  setSuggestion(null);
+                  setSelectedIds(new Set());
+                  qc.invalidateQueries({ queryKey: ["folders"] });
+                  qc.invalidateQueries({ queryKey: ["emails"] });
+                } catch (err: any) {
+                  toast.error(err?.message ?? "Failed to create folder");
+                }
+              }}
+            >
+              Create folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
