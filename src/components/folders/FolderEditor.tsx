@@ -337,6 +337,31 @@ export function FolderEditor({
               {folder.last_learned_at && ` · learned ${new Date(folder.last_learned_at).toLocaleString()}`}
               {" · "}auto-updates as you move emails in Gmail
             </p>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={!!local.auto_relearn}
+                  onCheckedChange={async (v) => {
+                    setLocal({ ...local, auto_relearn: v });
+                    try {
+                      await setAutoRelearnFn({ data: { folder_id: folder.id, auto_relearn: v } });
+                      toast.success(v ? "Auto-learning on" : "Auto-learning off");
+                      qc.invalidateQueries({ queryKey: ["folders-full"] });
+                    } catch (e: any) {
+                      setLocal({ ...local, auto_relearn: !v });
+                      toast.error(e.message ?? "Failed to update");
+                    }
+                  }}
+                />
+                <Label className="text-sm">Keep learning automatically</Label>
+              </div>
+              {local.auto_relearn && (
+                <span className="text-xs text-muted-foreground">
+                  Re-learns after {folder.relearn_threshold ?? 25} new emails ·{" "}
+                  {folder.emails_since_learn ?? 0} new since last learn
+                </span>
+              )}
+            </div>
             {(domainsQ.data?.length ?? 0) > 0 && (
               <div className="mt-3 border-t border-border/60 pt-3">
                 <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Suggested domains</div>
