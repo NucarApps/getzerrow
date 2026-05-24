@@ -201,11 +201,9 @@ function EmailBodyInline({ html }: { html: string }) {
 
 function SwipeRow({ onArchive, children }: { onArchive: () => void; children: React.ReactNode }) {
   const [dx, setDx] = useState(0);
-  const [animating, setAnimating] = useState(false);
   const startRef = useRef<{ x: number; y: number; active: boolean; locked: boolean } | null>(null);
 
   function onTouchStart(e: React.TouchEvent) {
-    if (animating) return;
     const t = e.touches[0];
     startRef.current = { x: t.clientX, y: t.clientY, active: true, locked: false };
   }
@@ -227,10 +225,9 @@ function SwipeRow({ onArchive, children }: { onArchive: () => void; children: Re
     startRef.current = null;
     if (!s || !s.locked) { setDx(0); return; }
     const width = (e.currentTarget as HTMLElement).offsetWidth || 1;
-    if (-dx > width * 0.35) {
-      setAnimating(true);
-      setDx(-width);
-      setTimeout(() => onArchive(), 180);
+    if (-dx > width * 0.25) {
+      setDx(0);
+      onArchive();
     } else {
       setDx(0);
     }
@@ -248,7 +245,7 @@ function SwipeRow({ onArchive, children }: { onArchive: () => void; children: Re
         onTouchCancel={onTouchEnd}
         style={{
           transform: `translateX(${dx}px)`,
-          transition: dx === 0 || animating ? "transform 180ms ease-out" : "none",
+          transition: dx === 0 ? "transform 120ms ease-out" : "none",
         }}
         className="relative bg-background"
       >
