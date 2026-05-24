@@ -290,7 +290,71 @@ Output only the description, no preamble.`,
   return text.trim();
 }
 
-export async function suggestReply(email: {
+export type SuggestedFolderShape = {
+  name: string;
+  color: string;
+  ai_rule: string;
+  filter_field: "from" | "domain" | "subject" | "list_id" | "" | null;
+  filter_op: "contains" | "equals" | "starts_with" | "ends_with" | "" | null;
+  filter_value: string;
+  why: string;
+};
+
+export async function suggestFolderFromEmails(emails: Array<{
+  from_addr: string | null;
+  from_name: string | null;
+  subject: string | null;
+  snippet: string | null;
+}>): Promise<SuggestedFolderShape> {
+  const list = emails
+    .slice(0, 30)
+    .map((e, i) => `${i + 1}. From: ${e.from_name ?? ""} <${e.from_addr ?? ""}>\n   Subject: ${e.subject ?? ""}\n   Snippet: ${(e.snippet ?? "").slice(0, 200)}`)
+    .join("\n\n");
+
+  const palette = ["#f59e0b", "#10b981", "#3b82f6", "#ec4899", "#8b5cf6", "#ef4444", "#14b8a6", "#eab308"];
+
+  try {
+    const { output } = await generateText({
+      model: getModel(),
+      output: Output.object({
+        schema: z.object({
+          name: z.string().min(1).max(40).describe("Short, human folder name in Title Case"),
+          color: z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Hex color from the palette"),
+          ai_rule: z.string().min(1).max(300).describe("1-2 sentence natural-language rule"),
+          filter_field: z.enum(["from", "domain", "subject", "list_id", ""]).describe("Optional concrete filter — empty if no single signal fits"),
+          filter_op: z.enum(["contains", "equals", "starts_with", "ends_with", ""]),
+          filter_value: z.string().max(200),
+          why: z.string().max(200),
+        }),
+      }),
+      prompt: `You are helping a user create a new email folder. Look at these unclassified emails and propose ONE new folder that would group most of them.
+
+Emails:
+${list}
+
+Guidelines:
+- Pick a name that describes the COMMON theme, not the literal sender.
+- Pick a color hex from this palette: ${palette.join(", ")}
+- ai_rule: 1-2 sentences a human would understand.
+- filter_field/op/value: only fill in if there is one strong concrete signal (e.g. all from the same domain, or all subjects start with "RE: Daily Report"). Otherwise leave all three empty.
+- why: one short line.`,
+    });
+    return output as SuggestedFolderShape;
+  } catch (err: any) {
+    console.error("suggestFolderFromEmails failed", err?.message ?? err);
+    return {
+      name: "New folder",
+      color: palette[0],
+      ai_rule: "Emails similar to the selected examples.",
+      filter_field: null,
+      filter_op: null,
+      filter_value: "",
+      why: "AI unavailable — using a generic suggestion.",
+    };
+  }
+}
+
+
   from_name: string;
   subject: string;
   body_text: string;
