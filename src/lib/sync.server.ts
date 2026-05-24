@@ -711,9 +711,32 @@ export async function regenerateFolderProfile(folderId: string) {
   const profile = await buildFolderProfile(folder.name, folder.ai_rule, examples ?? []);
   await supabaseAdmin
     .from("folders")
-    .update({ learned_profile: profile, last_learned_at: new Date().toISOString() })
+    .update({ learned_profile: profile, last_learned_at: new Date().toISOString(), emails_since_learn: 0 })
     .eq("id", folderId);
   return profile;
+}
+
+/**
+ * Increment the "new emails since last learn" counter for a folder. Used by
+ * the live + batch classifier paths so the background re-learn worker knows
+ * when an opted-in folder has accumulated enough new mail to re-learn.
+ * Best-effort: errors are swallowed so they never block classification.
+ */
+export async function bumpEmailsSinceLearn(folderId: string) {
+  try {
+    const { data: row } = await supabaseAdmin
+      .from("folders")
+      .select("emails_since_learn")
+      .eq("id", folderId)
+      .maybeSingle();
+    if (!row) return;
+    await supabaseAdmin
+      .from("folders")
+      .update({ emails_since_learn: (row.emails_since_learn ?? 0) + 1 })
+      .eq("id", folderId);
+  } catch (e) {
+    console.error("bumpEmailsSinceLearn failed", folderId, e);
+  }
 }
 
 export async function learnFromLinkedLabel(folderId: string, userId: string) {
