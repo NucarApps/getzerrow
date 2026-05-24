@@ -7,7 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { ensureWatch } from "@/lib/gmail.server";
-import { isAuthorizedCron, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 
 const SILENCE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!isAuthorizedCron(request)) return unauthorizedResponse();
+        if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
           .select("id, email_address, watch_expiration");
