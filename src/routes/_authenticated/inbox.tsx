@@ -552,6 +552,87 @@ function InboxPage() {
             </div>
           )}
         </div>
+        {isNoRules && (
+          <div className="shrink-0 border-b border-border bg-muted/30 px-3 py-2">
+            {selectedIds.size === 0 ? (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Select emails to re-classify or group into a new folder.</span>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-primary hover:underline"
+                  onClick={() => setSelectedIds(new Set(filtered.map((e) => e.id)))}
+                  disabled={filtered.length === 0}
+                >
+                  Select all
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-medium">{selectedIds.size} selected</span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground hover:underline"
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={reclassifyBusy}
+                    onClick={async () => {
+                      const ids = Array.from(selectedIds);
+                      setReclassifyBusy(true);
+                      try {
+                        const r: any = await reclassifyFn({ data: { email_ids: ids } });
+                        toast.success(`Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`);
+                        setSelectedIds(new Set());
+                        qc.invalidateQueries({ queryKey: ["emails"] });
+                      } catch (err: any) {
+                        toast.error(err?.message ?? "Re-classify failed");
+                      } finally {
+                        setReclassifyBusy(false);
+                      }
+                    }}
+                  >
+                    <RotateCw className={`mr-1.5 h-3.5 w-3.5 ${reclassifyBusy ? "animate-spin" : ""}`} />
+                    Re-classify
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7"
+                    disabled={suggestBusy}
+                    onClick={async () => {
+                      const ids = Array.from(selectedIds);
+                      setSuggestBusy(true);
+                      try {
+                        const s: any = await suggestFolderFn({ data: { email_ids: ids } });
+                        setSuggestion({
+                          name: s.name, color: s.color, ai_rule: s.ai_rule,
+                          filter_field: s.filter_field || null,
+                          filter_op: s.filter_op || null,
+                          filter_value: s.filter_value || "",
+                          why: s.why, email_ids: ids,
+                        });
+                      } catch (err: any) {
+                        toast.error(err?.message ?? "Couldn't suggest a folder");
+                      } finally {
+                        setSuggestBusy(false);
+                      }
+                    }}
+                  >
+                    <Sparkles className={`mr-1.5 h-3.5 w-3.5 ${suggestBusy ? "animate-pulse" : ""}`} />
+                    Suggest folder
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div
           className="min-h-0 flex-1 overflow-y-auto"
           onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
