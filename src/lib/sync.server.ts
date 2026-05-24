@@ -223,7 +223,8 @@ export type ClassificationResult = {
 export type AccountContext = {
   folders: Folder[];
   filters: Filter[];
-  overrides: Array<{ match_type: string; value: string }>;
+  overrides: Array<{ id: string; match_type: string; value: string }>;
+  overrideExceptions: OverrideException[];
   enrichedFolders: ClassifyFolder[];
 };
 
@@ -234,13 +235,14 @@ export async function loadAccountContext(accountId: string, userId: string): Pro
   const cached = accountContextCache.get(accountId);
   if (cached && cached.expires > Date.now()) return cached.ctx;
 
-  const [{ data: folders }, { data: overrides }] = await Promise.all([
+  const [{ data: folders }, { data: overrides }, { data: exceptions }] = await Promise.all([
     supabaseAdmin
       .from("folders")
       .select("*")
       .eq("gmail_account_id", accountId)
       .order("priority", { ascending: false }),
-    supabaseAdmin.from("inbox_overrides").select("match_type, value").eq("user_id", userId),
+    supabaseAdmin.from("inbox_overrides").select("id, match_type, value").eq("user_id", userId),
+    supabaseAdmin.from("inbox_override_exceptions").select("override_id, field, op, value").eq("user_id", userId),
   ]);
 
   const folderList = (folders ?? []) as Folder[];
@@ -261,6 +263,7 @@ export async function loadAccountContext(accountId: string, userId: string): Pro
     folders: folderList,
     filters: filterList,
     overrides: overrides ?? [],
+    overrideExceptions: (exceptions ?? []) as OverrideException[],
     enrichedFolders,
   };
   accountContextCache.set(accountId, { ctx, expires: Date.now() + ACCOUNT_CONTEXT_TTL_MS });
