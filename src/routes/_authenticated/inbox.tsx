@@ -1072,6 +1072,73 @@ function InboxPage() {
           defaultMode={folderRulePrompt.mode}
         />
       )}
+      <Dialog open={!!suggestion} onOpenChange={(v) => { if (!v) setSuggestion(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create folder from selection</DialogTitle>
+            <DialogDescription>{suggestion?.why}</DialogDescription>
+          </DialogHeader>
+          {suggestion && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Folder name</label>
+                <Input
+                  value={suggestion.name}
+                  onChange={(ev) => setSuggestion({ ...suggestion, name: ev.target.value })}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">AI rule</label>
+                <Textarea
+                  rows={3}
+                  value={suggestion.ai_rule}
+                  onChange={(ev) => setSuggestion({ ...suggestion, ai_rule: ev.target.value })}
+                />
+              </div>
+              {suggestion.filter_field && suggestion.filter_op && suggestion.filter_value && (
+                <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                  Filter: <span className="font-mono">{suggestion.filter_field} {suggestion.filter_op} "{suggestion.filter_value}"</span>
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground">
+                {suggestion.email_ids.length} selected email{suggestion.email_ids.length === 1 ? "" : "s"} will be moved into this folder.
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSuggestion(null)}>Cancel</Button>
+            <Button
+              disabled={!suggestion?.name.trim() || !accountId}
+              onClick={async () => {
+                if (!suggestion || !accountId) return;
+                try {
+                  await createFolderAndAssignFn({
+                    data: {
+                      account_id: accountId,
+                      name: suggestion.name.trim(),
+                      color: suggestion.color,
+                      ai_rule: suggestion.ai_rule,
+                      filter: suggestion.filter_field && suggestion.filter_op && suggestion.filter_value
+                        ? { field: suggestion.filter_field, op: suggestion.filter_op, value: suggestion.filter_value }
+                        : null,
+                      email_ids: suggestion.email_ids,
+                    },
+                  });
+                  toast.success(`Folder "${suggestion.name}" created`);
+                  setSuggestion(null);
+                  setSelectedIds(new Set());
+                  qc.invalidateQueries({ queryKey: ["folders"] });
+                  qc.invalidateQueries({ queryKey: ["emails"] });
+                } catch (err: any) {
+                  toast.error(err?.message ?? "Failed to create folder");
+                }
+              }}
+            >
+              Create folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
