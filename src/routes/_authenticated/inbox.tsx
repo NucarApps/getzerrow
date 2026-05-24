@@ -183,7 +183,7 @@ function EmailBodyFrame({ html }: { html: string }) {
       title="Email body"
       srcDoc={srcDoc}
       onLoad={pingForHeight}
-      sandbox="allow-popups"
+      sandbox="allow-popups allow-scripts"
       className="w-full rounded-lg bg-white"
       style={{ border: 0, colorScheme: "light", height: MIN_PX, minHeight: MIN_PX }}
     />
