@@ -550,6 +550,7 @@ export async function processGmailMessage(
       matched_filter_ids: c.matched_filter_ids,
       matched_folder_ids: c.matched_folder_ids,
     }).eq("id", inserted.id);
+    if (folder_id) void bumpEmailsSinceLearn(folder_id);
     if (t) t.db += performance.now() - _tDb;
   } catch (e) {
     console.error("classify failed (email already visible in Inbox)", e);
