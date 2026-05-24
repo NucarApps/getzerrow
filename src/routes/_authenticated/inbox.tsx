@@ -1011,7 +1011,21 @@ function InboxPage() {
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
-            </SwipeRow>
+            );
+
+            return isNoRules ? (
+              <div key={e.id}>{rowInner}</div>
+            ) : (
+              <SwipeRow
+                key={e.id}
+                onArchive={async () => {
+                  qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
+                  try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
+                  catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
+                }}
+              >
+                {rowInner}
+              </SwipeRow>
             );
           })}
         </div>
