@@ -1,35 +1,65 @@
-## Plan
+## Plan: Exceptions for "Always send to inbox" overrides
 
-1. **Add "starts with" and "ends with" filter operators**
-   - In `src/components/folders/FolderEditor.tsx`, extend both filter-op selectors with `starts_with` and `ends_with` options:
-     - The simple "Add filter" row (around line 552, `OP` Select).
-     - The advanced rule-tree `OP_OPTS` array (around line 1224) — already used by `RuleNodeEditor`.
-   - In `src/lib/sync.server.ts` (around line 71), extend the `applyFilter` switch to handle:
-     - `starts_with` → `fieldVal.startsWith(v)`
-     - `ends_with` → `fieldVal.endsWith(v)`
-   - The client-side matcher in `src/routes/_authenticated/inbox.tsx` already understands these two ops, so no change needed there.
+Add a way to say "everything from nucar.com goes to inbox, EXCEPT when subject starts with 'RE: Daily Reports'" — and also let high-priority folders override the inbox rule.
 
-2. **Make the Edit Folder sheet mobile responsive**
-   - Sheet width is already `w-full sm:max-w-xl`, so the container is fine. The problems are inside `FolderEditor`:
-     - **Header row** (color + name + priority + menu, line 271): on a 402px viewport the priority `Input` (`w-20`) plus the name input squeezes everything. Switch to a wrap-friendly layout — color + name on row one, priority + menu on row two on mobile; single row on `sm:` and up.
-     - **Filter add row** (line 537): two `Select`s (`w-32`, `w-36`) + `Input` + Button overflow on mobile. Make it stack: `flex-col sm:flex-row`, selects become `w-full sm:w-32 / sm:w-36`, button full-width on mobile.
-     - **Existing filter chips** (line 519-534): allow wrapping (`flex-wrap`) so long values don't push the remove button off-screen; let the value span shrink with `min-w-0 break-all`.
-     - **RuleNodeEditor cond row** (line 1245): same treatment — stack on mobile (`flex-col sm:flex-row`), full-width inputs, remove button aligns to the end.
-     - **Learned-profile header** (line 312): the "Sync to Gmail" + "Re-learn" buttons sit beside the label and overflow on mobile. Stack the title above the buttons on mobile and let the buttons wrap.
-     - **Suggested-domain chips** (line 336): already `flex-wrap`, but verify the popover trigger stays tappable; no change expected.
-   - All changes are presentation-only Tailwind class adjustments; no behavior changes.
+### 1. Schema: per-override exceptions
 
-3. **Verify**
-   - On the 402×716 mobile preview, open a folder for editing and confirm:
-     - Nothing overflows horizontally; no horizontal scroll on the sheet.
-     - Filter add row stacks cleanly; "starts with" and "ends with" appear in both the simple and advanced op pickers.
-     - Adding a `starts with` / `ends with` filter routes a matching email correctly (server matcher updated).
-   - On desktop, confirm the layout is visually unchanged.
+New table `inbox_override_exceptions` (1 override → many exceptions):
+- `override_id` → `inbox_overrides.id` (cascade delete)
+- `user_id` (RLS)
+- `field` — `from`, `to`, `subject`, `body`, `snippet`
+- `op` — `contains`, `equals`, `starts_with`, `ends_with`, `regex`
+- `value` — text
+- RLS: owner-only via `user_id`.
 
-## Technical notes
+Why a separate table (not JSON on the override row): matches how `folder_filters` already works, easy to edit one row at a time, and the matcher in `sync.server.ts` already has a `field/op/value` evaluator we can reuse.
+
+### 2. Schema: per-folder "beats inbox override" flag
+
+Add `folders.overrides_inbox_override boolean default false`.
+When true and that folder's filters match an email, the folder wins even if an inbox override matched the sender. Implemented as a simple priority swap in the classifier — no new evaluator.
+
+### 3. Classifier change (`src/lib/sync.server.ts`)
+
+Around line 303–315 (the `overrideHit` block):
+1. Compute `overrideHit` as today.
+2. Also compute the matching folder via the existing filter loop (currently runs after the override check — move it up so we know both results).
+3. Decision:
+   - If `overrideHit` AND any matched folder has `overrides_inbox_override=true` → folder wins.
+   - Else if `overrideHit` AND no exception matches → inbox wins (current behavior).
+   - Else if `overrideHit` AND an exception matches → fall through to normal folder/AI classification.
+   - Else → current behavior.
+4. Exception matcher reuses the same `applyFilter` switch (`contains`/`equals`/`starts_with`/`ends_with`/`regex`) already used by folder filters — so the two systems stay in sync (this is the same switch we just extended with `starts_with`/`ends_with`).
+5. Extend `loadAccountContext` to also `select` exceptions joined by `override_id`, and include them in the cached `AccountContext`.
+
+### 4. UI: `src/components/settings/InboxOverrides.tsx`
+
+Each override row becomes expandable:
+- Chevron toggles an "Exceptions" panel under the row.
+- Inside: a list of existing exceptions (field + op + value + remove) and an "Add exception" row with three pickers + value input + Add button — same shape as the folder filter add row, including the new `starts_with`/`ends_with` ops.
+- Empty state: "No exceptions — every email from nucar.com goes to inbox."
+- Helper text on the override: "Add an exception to let some emails be sorted normally (e.g. subject starts with 'RE: Daily Reports')."
+
+### 5. UI: `src/components/folders/FolderEditor.tsx`
+
+Add a single Switch in the folder's options area (near `hide_from_inbox` / `auto_archive`):
+- Label: **"Beat 'Always send to inbox' rules"**
+- Helper: "When this folder's filters match, route the email here even if the sender is on your Always-send-to-inbox list."
+- Wired to `folders.overrides_inbox_override`.
+
+### 6. Verify
+
+- Add nucar.com override → email from nucar arrives → goes to inbox. ✅ unchanged.
+- Add exception `subject starts_with "RE: Daily Reports"` → matching email is sorted by folders/AI; non-matching still goes to inbox.
+- Create a folder with filter `from contains nucar.com` + toggle "Beat inbox rules" on → all nucar mail goes to that folder, regardless of override.
+- Without the toggle, the same folder loses to the override (current behavior).
+
+### Technical notes
 
 - Files touched:
-  - `src/components/folders/FolderEditor.tsx` — add two `SelectItem`s in the simple op Select, two entries to `OP_OPTS`, and responsive Tailwind classes on the header / filter-add / chip / rule-node rows.
-  - `src/lib/sync.server.ts` — two new `case` branches in `applyFilter`.
-- No schema migration needed: `folder_filters.op` is already a free-form text column accepting any operator string, and rule-tree filters are stored in `filter_tree` JSON.
-- `EXCLUDE_OPS` in `sync.server.ts` does not need updating — `starts_with`/`ends_with` are inclusive matchers.
+  - migration: create `inbox_override_exceptions`, add `folders.overrides_inbox_override`.
+  - `src/lib/sync.server.ts` — extend `AccountContext`, `loadAccountContext`, and the override branch in `classifyParsedEmail`. Reuse `applyFilter`.
+  - `src/components/settings/InboxOverrides.tsx` — expandable exceptions UI.
+  - `src/components/folders/FolderEditor.tsx` — new Switch row bound to `overrides_inbox_override`.
+- No types regeneration needed beyond the standard auto-update after the migration.
+- Default values keep behavior identical for existing users (no exceptions, flag off).
