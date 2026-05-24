@@ -55,6 +55,7 @@ export type Folder = {
   forward_to?: string | null;
   min_ai_confidence?: number;
   snooze_hours?: number;
+  overrides_inbox_override?: boolean;
 };
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
