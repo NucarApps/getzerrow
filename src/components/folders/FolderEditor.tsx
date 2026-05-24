@@ -414,6 +414,13 @@ export function FolderEditor({
               </div>
               <Switch checked={local.skip_ai ?? false} onCheckedChange={(v) => toggleBehavior("skip_ai", v, null)} />
             </label>
+            <label className="col-span-2 flex items-start justify-between gap-3 rounded-md border border-border p-3 text-sm" title="When this folder's filters match, route the email here even if the sender is on your Always-send-to-inbox list">
+              <div className="min-w-0">
+                Beat "Always send to inbox" rules
+                <p className="mt-0.5 text-xs text-muted-foreground">When this folder's filters match, route here even if the sender is on your inbox list.</p>
+              </div>
+              <Switch checked={local.overrides_inbox_override ?? false} onCheckedChange={(v) => toggleBehavior("overrides_inbox_override", v, null)} />
+            </label>
           </div>
 
 
