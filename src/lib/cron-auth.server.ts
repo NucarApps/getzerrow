@@ -1,9 +1,10 @@
 // Shared auth for cron/webhook endpoints under /api/public/*.
-// Accepts EITHER:
-//   1. `Authorization: Bearer <CRON_SECRET>` / `x-cron-secret: <CRON_SECRET>`
-//      (manual calls + legacy schedules), OR
-//   2. `apikey: <SUPABASE_PUBLISHABLE_KEY>` (the standard pg_cron pattern).
-// The publishable/anon key is safe to embed in cron SQL — it's a public key.
+// Requires `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
+//
+// The Supabase publishable/anon key is intentionally bundled into the client
+// and therefore provides no access control — it must NOT be accepted here.
+// Any pg_cron job must be configured to send the CRON_SECRET as a Bearer
+// token in the Authorization header.
 function constantTimeEq(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -13,29 +14,16 @@ function constantTimeEq(a: string, b: string): boolean {
 
 export function isAuthorizedCron(request: Request): boolean {
   const cronSecret = process.env.CRON_SECRET;
-  const anonKey =
-    process.env.SUPABASE_PUBLISHABLE_KEY ??
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
-    process.env.SUPABASE_ANON_KEY ??
-    null;
+  if (!cronSecret) return false;
 
   const auth = request.headers.get("authorization");
-  const bearer = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
+  const bearer = auth?.toLowerCase().startsWith("bearer ")
+    ? auth.slice(7).trim()
+    : null;
   const cronHeader = request.headers.get("x-cron-secret");
-  const apikeyHeader = request.headers.get("apikey");
-
-  // Bearer / x-cron-secret path — must match CRON_SECRET
-  if (cronSecret) {
-    const provided = bearer ?? cronHeader;
-    if (provided && constantTimeEq(provided, cronSecret)) return true;
-  }
-
-  // apikey path — must match the publishable key
-  if (anonKey && apikeyHeader && constantTimeEq(apikeyHeader, anonKey)) {
-    return true;
-  }
-
-  return false;
+  const provided = bearer ?? cronHeader;
+  if (!provided) return false;
+  return constantTimeEq(provided, cronSecret);
 }
 
 export function unauthorizedResponse(): Response {
