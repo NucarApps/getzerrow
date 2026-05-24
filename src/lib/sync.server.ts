@@ -1478,6 +1478,7 @@ export async function runMessageJobs(
                         ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
                         : (r?.reason || null)),
                 }).eq("id", c.emailRowId);
+                if (passes && r?.folder_id) void bumpEmailsSinceLearn(r.folder_id);
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                 results.push({ id: c.job.id, ok: true });
               }),
