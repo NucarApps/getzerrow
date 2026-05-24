@@ -668,6 +668,8 @@ function InboxPage() {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
             const folderList = foldersQ.data ?? [];
             const currentFolderId = e.folder_id;
+            const showFolderPill = (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
+            const rowFolder = showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
             const isChecked = selectedIds.has(e.id);
             const toggleCheck = () => {
               setSelectedIds((prev) => {
