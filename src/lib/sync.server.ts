@@ -1497,6 +1497,7 @@ export async function runMessageJobs(
                     classified_by: "ai",
                     classification_reason: single.reason || null,
                   }).eq("id", c.emailRowId);
+                  if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
                 } catch (innerErr: any) {
