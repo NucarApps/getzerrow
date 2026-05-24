@@ -51,6 +51,26 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
   if (error || !data) throw new Error("Gmail account not found");
   return data as GmailAccount;
 }
+// Bounds for regex filter evaluation to prevent ReDoS (catastrophic backtracking).
+// Patterns and input are length-capped, and obviously dangerous patterns are rejected.
+const MAX_REGEX_PATTERN_LEN = 200;
+const MAX_REGEX_INPUT_LEN = 10_000;
+// Heuristic: nested quantifiers / overlapping alternation are the classic ReDoS shapes.
+const UNSAFE_REGEX_SHAPES = [
+  /(\([^)]*[+*][^)]*\))[+*]/, // (a+)+ / (a*)*
+  /(\[[^\]]+\][+*]){2,}/,      // [a-z]+[a-z]+ chains
+  /(\.\*){2,}/,                // .*.*
+];
+function isUnsafeRegex(pattern: string): boolean {
+  if (pattern.length > MAX_REGEX_PATTERN_LEN) return true;
+  return UNSAFE_REGEX_SHAPES.some((r) => r.test(pattern));
+}
+function safeRegexTest(pattern: string, input: string): boolean {
+  if (isUnsafeRegex(pattern)) return false;
+  const bounded = input.length > MAX_REGEX_INPUT_LEN ? input.slice(0, MAX_REGEX_INPUT_LEN) : input;
+  try { return new RegExp(pattern, "i").test(bounded); } catch { return false; }
+}
+
 
 function applyFilter(
   email: { from_addr: string; from_name: string; to_addrs: string; cc?: string; list_id?: string; in_reply_to?: string; subject: string; body_text: string; has_attachment: boolean },
