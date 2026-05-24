@@ -57,6 +57,9 @@ export type Folder = {
   min_ai_confidence?: number;
   snooze_hours?: number;
   overrides_inbox_override?: boolean;
+  auto_relearn?: boolean;
+  relearn_threshold?: number;
+  emails_since_learn?: number;
 };
 export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
 export type GLabel = { id: string; name: string; type: string };
