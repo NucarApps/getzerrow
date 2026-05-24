@@ -919,7 +919,7 @@ export type Database = {
           last_history_id: string | null
           last_poll_at: string | null
           updated_at: string
-          user_id: string | null
+          user_id: string
           watch_expiration: string | null
         }
         Insert: {
@@ -927,7 +927,7 @@ export type Database = {
           last_history_id?: string | null
           last_poll_at?: string | null
           updated_at?: string
-          user_id?: string | null
+          user_id: string
           watch_expiration?: string | null
         }
         Update: {
@@ -935,7 +935,7 @@ export type Database = {
           last_history_id?: string | null
           last_poll_at?: string | null
           updated_at?: string
-          user_id?: string | null
+          user_id?: string
           watch_expiration?: string | null
         }
         Relationships: []
