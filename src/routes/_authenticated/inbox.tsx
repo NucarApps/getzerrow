@@ -107,6 +107,17 @@ function EmailBodyFrame({ html }: { html: string }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const srcDoc = useMemo(() => {
+    // Sanitize email HTML to strip <script>, event handlers, and other
+    // dangerous constructs BEFORE injecting into the iframe. Even though the
+    // iframe is sandboxed without allow-same-origin, attacker scripts could
+    // otherwise auto-execute (outbound tracking beacons, popup phishing).
+    // Stripping them at the source removes that capability entirely.
+    const cleanHtml = DOMPurify.sanitize(html, {
+      USE_PROFILES: { html: true },
+      ADD_ATTR: ["target"],
+      FORBID_TAGS: ["script", "object", "embed", "form", "input", "meta", "link"],
+      FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover", "onfocus", "onblur", "onsubmit"],
+    });
     const resizeScript = `
 <script>
 (function(){
@@ -120,8 +131,6 @@ function EmailBodyFrame({ html }: { html: string }) {
       parent.postMessage({ __zerrowFrame: id, height: h }, "*");
     } catch(e){}
   }
-  // Post immediately and on every relevant lifecycle event so we never miss
-  // the parent's listener (which mounts after first paint).
   post();
   document.addEventListener("DOMContentLoaded", function(){
     post();
@@ -147,9 +156,7 @@ function EmailBodyFrame({ html }: { html: string }) {
   });
 })();
 </script>`;
-    // Force light scheme so emails authored with dark-mode CSS don't render
-    // white-on-white inside our white frame.
-    return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light only;}html,body{margin:0;padding:16px;background:#fff !important;color:#111 !important;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;word-wrap:break-word;overflow-wrap:break-word;}body *{color:inherit;}img{max-width:100%;height:auto;}a{color:#2563eb !important;}table{max-width:100%;}</style></head><body>${html}${resizeScript}</body></html>`;
+    return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light only;}html,body{margin:0;padding:16px;background:#fff !important;color:#111 !important;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;word-wrap:break-word;overflow-wrap:break-word;}body *{color:inherit;}img{max-width:100%;height:auto;}a{color:#2563eb !important;}table{max-width:100%;}</style></head><body>${cleanHtml}${resizeScript}</body></html>`;
   }, [html, frameId]);
 
   useLayoutEffect(() => {
