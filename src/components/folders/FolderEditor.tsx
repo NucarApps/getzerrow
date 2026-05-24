@@ -89,6 +89,7 @@ export function FolderEditor({
   const suggestFn = useServerFn(suggestRecategorization);
   const applyFn = useServerFn(applyRecategorization);
   const applyBehaviorFn = useServerFn(applyFolderBehaviorRetroactive);
+  const setAutoRelearnFn = useServerFn(setFolderAutoRelearn);
   const [local, setLocal] = useState(folder);
   const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
