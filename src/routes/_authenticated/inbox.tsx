@@ -306,12 +306,26 @@ function InboxPage() {
   // cursors[i] is the `received_at <` cursor used to fetch page i+1 (cursors[0] = null).
   const [page, setPage] = useState(1);
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const isNoRules = selectedFolder === "no_rules";
   useEffect(() => {
     setPage(1);
     setCursors([null]);
     setSelectedId(null);
+    setSelectedIds(new Set());
   }, [selectedFolder]);
   const cursor = cursors[page - 1] ?? null;
+
+  const reclassifyFn = useServerFn(reclassifyEmails);
+  const suggestFolderFn = useServerFn(suggestFolderFromSelection);
+  const createFolderAndAssignFn = useServerFn(createFolderAndAssign);
+  const [suggestion, setSuggestion] = useState<null | {
+    name: string; color: string; ai_rule: string;
+    filter_field: string | null; filter_op: string | null; filter_value: string;
+    why: string; email_ids: string[];
+  }>(null);
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [reclassifyBusy, setReclassifyBusy] = useState(false);
 
   const loadOlderFn = useServerFn(loadOlderFromGmail);
 
