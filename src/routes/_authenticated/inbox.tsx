@@ -678,13 +678,15 @@ function InboxPage() {
               });
             };
 
+            const RowTag: any = isNoRules ? "div" : "button";
             const rowInner = (
             <ContextMenu>
               <ContextMenuTrigger asChild>
-                <button
-                  onClick={(ev) => {
+                <RowTag
+                  role={isNoRules ? "button" : undefined}
+                  tabIndex={isNoRules ? 0 : undefined}
+                  onClick={(ev: any) => {
                     if (isNoRules) {
-                      ev.preventDefault();
                       toggleCheck();
                       return;
                     }
@@ -693,12 +695,12 @@ function InboxPage() {
                   className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
                 >
                   {isNoRules && (
-                    <span
+                    <div
                       className="absolute left-3 top-1/2 -translate-y-1/2"
-                      onClick={(ev) => { ev.stopPropagation(); toggleCheck(); }}
+                      onClick={(ev) => ev.stopPropagation()}
                     >
-                      <Checkbox checked={isChecked} onCheckedChange={toggleCheck} />
-                    </span>
+                      <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
+                    </div>
                   )}
                   {!e.is_read && !isNoRules && (
                     <span className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
