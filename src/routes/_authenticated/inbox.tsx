@@ -668,6 +668,8 @@ function InboxPage() {
             const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
             const folderList = foldersQ.data ?? [];
             const currentFolderId = e.folder_id;
+            const showFolderPill = (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
+            const rowFolder = showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
             const isChecked = selectedIds.has(e.id);
             const toggleCheck = () => {
               setSelectedIds((prev) => {
@@ -711,7 +713,15 @@ function InboxPage() {
                       {e.received_at ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false }) : ""}
                     </span>
                   </div>
-                  <div className={`truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}>{decodeEntities(e.subject) || "(no subject)"}</div>
+                  <div className="flex items-center gap-1.5">
+                    <div className={`min-w-0 flex-1 truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}>{decodeEntities(e.subject) || "(no subject)"}</div>
+                    {rowFolder && (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: rowFolder.color }} aria-hidden />
+                        <span className="max-w-[80px] truncate">{rowFolder.name}</span>
+                      </span>
+                    )}
+                  </div>
                   {e.ai_summary ? (
                     <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
                       <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
@@ -779,11 +789,23 @@ function InboxPage() {
                       <ContextMenuItem
                         key={f.id}
                         onSelect={async () => {
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: f.id, is_archived: true, classified_by: "manual_move" } : x)));
+                          // Optimistically remove from any view that wouldn't show an archived row in this folder.
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                            prev?.flatMap((x) => {
+                              if (x.id !== e.id) return [x];
+                              // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
+                              return [{ ...x, folder_id: f.id, is_archived: true, classified_by: "manual_move" }];
+                            }),
+                          );
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
+                            prev?.filter((x) => x.id !== e.id),
+                          );
                           try {
                             await moveFolderFn({ data: { email_id: e.id, to_folder_id: f.id } });
                             toast.success(`Moved to ${f.name}`);
-                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            // Defer refetch so the server-side Gmail label sync settles
+                            // before a stale reconcile flips is_archived back to false.
+                            setTimeout(() => qc.invalidateQueries({ queryKey: ["emails"] }), 1500);
                           } catch (err: any) {
                             qc.invalidateQueries({ queryKey: ["emails"] });
                             toast.error(err.message);
