@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { learnFromLinkedLabel, regenerateFolderProfile } from "@/lib/sync.server";
-import { isAuthorizedCron, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 
 export const Route = createFileRoute("/api/public/hooks/relearn-folders")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!isAuthorizedCron(request)) return unauthorizedResponse();
+        if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
 
         const { data: due, error } = await supabaseAdmin
           .from("folders")
