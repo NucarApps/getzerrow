@@ -5,6 +5,37 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 import { sendContactShareEmail } from "./cards.server";
+import { listMessages, getMessage, parseMessage } from "./gmail.server";
+
+/** Fetch recent Gmail messages matching a query, for a user's connected accounts.
+ * Returns parsed messages mapped into the same shape as our local emails_decrypted rows.
+ * Swallows per-account errors (expired tokens, quota, insufficient scopes) and moves on. */
+async function fetchFromGmail(
+  accountIds: string[],
+  query: string,
+  maxResults: number,
+): Promise<Array<ReturnType<typeof parseMessage>>> {
+  for (const accountId of accountIds) {
+    try {
+      const list = await listMessages(accountId, { q: query, maxResults });
+      const ids = (list.messages ?? []).map((m) => m.id);
+      if (ids.length === 0) continue;
+      const out: Array<ReturnType<typeof parseMessage>> = [];
+      for (const id of ids) {
+        try {
+          const msg = await getMessage(accountId, id);
+          out.push(parseMessage(msg));
+        } catch (e) {
+          console.error("fetchFromGmail getMessage failed", (e as Error)?.message);
+        }
+      }
+      if (out.length > 0) return out;
+    } catch (e) {
+      console.error("fetchFromGmail listMessages failed", (e as Error)?.message);
+    }
+  }
+  return [];
+}
 
 function getModel(modelId = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY;
