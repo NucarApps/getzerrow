@@ -632,7 +632,8 @@ export type Database = {
       }
       gmail_accounts: {
         Row: {
-          access_token: string
+          access_token: string | null
+          access_token_enc: string | null
           created_at: string
           email_address: string
           history_id: string | null
@@ -641,14 +642,16 @@ export type Database = {
           last_poll_at: string | null
           last_push_at: string | null
           reconcile_cursor: string | null
-          refresh_token: string
+          refresh_token: string | null
+          refresh_token_enc: string | null
           token_expires_at: string
           updated_at: string
           user_id: string
           watch_expiration: string | null
         }
         Insert: {
-          access_token: string
+          access_token?: string | null
+          access_token_enc?: string | null
           created_at?: string
           email_address: string
           history_id?: string | null
@@ -657,14 +660,16 @@ export type Database = {
           last_poll_at?: string | null
           last_push_at?: string | null
           reconcile_cursor?: string | null
-          refresh_token: string
+          refresh_token?: string | null
+          refresh_token_enc?: string | null
           token_expires_at: string
           updated_at?: string
           user_id: string
           watch_expiration?: string | null
         }
         Update: {
-          access_token?: string
+          access_token?: string | null
+          access_token_enc?: string | null
           created_at?: string
           email_address?: string
           history_id?: string | null
@@ -673,7 +678,8 @@ export type Database = {
           last_poll_at?: string | null
           last_push_at?: string | null
           reconcile_cursor?: string | null
-          refresh_token?: string
+          refresh_token?: string | null
+          refresh_token_enc?: string | null
           token_expires_at?: string
           updated_at?: string
           user_id?: string
@@ -1173,7 +1179,7 @@ export type Database = {
       }
       cron_secret_matches: { Args: { provided: string }; Returns: boolean }
       get_gmail_oauth_tokens: {
-        Args: { p_account_id: string }
+        Args: { p_account_id: string; p_key: string }
         Returns: {
           access_token: string
           refresh_token: string
@@ -1199,6 +1205,7 @@ export type Database = {
         Args: {
           p_access_token: string
           p_account_id: string
+          p_key: string
           p_refresh_token: string
           p_token_expires_at: string
         }
@@ -1208,6 +1215,7 @@ export type Database = {
         Args: {
           p_access_token: string
           p_email_address: string
+          p_key: string
           p_refresh_token: string
           p_token_expires_at: string
           p_user_id: string
