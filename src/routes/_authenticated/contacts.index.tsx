@@ -348,7 +348,7 @@ function ContactsPage() {
                   return (
                     <li key={c.id}>
                       <button
-                        onClick={() => navigate({ to: "/contacts/$id", params: { id: c.id } })}
+                        onClick={() => setDrawerId(c.id)}
                         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
                       >
                         {showLogo ? (
