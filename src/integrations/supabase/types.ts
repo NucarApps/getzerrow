@@ -975,6 +975,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bump_history_id_if_greater: {
+        Args: {
+          p_account_id: string
+          p_new_history_id: string
+          p_watch_expiration?: string
+        }
+        Returns: boolean
+      }
+      claim_forward_retries: {
+        Args: { p_limit: number }
+        Returns: {
+          body_text: string
+          folder_id: string
+          forward_attempts: number
+          from_addr: string
+          from_name: string
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          received_at: string
+          snippet: string
+          subject: string
+        }[]
+      }
       claim_message_jobs: {
         Args: { p_limit: number; p_priority?: number }
         Returns: {
