@@ -466,12 +466,9 @@ function InboxPage() {
 
   const filtered = useMemo(() => {
     if (isSearching) {
-      const qstr = query.trim();
-      // Parse Gmail-style operators: from:foo@bar.com, to:"a b@c.com"
-      const parsed = parseSearchQuery(qstr);
-      const fromNeedle = parsed.from?.toLowerCase() ?? null;
-      const toNeedle = parsed.to?.toLowerCase() ?? null;
-      const rest = parsed.rest.toLowerCase();
+      const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
+      const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
+      const rest = parsedQuery.rest.toLowerCase();
 
       const scored = pageRows.map((e) => {
         const fromAddr = (e.from_addr ?? "").toLowerCase();
@@ -500,7 +497,7 @@ function InboxPage() {
       return [...scored.filter((s) => s.hit), ...scored.filter((s) => !s.hit)].map((s) => s.e);
     }
     return pageRows;
-  }, [pageRows, isSearching, query]);
+  }, [pageRows, isSearching, parsedQuery]);
 
 
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
