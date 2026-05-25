@@ -36,8 +36,10 @@ async function getOwnedAccount(userId: string, accountId: string) {
 }
 
 async function getEmailAccount(userId: string, emailId: string) {
+  // emails_decrypted view decrypts body_text on read. RLS doesn't apply
+  // to supabaseAdmin (service role); we enforce the user_id check below.
   const { data, error } = await supabaseAdmin
-    .from("emails")
+    .from("emails_decrypted")
     .select("gmail_message_id, gmail_account_id, user_id, thread_id, from_addr, subject, body_text, from_name")
     .eq("id", emailId)
     .single();
@@ -667,7 +669,7 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
-      .from("emails")
+      .from("emails_decrypted")
       .select("id, user_id, folder_id, from_addr, from_name, subject, snippet, body_text")
       .eq("id", data.email_id).single();
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
@@ -1228,7 +1230,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
     const { data: email } = await supabaseAdmin
-      .from("emails")
+      .from("emails_decrypted")
       .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
       .eq("id", data.email_id)
       .single();
@@ -2352,7 +2354,7 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
     const { data: rows } = await supabaseAdmin
-      .from("emails")
+      .from("emails_decrypted")
       .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
       .in("id", data.email_ids);
     if (!rows) return { routed: 0, unchanged: 0, failed: 0 };

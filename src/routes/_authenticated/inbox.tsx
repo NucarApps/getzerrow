@@ -499,7 +499,10 @@ function InboxPage() {
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       if (!selectedId) return null;
-      const { data } = await supabase.from("emails").select("*").eq("id", selectedId).maybeSingle();
+      // emails_decrypted is a security_invoker view that auto-decrypts
+      // body_text + body_html via pgsodium AEAD. The user's RLS still
+      // applies — they can only fetch their own email bodies.
+      const { data } = await supabase.from("emails_decrypted").select("*").eq("id", selectedId).maybeSingle();
       return (data ?? null) as Email | null;
     },
   });
