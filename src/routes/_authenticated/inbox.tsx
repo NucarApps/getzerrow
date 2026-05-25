@@ -362,11 +362,40 @@ function InboxPage() {
   // not rendered in the inbox.
   const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels";
 
+  // Parse the search query once so both the data fetcher and the local filter
+  // agree on what's an operator query vs free-text.
+  const parsedQuery = useMemo(() => parseSearchQuery(query.trim()), [query]);
+  const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
+
   const emailsQ = useQuery<Email[]>({
     queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
     queryFn: async () => {
       if (isSearching) {
-        // Global search over the most recent messages, including archived/stripped.
+        // Operator-aware search: when the user typed `from:` / `to:`, filter
+        // server-side so we don't get capped by the 2000-newest window.
+        if (hasOperator) {
+          const esc = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
+          let q = supabase
+            .from("emails")
+            .select(LIST_COLUMNS)
+            .order("received_at", { ascending: false, nullsFirst: false })
+            .limit(500);
+          if (parsedQuery.from) {
+            const v = esc(parsedQuery.from);
+            q = q.or(`from_addr.ilike.%${v}%,from_name.ilike.%${v}%`);
+          }
+          if (parsedQuery.to) {
+            const v = esc(parsedQuery.to);
+            q = q.ilike("to_addrs", `%${v}%`);
+          }
+          if (parsedQuery.rest) {
+            const v = esc(parsedQuery.rest);
+            q = q.or(`subject.ilike.%${v}%,snippet.ilike.%${v}%`);
+          }
+          const { data } = await q;
+          return (data ?? []) as Email[];
+        }
+        // Free-text search: load the most recent corpus and score locally.
         const { data } = await supabase
           .from("emails")
           .select(LIST_COLUMNS)
