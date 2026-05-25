@@ -39,7 +39,7 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
           (drifty ?? []).map((r) => r.email_address ?? "").filter(Boolean),
         );
 
-        const results: Array<{ account: string; result?: unknown; error?: string; limit?: number }> = [];
+        const results: Array<{ account_id: string; result?: unknown; error?: string; limit?: number }> = [];
         for (const acc of accounts ?? []) {
           const lastSync = acc.last_history_sync_at
             ? new Date(acc.last_history_sync_at).getTime()

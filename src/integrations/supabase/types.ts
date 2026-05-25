@@ -941,6 +941,13 @@ export type Database = {
             referencedRelation: "emails"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "reply_drafts_email_id_fkey"
+            columns: ["email_id"]
+            isOneToOne: false
+            referencedRelation: "emails_decrypted"
+            referencedColumns: ["id"]
+          },
         ]
       }
       sync_state: {
@@ -972,7 +979,141 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      emails_decrypted: {
+        Row: {
+          ai_confidence: number | null
+          ai_summary: string | null
+          body_html: string | null
+          body_text: string | null
+          cc: string | null
+          classification_reason: string | null
+          classified_by: string | null
+          created_at: string | null
+          folder_id: string | null
+          forward_attempts: number | null
+          forward_last_error: string | null
+          forward_locked_at: string | null
+          forward_next_retry_at: string | null
+          forwarded_at: string | null
+          forwarded_to: string | null
+          from_addr: string | null
+          from_name: string | null
+          gmail_account_id: string | null
+          gmail_message_id: string | null
+          has_attachment: boolean | null
+          id: string | null
+          in_reply_to: string | null
+          is_archived: boolean | null
+          is_read: boolean | null
+          list_id: string | null
+          matched_filter_ids: string[] | null
+          matched_folder_ids: string[] | null
+          processed_at: string | null
+          published_at_ms: number | null
+          raw_labels: string[] | null
+          received_at: string | null
+          snippet: string | null
+          snoozed_until: string | null
+          subject: string | null
+          thread_id: string | null
+          to_addrs: string | null
+          user_id: string | null
+        }
+        Insert: {
+          ai_confidence?: number | null
+          ai_summary?: string | null
+          body_html?: string | null
+          body_text?: string | null
+          cc?: string | null
+          classification_reason?: string | null
+          classified_by?: string | null
+          created_at?: string | null
+          folder_id?: string | null
+          forward_attempts?: number | null
+          forward_last_error?: string | null
+          forward_locked_at?: string | null
+          forward_next_retry_at?: string | null
+          forwarded_at?: string | null
+          forwarded_to?: string | null
+          from_addr?: string | null
+          from_name?: string | null
+          gmail_account_id?: string | null
+          gmail_message_id?: string | null
+          has_attachment?: boolean | null
+          id?: string | null
+          in_reply_to?: string | null
+          is_archived?: boolean | null
+          is_read?: boolean | null
+          list_id?: string | null
+          matched_filter_ids?: string[] | null
+          matched_folder_ids?: string[] | null
+          processed_at?: string | null
+          published_at_ms?: number | null
+          raw_labels?: string[] | null
+          received_at?: string | null
+          snippet?: string | null
+          snoozed_until?: string | null
+          subject?: string | null
+          thread_id?: string | null
+          to_addrs?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          ai_confidence?: number | null
+          ai_summary?: string | null
+          body_html?: string | null
+          body_text?: string | null
+          cc?: string | null
+          classification_reason?: string | null
+          classified_by?: string | null
+          created_at?: string | null
+          folder_id?: string | null
+          forward_attempts?: number | null
+          forward_last_error?: string | null
+          forward_locked_at?: string | null
+          forward_next_retry_at?: string | null
+          forwarded_at?: string | null
+          forwarded_to?: string | null
+          from_addr?: string | null
+          from_name?: string | null
+          gmail_account_id?: string | null
+          gmail_message_id?: string | null
+          has_attachment?: boolean | null
+          id?: string | null
+          in_reply_to?: string | null
+          is_archived?: boolean | null
+          is_read?: boolean | null
+          list_id?: string | null
+          matched_filter_ids?: string[] | null
+          matched_folder_ids?: string[] | null
+          processed_at?: string | null
+          published_at_ms?: number | null
+          raw_labels?: string[] | null
+          received_at?: string | null
+          snippet?: string | null
+          snoozed_until?: string | null
+          subject?: string | null
+          thread_id?: string | null
+          to_addrs?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emails_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "emails_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       bump_history_id_if_greater: {
@@ -1031,9 +1172,47 @@ export type Database = {
         }[]
       }
       cron_secret_matches: { Args: { provided: string }; Returns: boolean }
+      get_gmail_oauth_tokens: {
+        Args: { p_account_id: string }
+        Returns: {
+          access_token: string
+          refresh_token: string
+          token_expires_at: string
+        }[]
+      }
       get_sync_latency_stats: {
         Args: { p_lookback_hours?: number; p_user_id: string }
         Returns: Json
+      }
+      list_decryption_audit: {
+        Args: { p_limit?: number }
+        Returns: {
+          caller: string
+          id: string
+          kind: string
+          occurred_at: string
+          row_id: string
+          success: boolean
+        }[]
+      }
+      set_gmail_oauth_tokens: {
+        Args: {
+          p_access_token: string
+          p_account_id: string
+          p_refresh_token: string
+          p_token_expires_at: string
+        }
+        Returns: undefined
+      }
+      upsert_gmail_oauth_account: {
+        Args: {
+          p_access_token: string
+          p_email_address: string
+          p_refresh_token: string
+          p_token_expires_at: string
+          p_user_id: string
+        }
+        Returns: string
       }
     }
     Enums: {

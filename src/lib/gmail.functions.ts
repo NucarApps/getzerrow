@@ -45,7 +45,17 @@ async function getEmailAccount(userId: string, emailId: string) {
     .single();
   if (error || !data) throw new Error("Email not found");
   if (data.user_id !== userId) throw new Error("Not authorized");
-  return data;
+  if (!data.gmail_message_id || !data.gmail_account_id) throw new Error("Email is missing Gmail identifiers");
+  return {
+    gmail_message_id: data.gmail_message_id,
+    gmail_account_id: data.gmail_account_id,
+    user_id: data.user_id,
+    thread_id: data.thread_id,
+    from_addr: data.from_addr,
+    subject: data.subject,
+    body_text: data.body_text,
+    from_name: data.from_name,
+  };
 }
 
 export const listMyGmailAccounts = createServerFn({ method: "GET" })
@@ -1235,6 +1245,12 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       .eq("id", data.email_id)
       .single();
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
+    if (!email.id || !email.gmail_account_id || !email.gmail_message_id) {
+      throw new Error("Email is missing required identifiers");
+    }
+    const emailId = email.id;
+    const emailAccountId = email.gmail_account_id;
+    const emailMessageId = email.gmail_message_id;
 
     const parsed = {
       from_addr: email.from_addr ?? "",
@@ -2365,6 +2381,7 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
 
     for (const email of rows) {
       if (email.user_id !== context.userId) { failed++; continue; }
+      if (!email.id || !email.gmail_account_id) { failed++; continue; }
       try {
         const parsed = {
           from_addr: email.from_addr ?? "",
