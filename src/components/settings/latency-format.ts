@@ -35,3 +35,29 @@ export const LATENCY_TONE_CLASS: Record<LatencyTone, string> = {
   bad:   "text-destructive",
   muted: "text-muted-foreground",
 };
+
+export type StalenessState =
+  | { kind: "none" }
+  | { kind: "no_recent_push" }
+  | { kind: "live"; ageMinutes: number }
+  | { kind: "stale_amber"; ageHours: number }
+  | { kind: "stale_red"; ageHours: number };
+
+/** Map (lastPushAt, sampleCount) → operator staleness state. Used by the
+ * latency tile's StalenessBadge — pure so the SLO bucket boundaries can
+ * be unit-tested. Boundaries: <1h live, 1-6h amber, ≥6h red. */
+export function computeStaleness(
+  lastPushAt: string | Date | null,
+  sampleCount: number,
+  now: Date = new Date(),
+): StalenessState {
+  if (!lastPushAt) {
+    return sampleCount > 0 ? { kind: "no_recent_push" } : { kind: "none" };
+  }
+  const ageMs = now.getTime() - new Date(lastPushAt).getTime();
+  if (ageMs < 0) return { kind: "live", ageMinutes: 0 };
+  const ageHours = ageMs / 3_600_000;
+  if (ageHours >= 6) return { kind: "stale_red", ageHours };
+  if (ageHours >= 1) return { kind: "stale_amber", ageHours };
+  return { kind: "live", ageMinutes: Math.floor(ageMs / 60_000) };
+}

@@ -113,6 +113,34 @@ d("gmail-backfill-tick is idempotent (no active jobs → 0 processed)", () => {
   });
 });
 
+d("gmail-retention prunes pubsub_events + DLQ rows", () => {
+  it("returns {ok, pubsub, dlq} with counts (or null if RPC missing)", async () => {
+    const res = await authedPost("/api/public/gmail-retention");
+    const json = await expectJsonShape(res, ["ok", "pubsub", "dlq"]);
+    expect(json.ok).toBe(true);
+    if (json.pubsub) {
+      expect(json.pubsub).toHaveProperty("deleted");
+      expect(json.pubsub).toHaveProperty("kept_errors");
+      expect(json.pubsub).toHaveProperty("total_before");
+    }
+    if (json.dlq) {
+      expect(json.dlq).toHaveProperty("deleted");
+      expect(json.dlq).toHaveProperty("total_before");
+    }
+  });
+
+  it("honors query params (pubsub_keep_days=1 caps lookback aggressively)", async () => {
+    // Just verify the endpoint accepts custom retention windows without
+    // crashing. Doesn't assert on counts because they depend on existing
+    // data.
+    const res = await fetch(
+      `${BASE}/api/public/gmail-retention?pubsub_keep_days=1&pubsub_limit=10&dlq_keep_days=1&dlq_limit=10`,
+      { method: "POST", headers: { authorization: `Bearer ${SECRET}` } },
+    );
+    expect(res.status, await res.clone().text()).toBe(200);
+  });
+});
+
 d("gmail-dlq-replay returns both DLQ and forward summaries", () => {
   it("authenticated POST returns {ok, dlq, forwards}", async () => {
     const res = await authedPost("/api/public/gmail-dlq-replay");

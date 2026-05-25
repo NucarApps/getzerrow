@@ -17,6 +17,7 @@ const CRON_ENDPOINTS = [
   "/api/public/gmail-reconcile",
   "/api/public/gmail-backfill-tick",
   "/api/public/gmail-dlq-replay",
+  "/api/public/gmail-retention",
   "/api/public/hooks/run-folder-summaries",
 ];
 

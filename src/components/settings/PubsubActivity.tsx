@@ -19,7 +19,7 @@ import {
   Activity, Copy, CheckCircle2, Info, Settings2, Gauge,
 } from "lucide-react";
 import { toast } from "sonner";
-import { fmtLatency, latencyTone, LATENCY_TONE_CLASS } from "./latency-format";
+import { fmtLatency, latencyTone, LATENCY_TONE_CLASS, computeStaleness } from "./latency-format";
 
 type Filter = "all" | "push" | "poll" | "errors" | "watch_renew";
 type AlertKind = "danger" | "warn" | "success" | "info";
@@ -101,6 +101,37 @@ function KV({ k, v, mono, bad }: { k: string; v: React.ReactNode; mono?: boolean
       <div className={`${mono ? "font-mono" : ""} ${bad ? "text-destructive" : ""} break-all`}>{v}</div>
     </div>
   );
+}
+
+// Operator-friendly indicator for "is the push stream flowing?".
+// Decision is in computeStaleness (./latency-format.ts) so the SLO
+// boundaries (1h amber, 6h red) are unit-testable.
+function StalenessBadge({ lastPushAt, sampleCount }: { lastPushAt: string | null; sampleCount: number }) {
+  const s = computeStaleness(lastPushAt, sampleCount);
+  switch (s.kind) {
+    case "none":
+      return null;
+    case "no_recent_push":
+      return <Badge variant="outline" className="h-5 text-[10px] font-normal">no recent push</Badge>;
+    case "live":
+      return (
+        <Badge variant="outline" className="h-5 border-emerald-500/40 bg-emerald-500/10 text-[10px] font-normal text-emerald-700 dark:text-emerald-400">
+          live · last push {s.ageMinutes < 1 ? "<1m" : `${s.ageMinutes}m`} ago
+        </Badge>
+      );
+    case "stale_amber":
+      return (
+        <Badge variant="outline" className="h-5 border-amber-500/40 bg-amber-500/10 text-[10px] font-normal text-amber-700 dark:text-amber-400">
+          {Math.round(s.ageHours)}h stale
+        </Badge>
+      );
+    case "stale_red":
+      return (
+        <Badge variant="destructive" className="h-5 text-[10px] font-normal">
+          {s.ageHours >= 24 ? `${Math.round(s.ageHours / 24)}d stale` : `${Math.round(s.ageHours)}h stale`}
+        </Badge>
+      );
+  }
 }
 
 function LatencyBucket({
@@ -517,6 +548,7 @@ export function PubsubActivity() {
             <div className="flex items-center gap-2">
               <Gauge className="h-4 w-4 text-muted-foreground" />
               <h3 className="text-sm font-medium">Push latency (last 24h)</h3>
+              <StalenessBadge lastPushAt={stats?.lastPushAt ?? null} sampleCount={latencyQ.data?.push_to_ack?.count ?? 0} />
             </div>
             <span className="text-[11px] text-muted-foreground">
               {latencyQ.isFetching ? "refreshing…" : "auto-refreshes every minute"}
