@@ -60,10 +60,20 @@ export const Route = createFileRoute("/api/public/logo")({
         const url = new URL(request.url);
         const domain = (url.searchParams.get("domain") || "").trim().toLowerCase();
         const size = Number(url.searchParams.get("size") || "64");
+        const providerParam = url.searchParams.get("provider");
         if (!domain || !DOMAIN_RE.test(domain) || isBlockedDomain(domain)) {
           return new Response("Bad domain", { status: 400 });
         }
-        for (const candidate of providersFor(domain, size)) {
+        const all = providersFor(domain, size);
+        let candidates = all;
+        if (providerParam !== null) {
+          const idx = Number(providerParam);
+          if (!Number.isInteger(idx) || idx < 0 || idx >= all.length) {
+            return new Response("Bad provider", { status: 400 });
+          }
+          candidates = [all[idx]];
+        }
+        for (const candidate of candidates) {
           const res = await tryFetch(candidate);
           if (!res) continue;
           const buf = await res.arrayBuffer();
