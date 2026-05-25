@@ -23,8 +23,8 @@ function providersFor(domain: string, size: number): string[] {
   const d = encodeURIComponent(domain);
   const s = Math.max(256, Math.min(512, size));
   return [
-    `https://logo.clearbit.com/${d}?size=${s}`,
     `https://img.logo.dev/${d}?size=${s}&format=png`,
+    `https://logo.clearbit.com/${d}?size=${s}`,
     `https://icons.duckduckgo.com/ip3/${domain}.ico`,
     `https://${domain}/apple-touch-icon.png`,
     `https://${domain}/apple-touch-icon-precomposed.png`,
