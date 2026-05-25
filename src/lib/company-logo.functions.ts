@@ -9,7 +9,11 @@ const domainSchema = z.string().trim().toLowerCase().refine((d) => DOMAIN_RE.tes
   message: "Invalid domain",
 });
 
-export type CompanyLogoChoice = { domain: string; provider: number };
+export type CompanyLogoChoice = {
+  domain: string;
+  provider: number;
+  source_domain: string | null;
+};
 
 export const listCompanyLogoChoices = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -17,7 +21,7 @@ export const listCompanyLogoChoices = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data, error } = await supabase
       .from("company_logo_choices")
-      .select("domain, provider")
+      .select("domain, provider, source_domain")
       .eq("user_id", userId);
     if (error) throw new Error(error.message);
     return (data ?? []) as CompanyLogoChoice[];
@@ -30,15 +34,25 @@ export const setCompanyLogoChoice = createServerFn({ method: "POST" })
       .object({
         domain: domainSchema,
         provider: z.number().int().min(0).max(LOGO_PROVIDER_COUNT - 1),
+        sourceDomain: domainSchema.optional(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const source = data.sourceDomain && data.sourceDomain !== data.domain
+      ? data.sourceDomain
+      : null;
     const { error } = await supabase
       .from("company_logo_choices")
       .upsert(
-        { user_id: userId, domain: data.domain, provider: data.provider, updated_at: new Date().toISOString() },
+        {
+          user_id: userId,
+          domain: data.domain,
+          provider: data.provider,
+          source_domain: source,
+          updated_at: new Date().toISOString(),
+        },
         { onConflict: "user_id,domain" },
       );
     if (error) throw new Error(error.message);
