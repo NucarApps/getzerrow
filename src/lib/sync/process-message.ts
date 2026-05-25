@@ -62,7 +62,7 @@ export async function processGmailMessage(
   // trigger, so reading them would always look empty.
   const { data: existing } = await supabaseAdmin
     .from("emails")
-    .select("id, from_addr, subject, body_text_encrypted, body_html_encrypted, received_at")
+    .select("id, from_addr, subject, body_text, body_html, received_at")
     .eq("gmail_message_id", gmailId)
     .eq("gmail_account_id", accountId)
     .maybeSingle();
@@ -83,7 +83,7 @@ export async function processGmailMessage(
     const needsRepair =
       !existing.from_addr ||
       !existing.subject ||
-      (!existing.body_text_encrypted && !existing.body_html_encrypted) ||
+      (!existing.body_text && !existing.body_html) ||
       !existing.received_at;
     if (needsRepair) {
       await supabaseAdmin.from("emails").update({

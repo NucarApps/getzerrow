@@ -39,7 +39,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     // emails_encrypt_body trigger after the first write; we only need
     // to know whether body content EXISTS, so we read the encrypted-
     // column presence instead.
-    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text_encrypted, body_html_encrypted, received_at, folder_id")
+    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
     .eq("gmail_account_id", accountId)
     .eq("is_archived", false)
     .order("received_at", { ascending: false, nullsFirst: true })
@@ -62,7 +62,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     // emails_encrypt_body trigger after the first write; we only need
     // to know whether body content EXISTS, so we read the encrypted-
     // column presence instead.
-    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text_encrypted, body_html_encrypted, received_at, folder_id")
+    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
       .eq("gmail_account_id", accountId)
       .eq("is_archived", false);
     if (tailAnchor) q = q.lt("received_at", tailAnchor);
@@ -109,7 +109,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       const needsRepair =
         !row.from_addr ||
         !row.subject ||
-        (!row.body_text_encrypted && !row.body_html_encrypted) ||
+        (!row.body_text && !row.body_html) ||
         !row.received_at;
 
       if (needsRepair) {
