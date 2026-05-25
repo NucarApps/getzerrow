@@ -69,8 +69,8 @@ type Email = {
   from_name: string | null;
   subject: string | null;
   snippet: string | null;
-  body_text: string | null;
-  body_html: string | null;
+  body_text?: string | null;
+  body_html?: string | null;
   received_at: string | null;
   is_read: boolean;
   is_archived: boolean;
@@ -1670,7 +1670,7 @@ function opLabel(op: string) {
 
 // Mirror of applyFilter in src/lib/sync.server.ts — keep in sync.
 function applyFilterClient(
-  email: { from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text: string | null; has_attachment: boolean },
+  email: { from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text?: string | null; has_attachment: boolean },
   f: { field: string; op: string; value: string },
 ): boolean {
   const v = (f.value || "").toLowerCase();

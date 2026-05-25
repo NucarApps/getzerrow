@@ -265,6 +265,10 @@ export type Database = {
           classified_by: string | null
           created_at: string
           folder_id: string | null
+          forward_attempts: number
+          forward_last_error: string | null
+          forward_locked_at: string | null
+          forward_next_retry_at: string | null
           forwarded_at: string | null
           forwarded_to: string | null
           from_addr: string | null
@@ -280,6 +284,7 @@ export type Database = {
           matched_filter_ids: string[]
           matched_folder_ids: string[]
           processed_at: string | null
+          published_at_ms: number | null
           raw_labels: string[] | null
           received_at: string | null
           snippet: string | null
@@ -299,6 +304,10 @@ export type Database = {
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
+          forward_attempts?: number
+          forward_last_error?: string | null
+          forward_locked_at?: string | null
+          forward_next_retry_at?: string | null
           forwarded_at?: string | null
           forwarded_to?: string | null
           from_addr?: string | null
@@ -314,6 +323,7 @@ export type Database = {
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
           processed_at?: string | null
+          published_at_ms?: number | null
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
@@ -333,6 +343,10 @@ export type Database = {
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
+          forward_attempts?: number
+          forward_last_error?: string | null
+          forward_locked_at?: string | null
+          forward_next_retry_at?: string | null
           forwarded_at?: string | null
           forwarded_to?: string | null
           from_addr?: string | null
@@ -348,6 +362,7 @@ export type Database = {
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
           processed_at?: string | null
+          published_at_ms?: number | null
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
@@ -622,7 +637,10 @@ export type Database = {
           email_address: string
           history_id: string | null
           id: string
+          last_history_sync_at: string | null
           last_poll_at: string | null
+          last_push_at: string | null
+          reconcile_cursor: string | null
           refresh_token: string
           token_expires_at: string
           updated_at: string
@@ -635,7 +653,10 @@ export type Database = {
           email_address: string
           history_id?: string | null
           id?: string
+          last_history_sync_at?: string | null
           last_poll_at?: string | null
+          last_push_at?: string | null
+          reconcile_cursor?: string | null
           refresh_token: string
           token_expires_at: string
           updated_at?: string
@@ -648,7 +669,10 @@ export type Database = {
           email_address?: string
           history_id?: string | null
           id?: string
+          last_history_sync_at?: string | null
           last_poll_at?: string | null
+          last_push_at?: string | null
+          reconcile_cursor?: string | null
           refresh_token?: string
           token_expires_at?: string
           updated_at?: string
@@ -734,6 +758,7 @@ export type Database = {
           locked_at: string | null
           next_run_at: string
           priority: number
+          published_at_ms: number | null
           status: string
           subject: string | null
           updated_at: string
@@ -750,6 +775,7 @@ export type Database = {
           locked_at?: string | null
           next_run_at?: string
           priority?: number
+          published_at_ms?: number | null
           status?: string
           subject?: string | null
           updated_at?: string
@@ -766,6 +792,7 @@ export type Database = {
           locked_at?: string | null
           next_run_at?: string
           priority?: number
+          published_at_ms?: number | null
           status?: string
           subject?: string | null
           updated_at?: string
@@ -842,6 +869,7 @@ export type Database = {
           event_type: string
           history_id: string | null
           id: string
+          latency_ms: number | null
           message_id: string | null
           payload: Json | null
           publish_time: string | null
@@ -857,6 +885,7 @@ export type Database = {
           event_type?: string
           history_id?: string | null
           id?: string
+          latency_ms?: number | null
           message_id?: string | null
           payload?: Json | null
           publish_time?: string | null
@@ -872,6 +901,7 @@ export type Database = {
           event_type?: string
           history_id?: string | null
           id?: string
+          latency_ms?: number | null
           message_id?: string | null
           payload?: Json | null
           publish_time?: string | null
@@ -945,6 +975,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bump_history_id_if_greater: {
+        Args: {
+          p_account_id: string
+          p_new_history_id: string
+          p_watch_expiration?: string
+        }
+        Returns: boolean
+      }
+      claim_forward_retries: {
+        Args: { p_limit: number }
+        Returns: {
+          body_text: string
+          folder_id: string
+          forward_attempts: number
+          from_addr: string
+          from_name: string
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          received_at: string
+          snippet: string
+          subject: string
+        }[]
+      }
       claim_message_jobs: {
         Args: { p_limit: number; p_priority?: number }
         Returns: {
@@ -953,10 +1007,34 @@ export type Database = {
           gmail_message_id: string
           id: string
           priority: number
+          published_at_ms: number
           user_id: string
         }[]
       }
+      cleanup_old_dlq_jobs: {
+        Args: { p_batch_limit?: number; p_keep_days?: number }
+        Returns: {
+          deleted: number
+          total_before: number
+        }[]
+      }
+      cleanup_old_pubsub_events: {
+        Args: {
+          p_batch_limit?: number
+          p_keep_days?: number
+          p_keep_errors_days?: number
+        }
+        Returns: {
+          deleted: number
+          kept_errors: number
+          total_before: number
+        }[]
+      }
       cron_secret_matches: { Args: { provided: string }; Returns: boolean }
+      get_sync_latency_stats: {
+        Args: { p_lookback_hours?: number; p_user_id: string }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
