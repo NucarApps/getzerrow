@@ -69,8 +69,8 @@ type Email = {
   from_name: string | null;
   subject: string | null;
   snippet: string | null;
-  body_text: string | null;
-  body_html: string | null;
+  body_text?: string | null;
+  body_html?: string | null;
   received_at: string | null;
   is_read: boolean;
   is_archived: boolean;
