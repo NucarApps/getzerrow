@@ -273,7 +273,7 @@ function parseSearchQuery(input: string): { from: string | null; to: string | nu
   let from: string | null = null;
   let to: string | null = null;
   // Match from:value or to:value where value is either "quoted string" or non-whitespace.
-  const re = /\b(from|to):(?:"([^"]+)"|(\S+))/gi;
+  const re = /\b(from|to):\s*(?:"([^"]+)"|(\S+))/gi;
   const rest = input.replace(re, (_m, key: string, quoted?: string, bare?: string) => {
     const value = (quoted ?? bare ?? "").trim();
     if (!value) return "";
