@@ -996,17 +996,14 @@ export async function backfillRecent(accountId: string, userId: string, maxResul
   // drains within seconds and we don't block the calling request (often the
   // Pub/Sub webhook). Widened window to 30d to cover longer outages.
   const list = await listMessages(accountId, { maxResults, q: "-in:chats -in:trash -in:spam newer_than:30d" });
-  const ids = list.messages || [];
-  let enqueued = 0;
-  for (const m of ids) {
-    try {
-      await enqueueMessageJob(accountId, userId, m.id, 0);
-      enqueued++;
-    } catch (e) {
-      console.error("backfillRecent enqueue failed", m.id, e);
-    }
+  const ids = (list.messages ?? []).map((m) => m.id);
+  try {
+    await enqueueMessageJobs(accountId, userId, ids, 0);
+  } catch (e) {
+    console.error("backfillRecent bulk enqueue failed", e);
+    return { processed: 0, enqueued: 0, error: (e as Error).message };
   }
-  return { processed: enqueued, enqueued };
+  return { processed: ids.length, enqueued: ids.length };
 }
 
 export async function backfillWindow(
@@ -1085,17 +1082,91 @@ export async function backfillWindow(
 async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   const account = await getAccount(accountId);
   const watch = await ensureWatch(accountId, account.watch_expiration);
+  // Gmail historyIds are monotonically increasing per-mailbox. Under
+  // overlapping pushes (two replicas, or a push + a manual sync), two
+  // concurrent UPDATEs can race; without a guard the LOWER history_id can
+  // land last and the next sync re-fetches a window we've already
+  // processed. compareGmailHistoryIds rejects any incoming id that's not
+  // strictly higher than what's currently in the DB.
   if (watch) {
-    await supabaseAdmin.from("gmail_accounts").update({
-      history_id: watch.historyId,
+    await bumpHistoryAndStamp(accountId, watch.historyId, {
       watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
-      last_poll_at: new Date().toISOString(),
-    }).eq("id", accountId);
+    });
   } else {
-    await supabaseAdmin.from("gmail_accounts").update({
-      history_id: historyId,
-      last_poll_at: new Date().toISOString(),
-    }).eq("id", accountId);
+    await bumpHistoryAndStamp(accountId, historyId, {});
+  }
+}
+
+/** Compare two Gmail history IDs (decimal strings representing unsigned
+ * 64-bit integers). Returns true iff `incoming` is strictly greater than
+ * `current`. Handles ids that exceed Number.MAX_SAFE_INTEGER by using
+ * BigInt; falls back to length+lex comparison if either input isn't a
+ * pure-decimal string. */
+export function gmailHistoryIdGreater(incoming: string | null, current: string | null): boolean {
+  if (!incoming) return false;
+  if (!current) return true;
+  // Pure-decimal fast path.
+  if (/^\d+$/.test(incoming) && /^\d+$/.test(current)) {
+    try {
+      return BigInt(incoming) > BigInt(current);
+    } catch {
+      /* fall through */
+    }
+  }
+  // Defensive fallback: same length → lex order works; different length →
+  // longer is bigger. Gmail history IDs are all decimal so this only fires
+  // if someone stored garbage.
+  if (incoming.length !== current.length) return incoming.length > current.length;
+  return incoming > current;
+}
+
+/** Bump history_id with a monotonic guard via an atomic SQL RPC. If a
+ * concurrent writer already stored a higher history_id we leave the row
+ * alone — losing a few cycles of work is better than re-processing a
+ * window we've already covered. */
+async function bumpHistoryAndStamp(
+  accountId: string,
+  incomingHistoryId: string,
+  extra: { watch_expiration?: string },
+) {
+  type BumpRpc = {
+    rpc: (
+      fn: "bump_history_id_if_greater",
+      args: { p_account_id: string; p_new_history_id: string; p_watch_expiration: string | null },
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+  const { error } = await (supabaseAdmin as unknown as BumpRpc).rpc("bump_history_id_if_greater", {
+    p_account_id: accountId,
+    p_new_history_id: incomingHistoryId,
+    p_watch_expiration: extra.watch_expiration ?? null,
+  });
+  if (error) {
+    // RPC isn't deployed yet, or some other DB error. Fall back to the
+    // JS-only check — strictly worse on overlapping replicas but still
+    // better than blind UPDATE.
+    console.error("bump_history_id_if_greater RPC failed, falling back", error.message);
+    const { data: current } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("history_id")
+      .eq("id", accountId)
+      .maybeSingle();
+    if (!gmailHistoryIdGreater(incomingHistoryId, current?.history_id ?? null)) {
+      if (extra.watch_expiration) {
+        await supabaseAdmin
+          .from("gmail_accounts")
+          .update({ watch_expiration: extra.watch_expiration, last_poll_at: new Date().toISOString() })
+          .eq("id", accountId);
+      }
+      return;
+    }
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({
+        history_id: incomingHistoryId,
+        last_poll_at: new Date().toISOString(),
+        ...(extra.watch_expiration ? { watch_expiration: extra.watch_expiration } : {}),
+      })
+      .eq("id", accountId);
   }
 }
 
@@ -1219,13 +1290,12 @@ async function tickBackfillJob(job: BackfillJob): Promise<{ phase: string; added
         const todo = ids.filter((id) => !have.has(id));
         alreadyDelta += ids.length - todo.length;
 
-        for (const id of todo) {
-          try {
-            await enqueueMessageJob(job.gmail_account_id, job.user_id, id, 10);
-            enqueuedDelta++;
-          } catch (e) {
-            console.error("backfill enqueue failed", id, e);
-          }
+        // Single batched upsert per page (vs N×roundtrip).
+        try {
+          await enqueueMessageJobs(job.gmail_account_id, job.user_id, todo, 10);
+          enqueuedDelta += todo.length;
+        } catch (e) {
+          console.error("backfill page bulk enqueue failed", e);
         }
       }
 
@@ -1369,31 +1439,50 @@ export async function enqueueMessageJob(
   priority: number = 0,
   opts: { publishedAtMs?: number | null } = {},
 ) {
-  // Upsert so the same message is never queued twice. If a job already exists
-  // (pending or dlq), do nothing — the worker / retry button owns it from here.
-  // priority: 0 = live (push/poll), 10 = backfill. Worker orders by priority ASC
-  // so live mail always jumps ahead of the backfill backlog.
-  //
-  // We jitter next_run_at by 0–500ms so a burst of N events from a single Pub/Sub
-  // delivery doesn't collide on the same instant — multiple workers can claim
-  // disjoint slices instead of contending for the same head of the queue.
-  const jitterMs = Math.floor(Math.random() * 500);
-  await supabaseAdmin
-    .from("message_jobs")
-    .upsert(
-      {
-        gmail_account_id: accountId,
-        gmail_message_id: gmailMessageId,
-        user_id: userId,
-        status: "pending",
-        priority,
-        next_run_at: new Date(Date.now() + jitterMs).toISOString(),
-        // Persisted column — any worker draining this job can read it and
-        // populate emails.published_at_ms for end-to-end latency telemetry.
-        published_at_ms: opts.publishedAtMs ?? null,
-      },
-      { onConflict: "gmail_account_id,gmail_message_id", ignoreDuplicates: true },
-    );
+  return enqueueMessageJobs(accountId, userId, [gmailMessageId], priority, opts);
+}
+
+/** Batched form — single upsert for N messages. Use this in any hot path
+ * that enqueues more than one message per call (history sync, bootstrap,
+ * backfill) so we don't pay one DB roundtrip per id.
+ *
+ * Caller-controlled jitter: next_run_at is staggered across 0–500ms so a
+ * burst of N events doesn't collide on the same instant — multiple workers
+ * claim disjoint slices instead of contending for the head of the queue.
+ *
+ * Upsert is idempotent — `ignoreDuplicates: true` means re-enqueueing an
+ * already-pending message is a no-op. priority: 0 = live (push/poll),
+ * 10 = backfill. */
+export async function enqueueMessageJobs(
+  accountId: string,
+  userId: string,
+  gmailMessageIds: string[],
+  priority: number = 0,
+  opts: { publishedAtMs?: number | null } = {},
+) {
+  if (gmailMessageIds.length === 0) return;
+  const nowMs = Date.now();
+  const publishedAtMs = opts.publishedAtMs ?? null;
+  const rows = gmailMessageIds.map((gmail_message_id, idx) => ({
+    gmail_account_id: accountId,
+    gmail_message_id,
+    user_id: userId,
+    status: "pending",
+    priority,
+    // Spread across 0–500ms. For small bursts (N ≤ 500) each gets a
+    // distinct ms slot; for larger bursts the modulo keeps it bounded.
+    next_run_at: new Date(nowMs + (idx % 500)).toISOString(),
+    published_at_ms: publishedAtMs,
+  }));
+  // Supabase caps a single upsert at ~1000 rows; we chunk just to be safe.
+  for (let i = 0; i < rows.length; i += 500) {
+    await supabaseAdmin
+      .from("message_jobs")
+      .upsert(rows.slice(i, i + 500), {
+        onConflict: "gmail_account_id,gmail_message_id",
+        ignoreDuplicates: true,
+      });
+  }
 }
 
 export async function runMessageJobs(
@@ -1760,11 +1849,6 @@ async function syncSinceHistoryLocked(
       for (const m of added) {
         if (seenAdded.has(m.id)) continue;
         seenAdded.add(m.id);
-        try {
-          await enqueueMessageJob(accountId, account.user_id, m.id, 0, {
-            publishedAtMs: opts.publishedAtMs ?? null,
-          });
-        } catch (e) { console.error("enqueue failed", e); }
       }
       for (const ev of h.labelsAdded ?? []) {
         labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
@@ -1793,10 +1877,28 @@ async function syncSinceHistoryLocked(
       }
     }
 
-    // Apply label ops sequentially per message (each one may need a row
-    // read), but only after we've finished the page so labelsAdded +
-    // labelsRemoved for the same message don't fight each other mid-loop.
+    // Bulk-enqueue all newly-added messages in one upsert (vs the previous
+    // N×sequential upserts). The published_at_ms is threaded through so any
+    // worker can populate emails.published_at_ms when it drains the job.
+    if (seenAdded.size > 0) {
+      try {
+        await enqueueMessageJobs(
+          accountId,
+          account.user_id,
+          Array.from(seenAdded),
+          0,
+          { publishedAtMs: opts.publishedAtMs ?? null },
+        );
+      } catch (e) { console.error("bulk enqueue failed", e); }
+    }
+
+    // Apply label ops sequentially per message. We SKIP ops whose message
+    // is ALSO in seenAdded — those rows don't exist yet (still queued via
+    // message_jobs) so the UPDATE would silently no-op and the label change
+    // would be lost. processGmailMessage will set raw_labels correctly from
+    // parseMessage when the queued job runs.
     for (const op of labelOps) {
+      if (seenAdded.has(op.messageId)) continue;
       try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed); }
       catch (e) { console.error("applyLabelChange failed", e); }
     }
@@ -1880,7 +1982,9 @@ async function bootstrapAccount(accountId: string, userId: string) {
     if (collected.length > 0) {
       const seen = new Set<string>();
       const ids = collected.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
-      const nowMs = Date.now();
+      // Skip ids we already have locally before enqueueing — saves the
+      // worker from doing 2000 noop fetches against Gmail.
+      const todo: string[] = [];
       for (let i = 0; i < ids.length; i += 500) {
         const slice = ids.slice(i, i + 500);
         const { data: existing } = await supabaseAdmin
@@ -1889,30 +1993,14 @@ async function bootstrapAccount(accountId: string, userId: string) {
           .eq("gmail_account_id", accountId)
           .in("gmail_message_id", slice);
         const have = new Set((existing ?? []).map((r) => r.gmail_message_id));
-        // Single batched insert (vs N×upsert roundtrips). For 500 ids this
-        // cuts bootstrap wall-clock from seconds to ~50ms — important
-        // because we're still inside the per-account lock.
-        const rows = slice
-          .filter((id) => !have.has(id))
-          .map((id, idx) => ({
-            gmail_account_id: accountId,
-            gmail_message_id: id,
-            user_id: userId,
-            status: "pending",
-            priority: 0,
-            // Spread next_run_at across the batch (0-500ms) so the worker
-            // pool can drain them in parallel instead of all-at-once.
-            next_run_at: new Date(nowMs + (idx % 500)).toISOString(),
-          }));
-        if (rows.length > 0) {
-          try {
-            await supabaseAdmin
-              .from("message_jobs")
-              .upsert(rows, { onConflict: "gmail_account_id,gmail_message_id", ignoreDuplicates: true });
-          } catch (e) {
-            console.error("bootstrap batch enqueue failed", e);
-          }
+        for (const id of slice) {
+          if (!have.has(id)) todo.push(id);
         }
+      }
+      try {
+        await enqueueMessageJobs(accountId, userId, todo, 0);
+      } catch (e) {
+        console.error("bootstrap bulk enqueue failed", e);
       }
     }
   } else {
@@ -2295,37 +2383,43 @@ export async function loadOlderFromLabel(
 
 const FORWARD_MAX_ATTEMPTS = 5;
 const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600]; // 1m, 5m, 30m, 2h, 6h
-// Window after which a stale forward_locked_at is reclaimed. Mirrors the
-// 60s skip-locked window message_jobs uses.
-const FORWARD_LOCK_TTL_MS = 60_000;
 
 export async function retryForwardAttempts(maxRows = 50) {
-  // ─── Atomic claim. Without this, two overlapping cron ticks can each
-  // pick up the same row and send a duplicate forward. We stamp
-  // forward_locked_at = now() on the rows we want to claim and filter to
-  // those whose pre-update locked_at was null or stale; only one writer
-  // wins on each row.
-  const now = new Date();
-  const staleCutoff = new Date(now.getTime() - FORWARD_LOCK_TTL_MS).toISOString();
-  const { data: rows } = await supabaseAdmin
-    .from("emails")
-    .update({ forward_locked_at: now.toISOString() })
-    .lte("forward_next_retry_at", now.toISOString())
-    .not("forward_next_retry_at", "is", null)
-    .lt("forward_attempts", FORWARD_MAX_ATTEMPTS)
-    // Skip rows currently held by another in-flight retry (within TTL).
-    .or(`forward_locked_at.is.null,forward_locked_at.lt.${staleCutoff}`)
-    // Don't re-forward a row that already succeeded — protects against the
-    // case where processGmailMessage's first attempt succeeded but a later
-    // re-run (manual retry) flipped retry state back on.
-    .is("forwarded_at", null)
-    .select("id, gmail_account_id, gmail_message_id, folder_id, subject, from_addr, from_name, body_text, snippet, received_at, forward_attempts")
-    .limit(maxRows);
+  // Atomic claim via SQL function. Without this, two overlapping cron
+  // ticks could each pick the same row and send a duplicate forward.
+  // claim_forward_retries uses FOR UPDATE SKIP LOCKED inside one
+  // transaction so only one tx wins per row.
+  type ForwardClaim = {
+    id: string;
+    gmail_account_id: string;
+    gmail_message_id: string;
+    folder_id: string | null;
+    subject: string | null;
+    from_addr: string | null;
+    from_name: string | null;
+    body_text: string | null;
+    snippet: string | null;
+    received_at: string | null;
+    forward_attempts: number;
+  };
+  type ForwardClaimRpc = {
+    rpc: (
+      fn: "claim_forward_retries",
+      args: { p_limit: number },
+    ) => Promise<{ data: ForwardClaim[] | null; error: { message: string } | null }>;
+  };
+  const { data: rows, error } = await (supabaseAdmin as unknown as ForwardClaimRpc).rpc(
+    "claim_forward_retries",
+    { p_limit: maxRows },
+  );
+  if (error) {
+    console.error("claim_forward_retries RPC failed", error.message);
+    return { processed: 0, ok: 0, failed: 0, gaveUp: 0, error: error.message };
+  }
 
   let ok = 0;
   let failed = 0;
   let gaveUp = 0;
-  let skipped = 0;
   for (const row of rows ?? []) {
     let forwardTo: string | null = null;
     if (row.folder_id) {
@@ -2386,7 +2480,7 @@ export async function retryForwardAttempts(maxRows = 50) {
       }
     }
   }
-  return { processed: rows?.length ?? 0, ok, failed, gaveUp, skipped };
+  return { processed: rows?.length ?? 0, ok, failed, gaveUp };
 }
 
 // ─── DLQ auto-replay ──────────────────────────────────────────────────────

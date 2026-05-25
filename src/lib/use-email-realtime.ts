@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-type EmailRow = {
+export type EmailRow = {
   id: string;
   user_id: string;
   gmail_message_id: string;
@@ -11,6 +11,29 @@ type EmailRow = {
   folder_id: string | null;
   [key: string]: unknown;
 };
+
+/**
+ * Heuristic: do we believe `row` belongs in the list identified by
+ * `queryKey`? We inspect the key shape — without server-side knowledge of
+ * the query's filters we conservatively reject any list whose key hints
+ * at a scope (folder id, "archived", etc.) that doesn't match the row.
+ * The top-level ["emails"] list is treated as the all-inbox view and
+ * accepts everything.
+ *
+ * Exported for unit tests. Keep in sync with the inbox.tsx query keys.
+ */
+export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): boolean {
+  if (queryKey.length <= 1) return true;
+  const tag = queryKey[1];
+  if (typeof tag === "string") {
+    if (tag === "all") return true;
+    if (tag === "archived") return row.is_archived === true;
+    if (tag === "inbox") return row.is_archived !== true && row.folder_id == null;
+    // Any other string segment is treated as a folder id.
+    return row.folder_id === tag;
+  }
+  return false;
+}
 
 /**
  * Single source of truth for inbox realtime + catch-up.
@@ -28,25 +51,6 @@ export function useEmailRealtime() {
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
-
-    // Heuristic: do we believe `row` belongs in the list identified by
-    // `queryKey`? We inspect the key shape — without server-side knowledge
-    // of the query's filters we conservatively reject any list whose key
-    // hints at a scope (folder id, "archived", etc.) that doesn't match
-    // the row. The top-level ["emails"] list is treated as the all-inbox
-    // view and accepts everything.
-    function rowBelongsInList(row: EmailRow, queryKey: unknown[]): boolean {
-      if (queryKey.length <= 1) return true;
-      const tag = queryKey[1];
-      if (typeof tag === "string") {
-        if (tag === "all") return true;
-        if (tag === "archived") return row.is_archived === true;
-        if (tag === "inbox") return row.is_archived !== true && row.folder_id == null;
-        // Any other string segment is treated as a folder id.
-        return row.folder_id === tag;
-      }
-      return false;
-    }
 
     type CachedList = EmailRow[] | { rows: EmailRow[] };
     function patchOneQuery(
