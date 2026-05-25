@@ -150,18 +150,21 @@ export type Database = {
         Row: {
           domain: string
           provider: number
+          source_domain: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           domain: string
           provider: number
+          source_domain?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           domain?: string
           provider?: number
+          source_domain?: string | null
           updated_at?: string
           user_id?: string
         }
