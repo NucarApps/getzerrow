@@ -23,7 +23,7 @@ export function CompanyLogo({ domain, name, size = 32, className = "", onColor, 
   const px = `${size}px`;
 
   // Reset retry index when domain changes.
-  useEffect(() => { setIdx(0); }, [domain]);
+  useEffect(() => { setIdx(0); }, [domain, provider]);
 
   useEffect(() => {
     if (!onColor || !domain) return;
