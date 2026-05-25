@@ -2381,6 +2381,7 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
 
     for (const email of rows) {
       if (email.user_id !== context.userId) { failed++; continue; }
+      if (!email.id || !email.gmail_account_id) { failed++; continue; }
       try {
         const parsed = {
           from_addr: email.from_addr ?? "",
