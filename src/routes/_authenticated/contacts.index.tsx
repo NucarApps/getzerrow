@@ -52,6 +52,7 @@ function ContactsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [drawerId, setDrawerId] = useState<string | null>(null);
 
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
