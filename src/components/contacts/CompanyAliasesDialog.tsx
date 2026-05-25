@@ -90,8 +90,21 @@ export function CompanyAliasesDialog({
   }, [open, savedKey]);
 
   useEffect(() => {
-    if (!open) setNewDomain("");
-  }, [open]);
+    if (open) setBrandQuery(companyName ?? "");
+    else { setNewDomain(""); setBrandQuery(""); setDebouncedQuery(""); }
+  }, [open, companyName]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(brandQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [brandQuery]);
+
+  const brandsQ = useQuery({
+    queryKey: ["logo-brand-search", debouncedQuery],
+    queryFn: () => searchBrandsFn({ data: { query: debouncedQuery } }),
+    enabled: open && debouncedQuery.length >= 2,
+    staleTime: 60_000,
+  });
 
   if (!primaryDomain) return null;
 
