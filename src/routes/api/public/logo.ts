@@ -2,6 +2,29 @@ import { createFileRoute } from "@tanstack/react-router";
 
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 
+// Block internal/reserved hostnames, link-local, and wildcard-DNS SSRF tricks.
+const BLOCKED_HOST_RE =
+  /(^|\.)(localhost|local|internal|intranet|corp|home|lan|test|example|invalid|onion)$/i;
+const BLOCKED_SUFFIX_RE = /\.(nip\.io|sslip\.io|xip\.io|localtest\.me)$/i;
+const IP_LITERAL_RE = /^(\d{1,3}\.){3}\d{1,3}$|^\[?[0-9a-f:]+\]?$/i;
+// Match IP-shaped labels embedded anywhere (e.g. 169.254.169.254.nip.io).
+const EMBEDDED_IP_RE = /(?:^|\.)(?:10|127|0|169\.254|192\.168|172\.(?:1[6-9]|2\d|3[01]))\./;
+
+function isBlockedDomain(domain: string): boolean {
+  if (IP_LITERAL_RE.test(domain)) return true;
+  if (BLOCKED_HOST_RE.test(domain)) return true;
+  if (BLOCKED_SUFFIX_RE.test(domain)) return true;
+  if (EMBEDDED_IP_RE.test(`.${domain}`)) return true;
+  return false;
+}
+
+const ALLOWED_PROVIDER_HOSTS = new Set([
+  "logo.clearbit.com",
+  "img.logo.dev",
+  "icons.duckduckgo.com",
+  "www.google.com",
+]);
+
 function providersFor(domain: string, size: number): string[] {
   const d = encodeURIComponent(domain);
   const s = Math.max(256, Math.min(512, size));
