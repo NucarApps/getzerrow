@@ -1,44 +1,64 @@
-# Fix `from:` / `to:` search when a space follows the colon
-
-## Problem
-
-Typing `from: Bill_Baker@reyrey.com` (with a space after the colon) returns
-unrelated results because the search isn't being treated as a sender filter.
+# Reconnect Gmail + surface "reconnect required" in the UI
 
 ## Root cause
 
-`parseSearchQuery` in `src/routes/_authenticated/inbox.tsx` uses:
+The earlier security migration dropped the plaintext `access_token` /
+`refresh_token` columns on `gmail_accounts`. Both Gmail accounts in the
+project still had tokens only in those plaintext columns — they were never
+migrated to `access_token_enc` / `refresh_token_enc`. Current state:
 
-```text
-/\b(from|to):(?:"([^"]+)"|(\S+))/gi
-```
+- `tpercoco@nucar.com` — no access token, no refresh token
+- `chris@nucar.com` — access token only (expires within the hour), no
+  refresh token
 
-The value group (`\S+`) must start immediately after the colon. With a space
-in between, the regex doesn't match, so:
+`getAccessToken` in `src/lib/google-oauth.server.ts` requires both tokens
+and throws `"Gmail account is missing OAuth tokens — user needs to
+reauthorize"` on every call. `searchGmailAndIngest` catches that per
+account and continues silently, so the UI sees `found: 0, ingested: 0`
+and we wrongly look like Gmail itself returned nothing. Background sync
+is failing for the same reason, which is why the local DB has no
+`Bill_Baker@reyrey.com` rows either.
 
-- `parsedQuery.from` stays `null`
-- `hasOperator` is `false`
-- The query falls back to free-text search over the 2000 newest emails
-  (subject/snippet/from scoring), which is why "everything" appears.
+This is not a search-logic bug — `from:Bill_Baker@reyrey.com` parses and
+runs correctly. The connection just can't talk to Gmail.
 
-## Fix
+## Action required from you
 
-Allow optional whitespace between the colon and the value in
-`parseSearchQuery`:
+Reconnect Gmail for both accounts:
 
-```text
-/\b(from|to):\s*(?:"([^"]+)"|(\S+))/gi
-```
+1. Open **Settings → Gmail accounts**
+2. Disconnect each account, then reconnect via Google OAuth
+3. Make sure Google's consent screen shows up (the OAuth flow forces
+   `prompt=consent` so a fresh refresh token is issued)
 
-That's the only change. The downstream operator-aware DB query, deep Gmail
-paging, and local filtering already work correctly once `parsedQuery.from`
-is populated.
+After that, run the search again — `from:Bill_Baker@reyrey.com` will go
+out to Gmail and pull matches in.
+
+## Optional code change (for clarity next time)
+
+To stop hiding this failure mode, update `searchGmailAndIngest` in
+`src/lib/gmail.functions.ts` so that when every account fails with a
+"missing OAuth tokens" / "reauthorize" error, it returns
+`{ ingested: 0, found: 0, reason: "reauth_required" }` instead of a
+generic zero. Then in `src/routes/_authenticated/inbox.tsx`, show a
+clear "Gmail needs to be reconnected — go to Settings" banner when
+`lastGmailResult.reason === "reauth_required"` instead of the current
+silent empty state.
+
+No DB migrations, no changes to the search parser, no changes to the
+operator-aware query path.
 
 ## Files
 
-- `src/routes/_authenticated/inbox.tsx` — one-line regex change in
-  `parseSearchQuery`.
+- `src/lib/gmail.functions.ts` — detect reauth errors in the per-account
+  catch and propagate a `reason: "reauth_required"` when all accounts
+  failed that way.
+- `src/routes/_authenticated/inbox.tsx` — show a reconnect-Gmail banner
+  for that reason.
 
 ## Out of scope
 
-No changes to the server-side Gmail search, scoring, or UI.
+- Auto-migrating tokens (impossible — there are no plaintext tokens left
+  to migrate; the columns were dropped).
+- Changing how `getAccessToken` validates tokens (current check is
+  correct).
