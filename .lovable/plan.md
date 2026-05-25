@@ -1,25 +1,41 @@
-# Fix: rocket reappears after blast-off
+# Contact drawer + my-card website fix
 
-## Problem
+## 1. Open contacts in a drawer instead of navigating
 
-After release, the rocket correctly blasts off the top — but then the `returning` phase plays a `rocket-return` animation that fades a fresh rocket back in from the bottom of the pull zone before collapsing. To the user this reads as "blast off → reappear → go back up again", which breaks the illusion.
+**Extract** the body of `src/routes/_authenticated/contacts.$id.tsx` (everything inside `ContactDetail` and the `ShareContactDialog`/`Field` helpers) into a new shared component:
 
-## Fix
+- New file: `src/components/contacts/ContactDetailView.tsx`
+  - Props: `{ id: string; onClose?: () => void; onDeleted?: () => void }`
+  - Same logic as today (queries, enrich, save, share, groups), but no `<Link to="/contacts">` back button or page padding wrapper — those are owned by the parent (route or drawer).
+  - On delete: call `onDeleted?.()` instead of `navigate({ to: "/contacts" })`.
 
-Treat blast-off as terminal. Once the rocket leaves the screen, just collapse the pull zone to 0 and reset to idle — no return animation, no second rocket. The next time the user pulls, a fresh rocket is revealed naturally by the existing pull logic.
+- Update `src/routes/_authenticated/contacts.$id.tsx` to be a thin wrapper that renders `<ContactDetailView id={id} onDeleted={() => navigate({ to: "/contacts" })} />` inside the existing page chrome (back link + max-width container). This preserves direct URL access to `/contacts/:id` and SEO.
 
-### Changes
+- New file: `src/components/contacts/ContactDrawer.tsx`
+  - Wraps `ContactDetailView` in a shadcn `Sheet` (`side="right"`, `className="w-full sm:max-w-2xl overflow-y-auto"`).
+  - Props: `{ contactId: string | null; open: boolean; onOpenChange: (v: boolean) => void }`.
+  - On delete, closes the drawer and invalidates `["contacts"]`.
 
-- `src/components/inbox/PullToRefresh.tsx`
-  - After `await onRefresh()` and the min-visible delay, skip the `returning` phase. Go straight to `idle` with `pull = 0`.
-  - During `launching`, keep the indicator zone height fixed (96px) so the blast-off animation has room. Once we transition to `idle`, the existing height transition collapses the zone smoothly.
+- Edit `src/routes/_authenticated/contacts.index.tsx`:
+  - Add local state `const [drawerId, setDrawerId] = useState<string | null>(null)`.
+  - Replace both `navigate({ to: "/contacts/$id", params: { id: c.id } })` calls (lines 309, 349) with `setDrawerId(c.id)`.
+  - Render `<ContactDrawer contactId={drawerId} open={!!drawerId} onOpenChange={(v) => !v && setDrawerId(null)} />` at the end of the page.
 
-- `src/components/inbox/RocketIndicator.tsx`
-  - Remove the `returning` branch (or leave it unused). Rocket is invisible (`opacity: 0`) in idle with `pull === 0`, which is already the default.
+The standalone `/contacts/:id` route remains functional (deep links, share links still work).
 
-- `src/styles.css`
-  - Leave `rocket-return` keyframe in place (harmless) or remove it. Either way it stops being referenced.
+## 2. Fix "Invalid input / Must be an http(s) URL" when saving My card
+
+The error comes from `src/lib/cards.functions.ts` line 29 — the `website` field requires a strict `https?://` URL, so typing `getzerrow.com` or leaving the field with whitespace fails Zod parsing.
+
+Fix in **two places**:
+
+- `src/routes/_authenticated/my-card.tsx` (`save()` handler): normalize before sending — trim, return `null` if empty, otherwise prepend `https://` if no `http(s)://` prefix is present.
+- `src/lib/cards.functions.ts` (`updateMyCard` validator): mirror the normalization server-side via a `z.preprocess` so any caller (including future ones) gets the same behavior. Keep the final shape `.url().max(500).nullable().optional()` but drop the redundant `https?://` regex (the preprocess guarantees it).
+
+No other field validation changes.
 
 ## Out of scope
 
-No changes to the pull gesture, threshold, blast-off animation, or refresh behavior — only the post-launch return is removed.
+- No changes to contacts list layout, grouping, search, or routes.
+- No changes to the contact detail's business logic (enrich, share, groups, delete).
+- No DB/RLS changes.
