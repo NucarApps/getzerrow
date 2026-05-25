@@ -117,9 +117,18 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
 
   const listAccounts = useServerFn(listMyGmailAccounts);
   const listLabelsFn = useServerFn(listGmailLabels);
+  const adminMeFn = useServerFn(getAdminMe);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
   const accountId = accountsQ.data?.accounts[0]?.id ?? null;
+
+  const adminMeQ = useQuery({
+    queryKey: ["admin-me"],
+    queryFn: () => adminMeFn(),
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const isAdmin = !!adminMeQ.data?.email;
 
   const foldersQ = useQuery({
     queryKey: ["folders-full", accountId],
