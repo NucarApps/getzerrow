@@ -5,6 +5,37 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 import { sendContactShareEmail } from "./cards.server";
+import { listMessages, getMessage, parseMessage } from "./gmail.server";
+
+/** Fetch recent Gmail messages matching a query, for a user's connected accounts.
+ * Returns parsed messages mapped into the same shape as our local emails_decrypted rows.
+ * Swallows per-account errors (expired tokens, quota, insufficient scopes) and moves on. */
+async function fetchFromGmail(
+  accountIds: string[],
+  query: string,
+  maxResults: number,
+): Promise<Array<ReturnType<typeof parseMessage>>> {
+  for (const accountId of accountIds) {
+    try {
+      const list = await listMessages(accountId, { q: query, maxResults });
+      const ids = (list.messages ?? []).map((m) => m.id);
+      if (ids.length === 0) continue;
+      const out: Array<ReturnType<typeof parseMessage>> = [];
+      for (const id of ids) {
+        try {
+          const msg = await getMessage(accountId, id);
+          out.push(parseMessage(msg));
+        } catch (e) {
+          console.error("fetchFromGmail getMessage failed", (e as Error)?.message);
+        }
+      }
+      if (out.length > 0) return out;
+    } catch (e) {
+      console.error("fetchFromGmail listMessages failed", (e as Error)?.message);
+    }
+  }
+  return [];
+}
 
 function getModel(modelId = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY;
@@ -175,7 +206,7 @@ export const enrichContact = createServerFn({ method: "POST" })
       if (age < 30 * 24 * 60 * 60 * 1000) return { contact, skipped: true as const };
     }
 
-    const { data: emails } = await supabase
+    const { data: localEmails } = await supabase
       // emails_decrypted view: same columns, body_text/body_html
       // auto-decrypted from the pgsodium-encrypted bytea backing
       // columns. RLS on emails still applies via security_invoker.
@@ -184,6 +215,37 @@ export const enrichContact = createServerFn({ method: "POST" })
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
       .limit(40);
+
+    // Lazy-load the user's Gmail accounts — used as a fallback below when
+    // local storage has nothing for this address yet (new contacts, or
+    // mail that's older than our sync window).
+    let gmailAccountIds: string[] | null = null;
+    const getGmailAccountIds = async (): Promise<string[]> => {
+      if (gmailAccountIds !== null) return gmailAccountIds;
+      const { data: accs } = await supabase
+        .from("gmail_accounts")
+        .select("id")
+        .order("created_at", { ascending: true });
+      gmailAccountIds = (accs ?? []).map((a) => a.id);
+      return gmailAccountIds;
+    };
+
+    let emails: Array<{ subject: string | null; body_text: string | null; snippet: string | null; from_name: string | null }> =
+      (localEmails ?? []) as any;
+
+    if (emails.length === 0) {
+      const accountIds = await getGmailAccountIds();
+      if (accountIds.length > 0) {
+        const fetched = await fetchFromGmail(accountIds, `from:${contact.email}`, 20);
+        emails = fetched.map((m) => ({
+          subject: m.subject ?? null,
+          body_text: m.body_text ?? null,
+          snippet: m.snippet ?? null,
+          from_name: m.from_name ?? null,
+        }));
+      }
+    }
+
 
     // Best candidate from the most recent non-empty from_name (handles "Last, First").
     const fromNameCandidate = normalizeName(
@@ -314,14 +376,32 @@ ${sample}`,
     // === Relationship summary: who are they, what have you discussed? ===
     try {
       const addr = contact.email;
-      const { data: convo } = await supabase
+      const { data: localConvo } = await supabase
         .from("emails_decrypted")
         .select("subject,body_text,snippet,from_addr,to_addrs,received_at")
         .or(`from_addr.eq.${addr},to_addrs.ilike.%${addr}%`)
         .order("received_at", { ascending: false })
         .limit(30);
 
-      const convoSample = (convo ?? [])
+      let convo: Array<{ subject: string | null; body_text: string | null; snippet: string | null; from_addr: string | null; to_addrs: string | null; received_at: string | null }> =
+        (localConvo ?? []) as any;
+
+      if (convo.length === 0) {
+        const accountIds = await getGmailAccountIds();
+        if (accountIds.length > 0) {
+          const fetched = await fetchFromGmail(accountIds, `from:${addr} OR to:${addr}`, 20);
+          convo = fetched.map((m) => ({
+            subject: m.subject ?? null,
+            body_text: m.body_text ?? null,
+            snippet: m.snippet ?? null,
+            from_addr: m.from_addr ?? null,
+            to_addrs: m.to_addrs ?? null,
+            received_at: m.received_at ?? null,
+          }));
+        }
+      }
+
+      const convoSample = convo
         .map((e, i) => {
           const inbound = (e.from_addr || "").toLowerCase() === addr.toLowerCase();
           const tail = cleanTail(e.body_text || e.snippet || "").slice(-600);
@@ -329,6 +409,7 @@ ${sample}`,
           return `--- ${i + 1} [${inbound ? "THEY SENT" : "YOU SENT"}] ${when} ---\nSubject: ${e.subject ?? ""}\n${tail}`;
         })
         .join("\n\n");
+
 
       if (convoSample.trim()) {
         const mergedName = patch.name ?? contact.name ?? null;
