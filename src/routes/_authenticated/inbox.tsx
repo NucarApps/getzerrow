@@ -1486,8 +1486,25 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
             <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1 text-left text-sm hover:bg-accent/40">
               <span className="flex min-w-0 flex-1 items-center gap-2">
                 <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate text-muted-foreground">Why this folder?</span>
-                <span className="hidden sm:inline-flex"><ClassifiedChip by={email.classified_by} /></span>
+                {(() => {
+                  const currentFolder = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
+                  if (currentFolder) {
+                    return (
+                      <>
+                        <span className="hidden shrink-0 text-muted-foreground sm:inline">In</span>
+                        <span
+                          className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
+                          title={currentFolder.name}
+                        >
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: currentFolder.color }} />
+                          <span className="truncate">{currentFolder.name}</span>
+                        </span>
+                      </>
+                    );
+                  }
+                  return <span className="truncate text-muted-foreground">Why this folder?</span>;
+                })()}
+                <ClassifiedChip by={email.classified_by} />
               </span>
               <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
             </button>
