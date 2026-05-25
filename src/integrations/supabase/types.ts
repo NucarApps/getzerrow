@@ -1011,6 +1011,25 @@ export type Database = {
           user_id: string
         }[]
       }
+      cleanup_old_dlq_jobs: {
+        Args: { p_batch_limit?: number; p_keep_days?: number }
+        Returns: {
+          deleted: number
+          total_before: number
+        }[]
+      }
+      cleanup_old_pubsub_events: {
+        Args: {
+          p_batch_limit?: number
+          p_keep_days?: number
+          p_keep_errors_days?: number
+        }
+        Returns: {
+          deleted: number
+          kept_errors: number
+          total_before: number
+        }[]
+      }
       cron_secret_matches: { Args: { provided: string }; Returns: boolean }
       get_sync_latency_stats: {
         Args: { p_lookback_hours?: number; p_user_id: string }
