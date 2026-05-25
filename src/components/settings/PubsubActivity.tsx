@@ -390,7 +390,7 @@ export function PubsubActivity() {
   const health = useMemo(
     () => deriveHealth({
       stats, diag, lastPush, lastRenew, watchActive,
-      webhookUrl: diag?.webhookUrl, pubsubTopic: diag?.pubsubTopic,
+      webhookUrl: diag?.webhookUrl ?? undefined, pubsubTopic: diag?.pubsubTopic ?? undefined,
       renewBtn,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
