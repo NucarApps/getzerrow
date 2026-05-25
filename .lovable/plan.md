@@ -1,35 +1,25 @@
-# Pull-to-refresh with rocket animation
+# Fix: rocket reappears after blast-off
 
-Add a native-feeling pull-to-refresh gesture to the inbox email list. As the user drags down from the top, the Zerrow rocket (`src/assets/zerrow-ship.png`) is revealed behind the list. On release past the threshold, the rocket blasts off (upward + fade with an exhaust trail), the email list refetches, and on completion a new rocket settles back at rest for the next pull.
+## Problem
 
-## Behavior
+After release, the rocket correctly blasts off the top — but then the `returning` phase plays a `rocket-return` animation that fades a fresh rocket back in from the bottom of the pull zone before collapsing. To the user this reads as "blast off → reappear → go back up again", which breaks the illusion.
 
-- Trigger: touch drag down when the inbox list is already scrolled to top (mobile + trackpad-friendly).
-- Reveal: as the user pulls, a fixed-height "pull zone" above the list expands (0 → ~96px) with the rocket fading/scaling in and rotating slightly upright. Resistance curve (`pull * 0.5`) so it feels rubber-bandy.
-- Indicator states:
-  - Pulling (< threshold): rocket dim, subtle bob.
-  - Ready (≥ threshold ~72px): rocket brightens, small "Release to refresh" caption.
-  - Refreshing: rocket plays blast-off (translateY -200px, scale 0.7, opacity 0) with a short flame/smoke trail (CSS gradient + animated dots), list refetches.
-  - Done: rocket re-enters from bottom of pull zone, settles to rest, zone collapses.
-- Refresh action: `queryClient.invalidateQueries({ queryKey: ["emails"] })` and `["folders"]`, awaited; min visible time ~700ms so the animation reads.
+## Fix
 
-## Where
+Treat blast-off as terminal. Once the rocket leaves the screen, just collapse the pull zone to 0 and reset to idle — no return animation, no second rocket. The next time the user pulls, a fresh rocket is revealed naturally by the existing pull logic.
 
-- `src/routes/_authenticated/inbox.tsx` — the email list scroll container is the `<div className="min-h-0 flex-1 overflow-y-auto">` around line 667. Wrap its contents with a new `PullToRefresh` component, or attach handlers + a sibling indicator div.
-- New component: `src/components/inbox/PullToRefresh.tsx` — owns touch listeners (`touchstart`/`touchmove`/`touchend`), pull distance state, threshold logic, and renders the rocket indicator. Accepts `onRefresh: () => Promise<void>` and `children`.
-- New component: `src/components/inbox/RocketIndicator.tsx` — pure visual: takes `pull` (0–1+), `phase` ('idle' | 'ready' | 'launching' | 'returning'), renders the rocket image, flame trail, and caption.
-- `src/styles.css` — add keyframes: `rocket-blastoff` (translateY -240px + fade + slight rotate), `rocket-return` (translateY from +40px to 0 with ease-out), `rocket-bob` (subtle idle hover), `flame-flicker`.
+### Changes
 
-## Technical notes
+- `src/components/inbox/PullToRefresh.tsx`
+  - After `await onRefresh()` and the min-visible delay, skip the `returning` phase. Go straight to `idle` with `pull = 0`.
+  - During `launching`, keep the indicator zone height fixed (96px) so the blast-off animation has room. Once we transition to `idle`, the existing height transition collapses the zone smoothly.
 
-- Only activate when `scrollTop === 0` at `touchstart`; otherwise let native scroll run.
-- Use `passive: false` on `touchmove` so we can `preventDefault()` once pulling, to suppress overscroll bounce on iOS.
-- Apply `overscroll-behavior: contain` to the scroll container to prevent the page itself from rubber-banding while we own the gesture.
-- Pointer Events fallback for trackpad: also listen for `wheel` with negative `deltaY` at scrollTop 0 to allow desktop testing (optional, low priority).
-- Respect `prefers-reduced-motion`: skip blast-off, just show a spinner-style fade.
-- Don't double-trigger: ignore new pulls while `phase !== 'idle'`.
+- `src/components/inbox/RocketIndicator.tsx`
+  - Remove the `returning` branch (or leave it unused). Rocket is invisible (`opacity: 0`) in idle with `pull === 0`, which is already the default.
+
+- `src/styles.css`
+  - Leave `rocket-return` keyframe in place (harmless) or remove it. Either way it stops being referenced.
 
 ## Out of scope
 
-- No changes to email detail view, sidebar, or any other route.
-- No backend changes — refresh is just a React Query invalidation; new emails already arrive via realtime.
+No changes to the pull gesture, threshold, blast-off animation, or refresh behavior — only the post-launch return is removed.
