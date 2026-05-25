@@ -206,7 +206,7 @@ export const enrichContact = createServerFn({ method: "POST" })
       if (age < 30 * 24 * 60 * 60 * 1000) return { contact, skipped: true as const };
     }
 
-    const { data: emails } = await supabase
+    const { data: localEmails } = await supabase
       // emails_decrypted view: same columns, body_text/body_html
       // auto-decrypted from the pgsodium-encrypted bytea backing
       // columns. RLS on emails still applies via security_invoker.
@@ -215,6 +215,37 @@ export const enrichContact = createServerFn({ method: "POST" })
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
       .limit(40);
+
+    // Lazy-load the user's Gmail accounts — used as a fallback below when
+    // local storage has nothing for this address yet (new contacts, or
+    // mail that's older than our sync window).
+    let gmailAccountIds: string[] | null = null;
+    const getGmailAccountIds = async (): Promise<string[]> => {
+      if (gmailAccountIds !== null) return gmailAccountIds;
+      const { data: accs } = await supabase
+        .from("gmail_accounts")
+        .select("id")
+        .order("created_at", { ascending: true });
+      gmailAccountIds = (accs ?? []).map((a) => a.id);
+      return gmailAccountIds;
+    };
+
+    let emails: Array<{ subject: string | null; body_text: string | null; snippet: string | null; from_name: string | null }> =
+      (localEmails ?? []) as any;
+
+    if (emails.length === 0) {
+      const accountIds = await getGmailAccountIds();
+      if (accountIds.length > 0) {
+        const fetched = await fetchFromGmail(accountIds, `from:${contact.email}`, 20);
+        emails = fetched.map((m) => ({
+          subject: m.subject ?? null,
+          body_text: m.body_text ?? null,
+          snippet: m.snippet ?? null,
+          from_name: m.from_name ?? null,
+        }));
+      }
+    }
+
 
     // Best candidate from the most recent non-empty from_name (handles "Last, First").
     const fromNameCandidate = normalizeName(
