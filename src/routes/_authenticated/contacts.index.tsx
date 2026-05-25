@@ -46,6 +46,7 @@ function ContactsPage() {
   const qc = useQueryClient();
   const list = useServerFn(listContacts);
   const listGroups = useServerFn(listContactGroups);
+  const listAliases = useServerFn(listCompanyAliases);
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
@@ -54,10 +55,12 @@ function ContactsPage() {
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [aliasDialog, setAliasDialog] = useState<null | { domain: string; name: string }>(null);
 
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
+  const aq = useQuery({ queryKey: ["company-aliases"], queryFn: () => listAliases() });
 
   // contact_id -> [group ids]
   const contactGroupMap = useMemo(() => {
