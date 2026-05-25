@@ -59,6 +59,29 @@ export function CompanyAliasesDialog({
     ? choicesQ.data?.find((c) => c.domain === primaryDomain)?.provider ?? null
     : null;
 
+  const assignmentsQ = useQuery({
+    queryKey: ["company-group-assignments"],
+    queryFn: () => listAssignments(),
+    enabled: open,
+  });
+  const groupsQ = useQuery({
+    queryKey: ["contact-groups"],
+    queryFn: () => listGroups(),
+    enabled: open,
+  });
+
+  const savedGroupIds = primaryDomain
+    ? (assignmentsQ.data ?? [])
+        .filter((a) => a.primary_domain === primaryDomain)
+        .map((a) => a.group_id)
+    : [];
+  const savedKey = savedGroupIds.slice().sort().join(",");
+
+  useEffect(() => {
+    if (open) setSelectedGroupIds(new Set(savedGroupIds));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, savedKey]);
+
   useEffect(() => {
     if (!open) setNewDomain("");
   }, [open]);
