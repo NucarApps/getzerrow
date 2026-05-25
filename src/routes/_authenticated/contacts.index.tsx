@@ -446,6 +446,14 @@ function ContactsPage() {
         open={!!drawerId}
         onOpenChange={(v) => !v && setDrawerId(null)}
       />
+
+      <CompanyAliasesDialog
+        open={!!aliasDialog}
+        onOpenChange={(v) => !v && setAliasDialog(null)}
+        primaryDomain={aliasDialog?.domain ?? null}
+        companyName={aliasDialog?.name ?? ""}
+        aliases={aliasDialog ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
+      />
     </div>
   );
 }
