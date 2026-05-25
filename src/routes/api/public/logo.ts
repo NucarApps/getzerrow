@@ -66,7 +66,7 @@ export const Route = createFileRoute("/api/public/logo")({
         const url = new URL(request.url);
         const domain = (url.searchParams.get("domain") || "").trim().toLowerCase();
         const size = Number(url.searchParams.get("size") || "64");
-        if (!domain || !DOMAIN_RE.test(domain)) {
+        if (!domain || !DOMAIN_RE.test(domain) || isBlockedDomain(domain)) {
           return new Response("Bad domain", { status: 400 });
         }
         for (const candidate of providersFor(domain, size)) {
