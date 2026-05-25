@@ -397,6 +397,7 @@ function ContactsPage() {
                   const dom = contactLogoDomain((c as any).website, c.email);
                   const resolvedDom = resolveCompanyDomain(dom, aliasMap);
                   const logoProv = resolvedDom ? (logoProviderByDomain.get(resolvedDom) ?? null) : null;
+                  const logoSrc = resolvedDom ? (logoSourceByDomain.get(resolvedDom) ?? null) : null;
                   const showLogo = !!dom;
                   return (
                     <li key={c.id}>
@@ -405,7 +406,7 @@ function ContactsPage() {
                         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
                       >
                         {showLogo ? (
-                          <CompanyLogo domain={resolvedDom ?? dom} name={c.company ?? prettyCompanyName(dom!)} size={40} className="rounded-full" provider={logoProv} />
+                          <CompanyLogo domain={resolvedDom ?? dom} name={c.company ?? prettyCompanyName(dom!)} size={40} className="rounded-full" provider={logoProv} sourceDomain={logoSrc} />
                         ) : (
                           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
                             {(c.name || c.email).slice(0, 1).toUpperCase()}
