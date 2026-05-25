@@ -340,6 +340,7 @@ function ContactsPage() {
                         collapsed={isCollapsed}
                         onToggle={() => toggleBucket(b.key)}
                         aliasCount={b.kind === "company" && b.domain ? (aliasesByPrimary.get(b.domain)?.length ?? 0) : 0}
+                        logoProvider={b.kind === "company" && b.domain ? (logoProviderByDomain.get(b.domain) ?? null) : null}
                         onEdit={b.kind === "company" && b.domain
                           ? () => setAliasDialog({ domain: b.domain!, name: b.name })
                           : undefined}
