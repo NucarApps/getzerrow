@@ -1245,6 +1245,12 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       .eq("id", data.email_id)
       .single();
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
+    if (!email.id || !email.gmail_account_id || !email.gmail_message_id) {
+      throw new Error("Email is missing required identifiers");
+    }
+    const emailId = email.id;
+    const emailAccountId = email.gmail_account_id;
+    const emailMessageId = email.gmail_message_id;
 
     const parsed = {
       from_addr: email.from_addr ?? "",
