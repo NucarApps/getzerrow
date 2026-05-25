@@ -376,14 +376,32 @@ ${sample}`,
     // === Relationship summary: who are they, what have you discussed? ===
     try {
       const addr = contact.email;
-      const { data: convo } = await supabase
+      const { data: localConvo } = await supabase
         .from("emails_decrypted")
         .select("subject,body_text,snippet,from_addr,to_addrs,received_at")
         .or(`from_addr.eq.${addr},to_addrs.ilike.%${addr}%`)
         .order("received_at", { ascending: false })
         .limit(30);
 
-      const convoSample = (convo ?? [])
+      let convo: Array<{ subject: string | null; body_text: string | null; snippet: string | null; from_addr: string | null; to_addrs: string | null; received_at: string | null }> =
+        (localConvo ?? []) as any;
+
+      if (convo.length === 0) {
+        const accountIds = await getGmailAccountIds();
+        if (accountIds.length > 0) {
+          const fetched = await fetchFromGmail(accountIds, `from:${addr} OR to:${addr}`, 20);
+          convo = fetched.map((m) => ({
+            subject: m.subject ?? null,
+            body_text: m.body_text ?? null,
+            snippet: m.snippet ?? null,
+            from_addr: m.from_addr ?? null,
+            to_addrs: m.to_addrs ?? null,
+            received_at: m.received_at ?? null,
+          }));
+        }
+      }
+
+      const convoSample = convo
         .map((e, i) => {
           const inbound = (e.from_addr || "").toLowerCase() === addr.toLowerCase();
           const tail = cleanTail(e.body_text || e.snippet || "").slice(-600);
@@ -391,6 +409,7 @@ ${sample}`,
           return `--- ${i + 1} [${inbound ? "THEY SENT" : "YOU SENT"}] ${when} ---\nSubject: ${e.subject ?? ""}\n${tail}`;
         })
         .join("\n\n");
+
 
       if (convoSample.trim()) {
         const mergedName = patch.name ?? contact.name ?? null;
