@@ -330,6 +330,10 @@ function ContactsPage() {
                         count={b.contacts.length}
                         collapsed={isCollapsed}
                         onToggle={() => toggleBucket(b.key)}
+                        aliasCount={b.kind === "company" && b.domain ? (aliasesByPrimary.get(b.domain)?.length ?? 0) : 0}
+                        onEdit={b.kind === "company" && b.domain
+                          ? () => setAliasDialog({ domain: b.domain!, name: b.name })
+                          : undefined}
                       />
                       {!isCollapsed && (
                         <ul className="divide-y divide-border border-x border-b border-border bg-card/40">
