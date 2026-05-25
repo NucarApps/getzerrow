@@ -175,6 +175,21 @@ export function CompanyAliasesDialog({
     }
   }
 
+  async function pickBrand(brand: LogoBrand) {
+    setBusy(true);
+    try {
+      await setChoiceFn({
+        data: { domain: primaryDomain!, provider: 0, sourceDomain: brand.domain },
+      });
+      toast.success(`Using ${brand.name} logo`);
+      qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't save logo choice");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function promote(alias: string) {
     if (!confirm(`Make ${alias} the primary domain for this company?`)) return;
     setBusy(true);
