@@ -1,1 +1,1 @@
-Add `LOGO_DEV_TOKEN` secret and append `&token=${LOGO_DEV_TOKEN}` to the logo.dev URL in `src/routes/api/public/logo.ts` when the env var is present.
+Add `LOGO_DEV_TOKEN` secret (publishable `pk_...` key). Update `src/routes/api/public/logo.ts` so the logo.dev provider URL appends `&token=${process.env.LOGO_DEV_TOKEN}` when set. Skip the secret key — not needed for image proxying.
