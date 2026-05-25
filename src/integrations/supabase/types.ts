@@ -725,7 +725,6 @@ export type Database = {
       }
       gmail_accounts: {
         Row: {
-          access_token: string | null
           access_token_enc: string | null
           created_at: string
           email_address: string
@@ -735,7 +734,6 @@ export type Database = {
           last_poll_at: string | null
           last_push_at: string | null
           reconcile_cursor: string | null
-          refresh_token: string | null
           refresh_token_enc: string | null
           token_expires_at: string
           updated_at: string
@@ -743,7 +741,6 @@ export type Database = {
           watch_expiration: string | null
         }
         Insert: {
-          access_token?: string | null
           access_token_enc?: string | null
           created_at?: string
           email_address: string
@@ -753,7 +750,6 @@ export type Database = {
           last_poll_at?: string | null
           last_push_at?: string | null
           reconcile_cursor?: string | null
-          refresh_token?: string | null
           refresh_token_enc?: string | null
           token_expires_at: string
           updated_at?: string
@@ -761,7 +757,6 @@ export type Database = {
           watch_expiration?: string | null
         }
         Update: {
-          access_token?: string | null
           access_token_enc?: string | null
           created_at?: string
           email_address?: string
@@ -771,7 +766,6 @@ export type Database = {
           last_poll_at?: string | null
           last_push_at?: string | null
           reconcile_cursor?: string | null
-          refresh_token?: string | null
           refresh_token_enc?: string | null
           token_expires_at?: string
           updated_at?: string
