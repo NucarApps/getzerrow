@@ -264,7 +264,56 @@ export function CompanyAliasesDialog({
 
           <div>
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">Logo</Label>
-            <div className="mt-2 space-y-3">
+            <div className="mt-2 rounded-md border border-border bg-card/40 p-2.5">
+              <Input
+                value={brandQuery}
+                onChange={(e) => setBrandQuery(e.target.value)}
+                placeholder="Search logos by company name"
+                disabled={busy}
+              />
+              {debouncedQuery.length >= 2 && (
+                <div className="mt-2">
+                  {brandsQ.isFetching ? (
+                    <p className="text-[11px] text-muted-foreground">Searching…</p>
+                  ) : (brandsQ.data?.results.length ?? 0) === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">No matches.</p>
+                  ) : (
+                    <div className="grid grid-cols-5 gap-2">
+                      {brandsQ.data!.results.map((b) => {
+                        const selected = currentSource === b.domain && currentProvider === 0;
+                        return (
+                          <button
+                            key={b.domain}
+                            type="button"
+                            onClick={() => pickBrand(b)}
+                            disabled={busy}
+                            title={`${b.name} (${b.domain})`}
+                            aria-pressed={selected}
+                            className={`relative grid aspect-square place-items-center overflow-hidden rounded-md border bg-white p-1.5 transition disabled:opacity-50 ${
+                              selected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/60"
+                            }`}
+                          >
+                            <img
+                              src={logoCandidates(b.domain, 256, 0)[0]}
+                              alt={b.name}
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              className="h-full w-full object-contain"
+                            />
+                            {selected && (
+                              <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-primary text-primary-foreground">
+                                <Check className="h-3 w-3" />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="mt-3 space-y-3">
               {[primaryDomain, ...aliases].map((d) => {
                 const isActiveSource = (currentSource ?? primaryDomain) === d;
                 return (
