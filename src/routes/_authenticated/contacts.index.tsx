@@ -24,6 +24,7 @@ import { CompanyAliasesDialog } from "@/components/contacts/CompanyAliasesDialog
 import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain, resolveCompanyDomain } from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import { listCompanyAliases } from "@/lib/company-aliases.functions";
+import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
