@@ -1,29 +1,29 @@
-# Fix inbox not filling height on mobile
+## Goal
 
-## Problem
-On mobile, the inbox list stops after the visible emails and the "Page 1" footer floats up, leaving a large empty area below it.
+Fix the production outage where deployed code references DB columns/RPCs that don't exist yet. The 8 migration files already exist in `supabase/migrations/` but have NOT been applied to the database (verified: `gmail_accounts.reconcile_cursor` missing, none of the new RPCs exist).
 
-## Cause
-`src/routes/_authenticated/inbox.tsx` line 524 wraps the two panels in:
+## Plan
 
-```
-<div className="grid h-full min-h-0 md:grid-cols-[400px_1fr]">
-```
+Apply the 8 migrations in order via the migration tool. Because the tool runs one migration per call and each call requires user approval, I'll submit them sequentially:
 
-On mobile there's no `grid-cols`/`grid-rows` set, so grid auto-rows size each child to its content. The list panel's `h-full` then resolves against an auto-sized row and collapses — so `flex-1` on the inner list never fills the viewport, and the pagination bar sits right under the last email.
+1. `20260525120000_email_sync_improvements.sql` — new columns on `gmail_accounts`, `emails`, `message_jobs`, `pubsub_events`
+2. `20260525150000_email_sync_review_fixes.sql` — review fixups
+3. `20260525150001_claim_message_jobs_publish.sql` — update `claim_message_jobs` RPC to return `published_at_ms`
+4. `20260525170000_sync_rpcs.sql` — `bump_history_id_if_greater`, `claim_forward_retries`, etc.
+5. `20260525170001_indexes_for_new_queries.sql` — 9 new indexes
+6. `20260525180000_sync_latency_stats.sql` — `get_sync_latency_stats` RPC
+7. `20260525190000_realtime_drop_body_columns.sql` — `ALTER PUBLICATION supabase_realtime SET TABLE emails (...)` dropping `body_text`/`body_html`
+8. `20260525200000_retention_cleanup.sql` — `cleanup_old_pubsub_events`, `cleanup_old_dlq_jobs`
 
-## Fix
-Make the container stretch its single visible child to full height on mobile, while keeping the existing 2-column desktop layout.
+## Verification after each / at the end
 
-Change line 524 to use flex on mobile, grid on desktop:
+- Columns present on `gmail_accounts`, `emails`, `message_jobs`, `pubsub_events`
+- The 5 new RPCs exist and are `service_role`-only
+- Indexes exist
+- `supabase_realtime` publication no longer broadcasts `body_text`/`body_html`
+- Run `supabase--linter` after migrations and address any new warnings
 
-```
-<div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
-```
+## Notes
 
-That's the only edit — both panels already use `h-full min-h-0` and the correct hidden/visible classes, so the desktop grid behavior is unchanged.
-
-## Verification
-- Mobile: list fills viewport, pagination bar pinned to bottom of the list panel above the Safari toolbar.
-- Mobile reader: opening an email still shows the reader full-height (it also has `h-full`).
-- Desktop (`md+`): unchanged 400px + 1fr two-pane layout.
+- No application code changes — code is already aligned with these migrations.
+- No data migration needed; all changes are additive except the realtime publication column list.
