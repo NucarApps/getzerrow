@@ -13,11 +13,11 @@
 // re-exports below preserve backward compatibility for existing
 // `import { x } from "@/lib/sync.server"` call sites.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, sendMessage, GmailApiError } from "./gmail.server";
+import { getMessageMetadata, parseMessage, listMessages, listHistory, ensureWatch, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "./ai.server";
 import {
-  MAX_JOB_ATTEMPTS, BACKOFF_SECONDS, RETRYABLE_BACKOFF_SECONDS,
-  RETRYABLE_FREE_ATTEMPTS, jitter, computeBackoffSeconds as _computeBackoffSeconds,
+  MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS,
+  computeBackoffSeconds as _computeBackoffSeconds,
 } from "./sync/backoff";
 import { withAccountLock as _withAccountLock } from "./sync/account-lock";
 import { gmailHistoryIdGreater as _gmailHistoryIdGreater } from "./sync/history-id";
@@ -45,6 +45,10 @@ import {
   learnFromLinkedLabel as _learnFromLinkedLabel,
   loadOlderFromLabel as _loadOlderFromLabel,
 } from "./sync/folder-learn";
+import {
+  processGmailMessage as _processGmailMessage,
+  type ProcessTimings as _ProcessTimings,
+} from "./sync/process-message";
 
 // Re-export for backward compatibility with existing imports.
 export const withAccountLock = _withAccountLock;
@@ -64,9 +68,11 @@ export const regenerateFolderProfile = _regenerateFolderProfile;
 export const bumpEmailsSinceLearn = _bumpEmailsSinceLearn;
 export const learnFromLinkedLabel = _learnFromLinkedLabel;
 export const loadOlderFromLabel = _loadOlderFromLabel;
-// recordManualMove is internal to the sync pipeline — used by history.ts
-// once it's extracted. Re-exported here so callers still resolve via the
-// barrel until that extraction lands.
+export const processGmailMessage = _processGmailMessage;
+export type ProcessTimings = _ProcessTimings;
+// recordManualMove is internal to the sync pipeline — used by the
+// inline syncSinceHistoryLocked / labelsAdded path that will eventually
+// move to ./sync/history.ts.
 const recordManualMove = _recordManualMove;
 
 // Shared types (Folder, Filter, OverrideException, GmailAccount, RuleNode)
@@ -92,249 +98,8 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
 // invalidate* moved to ./sync/account-context.ts and re-exported above.)
 
 // (classifyParsedEmail + ClassificationResult moved to ./sync/classify.ts
-// and re-exported at the top of this file.)
-
-export type ProcessTimings = { fetch: number; ai: number; db: number };
-
-export async function processGmailMessage(
-  accountId: string,
-  gmailId: string,
-  userId: string,
-  opts: {
-    context?: AccountContext;
-    skipAi?: boolean;
-    timings?: ProcessTimings;
-    /** Caller already has a parsed message (e.g. syncSinceHistory had to fetch
-     * it to record a manual move). Pass it here to skip the duplicate Gmail
-     * roundtrip. */
-    prefetched?: ReturnType<typeof parseMessage>;
-    /** Pub/Sub publish time (ms epoch) for the push that originated this
-     * job. Persisted onto the inserted email row so we can compute
-     * push → visible latency. Comes from message_jobs.published_at_ms when
-     * runMessageJobs invokes us. */
-    publishedAtMs?: number | null;
-  } = {},
-) {
-  const t = opts.timings;
-
-
-  const _t0 = performance.now();
-  const { data: existing } = await supabaseAdmin
-    .from("emails")
-    .select("id, from_addr, subject, body_text, body_html, received_at")
-    .eq("gmail_message_id", gmailId)
-    .eq("gmail_account_id", accountId)
-    .maybeSingle();
-  if (t) t.db += performance.now() - _t0;
-
-  let parsed: ReturnType<typeof parseMessage>;
-  if (opts.prefetched) {
-    // Caller already paid for the Gmail roundtrip (e.g. syncSinceHistory
-    // fetched the message to record a manual move). Reuse it.
-    parsed = opts.prefetched;
-  } else {
-    const _t1 = performance.now();
-    const raw = await getMessage(accountId, gmailId);
-    parsed = parseMessage(raw);
-    if (t) t.fetch += performance.now() - _t1;
-  }
-
-
-  if (existing) {
-    // Repair rows that were inserted with missing/blank metadata.
-    const needsRepair =
-      !existing.from_addr ||
-      !existing.subject ||
-      (!existing.body_text && !existing.body_html) ||
-      !existing.received_at;
-    if (needsRepair) {
-      await supabaseAdmin.from("emails").update({
-        from_addr: parsed.from_addr,
-        from_name: parsed.from_name,
-        to_addrs: parsed.to_addrs,
-        subject: parsed.subject,
-        snippet: parsed.snippet,
-        body_text: parsed.body_text,
-        body_html: parsed.body_html,
-        received_at: parsed.received_at,
-        has_attachment: parsed.has_attachment,
-        raw_labels: parsed.raw_labels,
-        is_read: parsed.is_read,
-      }).eq("id", existing.id);
-      return { repaired: true };
-    }
-    return { skipped: true };
-  }
-
-  const labels = parsed.raw_labels ?? [];
-  const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
-  if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return { skipped: true };
-  const inInbox = labels.includes("INBOX");
-
-  // Pub/Sub publishTime threaded through message_jobs.published_at_ms.
-  // Persist it on the email row so a single SQL query can compute
-  // push → visible p50/p95 latency.
-  const publishedAtMs = opts.publishedAtMs ?? null;
-
-  // 1) Insert the email row FIRST with no folder so it shows up in Inbox
-  //    immediately, even if classification (AI Gateway) is slow or fails.
-  //    Classification runs in step 2 and UPDATEs the row.
-  const { data: inserted, error } = await supabaseAdmin
-    .from("emails")
-    .insert({
-      user_id: userId,
-      gmail_account_id: accountId,
-      gmail_message_id: parsed.gmail_message_id,
-      thread_id: parsed.thread_id,
-      from_addr: parsed.from_addr,
-      from_name: parsed.from_name,
-      to_addrs: parsed.to_addrs,
-      cc: parsed.cc || null,
-      list_id: parsed.list_id || null,
-      in_reply_to: parsed.in_reply_to || null,
-      subject: parsed.subject,
-      snippet: parsed.snippet,
-      body_text: parsed.body_text,
-      body_html: parsed.body_html,
-      received_at: parsed.received_at,
-      is_read: parsed.is_read,
-      has_attachment: parsed.has_attachment,
-      raw_labels: parsed.raw_labels,
-      folder_id: null,
-      is_archived: !inInbox,
-      classified_by: "pending",
-      processed_at: new Date().toISOString(),
-      published_at_ms: publishedAtMs,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    console.error("insert email failed", error);
-    return { error: error.message };
-  }
-
-  // 2) Classify. If this throws or times out, the email is already in Inbox.
-  let folder_id: string | null = null;
-  try {
-    const _tAi = performance.now();
-    const c = await classifyParsedEmail(parsed, userId, accountId, {
-      context: opts.context,
-      skipAi: opts.skipAi,
-    });
-    if (t) t.ai += performance.now() - _tAi;
-    folder_id = c.folder_id ?? null;
-    const _tDb = performance.now();
-    await supabaseAdmin.from("emails").update({
-      folder_id,
-      ai_summary: c.ai_summary || null,
-      ai_confidence: c.ai_confidence,
-      classified_by: c.classified_by,
-      classification_reason: c.classification_reason,
-      matched_filter_ids: c.matched_filter_ids,
-      matched_folder_ids: c.matched_folder_ids,
-    }).eq("id", inserted.id);
-    if (folder_id) void bumpEmailsSinceLearn(folder_id);
-    if (t) t.db += performance.now() - _tDb;
-  } catch (e) {
-    console.error("classify failed (email already visible in Inbox)", e);
-    await supabaseAdmin.from("emails").update({
-      classified_by: "unclassified",
-      classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
-    }).eq("id", inserted.id);
-    return { id: inserted.id, classify_failed: true };
-  }
-
-
-  // 3) Apply Gmail label / auto-archive / auto-mark-read for the assigned folder.
-  //    Use the prefetched folder list when available to avoid an extra round trip.
-  if (folder_id) {
-    let folder: {
-      id: string; gmail_label_id: string | null; auto_archive: boolean;
-      auto_mark_read: boolean; auto_star: boolean; hide_from_inbox: boolean;
-      forward_to: string | null; snooze_hours: number;
-    } | null = null;
-    const cached = opts.context?.folders.find((f) => f.id === folder_id);
-    if (cached) {
-      folder = {
-        id: cached.id,
-        gmail_label_id: cached.gmail_label_id,
-        auto_archive: cached.auto_archive,
-        auto_mark_read: cached.auto_mark_read,
-        auto_star: cached.auto_star,
-        hide_from_inbox: cached.hide_from_inbox,
-        forward_to: cached.forward_to,
-        snooze_hours: cached.snooze_hours,
-      };
-    } else {
-      const { data } = await supabaseAdmin
-        .from("folders")
-        .select("id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours")
-        .eq("id", folder_id)
-        .maybeSingle();
-      folder = data ?? null;
-    }
-    if (folder) {
-      // hide_from_inbox behaves like auto_archive for the inbox view.
-      const effectiveArchive = folder.auto_archive || folder.hide_from_inbox;
-      const addLabels: string[] = [];
-      const removeLabels: string[] = [];
-      if (folder.gmail_label_id && !parsed.raw_labels?.includes(folder.gmail_label_id)) addLabels.push(folder.gmail_label_id);
-      if (folder.auto_mark_read) removeLabels.push("UNREAD");
-      if (folder.auto_star && !parsed.raw_labels?.includes("STARRED")) addLabels.push("STARRED");
-      if (inInbox && effectiveArchive) removeLabels.push("INBOX");
-      if (addLabels.length || removeLabels.length) {
-        try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); } catch (e) { console.error("modify failed", e); }
-      }
-      const patch: {
-        is_archived?: boolean;
-        is_read?: boolean;
-        snoozed_until?: string;
-        forwarded_to?: string;
-        forwarded_at?: string;
-        forward_attempts?: number;
-        forward_last_error?: string | null;
-        forward_next_retry_at?: string | null;
-      } = {};
-      if (inInbox && effectiveArchive) patch.is_archived = true;
-      if (folder.auto_mark_read) patch.is_read = true;
-      if (folder.snooze_hours && folder.snooze_hours > 0) {
-        patch.snoozed_until = new Date(Date.now() + folder.snooze_hours * 3600_000).toISOString();
-      }
-      if (folder.forward_to) {
-        try {
-          await sendMessage(
-            accountId,
-            folder.forward_to,
-            `Fwd: ${parsed.subject || "(no subject)"}`,
-            `---------- Forwarded message ----------\nFrom: ${parsed.from_name || ""} <${parsed.from_addr}>\nDate: ${parsed.received_at}\nSubject: ${parsed.subject}\n\n${parsed.body_text || parsed.snippet || ""}`,
-          );
-          patch.forwarded_to = folder.forward_to;
-          patch.forwarded_at = new Date().toISOString();
-          // Clear any pending retry state from previous failures.
-          patch.forward_attempts = 0;
-          patch.forward_last_error = null;
-          patch.forward_next_retry_at = null;
-        } catch (e) {
-          // Schedule a retry instead of silently dropping. attempt counter and
-          // next_retry_at are picked up by retryForwardAttempts() below.
-          const errMsg = (e as Error)?.message?.slice(0, 500) ?? "unknown";
-          console.error("auto-forward failed; scheduling retry", errMsg);
-          const nextRetry = new Date(Date.now() + jitter(60) * 1000).toISOString();
-          patch.forward_attempts = 1;
-          patch.forward_last_error = errMsg;
-          patch.forward_next_retry_at = nextRetry;
-        }
-      }
-      if (Object.keys(patch).length > 0) {
-        await supabaseAdmin.from("emails").update(patch).eq("id", inserted.id);
-      }
-    }
-  }
-
-
-  return { id: inserted.id, email_id: inserted.id, folder_id, parsed };
-}
+// processGmailMessage + ProcessTimings moved to ./sync/process-message.ts
+// — both re-exported at the top of this file.)
 
 // (recordManualMove, regenerateFolderProfile, bumpEmailsSinceLearn,
 // learnFromLinkedLabel, loadOlderFromLabel moved to ./sync/folder-learn.ts
