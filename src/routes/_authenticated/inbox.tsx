@@ -421,22 +421,37 @@ function InboxPage() {
 
   const filtered = useMemo(() => {
     if (isSearching) {
-      // Trust the server-side search corpus (last 2000 messages) plus any
-      // freshly-ingested Gmail hits. Avoid a local substring filter so
-      // body-text matches from Gmail don't get hidden.
-      const qstr = query.trim().toLowerCase();
+      const qstr = query.trim();
+      // Parse Gmail-style operators: from:foo@bar.com, to:"a b@c.com"
+      const parsed = parseSearchQuery(qstr);
+      const fromNeedle = parsed.from?.toLowerCase() ?? null;
+      const toNeedle = parsed.to?.toLowerCase() ?? null;
+      const rest = parsed.rest.toLowerCase();
+
       const scored = pageRows.map((e) => {
-        const hay =
-          (e.from_name ? decodeEntities(e.from_name).toLowerCase() : "") +
-          " " +
-          (e.from_addr ? e.from_addr.toLowerCase() : "") +
-          " " +
-          (e.subject ? decodeEntities(e.subject).toLowerCase() : "") +
-          " " +
-          (e.snippet ? decodeEntities(e.snippet).toLowerCase() : "");
-        return { e, hit: hay.includes(qstr) };
+        const fromAddr = (e.from_addr ?? "").toLowerCase();
+        const fromName = e.from_name ? decodeEntities(e.from_name).toLowerCase() : "";
+        const toAddrs = (e.to_addrs ?? "").toLowerCase();
+        const subject = e.subject ? decodeEntities(e.subject).toLowerCase() : "";
+        const snippet = e.snippet ? decodeEntities(e.snippet).toLowerCase() : "";
+
+        let hit = true;
+        if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle))) hit = false;
+        if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
+        if (rest) {
+          const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
+          if (!hay.includes(rest)) hit = false;
+        }
+        return { e, hit };
       });
-      // Show metadata matches first, then everything else (covers body-only Gmail hits).
+      // If any operator filter is active, only show matches (Gmail-side hits
+      // were already ingested into the corpus, but body-only matches here
+      // would just be noise when the user typed from:/to:).
+      if (fromNeedle || toNeedle) {
+        return scored.filter((s) => s.hit).map((s) => s.e);
+      }
+      // Free-text search: keep the old "metadata hits first, others after"
+      // ordering so body-only Gmail hits still appear.
       return [...scored.filter((s) => s.hit), ...scored.filter((s) => !s.hit)].map((s) => s.e);
     }
     return pageRows;
