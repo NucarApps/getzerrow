@@ -724,7 +724,7 @@ export function TrackingStandby() {
             ← → MOVE   ·   SPACE FIRE   ·   P PAUSE
           </div>
 
-          {(phase === "ready" || phase === "over") && (
+          {(phase === "ready" || phase === "over" || phase === "paused") && (
             <div
               className="mt-5 w-full max-w-xs rounded-sm border border-[rgba(255,138,61,.25)] bg-[rgba(10,14,26,.55)] px-3 py-2 text-left"
               style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
