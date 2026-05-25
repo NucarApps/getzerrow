@@ -367,7 +367,18 @@ function ContactsPage() {
                                   </div>
                                   <div className="min-w-0 flex-1">
                                     <div className="truncate text-sm font-medium text-foreground">{c.name || c.email}</div>
-                                    <div className="truncate text-xs text-muted-foreground">{c.email}</div>
+                                    {b.kind === "company" ? (
+                                      <>
+                                        <div className="truncate text-xs text-muted-foreground">{c.title || c.email}</div>
+                                        {(c as any).relationship_summary && (
+                                          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/80">
+                                            {(c as any).relationship_summary}
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <div className="truncate text-xs text-muted-foreground">{c.email}</div>
+                                    )}
                                   </div>
                                   {gids.length > 0 && (
                                     <div className="flex items-center gap-1">
