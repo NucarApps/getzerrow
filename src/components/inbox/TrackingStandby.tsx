@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import shipUrl from "@/assets/zerrow-ship.png";
+import { getInvaderStats, submitInvaderScore, type InvaderStats } from "@/lib/invader.functions";
 
 /**
  * Inbox empty state — Space Invaders mini-game.
