@@ -346,9 +346,19 @@ export function CompanyAliasesDialog({
                   <div key={a} className="flex items-center gap-2 rounded-md border border-border bg-card/40 px-2.5 py-1.5 text-sm">
                     <span className="flex-1 truncate">{a}</span>
                     <button
+                      onClick={() => promote(a)}
+                      disabled={busy}
+                      aria-label={`Make ${a} primary`}
+                      title="Make primary"
+                      className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <Star className="h-3.5 w-3.5" />
+                    </button>
+                    <button
                       onClick={() => remove(a)}
                       disabled={busy}
                       aria-label={`Remove ${a}`}
+                      title="Remove"
                       className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
                       <X className="h-3.5 w-3.5" />
