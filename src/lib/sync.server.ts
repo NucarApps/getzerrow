@@ -14,7 +14,7 @@
 // `import { x } from "@/lib/sync.server"` call sites.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels, sendMessage, GmailApiError } from "./gmail.server";
-import { classifyEmail, classifyEmailsBatch, buildFolderProfile, type ClassifyFolder } from "./ai.server";
+import { classifyEmail, classifyEmailsBatch, buildFolderProfile } from "./ai.server";
 import {
   MAX_JOB_ATTEMPTS, BACKOFF_SECONDS, RETRYABLE_BACKOFF_SECONDS,
   RETRYABLE_FREE_ATTEMPTS, jitter, computeBackoffSeconds as _computeBackoffSeconds,
@@ -26,8 +26,17 @@ import {
   replayTransientDlq as _replayTransientDlq,
 } from "./sync/dlq";
 import { retryForwardAttempts as _retryForwardAttempts } from "./sync/forward-retry";
-import type { Folder, Filter, GmailAccount, OverrideException, RuleNode } from "./sync/types";
-import { applyFilter, matchByFilters, labelOf, EXCLUDE_OPS } from "./sync/filter-engine";
+import type { Folder, Filter, GmailAccount } from "./sync/types";
+import {
+  type AccountContext as _AccountContext,
+  loadAccountContext as _loadAccountContext,
+  invalidateAccountContext as _invalidateAccountContext,
+  invalidateAccountContextForUser as _invalidateAccountContextForUser,
+} from "./sync/account-context";
+import {
+  classifyParsedEmail as _classifyParsedEmail,
+  type ClassificationResult as _ClassificationResult,
+} from "./sync/classify";
 
 // Re-export for backward compatibility with existing imports.
 export const withAccountLock = _withAccountLock;
@@ -36,6 +45,12 @@ export const gmailHistoryIdGreater = _gmailHistoryIdGreater;
 export const isTransientDlqError = _isTransientDlqError;
 export const replayTransientDlq = _replayTransientDlq;
 export const retryForwardAttempts = _retryForwardAttempts;
+export type AccountContext = _AccountContext;
+export const loadAccountContext = _loadAccountContext;
+export const invalidateAccountContext = _invalidateAccountContext;
+export const invalidateAccountContextForUser = _invalidateAccountContextForUser;
+export const classifyParsedEmail = _classifyParsedEmail;
+export type ClassificationResult = _ClassificationResult;
 
 // Shared types (Folder, Filter, OverrideException, GmailAccount, RuleNode)
 // moved to ./sync/types.ts and imported above.
@@ -56,280 +71,11 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
 // above.
 
 
-async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolder[]> {
-  if (folders.length === 0) return [];
-  const { data: examples } = await supabaseAdmin
-    .from("folder_examples")
-    .select("folder_id, from_addr, subject")
-    .in("folder_id", folders.map((f) => f.id))
-    .order("created_at", { ascending: false })
-    .limit(200);
-  const byFolder = new Map<string, Array<{ from_addr: string | null; subject: string | null }>>();
-  for (const e of examples ?? []) {
-    if (!byFolder.has(e.folder_id)) byFolder.set(e.folder_id, []);
-    const arr = byFolder.get(e.folder_id)!;
-    if (arr.length < 5) arr.push({ from_addr: e.from_addr, subject: e.subject });
-  }
-  return folders.map((f) => ({
-    id: f.id,
-    name: f.name,
-    ai_rule: f.ai_rule,
-    learned_profile: f.learned_profile,
-    examples: byFolder.get(f.id) ?? [],
-  }));
-}
+// (loadFoldersWithExamples + AccountContext + loadAccountContext +
+// invalidate* moved to ./sync/account-context.ts and re-exported above.)
 
-export type ClassificationResult = {
-  folder_id: string | null;
-  classified_by: string;
-  ai_confidence: number;
-  ai_summary: string;
-  classification_reason: string | null;
-  matched_filter_ids: string[];
-  matched_folder_ids: string[];
-};
-
-/**
- * Per-account context shared across a batch of jobs so we don't re-fetch
- * folders / filters / overrides / examples for every single message. Build
- * once at the top of a worker invocation with `loadAccountContext`.
- */
-export type AccountContext = {
-  folders: Folder[];
-  filters: Filter[];
-  overrides: Array<{ id: string; match_type: string; value: string }>;
-  overrideExceptions: OverrideException[];
-  enrichedFolders: ClassifyFolder[];
-};
-
-const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
-// Short TTL so a folder/filter change is reflected within a few seconds even
-// when the explicit invalidate hook below isn't called. Mutation paths that
-// know they changed routing rules should still call invalidateAccountContext
-// for instant pickup.
-const ACCOUNT_CONTEXT_TTL_MS = 5_000;
-
-/** Drop any cached context for one account. Call after writes to folders /
- * folder_filters for that account. */
-export function invalidateAccountContext(accountId: string): void {
-  accountContextCache.delete(accountId);
-}
-
-/** Drop cached context for every account belonging to a user. Use after
- * writes to user-scoped tables (inbox_overrides, inbox_override_exceptions)
- * where you don't know which account caches need to be busted. */
-export async function invalidateAccountContextForUser(userId: string): Promise<void> {
-  const { data } = await supabaseAdmin
-    .from("gmail_accounts")
-    .select("id")
-    .eq("user_id", userId);
-  for (const acc of data ?? []) accountContextCache.delete(acc.id);
-}
-
-export async function loadAccountContext(accountId: string, userId: string): Promise<AccountContext> {
-  const cached = accountContextCache.get(accountId);
-  if (cached && cached.expires > Date.now()) return cached.ctx;
-
-  const [{ data: folders }, { data: overrides }, { data: exceptions }] = await Promise.all([
-    supabaseAdmin
-      .from("folders")
-      .select("*")
-      .eq("gmail_account_id", accountId)
-      .order("priority", { ascending: false }),
-    supabaseAdmin.from("inbox_overrides").select("id, match_type, value").eq("user_id", userId),
-    supabaseAdmin.from("inbox_override_exceptions").select("override_id, field, op, value").eq("user_id", userId),
-  ]);
-
-  const folderList = (folders ?? []) as Folder[];
-  const folderIds = folderList.map((f) => f.id);
-  // Scope filter fetch to this account's folders only — avoids pulling every
-  // user's filters (RLS doesn't apply with the admin client) and scales better.
-  let filterList: Filter[] = [];
-  if (folderIds.length > 0) {
-    const { data: filters } = await supabaseAdmin
-      .from("folder_filters")
-      .select("id, folder_id, field, op, value")
-      .in("folder_id", folderIds);
-    filterList = (filters ?? []) as Filter[];
-  }
-  const enrichedFolders = await loadFoldersWithExamples(folderList);
-
-  const ctx: AccountContext = {
-    folders: folderList,
-    filters: filterList,
-    overrides: overrides ?? [],
-    overrideExceptions: (exceptions ?? []) as OverrideException[],
-    enrichedFolders,
-  };
-  accountContextCache.set(accountId, { ctx, expires: Date.now() + ACCOUNT_CONTEXT_TTL_MS });
-  return ctx;
-}
-
-export async function classifyParsedEmail(
-  parsed: {
-    from_addr: string;
-    from_name: string;
-    to_addrs: string;
-    cc?: string;
-    list_id?: string;
-    in_reply_to?: string;
-    subject: string;
-    snippet: string;
-    body_text: string;
-    body_html: string;
-    has_attachment: boolean;
-    received_at: string;
-    raw_labels: string[] | null;
-  },
-  userId: string,
-  accountId: string,
-  opts: { skipGmailLabelMatch?: boolean; context?: AccountContext; skipAi?: boolean } = {},
-): Promise<ClassificationResult> {
-  const context = opts.context ?? (await loadAccountContext(accountId, userId));
-  const folderList = context.folders;
-  const filterList = context.filters;
-  const overrides = context.overrides;
-  const overrideExceptions = context.overrideExceptions;
-
-  let folder_id: string | null = null;
-  let classified_by = "none";
-  let confidence = 0;
-  let summary = "";
-  let classification_reason: string | null = null;
-  let matched_filter_ids: string[] = [];
-  let matched_folder_ids: string[] = [];
-  let aiSkipped = false;
-
-  const fromAddr = (parsed.from_addr || "").toLowerCase();
-  const fromDomain = fromAddr.split("@")[1] || "";
-  const overrideHit = overrides.find((o) => {
-    const val = (o.value || "").toLowerCase();
-    return o.match_type === "email" ? val === fromAddr : val === fromDomain;
-  });
-
-  // If override fired, check per-override exceptions (same applyFilter evaluator
-  // used by folder filters, including starts_with/ends_with/contains/regex).
-  let overrideExceptionHit: OverrideException | null = null;
-  if (overrideHit) {
-    const exForThisOverride = overrideExceptions.filter((e) => e.override_id === overrideHit.id);
-    for (const ex of exForThisOverride) {
-      if (applyFilter(parsed, { id: "", folder_id: "", field: ex.field, op: ex.op, value: ex.value })) {
-        overrideExceptionHit = ex;
-        break;
-      }
-    }
-  }
-
-  // Folder match (computed up-front so we can let a folder beat the override
-  // when its `overrides_inbox_override` flag is on).
-  const labeledFolder = opts.skipGmailLabelMatch
-    ? undefined
-    : folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
-  const folderMatch = labeledFolder ? null : matchByFilters(parsed, folderList, filterList);
-  const beatingFolderId =
-    overrideHit && folderMatch?.kind === "match"
-      ? folderMatch.all_matched_folder_ids.find((fid) => {
-          const f = folderList.find((x) => x.id === fid);
-          return f?.overrides_inbox_override === true;
-        }) ?? null
-      : null;
-
-  const overrideWins = !!overrideHit && !overrideExceptionHit && !beatingFolderId;
-
-  if (overrideWins) {
-    classified_by = "global_exclude";
-    classification_reason = `Global inbox list: ${overrideHit!.match_type} "${overrideHit!.value}"`;
-    aiSkipped = true;
-  } else {
-    if (labeledFolder) {
-      folder_id = labeledFolder.id;
-      classified_by = "gmail_label";
-      confidence = 1;
-      classification_reason = `Already labeled "${labeledFolder.name}" in Gmail at sync time`;
-    } else {
-      const m = folderMatch;
-      // If a beatingFolder forced us past the override, prefer that folder
-      // even if matchByFilters' priority sort picked a different one.
-      const winningFolderId = beatingFolderId ?? (m?.kind === "match" ? m.folder_id : null);
-      if (m?.kind === "match" && winningFolderId) {
-        folder_id = winningFolderId;
-        matched_folder_ids = m.all_matched_folder_ids;
-        confidence = 1;
-        if (m.tree_used) {
-          classified_by = "filter";
-          classification_reason = `Rule group matched for "${labelOf(folderList, winningFolderId)}"`;
-        } else if (m.filter) {
-          classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
-          matched_filter_ids = m.matched_filters.map((f) => f.id);
-          classification_reason =
-            classified_by === "domain_rule"
-              ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, winningFolderId)}`
-              : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
-        }
-        if (beatingFolderId && overrideHit) {
-          classification_reason =
-            (classification_reason ?? "") +
-            ` (beat inbox override "${overrideHit.value}")`;
-        } else if (overrideExceptionHit && overrideHit) {
-          classification_reason =
-            (classification_reason ?? "") +
-            ` (exception to inbox override "${overrideHit.value}": ${overrideExceptionHit.field} ${overrideExceptionHit.op} "${overrideExceptionHit.value}")`;
-        }
-      } else if (m?.kind === "excluded") {
-        classified_by = "excluded";
-        classification_reason = `Would match "${m.folder_name}" but excluded by rule: ${m.exclude.field} ${m.exclude.op} "${m.exclude.value}"`;
-        aiSkipped = true;
-      } else if (overrideExceptionHit && overrideHit) {
-        // Exception fired but no folder matched — fall through to AI; note it.
-        classification_reason = `Inbox override "${overrideHit.value}" bypassed by exception (${overrideExceptionHit.field} ${overrideExceptionHit.op} "${overrideExceptionHit.value}")`;
-      }
-    }
-  }
-
-  if (!folder_id && !aiSkipped && !opts.skipAi && folderList.length > 0) {
-    // Exclude folders flagged skip_ai from the AI candidate set.
-    const skipAiIds = new Set(folderList.filter((f) => f.skip_ai).map((f) => f.id));
-    const aiFolders = context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
-    if (aiFolders.length > 0) {
-      try {
-        const r = await classifyEmail(parsed, aiFolders);
-        const candidate = folderList.find((f) => f.id === r.folder_id);
-        const threshold = candidate?.min_ai_confidence ?? 0;
-        if (r.folder_id && r.confidence >= threshold) {
-          folder_id = r.folder_id;
-          confidence = r.confidence;
-          summary = r.summary;
-          classified_by = "ai";
-          classification_reason = r.reason || null;
-        } else if (r.folder_id) {
-          classified_by = "ai_low_confidence";
-          confidence = r.confidence;
-          summary = r.summary;
-          classification_reason = `AI suggested "${candidate?.name ?? "?"}" at ${(r.confidence * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`;
-        } else {
-          classified_by = "ai";
-          confidence = r.confidence;
-          summary = r.summary;
-          classification_reason = r.reason || null;
-        }
-      } catch (e) {
-        console.error("AI classify failed", e);
-        classified_by = "ai_error";
-        classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
-      }
-    }
-  }
-
-  return {
-    folder_id,
-    classified_by,
-    ai_confidence: confidence,
-    ai_summary: summary,
-    classification_reason,
-    matched_filter_ids,
-    matched_folder_ids,
-  };
-}
+// (classifyParsedEmail + ClassificationResult moved to ./sync/classify.ts
+// and re-exported at the top of this file.)
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
 
