@@ -49,7 +49,7 @@ function ContactsPage() {
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
   const [groupDialog, setGroupDialog] = useState<null | { mode: "create" } | { mode: "edit"; group: GroupRow }>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [groupByCompany, setGroupByCompany] = useState(false);
+  const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
 
