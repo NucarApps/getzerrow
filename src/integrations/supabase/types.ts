@@ -267,6 +267,7 @@ export type Database = {
           folder_id: string | null
           forward_attempts: number
           forward_last_error: string | null
+          forward_locked_at: string | null
           forward_next_retry_at: string | null
           forwarded_at: string | null
           forwarded_to: string | null
@@ -305,6 +306,7 @@ export type Database = {
           folder_id?: string | null
           forward_attempts?: number
           forward_last_error?: string | null
+          forward_locked_at?: string | null
           forward_next_retry_at?: string | null
           forwarded_at?: string | null
           forwarded_to?: string | null
@@ -343,6 +345,7 @@ export type Database = {
           folder_id?: string | null
           forward_attempts?: number
           forward_last_error?: string | null
+          forward_locked_at?: string | null
           forward_next_retry_at?: string | null
           forwarded_at?: string | null
           forwarded_to?: string | null
@@ -636,6 +639,7 @@ export type Database = {
           id: string
           last_history_sync_at: string | null
           last_poll_at: string | null
+          last_push_at: string | null
           reconcile_cursor: string | null
           refresh_token: string
           token_expires_at: string
@@ -651,6 +655,7 @@ export type Database = {
           id?: string
           last_history_sync_at?: string | null
           last_poll_at?: string | null
+          last_push_at?: string | null
           reconcile_cursor?: string | null
           refresh_token: string
           token_expires_at: string
@@ -666,6 +671,7 @@ export type Database = {
           id?: string
           last_history_sync_at?: string | null
           last_poll_at?: string | null
+          last_push_at?: string | null
           reconcile_cursor?: string | null
           refresh_token?: string
           token_expires_at?: string
@@ -752,6 +758,7 @@ export type Database = {
           locked_at: string | null
           next_run_at: string
           priority: number
+          published_at_ms: number | null
           status: string
           subject: string | null
           updated_at: string
@@ -768,6 +775,7 @@ export type Database = {
           locked_at?: string | null
           next_run_at?: string
           priority?: number
+          published_at_ms?: number | null
           status?: string
           subject?: string | null
           updated_at?: string
@@ -784,6 +792,7 @@ export type Database = {
           locked_at?: string | null
           next_run_at?: string
           priority?: number
+          published_at_ms?: number | null
           status?: string
           subject?: string | null
           updated_at?: string
