@@ -186,8 +186,8 @@ ${(e.body_text || e.snippet || "").slice(0, 1500)}`)
     index: z.number().int().min(1),
     folder_name: z.string(),
     confidence: z.number().min(0).max(1),
-    summary: z.string().max(140),
-    reason: z.string().max(200),
+    summary: z.string().transform((s) => s.slice(0, 140)),
+    reason: z.string().transform((s) => s.slice(0, 200)),
   });
   const schema = z.object({ results: z.array(itemSchema) });
 
