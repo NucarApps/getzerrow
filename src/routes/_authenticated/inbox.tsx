@@ -1089,7 +1089,7 @@ function InboxPage() {
               </SwipeRow>
             );
           })}
-        </div>
+        </PullToRefresh>
         {!isSearching && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={goPrev} disabled={page === 1}>
