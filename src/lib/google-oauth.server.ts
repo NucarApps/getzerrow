@@ -129,20 +129,10 @@ type GetTokensRow = {
   token_expires_at: string;
 };
 type OAuthRpc = {
-  rpc:
-    | ((
-        fn: "get_gmail_oauth_tokens",
-        args: { p_account_id: string },
-      ) => Promise<{ data: GetTokensRow[] | null; error: { message: string } | null }>)
-    | ((
-        fn: "set_gmail_oauth_tokens",
-        args: {
-          p_account_id: string;
-          p_access_token: string;
-          p_refresh_token: string;
-          p_token_expires_at: string;
-        },
-      ) => Promise<{ data: unknown; error: { message: string } | null }>);
+  rpc: (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: GetTokensRow[] | null; error: { message: string } | null }>;
 };
 
 /** Returns a fresh access token for the given gmail account, refreshing if
