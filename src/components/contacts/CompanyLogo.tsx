@@ -10,20 +10,25 @@ type Props = {
   onColor?: (color: string | null) => void;
   /** Force a specific logo provider index from the proxy. */
   provider?: number | null;
+  /** Fetch the logo image from a different domain than `domain` (e.g. an alias). */
+  sourceDomain?: string | null;
 };
 
 /** Company logo with multi-provider fallback, then monogram. */
-export function CompanyLogo({ domain, name, size = 32, className = "", onColor, provider }: Props) {
+export function CompanyLogo({
+  domain, name, size = 32, className = "", onColor, provider, sourceDomain,
+}: Props) {
+  const fetchDomain = sourceDomain ?? domain;
   const candidates = useMemo(
-    () => (domain ? logoCandidates(domain, Math.max(256, size * 6), provider) : []),
-    [domain, size, provider],
+    () => (fetchDomain ? logoCandidates(fetchDomain, Math.max(256, size * 6), provider) : []),
+    [fetchDomain, size, provider],
   );
   const [idx, setIdx] = useState(0);
   const initial = ((name || domain || "?").trim().charAt(0) || "?").toUpperCase();
   const px = `${size}px`;
 
   // Reset retry index when domain changes.
-  useEffect(() => { setIdx(0); }, [domain, provider]);
+  useEffect(() => { setIdx(0); }, [fetchDomain, provider]);
 
   useEffect(() => {
     if (!onColor || !domain) return;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { X, Plus, Trash2, Check } from "lucide-react";
+import { X, Plus, Trash2, Check, Star } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
-  addCompanyAlias, removeCompanyAlias, clearCompanyAliases,
+  addCompanyAlias, removeCompanyAlias, clearCompanyAliases, promoteAliasToPrimary,
 } from "@/lib/company-aliases.functions";
 import {
   listCompanyLogoChoices, setCompanyLogoChoice, clearCompanyLogoChoice,
@@ -39,6 +39,7 @@ export function CompanyAliasesDialog({
   const addFn = useServerFn(addCompanyAlias);
   const removeFn = useServerFn(removeCompanyAlias);
   const clearFn = useServerFn(clearCompanyAliases);
+  const promoteFn = useServerFn(promoteAliasToPrimary);
   const listChoices = useServerFn(listCompanyLogoChoices);
   const setChoiceFn = useServerFn(setCompanyLogoChoice);
   const clearChoiceFn = useServerFn(clearCompanyLogoChoice);
@@ -55,9 +56,11 @@ export function CompanyAliasesDialog({
     queryFn: () => listChoices(),
     enabled: open,
   });
-  const currentChoice = primaryDomain
-    ? choicesQ.data?.find((c) => c.domain === primaryDomain)?.provider ?? null
-    : null;
+  const currentRow = primaryDomain
+    ? choicesQ.data?.find((c) => c.domain === primaryDomain)
+    : undefined;
+  const currentProvider = currentRow?.provider ?? null;
+  const currentSource = currentRow?.source_domain ?? null;
 
   const assignmentsQ = useQuery({
     queryKey: ["company-group-assignments"],
@@ -137,17 +140,36 @@ export function CompanyAliasesDialog({
     }
   }
 
-  async function pickLogo(provider: number | null) {
+  async function pickLogo(provider: number | null, sourceDomain: string) {
     setBusy(true);
     try {
-      if (provider === null) {
+      if (provider === null && sourceDomain === primaryDomain) {
         await clearChoiceFn({ data: { domain: primaryDomain! } });
       } else {
-        await setChoiceFn({ data: { domain: primaryDomain!, provider } });
+        // "Auto" for an alias source means provider 0 (Clearbit) from that domain.
+        const p = provider ?? 0;
+        await setChoiceFn({ data: { domain: primaryDomain!, provider: p, sourceDomain } });
       }
       qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't save logo choice");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function promote(alias: string) {
+    if (!confirm(`Make ${alias} the primary domain for this company?`)) return;
+    setBusy(true);
+    try {
+      await promoteFn({ data: { currentPrimary: primaryDomain!, newPrimary: alias } });
+      toast.success(`${alias} is now the primary`);
+      qc.invalidateQueries({ queryKey: ["company-aliases"] });
+      qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
+      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't promote");
     } finally {
       setBusy(false);
     }
@@ -192,7 +214,7 @@ export function CompanyAliasesDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <CompanyLogo domain={primaryDomain} name={companyName} size={28} provider={currentChoice} />
+            <CompanyLogo domain={primaryDomain} name={companyName} size={28} provider={currentProvider} sourceDomain={currentSource} />
             <span className="truncate">{companyName}</span>
           </DialogTitle>
           <DialogDescription>
@@ -210,31 +232,47 @@ export function CompanyAliasesDialog({
 
           <div>
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">Logo</Label>
-            <div className="mt-2 grid grid-cols-4 gap-2">
-              <LogoTile
-                label="Auto"
-                domain={primaryDomain}
-                provider={null}
-                selected={currentChoice === null}
-                disabled={busy}
-                onSelect={() => pickLogo(null)}
-              />
-              {LOGO_PROVIDER_LABELS.map((label, i) => (
-                <LogoTile
-                  key={i}
-                  label={label}
-                  domain={primaryDomain}
-                  provider={i}
-                  selected={currentChoice === i}
-                  disabled={busy}
-                  onSelect={() => pickLogo(i)}
-                />
-              ))}
+            <div className="mt-2 space-y-3">
+              {[primaryDomain, ...aliases].map((d) => {
+                const isActiveSource = (currentSource ?? primaryDomain) === d;
+                return (
+                  <div key={d}>
+                    <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span className="truncate">{d}</span>
+                      {d === primaryDomain && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">primary</span>}
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {d === primaryDomain && (
+                        <LogoTile
+                          label="Auto"
+                          domain={d}
+                          provider={null}
+                          selected={isActiveSource && currentProvider === null}
+                          disabled={busy}
+                          onSelect={() => pickLogo(null, d)}
+                        />
+                      )}
+                      {LOGO_PROVIDER_LABELS.map((label, i) => (
+                        <LogoTile
+                          key={`${d}-${i}`}
+                          label={label}
+                          domain={d}
+                          provider={i}
+                          selected={isActiveSource && currentProvider === i}
+                          disabled={busy}
+                          onSelect={() => pickLogo(i, d)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Tiles that can't load are hidden. Auto picks the first one that works.
+              Tiles that can't load are hidden. Auto picks the first one that works on the primary domain.
             </p>
           </div>
+
 
           <div>
             <div className="flex items-center justify-between gap-2">
@@ -308,9 +346,19 @@ export function CompanyAliasesDialog({
                   <div key={a} className="flex items-center gap-2 rounded-md border border-border bg-card/40 px-2.5 py-1.5 text-sm">
                     <span className="flex-1 truncate">{a}</span>
                     <button
+                      onClick={() => promote(a)}
+                      disabled={busy}
+                      aria-label={`Make ${a} primary`}
+                      title="Make primary"
+                      className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <Star className="h-3.5 w-3.5" />
+                    </button>
+                    <button
                       onClick={() => remove(a)}
                       disabled={busy}
                       aria-label={`Remove ${a}`}
+                      title="Remove"
                       className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
                       <X className="h-3.5 w-3.5" />
