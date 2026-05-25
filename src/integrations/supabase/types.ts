@@ -125,6 +125,27 @@ export type Database = {
         }
         Relationships: []
       }
+      company_group_assignments: {
+        Row: {
+          created_at: string
+          group_id: string
+          primary_domain: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          group_id: string
+          primary_domain: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          group_id?: string
+          primary_domain?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       company_logo_choices: {
         Row: {
           domain: string

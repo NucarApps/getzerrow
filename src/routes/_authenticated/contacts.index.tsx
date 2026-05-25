@@ -57,7 +57,7 @@ function ContactsPage() {
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
-  const [aliasDialog, setAliasDialog] = useState<null | { domain: string; name: string }>(null);
+  const [aliasDialog, setAliasDialog] = useState<null | { domain: string; name: string; contactIds: string[] }>(null);
 
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
@@ -342,7 +342,7 @@ function ContactsPage() {
                         aliasCount={b.kind === "company" && b.domain ? (aliasesByPrimary.get(b.domain)?.length ?? 0) : 0}
                         logoProvider={b.kind === "company" && b.domain ? (logoProviderByDomain.get(b.domain) ?? null) : null}
                         onEdit={b.kind === "company" && b.domain
-                          ? () => setAliasDialog({ domain: b.domain!, name: b.name })
+                          ? () => setAliasDialog({ domain: b.domain!, name: b.name, contactIds: b.contacts.map((c) => c.id) })
                           : undefined}
                       />
                       {!isCollapsed && (
@@ -465,6 +465,7 @@ function ContactsPage() {
         primaryDomain={aliasDialog?.domain ?? null}
         companyName={aliasDialog?.name ?? ""}
         aliases={aliasDialog ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
+        contactIds={aliasDialog?.contactIds ?? []}
       />
     </div>
   );

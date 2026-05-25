@@ -15,6 +15,10 @@ import {
 import {
   listCompanyLogoChoices, setCompanyLogoChoice, clearCompanyLogoChoice,
 } from "@/lib/company-logo.functions";
+import {
+  listCompanyGroupAssignments, setCompanyGroups,
+} from "@/lib/company-groups.functions";
+import { listContactGroups } from "@/lib/contact-groups.functions";
 import { LOGO_PROVIDER_LABELS } from "@/lib/logo-providers";
 import { logoCandidates } from "@/lib/company-domains";
 import { CompanyLogo } from "./CompanyLogo";
@@ -25,10 +29,11 @@ type Props = {
   primaryDomain: string | null;
   companyName: string;
   aliases: string[];
+  contactIds: string[];
 };
 
 export function CompanyAliasesDialog({
-  open, onOpenChange, primaryDomain, companyName, aliases,
+  open, onOpenChange, primaryDomain, companyName, aliases, contactIds,
 }: Props) {
   const qc = useQueryClient();
   const addFn = useServerFn(addCompanyAlias);
@@ -37,9 +42,13 @@ export function CompanyAliasesDialog({
   const listChoices = useServerFn(listCompanyLogoChoices);
   const setChoiceFn = useServerFn(setCompanyLogoChoice);
   const clearChoiceFn = useServerFn(clearCompanyLogoChoice);
+  const listAssignments = useServerFn(listCompanyGroupAssignments);
+  const listGroups = useServerFn(listContactGroups);
+  const setGroupsFn = useServerFn(setCompanyGroups);
 
   const [newDomain, setNewDomain] = useState("");
   const [busy, setBusy] = useState(false);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
 
   const choicesQ = useQuery({
     queryKey: ["company-logo-choices"],
@@ -49,6 +58,29 @@ export function CompanyAliasesDialog({
   const currentChoice = primaryDomain
     ? choicesQ.data?.find((c) => c.domain === primaryDomain)?.provider ?? null
     : null;
+
+  const assignmentsQ = useQuery({
+    queryKey: ["company-group-assignments"],
+    queryFn: () => listAssignments(),
+    enabled: open,
+  });
+  const groupsQ = useQuery({
+    queryKey: ["contact-groups"],
+    queryFn: () => listGroups(),
+    enabled: open,
+  });
+
+  const savedGroupIds = primaryDomain
+    ? (assignmentsQ.data ?? [])
+        .filter((a) => a.primary_domain === primaryDomain)
+        .map((a) => a.group_id)
+    : [];
+  const savedKey = savedGroupIds.slice().sort().join(",");
+
+  useEffect(() => {
+    if (open) setSelectedGroupIds(new Set(savedGroupIds));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, savedKey]);
 
   useEffect(() => {
     if (!open) setNewDomain("");
@@ -121,6 +153,40 @@ export function CompanyAliasesDialog({
     }
   }
 
+  async function saveTags() {
+    setBusy(true);
+    try {
+      const groupIds = [...selectedGroupIds];
+      const res = await setGroupsFn({
+        data: { primaryDomain: primaryDomain!, contactIds, groupIds },
+      });
+      toast.success(
+        groupIds.length === 0
+          ? "Tags cleared for this company"
+          : `Tagged ${res.tagged} ${res.tagged === 1 ? "contact" : "contacts"}`,
+      );
+      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't save tags");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleGroup(id: string) {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const groups = groupsQ.data?.groups ?? [];
+  const tagsDirty =
+    [...selectedGroupIds].sort().join(",") !== savedGroupIds.slice().sort().join(",");
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -169,6 +235,66 @@ export function CompanyAliasesDialog({
               Tiles that can't load are hidden. Auto picks the first one that works.
             </p>
           </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+                Tags
+              </Label>
+              <span className="text-[11px] text-muted-foreground">
+                {contactIds.length} {contactIds.length === 1 ? "contact" : "contacts"}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {groups.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No tags yet. Create one from the contacts page first.
+                </p>
+              ) : (
+                groups.map((g) => {
+                  const active = selectedGroupIds.has(g.id);
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => toggleGroup(g.id)}
+                      disabled={busy}
+                      aria-pressed={active}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
+                        active
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: g.color }}
+                      />
+                      <span className="truncate max-w-[10rem]">{g.name}</span>
+                      {active && <Check className="h-3 w-3" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {groups.length > 0 && (
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-[11px] text-muted-foreground">
+                  Tags apply to everyone in this company.
+                </p>
+                <Button
+                  size="sm"
+                  variant={tagsDirty ? "default" : "outline"}
+                  onClick={saveTags}
+                  disabled={busy || !tagsDirty}
+                >
+                  Save tags
+                </Button>
+              </div>
+            )}
+          </div>
+
+
 
           <div>
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">
