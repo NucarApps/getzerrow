@@ -40,7 +40,7 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
             ok++;
           } catch (e: unknown) {
             const msg = (e as Error)?.message ?? String(e);
-            console.error("renew failed for", acc.email_address, msg);
+            console.error("renew failed for", { account_id: acc.id, err: msg });
             failed++;
             if (errorSummaries.length < 5) errorSummaries.push(msg);
           }

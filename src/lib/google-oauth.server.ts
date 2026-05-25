@@ -123,14 +123,42 @@ export async function fetchUserEmail(accessToken: string): Promise<string> {
 // once is fine.
 const inFlightRefresh = new Map<string, Promise<string>>();
 
-/** Returns a fresh access token for the given gmail account, refreshing if needed. */
+type GetTokensRow = {
+  access_token: string | null;
+  refresh_token: string | null;
+  token_expires_at: string;
+};
+type OAuthRpc = {
+  rpc:
+    | ((
+        fn: "get_gmail_oauth_tokens",
+        args: { p_account_id: string },
+      ) => Promise<{ data: GetTokensRow[] | null; error: { message: string } | null }>)
+    | ((
+        fn: "set_gmail_oauth_tokens",
+        args: {
+          p_account_id: string;
+          p_access_token: string;
+          p_refresh_token: string;
+          p_token_expires_at: string;
+        },
+      ) => Promise<{ data: unknown; error: { message: string } | null }>);
+};
+
+/** Returns a fresh access token for the given gmail account, refreshing if
+ * needed. Tokens are stored encrypted at rest via the
+ * get_gmail_oauth_tokens / set_gmail_oauth_tokens RPCs (pgsodium AEAD). */
 export async function getAccessToken(accountId: string): Promise<string> {
-  const { data: acc, error } = await supabaseAdmin
-    .from("gmail_accounts")
-    .select("id, access_token, refresh_token, token_expires_at")
-    .eq("id", accountId)
-    .single();
-  if (error || !acc) throw new Error("Gmail account not found");
+  const { data: rows, error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
+    "get_gmail_oauth_tokens",
+    { p_account_id: accountId },
+  );
+  if (error) throw new Error(`OAuth token fetch failed: ${error.message}`);
+  if (!rows || rows.length === 0) throw new Error("Gmail account not found");
+  const acc = rows[0];
+  if (!acc.access_token || !acc.refresh_token) {
+    throw new Error("Gmail account is missing OAuth tokens — user needs to reauthorize");
+  }
 
   const expMs = new Date(acc.token_expires_at).getTime();
   if (expMs - Date.now() > 2 * 60 * 1000) return acc.access_token;
@@ -140,12 +168,21 @@ export async function getAccessToken(accountId: string): Promise<string> {
   if (existing) return existing;
 
   const refreshPromise = (async () => {
-    const refreshed = await refreshAccessToken(acc.refresh_token);
+    const refreshed = await refreshAccessToken(acc.refresh_token!);
     const newExp = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
-    await supabaseAdmin
-      .from("gmail_accounts")
-      .update({ access_token: refreshed.access_token, token_expires_at: newExp })
-      .eq("id", accountId);
+    // Empty p_refresh_token preserves the existing encrypted refresh
+    // token — Google only returns a new refresh_token during full
+    // consent, not on plain refresh calls.
+    const { error: setErr } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
+      "set_gmail_oauth_tokens",
+      {
+        p_account_id: accountId,
+        p_access_token: refreshed.access_token,
+        p_refresh_token: "",
+        p_token_expires_at: newExp,
+      },
+    );
+    if (setErr) throw new Error(`OAuth token update failed: ${setErr.message}`);
     return refreshed.access_token;
   })();
 

@@ -259,7 +259,9 @@ export type Database = {
           ai_confidence: number | null
           ai_summary: string | null
           body_html: string | null
+          body_html_encrypted: string | null
           body_text: string | null
+          body_text_encrypted: string | null
           cc: string | null
           classification_reason: string | null
           classified_by: string | null
@@ -298,7 +300,9 @@ export type Database = {
           ai_confidence?: number | null
           ai_summary?: string | null
           body_html?: string | null
+          body_html_encrypted?: string | null
           body_text?: string | null
+          body_text_encrypted?: string | null
           cc?: string | null
           classification_reason?: string | null
           classified_by?: string | null
@@ -337,7 +341,9 @@ export type Database = {
           ai_confidence?: number | null
           ai_summary?: string | null
           body_html?: string | null
+          body_html_encrypted?: string | null
           body_text?: string | null
+          body_text_encrypted?: string | null
           cc?: string | null
           classification_reason?: string | null
           classified_by?: string | null
@@ -633,6 +639,7 @@ export type Database = {
       gmail_accounts: {
         Row: {
           access_token: string
+          access_token_encrypted: string | null
           created_at: string
           email_address: string
           history_id: string | null
@@ -642,6 +649,7 @@ export type Database = {
           last_push_at: string | null
           reconcile_cursor: string | null
           refresh_token: string
+          refresh_token_encrypted: string | null
           token_expires_at: string
           updated_at: string
           user_id: string
@@ -649,6 +657,7 @@ export type Database = {
         }
         Insert: {
           access_token: string
+          access_token_encrypted?: string | null
           created_at?: string
           email_address: string
           history_id?: string | null
@@ -658,6 +667,7 @@ export type Database = {
           last_push_at?: string | null
           reconcile_cursor?: string | null
           refresh_token: string
+          refresh_token_encrypted?: string | null
           token_expires_at: string
           updated_at?: string
           user_id: string
@@ -665,6 +675,7 @@ export type Database = {
         }
         Update: {
           access_token?: string
+          access_token_encrypted?: string | null
           created_at?: string
           email_address?: string
           history_id?: string | null
@@ -674,6 +685,7 @@ export type Database = {
           last_push_at?: string | null
           reconcile_cursor?: string | null
           refresh_token?: string
+          refresh_token_encrypted?: string | null
           token_expires_at?: string
           updated_at?: string
           user_id?: string
@@ -972,7 +984,51 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      emails_decrypted: {
+        Row: {
+          ai_confidence: number | null
+          ai_summary: string | null
+          body_html: string | null
+          body_text: string | null
+          cc: string | null
+          classification_reason: string | null
+          classified_by: string | null
+          created_at: string | null
+          folder_id: string | null
+          forward_attempts: number | null
+          forward_last_error: string | null
+          forward_locked_at: string | null
+          forward_next_retry_at: string | null
+          forwarded_at: string | null
+          forwarded_to: string | null
+          from_addr: string | null
+          from_name: string | null
+          gmail_account_id: string | null
+          gmail_message_id: string | null
+          has_attachment: boolean | null
+          id: string | null
+          in_reply_to: string | null
+          is_archived: boolean | null
+          is_read: boolean | null
+          list_id: string | null
+          matched_filter_ids: string[] | null
+          matched_folder_ids: string[] | null
+          processed_at: string | null
+          published_at_ms: number | null
+          raw_labels: string[] | null
+          received_at: string | null
+          snippet: string | null
+          snoozed_until: string | null
+          subject: string | null
+          thread_id: string | null
+          to_addrs: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
     }
     Functions: {
       bump_history_id_if_greater: {

@@ -176,7 +176,10 @@ export const enrichContact = createServerFn({ method: "POST" })
     }
 
     const { data: emails } = await supabase
-      .from("emails")
+      // emails_decrypted view: same columns, body_text/body_html
+      // auto-decrypted from the pgsodium-encrypted bytea backing
+      // columns. RLS on emails still applies via security_invoker.
+      .from("emails_decrypted")
       .select("subject,body_text,snippet,from_name")
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
@@ -312,7 +315,7 @@ ${sample}`,
     try {
       const addr = contact.email;
       const { data: convo } = await supabase
-        .from("emails")
+        .from("emails_decrypted")
         .select("subject,body_text,snippet,from_addr,to_addrs,received_at")
         .or(`from_addr.eq.${addr},to_addrs.ilike.%${addr}%`)
         .order("received_at", { ascending: false })
@@ -498,7 +501,7 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
 
     const { data: email, error: emailErr } = await supabase
-      .from("emails")
+      .from("emails_decrypted")
       .select("from_addr,from_name,subject,body_text,snippet")
       .eq("id", data.emailId)
       .single();

@@ -51,11 +51,15 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
           const limit = suspect ? SUSPECT_LIMIT : DEFAULT_LIMIT;
           try {
             const r = await reconcileLocalInbox(acc.id, limit);
-            results.push({ account: acc.email_address, result: r, limit });
+            // Use account_id (UUID) in the response, not email — operators
+            // can map id → email via the accounts table if they need to,
+            // and the cron response shouldn't expose PII to whoever reads
+            // logs of the cron output.
+            results.push({ account_id: acc.id, result: r, limit });
           } catch (e) {
             const msg = (e as Error)?.message ?? String(e);
-            console.error("reconcile failed for", acc.email_address, e);
-            results.push({ account: acc.email_address, error: msg, limit });
+            console.error("reconcile failed for", { account_id: acc.id, err: (e as Error)?.message });
+            results.push({ account_id: acc.id, error: msg, limit });
           }
         }
 

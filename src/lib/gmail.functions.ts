@@ -36,8 +36,10 @@ async function getOwnedAccount(userId: string, accountId: string) {
 }
 
 async function getEmailAccount(userId: string, emailId: string) {
+  // emails_decrypted view decrypts body_text on read. RLS doesn't apply
+  // to supabaseAdmin (service role); we enforce the user_id check below.
   const { data, error } = await supabaseAdmin
-    .from("emails")
+    .from("emails_decrypted")
     .select("gmail_message_id, gmail_account_id, user_id, thread_id, from_addr, subject, body_text, from_name")
     .eq("id", emailId)
     .single();
@@ -79,21 +81,27 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
-    const { data: account, error } = await supabaseAdmin
-      .from("gmail_accounts")
-      .upsert(
-        {
-          user_id: context.userId,
-          email_address: data.email_address,
-          access_token: data.access_token,
-          refresh_token: data.refresh_token,
-          token_expires_at: expiresAt,
-        },
-        { onConflict: "user_id,email_address" }
-      )
-      .select("id")
-      .single();
-    if (error || !account) throw new Error(`Failed to save account: ${error?.message}`);
+    // Goes through upsert_gmail_oauth_account so the tokens are encrypted
+    // with pgsodium AEAD before they touch the table.
+    type UpsertRpc = { rpc: (fn: "upsert_gmail_oauth_account", args: {
+      p_user_id: string;
+      p_email_address: string;
+      p_access_token: string;
+      p_refresh_token: string;
+      p_token_expires_at: string;
+    }) => Promise<{ data: string | null; error: { message: string } | null }> };
+    const { data: accountId, error } = await (supabaseAdmin as unknown as UpsertRpc).rpc(
+      "upsert_gmail_oauth_account",
+      {
+        p_user_id: context.userId,
+        p_email_address: data.email_address,
+        p_access_token: data.access_token,
+        p_refresh_token: data.refresh_token,
+        p_token_expires_at: expiresAt,
+      },
+    );
+    if (error || !accountId) throw new Error(`Failed to save account: ${error?.message}`);
+    const account = { id: accountId };
 
     try {
       const watch = await ensureWatch(account.id, null);
@@ -661,7 +669,7 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
-      .from("emails")
+      .from("emails_decrypted")
       .select("id, user_id, folder_id, from_addr, from_name, subject, snippet, body_text")
       .eq("id", data.email_id).single();
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
@@ -1222,7 +1230,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
     const { data: email } = await supabaseAdmin
-      .from("emails")
+      .from("emails_decrypted")
       .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
       .eq("id", data.email_id)
       .single();
@@ -2346,7 +2354,7 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
     const { data: rows } = await supabaseAdmin
-      .from("emails")
+      .from("emails_decrypted")
       .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
       .in("id", data.email_ids);
     if (!rows) return { routed: 0, unchanged: 0, failed: 0 };
