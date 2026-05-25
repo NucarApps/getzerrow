@@ -47,14 +47,20 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           const email = await fetchUserEmail(tokens.access_token);
           const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-          // Goes through upsert_gmail_oauth_account so the tokens are
-          // encrypted with pgsodium before they touch the table.
+          // Tokens are encrypted at rest via pgcrypto inside the RPC; the
+          // key is held server-side and passed per-call.
+          const encKey = process.env.EMAIL_ENC_KEY;
+          if (!encKey) {
+            console.error("oauth: EMAIL_ENC_KEY not configured");
+            return new Response("Server misconfigured. Please contact support.", { status: 500 });
+          }
           type UpsertRpc = { rpc: (fn: "upsert_gmail_oauth_account", args: {
             p_user_id: string;
             p_email_address: string;
             p_access_token: string;
             p_refresh_token: string;
             p_token_expires_at: string;
+            p_key: string;
           }) => Promise<{ data: string | null; error: { message: string } | null }> };
           const { data: accountId, error } = await (supabaseAdmin as unknown as UpsertRpc).rpc(
             "upsert_gmail_oauth_account",
@@ -64,6 +70,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
               p_access_token: tokens.access_token,
               p_refresh_token: tokens.refresh_token,
               p_token_expires_at: expiresAt,
+              p_key: encKey,
             },
           );
 

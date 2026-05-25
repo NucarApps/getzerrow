@@ -135,13 +135,21 @@ type OAuthRpc = {
   ) => Promise<{ data: GetTokensRow[] | null; error: { message: string } | null }>;
 };
 
+function requireEncKey(): string {
+  const k = process.env.EMAIL_ENC_KEY;
+  if (!k) throw new Error("EMAIL_ENC_KEY is not configured");
+  return k;
+}
+
 /** Returns a fresh access token for the given gmail account, refreshing if
- * needed. Tokens are stored encrypted at rest via the
- * get_gmail_oauth_tokens / set_gmail_oauth_tokens RPCs (pgsodium AEAD). */
+ * needed. Tokens are stored encrypted at rest via pgcrypto pgp_sym_*; the
+ * key is held server-side (EMAIL_ENC_KEY) and passed per-call. Existing
+ * unmigrated rows still resolve via COALESCE on plaintext columns. */
 export async function getAccessToken(accountId: string): Promise<string> {
+  const key = requireEncKey();
   const { data: rows, error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
     "get_gmail_oauth_tokens",
-    { p_account_id: accountId },
+    { p_account_id: accountId, p_key: key },
   );
   if (error) throw new Error(`OAuth token fetch failed: ${error.message}`);
   if (!rows || rows.length === 0) throw new Error("Gmail account not found");
@@ -153,16 +161,13 @@ export async function getAccessToken(accountId: string): Promise<string> {
   const expMs = new Date(acc.token_expires_at).getTime();
   if (expMs - Date.now() > 2 * 60 * 1000) return acc.access_token;
 
-  // If another caller is already refreshing this account, piggy-back.
   const existing = inFlightRefresh.get(accountId);
   if (existing) return existing;
 
   const refreshPromise = (async () => {
     const refreshed = await refreshAccessToken(acc.refresh_token!);
     const newExp = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
-    // Empty p_refresh_token preserves the existing encrypted refresh
-    // token — Google only returns a new refresh_token during full
-    // consent, not on plain refresh calls.
+    // Empty p_refresh_token preserves the existing encrypted refresh token.
     const { error: setErr } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
       "set_gmail_oauth_tokens",
       {
@@ -170,6 +175,7 @@ export async function getAccessToken(accountId: string): Promise<string> {
         p_access_token: refreshed.access_token,
         p_refresh_token: "",
         p_token_expires_at: newExp,
+        p_key: key,
       },
     );
     if (setErr) throw new Error(`OAuth token update failed: ${setErr.message}`);
