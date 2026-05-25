@@ -465,6 +465,7 @@ function ContactsPage() {
         primaryDomain={aliasDialog?.domain ?? null}
         companyName={aliasDialog?.name ?? ""}
         aliases={aliasDialog ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
+        contactIds={aliasDialog?.contactIds ?? []}
       />
     </div>
   );
