@@ -75,8 +75,7 @@ export function PullToRefresh({ onRefresh, children, className, onClick }: Props
         if (elapsed < MIN_REFRESH_MS) {
           await new Promise((r) => setTimeout(r, MIN_REFRESH_MS - elapsed));
         }
-        setPhase("returning");
-        setTimeout(() => setPhase("idle"), 700);
+        setPhase("idle");
       } else {
         setPull(0);
         setPhase("idle");
@@ -96,7 +95,7 @@ export function PullToRefresh({ onRefresh, children, className, onClick }: Props
   }, [phase, pull, onRefresh]);
 
   const indicatorHeight =
-    phase === "launching" || phase === "returning" ? 96 : pull;
+    phase === "launching" ? 96 : pull;
 
   return (
     <div
