@@ -39,6 +39,7 @@ export function CompanyAliasesDialog({
   const addFn = useServerFn(addCompanyAlias);
   const removeFn = useServerFn(removeCompanyAlias);
   const clearFn = useServerFn(clearCompanyAliases);
+  const promoteFn = useServerFn(promoteAliasToPrimary);
   const listChoices = useServerFn(listCompanyLogoChoices);
   const setChoiceFn = useServerFn(setCompanyLogoChoice);
   const clearChoiceFn = useServerFn(clearCompanyLogoChoice);
@@ -55,9 +56,11 @@ export function CompanyAliasesDialog({
     queryFn: () => listChoices(),
     enabled: open,
   });
-  const currentChoice = primaryDomain
-    ? choicesQ.data?.find((c) => c.domain === primaryDomain)?.provider ?? null
-    : null;
+  const currentRow = primaryDomain
+    ? choicesQ.data?.find((c) => c.domain === primaryDomain)
+    : undefined;
+  const currentProvider = currentRow?.provider ?? null;
+  const currentSource = currentRow?.source_domain ?? null;
 
   const assignmentsQ = useQuery({
     queryKey: ["company-group-assignments"],
