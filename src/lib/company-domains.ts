@@ -75,11 +75,13 @@ export function contactLogoDomain(
 }
 
 /** Ordered list of logo URLs to try for a domain. Only our same-origin proxy;
- *  if it 404s, the UI falls through to a first-letter monogram. */
-export function logoCandidates(domain: string, size = 64): string[] {
+ *  if it 404s, the UI falls through to a first-letter monogram.
+ *  When `provider` is a number, asks the proxy for that specific source only. */
+export function logoCandidates(domain: string, size = 64, provider?: number | null): string[] {
   const d = encodeURIComponent(domain);
   const s = Math.max(size, 64);
-  return [`/api/public/logo?domain=${d}&size=${s}`];
+  const base = `/api/public/logo?domain=${d}&size=${s}`;
+  return [typeof provider === "number" ? `${base}&provider=${provider}` : base];
 }
 
 /** First-choice logo URL (kept for back-compat). */
