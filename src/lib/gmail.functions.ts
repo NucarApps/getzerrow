@@ -1661,6 +1661,11 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     const raw = data.query.trim();
     const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw);
     const looksLikeDomain = /^@?[a-z0-9.-]+\.[a-z]{2,}$/i.test(raw) && !raw.includes(" ");
+    // Explicit Gmail-style operator queries (from:/to:) get a "deep" search:
+    // page further into older results so old senders aren't capped by the
+    // single-page 50-result window.
+    const hasOperator = /\b(from|to):/i.test(raw);
+    const isDeep = hasOperator || looksLikeEmail || looksLikeDomain;
     let q: string;
     if (looksLikeEmail) q = `from:${raw}`;
     else if (looksLikeDomain) q = `from:${raw.replace(/^@/, "")}`;
@@ -1671,8 +1676,18 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
 
     for (const accountId of accountIds) {
       try {
-        const list = await listMessages(accountId, { q, maxResults: 50 });
-        const hits = list.messages ?? [];
+        // For deep searches, page through up to ~500 IDs per account; for
+        // plain free-text keep the single-page 50-result cap.
+        const PAGE = isDeep ? 100 : 50;
+        const MAX_PAGES = isDeep ? 5 : 1;
+        const hits: Array<{ id: string; threadId: string }> = [];
+        let pageToken: string | undefined;
+        for (let p = 0; p < MAX_PAGES; p++) {
+          const list = await listMessages(accountId, { q, maxResults: PAGE, pageToken });
+          for (const m of list.messages ?? []) hits.push(m);
+          pageToken = list.nextPageToken;
+          if (!pageToken) break;
+        }
         if (hits.length === 0) continue;
 
         // Expand each hit to its full thread so replies that aren't direct hits
