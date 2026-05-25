@@ -20,6 +20,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
 import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
@@ -89,6 +90,11 @@ const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
 const AuthenticatedFoldersRoute = AuthenticatedFoldersRouteImport.update({
   id: '/folders',
   path: '/folders',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedContactsIndexRoute =
@@ -185,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/my-card': typeof AuthenticatedMyCardRoute
@@ -213,6 +220,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/my-card': typeof AuthenticatedMyCardRoute
@@ -243,6 +251,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/folders': typeof AuthenticatedFoldersRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
   '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
@@ -273,6 +282,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/terms'
+    | '/admin'
     | '/folders'
     | '/inbox'
     | '/my-card'
@@ -301,6 +311,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/terms'
+    | '/admin'
     | '/folders'
     | '/inbox'
     | '/my-card'
@@ -330,6 +341,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/terms'
+    | '/_authenticated/admin'
     | '/_authenticated/folders'
     | '/_authenticated/inbox'
     | '/_authenticated/my-card'
@@ -455,6 +467,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedFoldersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/contacts/': {
       id: '/_authenticated/contacts/'
       path: '/contacts'
@@ -571,6 +590,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedFoldersRoute: typeof AuthenticatedFoldersRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
   AuthenticatedMyCardRoute: typeof AuthenticatedMyCardRoute
@@ -582,6 +602,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedFoldersRoute: AuthenticatedFoldersRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
   AuthenticatedMyCardRoute: AuthenticatedMyCardRoute,
