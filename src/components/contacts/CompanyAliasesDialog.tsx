@@ -140,17 +140,36 @@ export function CompanyAliasesDialog({
     }
   }
 
-  async function pickLogo(provider: number | null) {
+  async function pickLogo(provider: number | null, sourceDomain: string) {
     setBusy(true);
     try {
-      if (provider === null) {
+      if (provider === null && sourceDomain === primaryDomain) {
         await clearChoiceFn({ data: { domain: primaryDomain! } });
       } else {
-        await setChoiceFn({ data: { domain: primaryDomain!, provider } });
+        // "Auto" for an alias source means provider 0 (Clearbit) from that domain.
+        const p = provider ?? 0;
+        await setChoiceFn({ data: { domain: primaryDomain!, provider: p, sourceDomain } });
       }
       qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't save logo choice");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function promote(alias: string) {
+    if (!confirm(`Make ${alias} the primary domain for this company?`)) return;
+    setBusy(true);
+    try {
+      await promoteFn({ data: { currentPrimary: primaryDomain!, newPrimary: alias } });
+      toast.success(`${alias} is now the primary`);
+      qc.invalidateQueries({ queryKey: ["company-aliases"] });
+      qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
+      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't promote");
     } finally {
       setBusy(false);
     }
