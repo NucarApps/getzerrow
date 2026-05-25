@@ -9,7 +9,9 @@ export type InvaderStats = {
   top5: Array<{ name: string; score: number }>;
 };
 
-async function fetchStats(supabase: ReturnType<typeof requireSupabaseAuth> extends never ? never : any): Promise<InvaderStats> {
+async function fetchStats(supabase: {
+  rpc: (fn: string) => Promise<{ data: unknown; error: { message: string } | null }>;
+}): Promise<InvaderStats> {
   const { data, error } = await supabase.rpc("get_invader_stats");
   if (error) throw new Error(error.message);
   return (data ?? { myBest: null, globalBest: null, myRank: null, top5: [] }) as InvaderStats;
