@@ -71,6 +71,12 @@ function ContactsPage() {
     return m;
   }, [lq.data]);
 
+  const logoSourceByDomain = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of lq.data ?? []) if (r.source_domain) m.set(r.domain, r.source_domain);
+    return m;
+  }, [lq.data]);
+
   // contact_id -> [group ids]
   const contactGroupMap = useMemo(() => {
     const m = new Map<string, string[]>();
