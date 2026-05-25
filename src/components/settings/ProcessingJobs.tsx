@@ -40,12 +40,12 @@ export function ProcessingJobs() {
   const stats = q.data?.stats;
 
   return (
-    <Card className="p-4 md:p-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <Card className="overflow-hidden p-0">
+      <div className="flex flex-col gap-3 border-b bg-muted/20 p-4 md:flex-row md:items-start md:justify-between md:p-6">
         <div>
           <h2 className="font-display text-2xl">Processing queue</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Every incoming email becomes a job here. Failures retry automatically with backoff (30s → 2m → 10m → 30m → 2h), then land in the dead-letter queue if all 5 attempts fail.
+            Every incoming email becomes a job. Failures retry with backoff (30s → 2m → 10m → 30m → 2h), then dead-letter after 5 attempts.
           </p>
         </div>
         <div className="flex gap-2 self-start md:self-auto">
@@ -76,29 +76,34 @@ export function ProcessingJobs() {
         </div>
       </div>
 
-      {stats && (
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Stat label="Total" value={stats.total} />
-          <Stat label="Pending" value={stats.pending} />
-          <Stat label="Running" value={stats.running} />
-          <Stat label="Dead-letter" value={stats.dlq} accent={stats.dlq > 0 ? "danger" : undefined} />
+      <div className="space-y-4 p-4 md:p-6">
+        {stats && (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Stat label="Total" value={stats.total} />
+            <Stat label="Pending" value={stats.pending} />
+            <Stat label="Running" value={stats.running} />
+            <Stat label="Dead-letter" value={stats.dlq} accent={stats.dlq > 0 ? "danger" : undefined} />
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-medium">Jobs</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {(["dlq", "pending", "running", "all"] as StatusFilter[]).map((f) => (
+              <Button
+                key={f}
+                size="sm"
+                variant={filter === f ? "default" : "outline"}
+                className="h-7 px-2 text-xs"
+                onClick={() => setFilter(f)}
+              >
+                {f === "all" ? "All" : f === "dlq" ? "Dead-letter" : f[0].toUpperCase() + f.slice(1)}
+              </Button>
+            ))}
+          </div>
         </div>
-      )}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {(["dlq", "pending", "running", "all"] as StatusFilter[]).map((f) => (
-          <Button
-            key={f}
-            size="sm"
-            variant={filter === f ? "default" : "outline"}
-            onClick={() => setFilter(f)}
-          >
-            {f === "all" ? "All" : f === "dlq" ? "Dead-letter" : f[0].toUpperCase() + f.slice(1)}
-          </Button>
-        ))}
-      </div>
-
-      <div className="mt-4 overflow-x-auto rounded-md border">
+        <div className="overflow-x-auto rounded-md border">
         <table className="w-full text-xs">
           <thead className="bg-muted/50 text-left">
             <tr>
@@ -157,6 +162,7 @@ export function ProcessingJobs() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </Card>
   );

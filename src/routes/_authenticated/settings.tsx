@@ -170,12 +170,16 @@ function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-6">
-            <Card className="p-4 md:p-6">
-              <h2 className="font-display text-2xl">Account health</h2>
-              <p className="mt-1 mb-4 text-sm text-muted-foreground">
-                Live status of each connected mailbox — auto-refreshes every 15 seconds.
-              </p>
-              <AccountHealthPanel />
+            <Card className="overflow-hidden p-0">
+              <div className="border-b bg-muted/20 p-4 md:p-6">
+                <h2 className="font-display text-2xl">Account health</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Live status of each connected mailbox — auto-refreshes every 15 seconds.
+                </p>
+              </div>
+              <div className="p-4 md:p-6">
+                <AccountHealthPanel />
+              </div>
             </Card>
             <PubsubActivity />
             <ProcessingJobs />

@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
-          .select("id, email_address, watch_expiration, last_history_sync_at");
+          .select("id, email_address, watch_expiration, last_push_at, created_at");
         if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
         // Look up last successful watch re-arm so we don't spam ensureWatch.
@@ -42,15 +42,19 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         let totalSynced = 0;
         let firstError: string | null = null;
         for (const acc of accounts ?? []) {
-          // Per-account silence: did we actually sync this account recently?
-          // Push event silence is too coarse — a quiet mailbox with no incoming
-          // mail looks the same as a broken watch under the old global check.
+          // Per-account push silence: did this account receive a real Google
+          // push recently? `last_push_at` is stamped ONLY by the webhook
+          // handler (not by poll-driven syncs), so its staleness specifically
+          // indicates "Pub/Sub delivery is broken" rather than "quiet inbox".
           //
-          // Accounts that have never synced (last_history_sync_at is null)
-          // are NOT silent — they're brand new. The bootstrap path will set
-          // last_history_sync_at on first successful run.
-          const lastSync = acc.last_history_sync_at ? new Date(acc.last_history_sync_at).getTime() : null;
-          const accountSilent = lastSync !== null && Date.now() - lastSync > PER_ACCOUNT_SILENCE_MS;
+          // Accounts that have NEVER received a push (last_push_at is null)
+          // are silent only if the account itself is older than the threshold
+          // — otherwise we'd alarm on every freshly-connected mailbox.
+          const lastPushMs = acc.last_push_at ? new Date(acc.last_push_at).getTime() : null;
+          const accountAgeMs = acc.created_at ? Date.now() - new Date(acc.created_at).getTime() : 0;
+          const accountSilent = lastPushMs !== null
+            ? Date.now() - lastPushMs > PER_ACCOUNT_SILENCE_MS
+            : accountAgeMs > PER_ACCOUNT_SILENCE_MS;
           const watchActive = acc.watch_expiration && new Date(acc.watch_expiration).getTime() > Date.now();
           const cooldownOver = !rearmedRecently.has(acc.email_address);
 

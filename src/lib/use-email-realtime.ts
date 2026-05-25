@@ -29,52 +29,96 @@ export function useEmailRealtime() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
 
-    // Apply an updater to every cached query that starts with the given prefix.
-    // The inbox uses several variants (["emails"], ["emails", folderId], ...)
-    // so we patch them all instead of guessing each key.
-    function patchEmailQueries(updater: (rows: EmailRow[]) => EmailRow[]) {
-      qc.setQueriesData<EmailRow[] | { rows: EmailRow[] } | undefined>(
-        { queryKey: ["emails"] },
-        (old) => {
-          if (!old) return old;
-          if (Array.isArray(old)) return updater(old);
-          if (Array.isArray((old as { rows?: EmailRow[] }).rows)) {
-            return { ...(old as object), rows: updater((old as { rows: EmailRow[] }).rows) };
-          }
-          return old;
-        },
-      );
+    // Heuristic: do we believe `row` belongs in the list identified by
+    // `queryKey`? We inspect the key shape — without server-side knowledge
+    // of the query's filters we conservatively reject any list whose key
+    // hints at a scope (folder id, "archived", etc.) that doesn't match
+    // the row. The top-level ["emails"] list is treated as the all-inbox
+    // view and accepts everything.
+    function rowBelongsInList(row: EmailRow, queryKey: unknown[]): boolean {
+      if (queryKey.length <= 1) return true;
+      const tag = queryKey[1];
+      if (typeof tag === "string") {
+        if (tag === "all") return true;
+        if (tag === "archived") return row.is_archived === true;
+        if (tag === "inbox") return row.is_archived !== true && row.folder_id == null;
+        // Any other string segment is treated as a folder id.
+        return row.folder_id === tag;
+      }
+      return false;
+    }
+
+    type CachedList = EmailRow[] | { rows: EmailRow[] };
+    function patchOneQuery(
+      key: unknown[],
+      transform: (rows: EmailRow[]) => EmailRow[] | null,
+    ): void {
+      qc.setQueryData<CachedList | undefined>(key as readonly unknown[], (old) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          const next = transform(old);
+          return next ?? old;
+        }
+        if (Array.isArray(old.rows)) {
+          const next = transform(old.rows);
+          return next ? { ...old, rows: next } : old;
+        }
+        return old;
+      });
     }
 
     function applyInsert(row: EmailRow) {
-      patchEmailQueries((rows) => {
-        if (rows.some((r) => r.id === row.id)) return rows;
-        // Maintain newest-first ordering by received_at when available.
-        const next = [row, ...rows];
-        next.sort((a, b) => {
-          const ta = a.received_at ? new Date(a.received_at).getTime() : 0;
-          const tb = b.received_at ? new Date(b.received_at).getTime() : 0;
-          return tb - ta;
+      const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
+      for (const [key] of entries) {
+        if (!rowBelongsInList(row, key as unknown[])) continue;
+        patchOneQuery(key as unknown[], (rows) => {
+          if (rows.some((r) => r.id === row.id)) return null;
+          const next = [row, ...rows];
+          next.sort((a, b) => {
+            const ta = a.received_at ? new Date(a.received_at).getTime() : 0;
+            const tb = b.received_at ? new Date(b.received_at).getTime() : 0;
+            return tb - ta;
+          });
+          return next;
         });
-        return next;
-      });
+      }
     }
 
     function applyUpdate(row: EmailRow) {
-      patchEmailQueries((rows) => {
-        let touched = false;
-        const next = rows.map((r) => (r.id === row.id ? (touched = true, { ...r, ...row }) : r));
-        // If the row was outside our cached window, fall through to a refetch
-        // so any cross-list moves (folder change, archive) reconverge.
-        if (!touched) {
-          qc.invalidateQueries({ queryKey: ["emails"] });
+      const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
+      let needsRefetch = false;
+      for (const [key, value] of entries) {
+        if (!value) continue;
+        const rows = Array.isArray(value) ? value : Array.isArray(value.rows) ? value.rows : null;
+        if (!rows) continue;
+        const present = rows.some((r) => r.id === row.id);
+        const belongs = rowBelongsInList(row, key as unknown[]);
+        if (present && !belongs) {
+          // Row was here but no longer belongs — drop it. The destination
+          // list will pick it up via its own INSERT event (if it's cached).
+          patchOneQuery(key as unknown[], (curr) => curr.filter((r) => r.id !== row.id));
+        } else if (present && belongs) {
+          patchOneQuery(key as unknown[], (curr) => curr.map((r) => (r.id === row.id ? { ...r, ...row } : r)));
+        } else if (!present && belongs) {
+          // Row newly belongs in this list — refetch so we get correct order.
+          needsRefetch = true;
         }
-        return next;
-      });
+      }
+      if (needsRefetch) {
+        // Run AFTER the synchronous setQueryData calls above so React Query
+        // isn't re-entered mid-mutation.
+        Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
+      }
     }
 
     function applyDelete(row: { id: string }) {
-      patchEmailQueries((rows) => rows.filter((r) => r.id !== row.id));
+      const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
+      for (const [key, value] of entries) {
+        if (!value) continue;
+        const rows = Array.isArray(value) ? value : Array.isArray(value.rows) ? value.rows : null;
+        if (!rows || !rows.some((r) => r.id === row.id)) continue;
+        patchOneQuery(key as unknown[], (curr) => curr.filter((r) => r.id !== row.id));
+      }
     }
 
     const invalidateFolders = () => {

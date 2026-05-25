@@ -45,7 +45,13 @@ export function AccountHealthPanel() {
   }
 
   const accounts = q.data?.accounts ?? [];
-  if (accounts.length === 0) return null;
+  if (accounts.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+        No Gmail accounts connected yet.
+      </div>
+    );
+  }
 
   async function handleRetryAll(accountId: string) {
     setBusy(accountId);

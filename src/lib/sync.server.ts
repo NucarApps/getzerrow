@@ -512,6 +512,11 @@ export async function processGmailMessage(
      * it to record a manual move). Pass it here to skip the duplicate Gmail
      * roundtrip. */
     prefetched?: ReturnType<typeof parseMessage>;
+    /** Pub/Sub publish time (ms epoch) for the push that originated this
+     * job. Persisted onto the inserted email row so we can compute
+     * push → visible latency. Comes from message_jobs.published_at_ms when
+     * runMessageJobs invokes us. */
+    publishedAtMs?: number | null;
   } = {},
 ) {
   const t = opts.timings;
@@ -570,10 +575,10 @@ export async function processGmailMessage(
   if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return { skipped: true };
   const inInbox = labels.includes("INBOX");
 
-  // Pull the Pub/Sub publishTime that the webhook stashed when it enqueued
-  // this job. We persist it so a single SQL query can report push→visible
-  // p50/p95 latency.
-  const publishedAtMs = takePublishAt(accountId, gmailId);
+  // Pub/Sub publishTime threaded through message_jobs.published_at_ms.
+  // Persist it on the email row so a single SQL query can compute
+  // push → visible p50/p95 latency.
+  const publishedAtMs = opts.publishedAtMs ?? null;
 
   // 1) Insert the email row FIRST with no folder so it shows up in Inbox
   //    immediately, even if classification (AI Gateway) is slow or fails.
@@ -1309,19 +1314,27 @@ function jitter(seconds: number): number {
 }
 
 /** Seconds until midnight US/Pacific (Gmail per-user quotas reset at midnight
- * PT). DST-aware via Intl. */
+ * PT). DST-aware via Intl. Returns a safe 4h fallback if Intl yields an
+ * unparseable value — quota backoff should never produce NaN. */
 function secondsUntilMidnightPT(now = new Date()): number {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-    hour12: false,
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
-  const h = parseInt(parts.hour ?? "0", 10);
-  const m = parseInt(parts.minute ?? "0", 10);
-  const s = parseInt(parts.second ?? "0", 10);
-  const elapsed = h * 3600 + m * 60 + s;
-  return Math.max(60, 86400 - elapsed);
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
+    const h = parseInt(parts.hour ?? "", 10);
+    const m = parseInt(parts.minute ?? "", 10);
+    const s = parseInt(parts.second ?? "", 10);
+    if (!Number.isFinite(h) || !Number.isFinite(m) || !Number.isFinite(s)) {
+      return 4 * 3600;
+    }
+    const elapsed = h * 3600 + m * 60 + s;
+    return Math.max(60, 86400 - elapsed);
+  } catch {
+    return 4 * 3600;
+  }
 }
 
 /** Pick a backoff that respects, in order: Retry-After header, quotaExceeded
@@ -1337,9 +1350,10 @@ export function computeBackoffSeconds(opts: {
     return jitter(opts.retryAfterSeconds);
   }
   if (opts.isQuotaExceeded) {
-    // Adding a hard upper bound so we don't sleep > 6h. Per-user quota is
-    // daily; 6h is plenty for the daily reset to land.
-    return Math.min(secondsUntilMidnightPT(), 6 * 3600);
+    // Hard upper bound at 6h. Without jitter, a hundred jobs all queued at
+    // the same quota event would retry at the exact same instant and likely
+    // re-trigger the same quota — so apply the ±25% jitter we use elsewhere.
+    return jitter(Math.min(secondsUntilMidnightPT(), 6 * 3600));
   }
   const table = opts.retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
   const idx = opts.retryable
@@ -1374,38 +1388,12 @@ export async function enqueueMessageJob(
         status: "pending",
         priority,
         next_run_at: new Date(Date.now() + jitterMs).toISOString(),
-        // Stash publish time so we can compute end-to-end latency once
-        // processGmailMessage inserts the email row. Best-effort: the column
-        // doesn't exist on message_jobs, so we thread it through pendingPublishAt
-        // instead (see processGmailMessage).
+        // Persisted column — any worker draining this job can read it and
+        // populate emails.published_at_ms for end-to-end latency telemetry.
+        published_at_ms: opts.publishedAtMs ?? null,
       },
       { onConflict: "gmail_account_id,gmail_message_id", ignoreDuplicates: true },
     );
-  if (opts.publishedAtMs && opts.publishedAtMs > 0) {
-    rememberPublishAt(accountId, gmailMessageId, opts.publishedAtMs);
-  }
-}
-
-// Map of (accountId:messageId) → Pub/Sub publishTime in ms. Populated by the
-// webhook handler when it enqueues; consumed by processGmailMessage when it
-// inserts the email row, then deleted. Memory bound is tiny (one number per
-// in-flight push event) but we still cap the map to avoid pathological growth
-// if processing falls way behind.
-const pendingPublishAt = new Map<string, number>();
-const PENDING_PUBLISH_MAX = 5000;
-export function rememberPublishAt(accountId: string, messageId: string, publishedAtMs: number) {
-  if (pendingPublishAt.size >= PENDING_PUBLISH_MAX) {
-    // Evict oldest insertion (Map iteration order = insertion).
-    const first = pendingPublishAt.keys().next().value;
-    if (first) pendingPublishAt.delete(first);
-  }
-  pendingPublishAt.set(`${accountId}:${messageId}`, publishedAtMs);
-}
-function takePublishAt(accountId: string, messageId: string): number | null {
-  const k = `${accountId}:${messageId}`;
-  const v = pendingPublishAt.get(k) ?? null;
-  if (v !== null) pendingPublishAt.delete(k);
-  return v;
 }
 
 export async function runMessageJobs(
@@ -1463,6 +1451,7 @@ export async function runMessageJobs(
     user_id: string;
     attempt: number;
     priority: number;
+    published_at_ms: number | null;
   };
   const claimed = (claimedRows ?? []) as ClaimedJob[];
   if (claimed.length === 0) {
@@ -1574,6 +1563,7 @@ export async function runMessageJobs(
           context: ctx,
           skipAi: deferAi,
           timings,
+          publishedAtMs: job.published_at_ms,
         }),
         new Promise((_, reject) =>
           setTimeout(
@@ -1729,7 +1719,27 @@ async function syncSinceHistoryLocked(
 ) {
   const account = await getAccount(accountId);
   if (!account.history_id) {
-    return await bootstrapAccount(accountId, account.user_id);
+    // Bootstrap is best-effort: on failure (Gmail 429, quota, network blip)
+    // we surface the error and leave history_id null so the NEXT push/poll
+    // retries. Without this catch the exception escapes withAccountLock and
+    // the caller logs but doesn't otherwise rate-limit the next attempt.
+    try {
+      const r = await bootstrapAccount(accountId, account.user_id);
+      // Push-driven bootstrap should also stamp last_push_at — otherwise the
+      // poll cron will keep thinking this account is push-silent.
+      if (opts.publishedAtMs != null) {
+        try {
+          await supabaseAdmin.from("gmail_accounts")
+            .update({ last_push_at: new Date().toISOString() })
+            .eq("id", accountId);
+        } catch { /* best-effort */ }
+      }
+      return r;
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      console.error("bootstrap failed", accountId, msg);
+      return { bootstrapped: false, error: msg };
+    }
   }
   try {
     const hist = await listHistory(accountId, account.history_id);
@@ -1800,18 +1810,34 @@ async function syncSinceHistoryLocked(
     }
 
     if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);
-    // Record the timestamp so silence-detection can tell the difference between
-    // "no new mail" (this column ticks every sync) and "Pub/Sub is broken".
+    // Stamp two timestamps:
+    //   last_history_sync_at — ticks on every successful sync (push OR poll).
+    //     Used for "we touched this account recently" UX.
+    //   last_push_at — ticks ONLY on webhook-initiated syncs (opts.publishedAtMs
+    //     is non-null). The poll cron uses this to detect "no push in 2h →
+    //     watch is probably broken". Stamping it on poll runs would defeat
+    //     its purpose.
+    const stamp: { last_history_sync_at: string; last_push_at?: string } = {
+      last_history_sync_at: new Date().toISOString(),
+    };
+    if (opts.publishedAtMs != null) stamp.last_push_at = new Date().toISOString();
     try {
-      await supabaseAdmin.from("gmail_accounts")
-        .update({ last_history_sync_at: new Date().toISOString() })
-        .eq("id", accountId);
+      await supabaseAdmin.from("gmail_accounts").update(stamp).eq("id", accountId);
     } catch { /* best-effort */ }
     return { synced: seenAdded.size };
-  } catch (e: any) {
-    console.error("history failed, rebootstrapping", e.message);
-    await supabaseAdmin.from("gmail_accounts").update({ history_id: null }).eq("id", accountId);
-    return { error: e.message };
+  } catch (e: unknown) {
+    const msg = (e as Error)?.message ?? String(e);
+    // Only treat 404 (history_id genuinely expired in Gmail) as "rebootstrap".
+    // Transient errors (429, 5xx, network) get returned to the caller so the
+    // next push/poll retries cheaply, instead of triggering an expensive
+    // full-mailbox bootstrap.
+    if (e instanceof GmailApiError && e.status === 404) {
+      console.error("history_id expired, queueing rebootstrap", accountId);
+      await supabaseAdmin.from("gmail_accounts").update({ history_id: null }).eq("id", accountId);
+      return { error: msg, rebootstrapped: true };
+    }
+    console.error("history sync failed (transient)", accountId, msg);
+    return { error: msg };
   }
 }
 
@@ -1854,6 +1880,7 @@ async function bootstrapAccount(accountId: string, userId: string) {
     if (collected.length > 0) {
       const seen = new Set<string>();
       const ids = collected.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+      const nowMs = Date.now();
       for (let i = 0; i < ids.length; i += 500) {
         const slice = ids.slice(i, i + 500);
         const { data: existing } = await supabaseAdmin
@@ -1862,10 +1889,29 @@ async function bootstrapAccount(accountId: string, userId: string) {
           .eq("gmail_account_id", accountId)
           .in("gmail_message_id", slice);
         const have = new Set((existing ?? []).map((r) => r.gmail_message_id));
-        for (const id of slice) {
-          if (have.has(id)) continue;
-          try { await enqueueMessageJob(accountId, userId, id, 0); }
-          catch (e) { console.error("bootstrap enqueue failed", id, e); }
+        // Single batched insert (vs N×upsert roundtrips). For 500 ids this
+        // cuts bootstrap wall-clock from seconds to ~50ms — important
+        // because we're still inside the per-account lock.
+        const rows = slice
+          .filter((id) => !have.has(id))
+          .map((id, idx) => ({
+            gmail_account_id: accountId,
+            gmail_message_id: id,
+            user_id: userId,
+            status: "pending",
+            priority: 0,
+            // Spread next_run_at across the batch (0-500ms) so the worker
+            // pool can drain them in parallel instead of all-at-once.
+            next_run_at: new Date(nowMs + (idx % 500)).toISOString(),
+          }));
+        if (rows.length > 0) {
+          try {
+            await supabaseAdmin
+              .from("message_jobs")
+              .upsert(rows, { onConflict: "gmail_account_id,gmail_message_id", ignoreDuplicates: true });
+          } catch (e) {
+            console.error("bootstrap batch enqueue failed", e);
+          }
         }
       }
     }
@@ -1874,10 +1920,11 @@ async function bootstrapAccount(accountId: string, userId: string) {
     await backfillRecent(accountId, userId, 100);
   }
 
+  // Just need historyId; metadata fetch is 10x lighter than full body.
   const recent = await listMessages(accountId, { maxResults: 1 });
   if (recent.messages?.[0]) {
-    const m = await getMessage(accountId, recent.messages[0].id);
-    await bumpHistoryAndWatch(accountId, m.historyId);
+    const m = await getMessageMetadata(accountId, recent.messages[0].id);
+    if (m.historyId) await bumpHistoryAndWatch(accountId, m.historyId);
   }
   // Stamp last_history_sync_at so the poll cron's silence-detection treats this
   // freshly-bootstrapped account as healthy.
@@ -1921,11 +1968,23 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
   type RecRow = NonNullable<typeof headData>[number];
   let tailData: RecRow[] = [];
   if (TAIL_LIMIT > 0) {
+    // Anchor the tail walk so it never overlaps the head window we just
+    // pulled. When cursor is null (first run, or after wrap-around), use
+    // the OLDEST received_at from the head — guarantees zero duplicates.
+    const headOldest = (headData ?? [])
+      .map((r) => r.received_at)
+      .filter((x): x is string => !!x)
+      .sort()[0] ?? null;
+    const tailAnchor = cursor ?? headOldest;
     let q = supabaseAdmin
       .from("emails")
       .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
-      .eq("gmail_account_id", accountId);
-    if (cursor) q = q.lt("received_at", cursor);
+      .eq("gmail_account_id", accountId)
+      // Tail rows on a head-anchored first run should still be unarchived
+      // (consistent with head); on cursor-driven later runs we want both so
+      // we can re-archive rows whose state drifted.
+      .eq("is_archived", false);
+    if (tailAnchor) q = q.lt("received_at", tailAnchor);
     const { data } = await q
       .order("received_at", { ascending: false, nullsFirst: false })
       .limit(TAIL_LIMIT);
@@ -2236,19 +2295,37 @@ export async function loadOlderFromLabel(
 
 const FORWARD_MAX_ATTEMPTS = 5;
 const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600]; // 1m, 5m, 30m, 2h, 6h
+// Window after which a stale forward_locked_at is reclaimed. Mirrors the
+// 60s skip-locked window message_jobs uses.
+const FORWARD_LOCK_TTL_MS = 60_000;
 
 export async function retryForwardAttempts(maxRows = 50) {
+  // ─── Atomic claim. Without this, two overlapping cron ticks can each
+  // pick up the same row and send a duplicate forward. We stamp
+  // forward_locked_at = now() on the rows we want to claim and filter to
+  // those whose pre-update locked_at was null or stale; only one writer
+  // wins on each row.
+  const now = new Date();
+  const staleCutoff = new Date(now.getTime() - FORWARD_LOCK_TTL_MS).toISOString();
   const { data: rows } = await supabaseAdmin
     .from("emails")
-    .select("id, gmail_account_id, gmail_message_id, folder_id, subject, from_addr, from_name, body_text, snippet, received_at, forward_attempts")
-    .lte("forward_next_retry_at", new Date().toISOString())
+    .update({ forward_locked_at: now.toISOString() })
+    .lte("forward_next_retry_at", now.toISOString())
     .not("forward_next_retry_at", "is", null)
     .lt("forward_attempts", FORWARD_MAX_ATTEMPTS)
+    // Skip rows currently held by another in-flight retry (within TTL).
+    .or(`forward_locked_at.is.null,forward_locked_at.lt.${staleCutoff}`)
+    // Don't re-forward a row that already succeeded — protects against the
+    // case where processGmailMessage's first attempt succeeded but a later
+    // re-run (manual retry) flipped retry state back on.
+    .is("forwarded_at", null)
+    .select("id, gmail_account_id, gmail_message_id, folder_id, subject, from_addr, from_name, body_text, snippet, received_at, forward_attempts")
     .limit(maxRows);
 
   let ok = 0;
   let failed = 0;
   let gaveUp = 0;
+  let skipped = 0;
   for (const row of rows ?? []) {
     let forwardTo: string | null = null;
     if (row.folder_id) {
@@ -2263,6 +2340,7 @@ export async function retryForwardAttempts(maxRows = 50) {
       // Folder was deleted or forward_to cleared — abandon the retry.
       await supabaseAdmin.from("emails").update({
         forward_next_retry_at: null,
+        forward_locked_at: null,
         forward_last_error: "forward_to no longer set",
       }).eq("id", row.id);
       gaveUp++;
@@ -2282,6 +2360,7 @@ export async function retryForwardAttempts(maxRows = 50) {
         forward_attempts: 0,
         forward_last_error: null,
         forward_next_retry_at: null,
+        forward_locked_at: null,
       }).eq("id", row.id);
       ok++;
     } catch (e) {
@@ -2292,6 +2371,7 @@ export async function retryForwardAttempts(maxRows = 50) {
           forward_attempts: nextAttempt,
           forward_last_error: errMsg,
           forward_next_retry_at: null, // give up — user can re-trigger manually
+          forward_locked_at: null,
         }).eq("id", row.id);
         gaveUp++;
       } else {
@@ -2300,12 +2380,13 @@ export async function retryForwardAttempts(maxRows = 50) {
           forward_attempts: nextAttempt,
           forward_last_error: errMsg,
           forward_next_retry_at: new Date(Date.now() + backoff * 1000).toISOString(),
+          forward_locked_at: null,
         }).eq("id", row.id);
         failed++;
       }
     }
   }
-  return { processed: rows?.length ?? 0, ok, failed, gaveUp };
+  return { processed: rows?.length ?? 0, ok, failed, gaveUp, skipped };
 }
 
 // ─── DLQ auto-replay ──────────────────────────────────────────────────────
@@ -2326,6 +2407,12 @@ const TRANSIENT_DLQ_PATTERNS = [
   /unavailable/i,
 ];
 
+/** Pure: does this DLQ `last_error` string look transient enough to auto-replay? */
+export function isTransientDlqError(lastError: string | null | undefined): boolean {
+  if (typeof lastError !== "string" || lastError.length === 0) return false;
+  return TRANSIENT_DLQ_PATTERNS.some((p) => p.test(lastError));
+}
+
 export async function replayTransientDlq(maxRows = 200) {
   const { data: rows } = await supabaseAdmin
     .from("message_jobs")
@@ -2336,20 +2423,29 @@ export async function replayTransientDlq(maxRows = 200) {
   let replayed = 0;
   let skipped = 0;
   for (const row of rows ?? []) {
-    const transient = typeof row.last_error === "string" &&
-      TRANSIENT_DLQ_PATTERNS.some((p) => p.test(row.last_error!));
-    if (!transient) { skipped++; continue; }
-    await supabaseAdmin.from("message_jobs").update({
-      status: "pending",
-      attempt: 0,
-      locked_at: null,
-      // Spread the replay over a 10-minute window so a big chunk doesn't
-      // hammer Gmail all at once and re-trigger the same rate-limit that
-      // originally killed them.
-      next_run_at: new Date(Date.now() + Math.floor(Math.random() * 10 * 60 * 1000)).toISOString(),
-      last_error: `auto-replayed from DLQ at ${new Date().toISOString()} (was: ${row.last_error?.slice(0, 200) ?? ""})`,
-    }).eq("id", row.id);
-    replayed++;
+    if (!isTransientDlqError(row.last_error)) { skipped++; continue; }
+    // Conditional update: only flip back to pending if the row is STILL in
+    // dlq when our update lands. Without `.eq("status", "dlq")` a concurrent
+    // replayer could flip the row to running between our select and our
+    // update, and we'd write `status='pending'` over `status='running'`,
+    // resurrecting a job mid-execution.
+    const { data: updated } = await supabaseAdmin
+      .from("message_jobs")
+      .update({
+        status: "pending",
+        attempt: 0,
+        locked_at: null,
+        // Spread the replay over a 10-minute window so a big chunk doesn't
+        // hammer Gmail all at once and re-trigger the same rate-limit that
+        // originally killed them.
+        next_run_at: new Date(Date.now() + Math.floor(Math.random() * 10 * 60 * 1000)).toISOString(),
+        last_error: `auto-replayed from DLQ at ${new Date().toISOString()} (was: ${row.last_error?.slice(0, 200) ?? ""})`,
+      })
+      .eq("id", row.id)
+      .eq("status", "dlq")
+      .select("id");
+    if (updated && updated.length > 0) replayed++;
+    else skipped++;
   }
   return { checked: rows?.length ?? 0, replayed, skipped };
 }
