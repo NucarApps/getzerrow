@@ -20,8 +20,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
-import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain } from "@/lib/company-domains";
+import { CompanyAliasesDialog } from "@/components/contacts/CompanyAliasesDialog";
+import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain, resolveCompanyDomain } from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
+import { listCompanyAliases } from "@/lib/company-aliases.functions";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
