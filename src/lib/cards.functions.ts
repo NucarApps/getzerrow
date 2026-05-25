@@ -6,6 +6,24 @@ import { buildVCard, sendCardEmail, type CardData } from "./cards.server";
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{2,30}$/;
 
+/** Normalize user-entered URLs: trim, return null if empty, prepend https:// if missing. */
+function normalizeUrl(v: unknown): unknown {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string") return v;
+  const s = v.trim();
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s}`;
+}
+function normalizeHttpsUrl(v: unknown): unknown {
+  const n = normalizeUrl(v);
+  if (typeof n !== "string") return n;
+  return n.replace(/^http:\/\//i, "https://");
+}
+
+const urlField = z.preprocess(normalizeUrl, z.string().url().max(500).nullable().optional());
+const httpsUrlField = z.preprocess(normalizeHttpsUrl, z.string().url().max(1000).nullable().optional());
+
 /** Get the signed-in user's own card (or null if not set yet). */
 export const getMyCard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
