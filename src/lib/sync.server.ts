@@ -1,8 +1,39 @@
 // Core sync pipeline: pull messages for a specific gmail_account, apply filters/AI,
 // persist, apply Gmail label/actions. Server-only.
+//
+// Module layout — this file is the public surface; focused sub-modules
+// live under ./sync/:
+//   ./sync/account-lock     in-process coalescing lock
+//   ./sync/backoff          jitter, retry tables, computeBackoffSeconds
+//   ./sync/dlq              isTransientDlqError, replayTransientDlq
+//   ./sync/forward-retry    retryForwardAttempts
+//   ./sync/history-id       gmailHistoryIdGreater (BigInt comparison)
+//
+// New imports for callers should go straight to the sub-modules; the
+// re-exports below preserve backward compatibility for existing
+// `import { x } from "@/lib/sync.server"` call sites.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels, sendMessage, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch, buildFolderProfile, type ClassifyFolder } from "./ai.server";
+import {
+  MAX_JOB_ATTEMPTS, BACKOFF_SECONDS, RETRYABLE_BACKOFF_SECONDS,
+  RETRYABLE_FREE_ATTEMPTS, jitter, computeBackoffSeconds as _computeBackoffSeconds,
+} from "./sync/backoff";
+import { withAccountLock as _withAccountLock } from "./sync/account-lock";
+import { gmailHistoryIdGreater as _gmailHistoryIdGreater } from "./sync/history-id";
+import {
+  isTransientDlqError as _isTransientDlqError,
+  replayTransientDlq as _replayTransientDlq,
+} from "./sync/dlq";
+import { retryForwardAttempts as _retryForwardAttempts } from "./sync/forward-retry";
+
+// Re-export for backward compatibility with existing imports.
+export const withAccountLock = _withAccountLock;
+export const computeBackoffSeconds = _computeBackoffSeconds;
+export const gmailHistoryIdGreater = _gmailHistoryIdGreater;
+export const isTransientDlqError = _isTransientDlqError;
+export const replayTransientDlq = _replayTransientDlq;
+export const retryForwardAttempts = _retryForwardAttempts;
 
 type RuleNode =
   | { type: "group"; op: "and" | "or"; children: RuleNode[] }
@@ -52,26 +83,7 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
   return data as GmailAccount;
 }
 
-// Per-account in-process lock. Pub/Sub redeliveries and the polling cron can
-// trigger overlapping syncSinceHistory calls for the same account — the second
-// caller would read a stale history_id and either redo work or skip events. We
-// coalesce overlapping calls into one promise; subsequent callers within the
-// same worker share the result.
-const syncLocks = new Map<string, Promise<unknown>>();
-
-export function withAccountLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
-  const existing = syncLocks.get(accountId);
-  if (existing) return existing as Promise<T>;
-  const p = (async () => {
-    try {
-      return await fn();
-    } finally {
-      syncLocks.delete(accountId);
-    }
-  })();
-  syncLocks.set(accountId, p);
-  return p;
-}
+// (withAccountLock moved to ./sync/account-lock.ts and re-exported above.)
 // Bounds for regex filter evaluation to prevent ReDoS (catastrophic backtracking).
 // Patterns and input are length-capped, and obviously dangerous patterns are rejected.
 const MAX_REGEX_PATTERN_LEN = 200;
@@ -1097,28 +1109,7 @@ async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   }
 }
 
-/** Compare two Gmail history IDs (decimal strings representing unsigned
- * 64-bit integers). Returns true iff `incoming` is strictly greater than
- * `current`. Handles ids that exceed Number.MAX_SAFE_INTEGER by using
- * BigInt; falls back to length+lex comparison if either input isn't a
- * pure-decimal string. */
-export function gmailHistoryIdGreater(incoming: string | null, current: string | null): boolean {
-  if (!incoming) return false;
-  if (!current) return true;
-  // Pure-decimal fast path.
-  if (/^\d+$/.test(incoming) && /^\d+$/.test(current)) {
-    try {
-      return BigInt(incoming) > BigInt(current);
-    } catch {
-      /* fall through */
-    }
-  }
-  // Defensive fallback: same length → lex order works; different length →
-  // longer is bigger. Gmail history IDs are all decimal so this only fires
-  // if someone stored garbage.
-  if (incoming.length !== current.length) return incoming.length > current.length;
-  return incoming > current;
-}
+// (gmailHistoryIdGreater moved to ./sync/history-id.ts and re-exported above.)
 
 /** Bump history_id with a monotonic guard via an atomic SQL RPC. If a
  * concurrent writer already stored a higher history_id we leave the row
@@ -1370,67 +1361,9 @@ async function applyLabelChange(
 
 
 // ─── Durable per-message processing queue ─────────────────────────────────
-
-const MAX_JOB_ATTEMPTS = 5;
-const BACKOFF_SECONDS = [30, 120, 600, 1800, 7200]; // 30s, 2m, 10m, 30m, 2h
-// Short jittered backoff for transient Gmail-side failures (429, 5xx, timeout).
-// First 2 retryable failures don't count toward MAX_JOB_ATTEMPTS, so a flaky
-// Google API won't burn a message into the DLQ.
-const RETRYABLE_BACKOFF_SECONDS = [30, 90, 300, 900, 3600]; // 30s, 1.5m, 5m, 15m, 1h
-const RETRYABLE_FREE_ATTEMPTS = 2;
-
-function jitter(seconds: number): number {
-  return Math.floor(seconds * (0.75 + Math.random() * 0.5));
-}
-
-/** Seconds until midnight US/Pacific (Gmail per-user quotas reset at midnight
- * PT). DST-aware via Intl. Returns a safe 4h fallback if Intl yields an
- * unparseable value — quota backoff should never produce NaN. */
-function secondsUntilMidnightPT(now = new Date()): number {
-  try {
-    const fmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: false,
-    });
-    const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
-    const h = parseInt(parts.hour ?? "", 10);
-    const m = parseInt(parts.minute ?? "", 10);
-    const s = parseInt(parts.second ?? "", 10);
-    if (!Number.isFinite(h) || !Number.isFinite(m) || !Number.isFinite(s)) {
-      return 4 * 3600;
-    }
-    const elapsed = h * 3600 + m * 60 + s;
-    return Math.max(60, 86400 - elapsed);
-  } catch {
-    return 4 * 3600;
-  }
-}
-
-/** Pick a backoff that respects, in order: Retry-After header, quotaExceeded
- * (wait until midnight PT), retryable vs terminal table, attempt index. */
-export function computeBackoffSeconds(opts: {
-  retryable: boolean;
-  retryAfterSeconds: number | null;
-  isQuotaExceeded: boolean;
-  currentAttempt: number;
-  nextAttempt: number;
-}): number {
-  if (opts.retryAfterSeconds && opts.retryAfterSeconds > 0) {
-    return jitter(opts.retryAfterSeconds);
-  }
-  if (opts.isQuotaExceeded) {
-    // Hard upper bound at 6h. Without jitter, a hundred jobs all queued at
-    // the same quota event would retry at the exact same instant and likely
-    // re-trigger the same quota — so apply the ±25% jitter we use elsewhere.
-    return jitter(Math.min(secondsUntilMidnightPT(), 6 * 3600));
-  }
-  const table = opts.retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
-  const idx = opts.retryable
-    ? Math.min(opts.currentAttempt, table.length - 1)
-    : Math.min(opts.nextAttempt - 1, table.length - 1);
-  return jitter(table[idx]);
-}
+// Backoff constants + computeBackoffSeconds + jitter helper live in
+// ./sync/backoff.ts (imported above). The constants are referenced by
+// handleError below; jitter is also used by the forward-retry path.
 
 export async function enqueueMessageJob(
   accountId: string,
@@ -2373,173 +2306,7 @@ export async function loadOlderFromLabel(
   return { ingested, claimed, hasMore };
 }
 
-// ─── Forward-to retries ───────────────────────────────────────────────────
-//
-// When auto-forward fails (rate-limited, recipient mailbox down, transient
-// 5xx) we used to log to console and move on, leaving the user no way to
-// know their automation didn't run. Now we stamp forward_attempts +
-// forward_next_retry_at on the email row and this function picks them up
-// from the cron tick.
-
-const FORWARD_MAX_ATTEMPTS = 5;
-const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600]; // 1m, 5m, 30m, 2h, 6h
-
-export async function retryForwardAttempts(maxRows = 50) {
-  // Atomic claim via SQL function. Without this, two overlapping cron
-  // ticks could each pick the same row and send a duplicate forward.
-  // claim_forward_retries uses FOR UPDATE SKIP LOCKED inside one
-  // transaction so only one tx wins per row.
-  type ForwardClaim = {
-    id: string;
-    gmail_account_id: string;
-    gmail_message_id: string;
-    folder_id: string | null;
-    subject: string | null;
-    from_addr: string | null;
-    from_name: string | null;
-    body_text: string | null;
-    snippet: string | null;
-    received_at: string | null;
-    forward_attempts: number;
-  };
-  type ForwardClaimRpc = {
-    rpc: (
-      fn: "claim_forward_retries",
-      args: { p_limit: number },
-    ) => Promise<{ data: ForwardClaim[] | null; error: { message: string } | null }>;
-  };
-  const { data: rows, error } = await (supabaseAdmin as unknown as ForwardClaimRpc).rpc(
-    "claim_forward_retries",
-    { p_limit: maxRows },
-  );
-  if (error) {
-    console.error("claim_forward_retries RPC failed", error.message);
-    return { processed: 0, ok: 0, failed: 0, gaveUp: 0, error: error.message };
-  }
-
-  let ok = 0;
-  let failed = 0;
-  let gaveUp = 0;
-  for (const row of rows ?? []) {
-    let forwardTo: string | null = null;
-    if (row.folder_id) {
-      const { data: folder } = await supabaseAdmin
-        .from("folders")
-        .select("forward_to")
-        .eq("id", row.folder_id)
-        .maybeSingle();
-      forwardTo = folder?.forward_to ?? null;
-    }
-    if (!forwardTo) {
-      // Folder was deleted or forward_to cleared — abandon the retry.
-      await supabaseAdmin.from("emails").update({
-        forward_next_retry_at: null,
-        forward_locked_at: null,
-        forward_last_error: "forward_to no longer set",
-      }).eq("id", row.id);
-      gaveUp++;
-      continue;
-    }
-
-    try {
-      await sendMessage(
-        row.gmail_account_id,
-        forwardTo,
-        `Fwd: ${row.subject || "(no subject)"}`,
-        `---------- Forwarded message ----------\nFrom: ${row.from_name || ""} <${row.from_addr}>\nDate: ${row.received_at}\nSubject: ${row.subject}\n\n${row.body_text || row.snippet || ""}`,
-      );
-      await supabaseAdmin.from("emails").update({
-        forwarded_to: forwardTo,
-        forwarded_at: new Date().toISOString(),
-        forward_attempts: 0,
-        forward_last_error: null,
-        forward_next_retry_at: null,
-        forward_locked_at: null,
-      }).eq("id", row.id);
-      ok++;
-    } catch (e) {
-      const errMsg = (e as Error)?.message?.slice(0, 500) ?? "unknown";
-      const nextAttempt = (row.forward_attempts ?? 0) + 1;
-      if (nextAttempt >= FORWARD_MAX_ATTEMPTS) {
-        await supabaseAdmin.from("emails").update({
-          forward_attempts: nextAttempt,
-          forward_last_error: errMsg,
-          forward_next_retry_at: null, // give up — user can re-trigger manually
-          forward_locked_at: null,
-        }).eq("id", row.id);
-        gaveUp++;
-      } else {
-        const backoff = jitter(FORWARD_BACKOFF_SECONDS[Math.min(nextAttempt - 1, FORWARD_BACKOFF_SECONDS.length - 1)]);
-        await supabaseAdmin.from("emails").update({
-          forward_attempts: nextAttempt,
-          forward_last_error: errMsg,
-          forward_next_retry_at: new Date(Date.now() + backoff * 1000).toISOString(),
-          forward_locked_at: null,
-        }).eq("id", row.id);
-        failed++;
-      }
-    }
-  }
-  return { processed: rows?.length ?? 0, ok, failed, gaveUp };
-}
-
-// ─── DLQ auto-replay ──────────────────────────────────────────────────────
-//
-// Jobs that hit 5 retryable failures end up in the DLQ — a one-off Gmail 5xx
-// outage from a few hours ago can park hundreds of messages there. Rather
-// than waiting for manual operator clicks, this function returns DLQ rows
-// whose last_error looks transient back to pending with a fresh attempt
-// counter and a long backoff.
-
-const TRANSIENT_DLQ_PATTERNS = [
-  /\b5\d{2}\b/,
-  /timeout/i,
-  /\bECONNRESET\b/,
-  /\bETIMEDOUT\b/,
-  /\bfetch failed\b/,
-  /\b429\b/,
-  /unavailable/i,
-];
-
-/** Pure: does this DLQ `last_error` string look transient enough to auto-replay? */
-export function isTransientDlqError(lastError: string | null | undefined): boolean {
-  if (typeof lastError !== "string" || lastError.length === 0) return false;
-  return TRANSIENT_DLQ_PATTERNS.some((p) => p.test(lastError));
-}
-
-export async function replayTransientDlq(maxRows = 200) {
-  const { data: rows } = await supabaseAdmin
-    .from("message_jobs")
-    .select("id, last_error, attempt")
-    .eq("status", "dlq")
-    .order("updated_at", { ascending: false })
-    .limit(maxRows);
-  let replayed = 0;
-  let skipped = 0;
-  for (const row of rows ?? []) {
-    if (!isTransientDlqError(row.last_error)) { skipped++; continue; }
-    // Conditional update: only flip back to pending if the row is STILL in
-    // dlq when our update lands. Without `.eq("status", "dlq")` a concurrent
-    // replayer could flip the row to running between our select and our
-    // update, and we'd write `status='pending'` over `status='running'`,
-    // resurrecting a job mid-execution.
-    const { data: updated } = await supabaseAdmin
-      .from("message_jobs")
-      .update({
-        status: "pending",
-        attempt: 0,
-        locked_at: null,
-        // Spread the replay over a 10-minute window so a big chunk doesn't
-        // hammer Gmail all at once and re-trigger the same rate-limit that
-        // originally killed them.
-        next_run_at: new Date(Date.now() + Math.floor(Math.random() * 10 * 60 * 1000)).toISOString(),
-        last_error: `auto-replayed from DLQ at ${new Date().toISOString()} (was: ${row.last_error?.slice(0, 200) ?? ""})`,
-      })
-      .eq("id", row.id)
-      .eq("status", "dlq")
-      .select("id");
-    if (updated && updated.length > 0) replayed++;
-    else skipped++;
-  }
-  return { checked: rows?.length ?? 0, replayed, skipped };
-}
+// Forward-retry + DLQ-replay logic lives in:
+//   ./sync/forward-retry.ts → retryForwardAttempts
+//   ./sync/dlq.ts          → isTransientDlqError, replayTransientDlq
+// Both are re-exported at the top of this file for backward compat.
