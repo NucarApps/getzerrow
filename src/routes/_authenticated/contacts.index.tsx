@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,13 +141,21 @@ function ContactsPage() {
       return next;
     });
   }
-  // Auto-collapse all buckets when toggling "By company" on.
+  // Auto-collapse all buckets when toggling "By company" on, and again the
+  // first time buckets become available (initial load races contacts query).
+  const initialCollapseDoneRef = useRef(false);
   useEffect(() => {
     if (groupByCompany) {
       setCollapsed(new Set(companyBuckets.map((b) => b.key)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupByCompany]);
+  useEffect(() => {
+    if (!initialCollapseDoneRef.current && groupByCompany && companyBuckets.length > 0) {
+      initialCollapseDoneRef.current = true;
+      setCollapsed(new Set(companyBuckets.map((b) => b.key)));
+    }
+  }, [companyBuckets, groupByCompany]);
 
 
   return (
