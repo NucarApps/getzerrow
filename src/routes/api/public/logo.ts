@@ -22,8 +22,12 @@ function isBlockedDomain(domain: string): boolean {
 function providersFor(domain: string, size: number): string[] {
   const d = encodeURIComponent(domain);
   const s = Math.max(256, Math.min(512, size));
+  const logoDevToken = process.env.LOGO_DEV_TOKEN;
+  const logoDevUrl = `https://img.logo.dev/${d}?size=${s}&format=png${
+    logoDevToken ? `&token=${encodeURIComponent(logoDevToken)}` : ""
+  }`;
   return [
-    `https://img.logo.dev/${d}?size=${s}&format=png`,
+    logoDevUrl,
     `https://logo.clearbit.com/${d}?size=${s}`,
     `https://icons.duckduckgo.com/ip3/${domain}.ico`,
     `https://${domain}/apple-touch-icon.png`,
