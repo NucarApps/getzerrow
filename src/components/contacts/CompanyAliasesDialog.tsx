@@ -19,6 +19,7 @@ import {
   listCompanyGroupAssignments, setCompanyGroups,
 } from "@/lib/company-groups.functions";
 import { listContactGroups } from "@/lib/contact-groups.functions";
+import { searchLogoBrands, type LogoBrand } from "@/lib/logo-search.functions";
 import { LOGO_PROVIDER_LABELS } from "@/lib/logo-providers";
 import { logoCandidates } from "@/lib/company-domains";
 import { CompanyLogo } from "./CompanyLogo";
