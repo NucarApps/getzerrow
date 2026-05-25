@@ -1,64 +1,32 @@
-## Problem
 
-Production deploys reference DB objects that aren't in the database yet:
-- `public.emails_decrypted` view
-- `private.get_gmail_oauth_tokens` / `private.upsert_gmail_oauth_account` RPCs
-- `audit.decryption_log` table + `list_decryption_audit` RPC
+## Goal
 
-Result: manual sync + reclassify 500 on every call. The earlier 8 migrations from the previous prompt are already on disk and applied; verified `to_regclass('audit.decryption_log')` and `emails_decrypted` both return NULL, confirming the encryption layer is missing.
+When `enrichContact` finds no local emails for a contact's address, query Gmail directly with `from:<email>` (and optionally `to:<email>` for the relationship summary), fetch a handful of messages, and feed them into the existing extraction + relationship-summary prompts. This lets brand-new contacts get enriched without waiting for the sync pipeline to backfill them.
 
-## Migrations to apply (strict order)
+## Where the change lives
 
-Order matters — `230000` redefines the decrypt helpers + view that `220000` creates.
+`src/lib/contacts.functions.ts` → `enrichContact` server function only. No schema changes, no UI changes, no new public endpoints.
 
-1. **`20260525210000_encrypt_oauth_tokens.sql`** *(on disk)*
-   - Provisions pgsodium key `oauth_tokens_v1`
-   - Adds `gmail_accounts.access_token_encrypted` / `refresh_token_encrypted` bytea
-   - Creates `private.encrypt_oauth_token` / `decrypt_oauth_token` helpers
-   - Creates `public.get_gmail_oauth_tokens(p_account_id)`, `public.set_gmail_oauth_tokens(...)`, `public.upsert_gmail_oauth_account(...)` RPCs (service_role only)
-   - Backfills encryption from existing plaintext tokens
+## Behavior
 
-2. **`20260525220000_encrypt_email_bodies.sql`** *(on disk)*
-   - Provisions pgsodium key `email_bodies_v1`
-   - Adds `emails.body_text_encrypted` / `body_html_encrypted` bytea
-   - BEFORE INSERT/UPDATE trigger `emails_encrypt_body` zeros plaintext after encrypting
-   - Creates `public.emails_decrypted` view (`security_invoker = true`)
-   - Redefines `claim_forward_retries` to decrypt body_text on the fly
-   - Backfills existing rows through the trigger
+1. Run the existing local query against `emails_decrypted` (unchanged).
+2. If it returns 0 rows, look up the user's Gmail accounts (`gmail_accounts` filtered by `user_id`). For each account (stop at first that returns results):
+   - Call `listMessages(accountId, { q: \`from:${email}\`, maxResults: 20 })`.
+   - For each id, `getMessage` + `parseMessage` (existing helpers in `src/lib/gmail.server.ts`).
+   - Map the parsed payloads into the same shape the local query produces (`subject`, `body_text`, `snippet`, `from_name`) so the rest of the scoring/picking pipeline is unchanged.
+3. Same fallback for the relationship-summary block: if the local `or(from_addr.eq, to_addrs.ilike)` query is empty, run a second Gmail search with `q: \`from:${email} OR to:${email}\`` and map results into the convo shape (need `from_addr`, `to_addrs`, `received_at` too — all available from `parseMessage`).
+4. Cap Gmail fetches: max 20 messages per fallback, fetch sequentially with the existing `gmailFetch` (already has timeouts + retry classification). If Gmail returns `insufficientPermissions`/quota errors, swallow and proceed as if empty (current "no sample" path already handles this gracefully).
+5. Do not persist these fetched messages into the `emails` table — this is read-only enrichment. The regular sync/reconcile pipeline owns ingestion.
 
-3. **`20260525230000_decryption_audit_log.sql`** *(needs to be authored — not on disk; the branch copy is unavailable from the sandbox)*
-   - `CREATE SCHEMA IF NOT EXISTS audit`
-   - `audit.decryption_log` table: `id`, `occurred_at`, `caller` (role), `kind` (`'oauth'|'email_body'`), `row_id uuid NULL`, `success boolean`
-   - `CREATE OR REPLACE` of `private.decrypt_oauth_token` and `private.decrypt_email_body` to `INSERT INTO audit.decryption_log` on each call (best-effort, swallow logging errors so a logging failure can't break decrypt)
-   - `CREATE OR REPLACE VIEW public.emails_decrypted` re-emitted unchanged so it picks up the new decrypt helper definition
-   - `public.list_decryption_audit(p_limit int default 100)` SECURITY DEFINER RPC returning recent rows, granted to `service_role` only
-   - RLS enabled on `audit.decryption_log` with no policies (service_role bypasses)
+## Technical notes
 
-## Execution
+- Reuse `listMessages`, `getMessage`, `parseMessage` from `src/lib/gmail.server.ts`; no new Gmail helpers needed.
+- Pick the Gmail account by `user_id = auth uid`, ordered by `created_at` ascending; first one usually suffices.
+- Wrap the Gmail fallback in `try/catch` so any `GmailApiError` (token expiry, 429) degrades to the existing "no sample" early-return path rather than failing the whole enrichment.
+- Keep the function under `requireSupabaseAuth` (already is). No new RLS or secrets needed.
 
-Each migration is applied via the `supabase--migration` tool, one call per file, in the order above (the tool requires user approval per call). I'll wait for confirmation between calls to avoid partial application. Migration #3 will be authored inline (content above) since the branch isn't fetchable here — if you have the exact branch SQL, paste it and I'll use that verbatim instead.
+## Out of scope
 
-## Verification (run after all three apply)
-
-```sql
-SELECT viewname FROM pg_views
- WHERE schemaname='public' AND viewname='emails_decrypted';
-
-SELECT proname FROM pg_proc
- WHERE proname IN ('get_gmail_oauth_tokens',
-                   'upsert_gmail_oauth_account',
-                   'list_decryption_audit');
-
-SELECT to_regclass('audit.decryption_log');
-```
-
-All three should return rows / a non-null oid. I'll also run `supabase--linter` after the last migration and surface any new findings.
-
-## Question before I start
-
-The branch file `20260525230000_decryption_audit_log.sql` isn't in the sandbox checkout. Do you want me to:
-
-(a) author migration #3 from the description above, or
-(b) wait while you paste the exact SQL from the branch?
-
-If (a), I'll proceed immediately after you approve this plan.
+- Storing fetched messages in `emails`.
+- Changing the contacts UI or the `getContact` loader.
+- Adding a manual "refetch from Gmail" button (can be a follow-up).
