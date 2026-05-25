@@ -336,15 +336,21 @@ function InboxPage() {
 
   const loadOlderFn = useServerFn(loadOlderFromGmail);
 
+  // Columns selected for any list view. Excludes body_text + body_html
+  // (often multi-MB) — those are fetched on-demand via selectedFullQ when
+  // the user actually opens an email. Keeps both the initial fetch AND
+  // every realtime UPDATE payload small. raw_labels is included because
+  // the "no_rules" filter reads it.
+  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels,snoozed_until,forwarded_to,forwarded_at,gmail_message_id";
+
   const emailsQ = useQuery<Email[]>({
     queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
     queryFn: async () => {
       if (isSearching) {
         // Global search over the most recent messages, including archived/stripped.
-        // Exclude body_text/body_html — they're only needed when an email is opened.
         const { data } = await supabase
           .from("emails")
-          .select("id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at")
+          .select(LIST_COLUMNS)
           .order("received_at", { ascending: false })
           .limit(2000);
         return (data ?? []) as Email[];
@@ -353,7 +359,7 @@ function InboxPage() {
       const isAllMail = selectedFolder === "all_mail";
       let q = supabase
         .from("emails")
-        .select("*")
+        .select(LIST_COLUMNS)
         .order("received_at", { ascending: false, nullsFirst: false })
         .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
       if (cursor) q = q.lt("received_at", cursor);
@@ -480,18 +486,30 @@ function InboxPage() {
 
   const selectedListItem = filtered.find((e) => e.id === selectedId) ?? null;
 
-  // When searching, the list rows don't include body_text/body_html. Fetch the
-  // full email on demand when one is selected so the detail pane can render it.
+  // List rows omit body_text/body_html to keep payloads (initial query +
+  // every realtime update) small. The detail pane needs the full body, so
+  // we fetch on-demand whenever something is selected and merge with the
+  // cached list row to render. 5min staleTime keeps clicks through a
+  // recently-read thread free of refetches.
   const selectedFullQ = useQuery<Email | null>({
     queryKey: ["email-full", selectedId],
-    enabled: !!selectedId && isSearching,
+    enabled: !!selectedId,
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       if (!selectedId) return null;
       const { data } = await supabase.from("emails").select("*").eq("id", selectedId).maybeSingle();
       return (data ?? null) as Email | null;
     },
   });
-  const selected = isSearching && selectedFullQ.data ? selectedFullQ.data : selectedListItem;
+  // Detail pane shows header + body. The on-demand full row carries
+  // body_text / body_html / raw_labels (heavy fields we excluded from
+  // the list query). The list row carries the freshest label /
+  // classification state via realtime UPDATEs. Spread the full row FIRST
+  // then the list row — list-row keys override, so label flips picked
+  // up by realtime aren't masked by the stale full-row snapshot.
+  const selected: Email | null = selectedFullQ.data
+    ? (selectedListItem ? { ...selectedFullQ.data, ...selectedListItem } : selectedFullQ.data)
+    : selectedListItem;
 
   const syncMut = useMutation({
     mutationFn: () => {
