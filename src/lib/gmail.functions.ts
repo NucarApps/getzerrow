@@ -1854,12 +1854,20 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
         }
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/missing OAuth tokens|reauthorize|invalid_grant/i.test(msg)) {
+          reauthFailures++;
+        }
         console.error("searchGmailAndIngest account failed", accountId, e);
       }
     }
 
+    if (reauthFailures > 0 && reauthFailures === accountIds.length) {
+      return { ingested: 0, found: 0, reason: "reauth_required" as const };
+    }
     return { ingested: totalIngested, found: totalFound };
   });
+
 
 
 
