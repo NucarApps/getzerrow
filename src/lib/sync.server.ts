@@ -609,6 +609,27 @@ export async function runMessageJobs(
   };
   const pendingAi: PendingAi[] = [];
 
+  // If a job fails after processGmailMessage already inserted the email row
+  // (e.g. classify hung past JOB_TIMEOUT_MS), the row is stuck at
+  // classified_by='pending'. Stamp it to 'ai_error' so the realtime UPDATE
+  // fires and the UI stops looking frozen. WHERE classified_by='pending'
+  // guarantees we never overwrite a successful classification.
+  const finalizeStuckEmailRow = async (job: ClaimedJob, errMsg: string) => {
+    try {
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          classified_by: "ai_error",
+          classification_reason: `Worker error: ${errMsg.slice(0, 300)}`,
+        })
+        .eq("gmail_account_id", job.gmail_account_id)
+        .eq("gmail_message_id", job.gmail_message_id)
+        .eq("classified_by", "pending");
+    } catch (e) {
+      console.error("finalizeStuckEmailRow failed", e);
+    }
+  };
+
   const handleError = async (job: ClaimedJob, e: any) => {
     const msg = e?.message ?? String(e);
     const status: number | undefined = e instanceof GmailApiError ? e.status : undefined;
@@ -617,6 +638,9 @@ export async function runMessageJobs(
       : (typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg));
     const retryAfterSeconds: number | null = e instanceof GmailApiError ? e.retryAfterSeconds : null;
     const isQuotaExceeded: boolean = e instanceof GmailApiError ? e.isQuotaExceeded : false;
+
+    await finalizeStuckEmailRow(job, msg);
+
 
     if (status === 404 || (typeof msg === "string" && msg.includes(" 404 "))) {
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
