@@ -1012,6 +1012,10 @@ export type Database = {
         }[]
       }
       cron_secret_matches: { Args: { provided: string }; Returns: boolean }
+      get_sync_latency_stats: {
+        Args: { p_lookback_hours?: number; p_user_id: string }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
