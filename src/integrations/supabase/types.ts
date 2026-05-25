@@ -125,6 +125,27 @@ export type Database = {
         }
         Relationships: []
       }
+      company_logo_choices: {
+        Row: {
+          domain: string
+          provider: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          domain: string
+          provider: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          domain?: string
+          provider?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       contact_cards_sent: {
         Row: {
           contact_id: string | null

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { X, Plus, Trash2 } from "lucide-react";
+import { X, Plus, Trash2, Check } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -12,6 +12,11 @@ import { toast } from "sonner";
 import {
   addCompanyAlias, removeCompanyAlias, clearCompanyAliases,
 } from "@/lib/company-aliases.functions";
+import {
+  listCompanyLogoChoices, setCompanyLogoChoice, clearCompanyLogoChoice,
+} from "@/lib/company-logo.functions";
+import { LOGO_PROVIDER_LABELS } from "@/lib/logo-providers";
+import { logoCandidates } from "@/lib/company-domains";
 import { CompanyLogo } from "./CompanyLogo";
 
 type Props = {
@@ -29,9 +34,21 @@ export function CompanyAliasesDialog({
   const addFn = useServerFn(addCompanyAlias);
   const removeFn = useServerFn(removeCompanyAlias);
   const clearFn = useServerFn(clearCompanyAliases);
+  const listChoices = useServerFn(listCompanyLogoChoices);
+  const setChoiceFn = useServerFn(setCompanyLogoChoice);
+  const clearChoiceFn = useServerFn(clearCompanyLogoChoice);
 
   const [newDomain, setNewDomain] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const choicesQ = useQuery({
+    queryKey: ["company-logo-choices"],
+    queryFn: () => listChoices(),
+    enabled: open,
+  });
+  const currentChoice = primaryDomain
+    ? choicesQ.data?.find((c) => c.domain === primaryDomain)?.provider ?? null
+    : null;
 
   useEffect(() => {
     if (!open) setNewDomain("");
@@ -88,16 +105,32 @@ export function CompanyAliasesDialog({
     }
   }
 
+  async function pickLogo(provider: number | null) {
+    setBusy(true);
+    try {
+      if (provider === null) {
+        await clearChoiceFn({ data: { domain: primaryDomain! } });
+      } else {
+        await setChoiceFn({ data: { domain: primaryDomain!, provider } });
+      }
+      qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't save logo choice");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <CompanyLogo domain={primaryDomain} name={companyName} size={28} />
+            <CompanyLogo domain={primaryDomain} name={companyName} size={28} provider={currentChoice} />
             <span className="truncate">{companyName}</span>
           </DialogTitle>
           <DialogDescription>
-            Merge multiple email domains under this company. The logo uses the primary domain.
+            Merge multiple email domains under this company and pick which logo to show.
           </DialogDescription>
         </DialogHeader>
 
@@ -107,6 +140,34 @@ export function CompanyAliasesDialog({
             <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
               {primaryDomain}
             </div>
+          </div>
+
+          <div>
+            <Label className="text-xs uppercase tracking-widest text-muted-foreground">Logo</Label>
+            <div className="mt-2 grid grid-cols-4 gap-2">
+              <LogoTile
+                label="Auto"
+                domain={primaryDomain}
+                provider={null}
+                selected={currentChoice === null}
+                disabled={busy}
+                onSelect={() => pickLogo(null)}
+              />
+              {LOGO_PROVIDER_LABELS.map((label, i) => (
+                <LogoTile
+                  key={i}
+                  label={label}
+                  domain={primaryDomain}
+                  provider={i}
+                  selected={currentChoice === i}
+                  disabled={busy}
+                  onSelect={() => pickLogo(i)}
+                />
+              ))}
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              Tiles that can't load are hidden. Auto picks the first one that works.
+            </p>
           </div>
 
           <div>
@@ -160,5 +221,52 @@ export function CompanyAliasesDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type TileProps = {
+  label: string;
+  domain: string;
+  provider: number | null;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+};
+
+function LogoTile({ label, domain, provider, selected, disabled, onSelect }: TileProps) {
+  const [failed, setFailed] = useState(false);
+  // "Auto" tile always renders (no provider arg).
+  // Specific-provider tiles hide themselves when the proxy 404s.
+  if (provider !== null && failed) return null;
+
+  const src = provider === null
+    ? logoCandidates(domain, 256)[0]
+    : logoCandidates(domain, 256, provider)[0];
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
+      title={label}
+      aria-pressed={selected}
+      className={`relative grid aspect-square place-items-center overflow-hidden rounded-md border bg-white p-1.5 transition disabled:opacity-50 ${
+        selected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/60"
+      }`}
+    >
+      <img
+        src={src}
+        alt={label}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-contain"
+      />
+      {selected && (
+        <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-primary text-primary-foreground">
+          <Check className="h-3 w-3" />
+        </span>
+      )}
+    </button>
   );
 }

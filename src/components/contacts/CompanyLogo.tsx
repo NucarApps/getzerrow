@@ -8,20 +8,22 @@ type Props = {
   size?: number;
   className?: string;
   onColor?: (color: string | null) => void;
+  /** Force a specific logo provider index from the proxy. */
+  provider?: number | null;
 };
 
 /** Company logo with multi-provider fallback, then monogram. */
-export function CompanyLogo({ domain, name, size = 32, className = "", onColor }: Props) {
+export function CompanyLogo({ domain, name, size = 32, className = "", onColor, provider }: Props) {
   const candidates = useMemo(
-    () => (domain ? logoCandidates(domain, Math.max(256, size * 6)) : []),
-    [domain, size],
+    () => (domain ? logoCandidates(domain, Math.max(256, size * 6), provider) : []),
+    [domain, size, provider],
   );
   const [idx, setIdx] = useState(0);
   const initial = ((name || domain || "?").trim().charAt(0) || "?").toUpperCase();
   const px = `${size}px`;
 
   // Reset retry index when domain changes.
-  useEffect(() => { setIdx(0); }, [domain]);
+  useEffect(() => { setIdx(0); }, [domain, provider]);
 
   useEffect(() => {
     if (!onColor || !domain) return;

@@ -24,6 +24,7 @@ import { CompanyAliasesDialog } from "@/components/contacts/CompanyAliasesDialog
 import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain, resolveCompanyDomain } from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import { listCompanyAliases } from "@/lib/company-aliases.functions";
+import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -47,6 +48,7 @@ function ContactsPage() {
   const list = useServerFn(listContacts);
   const listGroups = useServerFn(listContactGroups);
   const listAliases = useServerFn(listCompanyAliases);
+  const listLogoChoices = useServerFn(listCompanyLogoChoices);
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
@@ -61,6 +63,13 @@ function ContactsPage() {
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
   const aq = useQuery({ queryKey: ["company-aliases"], queryFn: () => listAliases() });
+  const lq = useQuery({ queryKey: ["company-logo-choices"], queryFn: () => listLogoChoices() });
+
+  const logoProviderByDomain = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of lq.data ?? []) m.set(r.domain, r.provider);
+    return m;
+  }, [lq.data]);
 
   // contact_id -> [group ids]
   const contactGroupMap = useMemo(() => {
@@ -331,6 +340,7 @@ function ContactsPage() {
                         collapsed={isCollapsed}
                         onToggle={() => toggleBucket(b.key)}
                         aliasCount={b.kind === "company" && b.domain ? (aliasesByPrimary.get(b.domain)?.length ?? 0) : 0}
+                        logoProvider={b.kind === "company" && b.domain ? (logoProviderByDomain.get(b.domain) ?? null) : null}
                         onEdit={b.kind === "company" && b.domain
                           ? () => setAliasDialog({ domain: b.domain!, name: b.name })
                           : undefined}
@@ -378,6 +388,8 @@ function ContactsPage() {
                 {filtered.map((c) => {
                   const gids = contactGroupMap.get(c.id) ?? [];
                   const dom = contactLogoDomain((c as any).website, c.email);
+                  const resolvedDom = resolveCompanyDomain(dom, aliasMap);
+                  const logoProv = resolvedDom ? (logoProviderByDomain.get(resolvedDom) ?? null) : null;
                   const showLogo = !!dom;
                   return (
                     <li key={c.id}>
@@ -386,7 +398,7 @@ function ContactsPage() {
                         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
                       >
                         {showLogo ? (
-                          <CompanyLogo domain={dom} name={c.company ?? prettyCompanyName(dom)} size={40} className="rounded-full" />
+                          <CompanyLogo domain={resolvedDom ?? dom} name={c.company ?? prettyCompanyName(dom!)} size={40} className="rounded-full" provider={logoProv} />
                         ) : (
                           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
                             {(c.name || c.email).slice(0, 1).toUpperCase()}
