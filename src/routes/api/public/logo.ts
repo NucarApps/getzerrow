@@ -18,12 +18,6 @@ function isBlockedDomain(domain: string): boolean {
   return false;
 }
 
-const ALLOWED_PROVIDER_HOSTS = new Set([
-  "logo.clearbit.com",
-  "img.logo.dev",
-  "icons.duckduckgo.com",
-  "www.google.com",
-]);
 
 function providersFor(domain: string, size: number): string[] {
   const d = encodeURIComponent(domain);
