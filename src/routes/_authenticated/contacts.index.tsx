@@ -43,7 +43,6 @@ type GroupRow = { id: string; name: string; color: string; count: number };
 function ContactsPage() {
   const qc = useQueryClient();
   const list = useServerFn(listContacts);
-  const list = useServerFn(listContacts);
   const listGroups = useServerFn(listContactGroups);
 
   const [query, setQuery] = useState("");
