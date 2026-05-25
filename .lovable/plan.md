@@ -1,41 +1,59 @@
-# Contact drawer + my-card website fix
+# Space Invaders leaderboard + stats
 
-## 1. Open contacts in a drawer instead of navigating
+## Database (one migration)
 
-**Extract** the body of `src/routes/_authenticated/contacts.$id.tsx` (everything inside `ContactDetail` and the `ShareContactDialog`/`Field` helpers) into a new shared component:
+New table `public.game_scores`:
+- `id uuid` (PK, default gen_random_uuid)
+- `user_id uuid not null` (= `auth.uid()` at insert)
+- `game text not null default 'invader'` (room for future games)
+- `score integer not null check (score >= 0 and score <= 10000000)`
+- `display_name text not null` (snapshotted at insert so the leaderboard never exposes emails or future name changes)
+- `created_at timestamptz not null default now()`
+- Indexes: `(game, score desc)`, `(user_id, score desc)`
 
-- New file: `src/components/contacts/ContactDetailView.tsx`
-  - Props: `{ id: string; onClose?: () => void; onDeleted?: () => void }`
-  - Same logic as today (queries, enrich, save, share, groups), but no `<Link to="/contacts">` back button or page padding wrapper — those are owned by the parent (route or drawer).
-  - On delete: call `onDeleted?.()` instead of `navigate({ to: "/contacts" })`.
+RLS:
+- `Users insert own scores`: INSERT, `auth.uid() = user_id`
+- `Users view own scores`: SELECT, `auth.uid() = user_id`
+- No public SELECT — leaderboard data is exposed only via a SECURITY DEFINER RPC that projects safe columns (`display_name`, `score`).
 
-- Update `src/routes/_authenticated/contacts.$id.tsx` to be a thin wrapper that renders `<ContactDetailView id={id} onDeleted={() => navigate({ to: "/contacts" })} />` inside the existing page chrome (back link + max-width container). This preserves direct URL access to `/contacts/:id` and SEO.
+RPC `public.get_invader_stats()` (SECURITY DEFINER, `set search_path = public`):
+Returns a single jsonb:
+```
+{
+  myBest:     int | null,
+  globalBest: int | null,
+  myRank:     int | null,   // dense rank by best score across all users
+  top5: [ { name: text, score: int } ]  // best-per-user, top 5 desc
+}
+```
+Computes `myBest` from `auth.uid()`, `globalBest` from `max(score)`, `top5` from `(distinct on user_id) order by score desc limit 5`, `myRank` from `count(distinct user_id) where best > myBest) + 1`.
 
-- New file: `src/components/contacts/ContactDrawer.tsx`
-  - Wraps `ContactDetailView` in a shadcn `Sheet` (`side="right"`, `className="w-full sm:max-w-2xl overflow-y-auto"`).
-  - Props: `{ contactId: string | null; open: boolean; onOpenChange: (v: boolean) => void }`.
-  - On delete, closes the drawer and invalidates `["contacts"]`.
+## Server functions (`src/lib/invader.functions.ts`)
 
-- Edit `src/routes/_authenticated/contacts.index.tsx`:
-  - Add local state `const [drawerId, setDrawerId] = useState<string | null>(null)`.
-  - Replace both `navigate({ to: "/contacts/$id", params: { id: c.id } })` calls (lines 309, 349) with `setDrawerId(c.id)`.
-  - Render `<ContactDrawer contactId={drawerId} open={!!drawerId} onOpenChange={(v) => !v && setDrawerId(null)} />` at the end of the page.
+- `submitInvaderScore` — `createServerFn` + `requireSupabaseAuth`. Zod-validates `score` (int 0..1e7). Looks up the user's display name from `my_cards` (`name` → `handle` → `'Player'`). Inserts a row. Returns the new stats by calling the RPC.
+- `getInvaderStats` — `createServerFn` + `requireSupabaseAuth`. Calls the RPC and returns the jsonb.
 
-The standalone `/contacts/:id` route remains functional (deep links, share links still work).
+## UI (`src/components/inbox/TrackingStandby.tsx`)
 
-## 2. Fix "Invalid input / Must be an http(s) URL" when saving My card
+- Add a `useQuery({ queryKey: ['invader-stats'], queryFn: getInvaderStats })`.
+- When `phase` transitions to `"over"`, fire `useMutation(submitInvaderScore)` once per game with the final `score` (skip if score === 0). On success, `setQueryData(['invader-stats'], ...)` from the mutation response (and invalidate as fallback).
+- Add a compact stats panel inside the existing overlay (only visible on `ready` and `over`, hidden during `playing`/`paused` so it doesn't cover gameplay). Two parts, both in the JetBrains Mono / tracked-uppercase style already used by the overlay:
 
-The error comes from `src/lib/cards.functions.ts` line 29 — the `website` field requires a strict `https?://` URL, so typing `getzerrow.com` or leaving the field with whitespace fails Zod parsing.
+  ```
+  MY BEST 01240   ·   GLOBAL BEST 08120   ·   YOUR RANK #14
+  ─────────── TOP PILOTS ───────────
+  1  STARLORD   8120
+  2  ANNA       6440
+  3  …
+  ```
 
-Fix in **two places**:
+  Right-align scores, truncate names to ~14 chars, dim rows below the user's rank. If `myBest` is null show `—`; if `top5` is empty show "BE THE FIRST PILOT".
 
-- `src/routes/_authenticated/my-card.tsx` (`save()` handler): normalize before sending — trim, return `null` if empty, otherwise prepend `https://` if no `http(s)://` prefix is present.
-- `src/lib/cards.functions.ts` (`updateMyCard` validator): mirror the normalization server-side via a `z.preprocess` so any caller (including future ones) gets the same behavior. Keep the final shape `.url().max(500).nullable().optional()` but drop the redundant `https?://` regex (the preprocess guarantees it).
-
-No other field validation changes.
+- Keep all existing colors, fonts, and layout; new panel uses existing tokens (`text-muted-foreground`, `#ffd089` accent).
 
 ## Out of scope
 
-- No changes to contacts list layout, grouping, search, or routes.
-- No changes to the contact detail's business logic (enrich, share, groups, delete).
-- No DB/RLS changes.
+- No name input UI (uses card name automatically; users can rename via My card).
+- No per-level breakdowns or historical chart.
+- No anti-cheat / score signing.
+- No changes to gameplay, controls, or power-ups.

@@ -630,6 +630,33 @@ export type Database = {
           },
         ]
       }
+      game_scores: {
+        Row: {
+          created_at: string
+          display_name: string
+          game: string
+          id: string
+          score: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          game?: string
+          id?: string
+          score: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          game?: string
+          id?: string
+          score?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       gmail_accounts: {
         Row: {
           access_token: string | null
@@ -1186,6 +1213,7 @@ export type Database = {
           token_expires_at: string
         }[]
       }
+      get_invader_stats: { Args: never; Returns: Json }
       get_sync_latency_stats: {
         Args: { p_lookback_hours?: number; p_user_id: string }
         Returns: Json
