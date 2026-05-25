@@ -502,8 +502,22 @@ function InboxPage() {
       // emails_decrypted is a security_invoker view that auto-decrypts
       // body_text + body_html via pgsodium AEAD. The user's RLS still
       // applies — they can only fetch their own email bodies.
-      const { data } = await supabase.from("emails_decrypted").select("*").eq("id", selectedId).maybeSingle();
-      return (data ?? null) as Email | null;
+      //
+      // Fall back to the underlying emails table if the view doesn't
+      // exist (body-encryption migration not yet applied). This keeps
+      // the detail pane working during the gap between deploy and
+      // migration application.
+      const r = await supabase.from("emails_decrypted").select("*").eq("id", selectedId).maybeSingle();
+      if (r.error) {
+        const m = r.error.message ?? "";
+        const missing = m.includes("Could not find the table") || m.includes("schema cache") || m.includes("does not exist") || m.includes("relation");
+        if (missing) {
+          const fb = await supabase.from("emails").select("*").eq("id", selectedId).maybeSingle();
+          return (fb.data ?? null) as Email | null;
+        }
+        throw new Error(r.error.message);
+      }
+      return (r.data ?? null) as Email | null;
     },
   });
   // Detail pane shows header + body. The on-demand full row carries

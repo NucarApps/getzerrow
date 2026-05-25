@@ -81,8 +81,11 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
-    // Goes through upsert_gmail_oauth_account so the tokens are encrypted
-    // with pgsodium AEAD before they touch the table.
+    // Goes through upsert_gmail_oauth_account so the tokens are
+    // encrypted with pgsodium AEAD before they touch the table. Falls
+    // back to a direct upsert if the migration hasn't been applied
+    // yet — same defensive pattern as the OAuth callback so a code
+    // deploy ahead of a migration doesn't break connect.
     type UpsertRpc = { rpc: (fn: "upsert_gmail_oauth_account", args: {
       p_user_id: string;
       p_email_address: string;
@@ -90,17 +93,46 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
       p_refresh_token: string;
       p_token_expires_at: string;
     }) => Promise<{ data: string | null; error: { message: string } | null }> };
-    const { data: accountId, error } = await (supabaseAdmin as unknown as UpsertRpc).rpc(
-      "upsert_gmail_oauth_account",
-      {
-        p_user_id: context.userId,
-        p_email_address: data.email_address,
-        p_access_token: data.access_token,
-        p_refresh_token: data.refresh_token,
-        p_token_expires_at: expiresAt,
-      },
-    );
-    if (error || !accountId) throw new Error(`Failed to save account: ${error?.message}`);
+    let accountId: string | null = null;
+    {
+      const r = await (supabaseAdmin as unknown as UpsertRpc).rpc(
+        "upsert_gmail_oauth_account",
+        {
+          p_user_id: context.userId,
+          p_email_address: data.email_address,
+          p_access_token: data.access_token,
+          p_refresh_token: data.refresh_token,
+          p_token_expires_at: expiresAt,
+        },
+      );
+      if (r.error) {
+        const m = r.error.message;
+        const missing = m.includes("Could not find the function") || m.includes("schema cache") || m.includes("does not exist");
+        if (!missing) {
+          throw new Error(`Failed to save account: ${m}`);
+        }
+        console.warn("upsert_gmail_oauth_account RPC missing — falling back to direct upsert");
+        const fb = await supabaseAdmin
+          .from("gmail_accounts")
+          .upsert(
+            {
+              user_id: context.userId,
+              email_address: data.email_address,
+              access_token: data.access_token,
+              refresh_token: data.refresh_token,
+              token_expires_at: expiresAt,
+            },
+            { onConflict: "user_id,email_address" },
+          )
+          .select("id")
+          .single();
+        if (fb.error || !fb.data) throw new Error(`Failed to save account: ${fb.error?.message ?? "no row"}`);
+        accountId = fb.data.id;
+      } else if (r.data) {
+        accountId = r.data;
+      }
+    }
+    if (!accountId) throw new Error("Failed to save account");
     const account = { id: accountId };
 
     try {
