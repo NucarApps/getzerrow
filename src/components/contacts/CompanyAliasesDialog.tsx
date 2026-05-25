@@ -237,6 +237,66 @@ export function CompanyAliasesDialog({
           </div>
 
           <div>
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+                Tags
+              </Label>
+              <span className="text-[11px] text-muted-foreground">
+                {contactIds.length} {contactIds.length === 1 ? "contact" : "contacts"}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {groups.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No tags yet. Create one from the contacts page first.
+                </p>
+              ) : (
+                groups.map((g) => {
+                  const active = selectedGroupIds.has(g.id);
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => toggleGroup(g.id)}
+                      disabled={busy}
+                      aria-pressed={active}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
+                        active
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: g.color }}
+                      />
+                      <span className="truncate max-w-[10rem]">{g.name}</span>
+                      {active && <Check className="h-3 w-3" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {groups.length > 0 && (
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-[11px] text-muted-foreground">
+                  Tags apply to everyone in this company.
+                </p>
+                <Button
+                  size="sm"
+                  variant={tagsDirty ? "default" : "outline"}
+                  onClick={saveTags}
+                  disabled={busy || !tagsDirty}
+                >
+                  Save tags
+                </Button>
+              </div>
+            )}
+          </div>
+
+
+
+          <div>
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">
               Other domains for this company
             </Label>
