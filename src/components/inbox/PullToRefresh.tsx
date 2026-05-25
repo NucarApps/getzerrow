@@ -95,7 +95,7 @@ export function PullToRefresh({ onRefresh, children, className, onClick }: Props
   }, [phase, pull, onRefresh]);
 
   const indicatorHeight =
-    phase === "launching" || phase === "returning" ? 96 : pull;
+    phase === "launching" ? 96 : pull;
 
   return (
     <div
