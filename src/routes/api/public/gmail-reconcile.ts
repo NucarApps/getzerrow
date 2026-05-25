@@ -1,11 +1,17 @@
-// Safety-net reconciliation cron. Walks the most recent local emails for each
-// connected Gmail account and repairs anything that drifted from Gmail's
+// Safety-net reconciliation cron. Walks recent + cursor-paged older local
+// emails for each connected Gmail account, repairing drift from Gmail's
 // canonical state (missing bodies, archived/deleted upstream, etc.).
-// Scheduled every 15 minutes via pg_cron.
+//
+// Scheduled every 15 minutes via pg_cron. Accounts that look like they
+// recently lost a history event (recent push but `error` set, or no
+// last_history_sync_at) get a larger reconcile window to compensate.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { reconcileLocalInbox } from "@/lib/sync.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
+
+const DEFAULT_LIMIT = 200; // head + tail combined, walks the inbox faster
+const SUSPECT_LIMIT = 500; // bigger sweep when history drift is suspected
 
 export const Route = createFileRoute("/api/public/gmail-reconcile")({
   server: {
@@ -15,20 +21,41 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
 
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
-          .select("id, email_address");
+          .select("id, email_address, last_history_sync_at");
         if (error) {
           return Response.json({ ok: false, error: error.message }, { status: 500 });
         }
 
-        const results: Array<{ account: string; result?: unknown; error?: string }> = [];
+        // Accounts that received a push event with an error in the last hour
+        // — likely have drift the history-diff path couldn't process — get
+        // the larger window so we converge faster on the canonical state.
+        const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { data: drifty } = await supabaseAdmin
+          .from("pubsub_events")
+          .select("email_address")
+          .gte("received_at", since)
+          .not("error", "is", null);
+        const suspectEmails = new Set<string>(
+          (drifty ?? []).map((r) => r.email_address ?? "").filter(Boolean),
+        );
+
+        const results: Array<{ account: string; result?: unknown; error?: string; limit?: number }> = [];
         for (const acc of accounts ?? []) {
+          const lastSync = acc.last_history_sync_at
+            ? new Date(acc.last_history_sync_at).getTime()
+            : 0;
+          const suspect =
+            suspectEmails.has(acc.email_address) ||
+            // Or the account hasn't synced in 30 minutes — also suspect.
+            (lastSync > 0 && Date.now() - lastSync > 30 * 60 * 1000);
+          const limit = suspect ? SUSPECT_LIMIT : DEFAULT_LIMIT;
           try {
-            const r = await reconcileLocalInbox(acc.id, 100);
-            results.push({ account: acc.email_address, result: r });
+            const r = await reconcileLocalInbox(acc.id, limit);
+            results.push({ account: acc.email_address, result: r, limit });
           } catch (e) {
             const msg = (e as Error)?.message ?? String(e);
             console.error("reconcile failed for", acc.email_address, e);
-            results.push({ account: acc.email_address, error: msg });
+            results.push({ account: acc.email_address, error: msg, limit });
           }
         }
 
@@ -36,7 +63,7 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
           await supabaseAdmin.from("pubsub_events").insert({
             event_type: "reconcile",
             accounts_matched: accounts?.length ?? 0,
-            details: `Reconciled ${results.length} account(s)`,
+            details: `Reconciled ${results.length} account(s); ${suspectEmails.size} suspect`,
           });
         } catch (e) {
           console.error("pubsub_events reconcile log failed", e);

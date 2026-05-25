@@ -265,6 +265,9 @@ export type Database = {
           classified_by: string | null
           created_at: string
           folder_id: string | null
+          forward_attempts: number
+          forward_last_error: string | null
+          forward_next_retry_at: string | null
           forwarded_at: string | null
           forwarded_to: string | null
           from_addr: string | null
@@ -280,6 +283,7 @@ export type Database = {
           matched_filter_ids: string[]
           matched_folder_ids: string[]
           processed_at: string | null
+          published_at_ms: number | null
           raw_labels: string[] | null
           received_at: string | null
           snippet: string | null
@@ -299,6 +303,9 @@ export type Database = {
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
+          forward_attempts?: number
+          forward_last_error?: string | null
+          forward_next_retry_at?: string | null
           forwarded_at?: string | null
           forwarded_to?: string | null
           from_addr?: string | null
@@ -314,6 +321,7 @@ export type Database = {
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
           processed_at?: string | null
+          published_at_ms?: number | null
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
@@ -333,6 +341,9 @@ export type Database = {
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
+          forward_attempts?: number
+          forward_last_error?: string | null
+          forward_next_retry_at?: string | null
           forwarded_at?: string | null
           forwarded_to?: string | null
           from_addr?: string | null
@@ -348,6 +359,7 @@ export type Database = {
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
           processed_at?: string | null
+          published_at_ms?: number | null
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
@@ -622,7 +634,9 @@ export type Database = {
           email_address: string
           history_id: string | null
           id: string
+          last_history_sync_at: string | null
           last_poll_at: string | null
+          reconcile_cursor: string | null
           refresh_token: string
           token_expires_at: string
           updated_at: string
@@ -635,7 +649,9 @@ export type Database = {
           email_address: string
           history_id?: string | null
           id?: string
+          last_history_sync_at?: string | null
           last_poll_at?: string | null
+          reconcile_cursor?: string | null
           refresh_token: string
           token_expires_at: string
           updated_at?: string
@@ -648,7 +664,9 @@ export type Database = {
           email_address?: string
           history_id?: string | null
           id?: string
+          last_history_sync_at?: string | null
           last_poll_at?: string | null
+          reconcile_cursor?: string | null
           refresh_token?: string
           token_expires_at?: string
           updated_at?: string
@@ -842,6 +860,7 @@ export type Database = {
           event_type: string
           history_id: string | null
           id: string
+          latency_ms: number | null
           message_id: string | null
           payload: Json | null
           publish_time: string | null
@@ -857,6 +876,7 @@ export type Database = {
           event_type?: string
           history_id?: string | null
           id?: string
+          latency_ms?: number | null
           message_id?: string | null
           payload?: Json | null
           publish_time?: string | null
@@ -872,6 +892,7 @@ export type Database = {
           event_type?: string
           history_id?: string | null
           id?: string
+          latency_ms?: number | null
           message_id?: string | null
           payload?: Json | null
           publish_time?: string | null

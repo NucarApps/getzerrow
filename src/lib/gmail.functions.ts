@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { backfillRecent, backfillWindow, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox, loadOlderFromLabel, runMessageJobs, retryMessageJob, enqueueMessageJob, startBackfillJob, cancelBackfillJob } from "./sync.server";
+import { backfillRecent, backfillWindow, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox, loadOlderFromLabel, runMessageJobs, retryMessageJob, enqueueMessageJob, startBackfillJob, cancelBackfillJob, invalidateAccountContext, invalidateAccountContextForUser } from "./sync.server";
 import {
   listLabels,
   createLabel,
@@ -299,7 +299,7 @@ export const addDomainFilter = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
       .from("folders")
-      .select("id, user_id")
+      .select("id, user_id, gmail_account_id")
       .eq("id", data.folder_id)
       .single();
     if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
@@ -310,6 +310,7 @@ export const addDomainFilter = createServerFn({ method: "POST" })
       value: data.domain.toLowerCase(),
     });
     if (error) throw new Error(error.message);
+    invalidateAccountContext(folder.gmail_account_id);
     return { ok: true };
   });
 
@@ -1457,6 +1458,9 @@ export const addInboxOverride = createServerFn({ method: "POST" })
         value,
       });
       if (error) throw new Error(error.message);
+      // Bust caches across every account this user owns so the new override
+      // routes incoming mail immediately.
+      await invalidateAccountContextForUser(context.userId);
     }
 
     let reprocessed_count = 0;
@@ -2187,7 +2191,7 @@ export const addFolderRule = createServerFn({ method: "POST" })
     if (!value) throw new Error("Empty value");
     const { data: folder } = await supabaseAdmin
       .from("folders")
-      .select("id, user_id, name")
+      .select("id, user_id, name, gmail_account_id")
       .eq("id", data.folder_id)
       .maybeSingle();
     if (!folder || folder.user_id !== context.userId) throw new Error("Folder not found");
@@ -2208,6 +2212,7 @@ export const addFolderRule = createServerFn({ method: "POST" })
         value,
       });
       if (error) throw new Error(error.message);
+      invalidateAccountContext(folder.gmail_account_id);
     }
     return { ok: true, already, folder_name: folder.name };
   });
@@ -2415,6 +2420,7 @@ export const createFolderAndAssign = createServerFn({ method: "POST" })
         .in("id", data.email_ids);
     }
 
+    invalidateAccountContext(data.account_id);
     return { folder_id: folder.id };
   });
 

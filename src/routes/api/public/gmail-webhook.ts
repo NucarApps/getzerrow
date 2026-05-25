@@ -7,9 +7,38 @@
 // of `push` / `push_empty` and do NOT pollute real Google push diagnostics.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { syncSinceHistory } from "@/lib/sync.server";
+import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { verifyGoogleJwt } from "@/lib/google-jwt.server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth.server";
+
+// Pub/Sub considers a push delivered if we ack within ~10s. We spend up to
+// INLINE_DRAIN_BUDGET_MS draining the priority=0 queue inline so brand-new
+// mail is visible before the response is returned, then ack. Anything left
+// in the queue gets picked up by the dedicated 5s gmail-process-jobs cron.
+const INLINE_DRAIN_BUDGET_MS = 4_000;
+
+async function drainWithBudget(budgetMs: number): Promise<{ rounds: number; processed: number }> {
+  const deadline = Date.now() + budgetMs;
+  let rounds = 0;
+  let processed = 0;
+  let emptyRounds = 0;
+  while (Date.now() < deadline) {
+    const r = await runMessageJobs(25, 16, { priority: 0 });
+    rounds++;
+    processed += r.processed ?? 0;
+    if ((r.processed ?? 0) === 0) {
+      // Enqueue jitter is 0-500ms; if we hit two empty rounds in a row, the
+      // queue is genuinely drained and we can return early instead of busy-
+      // looping until the budget runs out.
+      emptyRounds++;
+      if (emptyRounds >= 2) break;
+      await new Promise((r) => setTimeout(r, 300));
+    } else {
+      emptyRounds = 0;
+    }
+  }
+  return { rounds, processed };
+}
 
 export const Route = createFileRoute("/api/public/gmail-webhook")({
   server: {
@@ -166,9 +195,12 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               if (accountsMatched === 0) {
                 details = `No gmail_accounts row matches "${emailAddress}" — watch was probably created against a different connected account.`;
               }
+              const publishedAtMs = publishTime ? new Date(publishTime).getTime() : null;
               for (const acc of accounts ?? []) {
                 try {
-                  const r = await syncSinceHistory(acc.id);
+                  // syncSinceHistory now holds a per-account lock internally,
+                  // so overlapping pushes coalesce into one history-diff pass.
+                  const r = await syncSinceHistory(acc.id, { publishedAtMs });
                   if (r && typeof (r as { synced?: number }).synced === "number") {
                     enqueuedCount += (r as { synced: number }).synced;
                   }
@@ -177,11 +209,18 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   errorMsg = (e as Error)?.message ?? String(e);
                 }
               }
-              // Note: we intentionally do NOT drain message_jobs inline here.
-              // Pub/Sub requires fast 200 responses (slow webhooks → Google
-              // retries → duplicate work). The dedicated 5s `gmail-process-
-              // live-5s` cron already owns the priority=0 lane and drains
-              // newly-enqueued live mail within seconds.
+              // Drain inline within a 4s budget. Cuts push→visible latency
+              // from "wait for next live-cron tick" (0-5s) to "wait for one
+              // Gmail message fetch + classify" (≈300ms-1s). Pub/Sub still
+              // gets its ack well inside the 10s deadline; anything we don't
+              // finish stays on the queue for gmail-process-jobs.
+              if (enqueuedCount > 0 || accountsMatched > 0) {
+                try {
+                  await drainWithBudget(INLINE_DRAIN_BUDGET_MS);
+                } catch (e) {
+                  console.error("inline drain failed", e);
+                }
+              }
             }
           }
         } catch (e: unknown) {
@@ -197,6 +236,12 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               : hadData
               ? "push"
               : "push_empty";
+            // End-to-end latency: time from Pub/Sub publishTime to the
+            // moment we recorded this row. Lets ops query p50/p95 push→ack
+            // latency in one SQL.
+            const latencyMs = publishTime
+              ? Math.max(0, Date.now() - new Date(publishTime).getTime())
+              : null;
             await supabaseAdmin.from("pubsub_events").insert({
               event_type,
               email_address: emailAddress,
@@ -208,6 +253,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               publish_time: publishTime,
               subscription,
               payload: (payload ?? null) as never,
+              latency_ms: latencyMs,
               details: isTest
                 ? `App-side webhook test — ${details ?? (hadData && accountsMatched > 0 ? "matched account and ran sync" : "synthetic envelope")}`
                 : details,

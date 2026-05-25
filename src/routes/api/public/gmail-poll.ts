@@ -1,15 +1,19 @@
 // Polling fallback — call from cron every 1-2 min.
-// Also: detects Pub/Sub silence and auto re-arms the Gmail watch when push
-// has been quiet for >6h despite an active watch. Drains a small batch of
-// message_jobs at the end so processing keeps moving even if the dedicated
-// jobs cron isn't running yet.
+// Also: detects Pub/Sub silence per-account and auto re-arms the Gmail
+// watch. Drains a larger batch of message_jobs at the end so processing
+// keeps moving even if the dedicated jobs cron isn't running yet.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { ensureWatch } from "@/lib/gmail.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 
-const SILENCE_MS = 6 * 60 * 60 * 1000; // 6 hours
+// Per-account silence threshold. If the cron has been running but a given
+// account hasn't had a single history event (push *or* poll-driven) in 2h,
+// the watch is suspect — far tighter than the previous global 6h check.
+const PER_ACCOUNT_SILENCE_MS = 2 * 60 * 60 * 1000;
+// Cap how often we re-arm any one account so a broken topic doesn't loop.
+const REARM_COOLDOWN_MS = 30 * 60 * 1000;
 
 export const Route = createFileRoute("/api/public/gmail-poll")({
   server: {
@@ -18,20 +22,18 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
-          .select("id, email_address, watch_expiration");
+          .select("id, email_address, watch_expiration, last_history_sync_at");
         if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
-        // Self-heal: if the last push event was >6h ago (or never) AND any
-        // account has an active watch, re-arm the watch.
-        const { data: lastPush } = await supabaseAdmin
+        // Look up last successful watch re-arm so we don't spam ensureWatch.
+        const { data: recentRearms } = await supabaseAdmin
           .from("pubsub_events")
-          .select("received_at")
-          .eq("event_type", "push")
-          .order("received_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        const lastPushAt = lastPush?.received_at ? new Date(lastPush.received_at).getTime() : 0;
-        const silent = Date.now() - lastPushAt > SILENCE_MS;
+          .select("email_address, received_at")
+          .eq("event_type", "watch_rearm_auto")
+          .gte("received_at", new Date(Date.now() - REARM_COOLDOWN_MS).toISOString());
+        const rearmedRecently = new Set<string>(
+          (recentRearms ?? []).map((r) => r.email_address ?? "").filter(Boolean),
+        );
 
         let ok = 0;
         let failed = 0;
@@ -40,8 +42,19 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         let totalSynced = 0;
         let firstError: string | null = null;
         for (const acc of accounts ?? []) {
-          
-          if (silent && acc.watch_expiration && new Date(acc.watch_expiration).getTime() > Date.now()) {
+          // Per-account silence: did we actually sync this account recently?
+          // Push event silence is too coarse — a quiet mailbox with no incoming
+          // mail looks the same as a broken watch under the old global check.
+          //
+          // Accounts that have never synced (last_history_sync_at is null)
+          // are NOT silent — they're brand new. The bootstrap path will set
+          // last_history_sync_at on first successful run.
+          const lastSync = acc.last_history_sync_at ? new Date(acc.last_history_sync_at).getTime() : null;
+          const accountSilent = lastSync !== null && Date.now() - lastSync > PER_ACCOUNT_SILENCE_MS;
+          const watchActive = acc.watch_expiration && new Date(acc.watch_expiration).getTime() > Date.now();
+          const cooldownOver = !rearmedRecently.has(acc.email_address);
+
+          if (accountSilent && watchActive && cooldownOver) {
             try {
               const w = await ensureWatch(acc.id, null);
               if (w) {
@@ -55,6 +68,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
                     event_type: "watch_rearm_auto",
                     email_address: acc.email_address,
                     history_id: w.historyId,
+                    details: `Per-account silence > ${PER_ACCOUNT_SILENCE_MS / 60_000}min`,
                   });
                 } catch (e) { console.error("pubsub_events log failed", e); }
               }
@@ -89,16 +103,26 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
           console.error("pubsub_events poll log failed", e);
         }
 
-        // Drain a small batch of due jobs so processing keeps moving even
-        // without the dedicated 30s jobs cron.
+        // Drain a larger batch of due jobs so processing keeps moving even
+        // without the dedicated 30s jobs cron. 50 vs 25 keeps live-lane mail
+        // moving when a small burst lands between cron ticks.
         let jobs: Awaited<ReturnType<typeof runMessageJobs>> | null = null;
         try {
-          jobs = await runMessageJobs(25);
+          jobs = await runMessageJobs(50);
         } catch (e) {
           console.error("drain jobs failed", e);
         }
 
-        return Response.json({ ok: true, count: ok + failed, accounts: ok + failed, succeeded: ok, failed, rearmed: rearmedCount, synced: totalSynced, silent, jobs });
+        return Response.json({
+          ok: true,
+          count: ok + failed,
+          accounts: ok + failed,
+          succeeded: ok,
+          failed,
+          rearmed: rearmedCount,
+          synced: totalSynced,
+          jobs,
+        });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
     },
