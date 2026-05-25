@@ -79,21 +79,27 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
-    const { data: account, error } = await supabaseAdmin
-      .from("gmail_accounts")
-      .upsert(
-        {
-          user_id: context.userId,
-          email_address: data.email_address,
-          access_token: data.access_token,
-          refresh_token: data.refresh_token,
-          token_expires_at: expiresAt,
-        },
-        { onConflict: "user_id,email_address" }
-      )
-      .select("id")
-      .single();
-    if (error || !account) throw new Error(`Failed to save account: ${error?.message}`);
+    // Goes through upsert_gmail_oauth_account so the tokens are encrypted
+    // with pgsodium AEAD before they touch the table.
+    type UpsertRpc = { rpc: (fn: "upsert_gmail_oauth_account", args: {
+      p_user_id: string;
+      p_email_address: string;
+      p_access_token: string;
+      p_refresh_token: string;
+      p_token_expires_at: string;
+    }) => Promise<{ data: string | null; error: { message: string } | null }> };
+    const { data: accountId, error } = await (supabaseAdmin as unknown as UpsertRpc).rpc(
+      "upsert_gmail_oauth_account",
+      {
+        p_user_id: context.userId,
+        p_email_address: data.email_address,
+        p_access_token: data.access_token,
+        p_refresh_token: data.refresh_token,
+        p_token_expires_at: expiresAt,
+      },
+    );
+    if (error || !accountId) throw new Error(`Failed to save account: ${error?.message}`);
+    const account = { id: accountId };
 
     try {
       const watch = await ensureWatch(account.id, null);

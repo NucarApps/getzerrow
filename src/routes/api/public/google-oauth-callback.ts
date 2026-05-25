@@ -47,25 +47,31 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           const email = await fetchUserEmail(tokens.access_token);
           const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-          const { data: account, error } = await supabaseAdmin
-            .from("gmail_accounts")
-            .upsert(
-              {
-                user_id: userId,
-                email_address: email,
-                access_token: tokens.access_token,
-                refresh_token: tokens.refresh_token,
-                token_expires_at: expiresAt,
-              },
-              { onConflict: "user_id,email_address" }
-            )
-            .select("id")
-            .single();
+          // Goes through upsert_gmail_oauth_account so the tokens are
+          // encrypted with pgsodium before they touch the table.
+          type UpsertRpc = { rpc: (fn: "upsert_gmail_oauth_account", args: {
+            p_user_id: string;
+            p_email_address: string;
+            p_access_token: string;
+            p_refresh_token: string;
+            p_token_expires_at: string;
+          }) => Promise<{ data: string | null; error: { message: string } | null }> };
+          const { data: accountId, error } = await (supabaseAdmin as unknown as UpsertRpc).rpc(
+            "upsert_gmail_oauth_account",
+            {
+              p_user_id: userId,
+              p_email_address: email,
+              p_access_token: tokens.access_token,
+              p_refresh_token: tokens.refresh_token,
+              p_token_expires_at: expiresAt,
+            },
+          );
 
-          if (error || !account) {
+          if (error || !accountId) {
             console.error("oauth: failed to save account", error);
             return new Response("Something went wrong saving your account. Please try again.", { status: 500 });
           }
+          const account = { id: accountId };
 
           // Start Gmail push watch if topic is configured
           try {

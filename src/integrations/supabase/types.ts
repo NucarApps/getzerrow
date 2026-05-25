@@ -633,6 +633,7 @@ export type Database = {
       gmail_accounts: {
         Row: {
           access_token: string
+          access_token_encrypted: string | null
           created_at: string
           email_address: string
           history_id: string | null
@@ -642,6 +643,7 @@ export type Database = {
           last_push_at: string | null
           reconcile_cursor: string | null
           refresh_token: string
+          refresh_token_encrypted: string | null
           token_expires_at: string
           updated_at: string
           user_id: string
@@ -649,6 +651,7 @@ export type Database = {
         }
         Insert: {
           access_token: string
+          access_token_encrypted?: string | null
           created_at?: string
           email_address: string
           history_id?: string | null
@@ -658,6 +661,7 @@ export type Database = {
           last_push_at?: string | null
           reconcile_cursor?: string | null
           refresh_token: string
+          refresh_token_encrypted?: string | null
           token_expires_at: string
           updated_at?: string
           user_id: string
@@ -665,6 +669,7 @@ export type Database = {
         }
         Update: {
           access_token?: string
+          access_token_encrypted?: string | null
           created_at?: string
           email_address?: string
           history_id?: string | null
@@ -674,6 +679,7 @@ export type Database = {
           last_push_at?: string | null
           reconcile_cursor?: string | null
           refresh_token?: string
+          refresh_token_encrypted?: string | null
           token_expires_at?: string
           updated_at?: string
           user_id?: string

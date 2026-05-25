@@ -77,7 +77,9 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
                 } catch (e) { console.error("pubsub_events log failed", e); }
               }
             } catch (e) {
-              console.error("self-heal watch re-arm failed", acc.email_address, e);
+              // Log the account ID instead of email_address — same
+              // operator value, no PII bleed into shared log aggregators.
+              console.error("self-heal watch re-arm failed", { account_id: acc.id, err: (e as Error)?.message });
             }
           }
           try {
@@ -88,7 +90,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
             ok++;
           } catch (e: unknown) {
             const err = e as Error;
-            console.error("poll failed for", acc.email_address, err);
+            console.error("poll failed for", { account_id: acc.id, err: err?.message });
             const msg = err?.message ?? String(e);
             if (!firstError) firstError = msg;
             failed++;

@@ -88,7 +88,7 @@ d("gmail-reconcile returns per-account result list", () => {
     // or `error` (failure). We don't assert content beyond that — the
     // preview may not have any connected mailboxes at all.
     for (const r of json.results as Array<Record<string, unknown>>) {
-      expect(r).toHaveProperty("account");
+      expect(r).toHaveProperty("account_id");
       const hasResultOrError = "result" in r || "error" in r;
       expect(hasResultOrError, `result row missing both .result and .error: ${JSON.stringify(r)}`).toBe(true);
     }
