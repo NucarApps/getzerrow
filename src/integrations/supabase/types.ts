@@ -983,6 +983,7 @@ export type Database = {
           gmail_message_id: string
           id: string
           priority: number
+          published_at_ms: number
           user_id: string
         }[]
       }
