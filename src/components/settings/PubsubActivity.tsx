@@ -8,6 +8,7 @@ import {
   renewGmailWatch,
   retryJob,
   runJobsNow,
+  getSyncLatencyStats,
 } from "@/lib/gmail.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,9 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   RefreshCw, ChevronRight, ChevronDown, AlertTriangle,
-  Activity, Copy, CheckCircle2, Info, Settings2,
+  Activity, Copy, CheckCircle2, Info, Settings2, Gauge,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fmtLatency, latencyTone, LATENCY_TONE_CLASS } from "./latency-format";
 
 type Filter = "all" | "push" | "poll" | "errors" | "watch_renew";
 type AlertKind = "danger" | "warn" | "success" | "info";
@@ -97,6 +99,43 @@ function KV({ k, v, mono, bad }: { k: string; v: React.ReactNode; mono?: boolean
     <div className="min-w-0">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</div>
       <div className={`${mono ? "font-mono" : ""} ${bad ? "text-destructive" : ""} break-all`}>{v}</div>
+    </div>
+  );
+}
+
+function LatencyBucket({
+  title, subtitle, bucket,
+}: {
+  title: string;
+  subtitle: string;
+  bucket: { count: number; p50: number | null; p95: number | null; p99: number | null } | undefined;
+}) {
+  const empty = !bucket || bucket.count === 0;
+  return (
+    <div className="rounded-md border bg-card p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">{title}</div>
+          <div className="text-[11px] text-muted-foreground">{subtitle}</div>
+        </div>
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground tabular-nums">
+          {empty ? "no samples" : `n=${bucket!.count}`}
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+        {(["p50", "p95", "p99"] as const).map((k) => {
+          const v = bucket?.[k] ?? null;
+          const tone = latencyTone(v);
+          return (
+            <div key={k}>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</div>
+              <div className={`mt-1 text-lg font-semibold tabular-nums ${LATENCY_TONE_CLASS[tone]}`}>
+                {fmtLatency(v)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -235,6 +274,7 @@ export function PubsubActivity() {
   const renewFn = useServerFn(renewGmailWatch);
   const retryFn = useServerFn(retryJob);
   const runJobsFn = useServerFn(runJobsNow);
+  const latencyFn = useServerFn(getSyncLatencyStats);
   const [retryingJob, setRetryingJob] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -264,6 +304,15 @@ export function PubsubActivity() {
   const accountsQ = useQuery({
     queryKey: ["my-gmail-accounts-pubsub"],
     queryFn: () => accountsFn(),
+  });
+
+  // Latency telemetry runs on a slower cadence than the event log — it
+  // queries the SQL percentile aggregator, which is the expensive bit, and
+  // the numbers don't move fast enough to need 10s refreshes.
+  const latencyQ = useQuery({
+    queryKey: ["sync-latency-24h"],
+    queryFn: () => latencyFn({ data: { lookback_hours: 24 } }),
+    refetchInterval: 60_000,
   });
 
   const events = q.data?.events ?? [];
@@ -461,6 +510,40 @@ export function PubsubActivity() {
             </div>
           </section>
         )}
+
+        {/* LATENCY — push→ack and push→visible percentiles over 24h */}
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium">Push latency (last 24h)</h3>
+            </div>
+            <span className="text-[11px] text-muted-foreground">
+              {latencyQ.isFetching ? "refreshing…" : "auto-refreshes every minute"}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <LatencyBucket
+              title="Push → ack"
+              subtitle="time from Pub/Sub publish to our webhook 200"
+              bucket={latencyQ.data?.push_to_ack}
+            />
+            <LatencyBucket
+              title="Push → visible"
+              subtitle="time from Pub/Sub publish to the email row appearing"
+              bucket={latencyQ.data?.push_to_visible}
+            />
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Targets: p50 &lt; 1s (green), p50 &lt; 3s (amber). Anything beyond suggests the worker queue is backed up or Gmail API is slow.
+            {latencyQ.data?.push_to_ack?.count === 0 && latencyQ.data?.push_to_visible?.count === 0 && (
+              <> Latency telemetry populates on every real Pub/Sub push — &quot;no samples&quot; means push hasn&apos;t fired in the lookback window.</>
+            )}
+            {("error" in (latencyQ.data ?? {})) && (
+              <span className="text-destructive"> · RPC error: {(latencyQ.data as { error?: string }).error}</span>
+            )}
+          </p>
+        </section>
 
         {/* LAST PUSH DETAIL */}
         {lastPush && (

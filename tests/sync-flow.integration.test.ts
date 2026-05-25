@@ -135,6 +135,16 @@ d("gmail-dlq-replay returns both DLQ and forward summaries", () => {
   });
 });
 
+// Note: getSyncLatencyStats is a TanStack Start server function — it isn't
+// directly exposed as a /api/public route, so it can't be hit from outside
+// authenticated app context. We can still smoke-test the underlying SQL
+// function via a synthetic webhook push (which writes a pubsub_events row
+// with latency_ms set) → wait → poll cron → eventually p50/p95 populates.
+//
+// The simpler invariant we CAN check here: the cron endpoints that read
+// the latency telemetry don't crash when the RPC isn't yet deployed (the
+// server function catches and returns an empty bucket shape).
+
 d("gmail-webhook accepts a signed test envelope", () => {
   it("synthetic test ping returns 200 ok", async () => {
     // The webhook's x-zerrow-test header is gated by CRON_SECRET — proves
