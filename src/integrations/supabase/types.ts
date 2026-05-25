@@ -1215,6 +1215,26 @@ export type Database = {
       }
     }
     Functions: {
+      admin_daily_activity: {
+        Args: { p_days?: number }
+        Returns: {
+          day: string
+          emails: number
+          signups: number
+        }[]
+      }
+      admin_user_stats: {
+        Args: never
+        Returns: {
+          contact_count: number
+          email_count: number
+          folder_count: number
+          jobs_dlq: number
+          jobs_pending: number
+          jobs_running: number
+          user_id: string
+        }[]
+      }
       bump_history_id_if_greater: {
         Args: {
           p_account_id: string

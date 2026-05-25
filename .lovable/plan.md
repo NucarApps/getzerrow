@@ -1,34 +1,44 @@
 ## Goal
 
-Make the inbox search bar understand Gmail-style `from:` and `to:` operators so a query like `from:Bill_Baker@reyrey.com` filters the local list against the sender field (and combined `to_addrs`), instead of looking for the literal string `from:Bill_Baker@reyrey.com` in subject/snippet.
+Add a hidden-but-linked `/admin` route only visible to **chris@nucar.com** that shows signups, Gmail connection status, per-user usage volume, and 30-day activity trends.
 
-## Background
+## Access control
 
-Two search paths run for the search bar in `src/routes/_authenticated/inbox.tsx`:
+- Email check happens server-side, not in the client. `ADMIN_EMAILS = ["chris@nucar.com"]` constant lives in `src/lib/admin.functions.ts`.
+- A helper `assertAdmin(context)` runs inside every admin server fn: pulls the verified email from `context.claims.email` (already set by `requireSupabaseAuth`) and throws `Response("Forbidden", { status: 403 })` if it isn't in the allow-list.
+- The `/admin` page also calls one lightweight `getAdminMe()` server fn on mount; if it 403s the page redirects to `/inbox`. The sidebar link only renders when that query succeeds (so other users won't even see it).
 
-1. **Gmail-side** (`searchGmailAndIngest` in `src/lib/gmail.functions.ts`) — already passes the raw query through to Gmail, which natively understands `from:` and `to:`. The only special-casing is auto-prefixing `from:` for bare emails/domains, which still works.
-2. **Local-side** (the `filtered` memo in `inbox.tsx`, lines ~422-443) — builds a haystack of `from_name + from_addr + subject + snippet` and does a plain `includes(query)`. This is where `from:` / `to:` are not understood today.
+## Server functions — `src/lib/admin.functions.ts`
 
-## Changes — `src/routes/_authenticated/inbox.tsx` only
+All use `requireSupabaseAuth` + `assertAdmin` and query via `supabaseAdmin` (RLS bypass needed to read across users).
 
-Add a tiny query parser used by the local `filtered` memo:
+1. **`getAdminMe()`** — returns `{ email }` if admin, throws 403 otherwise. Drives sidebar link visibility.
+2. **`listAdminUsers()`** — for each user: email, signup date (`auth.users.created_at`), last sign-in (`auth.users.last_sign_in_at`), counts of emails, folders, contacts, message_jobs (pending/running/dlq), and gmail account info (email_address, last_poll_at, last_push_at, watch_expiration, history_id present). Uses `supabaseAdmin.auth.admin.listUsers()` plus aggregated SQL via a single RPC `admin_user_stats()` we create in the migration (one round-trip, returns one row per user_id).
+3. **`getAdminActivity()`** — daily series for the last 30 days: signups per day (from auth.users), emails ingested per day (from emails.created_at). Returned as `{ signups: {date, count}[], emails: {date, count}[] }`. Uses a SQL RPC `admin_daily_activity()`.
 
-- Parse the query into `{ from?: string, to?: string, rest: string }`.
-- Tokens recognised (case-insensitive, anywhere in the string): `from:<value>` and `to:<value>`. Values are read until the next whitespace; values wrapped in `"..."` allow spaces. Multiple `from:` / `to:` are not needed in v1 — last wins.
-- The remaining tokens (stripped of the operator pairs) are joined into `rest` and used as the existing free-text needle.
+## Database — new migration
 
-New matching logic in the `filtered` memo:
+Add two SECURITY DEFINER RPCs (search_path = public) so the server fns don't have to fan out N queries:
 
-- For each row, lowercase `from_addr`, `from_name`, `to_addrs`, `subject`, `snippet`.
-- `from:` filter — row matches if `from_addr` OR `from_name` contains the value (case-insensitive). Underscores/dots are kept as-is so `Bill_Baker@reyrey.com` matches exactly.
-- `to:` filter — row matches if `to_addrs` contains the value.
-- `rest` — falls back to today's haystack `includes(rest)` check.
-- A row is a "hit" only if ALL provided filters match. The current "metadata hits first, others after" ordering is preserved so freshly-ingested Gmail body matches still show up beneath.
+- `admin_user_stats()` → table of `(user_id, email_count, folder_count, contact_count, jobs_pending, jobs_running, jobs_dlq)`. No direct RLS exposure — only callable via `supabaseAdmin` from server fns (we'll `REVOKE EXECUTE FROM anon, authenticated` and `GRANT EXECUTE TO service_role`).
+- `admin_daily_activity(p_days int default 30)` → table of `(day date, signups int, emails int)`.
 
-The Gmail-side fetch already works: `query` is forwarded verbatim, and Gmail interprets `from:` / `to:` natively. No change to `searchGmailAndIngest`.
+No new tables, no policy changes elsewhere.
+
+## UI
+
+**`src/routes/_authenticated/admin.tsx`** — new page.
+- Header: "Admin" with total user count, total emails, total contacts.
+- **Activity over time** — two small line charts (signups/day, emails/day) using `recharts` (already in shadcn ecosystem; add if missing).
+- **Users table** — sortable columns: Email, Signed up, Last sign-in, Gmail connected (icon + email), Last sync, Emails, Contacts, Folders, Jobs (pending / dlq). Color the "Last sync" cell red if >24h.
+- Loading skeletons + empty/error states. 403 → redirect to `/inbox` with toast.
+
+**Sidebar link — `src/routes/_authenticated.tsx`**
+- Add an "Admin" entry below "Settings", only rendered when `getAdminMe()` resolves successfully. Uses `Shield` icon from lucide.
 
 ## Out of scope
 
-- `subject:`, `has:attachment`, `before:`, `after:`, OR/AND syntax — can come later if needed.
-- Search inside the contact drawer or any other view.
-- Changing the Supabase-side initial fetch (still returns the most recent 2000 messages and then filters client-side, same as today).
+- Per-user drill-down page (just the table for v1).
+- Impersonation / "view as user".
+- CSV export.
+- Changing admin allow-list from the UI (edit the constant in code; can promote to a DB table later).

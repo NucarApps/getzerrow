@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
-import { Inbox, Settings, LogOut, Plus, Pencil, Menu, BarChart3, Users, IdCard } from "lucide-react";
+import { getAdminMe } from "@/lib/admin.functions";
+import { Inbox, Settings, LogOut, Plus, Pencil, Menu, BarChart3, Users, IdCard, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
@@ -117,9 +118,18 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
 
   const listAccounts = useServerFn(listMyGmailAccounts);
   const listLabelsFn = useServerFn(listGmailLabels);
+  const adminMeFn = useServerFn(getAdminMe);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
   const accountId = accountsQ.data?.accounts[0]?.id ?? null;
+
+  const adminMeQ = useQuery({
+    queryKey: ["admin-me"],
+    queryFn: () => adminMeFn(),
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const isAdmin = !!adminMeQ.data?.email;
 
   const foldersQ = useQuery({
     queryKey: ["folders-full", accountId],
@@ -231,6 +241,20 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         >
           <Settings className="h-4 w-4" /> Settings
         </button>
+        {isAdmin && (
+          <button
+            type="button"
+            className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/admin" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+            onClick={() => {
+              navigate({ to: "/admin" });
+              onNavigate?.();
+            }}
+          >
+            <Shield className="h-4 w-4" /> Admin
+          </button>
+        )}
+
+
 
       </nav>
 
