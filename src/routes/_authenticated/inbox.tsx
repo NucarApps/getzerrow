@@ -639,6 +639,15 @@ function InboxPage() {
               {gmailSearching ? "Checking Gmail…" : "Searching all folders, including archived"}
             </div>
           )}
+          {isSearching && lastGmailResult?.reason === "reauth_required" && (
+            <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              Gmail needs to be reconnected before search can pull older mail.{" "}
+              <Link to="/settings" className="font-medium underline">
+                Reconnect in Settings
+              </Link>
+            </div>
+          )}
+
         </div>
         {isNoRules && (
           <div className="shrink-0 border-b border-border bg-muted/30 px-3 py-2">
