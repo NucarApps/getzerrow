@@ -48,6 +48,7 @@ function ContactsPage() {
   const list = useServerFn(listContacts);
   const listGroups = useServerFn(listContactGroups);
   const listAliases = useServerFn(listCompanyAliases);
+  const listLogoChoices = useServerFn(listCompanyLogoChoices);
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
