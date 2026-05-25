@@ -406,6 +406,12 @@ function ContactsPage() {
         onOpenChange={setAddOpen}
         onAdded={() => qc.invalidateQueries({ queryKey: ["contacts"] })}
       />
+
+      <ContactDrawer
+        contactId={drawerId}
+        open={!!drawerId}
+        onOpenChange={(v) => !v && setDrawerId(null)}
+      />
     </div>
   );
 }
