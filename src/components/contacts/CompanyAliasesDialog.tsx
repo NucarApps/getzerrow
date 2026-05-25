@@ -153,6 +153,40 @@ export function CompanyAliasesDialog({
     }
   }
 
+  async function saveTags() {
+    setBusy(true);
+    try {
+      const groupIds = [...selectedGroupIds];
+      const res = await setGroupsFn({
+        data: { primaryDomain: primaryDomain!, contactIds, groupIds },
+      });
+      toast.success(
+        groupIds.length === 0
+          ? "Tags cleared for this company"
+          : `Tagged ${res.tagged} ${res.tagged === 1 ? "contact" : "contacts"}`,
+      );
+      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't save tags");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleGroup(id: string) {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const groups = groupsQ.data?.groups ?? [];
+  const tagsDirty =
+    [...selectedGroupIds].sort().join(",") !== savedGroupIds.slice().sort().join(",");
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
