@@ -664,9 +664,15 @@ function InboxPage() {
             )}
           </div>
         )}
-        <div
+        <PullToRefresh
           className="min-h-0 flex-1 overflow-y-auto"
           onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
+          onRefresh={async () => {
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ["emails"] }),
+              qc.invalidateQueries({ queryKey: ["folders"] }),
+            ]);
+          }}
         >
           {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
           {!emailsQ.isLoading && filtered.length === 0 && (
