@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export type InvaderStats = {
@@ -9,10 +10,11 @@ export type InvaderStats = {
   top5: Array<{ name: string; score: number }>;
 };
 
-async function fetchStats(supabase: {
-  rpc: (fn: string) => Promise<{ data: unknown; error: { message: string } | null }>;
-}): Promise<InvaderStats> {
-  const { data, error } = await supabase.rpc("get_invader_stats");
+async function fetchStats(supabase: SupabaseClient): Promise<InvaderStats> {
+  // Cast: get_invader_stats was just added; generated types may not include it yet.
+  const { data, error } = await (supabase as unknown as {
+    rpc: (fn: string) => Promise<{ data: unknown; error: { message: string } | null }>;
+  }).rpc("get_invader_stats");
   if (error) throw new Error(error.message);
   return (data ?? { myBest: null, globalBest: null, myRank: null, top5: [] }) as InvaderStats;
 }
@@ -20,7 +22,7 @@ async function fetchStats(supabase: {
 export const getInvaderStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    return fetchStats(context.supabase);
+    return fetchStats(context.supabase as unknown as SupabaseClient);
   });
 
 export const submitInvaderScore = createServerFn({ method: "POST" })
@@ -51,5 +53,5 @@ export const submitInvaderScore = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.message);
 
-    return fetchStats(supabase);
+    return fetchStats(supabase as unknown as SupabaseClient);
   });
