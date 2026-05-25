@@ -1,0 +1,174 @@
+// End-to-end integration tests for the email-sync cron endpoints. Hits a
+// real preview URL with a valid CRON_SECRET and asserts the response
+// shapes match the contracts the operator dashboard relies on.
+//
+// SAFETY:
+//   - Skipped unless BOTH PUBLIC_BASE_URL and CRON_SECRET are set.
+//   - Designed to run against preview / staging, NOT production. The cron
+//     endpoints perform real work (Gmail API calls, message_jobs draining).
+//     Running them against production from CI is fine if the cron is
+//     already running there anyway, but you'd be triggering an extra tick.
+//
+// Run:
+//   PUBLIC_BASE_URL=https://preview.example.com \
+//     CRON_SECRET=$(op read op://...) \
+//     bun run test:integration
+import { describe, it, expect } from "vitest";
+
+const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
+const SECRET = process.env.CRON_SECRET;
+const enabled = !!BASE && !!SECRET;
+const d = enabled ? describe : describe.skip;
+
+async function authedPost(path: string, body: unknown = {}) {
+  return fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${SECRET}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function expectJsonShape(res: Response, requiredKeys: string[]) {
+  expect(res.status, await res.clone().text()).toBe(200);
+  const json = await res.json();
+  for (const key of requiredKeys) {
+    expect(json, `missing key "${key}" in response: ${JSON.stringify(json)}`).toHaveProperty(key);
+  }
+  return json;
+}
+
+d("gmail-poll returns the documented summary shape", () => {
+  it("authenticated POST returns {ok, succeeded, failed, rearmed, synced, jobs}", async () => {
+    const res = await authedPost("/api/public/gmail-poll");
+    const json = await expectJsonShape(res, ["ok", "succeeded", "failed", "rearmed", "synced", "jobs"]);
+    expect(json.ok).toBe(true);
+    expect(typeof json.succeeded).toBe("number");
+    expect(typeof json.failed).toBe("number");
+    expect(typeof json.synced).toBe("number");
+    expect(typeof json.rearmed).toBe("number");
+  });
+});
+
+d("gmail-process-jobs returns worker summary", () => {
+  it("default drain returns processed/ok/failed/dlq counts", async () => {
+    const res = await authedPost("/api/public/gmail-process-jobs");
+    const json = await expectJsonShape(res, ["ok", "processed", "failed", "dlq"]);
+    expect(json.ok).toBe(true);
+    expect(typeof json.processed).toBe("number");
+  });
+
+  it("priority=0 filters to the live lane (still ok shape)", async () => {
+    const res = await fetch(`${BASE}/api/public/gmail-process-jobs?priority=0`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${SECRET}` },
+    });
+    const json = await expectJsonShape(res, ["ok", "processed"]);
+    expect(json.ok).toBe(true);
+  });
+
+  it("limit clamps to 200 (no internal error on huge requested limit)", async () => {
+    const res = await fetch(`${BASE}/api/public/gmail-process-jobs?limit=99999`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${SECRET}` },
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+  });
+});
+
+d("gmail-reconcile returns per-account result list", () => {
+  it("authenticated POST returns {ok, results}", async () => {
+    const res = await authedPost("/api/public/gmail-reconcile");
+    const json = await expectJsonShape(res, ["ok", "results"]);
+    expect(json.ok).toBe(true);
+    expect(Array.isArray(json.results)).toBe(true);
+    // Each result row is per-account. Either contains `result` (success)
+    // or `error` (failure). We don't assert content beyond that — the
+    // preview may not have any connected mailboxes at all.
+    for (const r of json.results as Array<Record<string, unknown>>) {
+      expect(r).toHaveProperty("account");
+      const hasResultOrError = "result" in r || "error" in r;
+      expect(hasResultOrError, `result row missing both .result and .error: ${JSON.stringify(r)}`).toBe(true);
+    }
+  });
+});
+
+d("gmail-renew-watches returns renewal summary", () => {
+  it("authenticated POST returns {ok, succeeded, failed, stillExpiring}", async () => {
+    const res = await authedPost("/api/public/gmail-renew-watches");
+    const json = await expectJsonShape(res, ["ok", "succeeded", "failed", "stillExpiring"]);
+    expect(json.ok).toBe(true);
+    expect(typeof json.stillExpiring).toBe("number");
+  });
+});
+
+d("gmail-backfill-tick is idempotent (no active jobs → 0 processed)", () => {
+  it("returns {ok, processed, results}", async () => {
+    const res = await authedPost("/api/public/gmail-backfill-tick");
+    const json = await expectJsonShape(res, ["ok", "processed", "results"]);
+    expect(json.ok).toBe(true);
+    expect(Array.isArray(json.results)).toBe(true);
+  });
+});
+
+d("gmail-dlq-replay returns both DLQ and forward summaries", () => {
+  it("authenticated POST returns {ok, dlq, forwards}", async () => {
+    const res = await authedPost("/api/public/gmail-dlq-replay");
+    const json = await expectJsonShape(res, ["ok", "dlq", "forwards"]);
+    expect(json.ok).toBe(true);
+    // The cron logs `dlq_replay` event regardless, so if Supabase RPCs
+    // aren't deployed yet these come back null with an error string. The
+    // endpoint itself still returns 200 — making it safe to schedule.
+    if (json.dlq) {
+      expect(json.dlq).toHaveProperty("checked");
+      expect(json.dlq).toHaveProperty("replayed");
+      expect(json.dlq).toHaveProperty("skipped");
+    }
+    if (json.forwards) {
+      expect(json.forwards).toHaveProperty("processed");
+      expect(json.forwards).toHaveProperty("ok");
+      expect(json.forwards).toHaveProperty("failed");
+      expect(json.forwards).toHaveProperty("gaveUp");
+    }
+  });
+});
+
+d("gmail-webhook accepts a signed test envelope", () => {
+  it("synthetic test ping returns 200 ok", async () => {
+    // The webhook's x-zerrow-test header is gated by CRON_SECRET — proves
+    // the auth path on the webhook is wired without requiring a valid OIDC
+    // signer.
+    const res = await fetch(`${BASE}/api/public/gmail-webhook`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-zerrow-test": "1",
+        authorization: `Bearer ${SECRET}`,
+      },
+      body: JSON.stringify({
+        message: {
+          messageId: `test-${Date.now()}`,
+          publishTime: new Date().toISOString(),
+        },
+      }),
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.text()).toMatch(/ok/);
+  });
+
+  it("synthetic test ping WITHOUT cron secret is rejected", async () => {
+    // Without the secret, x-zerrow-test must NOT allow the request through —
+    // otherwise anyone could trigger syncs for any known email address.
+    const res = await fetch(`${BASE}/api/public/gmail-webhook`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-zerrow-test": "1",
+      },
+      body: JSON.stringify({ message: { messageId: "no-auth" } }),
+    });
+    expect(res.status).toBe(401);
+  });
+});

@@ -9,8 +9,6 @@
 import { describe, it, expect } from "vitest";
 
 const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
-const runIf = BASE ? describe : describe.skip;
-
 
 const CRON_ENDPOINTS = [
   "/api/public/gmail-poll",
