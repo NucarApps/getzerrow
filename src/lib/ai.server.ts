@@ -42,11 +42,15 @@ export async function classifyEmail(email: {
   }
 
   const folderNames = folders.map((f) => f.name);
+  // NOTE: use .transform() instead of .max() — Gemini routinely returns
+  // strings longer than the soft cap. Hard validation made every fallback
+  // model fail, bursting JOB_TIMEOUT_MS and leaving emails stuck at
+  // classified_by='pending'. Truncate instead of reject.
   const schema = z.object({
     folder_name: z.string().describe("Exact name of the chosen folder, or 'NONE' if no folder fits"),
     confidence: z.number().min(0).max(1),
-    summary: z.string().max(140).describe("One-line summary of the email"),
-    reason: z.string().max(200).describe("Short explanation of WHY this folder was chosen — cite the folder rule, profile, or example pattern that matched. If 'NONE', explain why nothing fit."),
+    summary: z.string().transform((s) => s.slice(0, 140)).describe("One-line summary of the email (<=140 chars)"),
+    reason: z.string().transform((s) => s.slice(0, 200)).describe("Short explanation of WHY this folder was chosen (<=200 chars)"),
   });
 
   function buildPrompt(opts: { trim: boolean }) {
@@ -182,8 +186,8 @@ ${(e.body_text || e.snippet || "").slice(0, 1500)}`)
     index: z.number().int().min(1),
     folder_name: z.string(),
     confidence: z.number().min(0).max(1),
-    summary: z.string().max(140),
-    reason: z.string().max(200),
+    summary: z.string().transform((s) => s.slice(0, 140)),
+    reason: z.string().transform((s) => s.slice(0, 200)),
   });
   const schema = z.object({ results: z.array(itemSchema) });
 
