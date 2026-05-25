@@ -54,7 +54,7 @@ export function CompanyLogo({ domain, name, size = 32, className = "", onColor }
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setIdx((i) => i + 1)}
-      className={`shrink-0 rounded-md bg-card object-contain ${className}`}
+      className={`shrink-0 rounded-md bg-white object-contain p-0.5 ring-1 ring-border/40 ${className}`}
       style={{ width: px, height: px }}
     />
   );
