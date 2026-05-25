@@ -101,6 +101,31 @@ export function TrackingStandby() {
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
+  // Leaderboard stats
+  const queryClient = useQueryClient();
+  const fetchStats = useServerFn(getInvaderStats);
+  const submitScore = useServerFn(submitInvaderScore);
+  const { data: stats } = useQuery<InvaderStats>({
+    queryKey: ["invader-stats"],
+    queryFn: () => fetchStats(),
+    staleTime: 30_000,
+  });
+  const submitMutation = useMutation({
+    mutationFn: (score: number) => submitScore({ data: { score } }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(["invader-stats"], next);
+    },
+  });
+  const submittedForGameRef = useRef(false);
+  useEffect(() => {
+    if (phase === "playing") submittedForGameRef.current = false;
+    if (phase === "over" && !submittedForGameRef.current && score > 0) {
+      submittedForGameRef.current = true;
+      submitMutation.mutate(score);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   const [activeBuff, setActiveBuff] = useState<ActiveBuff | null>(null);
   const activeBuffRef = useRef<ActiveBuff | null>(null);
 
