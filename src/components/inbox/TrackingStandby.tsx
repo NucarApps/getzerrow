@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import shipUrl from "@/assets/zerrow-ship.png";
+import { getInvaderStats, submitInvaderScore, type InvaderStats } from "@/lib/invader.functions";
 
 /**
  * Inbox empty state — Space Invaders mini-game.
@@ -97,6 +100,31 @@ export function TrackingStandby() {
   const [phase, setPhase] = useState<"ready" | "playing" | "paused" | "over">("ready");
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // Leaderboard stats
+  const queryClient = useQueryClient();
+  const fetchStats = useServerFn(getInvaderStats);
+  const submitScore = useServerFn(submitInvaderScore);
+  const { data: stats } = useQuery<InvaderStats>({
+    queryKey: ["invader-stats"],
+    queryFn: () => fetchStats(),
+    staleTime: 30_000,
+  });
+  const submitMutation = useMutation({
+    mutationFn: (score: number) => submitScore({ data: { score } }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(["invader-stats"], next);
+    },
+  });
+  const submittedForGameRef = useRef(false);
+  useEffect(() => {
+    if (phase === "playing") submittedForGameRef.current = false;
+    if (phase === "over" && !submittedForGameRef.current && score > 0) {
+      submittedForGameRef.current = true;
+      submitMutation.mutate(score);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const [activeBuff, setActiveBuff] = useState<ActiveBuff | null>(null);
   const activeBuffRef = useRef<ActiveBuff | null>(null);
@@ -695,6 +723,37 @@ export function TrackingStandby() {
           <div className="mt-3 text-[10px] tracking-[0.28em] text-muted-foreground/70" style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}>
             ← → MOVE   ·   SPACE FIRE   ·   P PAUSE
           </div>
+
+          {(phase === "ready" || phase === "over") && (
+            <div
+              className="mt-5 w-full max-w-xs rounded-sm border border-[rgba(255,138,61,.25)] bg-[rgba(10,14,26,.55)] px-3 py-2 text-left"
+              style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
+            >
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[9px] tracking-[0.22em] text-[#ffd089]">
+                <span>MY BEST {stats?.myBest != null ? String(stats.myBest).padStart(5, "0") : "—"}</span>
+                <span className="text-muted-foreground/50">·</span>
+                <span>GLOBAL {stats?.globalBest != null ? String(stats.globalBest).padStart(5, "0") : "—"}</span>
+                <span className="text-muted-foreground/50">·</span>
+                <span>RANK {stats?.myRank != null ? `#${stats.myRank}` : "—"}</span>
+              </div>
+              <div className="mt-2 border-t border-[rgba(255,138,61,.18)] pt-2 text-center text-[9px] tracking-[0.28em] text-muted-foreground/70">
+                TOP PILOTS
+              </div>
+              <div className="mt-1 space-y-0.5 text-[10px] tracking-[0.18em] text-muted-foreground">
+                {stats && stats.top5.length > 0 ? (
+                  stats.top5.map((row, i) => (
+                    <div key={`${row.name}-${i}`} className="flex items-center justify-between gap-2">
+                      <span className="w-3 text-muted-foreground/60">{i + 1}</span>
+                      <span className="flex-1 truncate uppercase">{row.name}</span>
+                      <span className="tabular-nums text-[#ffd089]">{String(row.score).padStart(5, "0")}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-[9px] tracking-[0.28em] text-muted-foreground/60">BE THE FIRST PILOT</div>
+                )}
+              </div>
+            </div>
+          )}
         </button>
       )}
 
