@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { X, Plus, Trash2, Check } from "lucide-react";
+import { X, Plus, Trash2, Check, Star } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
-  addCompanyAlias, removeCompanyAlias, clearCompanyAliases,
+  addCompanyAlias, removeCompanyAlias, clearCompanyAliases, promoteAliasToPrimary,
 } from "@/lib/company-aliases.functions";
 import {
   listCompanyLogoChoices, setCompanyLogoChoice, clearCompanyLogoChoice,
