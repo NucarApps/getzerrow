@@ -1673,6 +1673,8 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
 
     let totalIngested = 0;
     let totalFound = 0;
+    let reauthFailures = 0;
+
 
     for (const accountId of accountIds) {
       try {
