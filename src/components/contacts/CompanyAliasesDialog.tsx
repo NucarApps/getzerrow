@@ -15,6 +15,10 @@ import {
 import {
   listCompanyLogoChoices, setCompanyLogoChoice, clearCompanyLogoChoice,
 } from "@/lib/company-logo.functions";
+import {
+  listCompanyGroupAssignments, setCompanyGroups,
+} from "@/lib/company-groups.functions";
+import { listContactGroups } from "@/lib/contact-groups.functions";
 import { LOGO_PROVIDER_LABELS } from "@/lib/logo-providers";
 import { logoCandidates } from "@/lib/company-domains";
 import { CompanyLogo } from "./CompanyLogo";
@@ -25,6 +29,7 @@ type Props = {
   primaryDomain: string | null;
   companyName: string;
   aliases: string[];
+  contactIds: string[];
 };
 
 export function CompanyAliasesDialog({
