@@ -57,7 +57,7 @@ function ContactsPage() {
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
-  const [aliasDialog, setAliasDialog] = useState<null | { domain: string; name: string }>(null);
+  const [aliasDialog, setAliasDialog] = useState<null | { domain: string; name: string; contactIds: string[] }>(null);
 
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
