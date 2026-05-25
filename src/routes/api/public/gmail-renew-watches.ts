@@ -28,7 +28,6 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
         let ok = 0;
         let failed = 0;
         const errorSummaries: string[] = [];
-        const updatedAccountIds: string[] = [];
         for (const acc of accounts ?? []) {
           try {
             const w = await ensureWatch(acc.id, null); // force renew
@@ -37,7 +36,6 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
                 history_id: w.historyId,
                 watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
               }).eq("id", acc.id);
-              updatedAccountIds.push(acc.id);
             }
             ok++;
           } catch (e: unknown) {
@@ -50,12 +48,16 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
 
         // Anyone still near-expiry after the renewal pass needs operator
         // attention — log a watch_renew_failed row per-account so it shows
-        // up in the Settings activity panel.
+        // up in the Settings activity panel. Skip the query if we didn't
+        // touch any accounts (nothing changed since the previous run).
         const nearExpiryCutoff = new Date(Date.now() + ALERT_NEAR_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();
-        const { data: stillExpiring } = await supabaseAdmin
-          .from("gmail_accounts")
-          .select("id, email_address, watch_expiration")
-          .or(`watch_expiration.is.null,watch_expiration.lt.${nearExpiryCutoff}`);
+        const stillExpiring = (accounts?.length ?? 0) > 0
+          ? (await supabaseAdmin
+              .from("gmail_accounts")
+              .select("id, email_address, watch_expiration")
+              .or(`watch_expiration.is.null,watch_expiration.lt.${nearExpiryCutoff}`)
+            ).data
+          : [];
         for (const acc of stillExpiring ?? []) {
           try {
             await supabaseAdmin.from("pubsub_events").insert({

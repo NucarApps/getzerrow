@@ -1,46 +1,44 @@
 // Core sync pipeline: pull messages for a specific gmail_account, apply filters/AI,
 // persist, apply Gmail label/actions. Server-only.
+//
+// Module layout — this file is the public surface; focused sub-modules
+// live under ./sync/:
+//   ./sync/account-lock     in-process coalescing lock
+//   ./sync/backoff          jitter, retry tables, computeBackoffSeconds
+//   ./sync/dlq              isTransientDlqError, replayTransientDlq
+//   ./sync/forward-retry    retryForwardAttempts
+//   ./sync/history-id       gmailHistoryIdGreater (BigInt comparison)
+//
+// New imports for callers should go straight to the sub-modules; the
+// re-exports below preserve backward compatibility for existing
+// `import { x } from "@/lib/sync.server"` call sites.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, getMessageMetadata, modifyMessage, parseMessage, listMessages, listHistory, ensureWatch, getMessageLabels, sendMessage, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch, buildFolderProfile, type ClassifyFolder } from "./ai.server";
+import {
+  MAX_JOB_ATTEMPTS, BACKOFF_SECONDS, RETRYABLE_BACKOFF_SECONDS,
+  RETRYABLE_FREE_ATTEMPTS, jitter, computeBackoffSeconds as _computeBackoffSeconds,
+} from "./sync/backoff";
+import { withAccountLock as _withAccountLock } from "./sync/account-lock";
+import { gmailHistoryIdGreater as _gmailHistoryIdGreater } from "./sync/history-id";
+import {
+  isTransientDlqError as _isTransientDlqError,
+  replayTransientDlq as _replayTransientDlq,
+} from "./sync/dlq";
+import { retryForwardAttempts as _retryForwardAttempts } from "./sync/forward-retry";
+import type { Folder, Filter, GmailAccount, OverrideException, RuleNode } from "./sync/types";
+import { applyFilter, matchByFilters, labelOf, EXCLUDE_OPS } from "./sync/filter-engine";
 
-type RuleNode =
-  | { type: "group"; op: "and" | "or"; children: RuleNode[] }
-  | { type: "cond"; field: string; op: string; value: string };
+// Re-export for backward compatibility with existing imports.
+export const withAccountLock = _withAccountLock;
+export const computeBackoffSeconds = _computeBackoffSeconds;
+export const gmailHistoryIdGreater = _gmailHistoryIdGreater;
+export const isTransientDlqError = _isTransientDlqError;
+export const replayTransientDlq = _replayTransientDlq;
+export const retryForwardAttempts = _retryForwardAttempts;
 
-type Folder = {
-  id: string;
-  name: string;
-  gmail_label_id: string | null;
-  ai_rule: string | null;
-  learned_profile: string | null;
-  last_learned_at: string | null;
-  auto_archive: boolean;
-  auto_mark_read: boolean;
-  auto_star: boolean;
-  hide_from_inbox: boolean;
-  skip_ai: boolean;
-  priority: number;
-  gmail_account_id: string;
-  filter_logic: "any" | "all";
-  filter_tree: RuleNode | null;
-  forward_to: string | null;
-  min_ai_confidence: number;
-  snooze_hours: number;
-  overrides_inbox_override: boolean;
-};
-
-type OverrideException = { override_id: string; field: string; op: string; value: string };
-
-type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
-
-type GmailAccount = {
-  id: string;
-  user_id: string;
-  email_address: string;
-  history_id: string | null;
-  watch_expiration: string | null;
-};
+// Shared types (Folder, Filter, OverrideException, GmailAccount, RuleNode)
+// moved to ./sync/types.ts and imported above.
 
 async function getAccount(accountId: string): Promise<GmailAccount> {
   const { data, error } = await supabaseAdmin
@@ -52,175 +50,10 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
   return data as GmailAccount;
 }
 
-// Per-account in-process lock. Pub/Sub redeliveries and the polling cron can
-// trigger overlapping syncSinceHistory calls for the same account — the second
-// caller would read a stale history_id and either redo work or skip events. We
-// coalesce overlapping calls into one promise; subsequent callers within the
-// same worker share the result.
-const syncLocks = new Map<string, Promise<unknown>>();
-
-export function withAccountLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
-  const existing = syncLocks.get(accountId);
-  if (existing) return existing as Promise<T>;
-  const p = (async () => {
-    try {
-      return await fn();
-    } finally {
-      syncLocks.delete(accountId);
-    }
-  })();
-  syncLocks.set(accountId, p);
-  return p;
-}
-// Bounds for regex filter evaluation to prevent ReDoS (catastrophic backtracking).
-// Patterns and input are length-capped, and obviously dangerous patterns are rejected.
-const MAX_REGEX_PATTERN_LEN = 200;
-const MAX_REGEX_INPUT_LEN = 10_000;
-// Heuristic: nested quantifiers / overlapping alternation are the classic ReDoS shapes.
-const UNSAFE_REGEX_SHAPES = [
-  /(\([^)]*[+*][^)]*\))[+*]/, // (a+)+ / (a*)*
-  /(\[[^\]]+\][+*]){2,}/,      // [a-z]+[a-z]+ chains
-  /(\.\*){2,}/,                // .*.*
-];
-function isUnsafeRegex(pattern: string): boolean {
-  if (pattern.length > MAX_REGEX_PATTERN_LEN) return true;
-  return UNSAFE_REGEX_SHAPES.some((r) => r.test(pattern));
-}
-function safeRegexTest(pattern: string, input: string): boolean {
-  if (isUnsafeRegex(pattern)) return false;
-  const bounded = input.length > MAX_REGEX_INPUT_LEN ? input.slice(0, MAX_REGEX_INPUT_LEN) : input;
-  try { return new RegExp(pattern, "i").test(bounded); } catch { return false; }
-}
-
-
-function applyFilter(
-  email: { from_addr: string; from_name: string; to_addrs: string; cc?: string; list_id?: string; in_reply_to?: string; subject: string; body_text: string; has_attachment: boolean },
-  f: Filter
-): boolean {
-  const v = f.value.toLowerCase();
-  const fieldVal = (() => {
-    switch (f.field) {
-      case "from": return `${email.from_addr} ${email.from_name}`.toLowerCase();
-      case "to": return (email.to_addrs || "").toLowerCase();
-      case "cc": return (email.cc || "").toLowerCase();
-      case "list_id": return (email.list_id || "").toLowerCase();
-      case "is_reply": return (email.in_reply_to ? "true" : "false");
-      case "subject": return (email.subject || "").toLowerCase();
-      case "body": return (email.body_text || "").toLowerCase();
-      case "domain": return (email.from_addr.split("@")[1] || "").toLowerCase();
-      case "has_attachment": return email.has_attachment ? "true" : "false";
-      default: return "";
-    }
-  })();
-  switch (f.op) {
-    case "contains": return fieldVal.includes(v);
-    case "equals": return fieldVal === v;
-    case "starts_with": return fieldVal.startsWith(v);
-    case "ends_with": return fieldVal.endsWith(v);
-    case "not_contains": return !fieldVal.includes(v);
-    case "not_equals": return fieldVal !== v;
-    case "regex":
-      return safeRegexTest(f.value, fieldVal);
-    default: return false;
-  }
-}
-
-const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
-
-function evalNode(
-  email: Parameters<typeof applyFilter>[0],
-  node: RuleNode,
-): boolean {
-  if (node.type === "cond") {
-    return applyFilter(email, { id: "", folder_id: "", field: node.field, op: node.op, value: node.value });
-  }
-  if (node.op === "and") return node.children.every((c) => evalNode(email, c));
-  return node.children.some((c) => evalNode(email, c));
-}
-
-function countConds(node: RuleNode): number {
-  return node.type === "cond" ? 1 : node.children.reduce((n, c) => n + countConds(c), 0);
-}
-
-type FolderMatch =
-  | { kind: "match"; folder_id: string; filter: Filter | null; matched_filters: Filter[]; all_matched_folder_ids: string[]; tree_used: boolean }
-  | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
-
-function matchByFilters(
-  email: Parameters<typeof applyFilter>[0],
-  folders: Folder[],
-  filters: Filter[],
-): FolderMatch | null {
-  const byFolder = new Map<string, Filter[]>();
-  for (const f of filters) {
-    if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
-    byFolder.get(f.folder_id)!.push(f);
-  }
-  const matched: Array<{ folder: Folder; filter: Filter | null; allMatches: Filter[]; treeUsed: boolean }> = [];
-  const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
-  for (const folder of folders) {
-    const fs = byFolder.get(folder.id) || [];
-    const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
-    const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
-
-    // Tree takes precedence when present and non-empty.
-    const tree = folder.filter_tree;
-    const hasTree = !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
-
-    let passes = false;
-    let includeHits: Filter[] = [];
-    if (hasTree) {
-      passes = evalNode(email, tree!);
-    } else {
-      if (includes.length === 0) continue;
-      includeHits = includes.filter((f) => applyFilter(email, f));
-      const logic = folder.filter_logic === "all" ? "all" : "any";
-      passes = logic === "all" ? includeHits.length === includes.length : includeHits.length > 0;
-    }
-    if (!passes) continue;
-
-    const excludeHit = excludes.find((f) => applyFilter(email, f));
-    if (excludeHit) {
-      excludedFolders.push({ folder, exclude: excludeHit });
-      continue;
-    }
-    matched.push({
-      folder,
-      filter: hasTree ? null : (includeHits[0] ?? null),
-      allMatches: hasTree ? [] : includeHits,
-      treeUsed: hasTree,
-    });
-  }
-  if (matched.length > 0) {
-    // Sort: highest priority first, then folder name asc for stable tiebreak.
-    matched.sort((a, b) =>
-      b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name)
-    );
-    return {
-      kind: "match",
-      folder_id: matched[0].folder.id,
-      filter: matched[0].filter,
-      matched_filters: matched[0].allMatches,
-      all_matched_folder_ids: matched.map((m) => m.folder.id),
-      tree_used: matched[0].treeUsed,
-    };
-  }
-  if (excludedFolders.length > 0) {
-    excludedFolders.sort((a, b) =>
-      b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name)
-    );
-    return {
-      kind: "excluded",
-      folder_id: excludedFolders[0].folder.id,
-      folder_name: excludedFolders[0].folder.name,
-      exclude: excludedFolders[0].exclude,
-    };
-  }
-  return null;
-}
-function labelOf(folders: Folder[], id: string) {
-  return folders.find((f) => f.id === id)?.name ?? "folder";
-}
+// (withAccountLock moved to ./sync/account-lock.ts and re-exported above.)
+// Filter evaluation (applyFilter, matchByFilters, labelOf, EXCLUDE_OPS) +
+// ReDoS-safe regex helpers moved to ./sync/filter-engine.ts and imported
+// above.
 
 
 async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolder[]> {
@@ -512,6 +345,11 @@ export async function processGmailMessage(
      * it to record a manual move). Pass it here to skip the duplicate Gmail
      * roundtrip. */
     prefetched?: ReturnType<typeof parseMessage>;
+    /** Pub/Sub publish time (ms epoch) for the push that originated this
+     * job. Persisted onto the inserted email row so we can compute
+     * push → visible latency. Comes from message_jobs.published_at_ms when
+     * runMessageJobs invokes us. */
+    publishedAtMs?: number | null;
   } = {},
 ) {
   const t = opts.timings;
@@ -570,10 +408,10 @@ export async function processGmailMessage(
   if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return { skipped: true };
   const inInbox = labels.includes("INBOX");
 
-  // Pull the Pub/Sub publishTime that the webhook stashed when it enqueued
-  // this job. We persist it so a single SQL query can report push→visible
-  // p50/p95 latency.
-  const publishedAtMs = takePublishAt(accountId, gmailId);
+  // Pub/Sub publishTime threaded through message_jobs.published_at_ms.
+  // Persist it on the email row so a single SQL query can compute
+  // push → visible p50/p95 latency.
+  const publishedAtMs = opts.publishedAtMs ?? null;
 
   // 1) Insert the email row FIRST with no folder so it shows up in Inbox
   //    immediately, even if classification (AI Gateway) is slow or fails.
@@ -991,17 +829,14 @@ export async function backfillRecent(accountId: string, userId: string, maxResul
   // drains within seconds and we don't block the calling request (often the
   // Pub/Sub webhook). Widened window to 30d to cover longer outages.
   const list = await listMessages(accountId, { maxResults, q: "-in:chats -in:trash -in:spam newer_than:30d" });
-  const ids = list.messages || [];
-  let enqueued = 0;
-  for (const m of ids) {
-    try {
-      await enqueueMessageJob(accountId, userId, m.id, 0);
-      enqueued++;
-    } catch (e) {
-      console.error("backfillRecent enqueue failed", m.id, e);
-    }
+  const ids = (list.messages ?? []).map((m) => m.id);
+  try {
+    await enqueueMessageJobs(accountId, userId, ids, 0);
+  } catch (e) {
+    console.error("backfillRecent bulk enqueue failed", e);
+    return { processed: 0, enqueued: 0, error: (e as Error).message };
   }
-  return { processed: enqueued, enqueued };
+  return { processed: ids.length, enqueued: ids.length };
 }
 
 export async function backfillWindow(
@@ -1080,17 +915,70 @@ export async function backfillWindow(
 async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   const account = await getAccount(accountId);
   const watch = await ensureWatch(accountId, account.watch_expiration);
+  // Gmail historyIds are monotonically increasing per-mailbox. Under
+  // overlapping pushes (two replicas, or a push + a manual sync), two
+  // concurrent UPDATEs can race; without a guard the LOWER history_id can
+  // land last and the next sync re-fetches a window we've already
+  // processed. compareGmailHistoryIds rejects any incoming id that's not
+  // strictly higher than what's currently in the DB.
   if (watch) {
-    await supabaseAdmin.from("gmail_accounts").update({
-      history_id: watch.historyId,
+    await bumpHistoryAndStamp(accountId, watch.historyId, {
       watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
-      last_poll_at: new Date().toISOString(),
-    }).eq("id", accountId);
+    });
   } else {
-    await supabaseAdmin.from("gmail_accounts").update({
-      history_id: historyId,
-      last_poll_at: new Date().toISOString(),
-    }).eq("id", accountId);
+    await bumpHistoryAndStamp(accountId, historyId, {});
+  }
+}
+
+// (gmailHistoryIdGreater moved to ./sync/history-id.ts and re-exported above.)
+
+/** Bump history_id with a monotonic guard via an atomic SQL RPC. If a
+ * concurrent writer already stored a higher history_id we leave the row
+ * alone — losing a few cycles of work is better than re-processing a
+ * window we've already covered. */
+async function bumpHistoryAndStamp(
+  accountId: string,
+  incomingHistoryId: string,
+  extra: { watch_expiration?: string },
+) {
+  type BumpRpc = {
+    rpc: (
+      fn: "bump_history_id_if_greater",
+      args: { p_account_id: string; p_new_history_id: string; p_watch_expiration: string | null },
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+  const { error } = await (supabaseAdmin as unknown as BumpRpc).rpc("bump_history_id_if_greater", {
+    p_account_id: accountId,
+    p_new_history_id: incomingHistoryId,
+    p_watch_expiration: extra.watch_expiration ?? null,
+  });
+  if (error) {
+    // RPC isn't deployed yet, or some other DB error. Fall back to the
+    // JS-only check — strictly worse on overlapping replicas but still
+    // better than blind UPDATE.
+    console.error("bump_history_id_if_greater RPC failed, falling back", error.message);
+    const { data: current } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("history_id")
+      .eq("id", accountId)
+      .maybeSingle();
+    if (!gmailHistoryIdGreater(incomingHistoryId, current?.history_id ?? null)) {
+      if (extra.watch_expiration) {
+        await supabaseAdmin
+          .from("gmail_accounts")
+          .update({ watch_expiration: extra.watch_expiration, last_poll_at: new Date().toISOString() })
+          .eq("id", accountId);
+      }
+      return;
+    }
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({
+        history_id: incomingHistoryId,
+        last_poll_at: new Date().toISOString(),
+        ...(extra.watch_expiration ? { watch_expiration: extra.watch_expiration } : {}),
+      })
+      .eq("id", accountId);
   }
 }
 
@@ -1214,13 +1102,12 @@ async function tickBackfillJob(job: BackfillJob): Promise<{ phase: string; added
         const todo = ids.filter((id) => !have.has(id));
         alreadyDelta += ids.length - todo.length;
 
-        for (const id of todo) {
-          try {
-            await enqueueMessageJob(job.gmail_account_id, job.user_id, id, 10);
-            enqueuedDelta++;
-          } catch (e) {
-            console.error("backfill enqueue failed", id, e);
-          }
+        // Single batched upsert per page (vs N×roundtrip).
+        try {
+          await enqueueMessageJobs(job.gmail_account_id, job.user_id, todo, 10);
+          enqueuedDelta += todo.length;
+        } catch (e) {
+          console.error("backfill page bulk enqueue failed", e);
         }
       }
 
@@ -1295,58 +1182,9 @@ async function applyLabelChange(
 
 
 // ─── Durable per-message processing queue ─────────────────────────────────
-
-const MAX_JOB_ATTEMPTS = 5;
-const BACKOFF_SECONDS = [30, 120, 600, 1800, 7200]; // 30s, 2m, 10m, 30m, 2h
-// Short jittered backoff for transient Gmail-side failures (429, 5xx, timeout).
-// First 2 retryable failures don't count toward MAX_JOB_ATTEMPTS, so a flaky
-// Google API won't burn a message into the DLQ.
-const RETRYABLE_BACKOFF_SECONDS = [30, 90, 300, 900, 3600]; // 30s, 1.5m, 5m, 15m, 1h
-const RETRYABLE_FREE_ATTEMPTS = 2;
-
-function jitter(seconds: number): number {
-  return Math.floor(seconds * (0.75 + Math.random() * 0.5));
-}
-
-/** Seconds until midnight US/Pacific (Gmail per-user quotas reset at midnight
- * PT). DST-aware via Intl. */
-function secondsUntilMidnightPT(now = new Date()): number {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-    hour12: false,
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
-  const h = parseInt(parts.hour ?? "0", 10);
-  const m = parseInt(parts.minute ?? "0", 10);
-  const s = parseInt(parts.second ?? "0", 10);
-  const elapsed = h * 3600 + m * 60 + s;
-  return Math.max(60, 86400 - elapsed);
-}
-
-/** Pick a backoff that respects, in order: Retry-After header, quotaExceeded
- * (wait until midnight PT), retryable vs terminal table, attempt index. */
-export function computeBackoffSeconds(opts: {
-  retryable: boolean;
-  retryAfterSeconds: number | null;
-  isQuotaExceeded: boolean;
-  currentAttempt: number;
-  nextAttempt: number;
-}): number {
-  if (opts.retryAfterSeconds && opts.retryAfterSeconds > 0) {
-    return jitter(opts.retryAfterSeconds);
-  }
-  if (opts.isQuotaExceeded) {
-    // Adding a hard upper bound so we don't sleep > 6h. Per-user quota is
-    // daily; 6h is plenty for the daily reset to land.
-    return Math.min(secondsUntilMidnightPT(), 6 * 3600);
-  }
-  const table = opts.retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
-  const idx = opts.retryable
-    ? Math.min(opts.currentAttempt, table.length - 1)
-    : Math.min(opts.nextAttempt - 1, table.length - 1);
-  return jitter(table[idx]);
-}
+// Backoff constants + computeBackoffSeconds + jitter helper live in
+// ./sync/backoff.ts (imported above). The constants are referenced by
+// handleError below; jitter is also used by the forward-retry path.
 
 export async function enqueueMessageJob(
   accountId: string,
@@ -1355,57 +1193,50 @@ export async function enqueueMessageJob(
   priority: number = 0,
   opts: { publishedAtMs?: number | null } = {},
 ) {
-  // Upsert so the same message is never queued twice. If a job already exists
-  // (pending or dlq), do nothing — the worker / retry button owns it from here.
-  // priority: 0 = live (push/poll), 10 = backfill. Worker orders by priority ASC
-  // so live mail always jumps ahead of the backfill backlog.
-  //
-  // We jitter next_run_at by 0–500ms so a burst of N events from a single Pub/Sub
-  // delivery doesn't collide on the same instant — multiple workers can claim
-  // disjoint slices instead of contending for the same head of the queue.
-  const jitterMs = Math.floor(Math.random() * 500);
-  await supabaseAdmin
-    .from("message_jobs")
-    .upsert(
-      {
-        gmail_account_id: accountId,
-        gmail_message_id: gmailMessageId,
-        user_id: userId,
-        status: "pending",
-        priority,
-        next_run_at: new Date(Date.now() + jitterMs).toISOString(),
-        // Stash publish time so we can compute end-to-end latency once
-        // processGmailMessage inserts the email row. Best-effort: the column
-        // doesn't exist on message_jobs, so we thread it through pendingPublishAt
-        // instead (see processGmailMessage).
-      },
-      { onConflict: "gmail_account_id,gmail_message_id", ignoreDuplicates: true },
-    );
-  if (opts.publishedAtMs && opts.publishedAtMs > 0) {
-    rememberPublishAt(accountId, gmailMessageId, opts.publishedAtMs);
-  }
+  return enqueueMessageJobs(accountId, userId, [gmailMessageId], priority, opts);
 }
 
-// Map of (accountId:messageId) → Pub/Sub publishTime in ms. Populated by the
-// webhook handler when it enqueues; consumed by processGmailMessage when it
-// inserts the email row, then deleted. Memory bound is tiny (one number per
-// in-flight push event) but we still cap the map to avoid pathological growth
-// if processing falls way behind.
-const pendingPublishAt = new Map<string, number>();
-const PENDING_PUBLISH_MAX = 5000;
-export function rememberPublishAt(accountId: string, messageId: string, publishedAtMs: number) {
-  if (pendingPublishAt.size >= PENDING_PUBLISH_MAX) {
-    // Evict oldest insertion (Map iteration order = insertion).
-    const first = pendingPublishAt.keys().next().value;
-    if (first) pendingPublishAt.delete(first);
+/** Batched form — single upsert for N messages. Use this in any hot path
+ * that enqueues more than one message per call (history sync, bootstrap,
+ * backfill) so we don't pay one DB roundtrip per id.
+ *
+ * Caller-controlled jitter: next_run_at is staggered across 0–500ms so a
+ * burst of N events doesn't collide on the same instant — multiple workers
+ * claim disjoint slices instead of contending for the head of the queue.
+ *
+ * Upsert is idempotent — `ignoreDuplicates: true` means re-enqueueing an
+ * already-pending message is a no-op. priority: 0 = live (push/poll),
+ * 10 = backfill. */
+export async function enqueueMessageJobs(
+  accountId: string,
+  userId: string,
+  gmailMessageIds: string[],
+  priority: number = 0,
+  opts: { publishedAtMs?: number | null } = {},
+) {
+  if (gmailMessageIds.length === 0) return;
+  const nowMs = Date.now();
+  const publishedAtMs = opts.publishedAtMs ?? null;
+  const rows = gmailMessageIds.map((gmail_message_id, idx) => ({
+    gmail_account_id: accountId,
+    gmail_message_id,
+    user_id: userId,
+    status: "pending",
+    priority,
+    // Spread across 0–500ms. For small bursts (N ≤ 500) each gets a
+    // distinct ms slot; for larger bursts the modulo keeps it bounded.
+    next_run_at: new Date(nowMs + (idx % 500)).toISOString(),
+    published_at_ms: publishedAtMs,
+  }));
+  // Supabase caps a single upsert at ~1000 rows; we chunk just to be safe.
+  for (let i = 0; i < rows.length; i += 500) {
+    await supabaseAdmin
+      .from("message_jobs")
+      .upsert(rows.slice(i, i + 500), {
+        onConflict: "gmail_account_id,gmail_message_id",
+        ignoreDuplicates: true,
+      });
   }
-  pendingPublishAt.set(`${accountId}:${messageId}`, publishedAtMs);
-}
-function takePublishAt(accountId: string, messageId: string): number | null {
-  const k = `${accountId}:${messageId}`;
-  const v = pendingPublishAt.get(k) ?? null;
-  if (v !== null) pendingPublishAt.delete(k);
-  return v;
 }
 
 export async function runMessageJobs(
@@ -1463,6 +1294,7 @@ export async function runMessageJobs(
     user_id: string;
     attempt: number;
     priority: number;
+    published_at_ms: number | null;
   };
   const claimed = (claimedRows ?? []) as ClaimedJob[];
   if (claimed.length === 0) {
@@ -1574,6 +1406,7 @@ export async function runMessageJobs(
           context: ctx,
           skipAi: deferAi,
           timings,
+          publishedAtMs: job.published_at_ms,
         }),
         new Promise((_, reject) =>
           setTimeout(
@@ -1729,7 +1562,27 @@ async function syncSinceHistoryLocked(
 ) {
   const account = await getAccount(accountId);
   if (!account.history_id) {
-    return await bootstrapAccount(accountId, account.user_id);
+    // Bootstrap is best-effort: on failure (Gmail 429, quota, network blip)
+    // we surface the error and leave history_id null so the NEXT push/poll
+    // retries. Without this catch the exception escapes withAccountLock and
+    // the caller logs but doesn't otherwise rate-limit the next attempt.
+    try {
+      const r = await bootstrapAccount(accountId, account.user_id);
+      // Push-driven bootstrap should also stamp last_push_at — otherwise the
+      // poll cron will keep thinking this account is push-silent.
+      if (opts.publishedAtMs != null) {
+        try {
+          await supabaseAdmin.from("gmail_accounts")
+            .update({ last_push_at: new Date().toISOString() })
+            .eq("id", accountId);
+        } catch { /* best-effort */ }
+      }
+      return r;
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      console.error("bootstrap failed", accountId, msg);
+      return { bootstrapped: false, error: msg };
+    }
   }
   try {
     const hist = await listHistory(accountId, account.history_id);
@@ -1750,11 +1603,6 @@ async function syncSinceHistoryLocked(
       for (const m of added) {
         if (seenAdded.has(m.id)) continue;
         seenAdded.add(m.id);
-        try {
-          await enqueueMessageJob(accountId, account.user_id, m.id, 0, {
-            publishedAtMs: opts.publishedAtMs ?? null,
-          });
-        } catch (e) { console.error("enqueue failed", e); }
       }
       for (const ev of h.labelsAdded ?? []) {
         labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
@@ -1783,10 +1631,28 @@ async function syncSinceHistoryLocked(
       }
     }
 
-    // Apply label ops sequentially per message (each one may need a row
-    // read), but only after we've finished the page so labelsAdded +
-    // labelsRemoved for the same message don't fight each other mid-loop.
+    // Bulk-enqueue all newly-added messages in one upsert (vs the previous
+    // N×sequential upserts). The published_at_ms is threaded through so any
+    // worker can populate emails.published_at_ms when it drains the job.
+    if (seenAdded.size > 0) {
+      try {
+        await enqueueMessageJobs(
+          accountId,
+          account.user_id,
+          Array.from(seenAdded),
+          0,
+          { publishedAtMs: opts.publishedAtMs ?? null },
+        );
+      } catch (e) { console.error("bulk enqueue failed", e); }
+    }
+
+    // Apply label ops sequentially per message. We SKIP ops whose message
+    // is ALSO in seenAdded — those rows don't exist yet (still queued via
+    // message_jobs) so the UPDATE would silently no-op and the label change
+    // would be lost. processGmailMessage will set raw_labels correctly from
+    // parseMessage when the queued job runs.
     for (const op of labelOps) {
+      if (seenAdded.has(op.messageId)) continue;
       try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed); }
       catch (e) { console.error("applyLabelChange failed", e); }
     }
@@ -1800,18 +1666,34 @@ async function syncSinceHistoryLocked(
     }
 
     if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);
-    // Record the timestamp so silence-detection can tell the difference between
-    // "no new mail" (this column ticks every sync) and "Pub/Sub is broken".
+    // Stamp two timestamps:
+    //   last_history_sync_at — ticks on every successful sync (push OR poll).
+    //     Used for "we touched this account recently" UX.
+    //   last_push_at — ticks ONLY on webhook-initiated syncs (opts.publishedAtMs
+    //     is non-null). The poll cron uses this to detect "no push in 2h →
+    //     watch is probably broken". Stamping it on poll runs would defeat
+    //     its purpose.
+    const stamp: { last_history_sync_at: string; last_push_at?: string } = {
+      last_history_sync_at: new Date().toISOString(),
+    };
+    if (opts.publishedAtMs != null) stamp.last_push_at = new Date().toISOString();
     try {
-      await supabaseAdmin.from("gmail_accounts")
-        .update({ last_history_sync_at: new Date().toISOString() })
-        .eq("id", accountId);
+      await supabaseAdmin.from("gmail_accounts").update(stamp).eq("id", accountId);
     } catch { /* best-effort */ }
     return { synced: seenAdded.size };
-  } catch (e: any) {
-    console.error("history failed, rebootstrapping", e.message);
-    await supabaseAdmin.from("gmail_accounts").update({ history_id: null }).eq("id", accountId);
-    return { error: e.message };
+  } catch (e: unknown) {
+    const msg = (e as Error)?.message ?? String(e);
+    // Only treat 404 (history_id genuinely expired in Gmail) as "rebootstrap".
+    // Transient errors (429, 5xx, network) get returned to the caller so the
+    // next push/poll retries cheaply, instead of triggering an expensive
+    // full-mailbox bootstrap.
+    if (e instanceof GmailApiError && e.status === 404) {
+      console.error("history_id expired, queueing rebootstrap", accountId);
+      await supabaseAdmin.from("gmail_accounts").update({ history_id: null }).eq("id", accountId);
+      return { error: msg, rebootstrapped: true };
+    }
+    console.error("history sync failed (transient)", accountId, msg);
+    return { error: msg };
   }
 }
 
@@ -1854,6 +1736,9 @@ async function bootstrapAccount(accountId: string, userId: string) {
     if (collected.length > 0) {
       const seen = new Set<string>();
       const ids = collected.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+      // Skip ids we already have locally before enqueueing — saves the
+      // worker from doing 2000 noop fetches against Gmail.
+      const todo: string[] = [];
       for (let i = 0; i < ids.length; i += 500) {
         const slice = ids.slice(i, i + 500);
         const { data: existing } = await supabaseAdmin
@@ -1863,10 +1748,13 @@ async function bootstrapAccount(accountId: string, userId: string) {
           .in("gmail_message_id", slice);
         const have = new Set((existing ?? []).map((r) => r.gmail_message_id));
         for (const id of slice) {
-          if (have.has(id)) continue;
-          try { await enqueueMessageJob(accountId, userId, id, 0); }
-          catch (e) { console.error("bootstrap enqueue failed", id, e); }
+          if (!have.has(id)) todo.push(id);
         }
+      }
+      try {
+        await enqueueMessageJobs(accountId, userId, todo, 0);
+      } catch (e) {
+        console.error("bootstrap bulk enqueue failed", e);
       }
     }
   } else {
@@ -1874,10 +1762,11 @@ async function bootstrapAccount(accountId: string, userId: string) {
     await backfillRecent(accountId, userId, 100);
   }
 
+  // Just need historyId; metadata fetch is 10x lighter than full body.
   const recent = await listMessages(accountId, { maxResults: 1 });
   if (recent.messages?.[0]) {
-    const m = await getMessage(accountId, recent.messages[0].id);
-    await bumpHistoryAndWatch(accountId, m.historyId);
+    const m = await getMessageMetadata(accountId, recent.messages[0].id);
+    if (m.historyId) await bumpHistoryAndWatch(accountId, m.historyId);
   }
   // Stamp last_history_sync_at so the poll cron's silence-detection treats this
   // freshly-bootstrapped account as healthy.
@@ -1921,11 +1810,23 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
   type RecRow = NonNullable<typeof headData>[number];
   let tailData: RecRow[] = [];
   if (TAIL_LIMIT > 0) {
+    // Anchor the tail walk so it never overlaps the head window we just
+    // pulled. When cursor is null (first run, or after wrap-around), use
+    // the OLDEST received_at from the head — guarantees zero duplicates.
+    const headOldest = (headData ?? [])
+      .map((r) => r.received_at)
+      .filter((x): x is string => !!x)
+      .sort()[0] ?? null;
+    const tailAnchor = cursor ?? headOldest;
     let q = supabaseAdmin
       .from("emails")
       .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
-      .eq("gmail_account_id", accountId);
-    if (cursor) q = q.lt("received_at", cursor);
+      .eq("gmail_account_id", accountId)
+      // Tail rows on a head-anchored first run should still be unarchived
+      // (consistent with head); on cursor-driven later runs we want both so
+      // we can re-archive rows whose state drifted.
+      .eq("is_archived", false);
+    if (tailAnchor) q = q.lt("received_at", tailAnchor);
     const { data } = await q
       .order("received_at", { ascending: false, nullsFirst: false })
       .limit(TAIL_LIMIT);
@@ -2226,130 +2127,7 @@ export async function loadOlderFromLabel(
   return { ingested, claimed, hasMore };
 }
 
-// ─── Forward-to retries ───────────────────────────────────────────────────
-//
-// When auto-forward fails (rate-limited, recipient mailbox down, transient
-// 5xx) we used to log to console and move on, leaving the user no way to
-// know their automation didn't run. Now we stamp forward_attempts +
-// forward_next_retry_at on the email row and this function picks them up
-// from the cron tick.
-
-const FORWARD_MAX_ATTEMPTS = 5;
-const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600]; // 1m, 5m, 30m, 2h, 6h
-
-export async function retryForwardAttempts(maxRows = 50) {
-  const { data: rows } = await supabaseAdmin
-    .from("emails")
-    .select("id, gmail_account_id, gmail_message_id, folder_id, subject, from_addr, from_name, body_text, snippet, received_at, forward_attempts")
-    .lte("forward_next_retry_at", new Date().toISOString())
-    .not("forward_next_retry_at", "is", null)
-    .lt("forward_attempts", FORWARD_MAX_ATTEMPTS)
-    .limit(maxRows);
-
-  let ok = 0;
-  let failed = 0;
-  let gaveUp = 0;
-  for (const row of rows ?? []) {
-    let forwardTo: string | null = null;
-    if (row.folder_id) {
-      const { data: folder } = await supabaseAdmin
-        .from("folders")
-        .select("forward_to")
-        .eq("id", row.folder_id)
-        .maybeSingle();
-      forwardTo = folder?.forward_to ?? null;
-    }
-    if (!forwardTo) {
-      // Folder was deleted or forward_to cleared — abandon the retry.
-      await supabaseAdmin.from("emails").update({
-        forward_next_retry_at: null,
-        forward_last_error: "forward_to no longer set",
-      }).eq("id", row.id);
-      gaveUp++;
-      continue;
-    }
-
-    try {
-      await sendMessage(
-        row.gmail_account_id,
-        forwardTo,
-        `Fwd: ${row.subject || "(no subject)"}`,
-        `---------- Forwarded message ----------\nFrom: ${row.from_name || ""} <${row.from_addr}>\nDate: ${row.received_at}\nSubject: ${row.subject}\n\n${row.body_text || row.snippet || ""}`,
-      );
-      await supabaseAdmin.from("emails").update({
-        forwarded_to: forwardTo,
-        forwarded_at: new Date().toISOString(),
-        forward_attempts: 0,
-        forward_last_error: null,
-        forward_next_retry_at: null,
-      }).eq("id", row.id);
-      ok++;
-    } catch (e) {
-      const errMsg = (e as Error)?.message?.slice(0, 500) ?? "unknown";
-      const nextAttempt = (row.forward_attempts ?? 0) + 1;
-      if (nextAttempt >= FORWARD_MAX_ATTEMPTS) {
-        await supabaseAdmin.from("emails").update({
-          forward_attempts: nextAttempt,
-          forward_last_error: errMsg,
-          forward_next_retry_at: null, // give up — user can re-trigger manually
-        }).eq("id", row.id);
-        gaveUp++;
-      } else {
-        const backoff = jitter(FORWARD_BACKOFF_SECONDS[Math.min(nextAttempt - 1, FORWARD_BACKOFF_SECONDS.length - 1)]);
-        await supabaseAdmin.from("emails").update({
-          forward_attempts: nextAttempt,
-          forward_last_error: errMsg,
-          forward_next_retry_at: new Date(Date.now() + backoff * 1000).toISOString(),
-        }).eq("id", row.id);
-        failed++;
-      }
-    }
-  }
-  return { processed: rows?.length ?? 0, ok, failed, gaveUp };
-}
-
-// ─── DLQ auto-replay ──────────────────────────────────────────────────────
-//
-// Jobs that hit 5 retryable failures end up in the DLQ — a one-off Gmail 5xx
-// outage from a few hours ago can park hundreds of messages there. Rather
-// than waiting for manual operator clicks, this function returns DLQ rows
-// whose last_error looks transient back to pending with a fresh attempt
-// counter and a long backoff.
-
-const TRANSIENT_DLQ_PATTERNS = [
-  /\b5\d{2}\b/,
-  /timeout/i,
-  /\bECONNRESET\b/,
-  /\bETIMEDOUT\b/,
-  /\bfetch failed\b/,
-  /\b429\b/,
-  /unavailable/i,
-];
-
-export async function replayTransientDlq(maxRows = 200) {
-  const { data: rows } = await supabaseAdmin
-    .from("message_jobs")
-    .select("id, last_error, attempt")
-    .eq("status", "dlq")
-    .order("updated_at", { ascending: false })
-    .limit(maxRows);
-  let replayed = 0;
-  let skipped = 0;
-  for (const row of rows ?? []) {
-    const transient = typeof row.last_error === "string" &&
-      TRANSIENT_DLQ_PATTERNS.some((p) => p.test(row.last_error!));
-    if (!transient) { skipped++; continue; }
-    await supabaseAdmin.from("message_jobs").update({
-      status: "pending",
-      attempt: 0,
-      locked_at: null,
-      // Spread the replay over a 10-minute window so a big chunk doesn't
-      // hammer Gmail all at once and re-trigger the same rate-limit that
-      // originally killed them.
-      next_run_at: new Date(Date.now() + Math.floor(Math.random() * 10 * 60 * 1000)).toISOString(),
-      last_error: `auto-replayed from DLQ at ${new Date().toISOString()} (was: ${row.last_error?.slice(0, 200) ?? ""})`,
-    }).eq("id", row.id);
-    replayed++;
-  }
-  return { checked: rows?.length ?? 0, replayed, skipped };
-}
+// Forward-retry + DLQ-replay logic lives in:
+//   ./sync/forward-retry.ts → retryForwardAttempts
+//   ./sync/dlq.ts          → isTransientDlqError, replayTransientDlq
+// Both are re-exported at the top of this file for backward compat.

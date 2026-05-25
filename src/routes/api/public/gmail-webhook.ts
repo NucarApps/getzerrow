@@ -214,7 +214,12 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               // Gmail message fetch + classify" (≈300ms-1s). Pub/Sub still
               // gets its ack well inside the 10s deadline; anything we don't
               // finish stays on the queue for gmail-process-jobs.
-              if (enqueuedCount > 0 || accountsMatched > 0) {
+              //
+              // Gate on enqueuedCount only — accountsMatched > 0 fires on
+              // every push (including label-only changes that produced no
+              // new mail), and an unnecessary 4s drain on every push isn't
+              // free.
+              if (enqueuedCount > 0) {
                 try {
                   await drainWithBudget(INLINE_DRAIN_BUDGET_MS);
                 } catch (e) {

@@ -2019,6 +2019,57 @@ export const resyncMessage = createServerFn({ method: "POST" })
   });
 
 /**
+ * Surface push→ack and push→visible latency percentiles over the last N
+ * hours, scoped to the caller's mailboxes. Backed by a SECURITY DEFINER
+ * SQL function so we can compute percentile_cont() in one roundtrip
+ * instead of paginating raw rows back to JS.
+ */
+export const getSyncLatencyStats = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ lookback_hours: z.number().int().min(1).max(24 * 7).optional() }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    type LatencyBucket = {
+      count: number;
+      p50: number | null;
+      p95: number | null;
+      p99: number | null;
+    };
+    type LatencyStats = {
+      push_to_ack: LatencyBucket;
+      push_to_visible: LatencyBucket;
+      since: string;
+    };
+    type LatencyRpc = {
+      rpc: (
+        fn: "get_sync_latency_stats",
+        args: { p_user_id: string; p_lookback_hours: number },
+      ) => Promise<{ data: LatencyStats | null; error: { message: string } | null }>;
+    };
+    const { data: stats, error } = await (supabaseAdmin as unknown as LatencyRpc).rpc(
+      "get_sync_latency_stats",
+      { p_user_id: context.userId, p_lookback_hours: data.lookback_hours ?? 24 },
+    );
+    if (error) {
+      console.error("get_sync_latency_stats RPC failed", error.message);
+      // Graceful fallback — empty buckets so the UI can render "no data
+      // yet" instead of crashing if the migration isn't deployed.
+      return {
+        push_to_ack: { count: 0, p50: null, p95: null, p99: null },
+        push_to_visible: { count: 0, p50: null, p95: null, p99: null },
+        since: new Date(Date.now() - (data.lookback_hours ?? 24) * 3600_000).toISOString(),
+        error: error.message,
+      } satisfies LatencyStats & { error: string };
+    }
+    return stats ?? {
+      push_to_ack: { count: 0, p50: null, p95: null, p99: null },
+      push_to_visible: { count: 0, p50: null, p95: null, p99: null },
+      since: new Date(Date.now() - (data.lookback_hours ?? 24) * 3600_000).toISOString(),
+    };
+  });
+
+/**
  * POST a synthetic envelope to our own Pub/Sub webhook to prove the endpoint
  * is reachable. Tagged with `x-zerrow-test: 1` so the webhook logs it as
  * `webhook_test` and it does NOT pollute real push diagnostics.

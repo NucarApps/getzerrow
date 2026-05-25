@@ -33,10 +33,15 @@ function isRetryableStatus(status: number): boolean {
 
 function parseRetryAfter(header: string | null): number | null {
   if (!header) return null;
-  // Either an integer of seconds, or an HTTP-date.
-  const asInt = parseInt(header, 10);
-  if (!Number.isNaN(asInt) && asInt > 0) return Math.min(asInt, 6 * 60 * 60);
-  const asDate = Date.parse(header);
+  const trimmed = header.trim();
+  // RFC 7231: Retry-After is either delta-seconds (a non-negative integer)
+  // or an HTTP-date. The strict /^\d+$/ check avoids parseInt() silently
+  // accepting "120 seconds" or "5xyz" as a number.
+  if (/^\d+$/.test(trimmed)) {
+    const asInt = parseInt(trimmed, 10);
+    return asInt > 0 ? Math.min(asInt, 6 * 60 * 60) : null;
+  }
+  const asDate = Date.parse(trimmed);
   if (!Number.isNaN(asDate)) {
     const secs = Math.floor((asDate - Date.now()) / 1000);
     return secs > 0 ? Math.min(secs, 6 * 60 * 60) : null;
