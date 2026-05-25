@@ -214,7 +214,7 @@ export function CompanyAliasesDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <CompanyLogo domain={primaryDomain} name={companyName} size={28} provider={currentChoice} />
+            <CompanyLogo domain={primaryDomain} name={companyName} size={28} provider={currentProvider} sourceDomain={currentSource} />
             <span className="truncate">{companyName}</span>
           </DialogTitle>
           <DialogDescription>
@@ -232,31 +232,47 @@ export function CompanyAliasesDialog({
 
           <div>
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">Logo</Label>
-            <div className="mt-2 grid grid-cols-4 gap-2">
-              <LogoTile
-                label="Auto"
-                domain={primaryDomain}
-                provider={null}
-                selected={currentChoice === null}
-                disabled={busy}
-                onSelect={() => pickLogo(null)}
-              />
-              {LOGO_PROVIDER_LABELS.map((label, i) => (
-                <LogoTile
-                  key={i}
-                  label={label}
-                  domain={primaryDomain}
-                  provider={i}
-                  selected={currentChoice === i}
-                  disabled={busy}
-                  onSelect={() => pickLogo(i)}
-                />
-              ))}
+            <div className="mt-2 space-y-3">
+              {[primaryDomain, ...aliases].map((d) => {
+                const isActiveSource = (currentSource ?? primaryDomain) === d;
+                return (
+                  <div key={d}>
+                    <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span className="truncate">{d}</span>
+                      {d === primaryDomain && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">primary</span>}
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {d === primaryDomain && (
+                        <LogoTile
+                          label="Auto"
+                          domain={d}
+                          provider={null}
+                          selected={isActiveSource && currentProvider === null}
+                          disabled={busy}
+                          onSelect={() => pickLogo(null, d)}
+                        />
+                      )}
+                      {LOGO_PROVIDER_LABELS.map((label, i) => (
+                        <LogoTile
+                          key={`${d}-${i}`}
+                          label={label}
+                          domain={d}
+                          provider={i}
+                          selected={isActiveSource && currentProvider === i}
+                          disabled={busy}
+                          onSelect={() => pickLogo(i, d)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Tiles that can't load are hidden. Auto picks the first one that works.
+              Tiles that can't load are hidden. Auto picks the first one that works on the primary domain.
             </p>
           </div>
+
 
           <div>
             <div className="flex items-center justify-between gap-2">
