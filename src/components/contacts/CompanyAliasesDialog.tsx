@@ -33,7 +33,7 @@ type Props = {
 };
 
 export function CompanyAliasesDialog({
-  open, onOpenChange, primaryDomain, companyName, aliases,
+  open, onOpenChange, primaryDomain, companyName, aliases, contactIds,
 }: Props) {
   const qc = useQueryClient();
   const addFn = useServerFn(addCompanyAlias);
@@ -42,9 +42,13 @@ export function CompanyAliasesDialog({
   const listChoices = useServerFn(listCompanyLogoChoices);
   const setChoiceFn = useServerFn(setCompanyLogoChoice);
   const clearChoiceFn = useServerFn(clearCompanyLogoChoice);
+  const listAssignments = useServerFn(listCompanyGroupAssignments);
+  const listGroups = useServerFn(listContactGroups);
+  const setGroupsFn = useServerFn(setCompanyGroups);
 
   const [newDomain, setNewDomain] = useState("");
   const [busy, setBusy] = useState(false);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
 
   const choicesQ = useQuery({
     queryKey: ["company-logo-choices"],
