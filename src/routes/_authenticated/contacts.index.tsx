@@ -63,6 +63,13 @@ function ContactsPage() {
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
   const aq = useQuery({ queryKey: ["company-aliases"], queryFn: () => listAliases() });
+  const lq = useQuery({ queryKey: ["company-logo-choices"], queryFn: () => listLogoChoices() });
+
+  const logoProviderByDomain = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of lq.data ?? []) m.set(r.domain, r.provider);
+    return m;
+  }, [lq.data]);
 
   // contact_id -> [group ids]
   const contactGroupMap = useMemo(() => {
