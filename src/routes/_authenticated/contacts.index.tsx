@@ -107,13 +107,31 @@ function ContactsPage() {
   type Contact = (typeof filtered)[number];
   type Bucket = { key: string; domain: string | null; name: string; kind: "company" | "personal" | "other"; contacts: Contact[] };
 
+  const aliasMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of aq.data ?? []) m.set(r.alias_domain, r.primary_domain);
+    return m;
+  }, [aq.data]);
+
+  const aliasesByPrimary = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const r of aq.data ?? []) {
+      const arr = m.get(r.primary_domain) ?? [];
+      arr.push(r.alias_domain);
+      m.set(r.primary_domain, arr);
+    }
+    return m;
+  }, [aq.data]);
+
   const companyBuckets = useMemo<Bucket[]>(() => {
     const map = new Map<string, Bucket>();
     const PERSONAL_KEY = "__personal__";
     const OTHER_KEY = "__other__";
     for (const c of filtered) {
-      const d = extractDomain(c.email);
+      const rawDomain = extractDomain(c.email);
+      const d = resolveCompanyDomain(rawDomain, aliasMap);
       const webDomain = contactLogoDomain((c as any).website, c.email);
+      const resolvedWeb = resolveCompanyDomain(webDomain, aliasMap);
       let key: string;
       let bucket: Bucket | undefined;
       if (!d) {
@@ -124,9 +142,9 @@ function ContactsPage() {
         bucket = map.get(key) ?? { key, domain: null, name: "Personal email", kind: "personal", contacts: [] };
       } else {
         key = d;
-        bucket = map.get(key) ?? { key, domain: webDomain ?? d, name: prettyCompanyName(d), kind: "company", contacts: [] };
+        bucket = map.get(key) ?? { key, domain: resolvedWeb ?? d, name: prettyCompanyName(d), kind: "company", contacts: [] };
         if (c.company && bucket.name === prettyCompanyName(d)) bucket.name = c.company;
-        if (webDomain && bucket.domain === d) bucket.domain = webDomain;
+        if (resolvedWeb && bucket.domain === d) bucket.domain = resolvedWeb;
       }
       bucket.contacts.push(c);
       map.set(key, bucket);
@@ -137,7 +155,7 @@ function ContactsPage() {
     const personal = arr.filter((b) => b.kind === "personal");
     const other = arr.filter((b) => b.kind === "other");
     return [...companies, ...personal, ...other];
-  }, [filtered]);
+  }, [filtered, aliasMap]);
 
   function toggleBucket(key: string) {
     setCollapsed((prev) => {
