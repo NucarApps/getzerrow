@@ -24,13 +24,13 @@ import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authen
 import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
+import { Route as ApiPublicGmailRetentionRouteImport } from './routes/api/public/gmail-retention'
 import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
 import { Route as ApiPublicGmailReconcileRouteImport } from './routes/api/public/gmail-reconcile'
 import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/public/gmail-process-jobs'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
-import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
 import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public/gmail-dlq-replay'
-import { Route as ApiPublicGmailRetentionRouteImport } from './routes/api/public/gmail-retention'
+import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
@@ -113,6 +113,11 @@ const ApiPublicGmailWebhookRoute = ApiPublicGmailWebhookRouteImport.update({
   path: '/api/public/gmail-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGmailRetentionRoute = ApiPublicGmailRetentionRouteImport.update({
+  id: '/api/public/gmail-retention',
+  path: '/api/public/gmail-retention',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicGmailRenewWatchesRoute =
   ApiPublicGmailRenewWatchesRouteImport.update({
     id: '/api/public/gmail-renew-watches',
@@ -135,22 +140,15 @@ const ApiPublicGmailPollRoute = ApiPublicGmailPollRouteImport.update({
   path: '/api/public/gmail-poll',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGmailDlqReplayRoute = ApiPublicGmailDlqReplayRouteImport.update({
+  id: '/api/public/gmail-dlq-replay',
+  path: '/api/public/gmail-dlq-replay',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicGmailBackfillTickRoute =
   ApiPublicGmailBackfillTickRouteImport.update({
     id: '/api/public/gmail-backfill-tick',
     path: '/api/public/gmail-backfill-tick',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicGmailDlqReplayRoute =
-  ApiPublicGmailDlqReplayRouteImport.update({
-    id: '/api/public/gmail-dlq-replay',
-    path: '/api/public/gmail-dlq-replay',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicGmailRetentionRoute =
-  ApiPublicGmailRetentionRouteImport.update({
-    id: '/api/public/gmail-retention',
-    path: '/api/public/gmail-retention',
     getParentRoute: () => rootRouteImport,
   } as any)
 const AuthenticatedContactsScanRoute =
@@ -197,11 +195,11 @@ export interface FileRoutesByFullPath {
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
-  '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
+  '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
@@ -225,11 +223,11 @@ export interface FileRoutesByTo {
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
-  '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
+  '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
@@ -255,11 +253,11 @@ export interface FileRoutesById {
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
-  '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
+  '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
@@ -285,11 +283,11 @@ export interface FileRouteTypes {
     | '/contacts/scan'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
-    | '/api/public/gmail-retention'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
+    | '/api/public/gmail-retention'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/logo'
@@ -313,11 +311,11 @@ export interface FileRouteTypes {
     | '/contacts/scan'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
-    | '/api/public/gmail-retention'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
+    | '/api/public/gmail-retention'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/logo'
@@ -342,11 +340,11 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/scan'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
-    | '/api/public/gmail-retention'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
+    | '/api/public/gmail-retention'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/logo'
@@ -365,11 +363,11 @@ export interface RootRouteChildren {
   CHandleRoute: typeof CHandleRoute
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailDlqReplayRoute: typeof ApiPublicGmailDlqReplayRoute
-  ApiPublicGmailRetentionRoute: typeof ApiPublicGmailRetentionRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
   ApiPublicGmailProcessJobsRoute: typeof ApiPublicGmailProcessJobsRoute
   ApiPublicGmailReconcileRoute: typeof ApiPublicGmailReconcileRoute
   ApiPublicGmailRenewWatchesRoute: typeof ApiPublicGmailRenewWatchesRoute
+  ApiPublicGmailRetentionRoute: typeof ApiPublicGmailRetentionRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
@@ -485,6 +483,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/gmail-retention': {
+      id: '/api/public/gmail-retention'
+      path: '/api/public/gmail-retention'
+      fullPath: '/api/public/gmail-retention'
+      preLoaderRoute: typeof ApiPublicGmailRetentionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/gmail-renew-watches': {
       id: '/api/public/gmail-renew-watches'
       path: '/api/public/gmail-renew-watches'
@@ -513,13 +518,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailPollRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/gmail-backfill-tick': {
-      id: '/api/public/gmail-backfill-tick'
-      path: '/api/public/gmail-backfill-tick'
-      fullPath: '/api/public/gmail-backfill-tick'
-      preLoaderRoute: typeof ApiPublicGmailBackfillTickRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/gmail-dlq-replay': {
       id: '/api/public/gmail-dlq-replay'
       path: '/api/public/gmail-dlq-replay'
@@ -527,11 +525,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailDlqReplayRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/gmail-retention': {
-      id: '/api/public/gmail-retention'
-      path: '/api/public/gmail-retention'
-      fullPath: '/api/public/gmail-retention'
-      preLoaderRoute: typeof ApiPublicGmailRetentionRouteImport
+    '/api/public/gmail-backfill-tick': {
+      id: '/api/public/gmail-backfill-tick'
+      path: '/api/public/gmail-backfill-tick'
+      fullPath: '/api/public/gmail-backfill-tick'
+      preLoaderRoute: typeof ApiPublicGmailBackfillTickRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/contacts/scan': {
@@ -607,11 +605,11 @@ const rootRouteChildren: RootRouteChildren = {
   CHandleRoute: CHandleRoute,
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailDlqReplayRoute: ApiPublicGmailDlqReplayRoute,
-  ApiPublicGmailRetentionRoute: ApiPublicGmailRetentionRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
   ApiPublicGmailProcessJobsRoute: ApiPublicGmailProcessJobsRoute,
   ApiPublicGmailReconcileRoute: ApiPublicGmailReconcileRoute,
   ApiPublicGmailRenewWatchesRoute: ApiPublicGmailRenewWatchesRoute,
+  ApiPublicGmailRetentionRoute: ApiPublicGmailRetentionRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicLogoRoute: ApiPublicLogoRoute,
