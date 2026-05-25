@@ -36,6 +36,7 @@ import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
+import { PullToRefresh } from "@/components/inbox/PullToRefresh";
 import { useIsMobile } from "@/hooks/use-mobile";
 import DOMPurify from "dompurify";
 
@@ -663,9 +664,15 @@ function InboxPage() {
             )}
           </div>
         )}
-        <div
+        <PullToRefresh
           className="min-h-0 flex-1 overflow-y-auto"
           onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
+          onRefresh={async () => {
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ["emails"] }),
+              qc.invalidateQueries({ queryKey: ["folders"] }),
+            ]);
+          }}
         >
           {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
           {!emailsQ.isLoading && filtered.length === 0 && (
@@ -1082,7 +1089,7 @@ function InboxPage() {
               </SwipeRow>
             );
           })}
-        </div>
+        </PullToRefresh>
         {!isSearching && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={goPrev} disabled={page === 1}>

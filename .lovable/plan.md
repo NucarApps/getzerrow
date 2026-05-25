@@ -1,32 +1,35 @@
+# Pull-to-refresh with rocket animation
 
-## Goal
-
-When `enrichContact` finds no local emails for a contact's address, query Gmail directly with `from:<email>` (and optionally `to:<email>` for the relationship summary), fetch a handful of messages, and feed them into the existing extraction + relationship-summary prompts. This lets brand-new contacts get enriched without waiting for the sync pipeline to backfill them.
-
-## Where the change lives
-
-`src/lib/contacts.functions.ts` → `enrichContact` server function only. No schema changes, no UI changes, no new public endpoints.
+Add a native-feeling pull-to-refresh gesture to the inbox email list. As the user drags down from the top, the Zerrow rocket (`src/assets/zerrow-ship.png`) is revealed behind the list. On release past the threshold, the rocket blasts off (upward + fade with an exhaust trail), the email list refetches, and on completion a new rocket settles back at rest for the next pull.
 
 ## Behavior
 
-1. Run the existing local query against `emails_decrypted` (unchanged).
-2. If it returns 0 rows, look up the user's Gmail accounts (`gmail_accounts` filtered by `user_id`). For each account (stop at first that returns results):
-   - Call `listMessages(accountId, { q: \`from:${email}\`, maxResults: 20 })`.
-   - For each id, `getMessage` + `parseMessage` (existing helpers in `src/lib/gmail.server.ts`).
-   - Map the parsed payloads into the same shape the local query produces (`subject`, `body_text`, `snippet`, `from_name`) so the rest of the scoring/picking pipeline is unchanged.
-3. Same fallback for the relationship-summary block: if the local `or(from_addr.eq, to_addrs.ilike)` query is empty, run a second Gmail search with `q: \`from:${email} OR to:${email}\`` and map results into the convo shape (need `from_addr`, `to_addrs`, `received_at` too — all available from `parseMessage`).
-4. Cap Gmail fetches: max 20 messages per fallback, fetch sequentially with the existing `gmailFetch` (already has timeouts + retry classification). If Gmail returns `insufficientPermissions`/quota errors, swallow and proceed as if empty (current "no sample" path already handles this gracefully).
-5. Do not persist these fetched messages into the `emails` table — this is read-only enrichment. The regular sync/reconcile pipeline owns ingestion.
+- Trigger: touch drag down when the inbox list is already scrolled to top (mobile + trackpad-friendly).
+- Reveal: as the user pulls, a fixed-height "pull zone" above the list expands (0 → ~96px) with the rocket fading/scaling in and rotating slightly upright. Resistance curve (`pull * 0.5`) so it feels rubber-bandy.
+- Indicator states:
+  - Pulling (< threshold): rocket dim, subtle bob.
+  - Ready (≥ threshold ~72px): rocket brightens, small "Release to refresh" caption.
+  - Refreshing: rocket plays blast-off (translateY -200px, scale 0.7, opacity 0) with a short flame/smoke trail (CSS gradient + animated dots), list refetches.
+  - Done: rocket re-enters from bottom of pull zone, settles to rest, zone collapses.
+- Refresh action: `queryClient.invalidateQueries({ queryKey: ["emails"] })` and `["folders"]`, awaited; min visible time ~700ms so the animation reads.
+
+## Where
+
+- `src/routes/_authenticated/inbox.tsx` — the email list scroll container is the `<div className="min-h-0 flex-1 overflow-y-auto">` around line 667. Wrap its contents with a new `PullToRefresh` component, or attach handlers + a sibling indicator div.
+- New component: `src/components/inbox/PullToRefresh.tsx` — owns touch listeners (`touchstart`/`touchmove`/`touchend`), pull distance state, threshold logic, and renders the rocket indicator. Accepts `onRefresh: () => Promise<void>` and `children`.
+- New component: `src/components/inbox/RocketIndicator.tsx` — pure visual: takes `pull` (0–1+), `phase` ('idle' | 'ready' | 'launching' | 'returning'), renders the rocket image, flame trail, and caption.
+- `src/styles.css` — add keyframes: `rocket-blastoff` (translateY -240px + fade + slight rotate), `rocket-return` (translateY from +40px to 0 with ease-out), `rocket-bob` (subtle idle hover), `flame-flicker`.
 
 ## Technical notes
 
-- Reuse `listMessages`, `getMessage`, `parseMessage` from `src/lib/gmail.server.ts`; no new Gmail helpers needed.
-- Pick the Gmail account by `user_id = auth uid`, ordered by `created_at` ascending; first one usually suffices.
-- Wrap the Gmail fallback in `try/catch` so any `GmailApiError` (token expiry, 429) degrades to the existing "no sample" early-return path rather than failing the whole enrichment.
-- Keep the function under `requireSupabaseAuth` (already is). No new RLS or secrets needed.
+- Only activate when `scrollTop === 0` at `touchstart`; otherwise let native scroll run.
+- Use `passive: false` on `touchmove` so we can `preventDefault()` once pulling, to suppress overscroll bounce on iOS.
+- Apply `overscroll-behavior: contain` to the scroll container to prevent the page itself from rubber-banding while we own the gesture.
+- Pointer Events fallback for trackpad: also listen for `wheel` with negative `deltaY` at scrollTop 0 to allow desktop testing (optional, low priority).
+- Respect `prefers-reduced-motion`: skip blast-off, just show a spinner-style fade.
+- Don't double-trigger: ignore new pulls while `phase !== 'idle'`.
 
 ## Out of scope
 
-- Storing fetched messages in `emails`.
-- Changing the contacts UI or the `getContact` loader.
-- Adding a manual "refetch from Gmail" button (can be a follow-up).
+- No changes to email detail view, sidebar, or any other route.
+- No backend changes — refresh is just a React Query invalidation; new emails already arrive via realtime.
