@@ -45,7 +45,17 @@ async function getEmailAccount(userId: string, emailId: string) {
     .single();
   if (error || !data) throw new Error("Email not found");
   if (data.user_id !== userId) throw new Error("Not authorized");
-  return data;
+  if (!data.gmail_message_id || !data.gmail_account_id) throw new Error("Email is missing Gmail identifiers");
+  return {
+    gmail_message_id: data.gmail_message_id,
+    gmail_account_id: data.gmail_account_id,
+    user_id: data.user_id,
+    thread_id: data.thread_id,
+    from_addr: data.from_addr,
+    subject: data.subject,
+    body_text: data.body_text,
+    from_name: data.from_name,
+  };
 }
 
 export const listMyGmailAccounts = createServerFn({ method: "GET" })
