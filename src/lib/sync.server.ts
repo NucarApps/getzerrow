@@ -26,6 +26,8 @@ import {
   replayTransientDlq as _replayTransientDlq,
 } from "./sync/dlq";
 import { retryForwardAttempts as _retryForwardAttempts } from "./sync/forward-retry";
+import type { Folder, Filter, GmailAccount, OverrideException, RuleNode } from "./sync/types";
+import { applyFilter, matchByFilters, labelOf, EXCLUDE_OPS } from "./sync/filter-engine";
 
 // Re-export for backward compatibility with existing imports.
 export const withAccountLock = _withAccountLock;
@@ -35,43 +37,8 @@ export const isTransientDlqError = _isTransientDlqError;
 export const replayTransientDlq = _replayTransientDlq;
 export const retryForwardAttempts = _retryForwardAttempts;
 
-type RuleNode =
-  | { type: "group"; op: "and" | "or"; children: RuleNode[] }
-  | { type: "cond"; field: string; op: string; value: string };
-
-type Folder = {
-  id: string;
-  name: string;
-  gmail_label_id: string | null;
-  ai_rule: string | null;
-  learned_profile: string | null;
-  last_learned_at: string | null;
-  auto_archive: boolean;
-  auto_mark_read: boolean;
-  auto_star: boolean;
-  hide_from_inbox: boolean;
-  skip_ai: boolean;
-  priority: number;
-  gmail_account_id: string;
-  filter_logic: "any" | "all";
-  filter_tree: RuleNode | null;
-  forward_to: string | null;
-  min_ai_confidence: number;
-  snooze_hours: number;
-  overrides_inbox_override: boolean;
-};
-
-type OverrideException = { override_id: string; field: string; op: string; value: string };
-
-type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
-
-type GmailAccount = {
-  id: string;
-  user_id: string;
-  email_address: string;
-  history_id: string | null;
-  watch_expiration: string | null;
-};
+// Shared types (Folder, Filter, OverrideException, GmailAccount, RuleNode)
+// moved to ./sync/types.ts and imported above.
 
 async function getAccount(accountId: string): Promise<GmailAccount> {
   const { data, error } = await supabaseAdmin
@@ -84,155 +51,9 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
 }
 
 // (withAccountLock moved to ./sync/account-lock.ts and re-exported above.)
-// Bounds for regex filter evaluation to prevent ReDoS (catastrophic backtracking).
-// Patterns and input are length-capped, and obviously dangerous patterns are rejected.
-const MAX_REGEX_PATTERN_LEN = 200;
-const MAX_REGEX_INPUT_LEN = 10_000;
-// Heuristic: nested quantifiers / overlapping alternation are the classic ReDoS shapes.
-const UNSAFE_REGEX_SHAPES = [
-  /(\([^)]*[+*][^)]*\))[+*]/, // (a+)+ / (a*)*
-  /(\[[^\]]+\][+*]){2,}/,      // [a-z]+[a-z]+ chains
-  /(\.\*){2,}/,                // .*.*
-];
-function isUnsafeRegex(pattern: string): boolean {
-  if (pattern.length > MAX_REGEX_PATTERN_LEN) return true;
-  return UNSAFE_REGEX_SHAPES.some((r) => r.test(pattern));
-}
-function safeRegexTest(pattern: string, input: string): boolean {
-  if (isUnsafeRegex(pattern)) return false;
-  const bounded = input.length > MAX_REGEX_INPUT_LEN ? input.slice(0, MAX_REGEX_INPUT_LEN) : input;
-  try { return new RegExp(pattern, "i").test(bounded); } catch { return false; }
-}
-
-
-function applyFilter(
-  email: { from_addr: string; from_name: string; to_addrs: string; cc?: string; list_id?: string; in_reply_to?: string; subject: string; body_text: string; has_attachment: boolean },
-  f: Filter
-): boolean {
-  const v = f.value.toLowerCase();
-  const fieldVal = (() => {
-    switch (f.field) {
-      case "from": return `${email.from_addr} ${email.from_name}`.toLowerCase();
-      case "to": return (email.to_addrs || "").toLowerCase();
-      case "cc": return (email.cc || "").toLowerCase();
-      case "list_id": return (email.list_id || "").toLowerCase();
-      case "is_reply": return (email.in_reply_to ? "true" : "false");
-      case "subject": return (email.subject || "").toLowerCase();
-      case "body": return (email.body_text || "").toLowerCase();
-      case "domain": return (email.from_addr.split("@")[1] || "").toLowerCase();
-      case "has_attachment": return email.has_attachment ? "true" : "false";
-      default: return "";
-    }
-  })();
-  switch (f.op) {
-    case "contains": return fieldVal.includes(v);
-    case "equals": return fieldVal === v;
-    case "starts_with": return fieldVal.startsWith(v);
-    case "ends_with": return fieldVal.endsWith(v);
-    case "not_contains": return !fieldVal.includes(v);
-    case "not_equals": return fieldVal !== v;
-    case "regex":
-      return safeRegexTest(f.value, fieldVal);
-    default: return false;
-  }
-}
-
-const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
-
-function evalNode(
-  email: Parameters<typeof applyFilter>[0],
-  node: RuleNode,
-): boolean {
-  if (node.type === "cond") {
-    return applyFilter(email, { id: "", folder_id: "", field: node.field, op: node.op, value: node.value });
-  }
-  if (node.op === "and") return node.children.every((c) => evalNode(email, c));
-  return node.children.some((c) => evalNode(email, c));
-}
-
-function countConds(node: RuleNode): number {
-  return node.type === "cond" ? 1 : node.children.reduce((n, c) => n + countConds(c), 0);
-}
-
-type FolderMatch =
-  | { kind: "match"; folder_id: string; filter: Filter | null; matched_filters: Filter[]; all_matched_folder_ids: string[]; tree_used: boolean }
-  | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
-
-function matchByFilters(
-  email: Parameters<typeof applyFilter>[0],
-  folders: Folder[],
-  filters: Filter[],
-): FolderMatch | null {
-  const byFolder = new Map<string, Filter[]>();
-  for (const f of filters) {
-    if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
-    byFolder.get(f.folder_id)!.push(f);
-  }
-  const matched: Array<{ folder: Folder; filter: Filter | null; allMatches: Filter[]; treeUsed: boolean }> = [];
-  const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
-  for (const folder of folders) {
-    const fs = byFolder.get(folder.id) || [];
-    const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
-    const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
-
-    // Tree takes precedence when present and non-empty.
-    const tree = folder.filter_tree;
-    const hasTree = !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
-
-    let passes = false;
-    let includeHits: Filter[] = [];
-    if (hasTree) {
-      passes = evalNode(email, tree!);
-    } else {
-      if (includes.length === 0) continue;
-      includeHits = includes.filter((f) => applyFilter(email, f));
-      const logic = folder.filter_logic === "all" ? "all" : "any";
-      passes = logic === "all" ? includeHits.length === includes.length : includeHits.length > 0;
-    }
-    if (!passes) continue;
-
-    const excludeHit = excludes.find((f) => applyFilter(email, f));
-    if (excludeHit) {
-      excludedFolders.push({ folder, exclude: excludeHit });
-      continue;
-    }
-    matched.push({
-      folder,
-      filter: hasTree ? null : (includeHits[0] ?? null),
-      allMatches: hasTree ? [] : includeHits,
-      treeUsed: hasTree,
-    });
-  }
-  if (matched.length > 0) {
-    // Sort: highest priority first, then folder name asc for stable tiebreak.
-    matched.sort((a, b) =>
-      b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name)
-    );
-    return {
-      kind: "match",
-      folder_id: matched[0].folder.id,
-      filter: matched[0].filter,
-      matched_filters: matched[0].allMatches,
-      all_matched_folder_ids: matched.map((m) => m.folder.id),
-      tree_used: matched[0].treeUsed,
-    };
-  }
-  if (excludedFolders.length > 0) {
-    excludedFolders.sort((a, b) =>
-      b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name)
-    );
-    return {
-      kind: "excluded",
-      folder_id: excludedFolders[0].folder.id,
-      folder_name: excludedFolders[0].folder.name,
-      exclude: excludedFolders[0].exclude,
-    };
-  }
-  return null;
-}
-function labelOf(folders: Folder[], id: string) {
-  return folders.find((f) => f.id === id)?.name ?? "folder";
-}
+// Filter evaluation (applyFilter, matchByFilters, labelOf, EXCLUDE_OPS) +
+// ReDoS-safe regex helpers moved to ./sync/filter-engine.ts and imported
+// above.
 
 
 async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolder[]> {
