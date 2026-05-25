@@ -104,6 +104,27 @@ export type Database = {
         }
         Relationships: []
       }
+      company_aliases: {
+        Row: {
+          alias_domain: string
+          created_at: string
+          primary_domain: string
+          user_id: string
+        }
+        Insert: {
+          alias_domain: string
+          created_at?: string
+          primary_domain: string
+          user_id: string
+        }
+        Update: {
+          alias_domain?: string
+          created_at?: string
+          primary_domain?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       contact_cards_sent: {
         Row: {
           contact_id: string | null

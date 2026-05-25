@@ -20,8 +20,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
-import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain } from "@/lib/company-domains";
+import { CompanyAliasesDialog } from "@/components/contacts/CompanyAliasesDialog";
+import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain, resolveCompanyDomain } from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
+import { listCompanyAliases } from "@/lib/company-aliases.functions";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -44,6 +46,7 @@ function ContactsPage() {
   const qc = useQueryClient();
   const list = useServerFn(listContacts);
   const listGroups = useServerFn(listContactGroups);
+  const listAliases = useServerFn(listCompanyAliases);
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
@@ -52,10 +55,12 @@ function ContactsPage() {
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [aliasDialog, setAliasDialog] = useState<null | { domain: string; name: string }>(null);
 
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
+  const aq = useQuery({ queryKey: ["company-aliases"], queryFn: () => listAliases() });
 
   // contact_id -> [group ids]
   const contactGroupMap = useMemo(() => {
@@ -102,13 +107,31 @@ function ContactsPage() {
   type Contact = (typeof filtered)[number];
   type Bucket = { key: string; domain: string | null; name: string; kind: "company" | "personal" | "other"; contacts: Contact[] };
 
+  const aliasMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of aq.data ?? []) m.set(r.alias_domain, r.primary_domain);
+    return m;
+  }, [aq.data]);
+
+  const aliasesByPrimary = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const r of aq.data ?? []) {
+      const arr = m.get(r.primary_domain) ?? [];
+      arr.push(r.alias_domain);
+      m.set(r.primary_domain, arr);
+    }
+    return m;
+  }, [aq.data]);
+
   const companyBuckets = useMemo<Bucket[]>(() => {
     const map = new Map<string, Bucket>();
     const PERSONAL_KEY = "__personal__";
     const OTHER_KEY = "__other__";
     for (const c of filtered) {
-      const d = extractDomain(c.email);
+      const rawDomain = extractDomain(c.email);
+      const d = resolveCompanyDomain(rawDomain, aliasMap);
       const webDomain = contactLogoDomain((c as any).website, c.email);
+      const resolvedWeb = resolveCompanyDomain(webDomain, aliasMap);
       let key: string;
       let bucket: Bucket | undefined;
       if (!d) {
@@ -119,9 +142,9 @@ function ContactsPage() {
         bucket = map.get(key) ?? { key, domain: null, name: "Personal email", kind: "personal", contacts: [] };
       } else {
         key = d;
-        bucket = map.get(key) ?? { key, domain: webDomain ?? d, name: prettyCompanyName(d), kind: "company", contacts: [] };
+        bucket = map.get(key) ?? { key, domain: resolvedWeb ?? d, name: prettyCompanyName(d), kind: "company", contacts: [] };
         if (c.company && bucket.name === prettyCompanyName(d)) bucket.name = c.company;
-        if (webDomain && bucket.domain === d) bucket.domain = webDomain;
+        if (resolvedWeb && bucket.domain === d) bucket.domain = resolvedWeb;
       }
       bucket.contacts.push(c);
       map.set(key, bucket);
@@ -132,7 +155,7 @@ function ContactsPage() {
     const personal = arr.filter((b) => b.kind === "personal");
     const other = arr.filter((b) => b.kind === "other");
     return [...companies, ...personal, ...other];
-  }, [filtered]);
+  }, [filtered, aliasMap]);
 
   function toggleBucket(key: string) {
     setCollapsed((prev) => {
@@ -307,6 +330,10 @@ function ContactsPage() {
                         count={b.contacts.length}
                         collapsed={isCollapsed}
                         onToggle={() => toggleBucket(b.key)}
+                        aliasCount={b.kind === "company" && b.domain ? (aliasesByPrimary.get(b.domain)?.length ?? 0) : 0}
+                        onEdit={b.kind === "company" && b.domain
+                          ? () => setAliasDialog({ domain: b.domain!, name: b.name })
+                          : undefined}
                       />
                       {!isCollapsed && (
                         <ul className="divide-y divide-border border-x border-b border-border bg-card/40">
@@ -418,6 +445,14 @@ function ContactsPage() {
         contactId={drawerId}
         open={!!drawerId}
         onOpenChange={(v) => !v && setDrawerId(null)}
+      />
+
+      <CompanyAliasesDialog
+        open={!!aliasDialog}
+        onOpenChange={(v) => !v && setAliasDialog(null)}
+        primaryDomain={aliasDialog?.domain ?? null}
+        companyName={aliasDialog?.name ?? ""}
+        aliases={aliasDialog ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
       />
     </div>
   );

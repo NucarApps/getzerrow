@@ -86,3 +86,15 @@ export function logoCandidates(domain: string, size = 64): string[] {
 export function logoUrl(domain: string, size = 64): string {
   return logoCandidates(domain, size)[0];
 }
+
+/** Resolve a domain through a user-defined alias map (alias -> primary). */
+export function resolveCompanyDomain(
+  domain: string | null | undefined,
+  aliasMap: Map<string, string> | null | undefined,
+): string | null {
+  if (!domain) return null;
+  const d = domain.toLowerCase();
+  if (!aliasMap || aliasMap.size === 0) return d;
+  return aliasMap.get(d) ?? d;
+}
+
