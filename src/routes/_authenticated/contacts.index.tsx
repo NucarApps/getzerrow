@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
 import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain } from "@/lib/company-domains";
+import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -41,7 +42,6 @@ type GroupRow = { id: string; name: string; color: string; count: number };
 
 function ContactsPage() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const list = useServerFn(listContacts);
   const listGroups = useServerFn(listContactGroups);
 
@@ -51,6 +51,7 @@ function ContactsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [drawerId, setDrawerId] = useState<string | null>(null);
 
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
@@ -306,7 +307,7 @@ function ContactsPage() {
                             return (
                               <li key={c.id}>
                                 <button
-                                  onClick={() => navigate({ to: "/contacts/$id", params: { id: c.id } })}
+                                  onClick={() => setDrawerId(c.id)}
                                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/40"
                                 >
                                   <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
@@ -346,7 +347,7 @@ function ContactsPage() {
                   return (
                     <li key={c.id}>
                       <button
-                        onClick={() => navigate({ to: "/contacts/$id", params: { id: c.id } })}
+                        onClick={() => setDrawerId(c.id)}
                         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
                       >
                         {showLogo ? (
@@ -403,6 +404,12 @@ function ContactsPage() {
         open={addOpen}
         onOpenChange={setAddOpen}
         onAdded={() => qc.invalidateQueries({ queryKey: ["contacts"] })}
+      />
+
+      <ContactDrawer
+        contactId={drawerId}
+        open={!!drawerId}
+        onOpenChange={(v) => !v && setDrawerId(null)}
       />
     </div>
   );

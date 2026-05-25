@@ -6,6 +6,24 @@ import { buildVCard, sendCardEmail, type CardData } from "./cards.server";
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{2,30}$/;
 
+/** Normalize user-entered URLs: trim, return null if empty, prepend https:// if missing. */
+function normalizeUrl(v: unknown): unknown {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string") return v;
+  const s = v.trim();
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s}`;
+}
+function normalizeHttpsUrl(v: unknown): unknown {
+  const n = normalizeUrl(v);
+  if (typeof n !== "string") return n;
+  return n.replace(/^http:\/\//i, "https://");
+}
+
+const urlField = z.preprocess(normalizeUrl, z.string().url().max(500).nullable().optional());
+const httpsUrlField = z.preprocess(normalizeHttpsUrl, z.string().url().max(1000).nullable().optional());
+
 /** Get the signed-in user's own card (or null if not set yet). */
 export const getMyCard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -26,11 +44,11 @@ export const upsertMyCard = createServerFn({ method: "POST" })
       company: z.string().max(200).nullable().optional(),
       email: z.string().email().nullable().optional(),
       phone: z.string().max(60).nullable().optional(),
-      website: z.string().trim().url().regex(/^https?:\/\//i, "Must be an http(s) URL").max(500).nullable().optional().or(z.literal("")),
-      linkedin: z.string().trim().url().regex(/^https?:\/\//i, "Must be an http(s) URL").max(500).nullable().optional().or(z.literal("")),
-      twitter: z.string().trim().url().regex(/^https?:\/\//i, "Must be an http(s) URL").max(500).nullable().optional().or(z.literal("")),
-      avatar_url: z.string().trim().url().regex(/^https:\/\//i, "Must be an https URL").max(1000).nullable().optional().or(z.literal("")),
-      cover_url: z.string().trim().url().regex(/^https:\/\//i, "Must be an https URL").max(1000).nullable().optional().or(z.literal("")),
+      website: urlField,
+      linkedin: urlField,
+      twitter: urlField,
+      avatar_url: httpsUrlField,
+      cover_url: httpsUrlField,
       tagline: z.string().max(280).nullable().optional(),
       theme: z.string().max(40).optional(),
     }).parse(d)
