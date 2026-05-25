@@ -141,13 +141,21 @@ function ContactsPage() {
       return next;
     });
   }
-  // Auto-collapse all buckets when toggling "By company" on.
+  // Auto-collapse all buckets when toggling "By company" on, and again the
+  // first time buckets become available (initial load races contacts query).
+  const initialCollapseDoneRef = useRef(false);
   useEffect(() => {
     if (groupByCompany) {
       setCollapsed(new Set(companyBuckets.map((b) => b.key)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupByCompany]);
+  useEffect(() => {
+    if (!initialCollapseDoneRef.current && groupByCompany && companyBuckets.length > 0) {
+      initialCollapseDoneRef.current = true;
+      setCollapsed(new Set(companyBuckets.map((b) => b.key)));
+    }
+  }, [companyBuckets, groupByCompany]);
 
 
   return (
