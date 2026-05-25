@@ -7,16 +7,46 @@ const REQUEST_TIMEOUT_MS = 20_000;
 export class GmailApiError extends Error {
   status: number;
   retryable: boolean;
-  constructor(message: string, status: number, retryable: boolean) {
+  /** Seconds to wait before next attempt, parsed from `Retry-After` on 429s. */
+  retryAfterSeconds: number | null;
+  /** True when the underlying reason is `quotaExceeded` (per-user quota
+   * resets at midnight PT, not after a short backoff). */
+  isQuotaExceeded: boolean;
+  constructor(
+    message: string,
+    status: number,
+    retryable: boolean,
+    opts: { retryAfterSeconds?: number | null; isQuotaExceeded?: boolean } = {},
+  ) {
     super(message);
     this.name = "GmailApiError";
     this.status = status;
     this.retryable = retryable;
+    this.retryAfterSeconds = opts.retryAfterSeconds ?? null;
+    this.isQuotaExceeded = opts.isQuotaExceeded ?? false;
   }
 }
 
 function isRetryableStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
+}
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null;
+  // Either an integer of seconds, or an HTTP-date.
+  const asInt = parseInt(header, 10);
+  if (!Number.isNaN(asInt) && asInt > 0) return Math.min(asInt, 6 * 60 * 60);
+  const asDate = Date.parse(header);
+  if (!Number.isNaN(asDate)) {
+    const secs = Math.floor((asDate - Date.now()) / 1000);
+    return secs > 0 ? Math.min(secs, 6 * 60 * 60) : null;
+  }
+  return null;
+}
+
+function parseQuotaReason(body: string): boolean {
+  // Google returns `{ error: { errors: [{ reason: "quotaExceeded" | "rateLimitExceeded" | "userRateLimitExceeded" }]}}`.
+  return /quotaExceeded|userRateLimitExceeded/.test(body);
 }
 
 async function gmailFetch<T = any>(accountId: string, path: string, init?: RequestInit): Promise<T> {
@@ -41,10 +71,13 @@ async function gmailFetch<T = any>(accountId: string, path: string, init?: Reque
   }
   const text = await res.text();
   if (!res.ok) {
+    const retryAfter = res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null;
+    const isQuota = res.status === 429 && parseQuotaReason(text);
     throw new GmailApiError(
       `Gmail API ${res.status} on ${path}: ${text.slice(0, 500)}`,
       res.status,
       isRetryableStatus(res.status),
+      { retryAfterSeconds: retryAfter, isQuotaExceeded: isQuota },
     );
   }
   return text ? JSON.parse(text) : ({} as T);
@@ -272,8 +305,9 @@ export async function ensureWatch(accountId: string, watchExpiration: string | n
   if (!topic) return null;
   if (watchExpiration) {
     const expMs = new Date(watchExpiration).getTime();
-    // Renew if less than 1 day remaining
-    if (expMs - Date.now() > 24 * 60 * 60 * 1000) return null;
+    // Renew if less than 2 days remaining. Tightened from 1 day so the every-6h
+    // renewal cron can absorb a missed run without watches lapsing.
+    if (expMs - Date.now() > 2 * 24 * 60 * 60 * 1000) return null;
   }
   return watchInbox(accountId, topic);
 }

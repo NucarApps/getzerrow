@@ -29,6 +29,7 @@ import { Route as ApiPublicGmailReconcileRouteImport } from './routes/api/public
 import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/public/gmail-process-jobs'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
 import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
+import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public/gmail-dlq-replay'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
@@ -139,6 +140,12 @@ const ApiPublicGmailBackfillTickRoute =
     path: '/api/public/gmail-backfill-tick',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicGmailDlqReplayRoute =
+  ApiPublicGmailDlqReplayRouteImport.update({
+    id: '/api/public/gmail-dlq-replay',
+    path: '/api/public/gmail-dlq-replay',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedContactsScanRoute =
   AuthenticatedContactsScanRouteImport.update({
     id: '/contacts/scan',
@@ -182,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
+  '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
@@ -208,6 +216,7 @@ export interface FileRoutesByTo {
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
+  '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
@@ -236,6 +245,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
+  '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
@@ -264,6 +274,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/public/gmail-backfill-tick'
+    | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
@@ -290,6 +301,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/public/gmail-backfill-tick'
+    | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
@@ -317,6 +329,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
     | '/api/public/gmail-backfill-tick'
+    | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
@@ -338,6 +351,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   CHandleRoute: typeof CHandleRoute
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
+  ApiPublicGmailDlqReplayRoute: typeof ApiPublicGmailDlqReplayRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
   ApiPublicGmailProcessJobsRoute: typeof ApiPublicGmailProcessJobsRoute
   ApiPublicGmailReconcileRoute: typeof ApiPublicGmailReconcileRoute
@@ -492,6 +506,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailBackfillTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/gmail-dlq-replay': {
+      id: '/api/public/gmail-dlq-replay'
+      path: '/api/public/gmail-dlq-replay'
+      fullPath: '/api/public/gmail-dlq-replay'
+      preLoaderRoute: typeof ApiPublicGmailDlqReplayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/contacts/scan': {
       id: '/_authenticated/contacts/scan'
       path: '/contacts/scan'
@@ -564,6 +585,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   CHandleRoute: CHandleRoute,
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
+  ApiPublicGmailDlqReplayRoute: ApiPublicGmailDlqReplayRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
   ApiPublicGmailProcessJobsRoute: ApiPublicGmailProcessJobsRoute,
   ApiPublicGmailReconcileRoute: ApiPublicGmailReconcileRoute,

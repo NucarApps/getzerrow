@@ -51,6 +51,27 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
   if (error || !data) throw new Error("Gmail account not found");
   return data as GmailAccount;
 }
+
+// Per-account in-process lock. Pub/Sub redeliveries and the polling cron can
+// trigger overlapping syncSinceHistory calls for the same account — the second
+// caller would read a stale history_id and either redo work or skip events. We
+// coalesce overlapping calls into one promise; subsequent callers within the
+// same worker share the result.
+const syncLocks = new Map<string, Promise<unknown>>();
+
+export function withAccountLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
+  const existing = syncLocks.get(accountId);
+  if (existing) return existing as Promise<T>;
+  const p = (async () => {
+    try {
+      return await fn();
+    } finally {
+      syncLocks.delete(accountId);
+    }
+  })();
+  syncLocks.set(accountId, p);
+  return p;
+}
 // Bounds for regex filter evaluation to prevent ReDoS (catastrophic backtracking).
 // Patterns and input are length-capped, and obviously dangerous patterns are rejected.
 const MAX_REGEX_PATTERN_LEN = 200;
@@ -249,7 +270,28 @@ export type AccountContext = {
 };
 
 const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
-const ACCOUNT_CONTEXT_TTL_MS = 30_000;
+// Short TTL so a folder/filter change is reflected within a few seconds even
+// when the explicit invalidate hook below isn't called. Mutation paths that
+// know they changed routing rules should still call invalidateAccountContext
+// for instant pickup.
+const ACCOUNT_CONTEXT_TTL_MS = 5_000;
+
+/** Drop any cached context for one account. Call after writes to folders /
+ * folder_filters for that account. */
+export function invalidateAccountContext(accountId: string): void {
+  accountContextCache.delete(accountId);
+}
+
+/** Drop cached context for every account belonging to a user. Use after
+ * writes to user-scoped tables (inbox_overrides, inbox_override_exceptions)
+ * where you don't know which account caches need to be busted. */
+export async function invalidateAccountContextForUser(userId: string): Promise<void> {
+  const { data } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("id")
+    .eq("user_id", userId);
+  for (const acc of data ?? []) accountContextCache.delete(acc.id);
+}
 
 export async function loadAccountContext(accountId: string, userId: string): Promise<AccountContext> {
   const cached = accountContextCache.get(accountId);
@@ -462,7 +504,15 @@ export async function processGmailMessage(
   accountId: string,
   gmailId: string,
   userId: string,
-  opts: { context?: AccountContext; skipAi?: boolean; timings?: ProcessTimings } = {},
+  opts: {
+    context?: AccountContext;
+    skipAi?: boolean;
+    timings?: ProcessTimings;
+    /** Caller already has a parsed message (e.g. syncSinceHistory had to fetch
+     * it to record a manual move). Pass it here to skip the duplicate Gmail
+     * roundtrip. */
+    prefetched?: ReturnType<typeof parseMessage>;
+  } = {},
 ) {
   const t = opts.timings;
 
@@ -476,10 +526,17 @@ export async function processGmailMessage(
     .maybeSingle();
   if (t) t.db += performance.now() - _t0;
 
-  const _t1 = performance.now();
-  const raw = await getMessage(accountId, gmailId);
-  const parsed = parseMessage(raw);
-  if (t) t.fetch += performance.now() - _t1;
+  let parsed: ReturnType<typeof parseMessage>;
+  if (opts.prefetched) {
+    // Caller already paid for the Gmail roundtrip (e.g. syncSinceHistory
+    // fetched the message to record a manual move). Reuse it.
+    parsed = opts.prefetched;
+  } else {
+    const _t1 = performance.now();
+    const raw = await getMessage(accountId, gmailId);
+    parsed = parseMessage(raw);
+    if (t) t.fetch += performance.now() - _t1;
+  }
 
 
   if (existing) {
@@ -513,6 +570,11 @@ export async function processGmailMessage(
   if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return { skipped: true };
   const inInbox = labels.includes("INBOX");
 
+  // Pull the Pub/Sub publishTime that the webhook stashed when it enqueued
+  // this job. We persist it so a single SQL query can report push→visible
+  // p50/p95 latency.
+  const publishedAtMs = takePublishAt(accountId, gmailId);
+
   // 1) Insert the email row FIRST with no folder so it shows up in Inbox
   //    immediately, even if classification (AI Gateway) is slow or fails.
   //    Classification runs in step 2 and UPDATEs the row.
@@ -541,6 +603,7 @@ export async function processGmailMessage(
       is_archived: !inInbox,
       classified_by: "pending",
       processed_at: new Date().toISOString(),
+      published_at_ms: publishedAtMs,
     })
     .select("id")
     .single();
@@ -628,6 +691,9 @@ export async function processGmailMessage(
         snoozed_until?: string;
         forwarded_to?: string;
         forwarded_at?: string;
+        forward_attempts?: number;
+        forward_last_error?: string | null;
+        forward_next_retry_at?: string | null;
       } = {};
       if (inInbox && effectiveArchive) patch.is_archived = true;
       if (folder.auto_mark_read) patch.is_read = true;
@@ -644,8 +710,19 @@ export async function processGmailMessage(
           );
           patch.forwarded_to = folder.forward_to;
           patch.forwarded_at = new Date().toISOString();
+          // Clear any pending retry state from previous failures.
+          patch.forward_attempts = 0;
+          patch.forward_last_error = null;
+          patch.forward_next_retry_at = null;
         } catch (e) {
-          console.error("auto-forward failed", e);
+          // Schedule a retry instead of silently dropping. attempt counter and
+          // next_retry_at are picked up by retryForwardAttempts() below.
+          const errMsg = (e as Error)?.message?.slice(0, 500) ?? "unknown";
+          console.error("auto-forward failed; scheduling retry", errMsg);
+          const nextRetry = new Date(Date.now() + jitter(60) * 1000).toISOString();
+          patch.forward_attempts = 1;
+          patch.forward_last_error = errMsg;
+          patch.forward_next_retry_at = nextRetry;
         }
       }
       if (Object.keys(patch).length > 0) {
@@ -1231,16 +1308,62 @@ function jitter(seconds: number): number {
   return Math.floor(seconds * (0.75 + Math.random() * 0.5));
 }
 
+/** Seconds until midnight US/Pacific (Gmail per-user quotas reset at midnight
+ * PT). DST-aware via Intl. */
+function secondsUntilMidnightPT(now = new Date()): number {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
+  const h = parseInt(parts.hour ?? "0", 10);
+  const m = parseInt(parts.minute ?? "0", 10);
+  const s = parseInt(parts.second ?? "0", 10);
+  const elapsed = h * 3600 + m * 60 + s;
+  return Math.max(60, 86400 - elapsed);
+}
+
+/** Pick a backoff that respects, in order: Retry-After header, quotaExceeded
+ * (wait until midnight PT), retryable vs terminal table, attempt index. */
+export function computeBackoffSeconds(opts: {
+  retryable: boolean;
+  retryAfterSeconds: number | null;
+  isQuotaExceeded: boolean;
+  currentAttempt: number;
+  nextAttempt: number;
+}): number {
+  if (opts.retryAfterSeconds && opts.retryAfterSeconds > 0) {
+    return jitter(opts.retryAfterSeconds);
+  }
+  if (opts.isQuotaExceeded) {
+    // Adding a hard upper bound so we don't sleep > 6h. Per-user quota is
+    // daily; 6h is plenty for the daily reset to land.
+    return Math.min(secondsUntilMidnightPT(), 6 * 3600);
+  }
+  const table = opts.retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
+  const idx = opts.retryable
+    ? Math.min(opts.currentAttempt, table.length - 1)
+    : Math.min(opts.nextAttempt - 1, table.length - 1);
+  return jitter(table[idx]);
+}
+
 export async function enqueueMessageJob(
   accountId: string,
   userId: string,
   gmailMessageId: string,
   priority: number = 0,
+  opts: { publishedAtMs?: number | null } = {},
 ) {
   // Upsert so the same message is never queued twice. If a job already exists
   // (pending or dlq), do nothing — the worker / retry button owns it from here.
   // priority: 0 = live (push/poll), 10 = backfill. Worker orders by priority ASC
   // so live mail always jumps ahead of the backfill backlog.
+  //
+  // We jitter next_run_at by 0–500ms so a burst of N events from a single Pub/Sub
+  // delivery doesn't collide on the same instant — multiple workers can claim
+  // disjoint slices instead of contending for the same head of the queue.
+  const jitterMs = Math.floor(Math.random() * 500);
   await supabaseAdmin
     .from("message_jobs")
     .upsert(
@@ -1250,10 +1373,39 @@ export async function enqueueMessageJob(
         user_id: userId,
         status: "pending",
         priority,
-        next_run_at: new Date().toISOString(),
+        next_run_at: new Date(Date.now() + jitterMs).toISOString(),
+        // Stash publish time so we can compute end-to-end latency once
+        // processGmailMessage inserts the email row. Best-effort: the column
+        // doesn't exist on message_jobs, so we thread it through pendingPublishAt
+        // instead (see processGmailMessage).
       },
       { onConflict: "gmail_account_id,gmail_message_id", ignoreDuplicates: true },
     );
+  if (opts.publishedAtMs && opts.publishedAtMs > 0) {
+    rememberPublishAt(accountId, gmailMessageId, opts.publishedAtMs);
+  }
+}
+
+// Map of (accountId:messageId) → Pub/Sub publishTime in ms. Populated by the
+// webhook handler when it enqueues; consumed by processGmailMessage when it
+// inserts the email row, then deleted. Memory bound is tiny (one number per
+// in-flight push event) but we still cap the map to avoid pathological growth
+// if processing falls way behind.
+const pendingPublishAt = new Map<string, number>();
+const PENDING_PUBLISH_MAX = 5000;
+export function rememberPublishAt(accountId: string, messageId: string, publishedAtMs: number) {
+  if (pendingPublishAt.size >= PENDING_PUBLISH_MAX) {
+    // Evict oldest insertion (Map iteration order = insertion).
+    const first = pendingPublishAt.keys().next().value;
+    if (first) pendingPublishAt.delete(first);
+  }
+  pendingPublishAt.set(`${accountId}:${messageId}`, publishedAtMs);
+}
+function takePublishAt(accountId: string, messageId: string): number | null {
+  const k = `${accountId}:${messageId}`;
+  const v = pendingPublishAt.get(k) ?? null;
+  if (v !== null) pendingPublishAt.delete(k);
+  return v;
 }
 
 export async function runMessageJobs(
@@ -1349,6 +1501,8 @@ export async function runMessageJobs(
     const retryable: boolean = e instanceof GmailApiError
       ? e.retryable
       : (typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg));
+    const retryAfterSeconds: number | null = e instanceof GmailApiError ? e.retryAfterSeconds : null;
+    const isQuotaExceeded: boolean = e instanceof GmailApiError ? e.isQuotaExceeded : false;
 
     if (status === 404 || (typeof msg === "string" && msg.includes(" 404 "))) {
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
@@ -1381,15 +1535,19 @@ export async function runMessageJobs(
       }).eq("id", job.id);
       results.push({ id: job.id, ok: false, dlq: true, error: msg });
     } else {
-      const table = retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
-      const idx = retryable ? Math.min(currentAttempt, table.length - 1) : Math.min(nextAttempt - 1, table.length - 1);
-      const backoff = jitter(table[idx]);
+      const backoffSeconds = computeBackoffSeconds({
+        retryable,
+        retryAfterSeconds,
+        isQuotaExceeded,
+        currentAttempt,
+        nextAttempt,
+      });
       await supabaseAdmin.from("message_jobs").update({
         status: "pending",
         attempt: nextAttempt,
         last_error: msg.slice(0, 1000),
         locked_at: null,
-        next_run_at: new Date(Date.now() + backoff * 1000).toISOString(),
+        next_run_at: new Date(Date.now() + backoffSeconds * 1000).toISOString(),
       }).eq("id", job.id);
       results.push({ id: job.id, ok: false, retryable, error: msg });
     }
@@ -1555,16 +1713,23 @@ export async function retryMessageJob(jobId: string) {
   }).eq("id", jobId);
 }
 
-export async function syncSinceHistory(accountId: string) {
+export async function syncSinceHistory(
+  accountId: string,
+  opts: { publishedAtMs?: number | null } = {},
+) {
+  // Coalesce overlapping calls per account. A Pub/Sub redelivery + the
+  // polling cron + a manual sync click can otherwise all run at once, race
+  // on history_id, and either miss events or burn duplicate work.
+  return withAccountLock(accountId, () => syncSinceHistoryLocked(accountId, opts));
+}
+
+async function syncSinceHistoryLocked(
+  accountId: string,
+  opts: { publishedAtMs?: number | null } = {},
+) {
   const account = await getAccount(accountId);
   if (!account.history_id) {
-    await backfillRecent(accountId, account.user_id, 20);
-    const recent = await listMessages(accountId, { maxResults: 1 });
-    if (recent.messages?.[0]) {
-      const m = await getMessage(accountId, recent.messages[0].id);
-      await bumpHistoryAndWatch(accountId, m.historyId);
-    }
-    return { bootstrapped: true };
+    return await bootstrapAccount(accountId, account.user_id);
   }
   try {
     const hist = await listHistory(accountId, account.history_id);
@@ -1574,20 +1739,32 @@ export async function syncSinceHistory(accountId: string) {
     const labelToFolder = new Map<string, Folder>();
     for (const f of folderList) if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f);
 
+    // Batch deletes / label changes so a history page with N events is N
+    // events worth of work, not N×roundtrips.
+    const toDelete = new Set<string>();
+    type LabelOp = { messageId: string; currentLabels: string[] | undefined; added: string[]; removed: string[] };
+    const labelOps: LabelOp[] = [];
+
     for (const h of hist.history || []) {
       const added = h.messagesAdded?.map((x) => x.message) ?? h.messages ?? [];
       for (const m of added) {
         if (seenAdded.has(m.id)) continue;
         seenAdded.add(m.id);
-        try { await enqueueMessageJob(accountId, account.user_id, m.id); } catch (e) { console.error("enqueue failed", e); }
+        try {
+          await enqueueMessageJob(accountId, account.user_id, m.id, 0, {
+            publishedAtMs: opts.publishedAtMs ?? null,
+          });
+        } catch (e) { console.error("enqueue failed", e); }
       }
       for (const ev of h.labelsAdded ?? []) {
-        try { await applyLabelChange(accountId, ev.message.id, ev.message.labelIds, ev.labelIds, []); } catch (e) { console.error("applyLabelChange add failed", e); }
+        labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
         const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
         if (matched.length === 0) continue;
         try {
-          const raw = await getMessage(accountId, ev.message.id);
-          const p = parseMessage(raw);
+          // Metadata fetch — 10x smaller than full body — is enough to record
+          // the manual-move example (from_addr/subject/snippet).
+          const meta = await getMessageMetadata(accountId, ev.message.id);
+          const p = parseMessage(meta);
           for (const folder of matched) {
             await recordManualMove(folder, accountId, account.user_id, {
               gmail_message_id: p.gmail_message_id,
@@ -1599,17 +1776,37 @@ export async function syncSinceHistory(accountId: string) {
         } catch (e) { console.error("labelAdded handler failed", e); }
       }
       for (const ev of h.labelsRemoved ?? []) {
-        try { await applyLabelChange(accountId, ev.message.id, ev.message.labelIds, [], ev.labelIds); } catch (e) { console.error("applyLabelChange remove failed", e); }
+        labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: [], removed: ev.labelIds });
       }
       for (const ev of h.messagesDeleted ?? []) {
-        try {
-          await supabaseAdmin.from("emails").delete()
-            .eq("gmail_account_id", accountId)
-            .eq("gmail_message_id", ev.message.id);
-        } catch (e) { console.error("messagesDeleted handler failed", e); }
+        toDelete.add(ev.message.id);
       }
     }
+
+    // Apply label ops sequentially per message (each one may need a row
+    // read), but only after we've finished the page so labelsAdded +
+    // labelsRemoved for the same message don't fight each other mid-loop.
+    for (const op of labelOps) {
+      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed); }
+      catch (e) { console.error("applyLabelChange failed", e); }
+    }
+
+    if (toDelete.size > 0) {
+      try {
+        await supabaseAdmin.from("emails").delete()
+          .eq("gmail_account_id", accountId)
+          .in("gmail_message_id", Array.from(toDelete));
+      } catch (e) { console.error("messagesDeleted batch handler failed", e); }
+    }
+
     if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);
+    // Record the timestamp so silence-detection can tell the difference between
+    // "no new mail" (this column ticks every sync) and "Pub/Sub is broken".
+    try {
+      await supabaseAdmin.from("gmail_accounts")
+        .update({ last_history_sync_at: new Date().toISOString() })
+        .eq("id", accountId);
+    } catch { /* best-effort */ }
     return { synced: seenAdded.size };
   } catch (e: any) {
     console.error("history failed, rebootstrapping", e.message);
@@ -1619,17 +1816,148 @@ export async function syncSinceHistory(accountId: string) {
 }
 
 /**
+ * Bootstrap a Gmail account whose history_id is null/expired. The naive path
+ * pulls the last 20 messages, which loses every message between our newest
+ * local row and Gmail's current head. Here we anchor the bootstrap to the
+ * newest local email so the gap (whether 5 minutes or 5 days) is filled in.
+ */
+async function bootstrapAccount(accountId: string, userId: string) {
+  // Find the newest local email for this account; anchor the catch-up to it.
+  const { data: newest } = await supabaseAdmin
+    .from("emails")
+    .select("received_at")
+    .eq("gmail_account_id", accountId)
+    .not("received_at", "is", null)
+    .order("received_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (newest?.received_at) {
+    const anchorSecs = Math.floor(new Date(newest.received_at).getTime() / 1000);
+    // Page through Gmail since the anchor, enqueueing every id we don't have yet.
+    // We cap the bootstrap at 2000 messages — anything older falls to the
+    // deep-backfill job rather than blocking this critical-path call.
+    const MAX_BOOTSTRAP = 2000;
+    let pageToken: string | undefined;
+    const collected: string[] = [];
+    while (collected.length < MAX_BOOTSTRAP) {
+      const list = await listMessages(accountId, {
+        q: `after:${anchorSecs} -in:chats -in:trash -in:spam`,
+        maxResults: 100,
+        pageToken,
+      });
+      for (const m of list.messages ?? []) collected.push(m.id);
+      pageToken = list.nextPageToken;
+      if (!pageToken) break;
+    }
+
+    if (collected.length > 0) {
+      const seen = new Set<string>();
+      const ids = collected.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+      for (let i = 0; i < ids.length; i += 500) {
+        const slice = ids.slice(i, i + 500);
+        const { data: existing } = await supabaseAdmin
+          .from("emails")
+          .select("gmail_message_id")
+          .eq("gmail_account_id", accountId)
+          .in("gmail_message_id", slice);
+        const have = new Set((existing ?? []).map((r) => r.gmail_message_id));
+        for (const id of slice) {
+          if (have.has(id)) continue;
+          try { await enqueueMessageJob(accountId, userId, id, 0); }
+          catch (e) { console.error("bootstrap enqueue failed", id, e); }
+        }
+      }
+    }
+  } else {
+    // No local rows at all — fall back to the original 30-day primer.
+    await backfillRecent(accountId, userId, 100);
+  }
+
+  const recent = await listMessages(accountId, { maxResults: 1 });
+  if (recent.messages?.[0]) {
+    const m = await getMessage(accountId, recent.messages[0].id);
+    await bumpHistoryAndWatch(accountId, m.historyId);
+  }
+  // Stamp last_history_sync_at so the poll cron's silence-detection treats this
+  // freshly-bootstrapped account as healthy.
+  try {
+    await supabaseAdmin.from("gmail_accounts")
+      .update({ last_history_sync_at: new Date().toISOString() })
+      .eq("id", accountId);
+  } catch { /* best-effort */ }
+  return { bootstrapped: true };
+}
+
+/**
  * Safety net: reconcile rows the app still considers "in inbox" against Gmail's
  * actual current labels. Catches messages whose history events we missed.
  */
 export async function reconcileLocalInbox(accountId: string, limit = 100) {
-  const { data: rows } = await supabaseAdmin
+  // Pull the active "head" window (recent inbox) AND a rotating older slice
+  // anchored at reconcile_cursor. Across runs the cursor walks backwards, so
+  // a 1k-message inbox is fully reconciled within ~10 ticks instead of "the
+  // first 100 forever, the rest never".
+  const { data: acc } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("reconcile_cursor")
+    .eq("id", accountId)
+    .maybeSingle();
+  const cursor = acc?.reconcile_cursor ?? null;
+
+  // Head window: most recent N inbox rows. These are the ones a user is most
+  // likely to be looking at right now, so it's worth always checking them.
+  const HEAD_LIMIT = Math.min(limit, 60);
+  const TAIL_LIMIT = Math.max(0, limit - HEAD_LIMIT);
+
+  const { data: headData } = await supabaseAdmin
     .from("emails")
     .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
     .eq("gmail_account_id", accountId)
     .eq("is_archived", false)
     .order("received_at", { ascending: false, nullsFirst: true })
-    .limit(limit);
+    .limit(HEAD_LIMIT);
+
+  type RecRow = NonNullable<typeof headData>[number];
+  let tailData: RecRow[] = [];
+  if (TAIL_LIMIT > 0) {
+    let q = supabaseAdmin
+      .from("emails")
+      .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
+      .eq("gmail_account_id", accountId);
+    if (cursor) q = q.lt("received_at", cursor);
+    const { data } = await q
+      .order("received_at", { ascending: false, nullsFirst: false })
+      .limit(TAIL_LIMIT);
+    tailData = (data ?? []) as RecRow[];
+  }
+
+  const rows: RecRow[] = [...(headData ?? []), ...tailData];
+
+  // Advance the cursor to the oldest received_at we just touched in the tail
+  // window. If we ran out (no tail rows older than cursor), wrap to NOW so
+  // the next tick starts from the top again.
+  let newCursor: string | null = cursor;
+  if (TAIL_LIMIT > 0) {
+    const oldest = tailData.reduce<string | null>((acc, r) => {
+      if (!r.received_at) return acc;
+      return !acc || r.received_at < acc ? r.received_at : acc;
+    }, null);
+    if (oldest) {
+      newCursor = oldest;
+    } else if (cursor) {
+      // Walked off the end — reset to start the loop over next time.
+      newCursor = null;
+    }
+  }
+  if (newCursor !== cursor) {
+    try {
+      await supabaseAdmin
+        .from("gmail_accounts")
+        .update({ reconcile_cursor: newCursor })
+        .eq("id", accountId);
+    } catch (e) { console.error("reconcile cursor update failed", e); }
+  }
 
 
   let archived = 0;
@@ -1638,7 +1966,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
   let repaired = 0;
   let failed = 0;
 
-  for (const row of rows ?? []) {
+  for (const row of rows) {
     try {
       const needsRepair =
         !row.from_addr ||
@@ -1753,7 +2081,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     }
   }
 
-  return { checked: rows?.length ?? 0, archived, deleted, updated, repaired, failed, archived_checked: archivedRows?.length ?? 0, unarchived };
+  return { checked: rows.length, archived, deleted, updated, repaired, failed, archived_checked: archivedRows?.length ?? 0, unarchived };
 }
 
 /**
@@ -1896,4 +2224,132 @@ export async function loadOlderFromLabel(
     .eq("id", folderId);
 
   return { ingested, claimed, hasMore };
+}
+
+// ─── Forward-to retries ───────────────────────────────────────────────────
+//
+// When auto-forward fails (rate-limited, recipient mailbox down, transient
+// 5xx) we used to log to console and move on, leaving the user no way to
+// know their automation didn't run. Now we stamp forward_attempts +
+// forward_next_retry_at on the email row and this function picks them up
+// from the cron tick.
+
+const FORWARD_MAX_ATTEMPTS = 5;
+const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600]; // 1m, 5m, 30m, 2h, 6h
+
+export async function retryForwardAttempts(maxRows = 50) {
+  const { data: rows } = await supabaseAdmin
+    .from("emails")
+    .select("id, gmail_account_id, gmail_message_id, folder_id, subject, from_addr, from_name, body_text, snippet, received_at, forward_attempts")
+    .lte("forward_next_retry_at", new Date().toISOString())
+    .not("forward_next_retry_at", "is", null)
+    .lt("forward_attempts", FORWARD_MAX_ATTEMPTS)
+    .limit(maxRows);
+
+  let ok = 0;
+  let failed = 0;
+  let gaveUp = 0;
+  for (const row of rows ?? []) {
+    let forwardTo: string | null = null;
+    if (row.folder_id) {
+      const { data: folder } = await supabaseAdmin
+        .from("folders")
+        .select("forward_to")
+        .eq("id", row.folder_id)
+        .maybeSingle();
+      forwardTo = folder?.forward_to ?? null;
+    }
+    if (!forwardTo) {
+      // Folder was deleted or forward_to cleared — abandon the retry.
+      await supabaseAdmin.from("emails").update({
+        forward_next_retry_at: null,
+        forward_last_error: "forward_to no longer set",
+      }).eq("id", row.id);
+      gaveUp++;
+      continue;
+    }
+
+    try {
+      await sendMessage(
+        row.gmail_account_id,
+        forwardTo,
+        `Fwd: ${row.subject || "(no subject)"}`,
+        `---------- Forwarded message ----------\nFrom: ${row.from_name || ""} <${row.from_addr}>\nDate: ${row.received_at}\nSubject: ${row.subject}\n\n${row.body_text || row.snippet || ""}`,
+      );
+      await supabaseAdmin.from("emails").update({
+        forwarded_to: forwardTo,
+        forwarded_at: new Date().toISOString(),
+        forward_attempts: 0,
+        forward_last_error: null,
+        forward_next_retry_at: null,
+      }).eq("id", row.id);
+      ok++;
+    } catch (e) {
+      const errMsg = (e as Error)?.message?.slice(0, 500) ?? "unknown";
+      const nextAttempt = (row.forward_attempts ?? 0) + 1;
+      if (nextAttempt >= FORWARD_MAX_ATTEMPTS) {
+        await supabaseAdmin.from("emails").update({
+          forward_attempts: nextAttempt,
+          forward_last_error: errMsg,
+          forward_next_retry_at: null, // give up — user can re-trigger manually
+        }).eq("id", row.id);
+        gaveUp++;
+      } else {
+        const backoff = jitter(FORWARD_BACKOFF_SECONDS[Math.min(nextAttempt - 1, FORWARD_BACKOFF_SECONDS.length - 1)]);
+        await supabaseAdmin.from("emails").update({
+          forward_attempts: nextAttempt,
+          forward_last_error: errMsg,
+          forward_next_retry_at: new Date(Date.now() + backoff * 1000).toISOString(),
+        }).eq("id", row.id);
+        failed++;
+      }
+    }
+  }
+  return { processed: rows?.length ?? 0, ok, failed, gaveUp };
+}
+
+// ─── DLQ auto-replay ──────────────────────────────────────────────────────
+//
+// Jobs that hit 5 retryable failures end up in the DLQ — a one-off Gmail 5xx
+// outage from a few hours ago can park hundreds of messages there. Rather
+// than waiting for manual operator clicks, this function returns DLQ rows
+// whose last_error looks transient back to pending with a fresh attempt
+// counter and a long backoff.
+
+const TRANSIENT_DLQ_PATTERNS = [
+  /\b5\d{2}\b/,
+  /timeout/i,
+  /\bECONNRESET\b/,
+  /\bETIMEDOUT\b/,
+  /\bfetch failed\b/,
+  /\b429\b/,
+  /unavailable/i,
+];
+
+export async function replayTransientDlq(maxRows = 200) {
+  const { data: rows } = await supabaseAdmin
+    .from("message_jobs")
+    .select("id, last_error, attempt")
+    .eq("status", "dlq")
+    .order("updated_at", { ascending: false })
+    .limit(maxRows);
+  let replayed = 0;
+  let skipped = 0;
+  for (const row of rows ?? []) {
+    const transient = typeof row.last_error === "string" &&
+      TRANSIENT_DLQ_PATTERNS.some((p) => p.test(row.last_error!));
+    if (!transient) { skipped++; continue; }
+    await supabaseAdmin.from("message_jobs").update({
+      status: "pending",
+      attempt: 0,
+      locked_at: null,
+      // Spread the replay over a 10-minute window so a big chunk doesn't
+      // hammer Gmail all at once and re-trigger the same rate-limit that
+      // originally killed them.
+      next_run_at: new Date(Date.now() + Math.floor(Math.random() * 10 * 60 * 1000)).toISOString(),
+      last_error: `auto-replayed from DLQ at ${new Date().toISOString()} (was: ${row.last_error?.slice(0, 200) ?? ""})`,
+    }).eq("id", row.id);
+    replayed++;
+  }
+  return { checked: rows?.length ?? 0, replayed, skipped };
 }
