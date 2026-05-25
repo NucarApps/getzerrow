@@ -10,9 +10,10 @@ type Props = {
   onToggle: () => void;
   onEdit?: () => void;
   aliasCount?: number;
+  logoProvider?: number | null;
 };
 
-export function CompanyBucketHeader({ domain, name, count, collapsed, onToggle, onEdit, aliasCount = 0 }: Props) {
+export function CompanyBucketHeader({ domain, name, count, collapsed, onToggle, onEdit, aliasCount = 0, logoProvider = null }: Props) {
   const [color, setColor] = useState<string | null>(null);
 
   const tinted = !!(color && domain);
@@ -31,7 +32,7 @@ export function CompanyBucketHeader({ domain, name, count, collapsed, onToggle, 
       }`}
     >
       <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <CompanyLogo domain={domain} name={name} size={32} onColor={setColor} />
+        <CompanyLogo domain={domain} name={name} size={32} onColor={setColor} provider={logoProvider} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-foreground">{name}</div>
           <div className="truncate text-xs text-muted-foreground">
