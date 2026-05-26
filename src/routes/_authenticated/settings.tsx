@@ -49,10 +49,10 @@ function SettingsPage() {
     setBusy(null);
   }
 
-  async function startConnect() {
-    setBusy("connect");
+  async function startConnect(loginHint?: string) {
+    setBusy(loginHint ? `reconnect-${loginHint}` : "connect");
     try {
-      const { url } = await connect();
+      const { url } = await connect({ data: loginHint ? { login_hint: loginHint } : {} });
       window.location.href = url;
     } catch (e: any) { toast.error(e.message); setBusy(null); }
   }
