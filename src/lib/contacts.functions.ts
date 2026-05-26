@@ -358,6 +358,12 @@ Fields:
 - website: company or personal website URL
 - linkedin: full LinkedIn profile URL
 - twitter: full Twitter/X profile URL
+- address_line1: street address, first line (only if a postal address is clearly printed in a signature)
+- address_line2: apt / suite / floor (only if present)
+- city: city / locality
+- region: state / province / region
+- postal_code: ZIP / postal code
+- country: country
 
 Emails (most-signature-likely first):
 ${sample}`,
@@ -378,9 +384,15 @@ ${sample}`,
       twitter?: string | null;
       relationship_summary?: string | null;
       summary_generated_at?: string | null;
+      address_line1?: string | null;
+      address_line2?: string | null;
+      city?: string | null;
+      region?: string | null;
+      postal_code?: string | null;
+      country?: string | null;
     } = { enriched_at: new Date().toISOString() };
-    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
-      let v = extracted[k];
+    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter", ...ADDRESS_FIELDS] as const) {
+      const v = extracted[k];
       if (k === "name") {
         let best = pickBetterName(contact.name, fromNameCandidate);
         best = pickBetterName(best, v);
