@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ACTIVE_BUFF_BLANK,
   BASE_COOLDOWN,
   BOSS_LEVEL_INTERVAL,
   BULLET_SPEED,
