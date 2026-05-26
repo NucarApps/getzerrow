@@ -1,45 +1,60 @@
-## Fix: "Always send to inbox" should mean allowlist, not blocklist
+# Make "All Inbox" mirror Gmail's INBOX label
 
-Today the classifier treats any hit on `inbox_overrides` as a global *exclude* — the message is auto-archived and AI is skipped. That contradicts the UI ("Always send to inbox") and the project's stated intent, and it's why Jim B's emails (and 8 others since 5/20) disappeared from the Zerrow inbox even though they're in Gmail.
+## Goal
+"All Inbox" should show every email that has Gmail's `INBOX` label — even if it's also routed to a Zerrow folder. If you (or Gmail) remove the INBOX label (archive), it disappears from All Inbox and only shows up in All Mail.
 
-You picked option 1: **inbox overrides are an allowlist**. A hit forces the email into the inbox and bypasses folder rules / AI. Exceptions let specific messages (e.g. `subject starts_with "RE: Daily Reports"`) fall back to normal sorting.
+## Why the change
+Today "All Inbox" filters on `is_archived = false`. That column gets flipped to `true` by folder side-effects (`auto_archive`, `hide_from_inbox`) even when the email still has the INBOX label in Gmail. That's why foldered items disappear and the view doesn't match Gmail.
 
-### Changes
+The fix is to switch the inbox view from `is_archived` to "raw_labels contains INBOX". `raw_labels` is already kept in sync by parse + reconcile + history poll, so it's the canonical Gmail state.
 
-**1. `src/lib/sync/classify.ts` — flip the override branch**
-- When `overrideWins` is true, do NOT set `aiSkipped` and do NOT route to `global_exclude`.
-- Instead: set `folder_id = null`, `classified_by = "inbox_override"`, `classification_reason = 'Always-inbox: ${match_type} "${value}"'`, and skip folder/AI evaluation entirely. Null folder + not archived = lands in inbox.
-- Keep the existing `overrides_inbox_override` folder escape hatch (a folder flagged that way still beats the override — that flag becomes "this folder is important enough to pull mail out of the always-inbox list", which still makes sense).
-- Keep the exception logic: an exception causes the override to be ignored and classification continues normally (filters → AI).
+## Changes
 
-**2. `src/lib/sync/process-message.ts` — make sure side-effects respect override**
-- Verify (and adjust if needed) that when `classified_by === "inbox_override"` we do NOT auto-archive, do NOT auto-mark-read, do NOT hide-from-inbox, do NOT forward, do NOT snooze. Folder side-effects only fire when a folder matched.
+### 1. `src/routes/_authenticated/inbox.tsx` — query filter
+In the emails query (around line 423), replace:
+```ts
+if (selectedFolder === "all") q = q.eq("is_archived", false);
+```
+with:
+```ts
+if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]);
+```
 
-**3. Data cleanup migration**
-- Un-archive existing emails that were wrongly archived by the old logic:
-  ```sql
-  UPDATE public.emails
-     SET is_archived = false,
-         classified_by = 'inbox_override',
-         classification_reason = 'Restored: always-inbox rule (was incorrectly archived)'
-   WHERE classified_by = 'global_exclude'
-     AND is_archived = true;
-  ```
-- This brings Jim B's 9 messages and the Raymond Karen messages back into the inbox without a re-sync.
+Per-folder selection (`folder_id = selectedFolder`) and All Mail stay as they are.
 
-**4. `src/components/settings/InboxOverrides.tsx` — copy tweak**
-- The label is already "Always send to inbox" so it's fine. Update the helper sentence about exceptions to match the new (correct) behavior — it already reads correctly, just verify wording matches "skip folder rules and AI sorting".
+### 2. `src/lib/use-email-realtime.ts` — `rowBelongsInList`
+Update the `"inbox"` tag branch so it matches the new rule:
+```ts
+if (tag === "inbox") {
+  return Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
+}
+```
+Add `raw_labels: string[] | null` to `EmailRow`. Update `rowBelongsInList` tests in `src/lib/realtime-belongs.test.ts` accordingly (inbox = raw_labels contains INBOX; folder_id no longer disqualifies).
 
-**5. Tests**
-- Update `src/lib/sync-classify.test.ts`: the existing test that asserts `classified_by === "global_exclude"` on override hit should now assert `classified_by === "inbox_override"`, `folder_id === null`, and side-effects-not-applied.
+### 3. Optimistic updates in `inbox.tsx`
+A few mutation handlers patch `is_archived` to reflect "now archived / now in inbox". Update those to also patch `raw_labels` so the realtime cache filter agrees:
+- Unarchive / move-to-inbox handlers (lines ~847, 875, 1435): set `raw_labels` to include `"INBOX"` (add if missing) alongside `is_archived: false`.
+- Archive / move-to-folder handlers (lines ~899–907, 1124, 1346, 1478): set `raw_labels` to exclude `"INBOX"` alongside `is_archived: true`.
 
-### Out of scope
-- No schema changes to `inbox_overrides` / `inbox_override_exceptions` — the tables and UI stay as-is.
-- No blocklist feature. If you ever want "never put this in my inbox", that's a separate folder with a filter + `auto_archive` + `hide_from_inbox` — which is what folders already do.
+Small helper inside the file:
+```ts
+const withInbox = (labels: string[] | null | undefined) =>
+  Array.from(new Set([...(labels ?? []), "INBOX"]));
+const withoutInbox = (labels: string[] | null | undefined) =>
+  (labels ?? []).filter((l) => l !== "INBOX");
+```
 
-### Files touched
-- `src/lib/sync/classify.ts` (logic flip)
-- `src/lib/sync/process-message.ts` (verify side-effect gating)
-- `src/lib/sync-classify.test.ts` (update assertions)
-- `src/components/settings/InboxOverrides.tsx` (minor copy check)
-- New migration: un-archive the wrongly-archived rows
+### 4. Counts / labels
+`labelForFolder` and badge counts that rely on the "all" query don't need changes — they read from the same query.
+
+## Out of scope
+- No schema changes.
+- No change to "Archived" view, per-folder views, search, or All Mail.
+- No change to `is_archived` writes in `process-message` / `reconcile` — that column still drives folder side-effects; we just stop using it as the inbox filter.
+- No re-archiving of the emails restored by the previous override fix; they'll naturally drop out of All Inbox only if their INBOX label is gone in Gmail.
+
+## Verification
+- Open All Inbox: a foldered email that still has Gmail's INBOX label appears (previously hidden).
+- Archive an email in Zerrow → disappears from All Inbox, appears in All Mail.
+- Archive an email in Gmail directly → after next sync, disappears from All Inbox.
+- Update `realtime-belongs.test.ts` and run `bunx vitest run src/lib/realtime-belongs.test.ts`.

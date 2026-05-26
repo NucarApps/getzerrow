@@ -87,11 +87,17 @@ type Email = {
   to_addrs: string | null;
   has_attachment: boolean;
   processed_at: string | null;
+  raw_labels?: string[] | null;
 };
 
 type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
 
 const PAGE_SIZE = 50;
+
+const withInbox = (labels: string[] | null | undefined): string[] =>
+  Array.from(new Set([...(labels ?? []), "INBOX"]));
+const withoutInbox = (labels: string[] | null | undefined): string[] =>
+  (labels ?? []).filter((l) => l !== "INBOX");
 
 const MIN_PX = 400;
 
@@ -420,7 +426,7 @@ function InboxPage() {
       } else {
         const nowIso = new Date().toISOString();
         q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
-        if (selectedFolder === "all") q = q.eq("is_archived", false);
+        if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]);
         else if (isNoRules) q = q.is("folder_id", null);
         else q = q.eq("folder_id", selectedFolder);
       }
@@ -844,7 +850,7 @@ function InboxPage() {
                   <>
                     <ContextMenuItem
                       onSelect={async () => {
-                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, classified_by: "manual_inbox" } : x)));
+                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, raw_labels: withInbox(x.raw_labels), classified_by: "manual_inbox" } : x)));
                         try {
                           await moveInboxFn({ data: { email_id: e.id } });
                           toast.success("Moved to inbox");
@@ -872,7 +878,7 @@ function InboxPage() {
                       <>
                         <ContextMenuItem
                           onSelect={async () => {
-                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, classified_by: "manual_inbox" } : x)));
+                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, raw_labels: withInbox(x.raw_labels), classified_by: "manual_inbox" } : x)));
                             try {
                               await moveInboxFn({ data: { email_id: e.id } });
                               toast.success("Moved to inbox");
@@ -901,7 +907,7 @@ function InboxPage() {
                             prev?.flatMap((x) => {
                               if (x.id !== e.id) return [x];
                               // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
-                              return [{ ...x, folder_id: f.id, is_archived: true, classified_by: "manual_move" }];
+                              return [{ ...x, folder_id: f.id, is_archived: true, raw_labels: withoutInbox(x.raw_labels), classified_by: "manual_move" }];
                             }),
                           );
                           qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
@@ -1121,7 +1127,7 @@ function InboxPage() {
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   onSelect={async () => {
-                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true } : x)));
+                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true, raw_labels: withoutInbox(x.raw_labels) } : x)));
                     try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
                     catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
                   }}
@@ -1343,7 +1349,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     setMoving(true);
     // Optimistic: flip folder_id locally so the row jumps immediately.
     qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-      prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id, is_archived: true } : e)),
+      prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id, is_archived: true, raw_labels: withoutInbox(e.raw_labels) } : e)),
     );
     try {
       const r = await moveFn({ data: { email_id: email.id, to_folder_id: target.id } });
@@ -1432,7 +1438,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                     onSelect={async () => {
                       setMoving(true);
                       qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                        prev?.map((e) => (e.id === email.id ? { ...e, folder_id: null, is_archived: false } : e)),
+                        prev?.map((e) => (e.id === email.id ? { ...e, folder_id: null, is_archived: false, raw_labels: withInbox(e.raw_labels) } : e)),
                       );
                       try {
                         const r = await inboxFn({ data: { email_id: email.id, add_override: null } });
@@ -1475,7 +1481,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={async () => {
-            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
+            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true, raw_labels: withoutInbox(e.raw_labels) } : e)));
             try { await archFn({ data: { id: email.id } }); toast.success("Archived"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
           }}>
