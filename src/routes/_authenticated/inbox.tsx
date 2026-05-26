@@ -878,7 +878,7 @@ function InboxPage() {
                       <>
                         <ContextMenuItem
                           onSelect={async () => {
-                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, classified_by: "manual_inbox" } : x)));
+                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, raw_labels: withInbox(x.raw_labels), classified_by: "manual_inbox" } : x)));
                             try {
                               await moveInboxFn({ data: { email_id: e.id } });
                               toast.success("Moved to inbox");
