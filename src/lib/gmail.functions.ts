@@ -58,25 +58,58 @@ async function getEmailAccount(userId: string, emailId: string) {
   };
 }
 
+type GmailAccountStatusRow = {
+  id: string;
+  email_address: string;
+  history_id: string | null;
+  watch_expiration: string | null;
+  last_poll_at: string | null;
+  created_at: string;
+  refresh_token_present: boolean;
+};
+type GmailAccountStatusRpc = {
+  rpc: (
+    fn: "list_my_gmail_accounts_with_status",
+    args: Record<string, never>,
+  ) => Promise<{ data: GmailAccountStatusRow[] | null; error: { message: string } | null }>;
+};
+
 export const listMyGmailAccounts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data } = await supabaseAdmin
-      .from("gmail_accounts")
-      .select("id, email_address, history_id, watch_expiration, last_poll_at, created_at")
-      .eq("user_id", context.userId)
-      .order("created_at", { ascending: true });
-    return { accounts: data ?? [] };
+    // Use the authenticated client so the SECURITY DEFINER RPC sees the
+    // current user's auth.uid() — supabaseAdmin would run as service role
+    // and return an empty set.
+    const { data, error } = await (context.supabase as unknown as GmailAccountStatusRpc).rpc(
+      "list_my_gmail_accounts_with_status",
+      {},
+    );
+    if (error) throw new Error(`Failed to load Gmail accounts: ${error.message}`);
+    const rows = data ?? [];
+    return {
+      accounts: rows.map((r) => ({
+        id: r.id,
+        email_address: r.email_address,
+        history_id: r.history_id,
+        watch_expiration: r.watch_expiration,
+        last_poll_at: r.last_poll_at,
+        created_at: r.created_at,
+        needs_reauth: !r.refresh_token_present,
+      })),
+    };
   });
 
 export const startConnectGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d: { login_hint?: string } | undefined) =>
+    z.object({ login_hint: z.string().email().optional() }).parse(d ?? {})
+  )
+  .handler(async ({ data, context }) => {
     const host = getRequestHost();
     const origin = `https://${host}`;
     const redirectUri = getRedirectUri(origin);
     const state = signState(context.userId);
-    return { url: buildAuthorizeUrl(redirectUri, state) };
+    return { url: buildAuthorizeUrl(redirectUri, state, data.login_hint) };
   });
 
 export const connectGmailFromSession = createServerFn({ method: "POST" })

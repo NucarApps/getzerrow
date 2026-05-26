@@ -49,10 +49,10 @@ function SettingsPage() {
     setBusy(null);
   }
 
-  async function startConnect() {
-    setBusy("connect");
+  async function startConnect(loginHint?: string) {
+    setBusy(loginHint ? `reconnect-${loginHint}` : "connect");
     try {
-      const { url } = await connect();
+      const { url } = await connect({ data: loginHint ? { login_hint: loginHint } : {} });
       window.location.href = url;
     } catch (e: any) { toast.error(e.message); setBusy(null); }
   }
@@ -80,17 +80,15 @@ function SettingsPage() {
                     Your Gmail is connected automatically when you sign in with Google. Use "Reauthorize" if scopes change.
                   </p>
                 </div>
-                {accounts.length === 0 && (
-                  <Button onClick={startConnect} disabled={busy !== null} className="self-start md:self-auto">
-                    <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : "Reauthorize Gmail"}
-                  </Button>
-                )}
+                <Button onClick={() => startConnect()} disabled={busy !== null} className="self-start md:self-auto">
+                  <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : accounts.length === 0 ? "Connect Gmail" : "Reconnect Gmail"}
+                </Button>
               </div>
 
               <div className="mt-6 space-y-3">
                 {accounts.length === 0 && (
                   <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                    No Gmail connected yet. Sign out and sign back in with Google, or click "Reauthorize Gmail".
+                    No Gmail connected yet. Sign out and sign back in with Google, or click "Connect Gmail".
                   </p>
                 )}
                 {accounts.map((a) => {
@@ -102,7 +100,14 @@ function SettingsPage() {
                     <div key={a.id} className="rounded-md border border-border p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium">{a.email_address}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{a.email_address}</span>
+                            {a.needs_reauth && (
+                              <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                                Reconnect required
+                              </span>
+                            )}
+                          </div>
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {watchActive ? (
                               <><CheckCircle2 className="h-3 w-3 text-primary" />Real-time push active · renews {exp!.toLocaleDateString()}</>
@@ -117,6 +122,11 @@ function SettingsPage() {
                         </Button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
+                        {a.needs_reauth && (
+                          <Button size="sm" variant="default" onClick={() => startConnect(a.email_address)} disabled={busy !== null}>
+                            {busy === `reconnect-${a.email_address}` ? "Redirecting…" : "Reconnect"}
+                          </Button>
+                        )}
                         <Button size="sm" onClick={() => run(`bf-${a.id}`, () => backfill({ data: { account_id: a.id, count: 30 } }), "Backfilled latest 30")} disabled={busy !== null}>
                           {busy === `bf-${a.id}` ? "Backfilling…" : "Backfill recent 30"}
                         </Button>
