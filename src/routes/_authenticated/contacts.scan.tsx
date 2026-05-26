@@ -1,13 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { ArrowLeft, Camera, Save } from "lucide-react";
+import { ArrowLeft, Camera, Save, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { scanCard, createContactFromScan } from "@/lib/contacts.functions";
 import { sendMyCard } from "@/lib/cards.functions";
+import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/contacts/scan")({
@@ -18,6 +19,9 @@ type Draft = {
   name: string | null; title: string | null; company: string | null;
   email: string | null; phone: string | null; website: string | null;
   linkedin: string | null; twitter: string | null;
+  address_line1: string | null; address_line2: string | null;
+  city: string | null; region: string | null;
+  postal_code: string | null; country: string | null;
 };
 
 function ScanPage() {
