@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { getContact, enrichContact, updateContact, deleteContact, shareContactByEmail } from "@/lib/contacts.functions";
+import { getContact, enrichContact, updateContact, deleteContact, shareContactByEmail, getContactCardSignedUrl } from "@/lib/contacts.functions";
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
@@ -34,8 +34,19 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   const listGroups = useServerFn(listContactGroups);
   const setGroups = useServerFn(setContactGroups);
 
+  const fetchCardUrl = useServerFn(getContactCardSignedUrl);
+
   const q = useQuery({ queryKey: ["contact", id], queryFn: () => fetchOne({ data: { id } }) });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
+
+  const hasCardImage = Boolean((q.data?.contact as any)?.card_image_url);
+  const cardUrlQ = useQuery({
+    queryKey: ["contact-card-url", id, (q.data?.contact as any)?.card_image_url ?? null],
+    queryFn: () => fetchCardUrl({ data: { contactId: id } }),
+    enabled: hasCardImage,
+    staleTime: 8 * 60 * 1000, // refresh before the 10-minute signed URL expires
+  });
+  const cardImgSrc = cardUrlQ.data?.url ?? null;
 
   const myGroupIds = useMemo(() => {
     const ids = new Set<string>();
@@ -361,12 +372,18 @@ export function ContactDetailView({ id, onDeleted }: Props) {
               className="block w-full overflow-hidden rounded-md"
               aria-label="View card image"
             >
-              <img
-                src={(c as any).card_image_url}
-                alt="Scanned business card"
-                className="max-h-56 w-full object-contain bg-background"
-                loading="lazy"
-              />
+              {cardImgSrc ? (
+                <img
+                  src={cardImgSrc}
+                  alt="Scanned business card"
+                  className="max-h-56 w-full object-contain bg-background"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="flex h-40 w-full items-center justify-center bg-background text-xs text-muted-foreground">
+                  {cardUrlQ.isError ? "Couldn't load card image" : "Loading…"}
+                </div>
+              )}
             </button>
             <div className="mt-2 flex justify-end">
               <Button size="sm" variant="ghost" className="text-destructive" onClick={removeCardImage}>
@@ -380,11 +397,13 @@ export function ContactDetailView({ id, onDeleted }: Props) {
                 <DialogTitle>Business card</DialogTitle>
                 <DialogDescription className="sr-only">Full-size view of the scanned business card.</DialogDescription>
               </DialogHeader>
-              <img
-                src={(c as any).card_image_url}
-                alt="Scanned business card"
-                className="w-full rounded-md bg-background object-contain"
-              />
+              {cardImgSrc ? (
+                <img
+                  src={cardImgSrc}
+                  alt="Scanned business card"
+                  className="w-full rounded-md bg-background object-contain"
+                />
+              ) : null}
             </DialogContent>
           </Dialog>
         </div>

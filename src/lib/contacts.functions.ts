@@ -492,7 +492,7 @@ export const updateContact = createServerFn({ method: "POST" })
       region: z.string().trim().max(120).nullable().optional(),
       postal_code: z.string().trim().max(40).nullable().optional(),
       country: z.string().trim().max(60).nullable().optional(),
-      card_image_url: z.string().url().max(1000).nullable().optional(),
+      card_image_url: z.string().max(500).regex(/^[A-Za-z0-9_\-/.]+$/).nullable().optional(),
       phones: z.array(phoneEntrySchema).max(20).optional(),
     }).parse(d)
   )
@@ -695,7 +695,7 @@ export const createContactFromScan = createServerFn({ method: "POST" })
       region: z.string().trim().max(120).nullable().optional(),
       postal_code: z.string().trim().max(40).nullable().optional(),
       country: z.string().trim().max(60).nullable().optional(),
-      card_image_url: z.string().url().max(1000).nullable().optional(),
+      card_image_url: z.string().max(500).regex(/^[A-Za-z0-9_\-/.]+$/).nullable().optional(),
       phones: z.array(phoneEntrySchema).max(20).optional(),
     }).parse(d)
   )
@@ -1018,4 +1018,31 @@ export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
       .upsert(rows, { onConflict: "user_id,email", count: "exact" });
     if (error) throw new Error(error.message);
     return { created: count ?? rows.length };
+  });
+
+/** Return a short-lived signed URL for a contact's stored card image.
+ *  The path is owner-scoped (`<user_id>/...`) and verified against the contact's user_id. */
+export const getContactCardSignedUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ contactId: z.string().uuid() }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: row, error } = await supabase
+      .from("contacts")
+      .select("card_image_url,user_id")
+      .eq("id", data.contactId)
+      .single();
+    if (error || !row) throw new Error("Contact not found");
+    if (row.user_id !== userId) throw new Error("Forbidden");
+    const path = row.card_image_url;
+    if (!path) return { url: null as string | null };
+    // Defensive: must live under the user's folder.
+    if (!path.startsWith(`${userId}/`)) throw new Error("Invalid path");
+    const { data: signed, error: sErr } = await supabaseAdmin.storage
+      .from("contact-cards")
+      .createSignedUrl(path, 60 * 10); // 10 minutes
+    if (sErr || !signed) throw new Error(sErr?.message ?? "Could not sign URL");
+    return { url: signed.signedUrl };
   });
