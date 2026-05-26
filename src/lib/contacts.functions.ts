@@ -492,6 +492,7 @@ export const updateContact = createServerFn({ method: "POST" })
       region: z.string().trim().max(120).nullable().optional(),
       postal_code: z.string().trim().max(40).nullable().optional(),
       country: z.string().trim().max(60).nullable().optional(),
+      card_image_url: z.string().url().max(1000).nullable().optional(),
       phones: z.array(phoneEntrySchema).max(20).optional(),
     }).parse(d)
   )
@@ -694,6 +695,7 @@ export const createContactFromScan = createServerFn({ method: "POST" })
       region: z.string().trim().max(120).nullable().optional(),
       postal_code: z.string().trim().max(40).nullable().optional(),
       country: z.string().trim().max(60).nullable().optional(),
+      card_image_url: z.string().url().max(1000).nullable().optional(),
       phones: z.array(phoneEntrySchema).max(20).optional(),
     }).parse(d)
   )

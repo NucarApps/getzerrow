@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Send, Save, Trash2, Mail, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare, MapPin } from "lucide-react";
+import { Sparkles, Send, Save, Trash2, Mail, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare, MapPin, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -65,6 +65,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [cardImageOpen, setCardImageOpen] = useState(false);
 
   useEffect(() => {
     if (q.data?.contact) {
@@ -180,6 +181,17 @@ export function ContactDetailView({ id, onDeleted }: Props) {
     toast.success("Deleted");
     qc.invalidateQueries({ queryKey: ["contacts"] });
     onDeleted?.();
+  }
+
+  async function removeCardImage() {
+    if (!confirm("Remove the saved card image?")) return;
+    try {
+      await update({ data: { id, card_image_url: null } });
+      qc.invalidateQueries({ queryKey: ["contact", id] });
+      toast.success("Card image removed");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    }
   }
 
   if (q.isLoading) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
@@ -336,6 +348,48 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           </div>
         </div>
       </div>
+
+      {(c as any).card_image_url ? (
+        <div className="mt-6">
+          <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
+            <ImageIcon className="h-3.5 w-3.5" /> Business card
+          </Label>
+          <div className="rounded-lg border border-border bg-card/40 p-3">
+            <button
+              type="button"
+              onClick={() => setCardImageOpen(true)}
+              className="block w-full overflow-hidden rounded-md"
+              aria-label="View card image"
+            >
+              <img
+                src={(c as any).card_image_url}
+                alt="Scanned business card"
+                className="max-h-56 w-full object-contain bg-background"
+                loading="lazy"
+              />
+            </button>
+            <div className="mt-2 flex justify-end">
+              <Button size="sm" variant="ghost" className="text-destructive" onClick={removeCardImage}>
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Remove image
+              </Button>
+            </div>
+          </div>
+          <Dialog open={cardImageOpen} onOpenChange={setCardImageOpen}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Business card</DialogTitle>
+                <DialogDescription className="sr-only">Full-size view of the scanned business card.</DialogDescription>
+              </DialogHeader>
+              <img
+                src={(c as any).card_image_url}
+                alt="Scanned business card"
+                className="w-full rounded-md bg-background object-contain"
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
+      ) : null}
+
 
       <div className="mt-6">
         <Label className="text-xs text-muted-foreground">Notes</Label>

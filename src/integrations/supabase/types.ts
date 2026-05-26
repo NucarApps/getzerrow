@@ -306,6 +306,7 @@ export type Database = {
           address_line1: string | null
           address_line2: string | null
           avatar_url: string | null
+          card_image_url: string | null
           city: string | null
           company: string | null
           country: string | null
@@ -332,6 +333,7 @@ export type Database = {
           address_line1?: string | null
           address_line2?: string | null
           avatar_url?: string | null
+          card_image_url?: string | null
           city?: string | null
           company?: string | null
           country?: string | null
@@ -358,6 +360,7 @@ export type Database = {
           address_line1?: string | null
           address_line2?: string | null
           avatar_url?: string | null
+          card_image_url?: string | null
           city?: string | null
           company?: string | null
           country?: string | null

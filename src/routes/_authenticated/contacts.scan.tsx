@@ -9,6 +9,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { scanCard, createContactFromScan } from "@/lib/contacts.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
+import { CardCropper } from "@/components/contacts/CardCropper";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/contacts/scan")({
@@ -30,25 +32,70 @@ function ScanPage() {
   const create = useServerFn(createContactFromScan);
   const send = useServerFn(sendMyCard);
 
-  const [preview, setPreview] = useState<string | null>(null);
+  /** Raw file as data URL, shown in the cropper. */
+  const [raw, setRaw] = useState<string | null>(null);
+  /** Cropped card image (preview + AI input). */
+  const [cropped, setCropped] = useState<string | null>(null);
+  const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
+  const [uploadingCard, setUploadingCard] = useState(false);
+
   const [draft, setDraft] = useState<Draft | null>(null);
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sendBack, setSendBack] = useState(true);
 
-  async function onFile(file: File) {
+  function resetAll() {
+    setRaw(null);
+    setCropped(null);
+    setCardImageUrl(null);
+    setDraft(null);
+    setPhones([]);
+  }
+
+  function onFile(file: File) {
     if (file.size > 8 * 1024 * 1024) {
       toast.error("Image too large (max 8MB)");
       return;
     }
     const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      setPreview(dataUrl);
-      setScanning(true);
+    reader.onload = () => {
+      resetAll();
+      setRaw(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function onCropConfirm(out: { dataUrl: string; blob: Blob }) {
+    setCropped(out.dataUrl);
+    setRaw(null);
+
+    // Kick off upload + AI scan in parallel.
+    setUploadingCard(true);
+    setScanning(true);
+
+    const uploadP = (async () => {
       try {
-        const r = await scan({ data: { imageDataUrl: dataUrl } });
+        const { data: userData } = await supabase.auth.getUser();
+        const uid = userData.user?.id;
+        if (!uid) return;
+        const path = `${uid}/${crypto.randomUUID()}.jpg`;
+        const { error } = await supabase.storage
+          .from("card-images")
+          .upload(path, out.blob, { contentType: "image/jpeg", upsert: false });
+        if (error) throw error;
+        const { data: pub } = supabase.storage.from("card-images").getPublicUrl(path);
+        setCardImageUrl(pub.publicUrl);
+      } catch (e: any) {
+        toast.warning(`Couldn't save card image: ${e?.message ?? "unknown"}`);
+      } finally {
+        setUploadingCard(false);
+      }
+    })();
+
+    const scanP = (async () => {
+      try {
+        const r = await scan({ data: { imageDataUrl: out.dataUrl } });
         const d = r.draft as Partial<Draft> & { phones?: Array<{ label: string; number: string }> | null };
         setDraft({
           name: d.name ?? null, title: d.title ?? null, company: d.company ?? null,
@@ -68,8 +115,9 @@ function ScanPage() {
       } finally {
         setScanning(false);
       }
-    };
-    reader.readAsDataURL(file);
+    })();
+
+    await Promise.allSettled([uploadP, scanP]);
   }
 
   async function save() {
@@ -91,6 +139,7 @@ function ScanPage() {
           address_line1: draft.address_line1, address_line2: draft.address_line2,
           city: draft.city, region: draft.region,
           postal_code: draft.postal_code, country: draft.country,
+          card_image_url: cardImageUrl,
           phones: cleanPhones,
         },
       });
@@ -121,10 +170,10 @@ function ScanPage() {
 
         <h1 className="mb-2 font-display text-2xl text-foreground">Scan a card</h1>
         <p className="mb-6 text-sm text-muted-foreground">
-          Take a photo of a paper business card. We'll extract the details with AI — you confirm before saving.
+          Take a photo of a paper business card. We'll auto-crop and extract the details — you confirm before saving.
         </p>
 
-        {!preview && (
+        {!raw && !cropped && (
           <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-card/40 px-6 py-16 text-center transition hover:border-primary/50">
             <Camera className="h-10 w-10 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">Tap to take a photo or choose an image</span>
@@ -139,12 +188,23 @@ function ScanPage() {
           </label>
         )}
 
-        {preview && (
+        {raw && !cropped && (
           <div className="mb-6">
-            <img src={preview} alt="Card preview" className="max-h-64 w-full rounded-md border border-border object-contain bg-card/40" />
-            <Button variant="ghost" size="sm" className="mt-2" onClick={() => { setPreview(null); setDraft(null); setPhones([]); }}>
-              Choose a different photo
-            </Button>
+            <h2 className="mb-3 text-sm font-medium text-foreground">Crop to just the card</h2>
+            <CardCropper src={raw} onConfirm={onCropConfirm} onCancel={resetAll} />
+          </div>
+        )}
+
+        {cropped && (
+          <div className="mb-6">
+            <img src={cropped} alt="Cropped card" className="max-h-64 w-full rounded-md border border-border object-contain bg-card/40" />
+            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+              {uploadingCard && <span>Saving image…</span>}
+              {!uploadingCard && cardImageUrl && <span>Image saved</span>}
+              <Button variant="ghost" size="sm" onClick={resetAll}>
+                Choose a different photo
+              </Button>
+            </div>
           </div>
         )}
 

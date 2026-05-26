@@ -1,69 +1,51 @@
 ## Goal
+When scanning a business card, retain the photo, cropped to just the card, and show it on the contact's detail page.
 
-Let contacts store a postal address and multiple labeled phone numbers, and surface that in the contact card UI and the business-card scan flow.
-
-## Quick clarification
-
-"Save an address to a card" — I'm reading this as the **contact card** (the per-contact detail page at `/contacts/$id`). Your personal **My Card** (`/my-card`) is a separate thing and currently also has a single `phone` field. Tell me if you want this same treatment applied there too; otherwise I'll keep My Card unchanged for now.
+## Flow
+1. User picks/captures a photo (existing).
+2. New crop step appears before the AI review form:
+   - Auto-detect the card's bounding rectangle on a downscaled canvas (grayscale → blur → Sobel edges → largest 4-corner contour). If detection succeeds, pre-fill an adjustable crop box; otherwise fall back to a centered default.
+   - User can drag the 4 corners / edges to fine-tune, then "Confirm crop".
+3. Cropped image (perspective-warped to a flat rectangle, JPEG ~85%) is:
+   - sent to `scanCard` for AI extraction (replaces the raw upload, faster + cleaner)
+   - uploaded to the `card-images` storage bucket under `<user_id>/<uuid>.jpg`
+4. Public URL stored on the contact as `card_image_url`.
+5. `ContactDetailView` shows a "Business card" section with the image (click to view full size).
 
 ## Data model
-
-**`contacts` table — add address fields** (single address per contact):
-- `address_line1` text
-- `address_line2` text
-- `city` text
-- `region` text (state/province)
-- `postal_code` text
-- `country` text
-
-**New `contact_phones` table** (multiple phones per contact, labeled):
-- `id`, `user_id`, `contact_id` (cascade delete with contact)
-- `label` text — `mobile` | `work` | `home` | `other` (free text allowed)
-- `number` text (stored as user-entered; we'll trim + cap at 60 chars)
-- `is_primary` boolean — exactly one primary per contact (enforced by partial unique index)
-- `position` int — for stable ordering
-- `created_at`, `updated_at`
-- RLS: `auth.uid() = user_id`
-
-**Migration of existing data:** copy each contact's current `contacts.phone` value into a `contact_phones` row labeled `mobile`, `is_primary = true`. Keep the `contacts.phone` column for now as a convenience mirror of the primary phone (kept in sync by the update fn) so the inbox/My Card and any AI prompts don't break. We can drop it in a later pass.
+- Migration: `ALTER TABLE contacts ADD COLUMN card_image_url text;`
+- `card-images` bucket already exists and is public — add storage RLS policies so authenticated users can insert/update/delete only under their own `<user_id>/` prefix (read stays public).
 
 ## Server functions (`src/lib/contacts.functions.ts`)
-
-- Update `getContact` / `listContacts` selects to include the new address fields and `contact_phones` (left join, ordered by `position`).
-- Update `updateContact` zod schema + handler to accept `address_*` fields and a `phones: { label, number, is_primary }[]` array. Replace-all strategy for phones inside a single transaction (delete-then-insert) to keep it simple and atomic; re-sync `contacts.phone` to the primary.
-- Update the AI-extraction prompts/return shapes (`enrichContact`, scan-card OCR, signature parser) to return `phones[]` and `address` so we don't lose multi-phone data the model already finds. Output schema becomes `{ phones: [{label,number}], address: {...} }` in addition to existing fields.
+- `createContactFromScan`: accept optional `cardImageUrl`, persist to `contacts.card_image_url`.
+- `updateContact`: accept optional `cardImageUrl` so users can remove/replace later.
+- `getContact` / `listContacts`: include `card_image_url` (detail only needs it; list query left untouched).
 
 ## UI
+- New `src/components/contacts/CardCropper.tsx`:
+  - Canvas-based corner-draggable quad overlay on the source image.
+  - `detectCardQuad(imageData)` helper using a lightweight Sobel + contour heuristic (pure TS, no deps).
+  - `warpToRect(image, quad, outW, outH)` using canvas 2D with 2-triangle affine slices (good enough for near-rectangular cards; no extra libs).
+  - Emits `{ croppedDataUrl, croppedBlob }`.
+- `contacts.scan.tsx`:
+  - Insert crop step between file pick and AI scan.
+  - Upload cropped blob to `card-images` via the supabase client, get public URL, then call `scanCard` with the cropped data URL and pass `cardImageUrl` into `createContactFromScan`.
+  - Show cropped preview in the review form.
+- `ContactDetailView.tsx`:
+  - New "Business card" block rendering `card_image_url` (rounded, max-h ~14rem, click opens lightbox dialog). Includes "Remove" button that clears the URL via `updateContact`.
 
-**`src/components/contacts/ContactDetailView.tsx`**
-- Replace the single Phone input with a `PhonesEditor` sub-component: list of rows (label select + number input + "Make primary" + remove), plus "Add phone" button.
-- Add an Address section: 6 inputs in a 2-column grid (line1, line2, city, region, postal, country).
-- The existing "Send to phone number" SMS panel switches to a dropdown of the contact's phones (defaulting to primary).
-- Surface address in the read-only header view as a formatted block.
-
-**`src/routes/_authenticated/contacts.scan.tsx`**
-- Scan draft type gains `phones: {label, number}[]` and `address`.
-- Render multiple phone rows + an address block in the review step; user can edit/remove before saving.
-
-**My Card (`my-card.tsx`)** — unchanged unless you confirm you want the same.
-
-## Validation
-
-- Phone `number`: trim, `max(60)`, `min(3)`, allow `+`, digits, spaces, `()` and `-` only.
-- `label`: trim, `max(20)`, enum-suggested but free-text accepted.
-- Address fields: each trimmed, `max(120)` (country `max(60)`).
-- Server zod schemas mirror client; reject empty phones array entries.
-
-## Files touched
-
-- New migration: schema + data backfill
-- `src/lib/contacts.functions.ts` — schema, get/list/update, AI prompts
-- `src/components/contacts/ContactDetailView.tsx` — phones editor + address section
-- `src/routes/_authenticated/contacts.scan.tsx` — multi-phone + address in scan review
-- New small component: `src/components/contacts/PhonesEditor.tsx`
+## Validation / limits
+- Cropped output capped at 1600px on the long edge, JPEG quality 0.85.
+- `cardImageUrl` Zod: `z.string().url().max(500).optional().nullable()`.
+- Hostname not validated (public bucket URL); URL format check only.
 
 ## Out of scope
+- Replacing the avatar with the card image.
+- List/thumbnail rendering.
+- OCR confidence highlighting on the crop.
+- Multiple card images per contact.
 
-- My Card multi-phone/address (ask if you want it)
-- Phone validation against a country library (kept lightweight)
-- Geocoding the address
+## Files
+- new: `supabase/migrations/<ts>_contact_card_image.sql`
+- new: `src/components/contacts/CardCropper.tsx`
+- edit: `src/lib/contacts.functions.ts`, `src/routes/_authenticated/contacts.scan.tsx`, `src/components/contacts/ContactDetailView.tsx`
