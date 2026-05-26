@@ -1127,7 +1127,7 @@ function InboxPage() {
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   onSelect={async () => {
-                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true } : x)));
+                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true, raw_labels: withoutInbox(x.raw_labels) } : x)));
                     try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
                     catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
                   }}
