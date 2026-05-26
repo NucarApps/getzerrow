@@ -111,8 +111,7 @@ export function TrackingStandby() {
     }
   };
 
-  const now = performance.now();
-  const isMoving = state.phase === "playing"; // simpler than tracking key state from outside the hook
+
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#02030a]">
