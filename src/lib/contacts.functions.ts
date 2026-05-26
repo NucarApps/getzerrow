@@ -51,7 +51,15 @@ const EXTRACT_SCHEMA = z.object({
   website: z.string().nullable(),
   linkedin: z.string().nullable(),
   twitter: z.string().nullable(),
+  address_line1: z.string().nullable(),
+  address_line2: z.string().nullable(),
+  city: z.string().nullable(),
+  region: z.string().nullable(),
+  postal_code: z.string().nullable(),
+  country: z.string().nullable(),
 });
+
+const ADDRESS_FIELDS = ["address_line1", "address_line2", "city", "region", "postal_code", "country"] as const;
 
 const BANNED_DOMAINS = new Set([
   "noreply", "no-reply", "donotreply", "do-not-reply",
