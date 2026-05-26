@@ -1,51 +1,25 @@
 ## Goal
-When scanning a business card, retain the photo, cropped to just the card, and show it on the contact's detail page.
+The address UI, DB columns, scan extraction, and `updateContact` already handle the 6 address fields (`address_line1`, `address_line2`, `city`, `region`, `postal_code`, `country`). What's still missing is the **email-signature enrichment** path — it doesn't extract or persist addresses, so contacts auto-enriched from past emails never get an address filled in.
 
-## Flow
-1. User picks/captures a photo (existing).
-2. New crop step appears before the AI review form:
-   - Auto-detect the card's bounding rectangle on a downscaled canvas (grayscale → blur → Sobel edges → largest 4-corner contour). If detection succeeds, pre-fill an adjustable crop box; otherwise fall back to a centered default.
-   - User can drag the 4 corners / edges to fine-tune, then "Confirm crop".
-3. Cropped image (perspective-warped to a flat rectangle, JPEG ~85%) is:
-   - sent to `scanCard` for AI extraction (replaces the raw upload, faster + cleaner)
-   - uploaded to the `card-images` storage bucket under `<user_id>/<uuid>.jpg`
-4. Public URL stored on the contact as `card_image_url`.
-5. `ContactDetailView` shows a "Business card" section with the image (click to view full size).
+## Changes (all in `src/lib/contacts.functions.ts`)
 
-## Data model
-- Migration: `ALTER TABLE contacts ADD COLUMN card_image_url text;`
-- `card-images` bucket already exists and is public — add storage RLS policies so authenticated users can insert/update/delete only under their own `<user_id>/` prefix (read stays public).
+1. **Extend `EXTRACT_SCHEMA`** (line 46) with the 6 address fields as `z.string().nullable()`.
 
-## Server functions (`src/lib/contacts.functions.ts`)
-- `createContactFromScan`: accept optional `cardImageUrl`, persist to `contacts.card_image_url`.
-- `updateContact`: accept optional `cardImageUrl` so users can remove/replace later.
-- `getContact` / `listContacts`: include `card_image_url` (detail only needs it; list query left untouched).
+2. **`enrichContact`** (lines ~333–382):
+   - Update the prompt's "Fields" list to include the 6 address fields, with an instruction to split a postal address found in a signature into the components and only return values clearly printed.
+   - Extend the default `extracted` object and the `patch` type with the address fields.
+   - Extend the field-merge loop so each address field is copied into `patch` when the AI returned a value and the contact has no value yet (or `force` is true) — same rule as `title`/`company`.
 
-## UI
-- New `src/components/contacts/CardCropper.tsx`:
-  - Canvas-based corner-draggable quad overlay on the source image.
-  - `detectCardQuad(imageData)` helper using a lightweight Sobel + contour heuristic (pure TS, no deps).
-  - `warpToRect(image, quad, outW, outH)` using canvas 2D with 2-triangle affine slices (good enough for near-rectangular cards; no extra libs).
-  - Emits `{ croppedDataUrl, croppedBlob }`.
-- `contacts.scan.tsx`:
-  - Insert crop step between file pick and AI scan.
-  - Upload cropped blob to `card-images` via the supabase client, get public URL, then call `scanCard` with the cropped data URL and pass `cardImageUrl` into `createContactFromScan`.
-  - Show cropped preview in the review form.
-- `ContactDetailView.tsx`:
-  - New "Business card" block rendering `card_image_url` (rounded, max-h ~14rem, click opens lightbox dialog). Includes "Remove" button that clears the URL via `updateContact`.
+3. **`addContactFromEmail`** (lines ~778–821):
+   - Same prompt update.
+   - Same default/patch extension and same merge loop addition.
 
-## Validation / limits
-- Cropped output capped at 1600px on the long edge, JPEG quality 0.85.
-- `cardImageUrl` Zod: `z.string().url().max(500).optional().nullable()`.
-- Hostname not validated (public bucket URL); URL format check only.
+4. **`shareContactByEmail`** (line ~849): include the 6 address fields in the `select(...)` so the shared-contact email body can render the address. (Will need a matching tweak wherever the email body is composed — I'll check `composeContactEmail`/template in the same file and include the address block only when at least one line is present.)
 
 ## Out of scope
-- Replacing the avatar with the card image.
-- List/thumbnail rendering.
-- OCR confidence highlighting on the crop.
-- Multiple card images per contact.
+- No DB migration (columns exist).
+- No UI changes (ContactDetailView and the scan review form already edit these fields).
+- No change to the scanned-card extraction (already complete).
 
 ## Files
-- new: `supabase/migrations/<ts>_contact_card_image.sql`
-- new: `src/components/contacts/CardCropper.tsx`
-- edit: `src/lib/contacts.functions.ts`, `src/routes/_authenticated/contacts.scan.tsx`, `src/components/contacts/ContactDetailView.tsx`
+- edit: `src/lib/contacts.functions.ts`
