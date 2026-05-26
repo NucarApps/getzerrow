@@ -87,6 +87,8 @@ export const getAccountHealth = createServerFn({ method: "GET" })
         running: runningRes.count ?? 0,
         dlq: dlqRes.count ?? 0,
         lastError: errorRes.data?.last_error ?? null,
+        needsReconnect: a.needs_reconnect ?? false,
+        lastOauthError: a.last_oauth_error ?? null,
       });
     }
 
