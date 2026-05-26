@@ -156,13 +156,13 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
         }).eq("id", account.id);
       }
     } catch (e) {
-      console.error("ensureWatch failed during auto-connect", e);
+      logError("gmail.auto_connect.ensure_watch_failed", { account_id: account.id, user_id: context.userId }, e);
     }
 
     try {
       await backfillRecent(account.id, context.userId, 30);
     } catch (e) {
-      console.error("backfill failed during auto-connect", e);
+      logError("gmail.auto_connect.backfill_failed", { account_id: account.id, user_id: context.userId }, e);
     }
 
     // Kick off a deep 6-month background import. Idempotent — won't spawn
@@ -170,7 +170,7 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
     try {
       await startBackfillJob(account.id, context.userId, { months: 6 });
     } catch (e) {
-      console.error("startBackfillJob failed during auto-connect", e);
+      logError("gmail.auto_connect.start_backfill_failed", { account_id: account.id, user_id: context.userId }, e);
     }
 
 
@@ -182,7 +182,7 @@ export const disconnectGmailAccount = createServerFn({ method: "POST" })
   .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
-    try { await stopWatch(data.account_id); } catch (e) { console.error("stopWatch failed", e); }
+    try { await stopWatch(data.account_id); } catch (e) { logError("gmail.disconnect.stop_watch_failed", { account_id: data.account_id, user_id: context.userId }, e); }
     await supabaseAdmin.from("gmail_accounts").delete().eq("id", data.account_id);
     return { ok: true };
   });
@@ -273,7 +273,7 @@ export const applyFolderLabelToLocal = createServerFn({ method: "POST" })
           .eq("id", r.id);
         synced++;
       } catch (e) {
-        console.error("applyFolderLabelToLocal failed for", r.gmail_message_id, e);
+        logError("gmail.apply_folder_label.failed", { gmail_message_id: r.gmail_message_id }, e);
         failed++;
       }
     }
@@ -437,7 +437,7 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
             try {
               await modifyMessage(m.gmail_account_id, m.gmail_message_id, addLabels, removeLabels);
             } catch (e) {
-              console.error("reassign label modify failed", e);
+              logError("gmail.reassign.label_modify_failed", { account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e);
             }
           })
         );
@@ -572,7 +572,7 @@ export const triggerSync = createServerFn({ method: "POST" })
       const r = await backfillRecent(data.account_id, context.userId, 30);
       recent_synced = r?.processed ?? 0;
     } catch (e) {
-      console.error("manual sync recent backfill failed", e);
+      logError("gmail.manual_sync.backfill_failed", { account_id: data.account_id, user_id: context.userId }, e);
     }
     const recon = await reconcileLocalInbox(data.account_id, 100);
     return { ...histResult, recent_synced, reconciled: recon };
@@ -602,7 +602,7 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
         history_id: watch.historyId,
         details: `Watch armed against topic ${process.env.GMAIL_PUBSUB_TOPIC ?? "(unset)"} — expires ${new Date(parseInt(watch.expiration, 10)).toISOString()}`,
       });
-    } catch (e) { console.error("watch_renew log failed", e); }
+    } catch (e) { logError("gmail.watch_renew.log_failed", { account_id: data.account_id }, e); }
     return { expiration: watch.expiration, topic: process.env.GMAIL_PUBSUB_TOPIC ?? null };
   });
 
@@ -621,7 +621,7 @@ export const markEmailRead = createServerFn({ method: "POST" })
         data.read ? [] : ["UNREAD"],
         data.read ? ["UNREAD"] : []
       );
-    } catch (e) { console.error(e); }
+    } catch (e) { logError("gmail.unknown_op_failed", {}, e); }
     await supabaseAdmin.from("emails").update({ is_read: data.read }).eq("id", data.id);
     return { ok: true };
   });
@@ -631,7 +631,7 @@ export const archiveEmail = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
-    try { await modifyMessage(email.gmail_account_id, email.gmail_message_id, [], ["INBOX"]); } catch (e) { console.error(e); }
+    try { await modifyMessage(email.gmail_account_id, email.gmail_message_id, [], ["INBOX"]); } catch (e) { logError("gmail.archive.modify_failed", { email_id: email.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e); }
     await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", data.id);
     return { ok: true };
   });
@@ -641,7 +641,7 @@ export const trashEmail = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
-    try { await trashMessage(email.gmail_account_id, email.gmail_message_id); } catch (e) { console.error(e); }
+    try { await trashMessage(email.gmail_account_id, email.gmail_message_id); } catch (e) { logError("gmail.archive.modify_failed", { email_id: email.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e); }
     await supabaseAdmin.from("emails").delete().eq("id", data.id);
     return { ok: true };
   });
@@ -756,7 +756,7 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
         error: null as string | null,
       };
     } catch (e: any) {
-      console.error("suggestRecategorization AI failed", e);
+      logError("gmail.suggest_recat.ai_failed", { user_id: context.userId }, e);
       return {
         source: {
           id: source.id, name: source.name,
@@ -833,7 +833,7 @@ export const applyRecategorization = createServerFn({ method: "POST" })
           to.gmail_label_id ? [to.gmail_label_id] : [],
           from.gmail_label_id ? [from.gmail_label_id] : []
         );
-      } catch (e) { console.error("label sync failed", e); }
+      } catch (e) { logError("gmail.label_sync.failed", {}, e); }
     }
 
     // Move example from source → target so AI signal reflects the correction
@@ -1075,7 +1075,7 @@ async function performMove(
       removeLabels,
     );
   } catch (e) {
-    console.error("label sync failed", e);
+    logError("gmail.label_sync.failed", {}, e);
   }
 
   // Migrate example signal
@@ -1106,10 +1106,10 @@ async function performMove(
   try {
     const { regenerateFolderProfile } = await import("./sync.server");
     void regenerateFolderProfile(toFolderId).catch((e) =>
-      console.error("auto-retrain after in-app move failed", e),
+      logError("gmail.auto_retrain.after_move_failed", { folder_id: toFolderId }, e),
     );
   } catch (e) {
-    console.error("auto-retrain import failed", e);
+    logError("gmail.auto_retrain.import_failed", {}, e);
   }
 
   return { ok: true };
@@ -1315,7 +1315,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
           snippet: parsed.snippet,
         });
       } catch (e) {
-        console.error("reanalyze summarize failed", e);
+        logError("gmail.reanalyze.summarize_failed", { email_id: email.id }, e);
       }
     }
 
@@ -1377,7 +1377,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
             toLabel ? [toLabel] : [],
             fromLabel ? [fromLabel] : [],
           );
-        } catch (e) { console.error("reanalyze label sync failed", e); }
+        } catch (e) { logError("gmail.reanalyze.label_sync_failed", { email_id: email.id }, e); }
       }
       return {
         ok: true,
@@ -1445,7 +1445,7 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
         ["INBOX"],
         fromLabel ? [fromLabel] : [],
       );
-    } catch (e) { console.error("inbox label sync failed", e); }
+    } catch (e) { logError("gmail.inbox.label_sync_failed", {}, e); }
 
     // Stop training AI on this mistake.
     if (email.folder_id) {
@@ -1569,12 +1569,12 @@ export const addInboxOverride = createServerFn({ method: "POST" })
                 try {
                   await modifyMessage(m.gmail_account_id, m.gmail_message_id, [], [oldLabel]);
                 } catch (e) {
-                  console.error("reprocess label strip failed", e);
+                  logError("gmail.reprocess.label_strip_failed", { email_id: row.id }, e);
                 }
               }
               reprocessed_count++;
             } catch (e) {
-              console.error("reprocess row failed", e);
+              logError("gmail.reprocess.row_failed", { email_id: row.id }, e);
             }
           }
         }
@@ -1645,12 +1645,12 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
               try {
                 await modifyMessage(m.gmail_account_id, m.gmail_message_id, [], [oldLabel]);
               } catch (e) {
-                console.error("strip label failed", e);
+                logError("gmail.strip.label_failed", { email_id: row.id }, e);
               }
             }
             stripped_count++;
           } catch (e) {
-            console.error("strip row failed", e);
+            logError("gmail.strip.row_failed", { email_id: row.id }, e);
           }
         }
       }
@@ -1742,7 +1742,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                 if (m?.id) allMessageIds.add(m.id);
               }
             } catch (e) {
-              console.error("searchGmailAndIngest thread fetch failed", tid, e);
+              logError("gmail.search_ingest.thread_fetch_failed", { account_id: accountId, thread_id: tid }, e);
             }
           }
         }
@@ -1880,9 +1880,9 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                 classification_reason,
               }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
               if (!error) totalIngested++;
-              else console.error("searchGmailAndIngest insert failed", id, error);
+              else logError("gmail.search_ingest.insert_failed", { account_id: accountId, gmail_message_id: id }, error);
             } catch (e) {
-              console.error("searchGmailAndIngest one failed", id, e);
+              logError("gmail.search_ingest.one_failed", { account_id: accountId, gmail_message_id: id }, e);
             }
           }
         }
@@ -1892,7 +1892,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
         if (/missing OAuth tokens|reauthorize|invalid_grant/i.test(msg)) {
           reauthFailures++;
         }
-        console.error("searchGmailAndIngest account failed", accountId, e);
+        logError("gmail.search_ingest.account_failed", { account_id: accountId }, e);
       }
     }
 
@@ -2135,7 +2135,7 @@ export const getSyncLatencyStats = createServerFn({ method: "POST" })
       { p_user_id: context.userId, p_lookback_hours: data.lookback_hours ?? 24 },
     );
     if (error) {
-      console.error("get_sync_latency_stats RPC failed", error.message);
+      logError("gmail.latency_stats.rpc_failed", { user_id: context.userId }, error);
       // Graceful fallback — empty buckets so the UI can render "no data
       // yet" instead of crashing if the migration isn't deployed.
       return {
@@ -2401,7 +2401,7 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
         await batchModifyMessages(folder.gmail_account_id, ids, ["STARRED"], []);
       }
     } catch (e) {
-      console.error("batchModify failed during retroactive apply", e);
+      logError("gmail.retroactive.batch_modify_failed", { account_id: accountId, folder_id: data.folder_id }, e);
     }
 
     // DB side.
@@ -2471,7 +2471,7 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
           unchanged++;
         }
       } catch (e) {
-        console.error("reclassifyEmails iter failed", email.id, e);
+        logError("gmail.reclassify.iter_failed", { email_id: email.id, user_id: context.userId }, e);
         failed++;
       }
     }
