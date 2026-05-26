@@ -96,43 +96,65 @@ describe("classifyParsedEmail — gmail label match", () => {
   });
 });
 
-describe("classifyParsedEmail — inbox overrides", () => {
-  it("blocks email when an `email` override matches the from address", async () => {
+describe("classifyParsedEmail — inbox overrides (allowlist)", () => {
+  it("forces email to inbox (no folder) when an `email` override matches the from address", async () => {
     const c = ctx({
-      overrides: [{ id: "o1", match_type: "email", value: "spam@bad.com" }],
+      overrides: [{ id: "o1", match_type: "email", value: "vip@good.com" }],
     });
     const r = await classifyParsedEmail(
-      email({ from_addr: "spam@bad.com" }),
+      email({ from_addr: "vip@good.com" }),
       "user-1", "acc-1", { ...opts, context: c },
     );
     expect(r.folder_id).toBeNull();
-    expect(r.classified_by).toBe("global_exclude");
-    expect(r.classification_reason).toContain("spam@bad.com");
+    expect(r.classified_by).toBe("inbox_override");
+    expect(r.classification_reason).toContain("vip@good.com");
   });
 
-  it("blocks email when a `domain` override matches the from domain", async () => {
+  it("forces email to inbox when a `domain` override matches the from domain", async () => {
     const c = ctx({
-      overrides: [{ id: "o1", match_type: "domain", value: "marketing.example" }],
+      overrides: [{ id: "o1", match_type: "domain", value: "vip.example" }],
     });
     const r = await classifyParsedEmail(
-      email({ from_addr: "newsletter@marketing.example" }),
+      email({ from_addr: "ceo@vip.example" }),
       "user-1", "acc-1", { ...opts, context: c },
     );
-    expect(r.classified_by).toBe("global_exclude");
+    expect(r.folder_id).toBeNull();
+    expect(r.classified_by).toBe("inbox_override");
   });
 
-  it("an override exception bypasses the block (subject-based)", async () => {
+  it("override ignores a matching folder filter (allowlist beats sorting)", async () => {
+    const f = folder({ id: "f1", name: "Newsletters" });
+    const filters: Filter[] = [filter("f1", "from", "contains", "newsletter")];
     const c = ctx({
-      overrides: [{ id: "o1", match_type: "domain", value: "marketing.example" }],
+      folders: [f],
+      filters,
+      overrides: [{ id: "o1", match_type: "email", value: "newsletter@vip.example" }],
+    });
+    const r = await classifyParsedEmail(
+      email({ from_addr: "newsletter@vip.example" }),
+      "user-1", "acc-1", { ...opts, context: c },
+    );
+    expect(r.folder_id).toBeNull();
+    expect(r.classified_by).toBe("inbox_override");
+  });
+
+  it("an override exception lets the email be sorted normally", async () => {
+    const f = folder({ id: "f1", name: "Reports" });
+    const filters: Filter[] = [filter("f1", "subject", "contains", "Daily Report")];
+    const c = ctx({
+      folders: [f],
+      filters,
+      overrides: [{ id: "o1", match_type: "domain", value: "vip.example" }],
       overrideExceptions: [
-        { override_id: "o1", field: "subject", op: "contains", value: "urgent" },
+        { override_id: "o1", field: "subject", op: "starts_with", value: "Daily Report" },
       ],
     });
     const r = await classifyParsedEmail(
-      email({ from_addr: "newsletter@marketing.example", subject: "URGENT: invoice overdue" }),
+      email({ from_addr: "bot@vip.example", subject: "Daily Report — 5/24" }),
       "user-1", "acc-1", { ...opts, context: c },
     );
-    expect(r.classified_by).not.toBe("global_exclude");
+    expect(r.classified_by).not.toBe("inbox_override");
+    expect(r.folder_id).toBe("f1");
   });
 
   it("`overrides_inbox_override` folder beats a matching override", async () => {

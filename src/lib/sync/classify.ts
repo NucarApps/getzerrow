@@ -110,8 +110,13 @@ export async function classifyParsedEmail(
   const overrideWins = !!overrideHit && !overrideExceptionHit && !beatingFolderId;
 
   if (overrideWins) {
-    classified_by = "global_exclude";
-    classification_reason = `Global inbox list: ${overrideHit!.match_type} "${overrideHit!.value}"`;
+    // Allowlist semantics: a hit forces the email into the inbox with no
+    // folder assignment, bypassing filter rules and AI. Side-effects in
+    // process-message only fire when folder_id is set, so leaving it null
+    // also disables auto-archive / hide / forward / snooze.
+    folder_id = null;
+    classified_by = "inbox_override";
+    classification_reason = `Always-inbox: ${overrideHit!.match_type} "${overrideHit!.value}"`;
     aiSkipped = true;
   } else {
     if (labeledFolder) {
