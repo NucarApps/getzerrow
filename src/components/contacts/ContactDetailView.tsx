@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { getContact, enrichContact, updateContact, deleteContact, shareContactByEmail } from "@/lib/contacts.functions";
+import { getContact, enrichContact, updateContact, deleteContact, shareContactByEmail, getContactCardSignedUrl } from "@/lib/contacts.functions";
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
