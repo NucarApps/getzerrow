@@ -10,11 +10,13 @@ import {
   clearNeedsReconnect,
 } from "@/lib/google-oauth.server";
 import { ensureWatch } from "@/lib/gmail.server";
+import { logError, newRunId } from "@/lib/log.server";
 
 export const Route = createFileRoute("/api/public/google-oauth-callback")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        const runId = newRunId();
         const url = new URL(request.url);
         const code = url.searchParams.get("code");
         const state = url.searchParams.get("state");
@@ -32,7 +34,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
         try {
           userId = verifyState(state);
         } catch (e: any) {
-          console.error("oauth: invalid state", e);
+          logError("oauth.invalid_state", { run_id: runId }, e);
           return new Response("Invalid or expired authorization state. Please try connecting again.", { status: 400 });
         }
 
@@ -52,7 +54,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           // key is held server-side and passed per-call.
           const encKey = process.env.EMAIL_ENC_KEY;
           if (!encKey) {
-            console.error("oauth: EMAIL_ENC_KEY not configured");
+            logError("oauth.misconfigured", { run_id: runId, user_id: userId, reason: "EMAIL_ENC_KEY not configured" });
             return new Response("Server misconfigured. Please contact support.", { status: 500 });
           }
           type UpsertRpc = { rpc: (fn: "upsert_gmail_oauth_account", args: {
@@ -76,7 +78,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           );
 
           if (error || !accountId) {
-            console.error("oauth: failed to save account", error);
+            logError("oauth.save_account_failed", { run_id: runId, user_id: userId, email_address: email }, error);
             return new Response("Something went wrong saving your account. Please try again.", { status: 500 });
           }
           const account = { id: accountId };
@@ -95,12 +97,12 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
               }).eq("id", account.id);
             }
           } catch (e) {
-            console.error("ensureWatch failed during connect", e);
+            logError("oauth.ensure_watch_failed", { run_id: runId, account_id: account.id, user_id: userId }, e);
           }
 
           return new Response(null, { status: 302, headers: { Location: "/settings?connected=1" } });
         } catch (e: any) {
-          console.error("oauth callback failed", e);
+          logError("oauth.callback_failed", { run_id: runId, user_id: userId }, e);
           return new Response("Something went wrong completing sign-in. Please try again.", { status: 500 });
         }
       },
