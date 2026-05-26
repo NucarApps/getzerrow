@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { ACHIEVEMENTS, type AchievementKey, type GameSettings, loadAchievements } from "@/lib/invader/storage";
 import { DIFFICULTY } from "@/lib/invader/engine";
 import type { GameState, Phase } from "@/lib/invader/useInvaderGame";
@@ -15,7 +15,7 @@ type Props = {
   shareDisabled: boolean;
 };
 
-export function GameOverlay({ phase, state, stats, settings, setSettings, onStart, shareScore, shareDisabled }: Props) {
+function GameOverlayImpl({ phase, state, stats, settings, setSettings, onStart, shareScore, shareDisabled }: Props) {
   const unlocked = useMemo<Set<AchievementKey>>(() => loadAchievements(), [phase]);
   const [tab, setTab] = useState<"global" | "daily" | "achievements">("global");
 
@@ -176,3 +176,6 @@ export function GameOverlay({ phase, state, stats, settings, setSettings, onStar
     </div>
   );
 }
+
+export const GameOverlay = memo(GameOverlayImpl);
+

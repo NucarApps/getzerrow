@@ -1,17 +1,23 @@
+import { memo } from "react";
 import { POWERUP_COLORS, POWERUP_NAME } from "@/lib/invader/engine";
-import type { GameState } from "@/lib/invader/useInvaderGame";
+import type { ActiveBuff } from "@/lib/invader/engine";
 
 type Props = {
-  state: GameState;
+  level: number;
+  score: number;
+  lives: number;
+  combo: number;
+  maxCombo: number;
+  activeBuff: ActiveBuff | null;
   difficultyLabel: string;
   muted: boolean;
   dailyMode: boolean;
 };
 
-export function GameHUD({ state, difficultyLabel, muted, dailyMode }: Props) {
+function GameHUDImpl({ level, score, lives, combo, maxCombo, activeBuff, difficultyLabel, muted, dailyMode }: Props) {
   const now = performance.now();
-  const buffRemaining = state.activeBuff ? Math.max(0, (state.activeBuff.expiresAt - now) / 1000) : 0;
-  const lives = Math.max(0, state.lives);
+  const buffRemaining = activeBuff ? Math.max(0, (activeBuff.expiresAt - now) / 1000) : 0;
+  const safeLives = Math.max(0, lives);
 
   return (
     <>
@@ -19,10 +25,8 @@ export function GameHUD({ state, difficultyLabel, muted, dailyMode }: Props) {
         className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-sm border border-[rgba(255,138,61,.35)] bg-[rgba(10,14,26,.65)] px-3 py-1 text-[10px] tracking-[0.22em] text-[#ffd089] backdrop-blur"
         style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
       >
-        LEVEL {String(state.level).padStart(2, "0")} · SCORE {String(state.score).padStart(5, "0")} · {"♥".repeat(lives)}{"♡".repeat(Math.max(0, 3 - lives))}
-        {state.combo > 1 && (
-          <span className="ml-2 text-[#ffe066]">×{state.combo}</span>
-        )}
+        LEVEL {String(level).padStart(2, "0")} · SCORE {String(score).padStart(5, "0")} · {"♥".repeat(safeLives)}{"♡".repeat(Math.max(0, 3 - safeLives))}
+        {combo > 1 && <span className="ml-2 text-[#ffe066]">×{combo}</span>}
       </div>
 
       <div
@@ -30,22 +34,24 @@ export function GameHUD({ state, difficultyLabel, muted, dailyMode }: Props) {
         style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
       >
         <span>{difficultyLabel}{dailyMode ? " · DAILY" : ""}{muted ? " · MUTED" : ""}</span>
-        {state.maxCombo > 1 && <span>BEST COMBO ×{state.maxCombo}</span>}
+        {maxCombo > 1 && <span>BEST COMBO ×{maxCombo}</span>}
       </div>
 
-      {state.activeBuff && (
+      {activeBuff && (
         <div
           className="pointer-events-none absolute left-1/2 top-9 z-20 -translate-x-1/2 rounded-sm border px-2 py-0.5 text-[10px] tracking-[0.22em] backdrop-blur"
           style={{
             fontFamily: "JetBrains Mono, ui-monospace, monospace",
-            color: POWERUP_COLORS[state.activeBuff.kind],
-            borderColor: POWERUP_COLORS[state.activeBuff.kind] + "66",
+            color: POWERUP_COLORS[activeBuff.kind],
+            borderColor: POWERUP_COLORS[activeBuff.kind] + "66",
             background: "rgba(10,14,26,.65)",
           }}
         >
-          {POWERUP_NAME[state.activeBuff.kind]} · {buffRemaining.toFixed(1)}s
+          {POWERUP_NAME[activeBuff.kind]} · {buffRemaining.toFixed(1)}s
         </div>
       )}
     </>
   );
 }
+
+export const GameHUD = memo(GameHUDImpl);
