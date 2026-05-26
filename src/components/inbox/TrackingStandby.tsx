@@ -763,8 +763,10 @@ export function TrackingStandby() {
           )}
         </button>
       )}
+      </div>
+      </div>
 
-      {/* Touch chips */}
+      {/* Touch chips (anchored to full pane) */}
       <div className="pointer-events-auto absolute inset-x-0 bottom-2 z-20 hidden items-center justify-center gap-3 px-4 [@media(pointer:coarse)]:flex">
         <button aria-label="Left" onTouchStart={holdKey("left", true)} onTouchEnd={holdKey("left", false)} onPointerDown={holdKey("left", true)} onPointerUp={holdKey("left", false)} className="rounded-md border border-[rgba(255,138,61,.4)] bg-[rgba(10,14,26,.7)] px-4 py-2 text-[#ffd089]">◀</button>
         <button aria-label="Fire" onTouchStart={holdKey("fire", true)} onTouchEnd={holdKey("fire", false)} onPointerDown={holdKey("fire", true)} onPointerUp={holdKey("fire", false)} className="rounded-md border border-[rgba(255,138,61,.4)] bg-[rgba(255,90,46,.18)] px-5 py-2 text-[#ffd089]" style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}>FIRE</button>
@@ -777,7 +779,7 @@ export function TrackingStandby() {
         </div>
       )}
     </div>
-    </div>
+
   );
 }
 
