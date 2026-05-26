@@ -372,12 +372,18 @@ export function ContactDetailView({ id, onDeleted }: Props) {
               className="block w-full overflow-hidden rounded-md"
               aria-label="View card image"
             >
-              <img
-                src={(c as any).card_image_url}
-                alt="Scanned business card"
-                className="max-h-56 w-full object-contain bg-background"
-                loading="lazy"
-              />
+              {cardImgSrc ? (
+                <img
+                  src={cardImgSrc}
+                  alt="Scanned business card"
+                  className="max-h-56 w-full object-contain bg-background"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="flex h-40 w-full items-center justify-center bg-background text-xs text-muted-foreground">
+                  {cardUrlQ.isError ? "Couldn't load card image" : "Loading…"}
+                </div>
+              )}
             </button>
             <div className="mt-2 flex justify-end">
               <Button size="sm" variant="ghost" className="text-destructive" onClick={removeCardImage}>
