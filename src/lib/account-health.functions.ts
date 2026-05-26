@@ -6,6 +6,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getAccessToken, NeedsReconnectError } from "@/lib/google-oauth.server";
+import { ensureWatch } from "@/lib/gmail.server";
 
 export type AccountHealth = {
   accountId: string;
