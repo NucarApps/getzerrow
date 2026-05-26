@@ -7,6 +7,7 @@ import {
   fetchUserEmail,
   getRedirectUri,
   verifyState,
+  clearNeedsReconnect,
 } from "@/lib/google-oauth.server";
 import { ensureWatch } from "@/lib/gmail.server";
 
