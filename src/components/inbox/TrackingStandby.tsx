@@ -70,9 +70,17 @@ export function TrackingStandby() {
     queryFn: () => fetchStats(),
     staleTime: 30_000,
   });
+  type SubmitPayload = {
+    score: number;
+    level: number;
+    kills: number;
+    maxCombo: number;
+    durationMs: number;
+    dailySeed: string | null;
+    achievements: string[];
+  };
   const submitMutation = useMutation({
-    mutationFn: (payload: Parameters<typeof submitScore>[0]["data"]) =>
-      submitScore({ data: payload }),
+    mutationFn: (payload: SubmitPayload) => submitScore({ data: payload }),
     onSuccess: (next) => {
       queryClient.setQueryData(["invader-stats"], next);
     },
