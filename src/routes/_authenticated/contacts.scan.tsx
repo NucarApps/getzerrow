@@ -1,13 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { ArrowLeft, Camera, Save } from "lucide-react";
+import { ArrowLeft, Camera, Save, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { scanCard, createContactFromScan } from "@/lib/contacts.functions";
 import { sendMyCard } from "@/lib/cards.functions";
+import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/contacts/scan")({
@@ -18,6 +19,9 @@ type Draft = {
   name: string | null; title: string | null; company: string | null;
   email: string | null; phone: string | null; website: string | null;
   linkedin: string | null; twitter: string | null;
+  address_line1: string | null; address_line2: string | null;
+  city: string | null; region: string | null;
+  postal_code: string | null; country: string | null;
 };
 
 function ScanPage() {
@@ -28,6 +32,7 @@ function ScanPage() {
 
   const [preview, setPreview] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sendBack, setSendBack] = useState(true);
@@ -44,7 +49,20 @@ function ScanPage() {
       setScanning(true);
       try {
         const r = await scan({ data: { imageDataUrl: dataUrl } });
-        setDraft(r.draft);
+        const d = r.draft as Partial<Draft> & { phones?: Array<{ label: string; number: string }> | null };
+        setDraft({
+          name: d.name ?? null, title: d.title ?? null, company: d.company ?? null,
+          email: d.email ?? null, phone: d.phone ?? null, website: d.website ?? null,
+          linkedin: d.linkedin ?? null, twitter: d.twitter ?? null,
+          address_line1: d.address_line1 ?? null, address_line2: d.address_line2 ?? null,
+          city: d.city ?? null, region: d.region ?? null,
+          postal_code: d.postal_code ?? null, country: d.country ?? null,
+        });
+        const aiPhones = (d.phones ?? []).filter((p) => p?.number?.trim());
+        const initial: PhoneEntry[] = aiPhones.length > 0
+          ? aiPhones.map((p, i) => ({ label: (p.label || "mobile").toLowerCase(), number: p.number, is_primary: i === 0 }))
+          : (d.phone ? [{ label: "mobile", number: d.phone, is_primary: true }] : []);
+        setPhones(initial);
       } catch (e: any) {
         toast.error(e?.message ?? "Couldn't read the card");
       } finally {
@@ -61,12 +79,19 @@ function ScanPage() {
     }
     setSaving(true);
     try {
+      const cleanPhones = phones
+        .map((p) => ({ ...p, number: p.number.trim() }))
+        .filter((p) => p.number.length > 0);
       const r = await create({
         data: {
           email: draft.email,
           name: draft.name, title: draft.title, company: draft.company,
           phone: draft.phone, website: draft.website,
           linkedin: draft.linkedin, twitter: draft.twitter,
+          address_line1: draft.address_line1, address_line2: draft.address_line2,
+          city: draft.city, region: draft.region,
+          postal_code: draft.postal_code, country: draft.country,
+          phones: cleanPhones,
         },
       });
       if (sendBack) {
@@ -117,7 +142,7 @@ function ScanPage() {
         {preview && (
           <div className="mb-6">
             <img src={preview} alt="Card preview" className="max-h-64 w-full rounded-md border border-border object-contain bg-card/40" />
-            <Button variant="ghost" size="sm" className="mt-2" onClick={() => { setPreview(null); setDraft(null); }}>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => { setPreview(null); setDraft(null); setPhones([]); }}>
               Choose a different photo
             </Button>
           </div>
@@ -135,11 +160,30 @@ function ScanPage() {
               <DraftField label="Title" value={draft.title} onChange={(v) => setDraft({ ...draft, title: v })} />
               <DraftField label="Company" value={draft.company} onChange={(v) => setDraft({ ...draft, company: v })} />
               <DraftField label="Email *" value={draft.email} onChange={(v) => setDraft({ ...draft, email: v })} />
-              <DraftField label="Phone" value={draft.phone} onChange={(v) => setDraft({ ...draft, phone: v })} />
               <DraftField label="Website" value={draft.website} onChange={(v) => setDraft({ ...draft, website: v })} />
               <DraftField label="LinkedIn" value={draft.linkedin} onChange={(v) => setDraft({ ...draft, linkedin: v })} />
               <DraftField label="Twitter / X" value={draft.twitter} onChange={(v) => setDraft({ ...draft, twitter: v })} />
             </Grid>
+
+            <PhonesEditor value={phones} onChange={setPhones} />
+
+            <div>
+              <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
+                <MapPin className="h-3.5 w-3.5" /> Address
+              </Label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <DraftField label="Address line 1" value={draft.address_line1} onChange={(v) => setDraft({ ...draft, address_line1: v })} />
+                </div>
+                <div className="sm:col-span-2">
+                  <DraftField label="Address line 2" value={draft.address_line2} onChange={(v) => setDraft({ ...draft, address_line2: v })} />
+                </div>
+                <DraftField label="City" value={draft.city} onChange={(v) => setDraft({ ...draft, city: v })} />
+                <DraftField label="State / region" value={draft.region} onChange={(v) => setDraft({ ...draft, region: v })} />
+                <DraftField label="Postal code" value={draft.postal_code} onChange={(v) => setDraft({ ...draft, postal_code: v })} />
+                <DraftField label="Country" value={draft.country} onChange={(v) => setDraft({ ...draft, country: v })} />
+              </div>
+            </div>
 
             <label className="flex items-center gap-2 text-sm text-foreground">
               <Checkbox checked={sendBack} onCheckedChange={(v) => setSendBack(!!v)} />

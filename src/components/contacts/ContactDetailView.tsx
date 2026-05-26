@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Send, Save, Trash2, Mail, Phone, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare } from "lucide-react";
+import { Sparkles, Send, Save, Trash2, Mail, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { getContact, enrichContact, updateContact, deleteContact, shareContactByEmail } from "@/lib/contacts.functions";
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { sendMyCard } from "@/lib/cards.functions";
+import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { toast } from "sonner";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -56,9 +57,11 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   }
 
   const [form, setForm] = useState({
-    name: "", title: "", company: "", phone: "",
+    name: "", title: "", company: "",
     website: "", linkedin: "", twitter: "", notes: "",
+    address_line1: "", address_line2: "", city: "", region: "", postal_code: "", country: "",
   });
+  const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -68,9 +71,24 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       const c = q.data.contact;
       setForm({
         name: c.name ?? "", title: c.title ?? "", company: c.company ?? "",
-        phone: c.phone ?? "", website: c.website ?? "", linkedin: c.linkedin ?? "",
-        twitter: c.twitter ?? "", notes: c.notes ?? "",
+        website: c.website ?? "", linkedin: c.linkedin ?? "", twitter: c.twitter ?? "",
+        notes: c.notes ?? "",
+        address_line1: (c as any).address_line1 ?? "",
+        address_line2: (c as any).address_line2 ?? "",
+        city: (c as any).city ?? "",
+        region: (c as any).region ?? "",
+        postal_code: (c as any).postal_code ?? "",
+        country: (c as any).country ?? "",
       });
+      const serverPhones = (q.data.phones ?? []) as Array<{ label: string; number: string; is_primary: boolean }>;
+      if (serverPhones.length > 0) {
+        setPhones(serverPhones.map((p) => ({ label: p.label, number: p.number, is_primary: !!p.is_primary })));
+      } else if (c.phone) {
+        // Legacy: contact has the old single phone field but no rows in contact_phones yet.
+        setPhones([{ label: "mobile", number: c.phone, is_primary: true }]);
+      } else {
+        setPhones([]);
+      }
     }
   }, [q.data?.contact?.id, q.data?.contact?.enriched_at, q.data?.contact?.updated_at, q.data?.contact?.name, q.data?.contact?.company, q.data?.contact?.title]);
 
@@ -92,6 +110,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         qc.setQueryData(["contact", id], (prev: any) => ({
           contact: r.contact,
           recentEmails: prev?.recentEmails ?? [],
+          phones: prev?.phones ?? [],
         }));
       }
       await qc.invalidateQueries({ queryKey: ["contact", id] });
@@ -105,17 +124,27 @@ export function ContactDetailView({ id, onDeleted }: Props) {
 
   async function save() {
     try {
+      // Drop empty phone rows.
+      const cleanPhones = phones
+        .map((p) => ({ ...p, number: p.number.trim() }))
+        .filter((p) => p.number.length > 0);
       await update({
         data: {
           id,
           name: form.name || null,
           title: form.title || null,
           company: form.company || null,
-          phone: form.phone || null,
           website: form.website || null,
           linkedin: form.linkedin || null,
           twitter: form.twitter || null,
           notes: form.notes || null,
+          address_line1: form.address_line1 || null,
+          address_line2: form.address_line2 || null,
+          city: form.city || null,
+          region: form.region || null,
+          postal_code: form.postal_code || null,
+          country: form.country || null,
+          phones: cleanPhones,
         },
       });
       toast.success("Saved");
@@ -261,9 +290,6 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         <Field label="Email" icon={<Mail className="h-3.5 w-3.5" />}>
           <Input value={c.email} disabled />
         </Field>
-        <Field label="Phone" icon={<Phone className="h-3.5 w-3.5" />}>
-          <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-        </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
           <Input value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
         </Field>
@@ -275,7 +301,43 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         </Field>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-6">
+        <PhonesEditor value={phones} onChange={setPhones} />
+      </div>
+
+      <div className="mt-6">
+        <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
+          <MapPin className="h-3.5 w-3.5" /> Address
+        </Label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Label className="text-xs text-muted-foreground">Address line 1</Label>
+            <Input value={form.address_line1} onChange={(e) => setForm({ ...form, address_line1: e.target.value })} placeholder="Street address" />
+          </div>
+          <div className="sm:col-span-2">
+            <Label className="text-xs text-muted-foreground">Address line 2</Label>
+            <Input value={form.address_line2} onChange={(e) => setForm({ ...form, address_line2: e.target.value })} placeholder="Apt, suite, floor (optional)" />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">City</Label>
+            <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">State / region</Label>
+            <Input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Postal code</Label>
+            <Input value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Country</Label>
+            <Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6">
         <Label className="text-xs text-muted-foreground">Notes</Label>
         <Textarea
           rows={4}
@@ -284,6 +346,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           placeholder="Private notes about this contact…"
         />
       </div>
+
 
       <div className="mt-6 flex justify-end">
         <Button onClick={save}><Save className="mr-2 h-4 w-4" /> Save</Button>
