@@ -465,10 +465,17 @@ ${convoSample}`,
     return { contact: updated, skipped: false as const };
   });
 
-/** Update a contact (manual edits). */
+const PHONE_NUMBER_RE = /^[+\d\s().-]{3,60}$/;
+const phoneEntrySchema = z.object({
+  label: z.string().trim().min(1).max(20),
+  number: z.string().trim().min(3).max(60).regex(PHONE_NUMBER_RE, "Invalid phone format"),
+  is_primary: z.boolean().optional(),
+});
+
+/** Update a contact (manual edits). Also replaces phones if `phones` provided. */
 export const updateContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: any) =>
+  .inputValidator((d: unknown) =>
     z.object({
       id: z.string().uuid(),
       name: z.string().max(200).nullable().optional(),
@@ -479,12 +486,26 @@ export const updateContact = createServerFn({ method: "POST" })
       linkedin: z.string().max(500).nullable().optional(),
       twitter: z.string().max(500).nullable().optional(),
       notes: z.string().max(5000).nullable().optional(),
+      address_line1: z.string().trim().max(200).nullable().optional(),
+      address_line2: z.string().trim().max(200).nullable().optional(),
+      city: z.string().trim().max(120).nullable().optional(),
+      region: z.string().trim().max(120).nullable().optional(),
+      postal_code: z.string().trim().max(40).nullable().optional(),
+      country: z.string().trim().max(60).nullable().optional(),
+      phones: z.array(phoneEntrySchema).max(20).optional(),
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const { id, ...patch } = data;
+    const { supabase, userId } = context;
+    const { id, phones, ...patch } = data;
     if ("name" in patch) patch.name = normalizeName(patch.name ?? null);
+
+    // If phones provided, sync the primary into the legacy contacts.phone mirror.
+    if (phones) {
+      const primary = phones.find((p) => p.is_primary) ?? phones[0];
+      patch.phone = primary?.number?.trim() || null;
+    }
+
     const { data: updated, error } = await supabase
       .from("contacts")
       .update(patch)
@@ -492,7 +513,35 @@ export const updateContact = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
-    return { contact: updated };
+
+    if (phones) {
+      // Replace-all strategy. RLS scopes deletes/inserts to the user.
+      const { error: delErr } = await supabase.from("contact_phones").delete().eq("contact_id", id);
+      if (delErr) throw new Error(delErr.message);
+      if (phones.length > 0) {
+        // Ensure exactly one primary.
+        const hasPrimary = phones.some((p) => p.is_primary);
+        const normalized = phones.map((p, idx) => ({
+          user_id: userId,
+          contact_id: id,
+          label: p.label.trim().toLowerCase(),
+          number: p.number.trim(),
+          is_primary: hasPrimary ? !!p.is_primary : idx === 0,
+          position: idx,
+        }));
+        const { error: insErr } = await supabase.from("contact_phones").insert(normalized);
+        if (insErr) throw new Error(insErr.message);
+      }
+    }
+
+    const { data: refreshedPhones } = await supabase
+      .from("contact_phones")
+      .select("id,label,number,is_primary,position")
+      .eq("contact_id", id)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    return { contact: updated, phones: refreshedPhones ?? [] };
   });
 
 /** Delete a contact. */
