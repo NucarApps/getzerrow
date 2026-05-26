@@ -1481,7 +1481,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={async () => {
-            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
+            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true, raw_labels: withoutInbox(e.raw_labels) } : e)));
             try { await archFn({ data: { id: email.id } }); toast.success("Archived"); }
             catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
           }}>
