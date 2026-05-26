@@ -340,6 +340,7 @@ export const enrichContact = createServerFn({ method: "POST" })
 
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
       name: null, title: null, company: null, phone: null, website: null, linkedin: null, twitter: null,
+      address_line1: null, address_line2: null, city: null, region: null, postal_code: null, country: null,
     };
     try {
       const { output } = await generateText({
