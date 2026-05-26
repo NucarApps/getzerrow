@@ -243,7 +243,7 @@ export function CompanyAliasesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <CompanyLogo domain={primaryDomain} name={companyName} size={28} provider={currentProvider} sourceDomain={currentSource} />
@@ -254,7 +254,7 @@ export function CompanyAliasesDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
           <div>
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">Primary domain</Label>
             <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
