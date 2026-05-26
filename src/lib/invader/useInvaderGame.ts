@@ -67,9 +67,6 @@ import {
   saveSettings,
 } from "./storage";
 
-// Defined inline since engine.ts only exports the type.
-export const ACTIVE_BUFF: ActiveBuff | null = null;
-void ACTIVE_BUFF_BLANK; // keep import order stable when added later
 
 export type Phase = "ready" | "playing" | "paused" | "over";
 
