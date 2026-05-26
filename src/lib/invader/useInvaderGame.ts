@@ -842,9 +842,18 @@ export function useInvaderGame(): UseInvaderGameResult {
       }
 
       const eBulletSpeed = Math.min(70, ENEMY_BULLET_BASE + lvl * 3) * diff.bulletMul * slowMul;
-      enemyBulletsRef.current = enemyBulletsRef.current
-        .map((b) => ({ ...b, x: b.x + (b.vx ?? 0) * dts, y: b.y + eBulletSpeed * dts }))
-        .filter((b) => b.y < FIELD_H + 2);
+      {
+        const arr = enemyBulletsRef.current;
+        let w = 0;
+        for (let i = 0; i < arr.length; i++) {
+          const b = arr[i];
+          b.x += (b.vx ?? 0) * dts;
+          b.y += eBulletSpeed * dts;
+          if (b.y < FIELD_H + 2) arr[w++] = b;
+        }
+        arr.length = w;
+        if (arr.length > MAX_ENEMY_BULLETS) arr.splice(0, arr.length - MAX_ENEMY_BULLETS);
+      }
 
       // ---- UFO ----
       if (!ufoRef.current && now >= nextUfoAtRef.current) {
