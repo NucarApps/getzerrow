@@ -153,7 +153,27 @@ export type ContactShareData = {
   website: string | null;
   linkedin: string | null;
   twitter: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
 };
+
+function formatAddressLines(c: {
+  address_line1?: string | null; address_line2?: string | null;
+  city?: string | null; region?: string | null;
+  postal_code?: string | null; country?: string | null;
+}): string[] {
+  const lines: string[] = [];
+  if (c.address_line1) lines.push(c.address_line1);
+  if (c.address_line2) lines.push(c.address_line2);
+  const cityLine = [c.city, c.region, c.postal_code].filter(Boolean).join(", ");
+  if (cityLine) lines.push(cityLine);
+  if (c.country) lines.push(c.country);
+  return lines;
+}
 
 /** Share a saved contact with someone else via the user's Gmail account. Includes a .vcf attachment. */
 export async function sendContactShareEmail(args: {
