@@ -197,9 +197,11 @@ export async function sendContactShareEmail(args: {
   const subject = `Contact: ${displayName}`;
   const noteBlock = args.note?.trim() ? `${args.note.trim()}\n\n` : "";
 
+  const addressLines = formatAddressLines(c);
   const sigLines = [
     c.name, c.title && c.company ? `${c.title}, ${c.company}` : (c.title || c.company),
     c.phone, c.email, c.website,
+    ...addressLines,
   ].filter(Boolean).join("\n");
 
   const textBody = `${noteBlock}I'm sharing ${displayName}'s contact info with you.
@@ -209,6 +211,10 @@ ${sigLines}
 (.vcf attached — open it on your phone to save them to contacts.)
 
 — Shared from Zerrow`;
+
+  const addressRow = addressLines.length > 0
+    ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px;vertical-align:top">Address</td><td style="padding:2px 8px;white-space:pre-line">${escapeHtml(addressLines.join("\n"))}</td></tr>`
+    : "";
 
   const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#111;line-height:1.5">
     ${args.note?.trim() ? `<p style="white-space:pre-wrap">${escapeHtml(args.note.trim())}</p>` : ""}
@@ -222,6 +228,7 @@ ${sigLines}
       ${c.website ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Website</td><td style="padding:2px 8px"><a href="${escapeHtml(c.website)}">${escapeHtml(c.website)}</a></td></tr>` : ""}
       ${c.linkedin ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">LinkedIn</td><td style="padding:2px 8px"><a href="${escapeHtml(c.linkedin)}">${escapeHtml(c.linkedin)}</a></td></tr>` : ""}
       ${c.twitter ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Twitter / X</td><td style="padding:2px 8px"><a href="${escapeHtml(c.twitter)}">${escapeHtml(c.twitter)}</a></td></tr>` : ""}
+      ${addressRow}
     </table>
     <p style="color:#888;font-size:12px">A .vcf file is attached — open it on your phone to add them to contacts.</p>
     <p style="color:#aaa;font-size:11px">Shared from Zerrow</p>
