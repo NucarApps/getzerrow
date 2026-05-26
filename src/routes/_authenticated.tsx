@@ -205,12 +205,20 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col p-4">
-      <div className="mb-6 px-2">
+      <div className="mb-4 px-2">
         <div className="flex items-center gap-2">
           <img src={zerrowLogo} alt="Zerrow" className="h-14 w-auto" />
         </div>
-        
       </div>
+
+      <div className="mb-4 px-1">
+        <AccountSwitcher
+          accounts={accounts}
+          loading={accountsQ.isLoading}
+          onNavigate={onNavigate}
+        />
+      </div>
+
 
       <nav className="flex flex-col gap-0.5">
         <button
