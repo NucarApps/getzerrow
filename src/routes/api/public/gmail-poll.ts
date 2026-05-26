@@ -42,6 +42,10 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         let totalSynced = 0;
         let firstError: string | null = null;
         for (const acc of accounts ?? []) {
+          // Skip dead-OAuth accounts — getAccessToken would throw a
+          // NeedsReconnectError, burning a slot in the per-tick loop with
+          // nothing the cron can fix. The UI banner is the recovery path.
+          if (acc.needs_reconnect) continue;
           // Per-account push silence: did this account receive a real Google
           // push recently? `last_push_at` is stamped ONLY by the webhook
           // handler (not by poll-driven syncs), so its staleness specifically
