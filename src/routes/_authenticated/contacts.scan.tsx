@@ -159,8 +159,6 @@ function ScanPage() {
     } finally {
       setSaving(false);
     }
-    // Silence unused-var warning for croppedBlob (kept in state for potential re-upload).
-    void croppedBlob;
   }
 
   return (
