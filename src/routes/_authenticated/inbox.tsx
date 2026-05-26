@@ -1438,7 +1438,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                     onSelect={async () => {
                       setMoving(true);
                       qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                        prev?.map((e) => (e.id === email.id ? { ...e, folder_id: null, is_archived: false } : e)),
+                        prev?.map((e) => (e.id === email.id ? { ...e, folder_id: null, is_archived: false, raw_labels: withInbox(e.raw_labels) } : e)),
                       );
                       try {
                         const r = await inboxFn({ data: { email_id: email.id, add_override: null } });
