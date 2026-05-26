@@ -9,6 +9,7 @@ export type EmailRow = {
   received_at: string | null;
   is_archived: boolean | null;
   folder_id: string | null;
+  raw_labels?: string[] | null;
   [key: string]: unknown;
 };
 
