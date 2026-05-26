@@ -83,9 +83,7 @@ export const submitInvaderScore = createServerFn({ method: "POST" })
       daily_seed: data.dailySeed,
       achievements: data.achievements,
     };
-    const { error } = await supabase
-      .from("game_scores")
-      .insert(insertRow as unknown as Record<string, unknown>);
+    const { error } = await supabase.from("game_scores").insert(insertRow);
     if (error) throw new Error(error.message);
 
     return fetchStats(supabase as unknown as SupabaseClient);
