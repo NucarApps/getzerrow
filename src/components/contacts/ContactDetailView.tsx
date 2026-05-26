@@ -349,6 +349,48 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         </div>
       </div>
 
+      {(c as any).card_image_url ? (
+        <div className="mt-6">
+          <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
+            <ImageIcon className="h-3.5 w-3.5" /> Business card
+          </Label>
+          <div className="rounded-lg border border-border bg-card/40 p-3">
+            <button
+              type="button"
+              onClick={() => setCardImageOpen(true)}
+              className="block w-full overflow-hidden rounded-md"
+              aria-label="View card image"
+            >
+              <img
+                src={(c as any).card_image_url}
+                alt="Scanned business card"
+                className="max-h-56 w-full object-contain bg-background"
+                loading="lazy"
+              />
+            </button>
+            <div className="mt-2 flex justify-end">
+              <Button size="sm" variant="ghost" className="text-destructive" onClick={removeCardImage}>
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Remove image
+              </Button>
+            </div>
+          </div>
+          <Dialog open={cardImageOpen} onOpenChange={setCardImageOpen}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Business card</DialogTitle>
+                <DialogDescription className="sr-only">Full-size view of the scanned business card.</DialogDescription>
+              </DialogHeader>
+              <img
+                src={(c as any).card_image_url}
+                alt="Scanned business card"
+                className="w-full rounded-md bg-background object-contain"
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
+      ) : null}
+
+
       <div className="mt-6">
         <Label className="text-xs text-muted-foreground">Notes</Label>
         <Textarea
