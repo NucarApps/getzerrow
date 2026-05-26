@@ -100,7 +100,14 @@ function SettingsPage() {
                     <div key={a.id} className="rounded-md border border-border p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium">{a.email_address}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{a.email_address}</span>
+                            {a.needs_reauth && (
+                              <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                                Reconnect required
+                              </span>
+                            )}
+                          </div>
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {watchActive ? (
                               <><CheckCircle2 className="h-3 w-3 text-primary" />Real-time push active · renews {exp!.toLocaleDateString()}</>
