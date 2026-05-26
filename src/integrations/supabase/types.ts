@@ -791,13 +791,16 @@ export type Database = {
       gmail_accounts: {
         Row: {
           access_token_enc: string | null
+          consecutive_silent_ticks: number
           created_at: string
           email_address: string
           history_id: string | null
           id: string
           last_history_sync_at: string | null
+          last_oauth_error: string | null
           last_poll_at: string | null
           last_push_at: string | null
+          needs_reconnect: boolean
           reconcile_cursor: string | null
           refresh_token_enc: string | null
           token_expires_at: string
@@ -807,13 +810,16 @@ export type Database = {
         }
         Insert: {
           access_token_enc?: string | null
+          consecutive_silent_ticks?: number
           created_at?: string
           email_address: string
           history_id?: string | null
           id?: string
           last_history_sync_at?: string | null
+          last_oauth_error?: string | null
           last_poll_at?: string | null
           last_push_at?: string | null
+          needs_reconnect?: boolean
           reconcile_cursor?: string | null
           refresh_token_enc?: string | null
           token_expires_at: string
@@ -823,13 +829,16 @@ export type Database = {
         }
         Update: {
           access_token_enc?: string | null
+          consecutive_silent_ticks?: number
           created_at?: string
           email_address?: string
           history_id?: string | null
           id?: string
           last_history_sync_at?: string | null
+          last_oauth_error?: string | null
           last_poll_at?: string | null
           last_push_at?: string | null
+          needs_reconnect?: boolean
           reconcile_cursor?: string | null
           refresh_token_enc?: string | null
           token_expires_at?: string
