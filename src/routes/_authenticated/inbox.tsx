@@ -1349,7 +1349,7 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     setMoving(true);
     // Optimistic: flip folder_id locally so the row jumps immediately.
     qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-      prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id, is_archived: true } : e)),
+      prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id, is_archived: true, raw_labels: withoutInbox(e.raw_labels) } : e)),
     );
     try {
       const r = await moveFn({ data: { email_id: email.id, to_folder_id: target.id } });
