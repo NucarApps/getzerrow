@@ -68,7 +68,6 @@ function ScanPage() {
 
   async function onCropConfirm(out: { dataUrl: string; blob: Blob }) {
     setCropped(out.dataUrl);
-    setCroppedBlob(out.blob);
     setRaw(null);
 
     // Kick off upload + AI scan in parallel.
