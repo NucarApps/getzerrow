@@ -97,7 +97,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
               }).eq("id", account.id);
             }
           } catch (e) {
-            console.error("ensureWatch failed during connect", e);
+            logError("oauth.ensure_watch_failed", { run_id: runId, account_id: account.id, user_id: userId }, e);
           }
 
           return new Response(null, { status: 302, headers: { Location: "/settings?connected=1" } });
