@@ -592,7 +592,7 @@ export function TrackingStandby() {
       )}
 
       {/* Game layer */}
-      <svg className="absolute inset-0 z-10" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
+      <svg className="absolute inset-0 z-10" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
         <defs>
           <linearGradient id="horizonGlow" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#ff5a2e" stopOpacity="0.18" />
