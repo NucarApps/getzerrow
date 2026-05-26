@@ -81,11 +81,11 @@ function ScanPage() {
         if (!uid) return;
         const path = `${uid}/${crypto.randomUUID()}.jpg`;
         const { error } = await supabase.storage
-          .from("card-images")
+          .from("contact-cards")
           .upload(path, out.blob, { contentType: "image/jpeg", upsert: false });
         if (error) throw error;
-        const { data: pub } = supabase.storage.from("card-images").getPublicUrl(path);
-        setCardImageUrl(pub.publicUrl);
+        // Store the storage path; signed URLs are generated on read.
+        setCardImageUrl(path);
       } catch (e: any) {
         toast.warning(`Couldn't save card image: ${e?.message ?? "unknown"}`);
       } finally {
