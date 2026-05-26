@@ -24,6 +24,7 @@ import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
 import { applyFilter, matchByFilters, labelOf } from "./filter-engine";
 import type { OverrideException } from "./types";
+import { logError } from "../log.server";
 
 export type ClassificationResult = {
   folder_id: string | null;
@@ -191,7 +192,7 @@ export async function classifyParsedEmail(
           classification_reason = r.reason || null;
         }
       } catch (e) {
-        console.error("AI classify failed", e);
+        logError("classify.ai_failed", { user_id: userId, account_id: accountId, folder_count: aiFolders.length }, e);
         classified_by = "ai_error";
         classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
       }

@@ -14,6 +14,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendMessage } from "../gmail.server";
 import { jitter } from "./backoff";
+import { logError } from "../log.server";
 
 const FORWARD_MAX_ATTEMPTS = 5;
 // 1m → 5m → 30m → 2h → 6h. Wider spread than the message-job backoff
@@ -48,7 +49,7 @@ export async function retryForwardAttempts(maxRows = 50) {
     { p_limit: maxRows },
   );
   if (error) {
-    console.error("claim_forward_retries RPC failed", error.message);
+    logError("forward_retry.claim_rpc_failed", { max_rows: maxRows }, error);
     return { processed: 0, ok: 0, failed: 0, gaveUp: 0, error: error.message };
   }
 

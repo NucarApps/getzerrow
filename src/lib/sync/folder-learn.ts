@@ -25,6 +25,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildFolderProfile } from "../ai.server";
 import { listMessages, getMessageMetadata, parseMessage } from "../gmail.server";
 import type { Folder } from "./types";
+import { logError } from "../log.server";
 
 /** Promote an email to a folder + record a "manual_move" example.
  * Skips the example/promotion when the row was ALREADY in this folder
@@ -65,7 +66,7 @@ export async function recordManualMove(
     },
     { onConflict: "folder_id,gmail_message_id" },
   );
-  if (error) console.error("example upsert failed", error);
+  if (error) logError("folder_learn.example_upsert_failed", { folder_id: folder.id, account_id: accountId, gmail_message_id: msg.gmail_message_id }, error);
 
   await supabaseAdmin
     .from("emails")
@@ -90,7 +91,7 @@ export async function recordManualMove(
     .gt("created_at", since);
   if ((count ?? 0) >= 3) {
     try { await regenerateFolderProfile(folder.id); }
-    catch (e) { console.error("auto re-learn failed", e); }
+    catch (e) { logError("folder_learn.auto_relearn_failed", { folder_id: folder.id }, e); }
   }
 }
 
@@ -137,7 +138,7 @@ export async function bumpEmailsSinceLearn(folderId: string): Promise<void> {
       .update({ emails_since_learn: (row.emails_since_learn ?? 0) + 1 })
       .eq("id", folderId);
   } catch (e) {
-    console.error("bumpEmailsSinceLearn failed", folderId, e);
+    logError("folder_learn.bump_failed", { folder_id: folderId }, e);
   }
 }
 
@@ -281,10 +282,10 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           classification_reason: `Matched Gmail label "${folder.name}"`,
         }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
         if (!insErr) ingested++;
-        else console.error("ingest labeled message failed", insErr);
+        else logError("folder_learn.ingest_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: p.gmail_message_id }, insErr);
       }
     } catch (e) {
-      console.error("seed example failed", e);
+      logError("folder_learn.seed_example_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: id }, e);
     }
   }
 
@@ -412,7 +413,7 @@ export async function loadOlderFromLabel(
           }
         }
       } catch (e) {
-        console.error("loadOlderFromLabel one failed", id, e);
+        logError("folder_learn.load_older_one_failed", { folder_id: folderId, account_id: folder.gmail_account_id, gmail_message_id: id }, e);
       }
     }
     for (let i = 0; i < ids.length; i += CONCURRENCY) {

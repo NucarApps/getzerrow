@@ -21,6 +21,7 @@
 // case where nothing has drifted.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, getMessageLabels, parseMessage } from "../gmail.server";
+import { logError } from "../log.server";
 
 export async function reconcileLocalInbox(accountId: string, limit = 100) {
   const { data: acc } = await supabaseAdmin
@@ -95,7 +96,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
         .from("gmail_accounts")
         .update({ reconcile_cursor: newCursor })
         .eq("id", accountId);
-    } catch (e) { console.error("reconcile cursor update failed", e); }
+    } catch (e) { logError("reconcile.cursor_update_failed", { account_id: accountId, new_cursor: newCursor }, e); }
   }
 
   let archived = 0;
@@ -174,7 +175,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       if (!patch.is_archived) updated++;
     } catch (e) {
       failed++;
-      console.error("reconcile row failed", row.gmail_message_id, e);
+      logError("reconcile.row_failed", { account_id: accountId, gmail_message_id: row.gmail_message_id, email_id: row.id, pass: "head_tail" }, e);
     }
   }
 
@@ -217,7 +218,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
     } catch (e) {
       failed++;
-      console.error("reconcile archived row failed", row.gmail_message_id, e);
+      logError("reconcile.row_failed", { account_id: accountId, gmail_message_id: row.gmail_message_id, email_id: row.id, pass: "archived" }, e);
     }
   }
 
