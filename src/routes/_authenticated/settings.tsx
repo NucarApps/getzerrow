@@ -80,17 +80,15 @@ function SettingsPage() {
                     Your Gmail is connected automatically when you sign in with Google. Use "Reauthorize" if scopes change.
                   </p>
                 </div>
-                {accounts.length === 0 && (
-                  <Button onClick={startConnect} disabled={busy !== null} className="self-start md:self-auto">
-                    <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : "Reauthorize Gmail"}
-                  </Button>
-                )}
+                <Button onClick={() => startConnect()} disabled={busy !== null} className="self-start md:self-auto">
+                  <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : accounts.length === 0 ? "Connect Gmail" : "Reconnect Gmail"}
+                </Button>
               </div>
 
               <div className="mt-6 space-y-3">
                 {accounts.length === 0 && (
                   <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                    No Gmail connected yet. Sign out and sign back in with Google, or click "Reauthorize Gmail".
+                    No Gmail connected yet. Sign out and sign back in with Google, or click "Connect Gmail".
                   </p>
                 )}
                 {accounts.map((a) => {
