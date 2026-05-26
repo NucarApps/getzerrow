@@ -101,6 +101,28 @@ export type GameState = {
   newAchievements: AchievementKey[];
 };
 
+// Live, mutable game data exposed to GameField for per-frame rendering
+// without going through React state. GameField subscribes via `subscribe`
+// and reads these refs directly, avoiding a parent re-render every RAF.
+export type LiveGame = {
+  bullets: Bullet[];
+  enemyBullets: Bullet[];
+  enemies: Enemy[];
+  boss: Boss | null;
+  ufo: Ufo | null;
+  bunkers: Bunker[];
+  bursts: Burst[];
+  particles: Particle[];
+  powerups: Powerup[];
+  floats: FloatText[];
+  formationX: number;
+  formationY: number;
+  playerX: number;
+  shieldUntil: number;
+  shakeUntil: number;
+  invulnUntil: number;
+};
+
 export type UseInvaderGameResult = {
   state: GameState;
   settings: GameSettings;
@@ -110,6 +132,9 @@ export type UseInvaderGameResult = {
   togglePause: () => void;
   restart: () => void;
   containerRef: React.MutableRefObject<HTMLDivElement | null>;
+  // Per-frame data for GameField + subscribe API to drive its render loop.
+  getLive: () => LiveGame;
+  subscribe: (listener: () => void) => () => void;
   // For result submission once game ends.
   consumeFinishedRun: () => null | {
     score: number;
@@ -122,6 +147,13 @@ export type UseInvaderGameResult = {
   };
 };
 
+// Soft caps to keep the SVG render + GC pressure bounded.
+const MAX_PARTICLES = 80;
+const MAX_BURSTS = 24;
+const MAX_FLOATS = 40;
+const MAX_PLAYER_BULLETS = 40;
+const MAX_ENEMY_BULLETS = 40;
+
 function newId(ref: { current: number }): number {
   ref.current += 1;
   return ref.current;
@@ -129,6 +161,7 @@ function newId(ref: { current: number }): number {
 
 function emitParticles(arr: Particle[], idRef: { current: number }, x: number, y: number, color: string, count: number, speed: number, ttl: number) {
   for (let i = 0; i < count; i++) {
+    if (arr.length >= MAX_PARTICLES) arr.shift();
     const a = Math.random() * Math.PI * 2;
     const s = speed * (0.5 + Math.random());
     arr.push({
