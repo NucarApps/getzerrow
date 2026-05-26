@@ -77,11 +77,11 @@ function SettingsPage() {
                 <div>
                   <h2 className="font-display text-2xl">Connected Gmail accounts</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Your Gmail is connected automatically when you sign in with Google. Use "Reauthorize" if scopes change.
+                    Connect multiple Gmail inboxes and switch between them from the inbox header.
                   </p>
                 </div>
                 <Button onClick={() => startConnect()} disabled={busy !== null} className="self-start md:self-auto">
-                  <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : accounts.length === 0 ? "Connect Gmail" : "Reconnect Gmail"}
+                  <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : accounts.length === 0 ? "Connect Gmail" : "Add another Gmail"}
                 </Button>
               </div>
 
