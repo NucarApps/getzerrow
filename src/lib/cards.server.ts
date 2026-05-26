@@ -202,6 +202,9 @@ export async function sendContactShareEmail(args: {
     name: c.name, title: c.title, company: c.company, email: c.email,
     phone: c.phone, website: c.website, linkedin: c.linkedin, twitter: c.twitter,
     tagline: null, handle: (c.name || c.email || "contact").toLowerCase().replace(/[^\w-]+/g, "-"),
+    address_line1: c.address_line1 ?? null, address_line2: c.address_line2 ?? null,
+    city: c.city ?? null, region: c.region ?? null,
+    postal_code: c.postal_code ?? null, country: c.country ?? null,
   };
   const vcf = buildVCard(cardData);
   const vcfFilename = `${(c.name || c.email || "contact").replace(/[^\w-]+/g, "_")}.vcf`;
