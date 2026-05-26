@@ -1,41 +1,26 @@
-# Fix "Connect another Gmail" so it actually adds a second account
-
 ## Problem
-From the inbox header → email dropdown → "Connect another Gmail" lands on Settings, but the only button there says "Reconnect Gmail" — which sounds like it'll re-auth the current account, not add a new one. And even when clicked, Google's OAuth screen tends to silently re-auth the already-signed-in account because the request uses `prompt: "consent"` (no account chooser).
 
-## Changes
+`TrackingStandby` (the Space Invaders-style standby game in the reading pane) fills 100% of the pane width and uses an SVG with `viewBox="0 0 100 100"` + `preserveAspectRatio="none"`. On wide monitors this stretches the playfield horizontally — the ship, enemies ("emails"), bullets and HUD all get wider with the window.
 
-### 1. `src/routes/_authenticated/settings.tsx` — button label
-Line 84: when at least one account is connected, label the top-right button **"Add another Gmail"** (icon stays `Plus`). Keep "Connect Gmail" when none. The per-account "Reconnect" button (line 126, only shown when `needs_reauth`) already covers the re-authorize case.
+## Fix
 
-```tsx
-{busy === "connect" ? "Redirecting…" : accounts.length === 0 ? "Connect Gmail" : "Add another Gmail"}
-```
+Cap the game's rendered size and stop the SVG from stretching, so it stays a consistent size regardless of how wide the reading pane is.
 
-Also tighten the helper text on line 80 to match: "Connect multiple Gmail inboxes and switch between them from the inbox header."
+### `src/components/inbox/TrackingStandby.tsx`
 
-### 2. `src/lib/google-oauth.server.ts` — force account chooser
-Change the OAuth `prompt` from `"consent"` to `"select_account consent"` so Google always shows the account picker. This guarantees the user can pick a *different* Google account when adding one, and still forces consent (needed for `refresh_token`).
+1. Root container (line 526): wrap the playfield in a centered, max-width box so it no longer scales past a sensible size on wide screens.
+   - Change root to a flex centering wrapper (`h-full w-full flex items-center justify-center bg-[#02030a] overflow-hidden`).
+   - Inside, render the existing playfield in a sized box: `relative h-full w-full max-w-[900px] aspect-[4/3] max-h-full overflow-hidden` (keeps a fixed game aspect; on narrow panes it shrinks naturally, on wide panes it stops at 900px).
+   - Move the `ref={containerRef}`, `tabIndex`, key handlers, and all children onto this inner box so input handling and the input-size measurement used by the game logic continue to work.
 
-```ts
-prompt: "select_account consent",
-```
+2. Playfield SVG (line 593): change `preserveAspectRatio="none"` → `preserveAspectRatio="xMidYMid meet"` so the ship, enemies, and bullets keep their proportions instead of being stretched horizontally.
 
-### 3. `src/components/AccountSwitcher.tsx` — direct connect (no settings detour)
-Make "Connect another Gmail" start the OAuth flow directly instead of bouncing to Settings:
+3. Sanity-check the mobile control bar (line 761) and overlays (start screen at line 703) — they're absolutely positioned within the inner playfield box, so they continue to sit correctly.
 
-- Import `useServerFn` + `startConnectGmail`.
-- On select: call `startConnectGmail({ data: {} })` and redirect to the returned `url` (same pattern as `startConnect` in settings.tsx).
-- Show a brief "Redirecting…" toast on failure, fall back to navigating to `/settings` if the server fn errors.
-
-Keep `goSettings` for "Manage accounts" if we want a secondary entry later — for now just replace the action.
+No changes needed in `inbox.tsx` — the reading pane stays full-width; only the game inside it is constrained.
 
 ## Out of scope
-- No schema changes. `gmail_accounts` already supports multiple rows per `user_id` (uniqueness is `(user_id, email_address)`).
-- No change to the OAuth callback — it already upserts a new account when the email differs.
-- No new tests; the change is UX copy + a query param.
 
-## Verification
-- From the inbox header dropdown → "Connect another Gmail" → Google account picker appears (not auto-consent to current account).
-- Pick a different Google account → callback creates a second `gmail_accounts` row → AccountSwitcher shows two emails.
-- Settings → top button now says "Add another Gmail" when one is already connected; per-account "Reconnect" still appears for accounts in `needs_reauth`.
+- No changes to game logic, scoring, or physics constants.
+- No changes to inbox layout or other panes.
+- No new dependencies.

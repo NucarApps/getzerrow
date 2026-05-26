@@ -523,7 +523,9 @@ export function TrackingStandby() {
   const buffRemaining = activeBuff ? Math.max(0, (activeBuff.expiresAt - now) / 1000) : 0;
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-[#02030a]" tabIndex={0}>
+    <div className="flex h-full w-full items-center justify-center overflow-hidden bg-[#02030a]">
+    <div ref={containerRef} className="relative h-full w-full max-w-[900px] max-h-full overflow-hidden" style={{ aspectRatio: "4 / 3" }} tabIndex={0}>
+
       <style>{`
         @keyframes thruster { 0%,100%{transform:scaleY(.7);opacity:.6} 50%{transform:scaleY(1.2);opacity:1} }
         .thruster { transform-origin:center top; animation: thruster .12s linear infinite; }
@@ -590,7 +592,7 @@ export function TrackingStandby() {
       )}
 
       {/* Game layer */}
-      <svg className="absolute inset-0 z-10" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
+      <svg className="absolute inset-0 z-10" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
         <defs>
           <linearGradient id="horizonGlow" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#ff5a2e" stopOpacity="0.18" />
@@ -770,5 +772,7 @@ export function TrackingStandby() {
         </div>
       )}
     </div>
+    </div>
   );
 }
+
