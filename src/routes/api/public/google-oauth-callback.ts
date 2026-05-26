@@ -78,7 +78,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           );
 
           if (error || !accountId) {
-            console.error("oauth: failed to save account", error);
+            logError("oauth.save_account_failed", { run_id: runId, user_id: userId, email_address: email }, error);
             return new Response("Something went wrong saving your account. Please try again.", { status: 500 });
           }
           const account = { id: accountId };
