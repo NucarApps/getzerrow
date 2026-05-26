@@ -16,6 +16,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        const runId = newRunId();
         const url = new URL(request.url);
         const code = url.searchParams.get("code");
         const state = url.searchParams.get("state");
