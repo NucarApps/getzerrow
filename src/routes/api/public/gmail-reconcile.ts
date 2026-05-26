@@ -19,9 +19,14 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
       POST: async ({ request }) => {
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
 
+        // Skip dead-OAuth accounts — every Gmail roundtrip inside reconcile
+        // would throw NeedsReconnectError, producing the per-15-minute ERROR
+        // stream. Mirrors the same short-circuit in gmail-poll and
+        // gmail-renew-watches.
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
-          .select("id, email_address, last_history_sync_at");
+          .select("id, email_address, last_history_sync_at")
+          .eq("needs_reconnect", false);
         if (error) {
           return Response.json({ ok: false, error: error.message }, { status: 500 });
         }
