@@ -190,10 +190,16 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
             } else {
               const { data: accounts } = await supabaseAdmin
                 .from("gmail_accounts")
-                .select("id, email_address")
+                .select("id, email_address, watch_expiration, needs_reconnect")
                 .eq("email_address", emailAddress);
-              accountsMatched = accounts?.length ?? 0;
-              if (accountsMatched === 0) {
+              // Skip dead-OAuth accounts entirely — every Gmail call would
+              // throw with the same NeedsReconnectError and there's nothing
+              // we can do until the user reconnects in the UI.
+              const liveAccounts = (accounts ?? []).filter((a) => !a.needs_reconnect);
+              accountsMatched = liveAccounts.length;
+              if ((accounts?.length ?? 0) > 0 && liveAccounts.length === 0) {
+                details = `Account(s) for "${emailAddress}" need reconnect — skipped.`;
+              } else if (accountsMatched === 0) {
                 details = `No gmail_accounts row matches "${emailAddress}" — watch was probably created against a different connected account.`;
               }
               const publishedAtMs = publishTime ? new Date(publishTime).getTime() : null;
