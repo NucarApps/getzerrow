@@ -876,7 +876,7 @@ export const shareContactByEmail = createServerFn({ method: "POST" })
 
     const { data: contact, error } = await supabase
       .from("contacts")
-      .select("name,title,company,email,phone,website,linkedin,twitter")
+      .select("name,title,company,email,phone,website,linkedin,twitter,address_line1,address_line2,city,region,postal_code,country")
       .eq("id", data.contactId)
       .maybeSingle();
     if (error) throw new Error(error.message);
