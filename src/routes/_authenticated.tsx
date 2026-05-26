@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -9,6 +9,8 @@ import { Inbox, Settings, LogOut, Plus, Pencil, Menu, BarChart3, Users, IdCard, 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
+import { AccountSelectionProvider, useAccountSelection } from "@/lib/account-selection";
+import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
