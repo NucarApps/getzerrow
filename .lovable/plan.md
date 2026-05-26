@@ -1,53 +1,69 @@
-# Fix "Couldn't read the card: No object generated"
+## Goal
 
-## What's happening
+Let contacts store a postal address and multiple labeled phone numbers, and surface that in the contact card UI and the business-card scan flow.
 
-`scanCard` in `src/lib/contacts.functions.ts` calls the Lovable AI Gateway with `Output.object({ schema })` on `google/gemini-2.5-flash`. When the model returns text that the AI SDK can't validate against the Zod schema, the SDK throws `No object generated` and we re-throw it as `Couldn't read the card: No object generated`.
+## Quick clarification
 
-The same pattern was already solved in `classifyEmail` (`src/lib/ai.server.ts:84-131`), which tries structured mode, then falls back to plain text + manual JSON parse, then to other models. `scanCard` has none of that — one shot, one model, no recovery.
+"Save an address to a card" — I'm reading this as the **contact card** (the per-contact detail page at `/contacts/$id`). Your personal **My Card** (`/my-card`) is a separate thing and currently also has a single `phone` field. Tell me if you want this same treatment applied there too; otherwise I'll keep My Card unchanged for now.
 
-## Fix
+## Data model
 
-Rewrite the body of `scanCard.handler` to use the same multi-tier fallback chain, scoped to vision-capable models.
+**`contacts` table — add address fields** (single address per contact):
+- `address_line1` text
+- `address_line2` text
+- `city` text
+- `region` text (state/province)
+- `postal_code` text
+- `country` text
 
-### Steps
+**New `contact_phones` table** (multiple phones per contact, labeled):
+- `id`, `user_id`, `contact_id` (cascade delete with contact)
+- `label` text — `mobile` | `work` | `home` | `other` (free text allowed)
+- `number` text (stored as user-entered; we'll trim + cap at 60 chars)
+- `is_primary` boolean — exactly one primary per contact (enforced by partial unique index)
+- `position` int — for stable ordering
+- `created_at`, `updated_at`
+- RLS: `auth.uid() = user_id`
 
-1. **Extract a vision-prompt builder** inside the handler that returns the same instruction text used today, plus an explicit JSON-shape instruction for the text-JSON path:
-   ```
-   Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
-   {"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>}
-   ```
+**Migration of existing data:** copy each contact's current `contacts.phone` value into a `contact_phones` row labeled `mobile`, `is_primary = true`. Keep the `contacts.phone` column for now as a convenience mirror of the primary phone (kept in sync by the update fn) so the inbox/My Card and any AI prompts don't break. We can drop it in a later pass.
 
-2. **Add two helpers inside the handler** (mirroring `ai.server.ts`):
-   - `tryStructured(modelId)` — current call, uses `Output.object({ schema: SCAN_SCHEMA })`, returns `null` on throw and stores `lastError`.
-   - `tryTextJson(modelId)` — calls `generateText` without `Output.object`, strips ```json fences, slices from first `{` to last `}`, `JSON.parse`, then `SCAN_SCHEMA.parse`. Returns `null` on any throw and stores `lastError`.
+## Server functions (`src/lib/contacts.functions.ts`)
 
-3. **Chain the attempts** (all vision-capable models on the gateway):
-   ```
-   tryStructured("google/gemini-2.5-flash")
-     || tryTextJson("google/gemini-2.5-flash")
-     || tryStructured("google/gemini-2.5-flash-lite")
-     || tryTextJson("google/gemini-2.5-flash-lite")
-     || tryTextJson("google/gemini-2.5-pro")
-   ```
-   First non-null wins.
+- Update `getContact` / `listContacts` selects to include the new address fields and `contact_phones` (left join, ordered by `position`).
+- Update `updateContact` zod schema + handler to accept `address_*` fields and a `phones: { label, number, is_primary }[]` array. Replace-all strategy for phones inside a single transaction (delete-then-insert) to keep it simple and atomic; re-sync `contacts.phone` to the primary.
+- Update the AI-extraction prompts/return shapes (`enrichContact`, scan-card OCR, signature parser) to return `phones[]` and `address` so we don't lose multi-phone data the model already finds. Output schema becomes `{ phones: [{label,number}], address: {...} }` in addition to existing fields.
 
-4. **Error message** — if all attempts return null, throw:
-   `Couldn't read the card: AI vision returned no parseable response (last error: <lastError>)`. This gives us a useful clue in the toast next time instead of a bare "No object generated".
+## UI
 
-5. **Server logs** — `console.error` each failed attempt with model id + last error (same shape as `classifyEmail`) so we can see in `stack_modern--server-function-logs` which model/path is misbehaving on real cards.
+**`src/components/contacts/ContactDetailView.tsx`**
+- Replace the single Phone input with a `PhonesEditor` sub-component: list of rows (label select + number input + "Make primary" + remove), plus "Add phone" button.
+- Add an Address section: 6 inputs in a 2-column grid (line1, line2, city, region, postal, country).
+- The existing "Send to phone number" SMS panel switches to a dropdown of the contact's phones (defaulting to primary).
+- Surface address in the read-only header view as a formatted block.
 
-## Out of scope
+**`src/routes/_authenticated/contacts.scan.tsx`**
+- Scan draft type gains `phones: {label, number}[]` and `address`.
+- Render multiple phone rows + an address block in the review step; user can edit/remove before saving.
 
-- UI (`contacts.scan.tsx`) — no change. Same `scan({ data: { imageDataUrl } })` call, same toast pipeline.
-- `createContactFromScan`, `sendMyCard`, `Output.object` usage elsewhere — unchanged.
-- No new dependencies, no schema changes, no new env vars.
+**My Card (`my-card.tsx`)** — unchanged unless you confirm you want the same.
+
+## Validation
+
+- Phone `number`: trim, `max(60)`, `min(3)`, allow `+`, digits, spaces, `()` and `-` only.
+- `label`: trim, `max(20)`, enum-suggested but free-text accepted.
+- Address fields: each trimmed, `max(120)` (country `max(60)`).
+- Server zod schemas mirror client; reject empty phones array entries.
 
 ## Files touched
 
-- `src/lib/contacts.functions.ts` — only the `scanCard` `.handler(...)` body (~30 lines).
+- New migration: schema + data backfill
+- `src/lib/contacts.functions.ts` — schema, get/list/update, AI prompts
+- `src/components/contacts/ContactDetailView.tsx` — phones editor + address section
+- `src/routes/_authenticated/contacts.scan.tsx` — multi-phone + address in scan review
+- New small component: `src/components/contacts/PhonesEditor.tsx`
 
-## Verification
+## Out of scope
 
-1. After the edit, retry the scan with the same card → expect either a populated draft, or a more specific error message identifying which model/path failed.
-2. If it still fails, the error text + server logs will tell us whether the gateway is rejecting vision input on these models (different remediation: open a Lovable AI Gateway issue) vs. the model genuinely can't read the card.
+- My Card multi-phone/address (ask if you want it)
+- Phone validation against a country library (kept lightweight)
+- Geocoding the address

@@ -257,10 +257,58 @@ export type Database = {
         }
         Relationships: []
       }
+      contact_phones: {
+        Row: {
+          contact_id: string
+          created_at: string
+          id: string
+          is_primary: boolean
+          label: string
+          number: string
+          position: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          label?: string
+          number: string
+          position?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          label?: string
+          number?: string
+          position?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_phones_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
+          address_line1: string | null
+          address_line2: string | null
           avatar_url: string | null
+          city: string | null
           company: string | null
+          country: string | null
           created_at: string
           email: string
           enriched_at: string | null
@@ -269,6 +317,8 @@ export type Database = {
           name: string | null
           notes: string | null
           phone: string | null
+          postal_code: string | null
+          region: string | null
           relationship_summary: string | null
           source: string
           summary_generated_at: string | null
@@ -279,8 +329,12 @@ export type Database = {
           website: string | null
         }
         Insert: {
+          address_line1?: string | null
+          address_line2?: string | null
           avatar_url?: string | null
+          city?: string | null
           company?: string | null
+          country?: string | null
           created_at?: string
           email: string
           enriched_at?: string | null
@@ -289,6 +343,8 @@ export type Database = {
           name?: string | null
           notes?: string | null
           phone?: string | null
+          postal_code?: string | null
+          region?: string | null
           relationship_summary?: string | null
           source?: string
           summary_generated_at?: string | null
@@ -299,8 +355,12 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          address_line1?: string | null
+          address_line2?: string | null
           avatar_url?: string | null
+          city?: string | null
           company?: string | null
+          country?: string | null
           created_at?: string
           email?: string
           enriched_at?: string | null
@@ -309,6 +369,8 @@ export type Database = {
           name?: string | null
           notes?: string | null
           phone?: string | null
+          postal_code?: string | null
+          region?: string | null
           relationship_summary?: string | null
           source?: string
           summary_generated_at?: string | null
