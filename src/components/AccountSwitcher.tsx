@@ -111,9 +111,12 @@ export function AccountSwitcher({ accounts, loading, compact, onNavigate }: Prop
           );
         })}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={goSettings} className="flex items-center gap-2">
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); addAccount(); }} className="flex items-center gap-2" disabled={connecting}>
           <Plus className="h-3.5 w-3.5" />
-          <span className="text-sm">Connect another Gmail</span>
+          <span className="text-sm">{connecting ? "Redirecting…" : "Connect another Gmail"}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={goSettings} className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Manage accounts</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
