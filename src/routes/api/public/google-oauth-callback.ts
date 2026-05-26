@@ -10,6 +10,7 @@ import {
   clearNeedsReconnect,
 } from "@/lib/google-oauth.server";
 import { ensureWatch } from "@/lib/gmail.server";
+import { logError, newRunId } from "@/lib/log.server";
 
 export const Route = createFileRoute("/api/public/google-oauth-callback")({
   server: {
