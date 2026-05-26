@@ -1309,6 +1309,18 @@ export type Database = {
           success: boolean
         }[]
       }
+      list_my_gmail_accounts_with_status: {
+        Args: never
+        Returns: {
+          created_at: string
+          email_address: string
+          history_id: string
+          id: string
+          last_poll_at: string
+          refresh_token_present: boolean
+          watch_expiration: string
+        }[]
+      }
       set_gmail_oauth_tokens: {
         Args: {
           p_access_token: string
