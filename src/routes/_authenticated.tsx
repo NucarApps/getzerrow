@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -9,6 +9,8 @@ import { Inbox, Settings, LogOut, Plus, Pencil, Menu, BarChart3, Users, IdCard, 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
+import { AccountSelectionProvider, useAccountSelection } from "@/lib/account-selection";
+import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
@@ -31,7 +33,20 @@ function AuthedLayout() {
   useEmailRealtime();
 
   return (
+    <AccountSelectionProvider>
     <FolderSelectionProvider>
+      <AuthedLayoutInner mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+    </FolderSelectionProvider>
+    </AccountSelectionProvider>
+  );
+}
+
+function AuthedLayoutInner({ mobileOpen, setMobileOpen }: { mobileOpen: boolean; setMobileOpen: (v: boolean) => void }) {
+  const listAccounts = useServerFn(listMyGmailAccounts);
+  const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
+  const accounts = accountsQ.data?.accounts ?? [];
+
+  return (
       <div className="relative flex h-[100dvh] overflow-hidden bg-background text-foreground">
         {/* Mission Control atmospheric backdrop */}
         <div
@@ -98,6 +113,9 @@ function AuthedLayout() {
               <Menu className="h-5 w-5" />
             </button>
             <img src={zerrowLogo} alt="Zerrow" className="h-12 w-auto" />
+            <div className="ml-auto min-w-0 max-w-[60%]">
+              <AccountSwitcher accounts={accounts} loading={accountsQ.isLoading} compact />
+            </div>
           </div>
           <BackfillBanner />
           <div className="min-h-0 flex-1">
@@ -106,13 +124,13 @@ function AuthedLayout() {
 
         </main>
       </div>
-    </FolderSelectionProvider>
   );
 }
 
 function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   
   const { selected, setSelected } = useFolderSelection();
+  const { activeAccountId, setActiveAccountId } = useAccountSelection();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<Folder | null>(null);
 
@@ -121,7 +139,19 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   const adminMeFn = useServerFn(getAdminMe);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
-  const accountId = accountsQ.data?.accounts[0]?.id ?? null;
+  const accounts = accountsQ.data?.accounts ?? [];
+
+  // Reconcile activeAccountId with the actual account list — fall back to the
+  // first account if the stored selection no longer exists or none was set.
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    const exists = activeAccountId && accounts.some((a) => a.id === activeAccountId);
+    if (!exists) setActiveAccountId(accounts[0].id);
+  }, [accounts, activeAccountId, setActiveAccountId]);
+
+  const accountId = activeAccountId && accounts.some((a) => a.id === activeAccountId)
+    ? activeAccountId
+    : accounts[0]?.id ?? null;
 
   const adminMeQ = useQuery({
     queryKey: ["admin-me"],
@@ -149,11 +179,13 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   });
 
   const emailsQ = useQuery({
-    queryKey: ["emails", "counts"],
+    queryKey: ["emails", "counts", accountId],
+    enabled: !!accountId,
     queryFn: async () => {
       const { data } = await supabase
         .from("emails")
         .select("id,folder_id,is_read,is_archived,raw_labels")
+        .eq("gmail_account_id", accountId!)
         .limit(5000);
       return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean; is_archived: boolean; raw_labels: string[] | null }>;
     },
@@ -186,12 +218,20 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col p-4">
-      <div className="mb-6 px-2">
+      <div className="mb-4 px-2">
         <div className="flex items-center gap-2">
           <img src={zerrowLogo} alt="Zerrow" className="h-14 w-auto" />
         </div>
-        
       </div>
+
+      <div className="mb-4 px-1">
+        <AccountSwitcher
+          accounts={accounts}
+          loading={accountsQ.isLoading}
+          onNavigate={onNavigate}
+        />
+      </div>
+
 
       <nav className="flex flex-col gap-0.5">
         <button

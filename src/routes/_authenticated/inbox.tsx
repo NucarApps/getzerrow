@@ -32,6 +32,7 @@ import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { useFolderSelection } from "@/lib/folder-selection";
+import { useAccountSelection } from "@/lib/account-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
@@ -307,19 +308,18 @@ function InboxPage() {
     mode: "sender" | "domain";
   }>(null);
 
-  const accountQ = useQuery({
-    queryKey: ["gmail_account"],
-    queryFn: async () => {
-      const { data } = await supabase.from("gmail_accounts").select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
-      return data as { id: string } | null;
-    },
-  });
-  const accountId = accountQ.data?.id ?? null;
+  const { activeAccountId } = useAccountSelection();
+  const accountId = activeAccountId;
 
   const foldersQ = useQuery({
-    queryKey: ["folders"],
+    queryKey: ["folders", accountId],
+    enabled: !!accountId,
     queryFn: async () => {
-      const { data } = await supabase.from("folders").select("id,name,color,gmail_label_id").order("priority", { ascending: false });
+      const { data } = await supabase
+        .from("folders")
+        .select("id,name,color,gmail_label_id")
+        .eq("gmail_account_id", accountId!)
+        .order("priority", { ascending: false });
       return (data ?? []) as Folder[];
     },
   });
@@ -368,7 +368,8 @@ function InboxPage() {
   const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
   const emailsQ = useQuery<Email[]>({
-    queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
+    queryKey: ["emails", accountId, selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
+    enabled: !!accountId,
     queryFn: async () => {
       if (isSearching) {
         // Operator-aware search: when the user typed `from:` / `to:`, filter
@@ -378,6 +379,7 @@ function InboxPage() {
           let q = supabase
             .from("emails")
             .select(LIST_COLUMNS)
+            .eq("gmail_account_id", accountId!)
             .order("received_at", { ascending: false, nullsFirst: false })
             .limit(500);
           if (parsedQuery.from) {
@@ -399,6 +401,7 @@ function InboxPage() {
         const { data } = await supabase
           .from("emails")
           .select(LIST_COLUMNS)
+          .eq("gmail_account_id", accountId!)
           .order("received_at", { ascending: false })
           .limit(2000);
         return (data ?? []) as Email[];
@@ -408,6 +411,7 @@ function InboxPage() {
       let q = supabase
         .from("emails")
         .select(LIST_COLUMNS)
+        .eq("gmail_account_id", accountId!)
         .order("received_at", { ascending: false, nullsFirst: false })
         .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
       if (cursor) q = q.lt("received_at", cursor);
