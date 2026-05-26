@@ -15,6 +15,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessageMetadata, parseMessage, listMessages, listHistory, ensureWatch, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "./ai.server";
+import { logError } from "./log.server";
 import {
   MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS,
   computeBackoffSeconds as _computeBackoffSeconds,
@@ -115,7 +116,7 @@ export async function backfillRecent(accountId: string, userId: string, maxResul
   try {
     await enqueueMessageJobs(accountId, userId, ids, 0);
   } catch (e) {
-    console.error("backfillRecent bulk enqueue failed", e);
+    logError("sync.backfill_recent_enqueue_failed", { account_id: accountId, user_id: userId, candidate_count: ids.length }, e);
     return { processed: 0, enqueued: 0, error: (e as Error).message };
   }
   return { processed: ids.length, enqueued: ids.length };
@@ -179,7 +180,7 @@ export async function backfillWindow(
         processed++;
       } catch (e) {
         failed++;
-        console.error("backfillWindow process failed", todo[i], e);
+        logError("sync.backfill_window_process_failed", { account_id: accountId, user_id: userId, gmail_message_id: todo[i] }, e);
       }
     }
   }
@@ -238,7 +239,7 @@ async function bumpHistoryAndStamp(
     // RPC isn't deployed yet, or some other DB error. Fall back to the
     // JS-only check — strictly worse on overlapping replicas but still
     // better than blind UPDATE.
-    console.error("bump_history_id_if_greater RPC failed, falling back", error.message);
+    logError("sync.bump_history_rpc_failed", { account_id: accountId, incoming_history_id: incomingHistoryId }, error);
     const { data: current } = await supabaseAdmin
       .from("gmail_accounts")
       .select("history_id")
@@ -344,7 +345,7 @@ export async function tickBackfillJobs(maxJobs = 2) {
       const r = await tickBackfillJob(job);
       results.push({ job_id: job.id, ...r });
     } catch (e: any) {
-      console.error("tickBackfillJob failed", job.id, e);
+      logError("sync.tick_backfill_job_failed", { job_id: job.id, account_id: job.gmail_account_id, status: job.status }, e);
       await supabaseAdmin
         .from("backfill_jobs")
         .update({ last_error: String(e?.message ?? e).slice(0, 500) })
@@ -389,7 +390,7 @@ async function tickBackfillJob(job: BackfillJob): Promise<{ phase: string; added
           await enqueueMessageJobs(job.gmail_account_id, job.user_id, todo, 10);
           enqueuedDelta += todo.length;
         } catch (e) {
-          console.error("backfill page bulk enqueue failed", e);
+          logError("sync.backfill_page_enqueue_failed", { job_id: job.id, account_id: job.gmail_account_id, batch_size: todo.length }, e);
         }
       }
 
@@ -566,7 +567,7 @@ export async function runMessageJobs(
     p_priority: opts.priority ?? undefined,
   });
   if (claimErr) {
-    console.error("claim_message_jobs RPC failed", claimErr);
+    logError("sync.claim_message_jobs_rpc_failed", { limit, priority: opts.priority ?? null }, claimErr);
     return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0, error: claimErr.message };
   }
   type ClaimedJob = {
@@ -593,7 +594,7 @@ export async function runMessageJobs(
       try {
         contextByAccount.set(aid, await loadAccountContext(aid, userByAccount.get(aid)!));
       } catch (e) {
-        console.error("loadAccountContext failed", aid, e);
+        logError("sync.load_account_context_failed", { account_id: aid, user_id: userByAccount.get(aid) ?? null }, e);
       }
     }),
   );
@@ -626,7 +627,7 @@ export async function runMessageJobs(
         .eq("gmail_message_id", job.gmail_message_id)
         .eq("classified_by", "pending");
     } catch (e) {
-      console.error("finalizeStuckEmailRow failed", e);
+      logError("sync.finalize_stuck_email_failed", { job_id: job.id, account_id: job.gmail_account_id, gmail_message_id: job.gmail_message_id }, e);
     }
   };
 
@@ -802,7 +803,7 @@ export async function runMessageJobs(
             );
           } catch (e: any) {
             // Batch failed — fall back to per-message classify so the queue still drains.
-            console.error("batch AI classify failed, falling back per-message", e?.message ?? e);
+            logError("sync.batch_ai_classify_failed", { account_id: aid, chunk_size: chunk.length }, e);
             await Promise.all(
               chunk.map(async (c) => {
                 try {
@@ -886,7 +887,7 @@ async function syncSinceHistoryLocked(
       return r;
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e);
-      console.error("bootstrap failed", accountId, msg);
+      logError("sync.bootstrap_failed", { account_id: accountId, user_id: account.user_id }, e);
       return { bootstrapped: false, error: msg };
     }
   }
@@ -927,7 +928,7 @@ async function syncSinceHistoryLocked(
               snippet: p.snippet,
             });
           }
-        } catch (e) { console.error("labelAdded handler failed", e); }
+        } catch (e) { logError("sync.label_added_handler_failed", { account_id: accountId, gmail_message_id: ev.message.id, added_labels: ev.labelIds }, e); }
       }
       for (const ev of h.labelsRemoved ?? []) {
         labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: [], removed: ev.labelIds });
@@ -949,7 +950,7 @@ async function syncSinceHistoryLocked(
           0,
           { publishedAtMs: opts.publishedAtMs ?? null },
         );
-      } catch (e) { console.error("bulk enqueue failed", e); }
+      } catch (e) { logError("sync.bulk_enqueue_failed", { account_id: accountId, user_id: account.user_id, count: seenAdded.size }, e); }
     }
 
     // Apply label ops sequentially per message. We SKIP ops whose message
@@ -960,7 +961,7 @@ async function syncSinceHistoryLocked(
     for (const op of labelOps) {
       if (seenAdded.has(op.messageId)) continue;
       try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed); }
-      catch (e) { console.error("applyLabelChange failed", e); }
+      catch (e) { logError("sync.apply_label_change_failed", { account_id: accountId, gmail_message_id: op.messageId, added: op.added, removed: op.removed }, e); }
     }
 
     if (toDelete.size > 0) {
@@ -968,7 +969,7 @@ async function syncSinceHistoryLocked(
         await supabaseAdmin.from("emails").delete()
           .eq("gmail_account_id", accountId)
           .in("gmail_message_id", Array.from(toDelete));
-      } catch (e) { console.error("messagesDeleted batch handler failed", e); }
+      } catch (e) { logError("sync.messages_deleted_batch_failed", { account_id: accountId, count: toDelete.size }, e); }
     }
 
     if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);
@@ -994,11 +995,11 @@ async function syncSinceHistoryLocked(
     // next push/poll retries cheaply, instead of triggering an expensive
     // full-mailbox bootstrap.
     if (e instanceof GmailApiError && e.status === 404) {
-      console.error("history_id expired, queueing rebootstrap", accountId);
+      logError("sync.history_id_expired", { account_id: accountId, action: "rebootstrap" }, e);
       await supabaseAdmin.from("gmail_accounts").update({ history_id: null }).eq("id", accountId);
       return { error: msg, rebootstrapped: true };
     }
-    console.error("history sync failed (transient)", accountId, msg);
+    logError("sync.history_sync_transient_failed", { account_id: accountId }, e);
     return { error: msg };
   }
 }
@@ -1060,7 +1061,7 @@ async function bootstrapAccount(accountId: string, userId: string) {
       try {
         await enqueueMessageJobs(accountId, userId, todo, 0);
       } catch (e) {
-        console.error("bootstrap bulk enqueue failed", e);
+        logError("sync.bootstrap_enqueue_failed", { account_id: accountId, user_id: userId, count: todo.length }, e);
       }
     }
   } else {

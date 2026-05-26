@@ -32,6 +32,7 @@ import type { AccountContext } from "./account-context";
 import { jitter } from "./backoff";
 import { classifyParsedEmail } from "./classify";
 import { bumpEmailsSinceLearn } from "./folder-learn";
+import { logError } from "../log.server";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
 
@@ -146,7 +147,11 @@ export async function processGmailMessage(
     .single();
 
   if (error) {
-    console.error("insert email failed", error);
+    logError("process_message.insert_failed", {
+      account_id: accountId,
+      gmail_message_id: gmailId,
+      user_id: userId,
+    }, error);
     return { error: error.message };
   }
 
@@ -174,7 +179,12 @@ export async function processGmailMessage(
     if (folder_id) void bumpEmailsSinceLearn(folder_id);
     if (t) t.db += performance.now() - _tDb;
   } catch (e) {
-    console.error("classify failed (email already visible in Inbox)", e);
+    logError("process_message.classify_failed", {
+      account_id: accountId,
+      gmail_message_id: gmailId,
+      email_id: inserted.id,
+      ai_ms: t?.ai,
+    }, e);
     await supabaseAdmin.from("emails").update({
       classified_by: "unclassified",
       classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
@@ -222,7 +232,7 @@ export async function processGmailMessage(
       if (inInbox && effectiveArchive) removeLabels.push("INBOX");
       if (addLabels.length || removeLabels.length) {
         try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); }
-        catch (e) { console.error("modify failed", e); }
+        catch (e) { logError("process_message.modify_failed", { account_id: accountId, gmail_message_id: gmailId, added: addLabels, removed: removeLabels }, e); }
       }
       const patch: {
         is_archived?: boolean;
@@ -257,7 +267,14 @@ export async function processGmailMessage(
           // Schedule a retry instead of silently dropping. Counter +
           // next_retry_at are picked up by retryForwardAttempts.
           const errMsg = (e as Error)?.message?.slice(0, 500) ?? "unknown";
-          console.error("auto-forward failed; scheduling retry", errMsg);
+          logError("process_message.forward_failed", {
+            account_id: accountId,
+            gmail_message_id: gmailId,
+            email_id: inserted.id,
+            folder_id,
+            forward_to: folder.forward_to,
+            attempt: 1,
+          }, e);
           const nextRetry = new Date(Date.now() + jitter(60) * 1000).toISOString();
           patch.forward_attempts = 1;
           patch.forward_last_error = errMsg;

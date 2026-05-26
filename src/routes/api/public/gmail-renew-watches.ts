@@ -6,6 +6,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { ensureWatch } from "@/lib/gmail.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { withCronRun, logError } from "@/lib/log.server";
 
 const RENEW_WINDOW_HOURS = 72;
 const ALERT_NEAR_EXPIRY_HOURS = 24;
@@ -15,6 +16,7 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
     handlers: {
       POST: async ({ request }) => {
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
+        return withCronRun("gmail-renew-watches", async ({ runId }) => {
         const cutoff = new Date(Date.now() + RENEW_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
@@ -22,7 +24,7 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
           .eq("needs_reconnect", false)
           .or(`watch_expiration.is.null,watch_expiration.lt.${cutoff}`);
         if (error) {
-          console.error("renew-watches: query failed", error);
+          logError("renew_watches.query_failed", { run_id: runId }, error);
           return Response.json({ ok: false, error: "Query failed" }, { status: 500 });
         }
 
@@ -30,6 +32,7 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
         let failed = 0;
         const errorSummaries: string[] = [];
         for (const acc of accounts ?? []) {
+          const tAcc = Date.now();
           try {
             const w = await ensureWatch(acc.id, null); // force renew
             if (w) {
@@ -41,16 +44,16 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
             ok++;
           } catch (e: unknown) {
             const msg = (e as Error)?.message ?? String(e);
-            console.error("renew failed for", { account_id: acc.id, err: msg });
+            logError("renew_watches.account_failed", {
+              run_id: runId,
+              account_id: acc.id,
+              duration_ms: Date.now() - tAcc,
+            }, e);
             failed++;
             if (errorSummaries.length < 5) errorSummaries.push(msg);
           }
         }
 
-        // Anyone still near-expiry after the renewal pass needs operator
-        // attention — log a watch_renew_failed row per-account so it shows
-        // up in the Settings activity panel. Skip the query if we didn't
-        // touch any accounts (nothing changed since the previous run).
         const nearExpiryCutoff = new Date(Date.now() + ALERT_NEAR_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();
         const stillExpiring = (accounts?.length ?? 0) > 0
           ? (await supabaseAdmin
@@ -66,7 +69,9 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
               email_address: acc.email_address,
               details: `Watch expiration ${acc.watch_expiration ?? "<null>"} still inside ${ALERT_NEAR_EXPIRY_HOURS}h after renewal pass`,
             });
-          } catch (e) { console.error("pubsub_events near-expiry log failed", e); }
+          } catch (e) {
+            logError("renew_watches.pubsub_log_failed", { run_id: runId, account_id: acc.id, kind: "watch_renew_failed" }, e);
+          }
         }
 
         try {
@@ -77,13 +82,17 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
             error: errorSummaries.join("; ") || null,
             details: `Renewed ${ok}/${ok + failed}; ${stillExpiring?.length ?? 0} still near-expiry`,
           });
-        } catch (e) { console.error("pubsub_events log failed", e); }
+        } catch (e) {
+          logError("renew_watches.pubsub_log_failed", { run_id: runId, kind: "watch_renew" }, e);
+        }
         return Response.json({
           ok: true,
           count: ok + failed,
           succeeded: ok,
           failed,
           stillExpiring: stillExpiring?.length ?? 0,
+          run_id: runId,
+        });
         });
       },
       GET: async () => new Response("Use POST", { status: 405 }),

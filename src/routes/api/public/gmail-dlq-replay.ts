@@ -6,12 +6,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { replayTransientDlq, retryForwardAttempts } from "@/lib/sync.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { withCronRun, logError } from "@/lib/log.server";
 
 export const Route = createFileRoute("/api/public/gmail-dlq-replay")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
+        return withCronRun("gmail-dlq-replay", async ({ runId }) => {
         const url = new URL(request.url);
         const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "200", 10) || 200, 500);
         const forwardLimit = Math.min(parseInt(url.searchParams.get("forwardLimit") ?? "50", 10) || 50, 200);
@@ -21,14 +23,24 @@ export const Route = createFileRoute("/api/public/gmail-dlq-replay")({
         let dlqError: string | null = null;
         let forwardError: string | null = null;
 
+        const tDlq = Date.now();
         try { dlq = await replayTransientDlq(limit); }
         catch (e) {
-          console.error("replayTransientDlq failed", e);
+          logError("dlq_replay.replay_failed", {
+            run_id: runId,
+            limit,
+            duration_ms: Date.now() - tDlq,
+          }, e);
           dlqError = (e as Error)?.message ?? String(e);
         }
+        const tFwd = Date.now();
         try { forwards = await retryForwardAttempts(forwardLimit); }
         catch (e) {
-          console.error("retryForwardAttempts failed", e);
+          logError("dlq_replay.forward_retry_failed", {
+            run_id: runId,
+            forward_limit: forwardLimit,
+            duration_ms: Date.now() - tFwd,
+          }, e);
           forwardError = (e as Error)?.message ?? String(e);
         }
 
@@ -38,9 +50,12 @@ export const Route = createFileRoute("/api/public/gmail-dlq-replay")({
             details: `DLQ replayed ${dlq?.replayed ?? 0}/${dlq?.checked ?? 0}; forwards ok=${forwards?.ok ?? 0} failed=${forwards?.failed ?? 0} gaveUp=${forwards?.gaveUp ?? 0}`,
             error: dlqError ?? forwardError,
           });
-        } catch (e) { console.error("pubsub_events dlq_replay log failed", e); }
+        } catch (e) {
+          logError("dlq_replay.pubsub_log_failed", { run_id: runId }, e);
+        }
 
-        return Response.json({ ok: true, dlq, forwards });
+        return Response.json({ ok: true, dlq, forwards, run_id: runId });
+        });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
     },
