@@ -155,7 +155,7 @@ export const listContacts = createServerFn({ method: "GET" })
 
   });
 
-/** Get a single contact + their last few emails. */
+/** Get a single contact + their last few emails + phones. */
 export const getContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
@@ -167,13 +167,21 @@ export const getContact = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .single();
     if (error || !contact) throw new Error("Contact not found");
-    const { data: emails } = await supabase
-      .from("emails")
-      .select("id,subject,snippet,received_at")
-      .eq("from_addr", contact.email)
-      .order("received_at", { ascending: false })
-      .limit(10);
-    return { contact, recentEmails: emails ?? [] };
+    const [{ data: emails }, { data: phones }] = await Promise.all([
+      supabase
+        .from("emails")
+        .select("id,subject,snippet,received_at")
+        .eq("from_addr", contact.email)
+        .order("received_at", { ascending: false })
+        .limit(10),
+      supabase
+        .from("contact_phones")
+        .select("id,label,number,is_primary,position")
+        .eq("contact_id", data.id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
+    ]);
+    return { contact, recentEmails: emails ?? [], phones: phones ?? [] };
   });
 
 
