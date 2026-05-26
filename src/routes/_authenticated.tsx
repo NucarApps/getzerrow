@@ -117,6 +117,7 @@ function AuthedLayout() {
 function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   
   const { selected, setSelected } = useFolderSelection();
+  const { activeAccountId, setActiveAccountId } = useAccountSelection();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<Folder | null>(null);
 
@@ -125,7 +126,19 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   const adminMeFn = useServerFn(getAdminMe);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
-  const accountId = accountsQ.data?.accounts[0]?.id ?? null;
+  const accounts = accountsQ.data?.accounts ?? [];
+
+  // Reconcile activeAccountId with the actual account list — fall back to the
+  // first account if the stored selection no longer exists or none was set.
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    const exists = activeAccountId && accounts.some((a) => a.id === activeAccountId);
+    if (!exists) setActiveAccountId(accounts[0].id);
+  }, [accounts, activeAccountId, setActiveAccountId]);
+
+  const accountId = activeAccountId && accounts.some((a) => a.id === activeAccountId)
+    ? activeAccountId
+    : accounts[0]?.id ?? null;
 
   const adminMeQ = useQuery({
     queryKey: ["admin-me"],
@@ -153,11 +166,13 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   });
 
   const emailsQ = useQuery({
-    queryKey: ["emails", "counts"],
+    queryKey: ["emails", "counts", accountId],
+    enabled: !!accountId,
     queryFn: async () => {
       const { data } = await supabase
         .from("emails")
         .select("id,folder_id,is_read,is_archived,raw_labels")
+        .eq("gmail_account_id", accountId!)
         .limit(5000);
       return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean; is_archived: boolean; raw_labels: string[] | null }>;
     },
