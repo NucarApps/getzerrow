@@ -34,8 +34,19 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   const listGroups = useServerFn(listContactGroups);
   const setGroups = useServerFn(setContactGroups);
 
+  const fetchCardUrl = useServerFn(getContactCardSignedUrl);
+
   const q = useQuery({ queryKey: ["contact", id], queryFn: () => fetchOne({ data: { id } }) });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
+
+  const hasCardImage = Boolean((q.data?.contact as any)?.card_image_url);
+  const cardUrlQ = useQuery({
+    queryKey: ["contact-card-url", id, (q.data?.contact as any)?.card_image_url ?? null],
+    queryFn: () => fetchCardUrl({ data: { contactId: id } }),
+    enabled: hasCardImage,
+    staleTime: 8 * 60 * 1000, // refresh before the 10-minute signed URL expires
+  });
+  const cardImgSrc = cardUrlQ.data?.url ?? null;
 
   const myGroupIds = useMemo(() => {
     const ids = new Set<string>();
