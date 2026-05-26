@@ -102,7 +102,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
 
           return new Response(null, { status: 302, headers: { Location: "/settings?connected=1" } });
         } catch (e: any) {
-          console.error("oauth callback failed", e);
+          logError("oauth.callback_failed", { run_id: runId, user_id: userId }, e);
           return new Response("Something went wrong completing sign-in. Please try again.", { status: 500 });
         }
       },
