@@ -183,6 +183,17 @@ export function ContactDetailView({ id, onDeleted }: Props) {
     onDeleted?.();
   }
 
+  async function removeCardImage() {
+    if (!confirm("Remove the saved card image?")) return;
+    try {
+      await update({ data: { id, card_image_url: null } });
+      qc.invalidateQueries({ queryKey: ["contact", id] });
+      toast.success("Card image removed");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    }
+  }
+
   if (q.isLoading) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
   if (!q.data?.contact) return <div className="p-8 text-sm text-muted-foreground">Not found.</div>;
 
