@@ -772,5 +772,7 @@ export function TrackingStandby() {
         </div>
       )}
     </div>
+    </div>
   );
 }
+
