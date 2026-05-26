@@ -60,7 +60,7 @@ describe("rowBelongsInList", () => {
     // A folder literally named "inbox" is unusual but possible. The folder
     // id should be a UUID — not "inbox"/"archived"/"all" — so we can keep
     // those as reserved tags without conflict.
-    expect(rowBelongsInList(row({ folder_id: "inbox" }), ["emails", "inbox"])).toBe(false);
+    expect(rowBelongsInList(row({ folder_id: "inbox", raw_labels: [] }), ["emails", "inbox"])).toBe(false);
     // (Caller's responsibility: never use a literal "inbox"/"archived"/"all"
     // as a folder id when constructing query keys.)
   });
