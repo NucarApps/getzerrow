@@ -35,6 +35,18 @@ function AuthedLayout() {
   return (
     <AccountSelectionProvider>
     <FolderSelectionProvider>
+      <AuthedLayoutInner mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+    </FolderSelectionProvider>
+    </AccountSelectionProvider>
+  );
+}
+
+function AuthedLayoutInner({ mobileOpen, setMobileOpen }: { mobileOpen: boolean; setMobileOpen: (v: boolean) => void }) {
+  const listAccounts = useServerFn(listMyGmailAccounts);
+  const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
+  const accounts = accountsQ.data?.accounts ?? [];
+
+  return (
       <div className="relative flex h-[100dvh] overflow-hidden bg-background text-foreground">
         {/* Mission Control atmospheric backdrop */}
         <div
