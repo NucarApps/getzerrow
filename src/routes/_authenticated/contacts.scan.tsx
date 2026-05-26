@@ -48,7 +48,6 @@ function ScanPage() {
   function resetAll() {
     setRaw(null);
     setCropped(null);
-    setCroppedBlob(null);
     setCardImageUrl(null);
     setDraft(null);
     setPhones([]);
