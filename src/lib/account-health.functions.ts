@@ -186,3 +186,76 @@ export const deleteDlqJob = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+export type AccountDiagnostic = {
+  accessToken: "ok" | "needs_reconnect" | "error";
+  watch: "ok" | "skipped" | "error";
+  watchExpiresAt: string | null;
+  historyId: string | null;
+  error: string | null;
+};
+
+// Manually exercise the OAuth refresh + Gmail watch top-up for one account.
+// Used by the "Run diagnostic" button on AccountHealthCard. Surfaces any
+// permanent failure (invalid_grant, missing topic, etc.) without waiting for
+// the next cron tick.
+export const runAccountDiagnostic = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ account_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }): Promise<AccountDiagnostic> => {
+    // Verify the caller owns the account before doing any Google calls.
+    const { data: acct, error: ownErr } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("id, user_id")
+      .eq("id", data.account_id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (ownErr || !acct) {
+      return {
+        accessToken: "error",
+        watch: "skipped",
+        watchExpiresAt: null,
+        historyId: null,
+        error: "Account not found",
+      };
+    }
+
+    let accessToken: AccountDiagnostic["accessToken"] = "ok";
+    let watch: AccountDiagnostic["watch"] = "skipped";
+    let watchExpiresAt: string | null = null;
+    let historyId: string | null = null;
+    let error: string | null = null;
+
+    try {
+      await getAccessToken(data.account_id);
+    } catch (e) {
+      if (e instanceof NeedsReconnectError) {
+        accessToken = "needs_reconnect";
+        error = e.message;
+      } else {
+        accessToken = "error";
+        error = (e as Error).message;
+      }
+      return { accessToken, watch, watchExpiresAt, historyId, error };
+    }
+
+    try {
+      const w = await ensureWatch(data.account_id, null);
+      if (w) {
+        watch = "ok";
+        historyId = w.historyId;
+        watchExpiresAt = new Date(parseInt(w.expiration, 10)).toISOString();
+        await supabaseAdmin
+          .from("gmail_accounts")
+          .update({ history_id: w.historyId, watch_expiration: watchExpiresAt })
+          .eq("id", data.account_id);
+      } else {
+        watch = "skipped";
+      }
+    } catch (e) {
+      watch = "error";
+      error = (e as Error).message;
+    }
+
+    return { accessToken, watch, watchExpiresAt, historyId, error };
+  });
