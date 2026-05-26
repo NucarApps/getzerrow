@@ -573,13 +573,23 @@ export const scanCard = createServerFn({ method: "POST" })
       website: z.string().nullable(),
       linkedin: z.string().nullable(),
       twitter: z.string().nullable(),
+      phones: z.array(z.object({
+        label: z.string(),
+        number: z.string(),
+      })).nullable().optional(),
+      address_line1: z.string().nullable().optional(),
+      address_line2: z.string().nullable().optional(),
+      city: z.string().nullable().optional(),
+      region: z.string().nullable().optional(),
+      postal_code: z.string().nullable().optional(),
+      country: z.string().nullable().optional(),
     });
     type ScanOut = z.infer<typeof SCAN_SCHEMA>;
 
     const baseInstruction =
-      "Extract contact information from this business card photo. Return each field exactly as printed or null if not visible. Do NOT invent values.";
+      "Extract contact information from this business card photo. Return each field exactly as printed or null if not visible. Do NOT invent values. If multiple phone numbers are present, list each one in `phones` with a label like \"mobile\", \"work\", \"home\", or \"other\" (lowercase). Still set `phone` to the most prominent / primary number. If a postal address is shown, split it into address_line1, address_line2, city, region (state/province), postal_code, and country.";
     const jsonShape =
-      '{"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>}';
+      '{"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>,"phones":<[{"label":<string>,"number":<string>}]|null>,"address_line1":<string|null>,"address_line2":<string|null>,"city":<string|null>,"region":<string|null>,"postal_code":<string|null>,"country":<string|null>}';
 
     let lastError = "unknown error";
 
