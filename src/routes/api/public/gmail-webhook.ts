@@ -203,13 +203,36 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 details = `No gmail_accounts row matches "${emailAddress}" — watch was probably created against a different connected account.`;
               }
               const publishedAtMs = publishTime ? new Date(publishTime).getTime() : null;
-              for (const acc of accounts ?? []) {
+              for (const acc of liveAccounts) {
                 try {
                   // syncSinceHistory now holds a per-account lock internally,
                   // so overlapping pushes coalesce into one history-diff pass.
                   const r = await syncSinceHistory(acc.id, { publishedAtMs });
                   if (r && typeof (r as { synced?: number }).synced === "number") {
                     enqueuedCount += (r as { synced: number }).synced;
+                  }
+                  // Opportunistic watch top-up: if this account's watch will
+                  // expire within 72h, re-arm it inline. Belt-and-suspenders
+                  // alongside the renewal cron — if cron is broken (which IS
+                  // how watches lapse in practice), a healthy push channel
+                  // keeps itself alive.
+                  try {
+                    const w = await topUpWatch(acc.id, acc.watch_expiration);
+                    if (w) {
+                      await supabaseAdmin.from("gmail_accounts").update({
+                        history_id: w.historyId,
+                        watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
+                      }).eq("id", acc.id);
+                      await supabaseAdmin.from("pubsub_events").insert({
+                        event_type: "watch_renew",
+                        email_address: acc.email_address,
+                        history_id: w.historyId,
+                        details: "Opportunistic top-up from push webhook",
+                      });
+                    }
+                  } catch (topUpErr) {
+                    // Non-fatal — renewal cron will retry.
+                    console.error("opportunistic top-up failed", { account_id: acc.id, err: (topUpErr as Error)?.message });
                   }
                 } catch (e) {
                   console.error("sync failed for", acc.id, e);
