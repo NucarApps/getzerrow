@@ -7,6 +7,7 @@ import {
   fetchUserEmail,
   getRedirectUri,
   verifyState,
+  clearNeedsReconnect,
 } from "@/lib/google-oauth.server";
 import { ensureWatch } from "@/lib/gmail.server";
 
@@ -79,6 +80,10 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
             return new Response("Something went wrong saving your account. Please try again.", { status: 500 });
           }
           const account = { id: accountId };
+
+          // Successful (re)auth: clear any prior reconnect flag/error.
+          await clearNeedsReconnect(account.id);
+
 
           // Start Gmail push watch if topic is configured
           try {
