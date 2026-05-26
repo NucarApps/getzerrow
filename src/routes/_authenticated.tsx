@@ -33,6 +33,7 @@ function AuthedLayout() {
   useEmailRealtime();
 
   return (
+    <AccountSelectionProvider>
     <FolderSelectionProvider>
       <div className="relative flex h-[100dvh] overflow-hidden bg-background text-foreground">
         {/* Mission Control atmospheric backdrop */}
