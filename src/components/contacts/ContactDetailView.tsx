@@ -1,14 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Send, Save, Trash2, Mail, Phone, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare } from "lucide-react";
+import { Sparkles, Send, Save, Trash2, Mail, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getContact, enrichContact, updateContact, deleteContact, shareContactByEmail } from "@/lib/contacts.functions";
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { sendMyCard } from "@/lib/cards.functions";
+import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { toast } from "sonner";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
