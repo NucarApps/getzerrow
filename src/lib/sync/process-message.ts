@@ -111,12 +111,13 @@ export async function processGmailMessage(
 
   const publishedAtMs = opts.publishedAtMs ?? null;
 
-  // 1) Insert the email row FIRST with no folder so it shows up in
-  //    Inbox immediately, even if classification (AI Gateway) is slow
-  //    or fails. Classification runs in step 2 and UPDATEs the row.
+  // Upsert on gmail_message_id: a re-delivered push (or a poll that
+  // races with the push) must not throw 23505 and abort the surrounding
+  // batch. DO UPDATE refreshes content fields; classification is reset
+  // to "pending" and step 2 reclassifies immediately.
   const { data: inserted, error } = await supabaseAdmin
     .from("emails")
-    .insert({
+    .upsert({
       user_id: userId,
       gmail_account_id: accountId,
       gmail_message_id: parsed.gmail_message_id,
@@ -140,7 +141,7 @@ export async function processGmailMessage(
       classified_by: "pending",
       processed_at: new Date().toISOString(),
       published_at_ms: publishedAtMs,
-    })
+    }, { onConflict: "gmail_message_id" })
     .select("id")
     .single();
 
