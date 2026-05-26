@@ -45,6 +45,13 @@ export function buildVCard(c: CardData, publicUrl?: string): string {
   if (c.linkedin) lines.push(`URL;TYPE=LinkedIn:${esc(c.linkedin)}`);
   if (c.twitter) lines.push(`URL;TYPE=Twitter:${esc(c.twitter)}`);
   if (c.tagline) lines.push(`NOTE:${esc(c.tagline)}`);
+  const street = [c.address_line1, c.address_line2].filter(Boolean).join(", ");
+  if (street || c.city || c.region || c.postal_code || c.country) {
+    // vCard ADR: ;;street;city;region;postal_code;country
+    lines.push(
+      `ADR;TYPE=WORK:;;${esc(street)};${esc(c.city ?? "")};${esc(c.region ?? "")};${esc(c.postal_code ?? "")};${esc(c.country ?? "")}`,
+    );
+  }
   if (publicUrl) lines.push(`URL;TYPE=Zerrow:${esc(publicUrl)}`);
   lines.push("END:VCARD");
   return lines.join("\r\n");
