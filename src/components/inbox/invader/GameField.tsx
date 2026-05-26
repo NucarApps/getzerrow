@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useReducer, useRef } from "react";
 import shipUrl from "@/assets/zerrow-ship.png";
 import {
   BUNKER_CELL,
@@ -14,27 +14,41 @@ import {
   POWERUP_LABEL,
   ROW_GAP,
 } from "@/lib/invader/engine";
-import type { GameState } from "@/lib/invader/useInvaderGame";
+import type { LiveGame } from "@/lib/invader/useInvaderGame";
 
 type Props = {
-  state: GameState;
+  getLive: () => LiveGame;
+  subscribe: (listener: () => void) => () => void;
   containerRef: React.MutableRefObject<HTMLDivElement | null>;
-  invulnUntil: number;
+  phase: "ready" | "playing" | "paused" | "over";
+  lives: number;
   isMovingHint: boolean;
 };
 
-export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Props) {
+function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovingHint }: Props) {
+  // Force re-render on each engine frame via a subscription rather than a
+  // parent re-render. Cheap counter, batched by React.
+  const [, force] = useReducer((x: number) => (x + 1) & 0xffff, 0);
+  useEffect(() => {
+    return subscribe(force);
+  }, [subscribe]);
+
+  // Read live data each render (refs are stable; no allocation).
+  const live = getLive();
   const now = performance.now();
-  const shake = state.shakeUntil > now ? Math.max(0, (state.shakeUntil - now) / 220) : 0;
+  const shake = live.shakeUntil > now ? Math.max(0, (live.shakeUntil - now) / 220) : 0;
   const dx = shake > 0 ? (Math.random() - 0.5) * shake * 6 : 0;
   const dy = shake > 0 ? (Math.random() - 0.5) * shake * 6 : 0;
+  const invulnUntil = live.shieldUntil > now ? live.shieldUntil : live.invulnUntil;
 
-  // Compute ship aspect-ratio compensation for non-uniform SVG stretch
-  const [size, setSize] = useState({ w: 0, h: 0 });
+  // Ship aspect-ratio compensation; ResizeObserver writes to a ref (no re-render).
+  const sizeRef = useRef({ w: 0, h: 0 });
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const update = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    const update = () => {
+      sizeRef.current = { w: el.clientWidth, h: el.clientHeight };
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
@@ -69,7 +83,7 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
         <rect x="0" y={PLAYER_Y + 4} width="100" height={100 - (PLAYER_Y + 4)} fill="url(#horizonGlow)" />
 
         {/* Bunkers */}
-        {state.bunkers.map((b) => {
+        {live.bunkers.map((b) => {
           const totalW = BUNKER_COLS * BUNKER_CELL;
           const totalH = BUNKER_ROWS * BUNKER_CELL;
           const left = b.x - totalW / 2;
@@ -96,21 +110,21 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
         })}
 
         {/* Player bullets */}
-        {state.bullets.map((b) => (
+        {live.bullets.map((b) => (
           <rect key={b.id} x={b.x - 0.25} y={b.y - 1.6} width="0.5" height="2.4" fill={b.pierce ? "#ffe066" : "#fff5e0"} />
         ))}
 
         {/* Enemy bullets */}
-        {state.enemyBullets.map((b) => (
+        {live.enemyBullets.map((b) => (
           <rect key={b.id} x={b.x - 0.3} y={b.y - 1.2} width="0.6" height="2.4" fill="#ff5a2e" />
         ))}
 
         {/* Enemies */}
-        {state.enemies.map((e) => {
+        {live.enemies.map((e) => {
           if (!e.alive) return null;
           const offset = e.kind === "phishing" ? Math.sin(e.zig) * 2 : 0;
-          const ex = state.formationX + e.col * COL_GAP + offset;
-          const ey = state.formationY + e.row * ROW_GAP;
+          const ex = live.formationX + e.col * COL_GAP + offset;
+          const ey = live.formationY + e.row * ROW_GAP;
           const flashing = e.hitUntil > now;
           const colors = ENEMY_COLORS[e.kind];
           const bodyFill = flashing ? "#fff5e0" : colors.body;
@@ -124,11 +138,7 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
                 strokeWidth="0.18"
               />
               <line x1={-ENEMY_HALF_W + 0.6} y1={ENEMY_HALF_H - 1.1} x2={ENEMY_HALF_W - 0.6} y2={ENEMY_HALF_H - 1.1} stroke={colors.accent} strokeOpacity="0.55" strokeWidth="0.14" />
-              <line x1={-ENEMY_HALF_W + 0.6} y1={ENEMY_HALF_H - 0.45} x2={ENEMY_HALF_W - 1.6} y2={ENEMY_HALF_H - 0.45} stroke={colors.accent} strokeOpacity="0.4" strokeWidth="0.14" />
               <rect x={ENEMY_HALF_W - 1.2} y={-ENEMY_HALF_H + 0.3} width="0.85" height="0.85" fill={colors.stamp} />
-              {e.kind === "attachment" && (
-                <circle cx={-ENEMY_HALF_W + 0.7} cy={-ENEMY_HALF_H + 0.7} r="0.35" fill={colors.accent} />
-              )}
               {e.kind === "urgent" && (
                 <text x="0" y={ENEMY_HALF_H - 1.3} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="1.3" fontWeight="700" fill={colors.stamp}>!</text>
               )}
@@ -137,22 +147,21 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
         })}
 
         {/* Boss */}
-        {state.boss && (
-          <g transform={`translate(${state.boss.x} ${state.boss.y})`}>
+        {live.boss && (
+          <g transform={`translate(${live.boss.x} ${live.boss.y})`}>
             <circle r="6.5" fill="url(#bossGlow)" />
             <rect x="-5" y="-3.5" width="10" height="7" rx="0.6" fill="#3a0d12" stroke="#ff5a8a" strokeWidth="0.3" />
             <path d="M -5 -3.5 L 0 0.5 L 5 -3.5" fill="none" stroke="#ff5a8a" strokeWidth="0.3" />
             <rect x="-5" y="2" width="10" height="0.8" fill="#ffd400" />
             <text x="0" y="0.4" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="1.6" fontWeight="700" fill="#ffd400">SPAM</text>
-            {/* HP bar */}
             <rect x="-6" y="-5.5" width="12" height="0.6" fill="#3a0d12" stroke="#ff5a8a" strokeWidth="0.1" />
-            <rect x="-6" y="-5.5" width={12 * Math.max(0, state.boss.hp / state.boss.maxHp)} height="0.6" fill="#ff5a8a" />
+            <rect x="-6" y="-5.5" width={12 * Math.max(0, live.boss.hp / live.boss.maxHp)} height="0.6" fill="#ff5a8a" />
           </g>
         )}
 
         {/* UFO */}
-        {state.ufo && (
-          <g transform={`translate(${state.ufo.x} ${state.ufo.y})`}>
+        {live.ufo && (
+          <g transform={`translate(${live.ufo.x} ${live.ufo.y})`}>
             <ellipse cx="0" cy="0" rx="3.2" ry="1" fill="#ffe066" />
             <ellipse cx="0" cy="-0.4" rx="1.6" ry="0.6" fill="#fff5e0" />
             <text x="0" y="0.5" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="0.9" fontWeight="700" fill="#3a0d12">VIP</text>
@@ -160,7 +169,7 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
         )}
 
         {/* Powerups */}
-        {state.powerups.map((p) => {
+        {live.powerups.map((p) => {
           const color = POWERUP_COLORS[p.kind];
           return (
             <g key={p.id} transform={`translate(${p.x} ${p.y})`}>
@@ -171,19 +180,20 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
         })}
 
         {/* Particles */}
-        {state.particles.map((p) => {
+        {live.particles.map((p) => {
           const a = 1 - p.life / p.ttl;
           return <rect key={p.id} x={p.x - 0.2} y={p.y - 0.2} width="0.4" height="0.4" fill={p.color} opacity={a} />;
         })}
 
         {/* Bursts */}
-        {state.bursts.map((b) => {
+        {live.bursts.map((b) => {
           const age = (now - b.startedAt) / BURST_MS;
           const scale = b.big ? 1.8 : 1;
+          const RINGS = 6;
           return (
             <g key={b.id} transform={`translate(${b.x} ${b.y})`}>
-              {Array.from({ length: 10 }).map((_, i) => {
-                const a = (i / 10) * Math.PI * 2;
+              {Array.from({ length: RINGS }).map((_, i) => {
+                const a = (i / RINGS) * Math.PI * 2;
                 const r = (3 + age * 4) * scale;
                 return <circle key={i} cx={Math.cos(a) * r} cy={Math.sin(a) * r} r={0.55 * scale} fill="#ff8a3d" opacity={1 - age} />;
               })}
@@ -193,7 +203,7 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
         })}
 
         {/* Floating text */}
-        {state.floats.map((f) => {
+        {live.floats.map((f) => {
           const age = (now - f.startedAt) / 900;
           return (
             <text
@@ -213,12 +223,13 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
         })}
 
         {/* Player rocket */}
-        {(state.phase !== "over" || state.lives > 0) && (
-          <g transform={`translate(${state.playerX} ${PLAYER_Y})`} className={now < invulnUntil ? "invuln" : undefined}>
+        {(phase !== "over" || lives > 0) && (
+          <g transform={`translate(${live.playerX} ${PLAYER_Y})`} className={now < invulnUntil ? "invuln" : undefined}>
             {isMovingHint && <polygon points="-0.8,3 0.8,3 0,5.5" fill="#ff8a3d" className="thruster" />}
             {(() => {
               const SHIP_SRC_RATIO = 187 / 265;
               const shipH = 9;
+              const size = sizeRef.current;
               const stretch = size.h > 0 ? size.w / size.h : 1;
               const shipW = stretch > 0 ? (shipH * SHIP_SRC_RATIO) / stretch : 7;
               return (
@@ -232,7 +243,7 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
                 />
               );
             })()}
-            {state.shieldUntil > now && (
+            {live.shieldUntil > now && (
               <circle r="6" fill="none" stroke="#7cc4ff" strokeWidth="0.4" opacity={0.55 + 0.45 * Math.sin(now / 80)} />
             )}
           </g>
@@ -241,3 +252,7 @@ export function GameField({ state, containerRef, invulnUntil, isMovingHint }: Pr
     </div>
   );
 }
+
+// Memo: parent re-renders (score, combo, etc.) must NOT re-render GameField;
+// it self-renders via subscribe(). Props are all primitive/stable refs.
+export const GameField = memo(GameFieldImpl);

@@ -59,6 +59,8 @@ export function TrackingStandby() {
     togglePause,
     containerRef,
     consumeFinishedRun,
+    getLive,
+    subscribe,
   } = useInvaderGame();
 
   // ---- Leaderboard / score submission ----
@@ -109,8 +111,7 @@ export function TrackingStandby() {
     }
   };
 
-  const now = performance.now();
-  const isMoving = state.phase === "playing"; // simpler than tracking key state from outside the hook
+
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#02030a]">
@@ -162,7 +163,12 @@ export function TrackingStandby() {
       </div>
 
       <GameHUD
-        state={state}
+        level={state.level}
+        score={state.score}
+        lives={state.lives}
+        combo={state.combo}
+        maxCombo={state.maxCombo}
+        activeBuff={state.activeBuff}
         difficultyLabel={DIFFICULTY[settings.difficulty].label}
         muted={settings.muted}
         dailyMode={settings.dailyMode}
@@ -184,9 +190,11 @@ export function TrackingStandby() {
       {/* Centered, constrained gameplay area */}
       <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
         <GameField
-          state={state}
+          getLive={getLive}
+          subscribe={subscribe}
           containerRef={containerRef}
-          invulnUntil={state.shieldUntil > now ? state.shieldUntil : (isMoving ? 0 : 0)}
+          phase={state.phase}
+          lives={state.lives}
           isMovingHint={state.phase === "playing"}
         />
       </div>

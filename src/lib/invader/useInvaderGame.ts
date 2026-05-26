@@ -101,6 +101,28 @@ export type GameState = {
   newAchievements: AchievementKey[];
 };
 
+// Live, mutable game data exposed to GameField for per-frame rendering
+// without going through React state. GameField subscribes via `subscribe`
+// and reads these refs directly, avoiding a parent re-render every RAF.
+export type LiveGame = {
+  bullets: Bullet[];
+  enemyBullets: Bullet[];
+  enemies: Enemy[];
+  boss: Boss | null;
+  ufo: Ufo | null;
+  bunkers: Bunker[];
+  bursts: Burst[];
+  particles: Particle[];
+  powerups: Powerup[];
+  floats: FloatText[];
+  formationX: number;
+  formationY: number;
+  playerX: number;
+  shieldUntil: number;
+  shakeUntil: number;
+  invulnUntil: number;
+};
+
 export type UseInvaderGameResult = {
   state: GameState;
   settings: GameSettings;
@@ -110,6 +132,9 @@ export type UseInvaderGameResult = {
   togglePause: () => void;
   restart: () => void;
   containerRef: React.MutableRefObject<HTMLDivElement | null>;
+  // Per-frame data for GameField + subscribe API to drive its render loop.
+  getLive: () => LiveGame;
+  subscribe: (listener: () => void) => () => void;
   // For result submission once game ends.
   consumeFinishedRun: () => null | {
     score: number;
@@ -122,6 +147,13 @@ export type UseInvaderGameResult = {
   };
 };
 
+// Soft caps to keep the SVG render + GC pressure bounded.
+const MAX_PARTICLES = 80;
+const MAX_BURSTS = 24;
+const MAX_FLOATS = 40;
+const MAX_PLAYER_BULLETS = 40;
+const MAX_ENEMY_BULLETS = 40;
+
 function newId(ref: { current: number }): number {
   ref.current += 1;
   return ref.current;
@@ -129,6 +161,7 @@ function newId(ref: { current: number }): number {
 
 function emitParticles(arr: Particle[], idRef: { current: number }, x: number, y: number, color: string, count: number, speed: number, ttl: number) {
   for (let i = 0; i < count; i++) {
+    if (arr.length >= MAX_PARTICLES) arr.shift();
     const a = Math.random() * Math.PI * 2;
     const s = speed * (0.5 + Math.random());
     arr.push({
@@ -187,7 +220,17 @@ export function useInvaderGame(): UseInvaderGameResult {
   const [level, setLevel] = useState(1);
   const [lives, setLives] = useState(3);
   const [activeBuff, setActiveBuff] = useState<ActiveBuff | null>(null);
-  const [, setFrameTick] = useState(0);
+  // Per-frame subscribers (GameField). Avoid setState on parent every RAF.
+  const listenersRef = useRef<Set<() => void>>(new Set());
+  const notify = useCallback(() => {
+    for (const l of listenersRef.current) l();
+  }, []);
+  const subscribe = useCallback((listener: () => void) => {
+    listenersRef.current.add(listener);
+    return () => {
+      listenersRef.current.delete(listener);
+    };
+  }, []);
   const [newAchievements, setNewAchievements] = useState<AchievementKey[]>([]);
 
   // ---------- Per-frame refs ----------
@@ -607,12 +650,14 @@ export function useInvaderGame(): UseInvaderGameResult {
         return;
       }
       if (phaseRef.current !== "playing") {
-        setFrameTick((x) => (x + 1) % 1_000_000);
+        // Still tick particles/floats/bursts so pause overlay looks alive,
+        // but only notify subscribers — don't re-render the React parent.
+        notify();
         raf = requestAnimationFrame(loop);
         return;
       }
       if (now < hitStopUntilRef.current) {
-        setFrameTick((x) => (x + 1) % 1_000_000);
+        notify();
         raf = requestAnimationFrame(loop);
         return;
       }
@@ -658,10 +703,19 @@ export function useInvaderGame(): UseInvaderGameResult {
         sfx.pew();
       }
 
-      // Player bullets travel
-      bulletsRef.current = bulletsRef.current
-        .map((b) => ({ ...b, x: b.x + (b.vx ?? 0) * dts, y: b.y - BULLET_SPEED * dts }))
-        .filter((b) => b.y > -2 && b.x > -2 && b.x < 102);
+      // Player bullets travel (in-place, no allocations)
+      {
+        const arr = bulletsRef.current;
+        let w = 0;
+        for (let i = 0; i < arr.length; i++) {
+          const b = arr[i];
+          b.x += (b.vx ?? 0) * dts;
+          b.y -= BULLET_SPEED * dts;
+          if (b.y > -2 && b.x > -2 && b.x < 102) arr[w++] = b;
+        }
+        arr.length = w;
+        if (arr.length > MAX_PLAYER_BULLETS) arr.splice(0, arr.length - MAX_PLAYER_BULLETS);
+      }
 
       const lvl = levelRef.current;
       const slowMul = buffKind === "slow" ? 0.5 : 1;
@@ -788,9 +842,18 @@ export function useInvaderGame(): UseInvaderGameResult {
       }
 
       const eBulletSpeed = Math.min(70, ENEMY_BULLET_BASE + lvl * 3) * diff.bulletMul * slowMul;
-      enemyBulletsRef.current = enemyBulletsRef.current
-        .map((b) => ({ ...b, x: b.x + (b.vx ?? 0) * dts, y: b.y + eBulletSpeed * dts }))
-        .filter((b) => b.y < FIELD_H + 2);
+      {
+        const arr = enemyBulletsRef.current;
+        let w = 0;
+        for (let i = 0; i < arr.length; i++) {
+          const b = arr[i];
+          b.x += (b.vx ?? 0) * dts;
+          b.y += eBulletSpeed * dts;
+          if (b.y < FIELD_H + 2) arr[w++] = b;
+        }
+        arr.length = w;
+        if (arr.length > MAX_ENEMY_BULLETS) arr.splice(0, arr.length - MAX_ENEMY_BULLETS);
+      }
 
       // ---- UFO ----
       if (!ufoRef.current && now >= nextUfoAtRef.current) {
@@ -934,16 +997,39 @@ export function useInvaderGame(): UseInvaderGameResult {
         if (b2.anyAlive && b2.maxY >= PLAYER_Y - 4) setPhase("over");
       }
 
-      // Cleanup bursts / particles / floats
-      burstsRef.current = burstsRef.current.filter((b) => now - b.startedAt < BURST_MS);
-      particlesRef.current = particlesRef.current
-        .map((p) => ({ ...p, x: p.x + p.vx * dts, y: p.y + p.vy * dts, life: p.life + dt }))
-        .filter((p) => p.life < p.ttl);
-      floatsRef.current = floatsRef.current
-        .map((f) => ({ ...f, y: f.y - 8 * dts }))
-        .filter((f) => now - f.startedAt < 900);
+      // Cleanup bursts / particles / floats (in-place)
+      {
+        const a = burstsRef.current;
+        let w = 0;
+        for (let i = 0; i < a.length; i++) if (now - a[i].startedAt < BURST_MS) a[w++] = a[i];
+        a.length = w;
+        if (a.length > MAX_BURSTS) a.splice(0, a.length - MAX_BURSTS);
+      }
+      {
+        const a = particlesRef.current;
+        let w = 0;
+        for (let i = 0; i < a.length; i++) {
+          const p = a[i];
+          p.x += p.vx * dts;
+          p.y += p.vy * dts;
+          p.life += dt;
+          if (p.life < p.ttl) a[w++] = p;
+        }
+        a.length = w;
+      }
+      {
+        const a = floatsRef.current;
+        let w = 0;
+        for (let i = 0; i < a.length; i++) {
+          const f = a[i];
+          f.y -= 8 * dts;
+          if (now - f.startedAt < 900) a[w++] = f;
+        }
+        a.length = w;
+        if (a.length > MAX_FLOATS) a.splice(0, a.length - MAX_FLOATS);
+      }
 
-      setFrameTick((x) => (x + 1) % 1_000_000);
+      notify();
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -1007,6 +1093,25 @@ export function useInvaderGame(): UseInvaderGameResult {
     newAchievements,
   };
 
+  const getLive = useCallback<() => LiveGame>(() => ({
+    bullets: bulletsRef.current,
+    enemyBullets: enemyBulletsRef.current,
+    enemies: enemiesRef.current,
+    boss: bossRef.current,
+    ufo: ufoRef.current,
+    bunkers: bunkersRef.current,
+    bursts: burstsRef.current,
+    particles: particlesRef.current,
+    powerups: powerupsRef.current,
+    floats: floatsRef.current,
+    formationX: formationXRef.current,
+    formationY: formationYRef.current,
+    playerX: playerXRef.current,
+    shieldUntil: shieldUntilRef.current,
+    shakeUntil: shakeUntilRef.current,
+    invulnUntil: invulnUntilRef.current,
+  }), []);
+
   return {
     state,
     settings,
@@ -1017,5 +1122,7 @@ export function useInvaderGame(): UseInvaderGameResult {
     restart,
     containerRef,
     consumeFinishedRun,
+    getLive,
+    subscribe,
   };
 }
