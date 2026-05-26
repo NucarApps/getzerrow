@@ -54,7 +54,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           // key is held server-side and passed per-call.
           const encKey = process.env.EMAIL_ENC_KEY;
           if (!encKey) {
-            console.error("oauth: EMAIL_ENC_KEY not configured");
+            logError("oauth.misconfigured", { run_id: runId, user_id: userId, reason: "EMAIL_ENC_KEY not configured" });
             return new Response("Server misconfigured. Please contact support.", { status: 500 });
           }
           type UpsertRpc = { rpc: (fn: "upsert_gmail_oauth_account", args: {
