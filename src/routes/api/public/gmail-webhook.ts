@@ -11,6 +11,7 @@ import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { topUpWatch } from "@/lib/gmail.server";
 import { verifyGoogleJwt } from "@/lib/google-jwt.server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth.server";
+import { logError, newRunId } from "@/lib/log.server";
 
 // Pub/Sub considers a push delivered if we ack within ~10s. We spend up to
 // INLINE_DRAIN_BUDGET_MS draining the priority=0 queue inline so brand-new
@@ -45,6 +46,8 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const runId = newRunId();
+        const tStart = Date.now();
         // Synthetic test requests must still be authenticated with the
         // CRON_SECRET — otherwise anyone could trigger Gmail syncs for any
         // known email address by setting the x-zerrow-test header.
@@ -81,7 +84,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details: `OIDC verify failed: ${result.reason}`,
                 });
               } catch (logErr) {
-                console.error("pubsub_events unauthorized log failed", logErr);
+                logError("webhook.pubsub_log_failed", { run_id: runId, kind: "push_unauthorized_oidc" }, logErr);
               }
               return new Response("Unauthorized", { status: 401 });
             }
@@ -108,7 +111,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details,
                 });
               } catch (logErr) {
-                console.error("pubsub_events unauthorized log failed", logErr);
+                logError("webhook.pubsub_log_failed", { run_id: runId, kind: "push_unauthorized_legacy" }, logErr);
               }
               return new Response("Unauthorized", { status: 401 });
             }
@@ -121,7 +124,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 details: "Authenticated via legacy ?token= — migrate subscription to OIDC",
               });
             } catch (logErr) {
-              console.error("pubsub_events legacy log failed", logErr);
+              logError("webhook.pubsub_log_failed", { run_id: runId, kind: "push_legacy_auth" }, logErr);
             }
           }
         }
@@ -162,7 +165,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details: `Duplicate Pub/Sub delivery within 60s (original ${dup.id})`,
                 });
               } catch (logErr) {
-                console.error("pubsub_events duplicate log failed", logErr);
+                logError("webhook.pubsub_log_failed", { run_id: runId, kind: "push_duplicate", message_id: messageId }, logErr);
               }
               return new Response("ok (duplicate)", { status: 200 });
             }
@@ -232,10 +235,22 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                     }
                   } catch (topUpErr) {
                     // Non-fatal — renewal cron will retry.
-                    console.error("opportunistic top-up failed", { account_id: acc.id, err: (topUpErr as Error)?.message });
+                    logError("webhook.topup_failed", {
+                      run_id: runId,
+                      account_id: acc.id,
+                      email_address: acc.email_address,
+                      message_id: messageId,
+                    }, topUpErr);
                   }
                 } catch (e) {
-                  console.error("sync failed for", acc.id, e);
+                  logError("webhook.sync_failed", {
+                    run_id: runId,
+                    account_id: acc.id,
+                    email_address: acc.email_address,
+                    history_id: historyId,
+                    message_id: messageId,
+                    duration_ms: Date.now() - tStart,
+                  }, e);
                   errorMsg = (e as Error)?.message ?? String(e);
                 }
               }
@@ -253,14 +268,24 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 try {
                   await drainWithBudget(INLINE_DRAIN_BUDGET_MS);
                 } catch (e) {
-                  console.error("inline drain failed", e);
+                  logError("webhook.inline_drain_failed", {
+                    run_id: runId,
+                    email_address: emailAddress,
+                    message_id: messageId,
+                    enqueued: enqueuedCount,
+                  }, e);
                 }
               }
             }
           }
         } catch (e: unknown) {
           const err = e as Error;
-          console.error("webhook error", err);
+          logError("webhook.handler_error", {
+            run_id: runId,
+            message_id: messageId,
+            email_address: emailAddress,
+            duration_ms: Date.now() - tStart,
+          }, err);
           errorMsg = err?.message ?? String(e);
         } finally {
           try {
@@ -294,7 +319,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 : details,
             });
           } catch (logErr) {
-            console.error("pubsub_events log failed", logErr);
+            logError("webhook.pubsub_log_failed", { run_id: runId, kind: "summary", message_id: messageId }, logErr);
           }
         }
         return new Response("ok", { status: 200 });
