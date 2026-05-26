@@ -154,26 +154,62 @@ export function AccountHealthPanel() {
                 </div>
               )}
 
-              {a.dlq > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleRetryAll(a.accountId)}
-                    disabled={busy === a.accountId}
-                  >
-                    <RotateCcw className="mr-1.5 h-3 w-3" />
-                    {busy === a.accountId ? "Requeuing…" : `Retry all (${a.dlq})`}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setDrawerAccount({ id: a.accountId, email: a.email })}
-                  >
-                    <Inbox className="mr-1.5 h-3 w-3" /> Inspect
-                  </Button>
+              {a.needsReconnect && (
+                <div className="mt-3 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+                  <div className="flex items-start gap-2 text-destructive">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium">Gmail disconnected — reconnect required</div>
+                      <div className="mt-0.5 text-destructive/80 break-words">
+                        {a.lastOauthError ?? "OAuth refresh token is invalid or missing. Sync is paused for this account."}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleReconnect(a.accountId, a.email)}
+                      disabled={reconnectBusy === a.accountId}
+                    >
+                      <RefreshCw className="mr-1.5 h-3 w-3" />
+                      {reconnectBusy === a.accountId ? "Redirecting…" : "Reconnect Gmail"}
+                    </Button>
+                  </div>
                 </div>
               )}
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleDiagnose(a.accountId)}
+                  disabled={diagBusy === a.accountId}
+                >
+                  <Stethoscope className="mr-1.5 h-3 w-3" />
+                  {diagBusy === a.accountId ? "Running…" : "Run diagnostic"}
+                </Button>
+                {a.dlq > 0 && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRetryAll(a.accountId)}
+                      disabled={busy === a.accountId}
+                    >
+                      <RotateCcw className="mr-1.5 h-3 w-3" />
+                      {busy === a.accountId ? "Requeuing…" : `Retry all (${a.dlq})`}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDrawerAccount({ id: a.accountId, email: a.email })}
+                    >
+                      <Inbox className="mr-1.5 h-3 w-3" /> Inspect
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           );
         })}
