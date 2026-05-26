@@ -113,7 +113,7 @@ export function AccountHealthPanel() {
           const dlqColor = a.dlq === 0 ? "text-muted-foreground" : "text-destructive";
 
           return (
-            <div key={a.accountId} className="rounded-md border border-border p-4">
+            <div key={a.accountId} className={`rounded-md border p-4 ${a.needsReconnect ? "border-destructive/40 bg-destructive/5" : "border-border"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{a.email}</div>
