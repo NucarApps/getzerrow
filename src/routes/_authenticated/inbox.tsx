@@ -907,7 +907,7 @@ function InboxPage() {
                             prev?.flatMap((x) => {
                               if (x.id !== e.id) return [x];
                               // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
-                              return [{ ...x, folder_id: f.id, is_archived: true, classified_by: "manual_move" }];
+                              return [{ ...x, folder_id: f.id, is_archived: true, raw_labels: withoutInbox(x.raw_labels), classified_by: "manual_move" }];
                             }),
                           );
                           qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
