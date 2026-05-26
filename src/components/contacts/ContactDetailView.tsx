@@ -58,9 +58,11 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   }
 
   const [form, setForm] = useState({
-    name: "", title: "", company: "", phone: "",
+    name: "", title: "", company: "",
     website: "", linkedin: "", twitter: "", notes: "",
+    address_line1: "", address_line2: "", city: "", region: "", postal_code: "", country: "",
   });
+  const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -70,9 +72,24 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       const c = q.data.contact;
       setForm({
         name: c.name ?? "", title: c.title ?? "", company: c.company ?? "",
-        phone: c.phone ?? "", website: c.website ?? "", linkedin: c.linkedin ?? "",
-        twitter: c.twitter ?? "", notes: c.notes ?? "",
+        website: c.website ?? "", linkedin: c.linkedin ?? "", twitter: c.twitter ?? "",
+        notes: c.notes ?? "",
+        address_line1: (c as any).address_line1 ?? "",
+        address_line2: (c as any).address_line2 ?? "",
+        city: (c as any).city ?? "",
+        region: (c as any).region ?? "",
+        postal_code: (c as any).postal_code ?? "",
+        country: (c as any).country ?? "",
       });
+      const serverPhones = (q.data.phones ?? []) as Array<{ label: string; number: string; is_primary: boolean }>;
+      if (serverPhones.length > 0) {
+        setPhones(serverPhones.map((p) => ({ label: p.label, number: p.number, is_primary: !!p.is_primary })));
+      } else if (c.phone) {
+        // Legacy: contact has the old single phone field but no rows in contact_phones yet.
+        setPhones([{ label: "mobile", number: c.phone, is_primary: true }]);
+      } else {
+        setPhones([]);
+      }
     }
   }, [q.data?.contact?.id, q.data?.contact?.enriched_at, q.data?.contact?.updated_at, q.data?.contact?.name, q.data?.contact?.company, q.data?.contact?.title]);
 
@@ -94,6 +111,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         qc.setQueryData(["contact", id], (prev: any) => ({
           contact: r.contact,
           recentEmails: prev?.recentEmails ?? [],
+          phones: prev?.phones ?? [],
         }));
       }
       await qc.invalidateQueries({ queryKey: ["contact", id] });
@@ -107,17 +125,27 @@ export function ContactDetailView({ id, onDeleted }: Props) {
 
   async function save() {
     try {
+      // Drop empty phone rows.
+      const cleanPhones = phones
+        .map((p) => ({ ...p, number: p.number.trim() }))
+        .filter((p) => p.number.length > 0);
       await update({
         data: {
           id,
           name: form.name || null,
           title: form.title || null,
           company: form.company || null,
-          phone: form.phone || null,
           website: form.website || null,
           linkedin: form.linkedin || null,
           twitter: form.twitter || null,
           notes: form.notes || null,
+          address_line1: form.address_line1 || null,
+          address_line2: form.address_line2 || null,
+          city: form.city || null,
+          region: form.region || null,
+          postal_code: form.postal_code || null,
+          country: form.country || null,
+          phones: cleanPhones,
         },
       });
       toast.success("Saved");
