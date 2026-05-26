@@ -308,19 +308,18 @@ function InboxPage() {
     mode: "sender" | "domain";
   }>(null);
 
-  const accountQ = useQuery({
-    queryKey: ["gmail_account"],
-    queryFn: async () => {
-      const { data } = await supabase.from("gmail_accounts").select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
-      return data as { id: string } | null;
-    },
-  });
-  const accountId = accountQ.data?.id ?? null;
+  const { activeAccountId } = useAccountSelection();
+  const accountId = activeAccountId;
 
   const foldersQ = useQuery({
-    queryKey: ["folders"],
+    queryKey: ["folders", accountId],
+    enabled: !!accountId,
     queryFn: async () => {
-      const { data } = await supabase.from("folders").select("id,name,color,gmail_label_id").order("priority", { ascending: false });
+      const { data } = await supabase
+        .from("folders")
+        .select("id,name,color,gmail_label_id")
+        .eq("gmail_account_id", accountId!)
+        .order("priority", { ascending: false });
       return (data ?? []) as Folder[];
     },
   });
