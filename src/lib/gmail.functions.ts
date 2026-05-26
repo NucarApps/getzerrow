@@ -1856,7 +1856,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                       : `Folder rule: ${m.field} ${m.value}`;
                 }
               }
-              const { error } = await supabaseAdmin.from("emails").insert({
+              const { error } = await supabaseAdmin.from("emails").upsert({
                 user_id: context.userId,
                 gmail_account_id: accountId,
                 gmail_message_id: p.gmail_message_id,
@@ -1877,7 +1877,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                 classified_by,
                 ai_confidence: folder_id ? 1 : null,
                 classification_reason,
-              });
+              }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
               if (!error) totalIngested++;
               else console.error("searchGmailAndIngest insert failed", id, error);
             } catch (e) {

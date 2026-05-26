@@ -260,7 +260,7 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           claimed++;
         }
       } else {
-        const { error: insErr } = await supabaseAdmin.from("emails").insert({
+        const { error: insErr } = await supabaseAdmin.from("emails").upsert({
           user_id: userId,
           gmail_account_id: accountId,
           gmail_message_id: p.gmail_message_id,
@@ -279,7 +279,7 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           classified_by: "gmail_label",
           ai_confidence: 1,
           classification_reason: `Matched Gmail label "${folder.name}"`,
-        });
+        }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
         if (!insErr) ingested++;
         else console.error("ingest labeled message failed", insErr);
       }
@@ -385,7 +385,7 @@ export async function loadOlderFromLabel(
         }
         const raw = await getMessageMetadata(folder.gmail_account_id, id);
         const p = parseMessage(raw);
-        const { error } = await supabaseAdmin.from("emails").insert({
+        const { error } = await supabaseAdmin.from("emails").upsert({
           user_id: userId,
           gmail_account_id: folder.gmail_account_id,
           gmail_message_id: p.gmail_message_id,
@@ -404,7 +404,7 @@ export async function loadOlderFromLabel(
           classified_by: "gmail_label",
           ai_confidence: 1,
           classification_reason: `Matched Gmail label "${folder.name}"`,
-        });
+        }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
         if (!error) {
           ingested++;
           if (p.received_at && (!oldestSeen || p.received_at < oldestSeen)) {

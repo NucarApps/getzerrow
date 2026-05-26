@@ -1,59 +1,41 @@
-# Fix Invader game performance
+## Verification of the 15:45 reconnect (step 0)
 
-The game runs at 60 fps internally but every frame currently triggers a full React re-render of the entire game tree, with a lot of object churn. On any non-trivial scene (lots of bullets, particles, bursts, multi-bullets, slow-mo) this drops FPS and stutters.
+Queried `gmail_accounts`:
 
-## Root causes
+| email | needs_reconnect | refresh_token present | updated_at |
+|---|---|---|---|
+| chris@nucar.com | false | yes | 20:50:30Z |
+| TPercoco@nucar.com | false | yes | 20:45:29Z |
+| chris@dagesse.com | false | yes | 20:43:07Z |
 
-1. **Whole-tree re-render every frame.** `useInvaderGame` calls `setFrameTick(...)` every RAF tick. That re-renders `TrackingStandby`, which rebuilds `state` (~25 fields) and re-renders `GameField`, `GameHUD`, and `GameOverlay` together. HUD and Overlay don't need to update at 60Hz.
-2. **Per-frame object churn (GC pressure).**
-   - `bulletsRef.current = bulletsRef.current.map(b => ({...b, x: ..., y: ...}))` for player bullets, enemy bullets, particles, floats. Same with `powerups`. Each frame allocates dozens of new objects + a new array.
-   - Per-frame `state` object rebuild + new arrays passed as props to children.
-3. **Many React state updates per kill.** `handleEnemyKill` fires `setScore`, `setKills`, `setCombo`, `setMaxCombo` (and `setLives` on hit). Each is a separate re-render path; with combos this multiplies.
-4. **SVG render cost.** `GameField` renders 10 circles per burst, all particles, all bullets, with text/gradients. The `<image href={shipUrl}>` block recomputes `size` math inside an IIFE every render.
-5. **Gamepad RAF loop runs even when not playing**, and `setFrameTick` runs even when paused/ready.
+Reconnect flow works end-to-end. So any duplicate-key errors we still see are a real ingest race, not a side-effect of the dead-OAuth state.
 
-## Fix plan
+## 1. Short-circuit reconcile on `needs_reconnect`
 
-### A. Decouple high-frequency render from React state
-- Keep React state for things HUD/Overlay actually display: `phase`, `score`, `combo`, `maxCombo`, `kills`, `level`, `lives`, `activeBuff`, `newAchievements`. These flush at most every ~120ms via a coalescing scheduler, not per frame.
-- Move the game-field rendering to an **imperative subscriber**: expose a `subscribe(listener)` from the hook. `GameField` becomes a component that owns its own `useState` "frame nonce" updated by its own subscription, and reads game data directly from refs exposed by the hook (e.g. `getSnapshot()` returning the same refs without re-allocating).
-- `useInvaderGame` returns `refs` (bullets, enemies, particles, bursts, floats, powerups, bunkers, boss, ufo, formationX/Y, playerX, shakeUntil, shieldUntil) plus `subscribe` and `getReactState`.
+`src/routes/api/public/gmail-reconcile.ts` currently selects every `gmail_account` and calls `reconcileLocalInbox` on each. For dead-OAuth accounts every Gmail roundtrip inside `reconcile` throws — same noise pattern poll and renew-watches already filter out.
 
-### B. Stop allocating per frame
-- Mutate bullets/enemyBullets/particles/floats/powerups **in place**: iterate with a write index and overwrite the same array (`arr.length = w`). No `.map(spread)`.
-- Stop rebuilding the `state` object every render; HUD reads scalar React state, GameField reads refs.
-- Cap collections defensively: max 80 particles, max 24 bursts, max 40 floats — drop oldest when exceeded.
+Mirror the renew-watches pattern: add `.eq("needs_reconnect", false)` to the account select. One-line change; no logic change for healthy accounts.
 
-### C. Batch per-kill updates
-- Accumulate score / kills / combo into refs during the frame and flush once at end of frame inside the coalescing scheduler. `handleEnemyKill` no longer calls four setters.
-- `setLives` stays inline (it can end the run).
+## 2. Make every `emails` INSERT conflict-safe
 
-### D. Memo + split children
-- `GameHUD` and `GameOverlay` wrapped in `React.memo`; props become primitives so memo bails out cleanly when nothing changed.
-- `GameField` re-renders only from its own subscription, not from parent.
+There is a `UNIQUE(gmail_message_id)` index AND a `UNIQUE(gmail_account_id, gmail_message_id)` index, so any race that causes two ingest paths to touch the same message throws `23505` and aborts the surrounding batch. Three INSERT sites to fix:
 
-### E. Loop hygiene
-- Skip the loop body (and re-render) entirely when `phase !== "playing"`; only schedule next RAF.
-- Gamepad poll: throttle to ~60Hz only while `phase === "playing"`; otherwise poll at ~10Hz.
-- Compute `now = performance.now()` once and pass through; remove `useState({w,h})` ResizeObserver thrash by using `useRef` + reading on render (size is only read inside the IIFE).
+**A. `src/lib/sync/process-message.ts:117` — primary ingest (push + poll)**
+This is the hot path. Switch from `.insert({...}).select("id").single()` to `.upsert({...}, { onConflict: "gmail_message_id" }).select("id").single()`. DO UPDATE semantics are appropriate here: a re-delivered push should refresh `snippet`, `body_text`, `body_html`, `raw_labels`, `is_read`, `received_at`, `published_at_ms`. Keep `folder_id: null` / `classified_by: "pending"` only on first insert — guard by not including them in the upsert payload, OR accept that re-pushes will reset classification (cheap: step 2 reclassifies immediately). Recommend the latter for simplicity, matching the "re-fetch refreshes everything" intent.
 
-### F. SVG micro-cuts
-- Burst rings: 10 circles → 6.
-- Particles: render as a single `<g>` of `<rect>`s without per-rect calculations beyond x/y/opacity (already small, mainly fewer of them via cap).
-- Remove `Math.random()`-driven `dx/dy` shake when `shake === 0` (already guarded) — fine, but compute shake from a ref-read of `shakeUntilRef`, not state.
+**B. `src/lib/sync/folder-learn.ts:263` and `:388` — label-seed + load-older**
+These are discovery walks; they already `.select(... gmail_message_id ...).in(...)` to skip known IDs, but a concurrent push between the select and the insert can still collide. DO NOTHING is the right semantic — the live ingest path owns content; the learner only assigns `folder_id`. Use `.upsert({...}, { onConflict: "gmail_message_id", ignoreDuplicates: true })`. After upsert returns 0 rows, do the existing `update({ folder_id, classified_by: "gmail_label", ... })` keyed on `gmail_message_id` so the learner still claims the row.
 
-## Files touched
+**C. `src/lib/gmail.functions.ts:1859` — `searchGmailAndIngest`**
+Same as B — discovery path. `.upsert({...}, { onConflict: "gmail_message_id", ignoreDuplicates: true })` and treat the no-op case as "already had it" rather than an error.
 
-- `src/lib/invader/useInvaderGame.ts` — in-place mutation, coalescing scheduler, subscribe API, batched per-kill updates, gated loop.
-- `src/components/inbox/invader/GameField.tsx` — subscribe to hook, read refs, memo, fewer burst rings, drop ResizeObserver state-thrash.
-- `src/components/inbox/invader/GameHUD.tsx` — `React.memo`, primitive props.
-- `src/components/inbox/invader/GameOverlay.tsx` — `React.memo`.
-- `src/components/inbox/TrackingStandby.tsx` — adapt to new hook return shape (refs + subscribe + reactState).
+Result: no INSERT in the codebase can ever throw `23505` for `gmail_message_id`. Batches stop aborting mid-stream.
 
-No engine/game-logic changes, no DB changes, no gameplay tuning. Pure perf refactor.
+## Files changed
 
-## Validation
+- `src/routes/api/public/gmail-reconcile.ts` — add `needs_reconnect=false` filter
+- `src/lib/sync/process-message.ts` — `.insert` → `.upsert(..., { onConflict: "gmail_message_id" })`
+- `src/lib/sync/folder-learn.ts` — two inserts → `.upsert(..., { onConflict: "gmail_message_id", ignoreDuplicates: true })` + claim-by-message-id update
+- `src/lib/gmail.functions.ts` (searchGmailAndIngest) — same treatment
 
-- After change: open `/inbox`, start a run, hold fire with `multi` powerup, ensure smooth motion at 60fps.
-- Use `browser--performance_profile` before/after if needed to confirm fewer long tasks and lower script time per frame.
-- Verify HUD numbers, combo timer, achievements, daily mode, pause, and game-over submission still work.
+Pure backend hygiene; no schema migration, no UI change.
