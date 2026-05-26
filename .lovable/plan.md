@@ -1,36 +1,53 @@
-## What's actually happening
+# Fix "Couldn't read the card: No object generated"
 
-The toast you're seeing — `Gmail account is missing OAuth tokens — user needs to reauthorize` — is thrown by `getAccessToken` in `src/lib/google-oauth.server.ts` for both of your Gmail accounts (`chris@nucar.com` and `tpercoco@nucar.com`). Their `refresh_token_enc` column is `NULL`, so any action that needs Gmail (search, sync, renew watch, backfill) fails immediately.
+## What's happening
 
-The only fix is to re-run the Google OAuth consent flow so Google hands us a fresh `refresh_token`. That code already exists (`startConnectGmail` → `buildAuthorizeUrl` with `prompt=consent`, and the callback upserts on `(user_id, email_address)` so it refills tokens on the existing row without creating a duplicate).
+`scanCard` in `src/lib/contacts.functions.ts` calls the Lovable AI Gateway with `Output.object({ schema })` on `google/gemini-2.5-flash`. When the model returns text that the AI SDK can't validate against the Zod schema, the SDK throws `No object generated` and we re-throw it as `Couldn't read the card: No object generated`.
 
-**The problem is the UI hides the reconnect button.** In `src/routes/_authenticated/settings.tsx` the "Reauthorize Gmail" button only renders when `accounts.length === 0`. Since you have two broken-but-present accounts, there's no clickable path to fix this without deleting them first (which would also wipe per-account settings).
+The same pattern was already solved in `classifyEmail` (`src/lib/ai.server.ts:84-131`), which tries structured mode, then falls back to plain text + manual JSON parse, then to other models. `scanCard` has none of that — one shot, one model, no recovery.
 
-## Plan
+## Fix
 
-### 1. `src/lib/gmail.functions.ts`
+Rewrite the body of `scanCard.handler` to use the same multi-tier fallback chain, scoped to vision-capable models.
 
-- Extend `listMyGmailAccounts` to also return a `needs_reauth: boolean` for each account, computed from `refresh_token_enc IS NULL` (a tiny `EXISTS` check via a dedicated RPC, or by adding a boolean column to a read-only view — I'll use a SQL function that returns `(id, ..., refresh_token_present bool)` so we never expose the ciphertext).
-- Extend `startConnectGmail` to accept an optional `{ login_hint?: string }` and pass it through to `buildAuthorizeUrl` (already supported by the underlying helper). This lets a per-account "Reconnect" button send the user straight to the right Google account.
+### Steps
 
-### 2. `src/routes/_authenticated/settings.tsx`
+1. **Extract a vision-prompt builder** inside the handler that returns the same instruction text used today, plus an explicit JSON-shape instruction for the text-JSON path:
+   ```
+   Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
+   {"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>}
+   ```
 
-- Always show a top-level **"Reconnect Gmail"** button in the Connected Gmail accounts header (remove the `accounts.length === 0` gate).
-- For each account card, when `needs_reauth === true`:
-  - Show a small destructive **"Reconnect required"** badge next to the email.
-  - Show a primary **"Reconnect"** button in the action row that calls `startConnectGmail({ login_hint: a.email_address })` so Google pre-selects the right account.
-- Keep the existing "No Gmail connected yet" empty state for the truly-empty case.
+2. **Add two helpers inside the handler** (mirroring `ai.server.ts`):
+   - `tryStructured(modelId)` — current call, uses `Output.object({ schema: SCAN_SCHEMA })`, returns `null` on throw and stores `lastError`.
+   - `tryTextJson(modelId)` — calls `generateText` without `Output.object`, strips ```json fences, slices from first `{` to last `}`, `JSON.parse`, then `SCAN_SCHEMA.parse`. Returns `null` on any throw and stores `lastError`.
 
-### 3. Tiny SQL helper (migration)
+3. **Chain the attempts** (all vision-capable models on the gateway):
+   ```
+   tryStructured("google/gemini-2.5-flash")
+     || tryTextJson("google/gemini-2.5-flash")
+     || tryStructured("google/gemini-2.5-flash-lite")
+     || tryTextJson("google/gemini-2.5-flash-lite")
+     || tryTextJson("google/gemini-2.5-pro")
+   ```
+   First non-null wins.
 
-Add a SQL function `list_my_gmail_accounts_with_status()` that returns the same columns `listMyGmailAccounts` already selects plus `refresh_token_present boolean`. We do this in SQL (not JS) so the ciphertext column never leaves the database. RLS is enforced via `SECURITY DEFINER` with an explicit `auth.uid()` filter, matching the pattern used by the other `get_*` RPCs.
+4. **Error message** — if all attempts return null, throw:
+   `Couldn't read the card: AI vision returned no parseable response (last error: <lastError>)`. This gives us a useful clue in the toast next time instead of a bare "No object generated".
 
-## After the code change — what you do
-
-Click **Reconnect** on `chris@nucar.com`, complete Google consent (you may see "Zerrow wants to access your Gmail" — that's the `prompt=consent` step that mints the refresh token), then do the same for `tpercoco@nucar.com`. After that, `from:Bill_Baker@reyrey.com` and background sync will work again.
+5. **Server logs** — `console.error` each failed attempt with model id + last error (same shape as `classifyEmail`) so we can see in `stack_modern--server-function-logs` which model/path is misbehaving on real cards.
 
 ## Out of scope
 
-- Token storage / encryption / OAuth callback — unchanged.
-- Search parser / filter engine — unchanged.
-- Background sync logic — unchanged; it will start working the moment refresh tokens exist.
+- UI (`contacts.scan.tsx`) — no change. Same `scan({ data: { imageDataUrl } })` call, same toast pipeline.
+- `createContactFromScan`, `sendMyCard`, `Output.object` usage elsewhere — unchanged.
+- No new dependencies, no schema changes, no new env vars.
+
+## Files touched
+
+- `src/lib/contacts.functions.ts` — only the `scanCard` `.handler(...)` body (~30 lines).
+
+## Verification
+
+1. After the edit, retry the scan with the same card → expect either a populated draft, or a more specific error message identifying which model/path failed.
+2. If it still fails, the error text + server logs will tell us whether the gateway is rejecting vision input on these models (different remediation: open a Lovable AI Gateway issue) vs. the model genuinely can't read the card.

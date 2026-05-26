@@ -517,28 +517,95 @@ export const scanCard = createServerFn({ method: "POST" })
       linkedin: z.string().nullable(),
       twitter: z.string().nullable(),
     });
+    type ScanOut = z.infer<typeof SCAN_SCHEMA>;
 
-    try {
-      const { output } = await generateText({
-        model: getModel("google/gemini-2.5-flash"),
-        output: Output.object({ schema: SCAN_SCHEMA }),
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Extract contact information from this business card photo. Return each field exactly as printed or null if not visible. Do NOT invent values.",
-              },
-              { type: "image", image: data.imageDataUrl },
-            ],
-          },
-        ],
-      });
-      return { draft: output as z.infer<typeof SCAN_SCHEMA> };
-    } catch (e: any) {
-      throw new Error(`Couldn't read the card: ${e?.message ?? "AI vision failed"}`);
+    const baseInstruction =
+      "Extract contact information from this business card photo. Return each field exactly as printed or null if not visible. Do NOT invent values.";
+    const jsonShape =
+      '{"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>}';
+
+    let lastError = "unknown error";
+
+    function describeError(e: unknown): string {
+      const err = e as { name?: string; status?: number; message?: string; responseBody?: unknown };
+      const parts: string[] = [];
+      if (err?.name) parts.push(err.name);
+      if (typeof err?.status === "number") parts.push(`status=${err.status}`);
+      if (err?.message) parts.push(err.message);
+      if (err?.responseBody) parts.push(`body=${String(err.responseBody).slice(0, 200)}`);
+      return parts.join(" | ").slice(0, 400) || "unknown error";
     }
+
+    async function tryStructured(modelId: string): Promise<ScanOut | null> {
+      try {
+        const { output } = await generateText({
+          model: getModel(modelId),
+          output: Output.object({ schema: SCAN_SCHEMA }),
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: baseInstruction },
+                { type: "image", image: data.imageDataUrl },
+              ],
+            },
+          ],
+        });
+        return output as ScanOut;
+      } catch (e) {
+        lastError = describeError(e);
+        console.error(`scanCard structured failed (${modelId})`, lastError);
+        return null;
+      }
+    }
+
+    async function tryTextJson(modelId: string): Promise<ScanOut | null> {
+      try {
+        const { text } = await generateText({
+          model: getModel(modelId),
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `${baseInstruction}\n\nRespond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:\n${jsonShape}`,
+                },
+                { type: "image", image: data.imageDataUrl },
+              ],
+            },
+          ],
+        });
+        const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
+        const start = cleaned.indexOf("{");
+        const end = cleaned.lastIndexOf("}");
+        if (start < 0 || end <= start) {
+          lastError = `empty/non-JSON response (len=${text.length})`;
+          console.error(`scanCard text-json failed (${modelId})`, lastError);
+          return null;
+        }
+        const parsed = JSON.parse(cleaned.slice(start, end + 1));
+        return SCAN_SCHEMA.parse(parsed);
+      } catch (e) {
+        lastError = describeError(e);
+        console.error(`scanCard text-json failed (${modelId})`, lastError);
+        return null;
+      }
+    }
+
+    const output =
+      (await tryStructured("google/gemini-2.5-flash")) ||
+      (await tryTextJson("google/gemini-2.5-flash")) ||
+      (await tryStructured("google/gemini-2.5-flash-lite")) ||
+      (await tryTextJson("google/gemini-2.5-flash-lite")) ||
+      (await tryTextJson("google/gemini-2.5-pro"));
+
+    if (!output) {
+      throw new Error(
+        `Couldn't read the card: AI vision returned no parseable response (last error: ${lastError})`,
+      );
+    }
+    return { draft: output };
   });
 
 /** Create a contact from a scanned-card draft. */
