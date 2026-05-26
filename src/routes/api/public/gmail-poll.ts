@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
-          .select("id, email_address, watch_expiration, last_push_at, created_at");
+          .select("id, email_address, watch_expiration, last_push_at, created_at, needs_reconnect");
         if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
         // Look up last successful watch re-arm so we don't spam ensureWatch.
@@ -42,6 +42,10 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         let totalSynced = 0;
         let firstError: string | null = null;
         for (const acc of accounts ?? []) {
+          // Skip dead-OAuth accounts — getAccessToken would throw a
+          // NeedsReconnectError, burning a slot in the per-tick loop with
+          // nothing the cron can fix. The UI banner is the recovery path.
+          if (acc.needs_reconnect) continue;
           // Per-account push silence: did this account receive a real Google
           // push recently? `last_push_at` is stamped ONLY by the webhook
           // handler (not by poll-driven syncs), so its staleness specifically

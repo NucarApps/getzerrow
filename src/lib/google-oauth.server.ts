@@ -141,12 +141,62 @@ function requireEncKey(): string {
   return k;
 }
 
+/**
+ * Mark the account as needing a reconnect so callers stop retrying a broken
+ * OAuth pair and the UI can surface a clear "Reconnect Gmail" banner.
+ * Distinguished from transient failures (5xx, network) — only `invalid_grant`
+ * / `invalid_client` / missing-token errors should flip this flag.
+ */
+async function markNeedsReconnect(accountId: string, reason: string): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({ needs_reconnect: true, last_oauth_error: reason.slice(0, 500) })
+      .eq("id", accountId);
+  } catch (e) {
+    console.error("markNeedsReconnect failed", { account_id: accountId, err: (e as Error)?.message });
+  }
+}
+
+/** True when Google rejected a refresh because the grant itself is dead. */
+function isPermanentOauthFailure(err: unknown): boolean {
+  const msg = (err as Error)?.message ?? String(err);
+  return /invalid_grant|invalid_client|unauthorized_client|invalid_token/i.test(msg);
+}
+
+export class NeedsReconnectError extends Error {
+  accountId: string;
+  constructor(accountId: string, reason: string) {
+    super(`Account ${accountId} needs reconnect: ${reason}`);
+    this.name = "NeedsReconnectError";
+    this.accountId = accountId;
+  }
+}
+
 /** Returns a fresh access token for the given gmail account, refreshing if
  * needed. Tokens are stored encrypted at rest via pgcrypto pgp_sym_*; the
  * key is held server-side (EMAIL_ENC_KEY) and passed per-call. Existing
- * unmigrated rows still resolve via COALESCE on plaintext columns. */
+ * unmigrated rows still resolve via COALESCE on plaintext columns.
+ *
+ * Throws `NeedsReconnectError` (and flips `gmail_accounts.needs_reconnect`)
+ * when the OAuth grant is permanently dead. Callers that loop over multiple
+ * accounts should catch this and skip the account rather than burning the
+ * whole batch.
+ */
 export async function getAccessToken(accountId: string): Promise<string> {
   const key = requireEncKey();
+
+  // Short-circuit: if a previous call already flagged this account, don't
+  // burn another Gmail/refresh roundtrip until the user reconnects.
+  const { data: status } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("needs_reconnect, last_oauth_error")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (status?.needs_reconnect) {
+    throw new NeedsReconnectError(accountId, status.last_oauth_error ?? "needs_reconnect=true");
+  }
+
   const { data: rows, error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
     "get_gmail_oauth_tokens",
     { p_account_id: accountId, p_key: key },
@@ -155,7 +205,9 @@ export async function getAccessToken(accountId: string): Promise<string> {
   if (!rows || rows.length === 0) throw new Error("Gmail account not found");
   const acc = rows[0];
   if (!acc.access_token || !acc.refresh_token) {
-    throw new Error("Gmail account is missing OAuth tokens — user needs to reauthorize");
+    const reason = "Refresh token missing — reconnect required to keep mail flowing.";
+    await markNeedsReconnect(accountId, reason);
+    throw new NeedsReconnectError(accountId, reason);
   }
 
   const expMs = new Date(acc.token_expires_at).getTime();
@@ -165,7 +217,17 @@ export async function getAccessToken(accountId: string): Promise<string> {
   if (existing) return existing;
 
   const refreshPromise = (async () => {
-    const refreshed = await refreshAccessToken(acc.refresh_token!);
+    let refreshed: Awaited<ReturnType<typeof refreshAccessToken>>;
+    try {
+      refreshed = await refreshAccessToken(acc.refresh_token!);
+    } catch (e) {
+      if (isPermanentOauthFailure(e)) {
+        const reason = `Google rejected the refresh token: ${(e as Error).message.slice(0, 300)}`;
+        await markNeedsReconnect(accountId, reason);
+        throw new NeedsReconnectError(accountId, reason);
+      }
+      throw e;
+    }
     const newExp = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
     // Empty p_refresh_token preserves the existing encrypted refresh token.
     const { error: setErr } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
@@ -187,6 +249,18 @@ export async function getAccessToken(accountId: string): Promise<string> {
     return await refreshPromise;
   } finally {
     inFlightRefresh.delete(accountId);
+  }
+}
+
+/** Clear the needs_reconnect flag — called after a successful re-OAuth. */
+export async function clearNeedsReconnect(accountId: string): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({ needs_reconnect: false, last_oauth_error: null, consecutive_silent_ticks: 0 })
+      .eq("id", accountId);
+  } catch (e) {
+    console.error("clearNeedsReconnect failed", { account_id: accountId, err: (e as Error)?.message });
   }
 }
 

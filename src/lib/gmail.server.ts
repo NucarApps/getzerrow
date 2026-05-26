@@ -304,15 +304,34 @@ export function parseMessage(msg: any) {
   };
 }
 
-/** Ensure Gmail push watch is active for this account. Re-watches if expired or near expiry. */
+/** Ensure Gmail push watch is active for this account. Re-watches if expired
+ * or near expiry. Threshold tightened to <3 days so a missed cron run can't
+ * lapse the underlying 7-day Gmail watch. */
 export async function ensureWatch(accountId: string, watchExpiration: string | null): Promise<{ historyId: string; expiration: string } | null> {
   const topic = process.env.GMAIL_PUBSUB_TOPIC;
   if (!topic) return null;
   if (watchExpiration) {
     const expMs = new Date(watchExpiration).getTime();
-    // Renew if less than 2 days remaining. Tightened from 1 day so the every-6h
-    // renewal cron can absorb a missed run without watches lapsing.
-    if (expMs - Date.now() > 2 * 24 * 60 * 60 * 1000) return null;
+    // Renew when <3 days remaining. With the 30-min renewal cron, this means
+    // ~144 renewal opportunities before a watch could lapse — comfortable
+    // safety margin even with several consecutive missed cron runs.
+    if (expMs - Date.now() > 3 * 24 * 60 * 60 * 1000) return null;
   }
+  return watchInbox(accountId, topic);
+}
+
+/**
+ * Opportunistic watch top-up. Called from the Pub/Sub webhook on every
+ * successful push so a healthy account doesn't depend on the renewal cron
+ * to keep its watch alive. Cheap when nothing is due — no API call.
+ * Threshold is intentionally tighter (<72h) than `ensureWatch` so this only
+ * fires when truly needed.
+ */
+export async function topUpWatch(accountId: string, watchExpiration: string | null): Promise<{ historyId: string; expiration: string } | null> {
+  if (!watchExpiration) return null;
+  const expMs = new Date(watchExpiration).getTime();
+  if (expMs - Date.now() > 3 * 24 * 60 * 60 * 1000) return null;
+  const topic = process.env.GMAIL_PUBSUB_TOPIC;
+  if (!topic) return null;
   return watchInbox(accountId, topic);
 }

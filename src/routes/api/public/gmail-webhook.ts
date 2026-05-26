@@ -8,6 +8,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
+import { topUpWatch } from "@/lib/gmail.server";
 import { verifyGoogleJwt } from "@/lib/google-jwt.server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth.server";
 
@@ -189,20 +190,49 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
             } else {
               const { data: accounts } = await supabaseAdmin
                 .from("gmail_accounts")
-                .select("id, email_address")
+                .select("id, email_address, watch_expiration, needs_reconnect")
                 .eq("email_address", emailAddress);
-              accountsMatched = accounts?.length ?? 0;
-              if (accountsMatched === 0) {
+              // Skip dead-OAuth accounts entirely — every Gmail call would
+              // throw with the same NeedsReconnectError and there's nothing
+              // we can do until the user reconnects in the UI.
+              const liveAccounts = (accounts ?? []).filter((a) => !a.needs_reconnect);
+              accountsMatched = liveAccounts.length;
+              if ((accounts?.length ?? 0) > 0 && liveAccounts.length === 0) {
+                details = `Account(s) for "${emailAddress}" need reconnect — skipped.`;
+              } else if (accountsMatched === 0) {
                 details = `No gmail_accounts row matches "${emailAddress}" — watch was probably created against a different connected account.`;
               }
               const publishedAtMs = publishTime ? new Date(publishTime).getTime() : null;
-              for (const acc of accounts ?? []) {
+              for (const acc of liveAccounts) {
                 try {
                   // syncSinceHistory now holds a per-account lock internally,
                   // so overlapping pushes coalesce into one history-diff pass.
                   const r = await syncSinceHistory(acc.id, { publishedAtMs });
                   if (r && typeof (r as { synced?: number }).synced === "number") {
                     enqueuedCount += (r as { synced: number }).synced;
+                  }
+                  // Opportunistic watch top-up: if this account's watch will
+                  // expire within 72h, re-arm it inline. Belt-and-suspenders
+                  // alongside the renewal cron — if cron is broken (which IS
+                  // how watches lapse in practice), a healthy push channel
+                  // keeps itself alive.
+                  try {
+                    const w = await topUpWatch(acc.id, acc.watch_expiration);
+                    if (w) {
+                      await supabaseAdmin.from("gmail_accounts").update({
+                        history_id: w.historyId,
+                        watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
+                      }).eq("id", acc.id);
+                      await supabaseAdmin.from("pubsub_events").insert({
+                        event_type: "watch_renew",
+                        email_address: acc.email_address,
+                        history_id: w.historyId,
+                        details: "Opportunistic top-up from push webhook",
+                      });
+                    }
+                  } catch (topUpErr) {
+                    // Non-fatal — renewal cron will retry.
+                    console.error("opportunistic top-up failed", { account_id: acc.id, err: (topUpErr as Error)?.message });
                   }
                 } catch (e) {
                   console.error("sync failed for", acc.id, e);

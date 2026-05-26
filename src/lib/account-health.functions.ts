@@ -17,6 +17,8 @@ export type AccountHealth = {
   running: number;
   dlq: number;
   lastError: string | null;
+  needsReconnect: boolean;
+  lastOauthError: string | null;
 };
 
 export const getAccountHealth = createServerFn({ method: "GET" })
@@ -26,8 +28,9 @@ export const getAccountHealth = createServerFn({ method: "GET" })
 
     const { data: accounts } = await supabaseAdmin
       .from("gmail_accounts")
-      .select("id, email_address, last_poll_at, watch_expiration")
+      .select("id, email_address, last_poll_at, watch_expiration, needs_reconnect, last_oauth_error")
       .eq("user_id", userId);
+
 
     const result: AccountHealth[] = [];
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -84,6 +87,8 @@ export const getAccountHealth = createServerFn({ method: "GET" })
         running: runningRes.count ?? 0,
         dlq: dlqRes.count ?? 0,
         lastError: errorRes.data?.last_error ?? null,
+        needsReconnect: a.needs_reconnect ?? false,
+        lastOauthError: a.last_oauth_error ?? null,
       });
     }
 
