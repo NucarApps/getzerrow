@@ -13,6 +13,7 @@ function row(over: Partial<EmailRow> = {}): EmailRow {
     received_at: over.received_at ?? new Date().toISOString(),
     is_archived: over.is_archived ?? false,
     folder_id: over.folder_id ?? null,
+    raw_labels: over.raw_labels ?? ["INBOX"],
   };
 }
 
