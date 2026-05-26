@@ -71,6 +71,38 @@ export function AccountHealthPanel() {
     }
   }
 
+  async function handleDiagnose(accountId: string) {
+    setDiagBusy(accountId);
+    try {
+      const r = await diagnose({ data: { account_id: accountId } });
+      if (r.accessToken === "needs_reconnect") {
+        toast.error("Reconnect required: " + (r.error ?? "OAuth token expired"));
+      } else if (r.accessToken === "error" || r.watch === "error") {
+        toast.error(r.error ?? "Diagnostic failed");
+      } else {
+        toast.success(`OAuth ok · watch ${r.watch}${r.watchExpiresAt ? " · " + fmtRelative(r.watchExpiresAt) : ""}`);
+      }
+      qc.invalidateQueries({ queryKey: ["account-health"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setDiagBusy(null);
+    }
+  }
+
+  async function handleReconnect(accountId: string, email: string) {
+    setReconnectBusy(accountId);
+    try {
+      const r = await startConnect({ data: { login_hint: email } });
+      window.location.href = r.url;
+    } catch (e) {
+      toast.error((e as Error).message);
+      setReconnectBusy(null);
+    }
+  }
+
+
+
   return (
     <>
       <div className="space-y-3">
