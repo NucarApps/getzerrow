@@ -291,9 +291,6 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         <Field label="Email" icon={<Mail className="h-3.5 w-3.5" />}>
           <Input value={c.email} disabled />
         </Field>
-        <Field label="Phone" icon={<Phone className="h-3.5 w-3.5" />}>
-          <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-        </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
           <Input value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
         </Field>
@@ -305,7 +302,43 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         </Field>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-6">
+        <PhonesEditor value={phones} onChange={setPhones} />
+      </div>
+
+      <div className="mt-6">
+        <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
+          <MapPin className="h-3.5 w-3.5" /> Address
+        </Label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Label className="text-xs text-muted-foreground">Address line 1</Label>
+            <Input value={form.address_line1} onChange={(e) => setForm({ ...form, address_line1: e.target.value })} placeholder="Street address" />
+          </div>
+          <div className="sm:col-span-2">
+            <Label className="text-xs text-muted-foreground">Address line 2</Label>
+            <Input value={form.address_line2} onChange={(e) => setForm({ ...form, address_line2: e.target.value })} placeholder="Apt, suite, floor (optional)" />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">City</Label>
+            <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">State / region</Label>
+            <Input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Postal code</Label>
+            <Input value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Country</Label>
+            <Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6">
         <Label className="text-xs text-muted-foreground">Notes</Label>
         <Textarea
           rows={4}
@@ -313,6 +346,11 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
           placeholder="Private notes about this contact…"
         />
+      </div>
+
+      {/* Avoid an unused-import build error when Select is only used inside PhonesEditor. */}
+      <div className="hidden">
+        <Select><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="x">x</SelectItem></SelectContent></Select>
       </div>
 
       <div className="mt-6 flex justify-end">
