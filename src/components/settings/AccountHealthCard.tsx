@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Activity, AlertTriangle, CheckCircle2, Clock, Inbox, Loader2, RotateCcw } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Clock, Inbox, Loader2, RotateCcw, Stethoscope, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { getAccountHealth, retryDlqJobs } from "@/lib/account-health.functions";
+import { getAccountHealth, retryDlqJobs, runAccountDiagnostic } from "@/lib/account-health.functions";
+import { startConnectGmail } from "@/lib/gmail.functions";
 import { DlqDrawer } from "./DlqDrawer";
 
 function fmtRelative(iso: string | null): string {
