@@ -523,9 +523,7 @@ export function TrackingStandby() {
   const buffRemaining = activeBuff ? Math.max(0, (activeBuff.expiresAt - now) / 1000) : 0;
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-hidden bg-[#02030a]">
-    <div ref={containerRef} className="relative h-full w-full max-w-[900px] max-h-full overflow-hidden" style={{ aspectRatio: "4 / 3" }} tabIndex={0}>
-
+    <div className="relative h-full w-full overflow-hidden bg-[#02030a]">
       <style>{`
         @keyframes thruster { 0%,100%{transform:scaleY(.7);opacity:.6} 50%{transform:scaleY(1.2);opacity:1} }
         .thruster { transform-origin:center top; animation: thruster .12s linear infinite; }
@@ -535,6 +533,7 @@ export function TrackingStandby() {
         .powerup { animation: powerup-bob 1.1s ease-in-out infinite; }
       `}</style>
 
+      {/* Full-width ambient background (sky + tracking HUD corners) */}
       <div className="launchpad__viewport is-tracking" style={{ position: "absolute", inset: 0, minHeight: 0 }}>
         <div className="tracking" aria-hidden="true" style={{ opacity: 1 }}>
           <div className="tracking__sky">
@@ -570,7 +569,7 @@ export function TrackingStandby() {
         </div>
       </div>
 
-      {/* Score HUD */}
+      {/* Score HUD (anchored to full pane) */}
       <div
         className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-sm border border-[rgba(255,138,61,.35)] bg-[rgba(10,14,26,.65)] px-3 py-1 text-[10px] tracking-[0.22em] text-[#ffd089] backdrop-blur"
         style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
@@ -590,6 +589,12 @@ export function TrackingStandby() {
           {activeBuff.kind.toUpperCase()} · {buffRemaining.toFixed(1)}s
         </div>
       )}
+
+      {/* Centered, constrained gameplay area */}
+      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+      <div ref={containerRef} className="pointer-events-auto relative h-full w-full max-w-[900px] max-h-full overflow-hidden" style={{ aspectRatio: "4 / 3" }} tabIndex={0}>
+
+
 
       {/* Game layer */}
       <svg className="absolute inset-0 z-10" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
