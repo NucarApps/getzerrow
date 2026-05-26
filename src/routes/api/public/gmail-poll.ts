@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
-          .select("id, email_address, watch_expiration, last_push_at, created_at");
+          .select("id, email_address, watch_expiration, last_push_at, created_at, needs_reconnect");
         if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
         // Look up last successful watch re-arm so we don't spam ensureWatch.
