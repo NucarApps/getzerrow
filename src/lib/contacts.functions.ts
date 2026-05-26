@@ -786,6 +786,7 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
     const body = (email.body_text || email.snippet || "").slice(0, 6000);
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
       name: null, title: null, company: null, phone: null, website: null, linkedin: null, twitter: null,
+      address_line1: null, address_line2: null, city: null, region: null, postal_code: null, country: null,
     };
     if (body.trim()) {
       try {
@@ -803,6 +804,12 @@ For each field, return the value or null if not clearly present. Do NOT guess.
 - website: company or personal website URL
 - linkedin: full LinkedIn profile URL
 - twitter: full Twitter/X profile URL
+- address_line1: street address, first line (only if a postal address is clearly printed)
+- address_line2: apt / suite / floor (only if present)
+- city: city / locality
+- region: state / province / region
+- postal_code: ZIP / postal code
+- country: country
 
 Email:
 Subject: ${email.subject ?? ""}
@@ -818,9 +825,11 @@ ${body}`,
       enriched_at: string;
       name?: string | null; title?: string | null; company?: string | null;
       phone?: string | null; website?: string | null; linkedin?: string | null; twitter?: string | null;
+      address_line1?: string | null; address_line2?: string | null; city?: string | null;
+      region?: string | null; postal_code?: string | null; country?: string | null;
     } = { enriched_at: new Date().toISOString() };
-    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
-      let v = extracted[k];
+    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter", ...ADDRESS_FIELDS] as const) {
+      const v = extracted[k];
       if (k === "name") {
         const better = pickBetterName((base as any).name, v);
         if (better && better !== (base as any).name) patch.name = better;
