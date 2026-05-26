@@ -18,7 +18,8 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
         const cutoff = new Date(Date.now() + RENEW_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
-          .select("id, email_address, watch_expiration")
+          .select("id, email_address, watch_expiration, needs_reconnect")
+          .eq("needs_reconnect", false)
           .or(`watch_expiration.is.null,watch_expiration.lt.${cutoff}`);
         if (error) {
           console.error("renew-watches: query failed", error);
