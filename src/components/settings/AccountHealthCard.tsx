@@ -28,8 +28,12 @@ export function AccountHealthPanel() {
   const qc = useQueryClient();
   const fetchHealth = useServerFn(getAccountHealth);
   const retryAll = useServerFn(retryDlqJobs);
+  const diagnose = useServerFn(runAccountDiagnostic);
+  const startConnect = useServerFn(startConnectGmail);
   const [drawerAccount, setDrawerAccount] = useState<{ id: string; email: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [diagBusy, setDiagBusy] = useState<string | null>(null);
+  const [reconnectBusy, setReconnectBusy] = useState<string | null>(null);
 
   const q = useQuery({
     queryKey: ["account-health"],
