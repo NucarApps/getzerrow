@@ -36,7 +36,6 @@ function ScanPage() {
   const [raw, setRaw] = useState<string | null>(null);
   /** Cropped card image (preview + AI input). */
   const [cropped, setCropped] = useState<string | null>(null);
-  const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
   const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
   const [uploadingCard, setUploadingCard] = useState(false);
 
