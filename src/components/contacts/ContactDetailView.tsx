@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Send, Save, Trash2, Mail, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare, MapPin } from "lucide-react";
+import { Sparkles, Send, Save, Trash2, Mail, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare, MapPin, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
