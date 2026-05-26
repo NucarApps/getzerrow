@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import { Mail, ChevronDown, Check, Plus, AlertTriangle } from "lucide-react";
 import {
   DropdownMenu,
@@ -9,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAccountSelection } from "@/lib/account-selection";
 import { useFolderSelection } from "@/lib/folder-selection";
+import { startConnectGmail } from "@/lib/gmail.functions";
 
 export type SwitcherAccount = {
   id: string;
@@ -27,6 +31,8 @@ export function AccountSwitcher({ accounts, loading, compact, onNavigate }: Prop
   const { activeAccountId, setActiveAccountId } = useAccountSelection();
   const { setSelected } = useFolderSelection();
   const navigate = useNavigate();
+  const connect = useServerFn(startConnectGmail);
+  const [connecting, setConnecting] = useState(false);
 
   const active = accounts.find((a) => a.id === activeAccountId) ?? accounts[0] ?? null;
 
@@ -35,11 +41,25 @@ export function AccountSwitcher({ accounts, loading, compact, onNavigate }: Prop
     onNavigate?.();
   };
 
+  const addAccount = async () => {
+    if (connecting) return;
+    setConnecting(true);
+    try {
+      const { url } = await connect({ data: {} });
+      window.location.href = url;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Couldn't start Google sign-in";
+      toast.error(msg);
+      setConnecting(false);
+      goSettings();
+    }
+  };
+
   if (!loading && accounts.length === 0) {
     return (
       <button
         type="button"
-        onClick={goSettings}
+        onClick={addAccount}
         className={`flex w-full items-center gap-2 rounded-md border border-dashed border-sidebar-border bg-sidebar-accent/30 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-sidebar-accent/60 ${compact ? "h-9" : ""}`}
       >
         <Plus className="h-4 w-4 shrink-0" />
@@ -91,9 +111,12 @@ export function AccountSwitcher({ accounts, loading, compact, onNavigate }: Prop
           );
         })}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={goSettings} className="flex items-center gap-2">
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); addAccount(); }} className="flex items-center gap-2" disabled={connecting}>
           <Plus className="h-3.5 w-3.5" />
-          <span className="text-sm">Connect another Gmail</span>
+          <span className="text-sm">{connecting ? "Redirecting…" : "Connect another Gmail"}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={goSettings} className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Manage accounts</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

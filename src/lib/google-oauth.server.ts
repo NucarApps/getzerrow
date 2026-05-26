@@ -55,7 +55,7 @@ export function buildAuthorizeUrl(redirectUri: string, state: string, loginHint?
     response_type: "code",
     scope: GMAIL_SCOPES.join(" "),
     access_type: "offline",
-    prompt: "consent", // force refresh_token
+    prompt: "select_account consent", // force account picker + refresh_token
     include_granted_scopes: "true",
     state,
   });
