@@ -17,7 +17,19 @@ export type AccountHealth = {
   running: number;
   dlq: number;
   lastError: string | null;
+  needsReconnect: boolean;
+  lastOauthError: string | null;
 };
+
+export const getAccountHealth = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<{ accounts: AccountHealth[] }> => {
+    const { userId } = context;
+
+    const { data: accounts } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("id, email_address, last_poll_at, watch_expiration, needs_reconnect, last_oauth_error")
+      .eq("user_id", userId);
 
 export const getAccountHealth = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
