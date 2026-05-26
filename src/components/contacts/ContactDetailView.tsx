@@ -397,11 +397,13 @@ export function ContactDetailView({ id, onDeleted }: Props) {
                 <DialogTitle>Business card</DialogTitle>
                 <DialogDescription className="sr-only">Full-size view of the scanned business card.</DialogDescription>
               </DialogHeader>
-              <img
-                src={(c as any).card_image_url}
-                alt="Scanned business card"
-                className="w-full rounded-md bg-background object-contain"
-              />
+              {cardImgSrc ? (
+                <img
+                  src={cardImgSrc}
+                  alt="Scanned business card"
+                  className="w-full rounded-md bg-background object-contain"
+                />
+              ) : null}
             </DialogContent>
           </Dialog>
         </div>
