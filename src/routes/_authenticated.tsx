@@ -110,6 +110,7 @@ function AuthedLayout() {
         </main>
       </div>
     </FolderSelectionProvider>
+    </AccountSelectionProvider>
   );
 }
 
