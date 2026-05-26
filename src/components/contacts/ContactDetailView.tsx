@@ -347,10 +347,6 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         />
       </div>
 
-      {/* Avoid an unused-import build error when Select is only used inside PhonesEditor. */}
-      <div className="hidden">
-        <Select><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="x">x</SelectItem></SelectContent></Select>
-      </div>
 
       <div className="mt-6 flex justify-end">
         <Button onClick={save}><Save className="mr-2 h-4 w-4" /> Save</Button>
