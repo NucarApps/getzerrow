@@ -12,6 +12,12 @@ export type CardData = {
   twitter: string | null;
   tagline: string | null;
   handle: string;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
 };
 
 function esc(s: string | null | undefined): string {
