@@ -763,26 +763,44 @@ export type Database = {
       }
       game_scores: {
         Row: {
+          achievements: string[]
           created_at: string
+          daily_seed: string | null
           display_name: string
+          duration_ms: number
           game: string
           id: string
+          kills: number
+          level: number
+          max_combo: number
           score: number
           user_id: string
         }
         Insert: {
+          achievements?: string[]
           created_at?: string
+          daily_seed?: string | null
           display_name: string
+          duration_ms?: number
           game?: string
           id?: string
+          kills?: number
+          level?: number
+          max_combo?: number
           score: number
           user_id: string
         }
         Update: {
+          achievements?: string[]
           created_at?: string
+          daily_seed?: string | null
           display_name?: string
+          duration_ms?: number
           game?: string
           id?: string
+          kills?: number
+          level?: number
+          max_combo?: number
           score?: number
           user_id?: string
         }

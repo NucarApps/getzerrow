@@ -8,15 +8,33 @@ export type InvaderStats = {
   globalBest: number | null;
   myRank: number | null;
   top5: Array<{ name: string; score: number }>;
+  myKills: number;
+  myBestCombo: number;
+  myPlays: number;
+  dailySeed: string | null;
+  myDailyBest: number | null;
+  dailyTop5: Array<{ name: string; score: number }>;
+};
+
+const DEFAULT_STATS: InvaderStats = {
+  myBest: null,
+  globalBest: null,
+  myRank: null,
+  top5: [],
+  myKills: 0,
+  myBestCombo: 0,
+  myPlays: 0,
+  dailySeed: null,
+  myDailyBest: null,
+  dailyTop5: [],
 };
 
 async function fetchStats(supabase: SupabaseClient): Promise<InvaderStats> {
-  // Cast: get_invader_stats was just added; generated types may not include it yet.
   const { data, error } = await (supabase as unknown as {
     rpc: (fn: string) => Promise<{ data: unknown; error: { message: string } | null }>;
   }).rpc("get_invader_stats");
   if (error) throw new Error(error.message);
-  return (data ?? { myBest: null, globalBest: null, myRank: null, top5: [] }) as InvaderStats;
+  return { ...DEFAULT_STATS, ...((data ?? {}) as Partial<InvaderStats>) };
 }
 
 export const getInvaderStats = createServerFn({ method: "GET" })
@@ -25,11 +43,19 @@ export const getInvaderStats = createServerFn({ method: "GET" })
     return fetchStats(context.supabase as unknown as SupabaseClient);
   });
 
+const submitSchema = z.object({
+  score: z.number().int().min(0).max(10_000_000),
+  level: z.number().int().min(0).max(10_000).optional().default(0),
+  kills: z.number().int().min(0).max(1_000_000).optional().default(0),
+  maxCombo: z.number().int().min(0).max(10_000).optional().default(0),
+  durationMs: z.number().int().min(0).max(60 * 60 * 1000).optional().default(0),
+  dailySeed: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().default(null),
+  achievements: z.array(z.string().min(1).max(64)).max(32).optional().default([]),
+});
+
 export const submitInvaderScore = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z.object({ score: z.number().int().min(0).max(10_000_000) }).parse(input),
-  )
+  .inputValidator((input: unknown) => submitSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
@@ -45,12 +71,19 @@ export const submitInvaderScore = createServerFn({ method: "POST" })
       "Player";
     const displayName = rawName.slice(0, 24);
 
-    const { error } = await supabase.from("game_scores").insert({
+    const insertRow = {
       user_id: userId,
       game: "invader",
       score: data.score,
       display_name: displayName,
-    });
+      level: data.level,
+      kills: data.kills,
+      max_combo: data.maxCombo,
+      duration_ms: data.durationMs,
+      daily_seed: data.dailySeed,
+      achievements: data.achievements,
+    };
+    const { error } = await supabase.from("game_scores").insert(insertRow);
     if (error) throw new Error(error.message);
 
     return fetchStats(supabase as unknown as SupabaseClient);
