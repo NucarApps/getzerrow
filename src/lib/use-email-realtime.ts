@@ -29,7 +29,7 @@ export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): b
   if (typeof tag === "string") {
     if (tag === "all") return true;
     if (tag === "archived") return row.is_archived === true;
-    if (tag === "inbox") return row.is_archived !== true && row.folder_id == null;
+    if (tag === "inbox") return Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
     // Any other string segment is treated as a folder id.
     return row.folder_id === tag;
   }
