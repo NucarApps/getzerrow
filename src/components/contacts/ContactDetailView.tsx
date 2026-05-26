@@ -65,6 +65,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [cardImageOpen, setCardImageOpen] = useState(false);
 
   useEffect(() => {
     if (q.data?.contact) {
