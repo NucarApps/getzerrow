@@ -87,11 +87,17 @@ type Email = {
   to_addrs: string | null;
   has_attachment: boolean;
   processed_at: string | null;
+  raw_labels?: string[] | null;
 };
 
 type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
 
 const PAGE_SIZE = 50;
+
+const withInbox = (labels: string[] | null | undefined): string[] =>
+  Array.from(new Set([...(labels ?? []), "INBOX"]));
+const withoutInbox = (labels: string[] | null | undefined): string[] =>
+  (labels ?? []).filter((l) => l !== "INBOX");
 
 const MIN_PX = 400;
 
