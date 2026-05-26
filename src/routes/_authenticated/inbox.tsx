@@ -368,7 +368,8 @@ function InboxPage() {
   const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
   const emailsQ = useQuery<Email[]>({
-    queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
+    queryKey: ["emails", accountId, selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
+    enabled: !!accountId,
     queryFn: async () => {
       if (isSearching) {
         // Operator-aware search: when the user typed `from:` / `to:`, filter
@@ -378,6 +379,7 @@ function InboxPage() {
           let q = supabase
             .from("emails")
             .select(LIST_COLUMNS)
+            .eq("gmail_account_id", accountId!)
             .order("received_at", { ascending: false, nullsFirst: false })
             .limit(500);
           if (parsedQuery.from) {
@@ -399,6 +401,7 @@ function InboxPage() {
         const { data } = await supabase
           .from("emails")
           .select(LIST_COLUMNS)
+          .eq("gmail_account_id", accountId!)
           .order("received_at", { ascending: false })
           .limit(2000);
         return (data ?? []) as Email[];
@@ -408,6 +411,7 @@ function InboxPage() {
       let q = supabase
         .from("emails")
         .select(LIST_COLUMNS)
+        .eq("gmail_account_id", accountId!)
         .order("received_at", { ascending: false, nullsFirst: false })
         .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
       if (cursor) q = q.lt("received_at", cursor);
