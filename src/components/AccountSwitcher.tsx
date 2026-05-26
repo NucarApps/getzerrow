@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import { Mail, ChevronDown, Check, Plus, AlertTriangle } from "lucide-react";
 import {
   DropdownMenu,
@@ -9,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAccountSelection } from "@/lib/account-selection";
 import { useFolderSelection } from "@/lib/folder-selection";
+import { startConnectGmail } from "@/lib/gmail.functions";
 
 export type SwitcherAccount = {
   id: string;
