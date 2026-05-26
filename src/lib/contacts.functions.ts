@@ -668,7 +668,7 @@ export const scanCard = createServerFn({ method: "POST" })
 /** Create a contact from a scanned-card draft. */
 export const createContactFromScan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: any) =>
+  .inputValidator((d: unknown) =>
     z.object({
       email: z.string().email(),
       name: z.string().max(200).nullable().optional(),
@@ -678,12 +678,26 @@ export const createContactFromScan = createServerFn({ method: "POST" })
       website: z.string().max(500).nullable().optional(),
       linkedin: z.string().max(500).nullable().optional(),
       twitter: z.string().max(500).nullable().optional(),
+      address_line1: z.string().trim().max(200).nullable().optional(),
+      address_line2: z.string().trim().max(200).nullable().optional(),
+      city: z.string().trim().max(120).nullable().optional(),
+      region: z.string().trim().max(120).nullable().optional(),
+      postal_code: z.string().trim().max(40).nullable().optional(),
+      country: z.string().trim().max(60).nullable().optional(),
+      phones: z.array(phoneEntrySchema).max(20).optional(),
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const email = data.email.trim().toLowerCase();
-    const payload = { ...data, name: normalizeName(data.name ?? null) };
+    const { phones, ...rest } = data;
+    // Derive legacy contacts.phone mirror from primary phone (if provided).
+    const primary = phones?.find((p) => p.is_primary) ?? phones?.[0];
+    const payload = {
+      ...rest,
+      name: normalizeName(rest.name ?? null),
+      phone: primary?.number?.trim() || rest.phone || null,
+    };
     const { data: row, error } = await supabaseAdmin
       .from("contacts")
       .upsert(
@@ -693,6 +707,22 @@ export const createContactFromScan = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+
+    if (phones && phones.length > 0) {
+      // Replace any existing phones for this contact.
+      await supabaseAdmin.from("contact_phones").delete().eq("contact_id", row.id);
+      const hasPrimary = phones.some((p) => p.is_primary);
+      const normalized = phones.map((p, idx) => ({
+        user_id: userId,
+        contact_id: row.id,
+        label: p.label.trim().toLowerCase(),
+        number: p.number.trim(),
+        is_primary: hasPrimary ? !!p.is_primary : idx === 0,
+        position: idx,
+      }));
+      const { error: insErr } = await supabaseAdmin.from("contact_phones").insert(normalized);
+      if (insErr) throw new Error(insErr.message);
+    }
     return { contact: row };
   });
 
