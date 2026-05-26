@@ -81,6 +81,10 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           }
           const account = { id: accountId };
 
+          // Successful (re)auth: clear any prior reconnect flag/error.
+          await clearNeedsReconnect(account.id);
+
+
           // Start Gmail push watch if topic is configured
           try {
             const watch = await ensureWatch(account.id, null);
