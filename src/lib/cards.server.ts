@@ -12,6 +12,12 @@ export type CardData = {
   twitter: string | null;
   tagline: string | null;
   handle: string;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
 };
 
 function esc(s: string | null | undefined): string {
@@ -39,6 +45,13 @@ export function buildVCard(c: CardData, publicUrl?: string): string {
   if (c.linkedin) lines.push(`URL;TYPE=LinkedIn:${esc(c.linkedin)}`);
   if (c.twitter) lines.push(`URL;TYPE=Twitter:${esc(c.twitter)}`);
   if (c.tagline) lines.push(`NOTE:${esc(c.tagline)}`);
+  const street = [c.address_line1, c.address_line2].filter(Boolean).join(", ");
+  if (street || c.city || c.region || c.postal_code || c.country) {
+    // vCard ADR: ;;street;city;region;postal_code;country
+    lines.push(
+      `ADR;TYPE=WORK:;;${esc(street)};${esc(c.city ?? "")};${esc(c.region ?? "")};${esc(c.postal_code ?? "")};${esc(c.country ?? "")}`,
+    );
+  }
   if (publicUrl) lines.push(`URL;TYPE=Zerrow:${esc(publicUrl)}`);
   lines.push("END:VCARD");
   return lines.join("\r\n");
@@ -153,7 +166,27 @@ export type ContactShareData = {
   website: string | null;
   linkedin: string | null;
   twitter: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
 };
+
+function formatAddressLines(c: {
+  address_line1?: string | null; address_line2?: string | null;
+  city?: string | null; region?: string | null;
+  postal_code?: string | null; country?: string | null;
+}): string[] {
+  const lines: string[] = [];
+  if (c.address_line1) lines.push(c.address_line1);
+  if (c.address_line2) lines.push(c.address_line2);
+  const cityLine = [c.city, c.region, c.postal_code].filter(Boolean).join(", ");
+  if (cityLine) lines.push(cityLine);
+  if (c.country) lines.push(c.country);
+  return lines;
+}
 
 /** Share a saved contact with someone else via the user's Gmail account. Includes a .vcf attachment. */
 export async function sendContactShareEmail(args: {
@@ -169,6 +202,9 @@ export async function sendContactShareEmail(args: {
     name: c.name, title: c.title, company: c.company, email: c.email,
     phone: c.phone, website: c.website, linkedin: c.linkedin, twitter: c.twitter,
     tagline: null, handle: (c.name || c.email || "contact").toLowerCase().replace(/[^\w-]+/g, "-"),
+    address_line1: c.address_line1 ?? null, address_line2: c.address_line2 ?? null,
+    city: c.city ?? null, region: c.region ?? null,
+    postal_code: c.postal_code ?? null, country: c.country ?? null,
   };
   const vcf = buildVCard(cardData);
   const vcfFilename = `${(c.name || c.email || "contact").replace(/[^\w-]+/g, "_")}.vcf`;
@@ -177,9 +213,11 @@ export async function sendContactShareEmail(args: {
   const subject = `Contact: ${displayName}`;
   const noteBlock = args.note?.trim() ? `${args.note.trim()}\n\n` : "";
 
+  const addressLines = formatAddressLines(c);
   const sigLines = [
     c.name, c.title && c.company ? `${c.title}, ${c.company}` : (c.title || c.company),
     c.phone, c.email, c.website,
+    ...addressLines,
   ].filter(Boolean).join("\n");
 
   const textBody = `${noteBlock}I'm sharing ${displayName}'s contact info with you.
@@ -189,6 +227,10 @@ ${sigLines}
 (.vcf attached — open it on your phone to save them to contacts.)
 
 — Shared from Zerrow`;
+
+  const addressRow = addressLines.length > 0
+    ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px;vertical-align:top">Address</td><td style="padding:2px 8px;white-space:pre-line">${escapeHtml(addressLines.join("\n"))}</td></tr>`
+    : "";
 
   const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#111;line-height:1.5">
     ${args.note?.trim() ? `<p style="white-space:pre-wrap">${escapeHtml(args.note.trim())}</p>` : ""}
@@ -202,6 +244,7 @@ ${sigLines}
       ${c.website ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Website</td><td style="padding:2px 8px"><a href="${escapeHtml(c.website)}">${escapeHtml(c.website)}</a></td></tr>` : ""}
       ${c.linkedin ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">LinkedIn</td><td style="padding:2px 8px"><a href="${escapeHtml(c.linkedin)}">${escapeHtml(c.linkedin)}</a></td></tr>` : ""}
       ${c.twitter ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Twitter / X</td><td style="padding:2px 8px"><a href="${escapeHtml(c.twitter)}">${escapeHtml(c.twitter)}</a></td></tr>` : ""}
+      ${addressRow}
     </table>
     <p style="color:#888;font-size:12px">A .vcf file is attached — open it on your phone to add them to contacts.</p>
     <p style="color:#aaa;font-size:11px">Shared from Zerrow</p>

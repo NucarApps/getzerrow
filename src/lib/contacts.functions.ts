@@ -51,7 +51,15 @@ const EXTRACT_SCHEMA = z.object({
   website: z.string().nullable(),
   linkedin: z.string().nullable(),
   twitter: z.string().nullable(),
+  address_line1: z.string().nullable(),
+  address_line2: z.string().nullable(),
+  city: z.string().nullable(),
+  region: z.string().nullable(),
+  postal_code: z.string().nullable(),
+  country: z.string().nullable(),
 });
+
+const ADDRESS_FIELDS = ["address_line1", "address_line2", "city", "region", "postal_code", "country"] as const;
 
 const BANNED_DOMAINS = new Set([
   "noreply", "no-reply", "donotreply", "do-not-reply",
@@ -332,6 +340,7 @@ export const enrichContact = createServerFn({ method: "POST" })
 
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
       name: null, title: null, company: null, phone: null, website: null, linkedin: null, twitter: null,
+      address_line1: null, address_line2: null, city: null, region: null, postal_code: null, country: null,
     };
     try {
       const { output } = await generateText({
@@ -349,6 +358,12 @@ Fields:
 - website: company or personal website URL
 - linkedin: full LinkedIn profile URL
 - twitter: full Twitter/X profile URL
+- address_line1: street address, first line (only if a postal address is clearly printed in a signature)
+- address_line2: apt / suite / floor (only if present)
+- city: city / locality
+- region: state / province / region
+- postal_code: ZIP / postal code
+- country: country
 
 Emails (most-signature-likely first):
 ${sample}`,
@@ -369,9 +384,15 @@ ${sample}`,
       twitter?: string | null;
       relationship_summary?: string | null;
       summary_generated_at?: string | null;
+      address_line1?: string | null;
+      address_line2?: string | null;
+      city?: string | null;
+      region?: string | null;
+      postal_code?: string | null;
+      country?: string | null;
     } = { enriched_at: new Date().toISOString() };
-    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
-      let v = extracted[k];
+    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter", ...ADDRESS_FIELDS] as const) {
+      const v = extracted[k];
       if (k === "name") {
         let best = pickBetterName(contact.name, fromNameCandidate);
         best = pickBetterName(best, v);
@@ -777,6 +798,7 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
     const body = (email.body_text || email.snippet || "").slice(0, 6000);
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
       name: null, title: null, company: null, phone: null, website: null, linkedin: null, twitter: null,
+      address_line1: null, address_line2: null, city: null, region: null, postal_code: null, country: null,
     };
     if (body.trim()) {
       try {
@@ -794,6 +816,12 @@ For each field, return the value or null if not clearly present. Do NOT guess.
 - website: company or personal website URL
 - linkedin: full LinkedIn profile URL
 - twitter: full Twitter/X profile URL
+- address_line1: street address, first line (only if a postal address is clearly printed)
+- address_line2: apt / suite / floor (only if present)
+- city: city / locality
+- region: state / province / region
+- postal_code: ZIP / postal code
+- country: country
 
 Email:
 Subject: ${email.subject ?? ""}
@@ -809,9 +837,11 @@ ${body}`,
       enriched_at: string;
       name?: string | null; title?: string | null; company?: string | null;
       phone?: string | null; website?: string | null; linkedin?: string | null; twitter?: string | null;
+      address_line1?: string | null; address_line2?: string | null; city?: string | null;
+      region?: string | null; postal_code?: string | null; country?: string | null;
     } = { enriched_at: new Date().toISOString() };
-    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter"] as const) {
-      let v = extracted[k];
+    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter", ...ADDRESS_FIELDS] as const) {
+      const v = extracted[k];
       if (k === "name") {
         const better = pickBetterName((base as any).name, v);
         if (better && better !== (base as any).name) patch.name = better;
@@ -846,7 +876,7 @@ export const shareContactByEmail = createServerFn({ method: "POST" })
 
     const { data: contact, error } = await supabase
       .from("contacts")
-      .select("name,title,company,email,phone,website,linkedin,twitter")
+      .select("name,title,company,email,phone,website,linkedin,twitter,address_line1,address_line2,city,region,postal_code,country")
       .eq("id", data.contactId)
       .maybeSingle();
     if (error) throw new Error(error.message);
