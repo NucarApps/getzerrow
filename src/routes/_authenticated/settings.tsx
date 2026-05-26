@@ -122,6 +122,11 @@ function SettingsPage() {
                         </Button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
+                        {a.needs_reauth && (
+                          <Button size="sm" variant="default" onClick={() => startConnect(a.email_address)} disabled={busy !== null}>
+                            {busy === `reconnect-${a.email_address}` ? "Redirecting…" : "Reconnect"}
+                          </Button>
+                        )}
                         <Button size="sm" onClick={() => run(`bf-${a.id}`, () => backfill({ data: { account_id: a.id, count: 30 } }), "Backfilled latest 30")} disabled={busy !== null}>
                           {busy === `bf-${a.id}` ? "Backfilling…" : "Backfill recent 30"}
                         </Button>
