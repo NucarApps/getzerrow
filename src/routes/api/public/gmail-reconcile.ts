@@ -9,6 +9,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { reconcileLocalInbox } from "@/lib/sync.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { withCronRun, logError } from "@/lib/log.server";
 
 const DEFAULT_LIMIT = 200; // head + tail combined, walks the inbox faster
 const SUSPECT_LIMIT = 500; // bigger sweep when history drift is suspected
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
     handlers: {
       POST: async ({ request }) => {
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
+        return withCronRun("gmail-reconcile", async ({ runId }) => {
 
         // Skip dead-OAuth accounts — every Gmail roundtrip inside reconcile
         // would throw NeedsReconnectError, producing the per-15-minute ERROR
@@ -28,12 +30,10 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
           .select("id, email_address, last_history_sync_at")
           .eq("needs_reconnect", false);
         if (error) {
+          logError("reconcile.accounts_query_failed", { run_id: runId }, error);
           return Response.json({ ok: false, error: error.message }, { status: 500 });
         }
 
-        // Accounts that received a push event with an error in the last hour
-        // — likely have drift the history-diff path couldn't process — get
-        // the larger window so we converge faster on the canonical state.
         const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
         const { data: drifty } = await supabaseAdmin
           .from("pubsub_events")
@@ -51,19 +51,21 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
             : 0;
           const suspect =
             suspectEmails.has(acc.email_address) ||
-            // Or the account hasn't synced in 30 minutes — also suspect.
             (lastSync > 0 && Date.now() - lastSync > 30 * 60 * 1000);
           const limit = suspect ? SUSPECT_LIMIT : DEFAULT_LIMIT;
+          const tAcc = Date.now();
           try {
             const r = await reconcileLocalInbox(acc.id, limit);
-            // Use account_id (UUID) in the response, not email — operators
-            // can map id → email via the accounts table if they need to,
-            // and the cron response shouldn't expose PII to whoever reads
-            // logs of the cron output.
             results.push({ account_id: acc.id, result: r, limit });
           } catch (e) {
             const msg = (e as Error)?.message ?? String(e);
-            console.error("reconcile failed for", { account_id: acc.id, err: (e as Error)?.message });
+            logError("reconcile.account_failed", {
+              run_id: runId,
+              account_id: acc.id,
+              suspect,
+              limit,
+              duration_ms: Date.now() - tAcc,
+            }, e);
             results.push({ account_id: acc.id, error: msg, limit });
           }
         }
@@ -75,10 +77,11 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
             details: `Reconciled ${results.length} account(s); ${suspectEmails.size} suspect`,
           });
         } catch (e) {
-          console.error("pubsub_events reconcile log failed", e);
+          logError("reconcile.pubsub_log_failed", { run_id: runId }, e);
         }
 
-        return Response.json({ ok: true, results });
+        return Response.json({ ok: true, results, run_id: runId });
+        });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
     },

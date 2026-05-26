@@ -6,16 +6,10 @@
 //
 // Both prune up to a bounded batch per call. The first run after this is
 // deployed will leave a backlog; subsequent daily ticks chip away.
-//
-// Query params (all optional):
-//   pubsub_keep_days        retention for normal rows           default 30
-//   pubsub_keep_errors_days retention for rows with error set   default 60
-//   pubsub_limit            max rows deleted per call           default 5000
-//   dlq_keep_days           DLQ retention                       default 30
-//   dlq_limit               max DLQ rows deleted per call       default 1000
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { withCronRun, logError } from "@/lib/log.server";
 
 type CleanupPubsubResult = { deleted: number; kept_errors: number; total_before: number };
 type CleanupDlqResult = { deleted: number; total_before: number };
@@ -44,6 +38,7 @@ export const Route = createFileRoute("/api/public/gmail-retention")({
     handlers: {
       POST: async ({ request }) => {
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
+        return withCronRun("gmail-retention", async ({ runId }) => {
         const url = new URL(request.url);
         const pubsubKeepDays       = clampInt(url.searchParams.get("pubsub_keep_days"),        1, 3650, 30);
         const pubsubKeepErrorsDays = clampInt(url.searchParams.get("pubsub_keep_errors_days"), 1, 3650, 60);
@@ -56,33 +51,51 @@ export const Route = createFileRoute("/api/public/gmail-retention")({
         let pubsubError: string | null = null;
         let dlqError: string | null = null;
 
+        const tPubsub = Date.now();
         try {
           const r = await (supabaseAdmin as unknown as CleanupRpc).rpc("cleanup_old_pubsub_events", {
             p_keep_days: pubsubKeepDays,
             p_keep_errors_days: pubsubKeepErrorsDays,
             p_batch_limit: pubsubLimit,
           });
-          if (r.error) pubsubError = r.error.message;
+          if (r.error) {
+            pubsubError = r.error.message;
+            logError("retention.pubsub_cleanup_rpc_error", {
+              run_id: runId,
+              duration_ms: Date.now() - tPubsub,
+            }, r.error);
+          }
           else pubsub = r.data?.[0] ?? null;
         } catch (e) {
           pubsubError = (e as Error)?.message ?? String(e);
-          console.error("cleanup_old_pubsub_events failed", e);
+          logError("retention.pubsub_cleanup_threw", {
+            run_id: runId,
+            duration_ms: Date.now() - tPubsub,
+          }, e);
         }
 
+        const tDlq = Date.now();
         try {
           const r = await (supabaseAdmin as unknown as DlqCleanupRpc).rpc("cleanup_old_dlq_jobs", {
             p_keep_days: dlqKeepDays,
             p_batch_limit: dlqLimit,
           });
-          if (r.error) dlqError = r.error.message;
+          if (r.error) {
+            dlqError = r.error.message;
+            logError("retention.dlq_cleanup_rpc_error", {
+              run_id: runId,
+              duration_ms: Date.now() - tDlq,
+            }, r.error);
+          }
           else dlq = r.data?.[0] ?? null;
         } catch (e) {
           dlqError = (e as Error)?.message ?? String(e);
-          console.error("cleanup_old_dlq_jobs failed", e);
+          logError("retention.dlq_cleanup_threw", {
+            run_id: runId,
+            duration_ms: Date.now() - tDlq,
+          }, e);
         }
 
-        // Single audit row per retention tick. Tagged so it's filterable
-        // out of the activity feed if it gets noisy.
         try {
           await supabaseAdmin.from("pubsub_events").insert({
             event_type: "retention",
@@ -90,10 +103,11 @@ export const Route = createFileRoute("/api/public/gmail-retention")({
             error: pubsubError ?? dlqError,
           });
         } catch (e) {
-          console.error("retention audit log failed", e);
+          logError("retention.audit_log_failed", { run_id: runId }, e);
         }
 
-        return Response.json({ ok: true, pubsub, dlq, pubsubError, dlqError });
+        return Response.json({ ok: true, pubsub, dlq, pubsubError, dlqError, run_id: runId });
+        });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
     },

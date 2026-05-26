@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { ensureWatch } from "@/lib/gmail.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { withCronRun, logError } from "@/lib/log.server";
 
 // Per-account silence threshold. If the cron has been running but a given
 // account hasn't had a single history event (push *or* poll-driven) in 2h,
@@ -20,10 +21,14 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
     handlers: {
       POST: async ({ request }) => {
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
+        return withCronRun("gmail-poll", async ({ runId }) => {
         const { data: accounts, error } = await supabaseAdmin
           .from("gmail_accounts")
           .select("id, email_address, watch_expiration, last_push_at, created_at, needs_reconnect");
-        if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+        if (error) {
+          logError("poll.accounts_query_failed", { run_id: runId }, error);
+          return Response.json({ ok: false, error: error.message }, { status: 500 });
+        }
 
         // Look up last successful watch re-arm so we don't spam ensureWatch.
         const { data: recentRearms } = await supabaseAdmin
@@ -46,14 +51,6 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
           // NeedsReconnectError, burning a slot in the per-tick loop with
           // nothing the cron can fix. The UI banner is the recovery path.
           if (acc.needs_reconnect) continue;
-          // Per-account push silence: did this account receive a real Google
-          // push recently? `last_push_at` is stamped ONLY by the webhook
-          // handler (not by poll-driven syncs), so its staleness specifically
-          // indicates "Pub/Sub delivery is broken" rather than "quiet inbox".
-          //
-          // Accounts that have NEVER received a push (last_push_at is null)
-          // are silent only if the account itself is older than the threshold
-          // — otherwise we'd alarm on every freshly-connected mailbox.
           const lastPushMs = acc.last_push_at ? new Date(acc.last_push_at).getTime() : null;
           const accountAgeMs = acc.created_at ? Date.now() - new Date(acc.created_at).getTime() : 0;
           const accountSilent = lastPushMs !== null
@@ -63,6 +60,7 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
           const cooldownOver = !rearmedRecently.has(acc.email_address);
 
           if (accountSilent && watchActive && cooldownOver) {
+            const tRearm = Date.now();
             try {
               const w = await ensureWatch(acc.id, null);
               if (w) {
@@ -78,14 +76,19 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
                     history_id: w.historyId,
                     details: `Per-account silence > ${PER_ACCOUNT_SILENCE_MS / 60_000}min`,
                   });
-                } catch (e) { console.error("pubsub_events log failed", e); }
+                } catch (e) {
+                  logError("poll.pubsub_log_failed", { run_id: runId, account_id: acc.id, kind: "watch_rearm_auto" }, e);
+                }
               }
             } catch (e) {
-              // Log the account ID instead of email_address — same
-              // operator value, no PII bleed into shared log aggregators.
-              console.error("self-heal watch re-arm failed", { account_id: acc.id, err: (e as Error)?.message });
+              logError("poll.self_heal_rearm_failed", {
+                run_id: runId,
+                account_id: acc.id,
+                duration_ms: Date.now() - tRearm,
+              }, e);
             }
           }
+          const tSync = Date.now();
           try {
             const r = await syncSinceHistory(acc.id);
             const synced = (r as { synced?: number })?.synced ?? 0;
@@ -94,7 +97,12 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
             ok++;
           } catch (e: unknown) {
             const err = e as Error;
-            console.error("poll failed for", { account_id: acc.id, err: err?.message });
+            logError("poll.sync_failed", {
+              run_id: runId,
+              account_id: acc.id,
+              attempt: 1,
+              duration_ms: Date.now() - tSync,
+            }, err);
             const msg = err?.message ?? String(e);
             if (!firstError) firstError = msg;
             failed++;
@@ -110,17 +118,20 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
             error: firstError,
           });
         } catch (e) {
-          console.error("pubsub_events poll log failed", e);
+          logError("poll.pubsub_log_failed", { run_id: runId, kind: "poll" }, e);
         }
 
         // Drain a larger batch of due jobs so processing keeps moving even
-        // without the dedicated 30s jobs cron. 50 vs 25 keeps live-lane mail
-        // moving when a small burst lands between cron ticks.
+        // without the dedicated 30s jobs cron.
         let jobs: Awaited<ReturnType<typeof runMessageJobs>> | null = null;
+        const tDrain = Date.now();
         try {
           jobs = await runMessageJobs(50);
         } catch (e) {
-          console.error("drain jobs failed", e);
+          logError("poll.drain_jobs_failed", {
+            run_id: runId,
+            duration_ms: Date.now() - tDrain,
+          }, e);
         }
 
         return Response.json({
@@ -132,6 +143,8 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
           rearmed: rearmedCount,
           synced: totalSynced,
           jobs,
+          run_id: runId,
+        });
         });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
