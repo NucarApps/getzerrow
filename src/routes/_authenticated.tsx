@@ -113,6 +113,9 @@ function AuthedLayoutInner({ mobileOpen, setMobileOpen }: { mobileOpen: boolean;
               <Menu className="h-5 w-5" />
             </button>
             <img src={zerrowLogo} alt="Zerrow" className="h-12 w-auto" />
+            <div className="ml-auto min-w-0 max-w-[60%]">
+              <AccountSwitcher accounts={accounts} loading={accountsQ.isLoading} compact />
+            </div>
           </div>
           <BackfillBanner />
           <div className="min-h-0 flex-1">
@@ -121,8 +124,6 @@ function AuthedLayoutInner({ mobileOpen, setMobileOpen }: { mobileOpen: boolean;
 
         </main>
       </div>
-    </FolderSelectionProvider>
-    </AccountSelectionProvider>
   );
 }
 
