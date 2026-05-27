@@ -17,6 +17,8 @@ import { InboxOverrides } from "@/components/settings/InboxOverrides";
 import { PubsubActivity } from "@/components/settings/PubsubActivity";
 import { ProcessingJobs } from "@/components/settings/ProcessingJobs";
 import { AccountHealthPanel } from "@/components/settings/AccountHealthCard";
+import { AccountPicker } from "@/components/settings/AccountPicker";
+import { useAccountSelection } from "@/lib/account-selection";
 
 export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
 
