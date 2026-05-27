@@ -1,22 +1,21 @@
-## Plan
+I’ll fix the search to behave like a person/name search instead of trusting every broad Gmail full-text hit.
 
-The issue is not the empty-state UI — the Gmail search is finding candidate messages, then failing while expanding/ingesting them because the Gmail API is returning `rateLimitExceeded` quota errors. The current search path makes too many Gmail calls at once by deep-searching up to 500 hits, expanding full threads, then fetching many full messages concurrently.
+Plan:
+1. Tighten local filtering for multi-word searches like `rob morris`
+   - Split free-text terms into tokens.
+   - Require all tokens to match visible email metadata (`from_name`, `from_addr`, `to_addrs`, `subject`, or `snippet`) unless Gmail returns a high-confidence exact phrase match.
+   - Stop showing rows solely because Gmail returned the message ID when the visible row has no relationship to the query.
 
-## Changes to make
+2. Make Gmail search more precise for names
+   - For multi-word free-text queries, send Gmail an exact phrase query (`"rob morris"`) instead of a broad raw query.
+   - Keep current email/domain behavior (`from:email`, `from:domain`) unchanged.
+   - Keep operator searches like `from:` / `to:` working as explicit filters.
 
-1. **Throttle Gmail search ingestion**
-   - Reduce the number of Gmail hits processed per search so a normal search like “rob morris” does not blow through per-user Gmail quota.
-   - Lower message/thread fetch concurrency and add small backoff handling for `rateLimitExceeded` responses.
-   - Stop expanding every matching thread during interactive search; only pull direct Gmail search hits first, which is enough to display Rob Morris matches.
+3. Preserve older-message ingestion without polluting results
+   - Continue ingesting Gmail hits so older relevant emails can appear.
+   - Only merge Gmail-hit rows into the visible result list if they also pass the stricter local/person search filter.
+   - Keep the rate-limit handling already added.
 
-2. **Return clearer search status to the inbox UI**
-   - Update `searchGmailAndIngest` to return a `rate_limited` reason when Gmail quota blocks ingestion.
-   - Include `found` counts and already-known Gmail IDs even if some ingestion fails.
-
-3. **Improve the empty-state messaging**
-   - If Gmail found matches but ingestion was rate-limited, show a retry/wait message instead of “No matches”.
-   - If Gmail found matches but no local rows are available yet, show that Gmail found results and the app is still pulling them in.
-
-4. **Verify the behavior**
-   - Use server logs to confirm quota errors stop or are handled gracefully.
-   - Confirm the inbox no longer incorrectly says there are no Gmail matches when Gmail returned hits or rate-limited the pull.
+4. Validate with the Rob Morris case
+   - Confirm the result list no longer includes Donald Gaskins / Andy Loconto style unrelated rows for `rob morris`.
+   - Check server logs for Gmail search errors and verify the UI still shows the rate-limit/reconnect states when needed.
