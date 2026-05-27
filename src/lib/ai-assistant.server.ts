@@ -136,26 +136,101 @@ Guidelines:
 Prefer calling the propose_changes tool. Only reply in plain text if you genuinely need to ask a clarifying question and cannot express it via the tool's clarifying_question field.${args.extraReminder ? `\n${args.extraReminder}` : ""}`;
 }
 
-async function callModel(prompt: string): Promise<AssistantProposal> {
-  let captured: AssistantProposal | null = null;
-  const result = await generateText({
-    model: getModel(),
-    tools: {
-      propose_changes: tool({
-        description: "Return your reply, optional clarifying question, and the list of proposed actions.",
-        inputSchema: proposalSchema,
-        execute: async (input) => {
-          captured = input as AssistantProposal;
-          return { ok: true };
+const TOOL_PARAMETERS_SCHEMA = {
+  type: "object",
+  properties: {
+    reply: { type: "string", description: "Short friendly summary of what you will change." },
+    clarifying_question: { type: "string", description: "A single short question if you cannot proceed; otherwise empty." },
+    actions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["move_email", "add_filter", "remove_filter", "update_folder_rule"] },
+          email_id: { type: "string", description: "Required when type is move_email." },
+          to_folder_id: { type: "string", description: "Required when type is move_email." },
+          folder_id: { type: "string", description: "Required when type is add_filter or update_folder_rule." },
+          filter_id: { type: "string", description: "Required when type is remove_filter." },
+          field: { type: "string", enum: ["from", "domain", "subject"], description: "Required when type is add_filter." },
+          op: { type: "string", enum: ["contains", "equals", "starts_with"], description: "Required when type is add_filter." },
+          value: { type: "string", description: "Required when type is add_filter." },
+          ai_rule: { type: "string", description: "Required when type is update_folder_rule." },
+          why: { type: "string", description: "Optional short reason." },
         },
-      }),
+        required: ["type"],
+      },
     },
-    toolChoice: "auto",
-    prompt,
+  },
+  required: ["actions"],
+} as const;
+
+type ToolCall = { function?: { name?: string; arguments?: string } };
+type GatewayChoice = { message?: { content?: string | null; tool_calls?: ToolCall[] } };
+type GatewayResponse = { choices?: GatewayChoice[] };
+
+async function callModel(prompt: string): Promise<AssistantProposal> {
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) throw new Error("LOVABLE_API_KEY missing");
+
+  const resp = await fetch(GATEWAY_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: DEFAULT_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "propose_changes",
+            description: "Return your reply, optional clarifying question, and the list of proposed actions.",
+            parameters: TOOL_PARAMETERS_SCHEMA,
+          },
+        },
+      ],
+      tool_choice: { type: "function", function: { name: "propose_changes" } },
+    }),
   });
-  if (captured) return captured;
-  // Model declined to call the tool — surface its text instead of a canned fallback.
-  const text = (result.text ?? "").trim();
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`gateway ${resp.status}: ${text.slice(0, 300)}`);
+  }
+
+  const json = (await resp.json()) as GatewayResponse;
+  const choice = json.choices?.[0]?.message;
+  const toolCall = choice?.tool_calls?.[0];
+  const argsStr = toolCall?.function?.arguments;
+
+  if (argsStr) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(argsStr);
+    } catch {
+      throw new Error("Tool call arguments were not valid JSON");
+    }
+    // Validate loosely first, then drop any action that fails the strict schema.
+    const rawObj = (raw ?? {}) as { reply?: unknown; clarifying_question?: unknown; actions?: unknown };
+    const rawActions = Array.isArray(rawObj.actions) ? rawObj.actions : [];
+    const validActions: AssistantAction[] = [];
+    for (const a of rawActions) {
+      const parsed = actionSchema.safeParse(a);
+      if (parsed.success) validActions.push(parsed.data);
+    }
+    const final = proposalSchema.safeParse({
+      reply: typeof rawObj.reply === "string" ? rawObj.reply : "",
+      clarifying_question: typeof rawObj.clarifying_question === "string" ? rawObj.clarifying_question : "",
+      actions: validActions,
+    });
+    if (!final.success) throw new Error("Proposal failed final validation");
+    return final.data as AssistantProposal;
+  }
+
+  // No tool call — surface the plain-text reply if any.
+  const text = (choice?.content ?? "").trim();
   if (text) {
     const looksLikeQuestion = /\?\s*$/.test(text);
     return {
