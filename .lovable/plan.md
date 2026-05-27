@@ -1,49 +1,59 @@
-## What I found
+## What's happening
 
-Your Zerrow inbox is filtering correctly for rows that have both:
+Robert O'Koniewski's email (`rokoniewski@msada.org`, gmail id `19e6a1455025344d`) is in your Gmail inbox but missing from the Zerrow inbox.
+
+DB row state right now:
 - `is_archived = false`
-- `raw_labels` contains `INBOX`
+- `classified_by = "manual_inbox"`, reason `"Moved to Inbox manually"`
+- `raw_labels = {UNREAD, CATEGORY_PERSONAL}` — **`INBOX` is missing**
 
-The two messages currently visible in Zerrow match those fields:
-- Mark Zarif — `Fwd: FW: DCD Automotive` — has `INBOX`
-- Mark Zarif via Google Sheets — spreadsheet share — has `INBOX`
+The Zerrow inbox view filters with `raw_labels @> ['INBOX']`, so this row is hidden even though `is_archived` is false.
 
-The two missing screenshot messages are present in Zerrow's database, but their local label state says they are not in the Gmail inbox:
+## Why it ended up like this
 
-1. **Mark Zarif — `Fwd: Reynolds & Reynolds Innovation Center Visit`**
-   - `gmail_message_id`: `19e648f0dd00ff52`
-   - `classified_by`: `inbox_override`
-   - `classification_reason`: `Restored: always-inbox rule (was incorrectly archived by old global_exclude logic)`
-   - current local state: `is_archived = true`, `raw_labels = [CATEGORY_PERSONAL, IMPORTANT]`
-   - why hidden: it is missing `INBOX` locally and is marked archived locally
+When the email arrived at 11:36, `process-message` classified it into a folder with `auto_archive`/`hide_from_inbox` and stripped `INBOX` from local `raw_labels` (the intended behavior). When you then added the always-inbox override at 11:47, two things happened:
 
-2. **PB Service1279 — `Returned Wire Notifications - MANUEL DE SANTAREN`**
-   - `gmail_message_id`: `19e69ed239f2dd8d`
-   - `classified_by`: `manual_inbox`
-   - `classification_reason`: `Moved to Inbox manually`
-   - current local state: `is_archived = false`, `raw_labels = [IMPORTANT, CATEGORY_PERSONAL]`
-   - why hidden: it is missing `INBOX` locally, even though it was manually moved back to Inbox
+1. The "Move to Inbox" action ran `moveEmailToInbox` — that path now correctly re-adds `INBOX` locally (fixed last turn).
+2. `addInboxOverride` ran with `reprocess_past = true`. Its reprocess loop only does:
+   - `folder_id = null`
+   - `classified_by = 'global_exclude'`
+   - clears `matched_filter_ids` and `ai_summary`
+   
+   It does **not** set `is_archived = false` and does **not** add `INBOX` to `raw_labels`. So when the override reprocess runs against rows that arrived already archived/labeled by a folder, those rows stay hidden from the Zerrow inbox even after the override matches them. This is the same class of bug we hit twice already, just on the "always-inbox" entry point instead of "move to inbox".
 
-## Likely cause
+A subsequent reconcile or label-sync event likely re-pulled Gmail labels for this row (or one of the two writers ran in the wrong order), which is how a row ended up with `classified_by = "manual_inbox"` but no `INBOX` in `raw_labels`.
 
-The earlier reversal cleaned up the over-restored historical messages by removing `INBOX` and marking rows archived when `classification_reason` included `restored to inbox`. That fixed the “all emails show again” issue, but it also exposed two legitimate inbox cases where Zerrow's local row no longer matches Gmail's current visible inbox state.
+## Fix
 
-There is also a code issue in `moveEmailToInbox`: it sets `is_archived = false`, but does not update local `raw_labels` to include `INBOX`. That explains the PB Service1279 row: Gmail was modified, but Zerrow's inbox query still hides it because the local label array lacks `INBOX`.
+### 1. Update `addInboxOverride` reprocess loop (`src/lib/gmail.functions.ts` ~1605–1665)
 
-## Implementation plan
+For each matched row in the reprocess pass:
+- Read `raw_labels` along with the other selected columns.
+- Set `is_archived = false`.
+- Compute `nextLabels = unique(currentLabels.filter(l => l !== oldFolderLabel).concat(["INBOX"]))` and write it back.
+- Keep the existing Gmail-side `modifyMessage` call, but extend it to also add `INBOX` (currently it only removes the folder label).
+- Change `classified_by` to `"inbox_override"` and `classification_reason` to `'Always-inbox: {match_type} "{value}"'` so the row's state matches the runtime override path in `process-message.ts`.
 
-1. **Fix the manual move-to-inbox code path**
-   - Update `moveEmailToInbox` in `src/lib/gmail.functions.ts` so it fetches the current `raw_labels` and writes them back with `INBOX` added.
-   - Keep the existing Gmail API label modification.
-   - This prevents future manually restored emails from being hidden by the `raw_labels` inbox filter.
+### 2. Targeted data repair (one row)
 
-2. **Add a targeted one-time data repair**
-   - Repair only the two confirmed missing rows by `gmail_message_id`:
-     - `19e648f0dd00ff52`
-     - `19e69ed239f2dd8d`
-   - Set `is_archived = false` and add `INBOX` into `raw_labels` without duplicating labels.
-   - Do not bulk-restore old `inbox_override` history again.
+```sql
+UPDATE public.emails
+SET is_archived = false,
+    raw_labels = (
+      SELECT array_agg(DISTINCT l)
+      FROM unnest(coalesce(raw_labels, ARRAY[]::text[]) || ARRAY['INBOX']) AS l
+    )
+WHERE gmail_message_id = '19e6a1455025344d';
+```
 
-3. **Validate after repair**
-   - Re-query the active inbox condition for this Gmail account and confirm all four screenshot messages now match the Zerrow inbox filter.
-   - Avoid changing the inbox view filter because it is currently doing the right thing: showing only messages that are actually labeled Inbox locally.
+No bulk backfill — we've been bitten by those before. Only this one row.
+
+### 3. Validate
+
+Re-query the row and confirm `INBOX` is in `raw_labels` and `is_archived = false`, then confirm the email appears in the Zerrow inbox view.
+
+## Out of scope
+
+- Not changing the inbox view filter.
+- Not changing `moveEmailToInbox` (already correct).
+- Not touching `process-message.ts` runtime path (already correct for new arrivals matching an override).
