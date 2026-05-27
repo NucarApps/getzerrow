@@ -438,7 +438,7 @@ function InboxPage() {
       return rows;
     },
     refetchOnWindowFocus: true,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 
   // When searching, also ask Gmail for matching messages and ingest any we
