@@ -53,6 +53,8 @@ export function InboxOverrides() {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [filter, setFilter] = useState<"all" | "email" | "domain">("all");
+  const [search, setSearch] = useState("");
 
   const q = useQuery({
     queryKey: ["inbox-overrides"],
