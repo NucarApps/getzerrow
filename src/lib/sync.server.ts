@@ -446,7 +446,18 @@ async function applyLabelChange(
   removed: string[],
 ) {
   const patch: { raw_labels?: string[]; is_archived?: boolean; is_read?: boolean } = {};
-  if (currentLabels) patch.raw_labels = currentLabels;
+  if (currentLabels) {
+    // currentLabels is the snapshot from the history event payload, taken
+    // BEFORE the added/removed deltas were applied. Replay the deltas so
+    // raw_labels reflects the post-event state — otherwise rows archived
+    // in Gmail (labelsRemoved: ['INBOX']) keep INBOX in raw_labels and
+    // the Inbox view (which checks raw_labels.includes('INBOX')) keeps
+    // showing them.
+    const next = new Set(currentLabels);
+    for (const l of removed) next.delete(l);
+    for (const l of added) next.add(l);
+    patch.raw_labels = Array.from(next);
+  }
   if (removed.includes("INBOX")) patch.is_archived = true;
   if (added.includes("INBOX")) patch.is_archived = false;
   if (removed.includes("UNREAD")) patch.is_read = true;
