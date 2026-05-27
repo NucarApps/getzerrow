@@ -191,10 +191,14 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
             if (!emailAddress) {
               details = details ?? "Decoded payload had no emailAddress field";
             } else {
+              // Case-insensitive match: Gmail Pub/Sub lowercases the address,
+              // but the stored row may have mixed-case characters from the
+              // user's Google profile. `.ilike(value)` without wildcards is
+              // an exact case-insensitive equality.
               const { data: accounts } = await supabaseAdmin
                 .from("gmail_accounts")
                 .select("id, email_address, watch_expiration, needs_reconnect")
-                .eq("email_address", emailAddress);
+                .ilike("email_address", emailAddress);
               // Skip dead-OAuth accounts entirely — every Gmail call would
               // throw with the same NeedsReconnectError and there's nothing
               // we can do until the user reconnects in the UI.

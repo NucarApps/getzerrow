@@ -138,7 +138,7 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
       "upsert_gmail_oauth_account",
       {
         p_user_id: context.userId,
-        p_email_address: data.email_address,
+        p_email_address: data.email_address.toLowerCase(),
         p_access_token: data.access_token,
         p_refresh_token: data.refresh_token,
         p_token_expires_at: expiresAt,
@@ -437,7 +437,7 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
             try {
               await modifyMessage(m.gmail_account_id, m.gmail_message_id, addLabels, removeLabels);
             } catch (e) {
-              logError("gmail.reassign.label_modify_failed", { account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e);
+              logError("gmail.reassign.label_modify_failed", { account_id: m.gmail_account_id, gmail_message_id: m.gmail_message_id }, e);
             }
           })
         );
@@ -631,7 +631,7 @@ export const archiveEmail = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
-    try { await modifyMessage(email.gmail_account_id, email.gmail_message_id, [], ["INBOX"]); } catch (e) { logError("gmail.archive.modify_failed", { email_id: email.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e); }
+    try { await modifyMessage(email.gmail_account_id, email.gmail_message_id, [], ["INBOX"]); } catch (e) { logError("gmail.archive.modify_failed", { email_id: data.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e); }
     await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", data.id);
     return { ok: true };
   });
@@ -641,7 +641,7 @@ export const trashEmail = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
-    try { await trashMessage(email.gmail_account_id, email.gmail_message_id); } catch (e) { logError("gmail.archive.modify_failed", { email_id: email.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e); }
+    try { await trashMessage(email.gmail_account_id, email.gmail_message_id); } catch (e) { logError("gmail.archive.modify_failed", { email_id: data.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e); }
     await supabaseAdmin.from("emails").delete().eq("id", data.id);
     return { ok: true };
   });
@@ -1569,12 +1569,12 @@ export const addInboxOverride = createServerFn({ method: "POST" })
                 try {
                   await modifyMessage(m.gmail_account_id, m.gmail_message_id, [], [oldLabel]);
                 } catch (e) {
-                  logError("gmail.reprocess.label_strip_failed", { email_id: row.id }, e);
+                  logError("gmail.reprocess.label_strip_failed", { email_id: m.id }, e);
                 }
               }
               reprocessed_count++;
             } catch (e) {
-              logError("gmail.reprocess.row_failed", { email_id: row.id }, e);
+              logError("gmail.reprocess.row_failed", { email_id: m.id }, e);
             }
           }
         }
@@ -1645,12 +1645,12 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
               try {
                 await modifyMessage(m.gmail_account_id, m.gmail_message_id, [], [oldLabel]);
               } catch (e) {
-                logError("gmail.strip.label_failed", { email_id: row.id }, e);
+                logError("gmail.strip.label_failed", { email_id: m.id }, e);
               }
             }
             stripped_count++;
           } catch (e) {
-            logError("gmail.strip.row_failed", { email_id: row.id }, e);
+            logError("gmail.strip.row_failed", { email_id: m.id }, e);
           }
         }
       }
@@ -2401,7 +2401,7 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
         await batchModifyMessages(folder.gmail_account_id, ids, ["STARRED"], []);
       }
     } catch (e) {
-      logError("gmail.retroactive.batch_modify_failed", { account_id: accountId, folder_id: data.folder_id }, e);
+      logError("gmail.retroactive.batch_modify_failed", { account_id: folder.gmail_account_id, folder_id: data.folderId }, e);
     }
 
     // DB side.
