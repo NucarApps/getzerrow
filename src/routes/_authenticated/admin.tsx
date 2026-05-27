@@ -226,30 +226,52 @@ function ActivityChart({ title, data, loading, color }: {
 }
 
 function UserRow({ u }: { u: AdminUser }) {
-  const syncHrs = hoursSince(u.gmail?.last_push_at ?? u.gmail?.last_poll_at ?? null);
-  const stale = syncHrs !== null && syncHrs > 24;
+  const accounts = u.gmail_accounts;
   const jobs = u.stats.jobs_pending + u.stats.jobs_running;
   return (
-    <tr className="hover:bg-accent/30">
-      <td className="px-3 py-2 font-medium text-foreground">{u.email}</td>
+    <tr className="hover:bg-accent/30 align-top">
+      <td className="px-3 py-2 font-medium text-foreground">
+        {u.email}
+        {accounts.length > 1 && (
+          <span className="ml-1 rounded bg-primary/15 px-1 text-[10px] text-primary">×{accounts.length}</span>
+        )}
+      </td>
       <td className="px-3 py-2 text-muted-foreground">{fmtDate(u.created_at)}</td>
       <td className="px-3 py-2 text-muted-foreground">{fmtDateTime(u.last_sign_in_at)}</td>
       <td className="px-3 py-2">
-        {u.gmail ? (
-          <span className="inline-flex items-center gap-1 text-xs">
-            <Mail className="h-3 w-3 text-primary" /> {u.gmail.email_address}
-          </span>
-        ) : (
+        {accounts.length === 0 ? (
           <span className="text-xs text-muted-foreground">—</span>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {accounts.map((g, i) => (
+              <span key={`${g.email_address ?? "unknown"}-${i}`} className="inline-flex items-center gap-1 text-xs">
+                <Mail className="h-3 w-3 text-primary" /> {g.email_address ?? "—"}
+              </span>
+            ))}
+          </div>
         )}
       </td>
-      <td className={`px-3 py-2 ${stale ? "text-destructive" : "text-muted-foreground"}`}>
-        {u.gmail ? (
-          <span className="inline-flex items-center gap-1">
-            {stale && <AlertTriangle className="h-3 w-3" />}
-            {fmtDateTime(u.gmail.last_push_at ?? u.gmail.last_poll_at)}
-          </span>
-        ) : "—"}
+      <td className="px-3 py-2">
+        {accounts.length === 0 ? (
+          <span className="text-muted-foreground">—</span>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {accounts.map((g, i) => {
+              const last = g.last_push_at ?? g.last_poll_at;
+              const hrs = hoursSince(last);
+              const stale = hrs !== null && hrs > 24;
+              return (
+                <span
+                  key={`${g.email_address ?? "unknown"}-${i}`}
+                  className={`inline-flex items-center gap-1 text-xs ${stale ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  {stale && <AlertTriangle className="h-3 w-3" />}
+                  {fmtDateTime(last)}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </td>
       <td className="px-3 py-2 text-right tabular-nums">{u.stats.emails.toLocaleString()}</td>
       <td className="px-3 py-2 text-right tabular-nums">{u.stats.contacts.toLocaleString()}</td>
