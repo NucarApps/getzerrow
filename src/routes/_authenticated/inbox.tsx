@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
-  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
+  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox,
   loadOlderFromGmail, searchGmailAndIngest, resyncMessage,
   reclassifyEmails, suggestFolderFromSelection, createFolderAndAssign,
   reconcileInboxFromGmail,
@@ -27,7 +27,7 @@ import {
   ContextMenuSub, ContextMenuSubTrigger, ContextMenuSubContent, ContextMenuSeparator, ContextMenuLabel,
 } from "@/components/ui/context-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw, AtSign, Globe, Reply, UserPlus } from "lucide-react";
+import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw, Reply, UserPlus } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -300,8 +300,6 @@ function InboxPage() {
   const sync = useServerFn(triggerSync);
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
-  const addOverrideFn = useServerFn(addInboxOverride);
-  const stripLabelFn = useServerFn(stripFolderLabelPast);
   
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
@@ -982,104 +980,8 @@ function InboxPage() {
                   </ContextMenuSubContent>
                 </ContextMenuSub>
 
-                <ContextMenuSeparator />
-                <ContextMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Always send to inbox
-                </ContextMenuLabel>
-                {e.from_addr ? (
-                  <ContextMenuSub>
-                    <ContextMenuSubTrigger>
-                      <AtSign className="mr-2 h-4 w-4" />
-                      <span className="truncate">Just {e.from_addr}</span>
-                    </ContextMenuSubTrigger>
-                    <ContextMenuSubContent>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          try {
-                            const r = await addOverrideFn({ data: { value: e.from_addr!, match_type: "email" } });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                            toast.success(r.already ? `${e.from_addr} already on the list` : `Future mail from ${e.from_addr} will go to inbox`);
-                          } catch (err: any) { toast.error(err.message); }
-                        }}
-                      >
-                        Future emails only
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          const sender = (e.from_addr || "").toLowerCase();
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                            prev?.filter((x) => (x.from_addr || "").toLowerCase() !== sender),
-                          );
-                          try {
-                            await addOverrideFn({ data: { value: e.from_addr!, match_type: "email" } });
-                            const r = await stripLabelFn({ data: { value: e.from_addr!, match_type: "email" } });
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                            toast.success(`Added to inbox list · cleaned ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
-                          } catch (err: any) {
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            toast.error(err.message);
-                          }
-                        }}
-                      >
-                        Future and past emails
-                      </ContextMenuItem>
 
-
-
-                    </ContextMenuSubContent>
-                  </ContextMenuSub>
-                ) : (
-                  <ContextMenuItem disabled>No sender address</ContextMenuItem>
-                )}
-                {domain && (
-                  <ContextMenuSub>
-                    <ContextMenuSubTrigger>
-                      <Globe className="mr-2 h-4 w-4" />
-                      <span className="truncate">Anyone @{domain}</span>
-                    </ContextMenuSubTrigger>
-                    <ContextMenuSubContent>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          try {
-                            const r = await addOverrideFn({ data: { value: domain, match_type: "domain" } });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                            toast.success(r.already ? `@${domain} already on the list` : `Future mail from @${domain} will go to inbox`);
-                          } catch (err: any) { toast.error(err.message); }
-                        }}
-                      >
-                        Future emails only
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          const d = domain.toLowerCase();
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                            prev?.filter((x) => ((x.from_addr || "").toLowerCase().split("@")[1] || "") !== d),
-                          );
-                          try {
-                            await addOverrideFn({ data: { value: domain, match_type: "domain" } });
-                            const r = await stripLabelFn({ data: { value: domain, match_type: "domain" } });
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                            toast.success(`Added to inbox list · cleaned ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
-                          } catch (err: any) {
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            toast.error(err.message);
-                          }
-                        }}
-                      >
-                        Future and past emails
-                      </ContextMenuItem>
-
-
-
-                    </ContextMenuSubContent>
-                  </ContextMenuSub>
-                )}
-
-                {(e.from_addr || domain || e.subject) && folderList.length > 0 && (
+                {(e.from_addr || domain || e.subject) && (
                   <>
                     <ContextMenuSeparator />
                     <ContextMenuItem

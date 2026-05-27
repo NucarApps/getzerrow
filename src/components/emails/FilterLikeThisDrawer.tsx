@@ -5,6 +5,8 @@ import {
   addFolderRule,
   countMatchingForRule,
   applyFilterRuleToPast,
+  addInboxOverride,
+  stripFolderLabelPast,
 } from "@/lib/gmail.functions";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -12,12 +14,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AtSign, Globe, Type, Loader2 } from "lucide-react";
+import { AtSign, Globe, Type, Loader2, Inbox } from "lucide-react";
 import { toast } from "sonner";
 
 type Folder = { id: string; name: string; color: string };
 type Field = "from" | "domain" | "subject";
 type Op = "contains" | "equals" | "starts_with";
+
+const INBOX_OVERRIDE = "__inbox__";
 
 export function FilterLikeThisDrawer({
   open,
@@ -40,6 +44,8 @@ export function FilterLikeThisDrawer({
   const addRuleFn = useServerFn(addFolderRule);
   const countFn = useServerFn(countMatchingForRule);
   const applyPastFn = useServerFn(applyFilterRuleToPast);
+  const addOverrideFn = useServerFn(addInboxOverride);
+  const stripLabelFn = useServerFn(stripFolderLabelPast);
 
   const domain = useMemo(
     () => (fromAddr?.includes("@") ? fromAddr.split("@")[1]?.toLowerCase() ?? null : null),
@@ -101,12 +107,48 @@ export function FilterLikeThisDrawer({
     };
   }, [open, accountId, field, op, value, countFn]);
 
-  const canSave = !!folderId && value.trim().length > 0 && !saving;
+  const isInboxMode = folderId === INBOX_OVERRIDE;
+  // Inbox overrides only support sender or domain matches; auto-switch from subject.
+  useEffect(() => {
+    if (!isInboxMode) return;
+    if (field === "subject") {
+      const nextField: Field = fromAddr ? "from" : domain ? "domain" : "from";
+      setField(nextField);
+      setValue(nextField === "from" ? fromAddr ?? "" : domain ?? "");
+    }
+    if (op !== "equals") setOp("equals");
+  }, [isInboxMode, field, op, fromAddr, domain]);
+
+  const canSave = !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
 
   async function handleSave() {
     if (!folderId || !value.trim() || !accountId) return;
     setSaving(true);
     try {
+      if (isInboxMode) {
+        const matchType: "email" | "domain" = field === "domain" ? "domain" : "email";
+        const r = await addOverrideFn({ data: { value: value.trim(), match_type: matchType } });
+        let pastSummary = "";
+        if (applyToPast) {
+          try {
+            const past = await stripLabelFn({ data: { value: value.trim(), match_type: matchType } });
+            if (past.stripped_count > 0) pastSummary = ` · cleaned ${past.stripped_count} past`;
+          } catch (e: any) {
+            toast.error(`Override saved, but cleaning past emails failed: ${e.message}`);
+          }
+        }
+        toast.success(
+          r.already
+            ? `Already on the inbox list${pastSummary}`
+            : `Future mail kept in inbox${pastSummary}`,
+        );
+        qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+        qc.invalidateQueries({ queryKey: ["emails"] });
+        qc.invalidateQueries({ queryKey: ["emails-summary"] });
+        onOpenChange(false);
+        return;
+      }
+
       const r = await addRuleFn({
         data: { folder_id: folderId, field, value: value.trim(), op },
       });
@@ -183,7 +225,7 @@ export function FilterLikeThisDrawer({
                 onClick={() => pickField("subject")}
                 icon={<Type className="h-3.5 w-3.5" />}
                 label="Subject"
-                disabled={!subject}
+                disabled={!subject || isInboxMode}
               />
             </div>
           </div>
@@ -223,8 +265,8 @@ export function FilterLikeThisDrawer({
             </div>
           </div>
 
-          {/* Match type — subject only */}
-          {field === "subject" && (
+          {/* Match type — subject only, never in inbox mode */}
+          {field === "subject" && !isInboxMode && (
             <div>
               <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
                 Match type
@@ -240,9 +282,20 @@ export function FilterLikeThisDrawer({
           {/* Send to folder */}
           <div>
             <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
-              Send to folder
+              Send to
             </Label>
             <div className="max-h-56 overflow-y-auto rounded-md border border-border">
+              <button
+                type="button"
+                onClick={() => setFolderId(INBOX_OVERRIDE)}
+                className={`flex w-full items-center gap-2 border-b border-border/50 px-3 py-2 text-left text-sm transition-colors ${
+                  folderId === INBOX_OVERRIDE ? "bg-primary/10 text-primary" : "hover:bg-accent/60"
+                }`}
+              >
+                <Inbox className="h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1 truncate">Inbox — always show</span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">keep visible</span>
+              </button>
               {folders.length === 0 && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No folders yet.</p>
               )}
@@ -288,10 +341,16 @@ export function FilterLikeThisDrawer({
                 value="past"
                 current={applyToPast ? "past" : "future"}
                 label="Future and past matches"
-                hint={count !== null ? `${count >= 500 ? "500+" : count} existing email${count === 1 ? "" : "s"} will be moved.` : undefined}
+                hint={
+                  count !== null
+                    ? isInboxMode
+                      ? `${count >= 500 ? "500+" : count} past email${count === 1 ? "" : "s"} will be returned to the inbox.`
+                      : `${count >= 500 ? "500+" : count} existing email${count === 1 ? "" : "s"} will be moved.`
+                    : undefined
+                }
               />
             </RadioGroup>
-            {applyToPast && (
+            {applyToPast && !isInboxMode && (
               <label className="mt-2 flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-accent/20 px-3 py-2">
                 <Checkbox
                   checked={archivePast}
@@ -318,6 +377,8 @@ export function FilterLikeThisDrawer({
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
               </>
+            ) : isInboxMode ? (
+              "Add to inbox list"
             ) : (
               "Create filter"
             )}
