@@ -888,7 +888,6 @@ async function syncSinceHistoryLocked(
     }
   }
   try {
-    const hist = await listHistory(accountId, account.history_id);
     const seenAdded = new Set<string>();
     const { data: folders } = await supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId);
     const folderList = (folders ?? []) as Folder[];
@@ -901,37 +900,53 @@ async function syncSinceHistoryLocked(
     type LabelOp = { messageId: string; currentLabels: string[] | undefined; added: string[]; removed: string[] };
     const labelOps: LabelOp[] = [];
 
-    for (const h of hist.history || []) {
-      const added = h.messagesAdded?.map((x) => x.message) ?? h.messages ?? [];
-      for (const m of added) {
-        if (seenAdded.has(m.id)) continue;
-        seenAdded.add(m.id);
+    // Walk every history page before advancing the cursor. Gmail caps each
+    // page at ~100 history records; busy mailboxes can easily exceed that
+    // in a single push, and skipping pages means missed archive/label
+    // events. Cap iterations so a runaway pageToken can't loop forever.
+    let pageToken: string | undefined;
+    let lastHistoryId: string | undefined;
+    const MAX_HISTORY_PAGES = 25;
+    let pages = 0;
+    while (pages < MAX_HISTORY_PAGES) {
+      const hist = await listHistory(accountId, account.history_id, pageToken);
+      pages++;
+      if (hist.historyId) lastHistoryId = hist.historyId;
+      for (const h of hist.history || []) {
+        const added = h.messagesAdded?.map((x) => x.message) ?? h.messages ?? [];
+        for (const m of added) {
+          if (seenAdded.has(m.id)) continue;
+          seenAdded.add(m.id);
+        }
+        for (const ev of h.labelsAdded ?? []) {
+          labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
+          const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
+          if (matched.length === 0) continue;
+          try {
+            const meta = await getMessageMetadata(accountId, ev.message.id);
+            const p = parseMessage(meta);
+            for (const folder of matched) {
+              await recordManualMove(folder, accountId, account.user_id, {
+                gmail_message_id: p.gmail_message_id,
+                from_addr: p.from_addr,
+                subject: p.subject,
+                snippet: p.snippet,
+              });
+            }
+          } catch (e) { logError("sync.label_added_handler_failed", { account_id: accountId, gmail_message_id: ev.message.id, added_labels: ev.labelIds }, e); }
+        }
+        for (const ev of h.labelsRemoved ?? []) {
+          labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: [], removed: ev.labelIds });
+        }
+        for (const ev of h.messagesDeleted ?? []) {
+          toDelete.add(ev.message.id);
+        }
       }
-      for (const ev of h.labelsAdded ?? []) {
-        labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
-        const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
-        if (matched.length === 0) continue;
-        try {
-          // Metadata fetch — 10x smaller than full body — is enough to record
-          // the manual-move example (from_addr/subject/snippet).
-          const meta = await getMessageMetadata(accountId, ev.message.id);
-          const p = parseMessage(meta);
-          for (const folder of matched) {
-            await recordManualMove(folder, accountId, account.user_id, {
-              gmail_message_id: p.gmail_message_id,
-              from_addr: p.from_addr,
-              subject: p.subject,
-              snippet: p.snippet,
-            });
-          }
-        } catch (e) { logError("sync.label_added_handler_failed", { account_id: accountId, gmail_message_id: ev.message.id, added_labels: ev.labelIds }, e); }
-      }
-      for (const ev of h.labelsRemoved ?? []) {
-        labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: [], removed: ev.labelIds });
-      }
-      for (const ev of h.messagesDeleted ?? []) {
-        toDelete.add(ev.message.id);
-      }
+      pageToken = hist.nextPageToken;
+      if (!pageToken) break;
+    }
+    if (pages >= MAX_HISTORY_PAGES && pageToken) {
+      logError("sync.history_pages_capped", { account_id: accountId, pages, max: MAX_HISTORY_PAGES }, new Error("history pagination cap hit"));
     }
 
     // Bulk-enqueue all newly-added messages in one upsert (vs the previous
@@ -968,7 +983,10 @@ async function syncSinceHistoryLocked(
       } catch (e) { logError("sync.messages_deleted_batch_failed", { account_id: accountId, count: toDelete.size }, e); }
     }
 
-    if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);
+    // Only advance the stored history cursor after every page has been
+    // processed — otherwise a later page's archive event would be skipped
+    // on the next sync.
+    if (lastHistoryId) await bumpHistoryAndWatch(accountId, lastHistoryId);
     // Stamp two timestamps:
     //   last_history_sync_at — ticks on every successful sync (push OR poll).
     //     Used for "we touched this account recently" UX.

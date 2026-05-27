@@ -213,12 +213,17 @@ export async function insertMessage(
   );
 }
 
-export async function listHistory(accountId: string, startHistoryId: string) {
+export async function listHistory(
+  accountId: string,
+  startHistoryId: string,
+  pageToken?: string,
+) {
   const params = new URLSearchParams({ startHistoryId });
   params.append("historyTypes", "messageAdded");
   params.append("historyTypes", "messageDeleted");
   params.append("historyTypes", "labelAdded");
   params.append("historyTypes", "labelRemoved");
+  if (pageToken) params.set("pageToken", pageToken);
   return gmailFetch<{
     history?: Array<{
       messages?: Array<{ id: string; threadId: string }>;
@@ -228,6 +233,7 @@ export async function listHistory(accountId: string, startHistoryId: string) {
       labelsRemoved?: Array<{ message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }>;
     }>;
     historyId?: string;
+    nextPageToken?: string;
   }>(accountId, `/users/me/history?${params.toString()}`);
 }
 

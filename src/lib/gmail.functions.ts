@@ -2139,6 +2139,98 @@ export const resyncMessage = createServerFn({ method: "POST" })
   });
 
 /**
+ * Self-heal the Inbox view by asking Gmail which of the user's locally-
+ * "in inbox" messages are actually still in INBOX. Any local row whose
+ * gmail_message_id is missing from Gmail's current top-N inbox slice has
+ * been archived (or deleted) externally and is reconciled in place.
+ *
+ * Costs ONE Gmail list call + at most a handful of per-message label
+ * fetches for the drifted ids, regardless of how many emails are shown.
+ */
+export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { gmail_account_id: string }) =>
+    z.object({ gmail_account_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await getOwnedAccount(context.userId, data.gmail_account_id);
+
+    // Fetch the locally-inbox rows for this account (newest first). Cap
+    // matches the Gmail INBOX slice we pull below so we never miss a row
+    // by paging past it.
+    const LIMIT = 500;
+    const { data: localRows } = await supabaseAdmin
+      .from("emails")
+      .select("id, gmail_message_id, received_at")
+      .eq("gmail_account_id", data.gmail_account_id)
+      .eq("user_id", context.userId)
+      .eq("is_archived", false)
+      .contains("raw_labels", ["INBOX"])
+      .order("received_at", { ascending: false, nullsFirst: false })
+      .limit(LIMIT);
+
+    const rows = (localRows ?? []) as Array<{ id: string; gmail_message_id: string; received_at: string | null }>;
+    if (rows.length === 0) return { checked: 0, reconciled: 0, deleted: 0 };
+
+    // Pull the current Gmail INBOX slice in one call. maxResults caps at 500.
+    const gmailInbox = new Set<string>();
+    try {
+      const list = await listMessages(data.gmail_account_id, {
+        labelIds: ["INBOX"],
+        maxResults: 500,
+      });
+      for (const m of list.messages ?? []) gmailInbox.add(m.id);
+    } catch (e) {
+      logError(
+        "reconcile.inbox_list_failed",
+        { account_id: data.gmail_account_id, user_id: context.userId },
+        e,
+      );
+      return { checked: 0, reconciled: 0, deleted: 0, error: (e as Error).message };
+    }
+
+    // Anchor: only consider local rows whose received_at is at or newer
+    // than the oldest message in the Gmail INBOX slice we just pulled.
+    // Older rows might genuinely still be in inbox but past our 500-row
+    // window. The deep reconcile path (cron) covers that.
+    const drifted = rows.filter((r) => !gmailInbox.has(r.gmail_message_id));
+    if (drifted.length === 0) return { checked: rows.length, reconciled: 0, deleted: 0 };
+
+    // Cap per-call repair work so a one-off divergence can't hammer the
+    // Gmail API on every poll. The cron reconcile mops up the rest.
+    const MAX_REPAIR = 25;
+    let reconciled = 0;
+    let deleted = 0;
+    for (const r of drifted.slice(0, MAX_REPAIR)) {
+      try {
+        const labels = await getMessageLabels(data.gmail_account_id, r.gmail_message_id);
+        if (labels === null || labels.includes("TRASH")) {
+          await supabaseAdmin.from("emails").delete().eq("id", r.id);
+          deleted++;
+          continue;
+        }
+        const inInbox = labels.includes("INBOX");
+        const unread = labels.includes("UNREAD");
+        await supabaseAdmin.from("emails").update({
+          raw_labels: labels,
+          is_archived: !inInbox,
+          is_read: !unread,
+        }).eq("id", r.id);
+        if (!inInbox) reconciled++;
+      } catch (e) {
+        logError(
+          "reconcile.message_repair_failed",
+          { account_id: data.gmail_account_id, gmail_message_id: r.gmail_message_id },
+          e,
+        );
+      }
+    }
+    return { checked: rows.length, drifted: drifted.length, reconciled, deleted };
+  });
+
+
+
+/**
  * Surface push→ack and push→visible latency percentiles over the last N
  * hours, scoped to the caller's mailboxes. Backed by a SECURITY DEFINER
  * SQL function so we can compute percentile_cont() in one roundtrip
