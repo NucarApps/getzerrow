@@ -113,6 +113,14 @@ export function InboxOverrides() {
 
   const rows = q.data ?? [];
   const exceptions = ex.data ?? [];
+  const emailCount = rows.filter((r) => r.match_type === "email").length;
+  const domainCount = rows.filter((r) => r.match_type === "domain").length;
+  const searchLower = search.trim().toLowerCase();
+  const filteredRows = rows.filter((r) => {
+    if (filter !== "all" && r.match_type !== filter) return false;
+    if (searchLower && !r.value.toLowerCase().includes(searchLower)) return false;
+    return true;
+  });
 
   return (
     <Card className="p-4 md:p-6">
