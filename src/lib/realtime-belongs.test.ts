@@ -31,9 +31,10 @@ describe("rowBelongsInList", () => {
     expect(rowBelongsInList(row({ gmail_account_id: "other" }), ["emails", ACC])).toBe(false);
   });
 
-  it("['emails', accountId, 'all'] accepts ONLY rows whose raw_labels include INBOX", () => {
+  it("['emails', accountId, 'all'] accepts only unarchived rows whose raw_labels include INBOX", () => {
     expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), ["emails", ACC, "all"])).toBe(true);
     expect(rowBelongsInList(row({ raw_labels: ["INBOX", "Label_123"], folder_id: "f-1" }), ["emails", ACC, "all"])).toBe(true);
+    expect(rowBelongsInList(row({ raw_labels: ["INBOX"], is_archived: true }), ["emails", ACC, "all"])).toBe(false);
     expect(rowBelongsInList(row({ raw_labels: ["Label_123"] }), ["emails", ACC, "all"])).toBe(false);
     expect(rowBelongsInList(row({ raw_labels: [] }), ["emails", ACC, "all"])).toBe(false);
     expect(rowBelongsInList(row({ raw_labels: null }), ["emails", ACC, "all"])).toBe(false);
