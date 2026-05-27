@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Trash2, ShieldOff, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { Trash2, ShieldOff, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 type Override = {
@@ -52,6 +53,8 @@ export function InboxOverrides() {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [filter, setFilter] = useState<"all" | "email" | "domain">("all");
+  const [search, setSearch] = useState("");
 
   const q = useQuery({
     queryKey: ["inbox-overrides"],
@@ -110,6 +113,14 @@ export function InboxOverrides() {
 
   const rows = q.data ?? [];
   const exceptions = ex.data ?? [];
+  const emailCount = rows.filter((r) => r.match_type === "email").length;
+  const domainCount = rows.filter((r) => r.match_type === "domain").length;
+  const searchLower = search.trim().toLowerCase();
+  const filteredRows = rows.filter((r) => {
+    if (filter !== "all" && r.match_type !== filter) return false;
+    if (searchLower && !r.value.toLowerCase().includes(searchLower)) return false;
+    return true;
+  });
 
   return (
     <Card className="p-4 md:p-6">
@@ -142,11 +153,46 @@ export function InboxOverrides() {
         <Button onClick={add} disabled={busy}>{busy ? "Adding…" : "Add"}</Button>
       </div>
 
+      {rows.length > 0 && (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | "email" | "domain")}>
+            <TabsList>
+              <TabsTrigger value="all">All ({rows.length})</TabsTrigger>
+              <TabsTrigger value="email">Emails ({emailCount})</TabsTrigger>
+              <TabsTrigger value="domain">Domains ({domainCount})</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div className="relative sm:w-64">
+            <Input
+              className="h-8 pr-8 text-xs"
+              placeholder="Search overrides…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 space-y-2">
         {rows.length === 0 && (
           <p className="text-sm italic text-muted-foreground">No overrides yet.</p>
         )}
-        {rows.map((r) => {
+        {rows.length > 0 && filteredRows.length === 0 && (
+          <p className="text-sm italic text-muted-foreground">
+            No {filter === "all" ? "" : filter === "email" ? "email " : "domain "}overrides match.
+          </p>
+        )}
+        {filteredRows.map((r) => {
           const isOpen = !!expanded[r.id];
           const rowEx = exceptions.filter((e) => e.override_id === r.id);
           return (
