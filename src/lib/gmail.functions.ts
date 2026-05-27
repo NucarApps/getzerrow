@@ -2607,28 +2607,32 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     const v = data.field === "subject" ? raw : raw.toLowerCase().replace(/^@/, "");
     const esc = v.replace(/[\\%_]/g, (m) => `\\${m}`);
 
-    let q = supabaseAdmin
-      .from("emails")
-      .select("id")
-      .eq("user_id", context.userId)
-      .eq("gmail_account_id", data.account_id)
-      .neq("folder_id", data.to_folder_id)
-      .order("received_at", { ascending: false })
-      .limit(500);
+    // Build a query with the rule predicate applied (without folder/archive scoping).
+    const applyRulePredicate = <T extends ReturnType<typeof supabaseAdmin.from>>(qb: any) => {
+      if (data.field === "subject") {
+        const pat = data.op === "equals" ? esc : data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
+        return qb.ilike("subject", pat);
+      } else if (data.field === "domain") {
+        return qb.ilike("from_addr", `%@${esc}%`);
+      } else {
+        const pat = data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
+        return qb.ilike("from_addr", pat);
+      }
+    };
 
-    if (data.field === "subject") {
-      const pat = data.op === "equals" ? esc : data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
-      q = q.ilike("subject", pat);
-    } else if (data.field === "domain") {
-      q = q.ilike("from_addr", `%@${esc}%`);
-    } else {
-      const pat = data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
-      q = q.ilike("from_addr", pat);
-    }
-
-    const { data: rows, error } = await q;
+    // Move pass: rows matching the rule that aren't already in the target folder.
+    const moveQ = applyRulePredicate(
+      supabaseAdmin
+        .from("emails")
+        .select("id")
+        .eq("user_id", context.userId)
+        .eq("gmail_account_id", data.account_id)
+        .neq("folder_id", data.to_folder_id)
+        .order("received_at", { ascending: false })
+        .limit(500),
+    );
+    const { data: rows, error } = await moveQ;
     if (error) throw new Error(error.message);
-    if (!rows || rows.length === 0) return { moved: 0, failed: 0, archived: 0 };
 
     const classifiedBy = data.field === "domain" ? "domain_rule" : "filter";
     const reason =
@@ -2641,7 +2645,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     let moved = 0;
     let failed = 0;
     const movedIds: string[] = [];
-    for (const row of rows) {
+    for (const row of rows ?? []) {
       const r = await performMove(context.userId, row.id, data.to_folder_id, reason);
       if (r.ok) {
         moved++;
@@ -2657,13 +2661,21 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
         .eq("folder_id", data.to_folder_id);
     }
 
+    // Archive pass: every matching row currently in the inbox, regardless of
+    // whether it was moved in this run or was already in the target folder.
     let archived = 0;
-    if (data.archive && movedIds.length > 0) {
-      const { data: archRows } = await supabaseAdmin
-        .from("emails")
-        .select("id, gmail_message_id, raw_labels")
-        .in("id", movedIds)
-        .eq("is_archived", false);
+    if (data.archive) {
+      const archQ = applyRulePredicate(
+        supabaseAdmin
+          .from("emails")
+          .select("id, gmail_message_id, raw_labels")
+          .eq("user_id", context.userId)
+          .eq("gmail_account_id", data.account_id)
+          .eq("is_archived", false)
+          .order("received_at", { ascending: false })
+          .limit(500),
+      );
+      const { data: archRows } = await archQ;
       const targetRows = archRows ?? [];
       const gmailIds = targetRows.map((r) => r.gmail_message_id).filter(Boolean) as string[];
       if (gmailIds.length > 0) {

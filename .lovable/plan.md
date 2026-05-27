@@ -1,23 +1,22 @@
-## Add "Also archive past matches" option to filter drawer
+## Fix: "Also archive past matches" does nothing when the rule already exists
 
-When "Future and past matches" is selected in `FilterLikeThisDrawer`, surface a checkbox to also archive (remove from inbox) the matched existing emails — in addition to moving them to the chosen folder.
+### Problem
+In `applyFilterRuleToPast` (`src/lib/gmail.functions.ts`), the SQL query excludes emails already in the target folder (`.neq("folder_id", to_folder_id)`), and the archive step only runs against `movedIds`. So when the user re-triggers the same rule (or the rule already moved everything previously), there are no "moved" rows and the archive checkbox is silently ignored — exactly what the user just saw ("Rule already routed to Cold Email", no archive).
 
-### Changes
-
-**`src/components/emails/FilterLikeThisDrawer.tsx`**
-- Add `archivePast` state (default `false`), reset alongside `applyToPast` when the drawer opens.
-- Below the "Future and past matches" radio (rendered only when `applyToPast === true`), show a shadcn `Checkbox` + label: "Also archive them (remove from inbox)" with a hint.
-- Pass `archive: archivePast` into `applyPastFn`.
-- Toast summary appends ` · N archived` when archive count > 0.
+### Change
 
 **`src/lib/gmail.functions.ts` — `applyFilterRuleToPast`**
-- Extend input schema with optional `archive: boolean` (default `false`).
-- After the existing per-row `performMove` loop, if `archive` is true and we have moved rows:
-  - Fetch `gmail_message_id` + `raw_labels` for the successfully moved rows.
-  - Call `batchModifyMessages(account_id, ids, [], ["INBOX"])` (wrap in try/catch + `logError`, same pattern as `applyFolderBehaviorRetroactive`).
-  - Update DB rows: `is_archived: true` and strip `INBOX` from `raw_labels` via `removeLabelsFromCurrent` (per-row, mirroring the existing helper).
-- Return `{ moved, failed, archived }`.
+
+1. Split the row fetch into two passes when `archive` is true:
+   - **Move pass** (unchanged): rows matching the rule that are NOT in the target folder → run `performMove` loop.
+   - **Archive pass** (new): rows matching the rule that are currently `is_archived = false`, regardless of `folder_id`. Select `id, gmail_message_id, raw_labels`, dedupe, then call `batchModifyMessages(account_id, gmailIds, [], ["INBOX"])` and update each row to `is_archived: true` with `INBOX` stripped from `raw_labels` (same helper as today).
+2. Keep the existing `try/catch + logError` around `batchModifyMessages`.
+3. Return `{ moved, failed, archived }` where `archived` now reflects all rows we actually flipped to archived in this call (including ones that were already in the target folder from a prior run).
+4. Cap the archive pass at the same `limit(500)` as the move pass to keep it bounded.
+
+No schema changes, no UI changes — the drawer already passes `archive: archivePast` and surfaces `past.archived` in the toast, so the count will now appear correctly.
 
 ### Out of scope
-- No new folder behaviors, no schema changes.
-- Folder's own `auto_archive` setting is unchanged — this is a one-shot retro action scoped to the past-matches the user just acknowledged.
+- No changes to `FilterLikeThisDrawer.tsx`.
+- No change to folder `auto_archive` behavior.
+- No change to the `addFolderRule` "already" path — the existing toast wording stays; only the archive count will start showing.
