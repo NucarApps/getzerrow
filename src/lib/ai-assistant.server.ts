@@ -127,17 +127,18 @@ Action types:
 
 Guidelines:
 - Prefer the smallest set of changes.
-- If the user wants future similar emails routed differently, propose an add_filter on the correct folder. If a competing filter routes wrong, also propose remove_filter.
-- Only reference folder/filter/email IDs from the lists above.
-- If the user says "this email" but nothing is selected, leave actions empty and ask a clarifying question.
-- "reply" is a short friendly summary. "clarifying_question" is a single short question if needed, otherwise empty.
+- If the user describes a routing rule by sender, domain, or subject (with or without any selected emails), propose add_filter on the target folder. You do NOT need a selected email to add a filter.
+- If a user says "anything that starts with X goes to folder Y", use add_filter with field: subject, op: starts_with, value: X on folder Y. If another folder currently has a filter that would catch the same mail and route it elsewhere, ALSO propose remove_filter for that competing filter.
+- Match folders by name fuzzily (case-insensitive, ignore plural/singular) against the list above. Always reference folder/filter/email IDs from the lists above — never invent IDs.
+- If the user says "this email" but nothing is selected, leave actions empty and set clarifying_question.
+- "reply" is a short friendly summary of what you'll change. "clarifying_question" is a single short question if you truly cannot proceed, otherwise empty.
 
-You MUST respond by calling the propose_changes tool exactly once.${args.extraReminder ? `\n${args.extraReminder}` : ""}`;
+Prefer calling the propose_changes tool. Only reply in plain text if you genuinely need to ask a clarifying question and cannot express it via the tool's clarifying_question field.${args.extraReminder ? `\n${args.extraReminder}` : ""}`;
 }
 
 async function callModel(prompt: string): Promise<AssistantProposal> {
   let captured: AssistantProposal | null = null;
-  await generateText({
+  const result = await generateText({
     model: getModel(),
     tools: {
       propose_changes: tool({
@@ -149,11 +150,21 @@ async function callModel(prompt: string): Promise<AssistantProposal> {
         },
       }),
     },
-    toolChoice: { type: "tool", toolName: "propose_changes" },
+    toolChoice: "auto",
     prompt,
   });
-  if (!captured) throw new Error("Model did not call propose_changes");
-  return captured;
+  if (captured) return captured;
+  // Model declined to call the tool — surface its text instead of a canned fallback.
+  const text = (result.text ?? "").trim();
+  if (text) {
+    const looksLikeQuestion = /\?\s*$/.test(text);
+    return {
+      reply: looksLikeQuestion ? "" : text,
+      clarifying_question: looksLikeQuestion ? text : "",
+      actions: [],
+    };
+  }
+  throw new Error("Model did not call propose_changes");
 }
 
 export async function proposeAssistantChanges(args: {
