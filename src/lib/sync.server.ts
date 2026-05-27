@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessageMetadata, parseMessage, listMessages, listHistory, ensureWatch, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "./ai.server";
 import { logError } from "./log.server";
+import { computeLabelPatch } from "./sync/label-merge";
 import {
   MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS,
   computeBackoffSeconds as _computeBackoffSeconds,
@@ -445,18 +446,13 @@ async function applyLabelChange(
   added: string[],
   removed: string[],
 ) {
-  const patch: { raw_labels?: string[]; is_archived?: boolean; is_read?: boolean } = {};
-  if (currentLabels) patch.raw_labels = currentLabels;
-  if (removed.includes("INBOX")) patch.is_archived = true;
-  if (added.includes("INBOX")) patch.is_archived = false;
-  if (removed.includes("UNREAD")) patch.is_read = true;
-  if (added.includes("UNREAD")) patch.is_read = false;
   if (added.includes("TRASH")) {
     await supabaseAdmin.from("emails").delete()
       .eq("gmail_account_id", accountId)
       .eq("gmail_message_id", messageId);
     return;
   }
+  const patch = computeLabelPatch(currentLabels, added, removed);
   if (Object.keys(patch).length === 0) return;
   await supabaseAdmin.from("emails").update(patch)
     .eq("gmail_account_id", accountId)
