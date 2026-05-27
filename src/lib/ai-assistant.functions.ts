@@ -201,10 +201,8 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
       }
     }
 
-    // Apply each action. We use performMove indirectly via moveEmailToFolder's
-    // logic by calling the underlying helper through a dynamic import to avoid
-    // circular imports in tests.
-    const { performMove } = await import("./gmail.functions");
+
+
 
 
     for (const action of data.actions) {
