@@ -16,6 +16,7 @@ import {
   updateFolderSummary,
   deleteFolderSummary,
   runFolderSummaryNow,
+  getFolderSummaryJob,
   applyFolderBehaviorRetroactive,
   setFolderAutoRelearn,
 } from "@/lib/gmail.functions";
@@ -1049,6 +1050,7 @@ function SummariesPanel({ folderId }: { folderId: string }) {
   const updateFn = useServerFn(updateFolderSummary);
   const deleteFn = useServerFn(deleteFolderSummary);
   const runNowFn = useServerFn(runFolderSummaryNow);
+  const getJobFn = useServerFn(getFolderSummaryJob);
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
@@ -1073,14 +1075,42 @@ function SummariesPanel({ folderId }: { folderId: string }) {
   }
   async function runNow(s: Schedule) {
     setRunningId(s.id);
+    const toastId = toast.loading("Generating digest…");
     try {
-      const r = await runNowFn({ data: { id: s.id } });
-      if (r.ok) toast.success(r.emails === 0 ? "Ran — no emails in window" : `Inserted digest of ${r.emails} email${r.emails === 1 ? "" : "s"}`);
-      else toast.error(r.error ?? "Failed");
+      const enq = await runNowFn({ data: { id: s.id } });
+      const jobId = enq.jobId;
+      // Poll up to ~5 minutes (150 * 2s).
+      const maxTicks = 150;
+      let finished = false;
+      for (let i = 0; i < maxTicks; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const { job } = await getJobFn({ data: { id: jobId } });
+        if (job.status === "done") {
+          const n = job.emails_count ?? 0;
+          toast.success(
+            n === 0 ? "Ran — no emails in window" : `Inserted digest of ${n} email${n === 1 ? "" : "s"}`,
+            { id: toastId },
+          );
+          finished = true;
+          break;
+        }
+        if (job.status === "failed") {
+          toast.error(job.error ?? "Failed", { id: toastId });
+          finished = true;
+          break;
+        }
+      }
+      if (!finished) {
+        toast.error("Still running — check back in a moment", { id: toastId });
+      }
       qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
-    } catch (e: any) { toast.error(e?.message ?? "Failed"); }
-    finally { setRunningId(null); }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed", { id: toastId });
+    } finally {
+      setRunningId(null);
+    }
   }
+
 
   return (
     <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">

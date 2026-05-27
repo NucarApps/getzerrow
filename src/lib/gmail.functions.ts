@@ -19,7 +19,7 @@ import {
   parseMessage,
 } from "./gmail.server";
 import { suggestReply, suggestRuleUpdates, suggestFolderFromEmails } from "./ai.server";
-import { computeNextRun, runFolderSummary } from "./summaries.server";
+import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "./summaries.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { signState, buildAuthorizeUrl, getRedirectUri } from "./google-oauth.server";
 import { getRequestHost } from "@tanstack/react-start/server";
@@ -1029,6 +1029,34 @@ export const deleteFolderSummary = createServerFn({ method: "POST" })
   });
 
 export const runFolderSummaryNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await getOwnedSchedule(context.userId, data.id);
+    // Enqueue a background job so the UI request never has to wait on the
+    // AI gateway (heavy prompts otherwise time out).
+    const { jobId } = await enqueueFolderSummaryJob({ scheduleId: data.id, userId: context.userId });
+    return { ok: true as const, jobId };
+  });
+
+export const getFolderSummaryJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: job, error } = await supabaseAdmin
+      .from("folder_summary_jobs")
+      .select("id, status, error, emails_count, created_at, started_at, finished_at")
+      .eq("id", data.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!job) throw new Error("Job not found");
+    return { job };
+  });
+
+// Back-compat: keep the original synchronous entry point available for callers
+// (e.g. the scheduled cron tick) that still want to run a schedule inline.
+export const runFolderSummaryInline = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {

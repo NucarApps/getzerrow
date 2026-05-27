@@ -442,12 +442,19 @@ export async function summarizeFolderEmails(args: {
     received_at: string | null;
   }>;
 }): Promise<FolderSummaryOutput & { _fallback?: boolean }> {
+  // Heavy custom prompts (e.g. Factory daily briefing) blow past the upstream
+  // gateway budget when combined with long email lists. Trim aggressively when
+  // the instructions are long.
+  const longPrompt = (args.instructions ?? "").length > 1500;
+  const maxEmails = longPrompt ? 100 : 150;
+  const snippetLen = longPrompt ? 200 : 240;
+
   const list = args.emails
-    .slice(0, 150)
+    .slice(0, maxEmails)
     .map((e, i) => {
       const when = e.received_at ? new Date(e.received_at).toISOString() : "";
       const who = e.from_name ? `${e.from_name} <${e.from_addr ?? ""}>` : (e.from_addr ?? "");
-      return `${i + 1}. [${when}] ${who}\n   Subject: ${e.subject ?? ""}\n   Snippet: ${(e.snippet ?? "").slice(0, 240)}`;
+      return `${i + 1}. [${when}] ${who}\n   Subject: ${e.subject ?? ""}\n   Snippet: ${(e.snippet ?? "").slice(0, snippetLen)}`;
     })
     .join("\n");
 
@@ -459,18 +466,37 @@ ${args.instructions || "(none — use sensible defaults: group by sender or topi
 Emails (most recent first):
 ${list}`;
 
-  // Primary: structured output with a strong model.
-  try {
-    const { output } = await generateText({
-      model: getModel("google/gemini-2.5-pro"),
-      output: Output.object({
-        schema: z.object({
-          subject: z.string().min(1).max(200).describe("Concise subject line for the digest email"),
-          body_text: z.string().min(1).describe("Plain-text digest body"),
-          body_html: z.string().min(1).describe("HTML digest body (semantic, inline-styled, no <html>/<body> tags)"),
+  // Race the AI call against a hard timeout so the background worker never
+  // hangs on a stuck upstream response.
+  const withTimeout = async <T>(p: Promise<T>, ms: number, label: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race<T>([
+        p,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
         }),
-      }),
-      prompt: `${basePrompt}
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  const PRIMARY_MODEL = "google/gemini-3-flash-preview";
+
+  // Primary: structured output with a fast model.
+  try {
+    const { output } = await withTimeout(
+      generateText({
+        model: getModel(PRIMARY_MODEL),
+        output: Output.object({
+          schema: z.object({
+            subject: z.string().min(1).max(200).describe("Concise subject line for the digest email"),
+            body_text: z.string().min(1).describe("Plain-text digest body"),
+            body_html: z.string().min(1).describe("HTML digest body (semantic, inline-styled, no <html>/<body> tags)"),
+          }),
+        }),
+        prompt: `${basePrompt}
 
 Write:
 - subject: short, mentions the folder and date range or count.
@@ -478,19 +504,27 @@ Write:
 - body_html: well-structured HTML using headings, bullet lists, and bold for emphasis. Use simple inline styles only. No <html>, <head>, or <body> tags — just the inner content. Do not include images.
 
 Be concise. Skip empty/duplicate content. If there are no emails, say so briefly.`,
-    });
+      }),
+      90_000,
+      "summarizeFolderEmails(primary)",
+    );
     return output;
   } catch (err: any) {
     console.warn("summarizeFolderEmails: structured output failed, falling back to plain text:", err?.message ?? err);
   }
 
   // Fallback: plain Markdown, then convert to text/html.
-  const { text } = await generateText({
-    model: getModel("google/gemini-2.5-pro"),
-    prompt: `${basePrompt}
+  const { text } = await withTimeout(
+    generateText({
+      model: getModel(PRIMARY_MODEL),
+      prompt: `${basePrompt}
 
 Write a daily digest in Markdown. Start with a single line: "# <short subject>" — that first line is the email subject. Then group by sender or topic, surface action items, keep it scannable. No images.`,
-  });
+    }),
+    90_000,
+    "summarizeFolderEmails(fallback)",
+  );
+
 
   const lines = text.split("\n");
   let subject = `${args.folderName} daily digest`;

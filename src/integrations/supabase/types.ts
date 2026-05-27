@@ -609,6 +609,48 @@ export type Database = {
           },
         ]
       }
+      folder_summary_jobs: {
+        Row: {
+          created_at: string
+          emails_count: number | null
+          error: string | null
+          finished_at: string | null
+          id: string
+          locked_at: string | null
+          schedule_id: string
+          started_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          emails_count?: number | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          locked_at?: string | null
+          schedule_id: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          emails_count?: number | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          locked_at?: string | null
+          schedule_id?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       folder_summary_schedules: {
         Row: {
           created_at: string
@@ -1328,6 +1370,14 @@ export type Database = {
           p_watch_expiration?: string
         }
         Returns: boolean
+      }
+      claim_folder_summary_jobs: {
+        Args: { p_limit?: number }
+        Returns: {
+          id: string
+          schedule_id: string
+          user_id: string
+        }[]
       }
       claim_forward_retries: {
         Args: { p_limit: number }
