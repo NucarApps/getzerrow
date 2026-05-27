@@ -1978,17 +1978,21 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       event_type: z.enum(["push", "push_empty", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error", "webhook_test"]).optional(),
       only_errors: z.boolean().optional(),
       limit: z.number().min(1).max(500).optional(),
+      account_id: z.string().uuid().optional(),
     }).parse(input ?? {})
   )
   .handler(async ({ data, context }) => {
     const limit = data.limit ?? 100;
 
     // Scope all diagnostics to the caller's own Gmail accounts to avoid
-    // leaking other users' email addresses / sync metadata.
-    const { data: myAccounts } = await supabaseAdmin
+    // leaking other users' email addresses / sync metadata. When account_id
+    // is supplied, narrow to that one account.
+    let acctQ = supabaseAdmin
       .from("gmail_accounts")
       .select("id, email_address")
       .eq("user_id", context.userId);
+    if (data.account_id) acctQ = acctQ.eq("id", data.account_id);
+    const { data: myAccounts } = await acctQ;
     const myEmails = (myAccounts ?? []).map((a) => a.email_address).filter(Boolean) as string[];
     const myAccountIds = (myAccounts ?? []).map((a) => a.id);
 
@@ -2267,7 +2271,10 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
 export const getSyncLatencyStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
-    z.object({ lookback_hours: z.number().int().min(1).max(24 * 7).optional() }).parse(d ?? {}),
+    z.object({
+      lookback_hours: z.number().int().min(1).max(24 * 7).optional(),
+      account_id: z.string().uuid().optional(),
+    }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
     type LatencyBucket = {
@@ -2284,17 +2291,19 @@ export const getSyncLatencyStats = createServerFn({ method: "POST" })
     type LatencyRpc = {
       rpc: (
         fn: "get_sync_latency_stats",
-        args: { p_user_id: string; p_lookback_hours: number },
+        args: { p_user_id: string; p_lookback_hours: number; p_account_id?: string | null },
       ) => Promise<{ data: LatencyStats | null; error: { message: string } | null }>;
     };
     const { data: stats, error } = await (supabaseAdmin as unknown as LatencyRpc).rpc(
       "get_sync_latency_stats",
-      { p_user_id: context.userId, p_lookback_hours: data.lookback_hours ?? 24 },
+      {
+        p_user_id: context.userId,
+        p_lookback_hours: data.lookback_hours ?? 24,
+        p_account_id: data.account_id ?? null,
+      },
     );
     if (error) {
       logError("gmail.latency_stats.rpc_failed", { user_id: context.userId }, error);
-      // Graceful fallback — empty buckets so the UI can render "no data
-      // yet" instead of crashing if the migration isn't deployed.
       return {
         push_to_ack: { count: 0, p50: null, p95: null, p99: null },
         push_to_visible: { count: 0, p50: null, p95: null, p99: null },
@@ -2396,6 +2405,7 @@ export const listMessageJobs = createServerFn({ method: "POST" })
     z.object({
       status: z.enum(["pending", "running", "dlq", "all"]).optional(),
       limit: z.number().min(1).max(500).optional(),
+      account_id: z.string().uuid().optional(),
     }).parse(input ?? {})
   )
   .handler(async ({ data, context }) => {
@@ -2407,13 +2417,16 @@ export const listMessageJobs = createServerFn({ method: "POST" })
       .order("updated_at", { ascending: false })
       .limit(limit);
     if (data.status && data.status !== "all") q = q.eq("status", data.status);
+    if (data.account_id) q = q.eq("gmail_account_id", data.account_id);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
 
-    const { data: agg } = await supabaseAdmin
+    let aggQ = supabaseAdmin
       .from("message_jobs")
       .select("status")
       .eq("user_id", context.userId);
+    if (data.account_id) aggQ = aggQ.eq("gmail_account_id", data.account_id);
+    const { data: agg } = await aggQ;
     const stats = { pending: 0, running: 0, dlq: 0, total: agg?.length ?? 0 };
     for (const r of agg ?? []) {
       if (r.status === "pending") stats.pending++;
