@@ -2,15 +2,15 @@
 // instruction into a structured proposal of folder/filter changes. The
 // model never writes to the DB — it just emits actions for the user to
 // approve in the assistant panel.
-import { generateText, tool } from "ai";
+//
+// We call the Lovable AI Gateway directly (OpenAI-style function calling)
+// rather than going through the AI SDK's tool() abstraction, because
+// Gemini handles flat JSON-schema objects reliably but chokes on Zod
+// discriminated unions translated to JSON Schema.
 import { z } from "zod";
-import { createLovableAiGatewayProvider } from "./ai-gateway";
 
-function getModel(modelId: string = "google/gemini-3-flash-preview") {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
-  return createLovableAiGatewayProvider(key)(modelId);
-}
+const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const DEFAULT_MODEL = "google/gemini-3-flash-preview";
 
 const actionSchema = z.discriminatedUnion("type", [
   z.object({
