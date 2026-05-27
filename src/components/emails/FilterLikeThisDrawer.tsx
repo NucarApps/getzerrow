@@ -44,6 +44,8 @@ export function FilterLikeThisDrawer({
   const addRuleFn = useServerFn(addFolderRule);
   const countFn = useServerFn(countMatchingForRule);
   const applyPastFn = useServerFn(applyFilterRuleToPast);
+  const addOverrideFn = useServerFn(addInboxOverride);
+  const stripLabelFn = useServerFn(stripFolderLabelPast);
 
   const domain = useMemo(
     () => (fromAddr?.includes("@") ? fromAddr.split("@")[1]?.toLowerCase() ?? null : null),
