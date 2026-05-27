@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeLabelPatch } from "./sync/label-merge";
+import { computeLabelPatch, removeLabelsFromCurrent } from "./sync/label-merge";
 
 describe("computeLabelPatch", () => {
   it("strips INBOX from raw_labels when Gmail archives the message", () => {
@@ -36,5 +36,10 @@ describe("computeLabelPatch", () => {
   it("returns empty patch when no currentLabels and no inbox/unread deltas", () => {
     const patch = computeLabelPatch(undefined, ["Label_123"], []);
     expect(patch).toEqual({});
+  });
+
+  it("removes INBOX from a current label snapshot for retroactive archive updates", () => {
+    const labels = removeLabelsFromCurrent(["IMPORTANT", "INBOX", "Label_25"], ["INBOX"]);
+    expect(labels).toEqual(["IMPORTANT", "Label_25"]);
   });
 });

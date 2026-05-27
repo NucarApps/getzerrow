@@ -88,6 +88,7 @@ type Email = {
   has_attachment: boolean;
   processed_at: string | null;
   raw_labels?: string[] | null;
+  snoozed_until?: string | null;
 };
 
 type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
@@ -363,10 +364,10 @@ function InboxPage() {
   // (often multi-MB) — those are fetched on-demand via selectedFullQ when
   // the user actually opens an email. Keeps both the initial fetch AND
   // every realtime UPDATE payload small. raw_labels is included because
-  // the "no_rules" filter reads it. snoozed_until is a DB-side predicate
-  // only, so we don't select it; forward_* columns are operator-facing,
-  // not rendered in the inbox.
-  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels";
+  // the "no_rules" filter reads it. snoozed_until is included so local
+  // search results can apply the same visibility filter as normal lists.
+  // forward_* columns are operator-facing, not rendered in the inbox.
+  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels,snoozed_until";
 
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
@@ -377,6 +378,8 @@ function InboxPage() {
     queryKey: ["emails", accountId, selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
     enabled: !!accountId,
     queryFn: async () => {
+      const isNoRules = selectedFolder === "no_rules";
+      const isAllMail = selectedFolder === "all_mail";
       if (isSearching) {
         // Operator-aware search: when the user typed `from:` / `to:`, filter
         // server-side so we don't get capped by the 2000-newest window.
@@ -388,6 +391,13 @@ function InboxPage() {
             .eq("gmail_account_id", accountId!)
             .order("received_at", { ascending: false, nullsFirst: false })
             .limit(500);
+          if (!isAllMail) {
+            const nowIso = new Date().toISOString();
+            q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
+            if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]).eq("is_archived", false);
+            else if (isNoRules) q = q.is("folder_id", null);
+            else q = q.eq("folder_id", selectedFolder);
+          }
           if (parsedQuery.from) {
             const v = esc(parsedQuery.from);
             q = q.or(`from_addr.ilike.%${v}%,from_name.ilike.%${v}%`);
@@ -404,16 +414,27 @@ function InboxPage() {
           return (data ?? []) as Email[];
         }
         // Free-text search: load the most recent corpus and score locally.
-        const { data } = await supabase
+        let q = supabase
           .from("emails")
           .select(LIST_COLUMNS)
           .eq("gmail_account_id", accountId!)
           .order("received_at", { ascending: false })
           .limit(2000);
-        return (data ?? []) as Email[];
+        if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]);
+        const { data } = await q;
+        let rows = (data ?? []) as Email[];
+        if (!isAllMail) {
+          const nowIso = new Date().toISOString();
+          rows = rows.filter((e) => {
+            const active = !e.snoozed_until || e.snoozed_until <= nowIso;
+            if (!active) return false;
+            if (selectedFolder === "all") return e.is_archived === false && (e.raw_labels ?? []).includes("INBOX");
+            if (isNoRules) return e.folder_id === null;
+            return e.folder_id === selectedFolder;
+          });
+        }
+        return rows;
       }
-      const isNoRules = selectedFolder === "no_rules";
-      const isAllMail = selectedFolder === "all_mail";
       let q = supabase
         .from("emails")
         .select(LIST_COLUMNS)
@@ -426,7 +447,7 @@ function InboxPage() {
       } else {
         const nowIso = new Date().toISOString();
         q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
-        if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]);
+        if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]).eq("is_archived", false);
         else if (isNoRules) q = q.is("folder_id", null);
         else q = q.eq("folder_id", selectedFolder);
       }
