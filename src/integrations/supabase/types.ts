@@ -949,6 +949,7 @@ export type Database = {
       inbox_overrides: {
         Row: {
           created_at: string
+          gmail_account_id: string | null
           id: string
           match_type: string
           note: string | null
@@ -957,6 +958,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          gmail_account_id?: string | null
           id?: string
           match_type: string
           note?: string | null
@@ -965,6 +967,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          gmail_account_id?: string | null
           id?: string
           match_type?: string
           note?: string | null
@@ -1436,10 +1439,19 @@ export type Database = {
         }[]
       }
       get_invader_stats: { Args: never; Returns: Json }
-      get_sync_latency_stats: {
-        Args: { p_lookback_hours?: number; p_user_id: string }
-        Returns: Json
-      }
+      get_sync_latency_stats:
+        | {
+            Args: { p_lookback_hours?: number; p_user_id: string }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_account_id?: string
+              p_lookback_hours?: number
+              p_user_id: string
+            }
+            Returns: Json
+          }
       list_decryption_audit: {
         Args: { p_limit?: number }
         Returns: {

@@ -23,7 +23,7 @@ function relTime(iso: string | null): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-export function ProcessingJobs() {
+export function ProcessingJobs({ accountId }: { accountId: string | null }) {
   const fetchJobs = useServerFn(listMessageJobs);
   const retryFn = useServerFn(retryJob);
   const runNow = useServerFn(runJobsNow);
@@ -31,8 +31,8 @@ export function ProcessingJobs() {
   const [busy, setBusy] = useState(false);
 
   const q = useQuery({
-    queryKey: ["message-jobs", filter],
-    queryFn: () => fetchJobs({ data: { status: filter, limit: 200 } }),
+    queryKey: ["message-jobs", filter, accountId],
+    queryFn: () => fetchJobs({ data: { status: filter, limit: 200, account_id: accountId ?? undefined } }),
     refetchInterval: 5000,
   });
 
