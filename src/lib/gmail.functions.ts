@@ -2470,16 +2470,32 @@ export const enqueueGmailMessage = createServerFn({ method: "POST" })
 
 export const addFolderRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; field: "from" | "domain"; value: string }) =>
+  .inputValidator((d: {
+    folder_id: string;
+    field: "from" | "domain" | "subject";
+    value: string;
+    op?: "contains" | "equals" | "starts_with";
+  }) =>
     z.object({
       folder_id: z.string().uuid(),
-      field: z.enum(["from", "domain"]),
-      value: z.string().min(1).max(320),
+      field: z.enum(["from", "domain", "subject"]),
+      value: z.string().min(1).max(998),
+      op: z.enum(["contains", "equals", "starts_with"]).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const value = data.value.trim().toLowerCase().replace(/^@/, "");
+    const op = data.op ?? (data.field === "subject" ? "starts_with" : "contains");
+    // Domain values are normalized (lowercase, no leading @). Sender addresses are
+    // lowercased. Subject text is preserved as the user typed it (case-insensitive
+    // compare happens in the filter engine).
+    const value =
+      data.field === "subject"
+        ? data.value.trim()
+        : data.field === "domain"
+        ? data.value.trim().toLowerCase().replace(/^@/, "")
+        : data.value.trim().toLowerCase();
     if (!value) throw new Error("Empty value");
+
     const { data: folder } = await supabaseAdmin
       .from("folders")
       .select("id, user_id, name, gmail_account_id")
@@ -2492,6 +2508,7 @@ export const addFolderRule = createServerFn({ method: "POST" })
       .select("id")
       .eq("folder_id", data.folder_id)
       .eq("field", data.field)
+      .eq("op", op)
       .eq("value", value)
       .maybeSingle();
     const already = !!existing;
@@ -2499,13 +2516,142 @@ export const addFolderRule = createServerFn({ method: "POST" })
       const { error } = await supabaseAdmin.from("folder_filters").insert({
         folder_id: data.folder_id,
         field: data.field,
-        op: "contains",
+        op,
         value,
       });
       if (error) throw new Error(error.message);
       invalidateAccountContext(folder.gmail_account_id);
     }
     return { ok: true, already, folder_name: folder.name };
+  });
+
+/**
+ * Count emails in the given Gmail account that would match a folder rule
+ * (field/op/value). Used by FilterLikeThisDrawer's live preview. Caps at 500.
+ */
+export const countMatchingForRule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    account_id: string;
+    field: "from" | "domain" | "subject";
+    op: "contains" | "equals" | "starts_with";
+    value: string;
+  }) =>
+    z.object({
+      account_id: z.string().uuid(),
+      field: z.enum(["from", "domain", "subject"]),
+      op: z.enum(["contains", "equals", "starts_with"]),
+      value: z.string().min(1).max(998),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const raw = data.value.trim();
+    if (!raw) return { count: 0 };
+    const v = data.field === "subject" ? raw : raw.toLowerCase().replace(/^@/, "");
+    const esc = v.replace(/[\\%_]/g, (m) => `\\${m}`);
+    let q = supabaseAdmin
+      .from("emails")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("gmail_account_id", data.account_id);
+
+    if (data.field === "subject") {
+      const pat = data.op === "equals" ? esc : data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
+      q = q.ilike("subject", pat);
+    } else if (data.field === "domain") {
+      q = q.ilike("from_addr", `%@${esc}%`);
+    } else {
+      const pat = data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
+      q = q.ilike("from_addr", pat);
+    }
+
+    const { count, error } = await q;
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  });
+
+/**
+ * Apply an existing/just-created folder rule to past matching emails: move
+ * them into the target folder. Used by FilterLikeThisDrawer when the user
+ * picks "Future and past". Caps at 500 rows per call.
+ */
+export const applyFilterRuleToPast = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    account_id: string;
+    to_folder_id: string;
+    field: "from" | "domain" | "subject";
+    op: "contains" | "equals" | "starts_with";
+    value: string;
+  }) =>
+    z.object({
+      account_id: z.string().uuid(),
+      to_folder_id: z.string().uuid(),
+      field: z.enum(["from", "domain", "subject"]),
+      op: z.enum(["contains", "equals", "starts_with"]),
+      value: z.string().min(1).max(998),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, name")
+      .eq("id", data.to_folder_id)
+      .maybeSingle();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Folder not found");
+
+    const raw = data.value.trim();
+    if (!raw) return { moved: 0, failed: 0 };
+    const v = data.field === "subject" ? raw : raw.toLowerCase().replace(/^@/, "");
+    const esc = v.replace(/[\\%_]/g, (m) => `\\${m}`);
+
+    let q = supabaseAdmin
+      .from("emails")
+      .select("id")
+      .eq("user_id", context.userId)
+      .eq("gmail_account_id", data.account_id)
+      .neq("folder_id", data.to_folder_id)
+      .order("received_at", { ascending: false })
+      .limit(500);
+
+    if (data.field === "subject") {
+      const pat = data.op === "equals" ? esc : data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
+      q = q.ilike("subject", pat);
+    } else if (data.field === "domain") {
+      q = q.ilike("from_addr", `%@${esc}%`);
+    } else {
+      const pat = data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
+      q = q.ilike("from_addr", pat);
+    }
+
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    if (!rows || rows.length === 0) return { moved: 0, failed: 0 };
+
+    const classifiedBy = data.field === "domain" ? "domain_rule" : "filter";
+    const reason =
+      data.field === "domain"
+        ? `Domain rule: ${v} → ${folder.name}`
+        : data.field === "subject"
+        ? `Subject rule (${data.op}): ${v} → ${folder.name}`
+        : `Sender rule: ${v} → ${folder.name}`;
+
+    let moved = 0;
+    let failed = 0;
+    for (const row of rows) {
+      const r = await performMove(context.userId, row.id, data.to_folder_id, reason);
+      if (r.ok) moved++;
+      else failed++;
+    }
+    if (moved > 0) {
+      await supabaseAdmin
+        .from("emails")
+        .update({ classified_by: classifiedBy })
+        .eq("user_id", context.userId)
+        .in("id", rows.map((r) => r.id))
+        .eq("folder_id", data.to_folder_id);
+    }
+    return { moved, failed };
   });
 
 /**
