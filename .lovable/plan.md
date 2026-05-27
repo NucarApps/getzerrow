@@ -1,39 +1,44 @@
-## Diagnosis
+# Fix: Folder doesn't empty when user removes its Gmail label
 
-Tony's account (`tpercoco@nucar.com`) is stuck in a Gmail-quota death spiral:
+## What's happening
 
-- `gmail_accounts.history_id` is frozen at `21468849` since 11:41 UTC.
-- `last_push_at` is `NULL` (never been stamped successfully).
-- Pub/Sub pushes ARE arriving (15+ in the last minute, `accounts_matched=1`) but every one returns `synced_count=0`.
-- Worker logs show two repeating errors for his account:
-  - `sync.label_added_handler_failed` — `Gmail API 403 ... Quota exceeded for quota metric 'Queries per minute per user'` on `messages/{id}?format=metadata`.
-  - `sync.history_sync_transient_failed` — same 403 on `users/me/history?startHistoryId=21468849`.
+Tony emptied his Gmail "Factory" label, but Zerrow's Factory folder still shows those emails.
 
-Why it spirals: Tony has two Gmail labels linked to Zerrow folders (`Label_25 → Factory`, `Label_26 → Pulse`). His Gmail emits a large stream of `labelsAdded` events. In `syncSinceHistoryLocked` (`src/lib/sync.server.ts:921-937`), every matched `labelsAdded` event calls `getMessageMetadata` (one Gmail API call per event) just to feed `from/subject/snippet` into `recordManualMove`. With high event volume that burns the per-user-per-minute quota in seconds. Once exhausted, `listHistory` itself 403s, so the outer try returns early — `history_id` never advances and `last_push_at` is never stamped. The next push restarts from the same stale `startHistoryId`, replays the same backlog, and re-exhausts quota. Self-sustaining.
+When Gmail removes a label from a message, our history-sync handler fires `applyLabelChange` → `computeLabelPatch`. That helper updates `raw_labels`, `is_archived`, and `is_read` — but it never touches `emails.folder_id`. Zerrow's folder view filters by `folder_id = <folder>` (see `inbox.tsx` line 397/449), so the rows keep appearing under Factory even though their Gmail label is gone.
 
-chris@nucar.com and chris@dagesse.com don't trip this because their `labelsAdded` volume is lower.
+The mirror problem exists for `labelsAdded`: we record a folder-learning example, but we don't actually assign `folder_id` when Gmail adds a folder's label. So moving a message into a label inside Gmail also doesn't move it in Zerrow.
 
 ## Fix
 
-### 1. Stop fetching Gmail metadata per labelsAdded event — `src/lib/sync.server.ts` (~lines 921-937)
+In `src/lib/sync.server.ts`, inside the history walk where we already build the `labelToFolder` map (lines 894–895), extend `applyLabelChange` (or its call site at lines 921‑954) to also patch `folder_id`:
 
-In the labelsAdded loop, replace the per-event `getMessageMetadata(...)` call with a local-only lookup:
+1. **labelsRemoved**: if any removed `labelIds` matches a `folder.gmail_label_id` AND that folder is the email's current `folder_id`, set `folder_id = null` and `classified_by = 'gmail_unlabeled'`. (Scope by current folder_id so removing an unrelated label doesn't clobber a different active assignment.)
+2. **labelsAdded**: if an added label maps to a folder via `labelToFolder`, set `folder_id = <that folder.id>`, `classified_by = 'gmail_labeled'`, and respect the folder's `hide_from_inbox` / `auto_archive` to set `is_archived` consistent with the rest of the pipeline.
 
-- If a row for `ev.message.id` already exists in `public.emails` for this account, read `from_addr`, `subject`, `snippet` from that row and pass it into `recordManualMove`.
-- If the row doesn't exist locally yet, **skip** the `recordManualMove` for this event. The message is still being ingested through the normal pipeline (via `seenAdded` + `enqueueMessageJobs`); `process-message` will set the folder and seed `folder_examples` correctly when the row is created.
+Implementation shape:
+- Pass `labelToFolder` into `applyLabelChange` (or inline the folder lookup in the loop at 952‑954 and the existing labelsAdded loop at 921‑951).
+- Read the email's current `folder_id` in the same `select` we already do at lines 934‑940 (just add the column) so we don't add a roundtrip.
+- Extend the patch object built by `computeLabelPatch` with the new `folder_id` / `classified_by` / `is_archived` keys when applicable. Keep `computeLabelPatch` pure — pass folder context in.
 
-Net effect: zero Gmail calls inside the labelsAdded loop. That removes the quota pressure that's currently breaking Tony.
+Realtime already broadcasts `emails` UPDATEs and `use-email-realtime.ts` re-evaluates row membership per query key, so once `folder_id` is cleared, the row drops out of the Factory view automatically. No UI changes needed.
 
-### 2. Advance `history_id` incrementally — `src/lib/sync.server.ts` (~lines 911-947, 989)
+## Backfill for Tony's existing drift
 
-Today `bumpHistoryAndWatch(lastHistoryId)` is only called after every page succeeds. Change the walk to bump `history_id` AFTER each successful page (`if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);`). Then if a later page 403s, the next push restarts from the page we already drained instead of replaying from `21468849`. Keep the outer post-loop bump as-is (idempotent via `bump_history_id_if_greater`).
+One-off SQL to repair rows whose Gmail label is already gone but Zerrow still files under that folder:
 
-### 3. One-off data repair for Tony
+```sql
+UPDATE public.emails e
+   SET folder_id = NULL,
+       classified_by = 'gmail_unlabeled'
+  FROM public.folders f
+ WHERE e.folder_id = f.id
+   AND f.gmail_label_id IS NOT NULL
+   AND NOT (COALESCE(e.raw_labels, '{}') @> ARRAY[f.gmail_label_id]);
+```
 
-After the code change ships, fast-forward Tony's stuck cursor so he doesn't have to wait for the spiral to organically break. Set `gmail_accounts.history_id = '21479322'` (the most recent push payload's historyId) for account `e4af232e-2676-4f7c-9cb8-cb0f090daba8`. This skips the giant backlog; any messages newer than that will arrive via the next push, and his reconcile cron will catch anything in the gap within 5 minutes.
+Run it as a migration so Tony's Factory folder empties immediately and the going-forward fix keeps it in sync.
 
 ## Out of scope
 
-- No changes to the poll cron, reconciler, or Pub/Sub envelope handling.
-- No changes to `recordManualMove` itself — it stays a generic "promote + seed example" helper, just called with locally-sourced fields.
-- No new quota-aware backoff layer (the metadata-fetch removal eliminates the root cause; we can revisit dedicated 429 backoff later if quota errors reappear on healthy accounts).
+- Folder-learning examples already recorded for those messages stay put (they're historical signal).
+- AI-classified rows whose Gmail label was never set won't be affected — they have no `gmail_label_id` to match.

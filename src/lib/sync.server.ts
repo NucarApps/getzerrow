@@ -445,6 +445,7 @@ async function applyLabelChange(
   currentLabels: string[] | undefined,
   added: string[],
   removed: string[],
+  labelToFolder?: Map<string, { id: string; gmail_label_id: string | null }>,
 ) {
   if (added.includes("TRASH")) {
     await supabaseAdmin.from("emails").delete()
@@ -452,9 +453,36 @@ async function applyLabelChange(
       .eq("gmail_message_id", messageId);
     return;
   }
-  const patch = computeLabelPatch(currentLabels, added, removed);
+  const patch: Record<string, unknown> = { ...computeLabelPatch(currentLabels, added, removed) };
+
+  // Mirror folder_id with Gmail label state. When the user removes a folder's
+  // Gmail label, the email should drop out of that folder in Zerrow; when
+  // they add one, it should jump into the matching folder.
+  if (labelToFolder && labelToFolder.size > 0) {
+    const addedFolder = added.map((l) => labelToFolder.get(l)).find(Boolean);
+    const removedFolderIds = new Set(
+      removed.map((l) => labelToFolder.get(l)?.id).filter(Boolean) as string[],
+    );
+    if (addedFolder) {
+      patch.folder_id = addedFolder.id;
+      patch.classified_by = "gmail_labeled";
+    } else if (removedFolderIds.size > 0) {
+      // Only clear folder_id if it matches a folder whose label was just removed.
+      const { data: cur } = await supabaseAdmin
+        .from("emails")
+        .select("folder_id")
+        .eq("gmail_account_id", accountId)
+        .eq("gmail_message_id", messageId)
+        .maybeSingle();
+      if (cur?.folder_id && removedFolderIds.has(cur.folder_id)) {
+        patch.folder_id = null;
+        patch.classified_by = "gmail_unlabeled";
+      }
+    }
+  }
+
   if (Object.keys(patch).length === 0) return;
-  await supabaseAdmin.from("emails").update(patch)
+  await supabaseAdmin.from("emails").update(patch as never)
     .eq("gmail_account_id", accountId)
     .eq("gmail_message_id", messageId);
 }
@@ -994,7 +1022,7 @@ async function syncSinceHistoryLocked(
     // parseMessage when the queued job runs.
     for (const op of labelOps) {
       if (seenAdded.has(op.messageId)) continue;
-      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed); }
+      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed, labelToFolder); }
       catch (e) { logError("sync.apply_label_change_failed", { account_id: accountId, gmail_message_id: op.messageId, added: op.added, removed: op.removed }, e); }
     }
 
