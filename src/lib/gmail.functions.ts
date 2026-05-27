@@ -138,7 +138,7 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
       "upsert_gmail_oauth_account",
       {
         p_user_id: context.userId,
-        p_email_address: data.email_address,
+        p_email_address: data.email_address.toLowerCase(),
         p_access_token: data.access_token,
         p_refresh_token: data.refresh_token,
         p_token_expires_at: expiresAt,

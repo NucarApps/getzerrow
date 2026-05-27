@@ -69,7 +69,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
             "upsert_gmail_oauth_account",
             {
               p_user_id: userId,
-              p_email_address: email,
+              p_email_address: email.toLowerCase(),
               p_access_token: tokens.access_token,
               p_refresh_token: tokens.refresh_token,
               p_token_expires_at: expiresAt,
