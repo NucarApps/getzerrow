@@ -1073,7 +1073,6 @@ function extractDomain(addr: string | null): string | null {
   return addr.slice(at + 1).toLowerCase().replace(/[>\s]+$/g, "");
 }
 
-export { performMove } from "./move-email.server";
 import { performMove } from "./move-email.server";
 
 
