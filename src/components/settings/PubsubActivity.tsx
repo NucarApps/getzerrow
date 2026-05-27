@@ -298,7 +298,7 @@ function deriveHealth(args: {
   return null;
 }
 
-export function PubsubActivity() {
+export function PubsubActivity({ accountId, accountEmail: _accountEmail }: { accountId: string | null; accountEmail: string | null }) {
   const fetchEvents = useServerFn(listPubsubEvents);
   const pingFn = useServerFn(pingPubsubWebhook);
   const accountsFn = useServerFn(listMyGmailAccounts);
@@ -316,7 +316,7 @@ export function PubsubActivity() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const q = useQuery({
-    queryKey: ["pubsub-events", filter],
+    queryKey: ["pubsub-events", filter, accountId],
     queryFn: () =>
       fetchEvents({
         data: {
@@ -327,6 +327,7 @@ export function PubsubActivity() {
             undefined,
           only_errors: filter === "errors" ? true : undefined,
           limit: 100,
+          account_id: accountId ?? undefined,
         },
       }),
     refetchInterval: 10_000,
@@ -337,12 +338,10 @@ export function PubsubActivity() {
     queryFn: () => accountsFn(),
   });
 
-  // Latency telemetry runs on a slower cadence than the event log — it
-  // queries the SQL percentile aggregator, which is the expensive bit, and
-  // the numbers don't move fast enough to need 10s refreshes.
+  // Latency telemetry runs on a slower cadence than the event log.
   const latencyQ = useQuery({
-    queryKey: ["sync-latency-24h"],
-    queryFn: () => latencyFn({ data: { lookback_hours: 24 } }),
+    queryKey: ["sync-latency-24h", accountId],
+    queryFn: () => latencyFn({ data: { lookback_hours: 24, account_id: accountId ?? undefined } }),
     refetchInterval: 60_000,
   });
 
