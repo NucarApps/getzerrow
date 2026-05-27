@@ -1071,6 +1071,21 @@ async function performMove(
     ? `Re-categorized from "${from.name}" to "${to.name}"`
     : `Moved to "${to.name}" manually`);
 
+  // Read current raw_labels so we can mirror Gmail's label change in the same
+  // UPDATE — keeps the realtime subscribers' inbox view in sync immediately.
+  const { data: cur } = await supabaseAdmin
+    .from("emails")
+    .select("raw_labels")
+    .eq("id", email.id)
+    .maybeSingle();
+  const curLabels = (cur?.raw_labels ?? []) as string[];
+  const fromLabelId = from?.gmail_label_id ?? null;
+  const toLabelId = to.gmail_label_id ?? null;
+  const nextLabels = Array.from(new Set([
+    ...curLabels.filter((l) => l !== "INBOX" && (!fromLabelId || l !== fromLabelId)),
+    ...(toLabelId ? [toLabelId] : []),
+  ]));
+
   const { error: upErr } = await supabaseAdmin
     .from("emails")
     .update({
@@ -1079,14 +1094,15 @@ async function performMove(
       ai_confidence: 1,
       classification_reason: reason,
       is_archived: true,
+      raw_labels: nextLabels,
     })
     .eq("id", email.id);
   if (upErr) return { ok: false, error: upErr.message };
 
   // Always remove INBOX so the row leaves the user's Inbox view, mirroring
   // Gmail's "Move to label" behavior. Swap folder labels if defined.
-  const addLabels = to.gmail_label_id ? [to.gmail_label_id] : [];
-  const removeLabels = ["INBOX", ...(from?.gmail_label_id ? [from.gmail_label_id] : [])];
+  const addLabels = toLabelId ? [toLabelId] : [];
+  const removeLabels = ["INBOX", ...(fromLabelId ? [fromLabelId] : [])];
   try {
     await modifyMessage(
       email.gmail_account_id,
