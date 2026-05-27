@@ -611,6 +611,9 @@ export function FolderEditor({
             </div>
           </div>
 
+          <ScanGmailSection folder={local} hasIncludeRules={(filters.some((f) => f.op !== "not_contains" && f.op !== "not_equals")) || !!local.filter_tree} />
+
+
           {dirty && (
             <div className="mt-4 flex justify-end gap-2">
               <Button size="sm" variant="ghost" onClick={() => setLocal(folder)}>Cancel</Button>
