@@ -313,13 +313,6 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
 
       <div className="mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto">
         <FolderRow
-          active={selected === "all"}
-          onSelect={() => pick("all")}
-          color="#a3a3a3"
-          label="All inbox"
-          count={counts.total}
-        />
-        <FolderRow
           active={selected === "all_mail"}
           onSelect={() => pick("all_mail")}
           color="#d4d4d8"
