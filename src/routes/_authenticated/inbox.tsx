@@ -530,6 +530,8 @@ function InboxPage() {
       const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
       const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
       const rest = parsedQuery.rest.toLowerCase();
+      const qLower = query.trim().toLowerCase();
+      const gmailHits = gmailHitIds.query === qLower ? gmailHitIds.ids : null;
 
       const scored = pageRows.map((e) => {
         const fromAddr = (e.from_addr ?? "").toLowerCase();
@@ -542,23 +544,18 @@ function InboxPage() {
         if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle))) hit = false;
         if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
         if (rest) {
-          const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
-          if (!hay.includes(rest)) hit = false;
+          const hay = `${fromName} ${fromAddr} ${toAddrs} ${subject} ${snippet}`;
+          const metaHit = hay.includes(rest);
+          const bodyHit = gmailHits?.has(e.gmail_message_id) ?? false;
+          if (!metaHit && !bodyHit) hit = false;
         }
         return { e, hit };
       });
-      // If any operator filter is active, only show matches (Gmail-side hits
-      // were already ingested into the corpus, but body-only matches here
-      // would just be noise when the user typed from:/to:).
-      if (fromNeedle || toNeedle) {
-        return scored.filter((s) => s.hit).map((s) => s.e);
-      }
-      // Free-text search: keep the old "metadata hits first, others after"
-      // ordering so body-only Gmail hits still appear.
-      return [...scored.filter((s) => s.hit), ...scored.filter((s) => !s.hit)].map((s) => s.e);
+      // Only show actual matches — no more "long tail of unrelated mail".
+      return scored.filter((s) => s.hit).map((s) => s.e);
     }
     return pageRows;
-  }, [pageRows, isSearching, parsedQuery]);
+  }, [pageRows, isSearching, parsedQuery, query, gmailHitIds]);
 
 
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
