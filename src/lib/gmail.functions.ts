@@ -2999,6 +2999,7 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
     if (fErr || !folder) throw new Error("Folder not found");
     if (folder.user_id !== context.userId) throw new Error("Not authorized for this folder");
     const accountId = folder.gmail_account_id;
+    const folderName = folder.name;
 
     // Collect rules from folder_filters + filter_tree leaves.
     type Cond = { field: string; op: string; value: string };
