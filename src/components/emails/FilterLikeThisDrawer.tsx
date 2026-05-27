@@ -282,9 +282,20 @@ export function FilterLikeThisDrawer({
           {/* Send to folder */}
           <div>
             <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
-              Send to folder
+              Send to
             </Label>
             <div className="max-h-56 overflow-y-auto rounded-md border border-border">
+              <button
+                type="button"
+                onClick={() => setFolderId(INBOX_OVERRIDE)}
+                className={`flex w-full items-center gap-2 border-b border-border/50 px-3 py-2 text-left text-sm transition-colors ${
+                  folderId === INBOX_OVERRIDE ? "bg-primary/10 text-primary" : "hover:bg-accent/60"
+                }`}
+              >
+                <Inbox className="h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1 truncate">Inbox — always show</span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">keep visible</span>
+              </button>
               {folders.length === 0 && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No folders yet.</p>
               )}
