@@ -1073,7 +1073,7 @@ function extractDomain(addr: string | null): string | null {
   return addr.slice(at + 1).toLowerCase().replace(/[>\s]+$/g, "");
 }
 
-async function performMove(
+export async function performMove(
   userId: string,
   emailId: string,
   toFolderId: string,

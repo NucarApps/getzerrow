@@ -39,6 +39,7 @@ import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
+import { AssistantPanel } from "@/components/inbox/AssistantPanel";
 import { PullToRefresh } from "@/components/inbox/PullToRefresh";
 import { useIsMobile } from "@/hooks/use-mobile";
 import DOMPurify from "dompurify";
@@ -373,6 +374,7 @@ function InboxPage() {
   const [page, setPage] = useState(1);
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const isNoRules = selectedFolder === "no_rules";
   useEffect(() => {
     setPage(1);
@@ -739,9 +741,20 @@ function InboxPage() {
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
             <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
           </div>
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => syncMut.mutate()} disabled={syncMut.isPending} title="Refresh">
-            <RefreshCw className={`h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={() => setAssistantOpen(true)}
+              title="Ask AI assistant"
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => syncMut.mutate()} disabled={syncMut.isPending} title="Refresh">
+              <RefreshCw className={`h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
         <div className="shrink-0 border-b border-border px-3 py-2">
           <div className="relative">
@@ -1173,6 +1186,27 @@ function InboxPage() {
           currentFolderId={filterPrompt.currentFolderId}
         />
       )}
+
+      <AssistantPanel
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        accountId={accountId}
+        folders={(foldersQ.data ?? []).map((f) => ({ id: f.id, name: f.name }))}
+        selectedEmails={(() => {
+          const ids = selectedIds.size > 0
+            ? Array.from(selectedIds)
+            : selected ? [selected.id] : [];
+          return ids
+            .map((id) => filtered.find((e) => e.id === id) ?? (selected?.id === id ? selected : null))
+            .filter((e): e is Email => !!e)
+            .map((e) => ({
+              id: e.id,
+              from_name: e.from_name,
+              from_addr: e.from_addr,
+              subject: e.subject,
+            }));
+        })()}
+      />
 
       <Dialog open={!!suggestion} onOpenChange={(v) => { if (!v) setSuggestion(null); }}>
         <DialogContent>
