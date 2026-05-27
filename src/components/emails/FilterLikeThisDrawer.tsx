@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AtSign, Globe, Type, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -50,6 +51,7 @@ export function FilterLikeThisDrawer({
   const [op, setOp] = useState<Op>("starts_with");
   const [folderId, setFolderId] = useState<string | null>(null);
   const [applyToPast, setApplyToPast] = useState(false);
+  const [archivePast, setArchivePast] = useState(false);
   const [count, setCount] = useState<number | null>(null);
   const [countLoading, setCountLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -63,6 +65,7 @@ export function FilterLikeThisDrawer({
     setOp(initialField === "subject" ? "starts_with" : "contains");
     setFolderId(null);
     setApplyToPast(false);
+    setArchivePast(false);
     setCount(null);
   }, [open, fromAddr, subject, domain]);
 
@@ -118,9 +121,11 @@ export function FilterLikeThisDrawer({
               field,
               op,
               value: value.trim(),
+              archive: archivePast,
             },
           });
           if (past.moved > 0) pastSummary = ` · ${past.moved} past moved`;
+          if (past.archived > 0) pastSummary += ` · ${past.archived} archived`;
           if (past.failed > 0) pastSummary += ` · ${past.failed} failed`;
         } catch (e: any) {
           toast.error(`Rule saved, but moving past emails failed: ${e.message}`);
@@ -286,6 +291,21 @@ export function FilterLikeThisDrawer({
                 hint={count !== null ? `${count >= 500 ? "500+" : count} existing email${count === 1 ? "" : "s"} will be moved.` : undefined}
               />
             </RadioGroup>
+            {applyToPast && (
+              <label className="mt-2 flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-accent/20 px-3 py-2">
+                <Checkbox
+                  checked={archivePast}
+                  onCheckedChange={(v) => setArchivePast(v === true)}
+                  className="mt-0.5"
+                />
+                <div className="flex-1">
+                  <div className="text-sm">Also archive them</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Remove past matches from the inbox after moving.
+                  </div>
+                </div>
+              </label>
+            )}
           </div>
         </div>
 

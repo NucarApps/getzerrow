@@ -1,14 +1,23 @@
-## Add type filter to "Always send to inbox" list
+## Add "Also archive past matches" option to filter drawer
 
-In `src/components/settings/InboxOverrides.tsx`, add a filter control above the overrides list so you can narrow it to Email-only or Domain-only entries.
+When "Future and past matches" is selected in `FilterLikeThisDrawer`, surface a checkbox to also archive (remove from inbox) the matched existing emails — in addition to moving them to the chosen folder.
 
 ### Changes
-- Add `filter` state: `"all" | "email" | "domain"` (default `"all"`).
-- Render a shadcn `Tabs` above the list with three triggers: **All**, **Emails**, **Domains**. Each shows a count badge derived from `rows`.
-- Filter `rows` by `match_type` before mapping. Empty-state copy adapts ("No email overrides yet." / "No domain overrides yet.").
-- Add a small search `Input` next to the tabs that does a case-insensitive substring match on `value`, so long lists are easy to scan. Clears with an `x` button when non-empty.
-- No backend changes, no schema changes — purely a UI refinement on the existing query data.
+
+**`src/components/emails/FilterLikeThisDrawer.tsx`**
+- Add `archivePast` state (default `false`), reset alongside `applyToPast` when the drawer opens.
+- Below the "Future and past matches" radio (rendered only when `applyToPast === true`), show a shadcn `Checkbox` + label: "Also archive them (remove from inbox)" with a hint.
+- Pass `archive: archivePast` into `applyPastFn`.
+- Toast summary appends ` · N archived` when archive count > 0.
+
+**`src/lib/gmail.functions.ts` — `applyFilterRuleToPast`**
+- Extend input schema with optional `archive: boolean` (default `false`).
+- After the existing per-row `performMove` loop, if `archive` is true and we have moved rows:
+  - Fetch `gmail_message_id` + `raw_labels` for the successfully moved rows.
+  - Call `batchModifyMessages(account_id, ids, [], ["INBOX"])` (wrap in try/catch + `logError`, same pattern as `applyFolderBehaviorRetroactive`).
+  - Update DB rows: `is_archived: true` and strip `INBOX` from `raw_labels` via `removeLabelsFromCurrent` (per-row, mirroring the existing helper).
+- Return `{ moved, failed, archived }`.
 
 ### Out of scope
-- The add-form's email/domain `Select` stays as-is.
-- Exceptions list inside each row is untouched.
+- No new folder behaviors, no schema changes.
+- Folder's own `auto_archive` setting is unchanged — this is a one-shot retro action scoped to the past-matches the user just acknowledged.
