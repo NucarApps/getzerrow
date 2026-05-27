@@ -16,6 +16,7 @@ import {
   updateFolderSummary,
   deleteFolderSummary,
   runFolderSummaryNow,
+  getFolderSummaryJob,
   applyFolderBehaviorRetroactive,
   setFolderAutoRelearn,
 } from "@/lib/gmail.functions";
