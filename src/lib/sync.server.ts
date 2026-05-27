@@ -482,7 +482,7 @@ async function applyLabelChange(
   }
 
   if (Object.keys(patch).length === 0) return;
-  await supabaseAdmin.from("emails").update(patch)
+  await supabaseAdmin.from("emails").update(patch as never)
     .eq("gmail_account_id", accountId)
     .eq("gmail_message_id", messageId);
 }
