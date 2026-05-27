@@ -1,61 +1,73 @@
-## What's happening
+## "Filter messages like this" drawer
 
-When you click "Run now" on the Factory daily digest, the request goes through this path:
+Collapse the current nested **Always send to folder → Just sender → folder → Future/past** menu into a single right-click item that opens a focused drawer. This makes the subject-line option a first-class citizen alongside sender and domain, and removes 3 levels of menu nesting.
 
-```
-UI → runFolderSummaryNow (serverFn) → runFolderSummary
-   → summarizeFolderEmails → Lovable AI (google/gemini-2.5-pro, structured output)
-   → insertMessage (Gmail API)
-```
+### UX
 
-The Factory folder has a heavy custom prompt (5 categorized sections, strict HTML rules) and up to 150 emails. Gemini 2.5 Pro with structured output on that input regularly takes longer than the Cloudflare Worker / AI Gateway request budget, so the gateway returns "upstream request timeout" before the model finishes. The session replay confirms two back-to-back timeout toasts at ~30s.
+Right-click an email → new top-level item:
 
-## Fix
+- **🪄 Filter messages like this…**
 
-Move "Run now" off the synchronous request path so the user click never has to wait on the model.
+Clicking opens a right-side drawer (reuse the `Sheet` pattern already used in `ContactDrawer`) with the following sections, top to bottom:
 
-### 1. Background job for digest runs
+1. **Match by** — segmented control with three tabs:
+   - `Sender` — pre-filled with `e.from_addr`
+   - `Domain` — pre-filled with the `@domain` portion
+   - `Subject` — pre-filled with `e.subject`
+2. **Value** — editable text input bound to the selected tab. The user can tweak the address, the domain, or the subject text.
+3. **Match type** — only shown for Subject:
+   - *Starts with* (default)
+   - *Contains*
+   - *Exact match*
+   
+   Sender and Domain stay as today (`contains`-style equality on the parsed field).
+4. **Send to folder** — list of the user's folders (color dot + name), single-select. Current folder disabled.
+5. **Apply to** — radio:
+   - *Future emails only* (default)
+   - *Future and past matching emails*
+6. **Live preview** — a small "About N existing emails match" line that runs a lightweight count query as the user edits (debounced 250ms). Lets the user catch over-broad subject filters before saving.
+7. Footer: **Cancel** / **Create filter**.
 
-- Add a `folder_summary_jobs` table: `id, schedule_id, user_id, status (pending|running|done|failed), error, created_at, started_at, finished_at, emails_count`.
-- New serverFn `enqueueFolderSummaryRun({ id })` — inserts a `pending` job and returns the job id immediately.
-- New serverFn `getFolderSummaryJob({ id })` — returns status for polling.
-- Update `runNow` in `FolderEditor.tsx` to enqueue, then poll (every 2s, max ~5 min) and toast on completion/failure. Show "Generating digest…" while running.
+On **Create filter**:
+- Call `addFolderRule` with `{ folder_id, field, op, value }`.
+- If "Future and past" is checked, also reuse `MoveSimilarDialog`'s retro-apply logic — but inline (no second dialog hop): after the rule insert, fire the same reassign-and-batch-modify call the dialog uses today, then toast the result.
+- Close the drawer and invalidate `["folder-filters"]` + `["emails"]`.
 
-### 2. Worker that actually runs `runFolderSummary`
+### Right-click menu cleanup
 
-- New public cron endpoint `src/routes/api/public/hooks/run-folder-summary-jobs.ts` (verifies `CRON_SECRET`).
-- Claims one pending job at a time via a `claim_folder_summary_job` RPC (SKIP LOCKED, 5 min lease, mirrors the `claim_message_jobs` pattern).
-- Calls existing `runFolderSummary(scheduleId)`, then marks the job done/failed and writes `emails_count` / `error`.
-- Register in pg_cron to fire every minute (same secret as other cron hooks).
+Remove from the email row context menu:
+- The entire `Always send to folder` submenu (the `from_addr` sub, the `domain` sub, all their nested folder pickers, all `Future emails only` / `Future and past` items).
 
-### 3. Make the model call more resilient
+Keep:
+- `Always send to inbox` (sender / domain) — different feature (overrides), separate flow.
+- All other items (mark read/unread, archive, snooze, move to folder, etc.).
 
-Inside `summarizeFolderEmails` (`src/lib/ai.server.ts`):
+Add the new single item right where the old `Always send to folder` block was so muscle memory carries over.
 
-- Switch the primary model from `google/gemini-2.5-pro` to `google/gemini-3-flash-preview` (project default, much faster, still strong at structured output). Keep the structured-output schema.
-- Keep the existing markdown fallback but also switch it to flash.
-- Wrap the structured call in `Promise.race` with a 90s timeout that throws a clean "digest generation timed out" so the job fails fast instead of hanging on the lease.
-- Pre-trim: cap emails to 100 (currently 150) and snippet to 200 chars when the folder prompt is long (>1.5k chars), to reduce token count for prompt-heavy folders like Factory.
+### Backend
 
-### 4. Existing scheduled runs
+`src/lib/gmail.functions.ts` → `addFolderRule`:
+- Extend `field` enum to `"from" | "domain" | "subject"`.
+- Add optional `op: "contains" | "equals" | "starts_with"` (default `contains` for from/domain to preserve current behavior; required for subject).
+- Don't strip a leading `@` when field is `subject` (only when field is `domain`).
+- Include `op` in the dedupe lookup so the same value with two different match types can coexist.
 
-`run-folder-summaries.ts` cron currently calls `runFolderSummary` inline. Change it to enqueue jobs into the same `folder_summary_jobs` table so scheduled runs benefit from the same background worker and don't tie up the cron tick.
+New server function `countMatchingEmails({ account_id, field, op, value })` (or extend existing) that returns a count for the live-preview line. Caps at 500 for speed.
 
-### 5. Recovery for the Factory schedule
+The filter engine already supports `subject` with `contains` / `equals` / `starts_with`, so no engine changes.
 
-After deploy, the next click on "Run now" will enqueue + poll instead of timing out. No data fix needed — the previous failed attempts already wrote `last_error` and advanced `next_run_at`.
+### Components
 
-## Files touched
+- New: `src/components/emails/FilterLikeThisDrawer.tsx` — owns all drawer state, calls `addFolderRule` and the retro-apply path.
+- Edit: `src/routes/_authenticated/inbox.tsx` — drop the nested submenus, add the new menu item + drawer trigger state.
+- Edit: `src/components/emails/MoveSimilarDialog.tsx` — extract its retro-apply logic into a reusable function (or export an `applyFolderRuleToPast` helper) so the drawer can call it without opening a second dialog.
 
-- New migration: `folder_summary_jobs` table + grants + RLS + `claim_folder_summary_job` RPC, plus pg_cron schedule.
-- New: `src/routes/api/public/hooks/run-folder-summary-jobs.ts`
-- Edit: `src/lib/summaries.server.ts` (job helpers, no logic change to `runFolderSummary` itself beyond return shape)
-- Edit: `src/lib/gmail.functions.ts` (add `enqueueFolderSummaryRun`, `getFolderSummaryJob`; keep `runFolderSummaryNow` as a thin wrapper around enqueue for back-compat)
-- Edit: `src/lib/ai.server.ts` (flash model, 90s race, prompt-aware trimming)
-- Edit: `src/components/folders/FolderEditor.tsx` (enqueue + poll UX in `runNow`)
-- Edit: `src/routes/api/public/hooks/run-folder-summaries.ts` (enqueue instead of inline run)
+### Out of scope
 
-## Out of scope
+- No DB migration (free-form text columns already in place).
+- No changes to AI classification, sync pipeline, or realtime.
+- The mobile/touch right-click path keeps working — drawer is responsive by default.
 
-- No changes to filter/classify pipeline or inbox sync.
-- No changes to the Factory folder's prompt or category rules.
+### Open question
+
+Should the drawer also let the user add **multiple conditions** (e.g. subject *starts with* "Invoice" AND domain = `stripe.com`) in one step, or keep it strictly single-condition for now? My recommendation: ship single-condition first to match today's mental model, and add an "Add condition" button later if you ask for it.
