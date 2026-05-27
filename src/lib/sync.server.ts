@@ -1022,7 +1022,7 @@ async function syncSinceHistoryLocked(
     // parseMessage when the queued job runs.
     for (const op of labelOps) {
       if (seenAdded.has(op.messageId)) continue;
-      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed); }
+      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed, labelToFolder); }
       catch (e) { logError("sync.apply_label_change_failed", { account_id: accountId, gmail_message_id: op.messageId, added: op.added, removed: op.removed }, e); }
     }
 
