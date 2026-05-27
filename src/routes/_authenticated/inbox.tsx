@@ -8,6 +8,7 @@ import {
   moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
   loadOlderFromGmail, searchGmailAndIngest, resyncMessage, addFolderRule,
   reclassifyEmails, suggestFolderFromSelection, createFolderAndAssign,
+  reconcileInboxFromGmail,
 } from "@/lib/gmail.functions";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
