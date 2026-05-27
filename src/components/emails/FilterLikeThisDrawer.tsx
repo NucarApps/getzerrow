@@ -21,6 +21,8 @@ type Folder = { id: string; name: string; color: string };
 type Field = "from" | "domain" | "subject";
 type Op = "contains" | "equals" | "starts_with";
 
+const INBOX_OVERRIDE = "__inbox__";
+
 export function FilterLikeThisDrawer({
   open,
   onOpenChange,
