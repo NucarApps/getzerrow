@@ -71,7 +71,7 @@ export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): b
 function matchesScope(row: EmailRow, scope: string): boolean {
   if (scope === "all_mail") return true;
   if (scope === "all" || scope === "inbox") {
-    return Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
+    return row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
   }
   if (scope === "archived") return row.is_archived === true;
   if (scope === "no_rules") {
