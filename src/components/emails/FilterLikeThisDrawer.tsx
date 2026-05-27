@@ -51,6 +51,7 @@ export function FilterLikeThisDrawer({
   const [op, setOp] = useState<Op>("starts_with");
   const [folderId, setFolderId] = useState<string | null>(null);
   const [applyToPast, setApplyToPast] = useState(false);
+  const [archivePast, setArchivePast] = useState(false);
   const [count, setCount] = useState<number | null>(null);
   const [countLoading, setCountLoading] = useState(false);
   const [saving, setSaving] = useState(false);
