@@ -1902,17 +1902,17 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
           return null;
         }
 
-        const CONCURRENCY = 8;
+        // Low concurrency + stop early on rate-limit to stay within Gmail's
+        // per-minute quota (~250 calls/user/min, shared with sync).
+        const CONCURRENCY = 3;
         let i = 0;
+        let stop = false;
         async function worker() {
-          while (i < todo.length) {
+          while (i < todo.length && !stop) {
             const id = todo[i++];
             try {
-              // Full fetch so body_text/body_html land too — these messages
-              // bypass the normal sync pipeline that would otherwise repair them.
               const raw = await getMessage(accountId, id);
               const p = parseMessage(raw);
-              // Pick a folder if Gmail has one of our linked labels.
               let folder_id: string | null = null;
               let classified_by: string = "gmail_search_ingest";
               let classification_reason: string | null = "Pulled from Gmail via search";
@@ -1925,7 +1925,6 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                   break;
                 }
               }
-              // Fall back to user's folder rules.
               if (!folder_id) {
                 const m = matchFilters({
                   from_addr: p.from_addr ?? "",
@@ -1969,6 +1968,11 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
               if (!error) totalIngested++;
               else logError("gmail.search_ingest.insert_failed", { account_id: accountId, gmail_message_id: id }, error);
             } catch (e) {
+              if (isRateLimit(e)) {
+                rateLimited = true;
+                stop = true;
+                break;
+              }
               logError("gmail.search_ingest.one_failed", { account_id: accountId, gmail_message_id: id }, e);
             }
           }
@@ -1979,6 +1983,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
         if (/missing OAuth tokens|reauthorize|invalid_grant/i.test(msg)) {
           reauthFailures++;
         }
+        if (isRateLimit(e)) rateLimited = true;
         logError("gmail.search_ingest.account_failed", { account_id: accountId }, e);
       }
     }
@@ -1986,7 +1991,12 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     if (reauthFailures > 0 && reauthFailures === accountIds.length) {
       return { ingested: 0, found: 0, reason: "reauth_required" as const, hit_gmail_message_ids: [] as string[] };
     }
-    return { ingested: totalIngested, found: totalFound, hit_gmail_message_ids: hitGmailMessageIds };
+    return {
+      ingested: totalIngested,
+      found: totalFound,
+      hit_gmail_message_ids: hitGmailMessageIds,
+      ...(rateLimited ? { reason: "rate_limited" as const } : {}),
+    };
   });
 
 
