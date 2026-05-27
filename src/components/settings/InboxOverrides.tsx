@@ -47,7 +47,7 @@ const OP_OPTS: Array<{ value: string; label: string }> = [
   { value: "regex", label: "matches regex" },
 ];
 
-export function InboxOverrides() {
+export function InboxOverrides({ accountId, accountEmail }: { accountId: string | null; accountEmail: string | null }) {
   const qc = useQueryClient();
   const [matchType, setMatchType] = useState<"email" | "domain">("email");
   const [value, setValue] = useState("");
@@ -57,11 +57,13 @@ export function InboxOverrides() {
   const [search, setSearch] = useState("");
 
   const q = useQuery({
-    queryKey: ["inbox-overrides"],
+    queryKey: ["inbox-overrides", accountId],
+    enabled: !!accountId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("inbox_overrides")
         .select("*")
+        .eq("gmail_account_id", accountId!)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as Override[];
@@ -83,6 +85,7 @@ export function InboxOverrides() {
   async function add() {
     const v = value.trim().toLowerCase();
     if (!v) return;
+    if (!accountId) { toast.error("Pick a Gmail account first"); return; }
     if (matchType === "email" && !v.includes("@")) {
       toast.error("Enter a full email address");
       return;
@@ -96,18 +99,18 @@ export function InboxOverrides() {
     if (!u.user) { setBusy(false); toast.error("Not signed in"); return; }
     const { error } = await supabase
       .from("inbox_overrides")
-      .insert({ user_id: u.user.id, match_type: matchType, value: v });
+      .insert({ user_id: u.user.id, gmail_account_id: accountId, match_type: matchType, value: v });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
     setValue("");
     toast.success(`Added ${v} to your inbox list`);
-    qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+    qc.invalidateQueries({ queryKey: ["inbox-overrides", accountId] });
   }
 
   async function remove(id: string) {
     const { error } = await supabase.from("inbox_overrides").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
-    qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+    qc.invalidateQueries({ queryKey: ["inbox-overrides", accountId] });
     qc.invalidateQueries({ queryKey: ["inbox-override-exceptions"] });
   }
 
@@ -130,7 +133,8 @@ export function InboxOverrides() {
           <h2 className="font-display text-2xl">Always send to inbox</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          Senders on this list skip folder rules and AI sorting. New mail from them stays in your inbox.
+          Senders on this list skip folder rules and AI sorting for
+          {accountEmail ? <> <span className="font-medium text-foreground">{accountEmail}</span></> : " this inbox"}.
           Add exceptions to let specific emails (e.g. subject starts with "RE: Daily Reports") be sorted normally.
         </p>
       </div>
