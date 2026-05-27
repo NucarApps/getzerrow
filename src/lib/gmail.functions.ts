@@ -2974,3 +2974,276 @@ export const setFolderAutoRelearn = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// Scan Gmail for messages matching this folder's existing rules and ingest
+// any that aren't already in the local DB. Translates folder_filters (and any
+// filter_tree leaves) into Gmail query strings; messages land via the usual
+// matchFilters path so they get classified into this folder on insert.
+export const scanGmailForFolder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string; months?: 1 | 3 | 6 | 12 }) =>
+    z.object({
+      folder_id: z.string().uuid(),
+      months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const months = data.months ?? 6;
+
+    // Load folder + verify ownership.
+    const { data: folder, error: fErr } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, gmail_account_id, name, filter_tree")
+      .eq("id", data.folder_id)
+      .maybeSingle();
+    if (fErr || !folder) throw new Error("Folder not found");
+    if (folder.user_id !== context.userId) throw new Error("Not authorized for this folder");
+    const accountId = folder.gmail_account_id;
+    const folderName = folder.name;
+
+    // Collect rules from folder_filters + filter_tree leaves.
+    type Cond = { field: string; op: string; value: string };
+    const conds: Cond[] = [];
+    const { data: ff } = await supabaseAdmin
+      .from("folder_filters")
+      .select("field, op, value")
+      .eq("folder_id", folder.id);
+    for (const f of (ff ?? []) as Cond[]) {
+      if (f.op === "not_contains" || f.op === "not_equals") continue;
+      conds.push(f);
+    }
+    function walk(node: unknown) {
+      if (!node || typeof node !== "object") return;
+      const n = node as { type?: string; children?: unknown[]; field?: string; op?: string; value?: string };
+      if (n.type === "group" && Array.isArray(n.children)) {
+        for (const c of n.children) walk(c);
+      } else if (n.type === "cond" && n.field && n.op && typeof n.value === "string") {
+        if (n.op === "not_contains" || n.op === "not_equals") return;
+        conds.push({ field: n.field, op: n.op, value: n.value });
+      }
+    }
+    walk(folder.filter_tree);
+
+    // Translate each rule into a Gmail query string. Skip ones Gmail can't express.
+    let skippedRegex = 0;
+    function quote(v: string): string {
+      const trimmed = v.trim();
+      if (!trimmed) return "";
+      return /[\s:]/.test(trimmed) ? `"${trimmed.replace(/"/g, '\\"')}"` : trimmed;
+    }
+    const queries = new Set<string>();
+    for (const c of conds) {
+      const v = c.value.trim();
+      if (!v) continue;
+      if (c.op === "regex") { skippedRegex++; continue; }
+      let q: string | null = null;
+      switch (c.field) {
+        case "domain": q = `from:${v.replace(/^@/, "")}`; break;
+        case "from":   q = `from:${quote(v)}`; break;
+        case "to":     q = `to:${quote(v)}`; break;
+        case "cc":     q = `cc:${quote(v)}`; break;
+        case "subject":q = `subject:${quote(v)}`; break;
+        case "body":   q = quote(v); break;
+        case "list_id":q = `list:${quote(v)}`; break;
+        case "has_attachment": q = v === "true" ? "has:attachment" : null; break;
+        default: q = null;
+      }
+      if (q) queries.add(`${q} newer_than:${months}m`);
+      if (queries.size >= 20) break;
+    }
+
+    if (queries.size === 0) {
+      return {
+        ok: false as const,
+        ingested: 0, found: 0, queries_run: 0, skipped_regex: skippedRegex,
+        truncated: false,
+        reason: "no_translatable_rules" as const,
+      };
+    }
+
+    // Folder-rule cache for matchFilters (so messages get classified into the right folder).
+    const { data: folders } = await supabaseAdmin
+      .from("folders")
+      .select("id, gmail_label_id")
+      .eq("user_id", context.userId)
+      .eq("gmail_account_id", accountId);
+    const labelToFolder = new Map<string, string>();
+    for (const f of folders ?? []) {
+      if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
+    }
+    const folderIds = (folders ?? []).map((f) => f.id);
+    type FF = { id: string; folder_id: string; field: string; op: string; value: string };
+    let filters: FF[] = [];
+    if (folderIds.length > 0) {
+      const { data: allFF } = await supabaseAdmin
+        .from("folder_filters")
+        .select("id, folder_id, field, op, value")
+        .in("folder_id", folderIds);
+      filters = (allFF ?? []) as FF[];
+    }
+    function matchFilters(parsed: {
+      from_addr: string; from_name: string; to_addrs: string;
+      subject: string; body_text: string; has_attachment: boolean;
+    }): { folder_id: string; field: string; value: string } | null {
+      for (const f of filters) {
+        const v = (f.value || "").toLowerCase();
+        const fieldVal = (() => {
+          switch (f.field) {
+            case "from": return `${parsed.from_addr} ${parsed.from_name}`.toLowerCase();
+            case "to": return (parsed.to_addrs || "").toLowerCase();
+            case "subject": return (parsed.subject || "").toLowerCase();
+            case "body": return (parsed.body_text || "").toLowerCase();
+            case "domain": return (parsed.from_addr.split("@")[1] || "").toLowerCase();
+            case "has_attachment": return parsed.has_attachment ? "true" : "false";
+            default: return "";
+          }
+        })();
+        const hit = (() => {
+          switch (f.op) {
+            case "contains": return fieldVal.includes(v);
+            case "equals": return fieldVal === v;
+            case "regex":
+              try { return new RegExp(f.value, "i").test(fieldVal); } catch { return false; }
+            default: return false;
+          }
+        })();
+        if (hit) return { folder_id: f.folder_id, field: f.field, value: v };
+      }
+      return null;
+    }
+
+    const HARD_INGEST_CAP = 1000;
+    const PAGE = 100;
+    const MAX_PAGES = 5;
+
+    let totalFound = 0;
+    let totalIngested = 0;
+    let truncated = false;
+    let queriesRun = 0;
+    let reauthFailed = false;
+
+    outer:
+    for (const q of queries) {
+      queriesRun++;
+      try {
+        // Page through results for this query.
+        const hits: Array<{ id: string; threadId: string }> = [];
+        let pageToken: string | undefined;
+        for (let p = 0; p < MAX_PAGES; p++) {
+          const list = await listMessages(accountId, { q, maxResults: PAGE, pageToken });
+          for (const m of list.messages ?? []) hits.push(m);
+          pageToken = list.nextPageToken;
+          if (!pageToken) break;
+        }
+        if (hits.length === 0) continue;
+
+        const ids = Array.from(new Set(hits.map((m) => m.id)));
+        totalFound += ids.length;
+
+        // Skip ones already in the DB.
+        const { data: existing } = await supabaseAdmin
+          .from("emails")
+          .select("gmail_message_id")
+          .eq("user_id", context.userId)
+          .in("gmail_message_id", ids);
+        const known = new Set((existing ?? []).map((r) => r.gmail_message_id));
+        const todo = ids.filter((id) => !known.has(id));
+
+        const CONCURRENCY = 8;
+        let i = 0;
+        async function worker() {
+          while (i < todo.length) {
+            if (totalIngested >= HARD_INGEST_CAP) { truncated = true; return; }
+            const id = todo[i++];
+            try {
+              const raw = await getMessage(accountId, id);
+              const p = parseMessage(raw);
+              let folder_id: string | null = null;
+              let classified_by: string = "gmail_search_ingest";
+              let classification_reason: string | null = `Scanned for folder: ${folderName}`;
+              for (const lbl of p.raw_labels ?? []) {
+                const fid = labelToFolder.get(lbl);
+                if (fid) {
+                  folder_id = fid;
+                  classified_by = "gmail_label";
+                  classification_reason = "Matched Gmail label";
+                  break;
+                }
+              }
+              if (!folder_id) {
+                const m = matchFilters({
+                  from_addr: p.from_addr ?? "",
+                  from_name: p.from_name ?? "",
+                  to_addrs: p.to_addrs ?? "",
+                  subject: p.subject ?? "",
+                  body_text: p.body_text ?? "",
+                  has_attachment: !!p.has_attachment,
+                });
+                if (m) {
+                  folder_id = m.folder_id;
+                  classified_by = m.field === "domain" ? "domain_rule" : "filter";
+                  classification_reason =
+                    m.field === "domain"
+                      ? `Domain rule: ${m.value}`
+                      : `Folder rule: ${m.field} ${m.value}`;
+                }
+              }
+              const { error } = await supabaseAdmin.from("emails").upsert({
+                user_id: context.userId,
+                gmail_account_id: accountId,
+                gmail_message_id: p.gmail_message_id,
+                thread_id: p.thread_id,
+                from_addr: p.from_addr,
+                from_name: p.from_name,
+                to_addrs: p.to_addrs,
+                subject: p.subject,
+                snippet: p.snippet,
+                body_text: p.body_text,
+                body_html: p.body_html,
+                received_at: p.received_at,
+                is_read: p.is_read,
+                is_archived: !(p.raw_labels ?? []).includes("INBOX"),
+                has_attachment: p.has_attachment,
+                raw_labels: p.raw_labels,
+                folder_id,
+                classified_by,
+                ai_confidence: folder_id ? 1 : null,
+                classification_reason,
+              }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
+              if (!error) totalIngested++;
+              else logError("gmail.scan_folder.insert_failed", { account_id: accountId, gmail_message_id: id }, error);
+            } catch (e) {
+              logError("gmail.scan_folder.one_failed", { account_id: accountId, gmail_message_id: id }, e);
+            }
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
+        if (totalIngested >= HARD_INGEST_CAP) { truncated = true; break outer; }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/missing OAuth tokens|reauthorize|invalid_grant/i.test(msg)) {
+          reauthFailed = true;
+          break;
+        }
+        logError("gmail.scan_folder.query_failed", { account_id: accountId, folder_id: folder.id, q }, e);
+      }
+    }
+
+    if (reauthFailed && totalIngested === 0) {
+      return {
+        ok: false as const,
+        ingested: 0, found: totalFound, queries_run: queriesRun,
+        skipped_regex: skippedRegex, truncated: false,
+        reason: "reauth_required" as const,
+      };
+    }
+
+    return {
+      ok: true as const,
+      ingested: totalIngested,
+      found: totalFound,
+      queries_run: queriesRun,
+      skipped_regex: skippedRegex,
+      truncated,
+    };
+  });

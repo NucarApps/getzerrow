@@ -1,45 +1,53 @@
-# Fix free-text inbox search to actually filter (and search body)
+# Per-folder "Scan Gmail for matches" button
 
-## What's wrong
+Add a button in each folder's edit dialog that scans the user's Gmail for any messages matching the folder's existing rules (domains, senders, subjects) and pulls them into Zerrow so they get classified into this folder.
 
-When Tony types `indeed` into the inbox search:
+## Where it lives
 
-1. `inbox.tsx` loads the 2000 most-recent emails for his account (no body columns — bodies are encrypted at rest, and `LIST_COLUMNS` doesn't include them).
-2. The local scorer (`filtered` useMemo, lines 525‑558) checks the term against `fromName + fromAddr + subject + snippet` only — it skips `to_addrs` and (necessarily) the body.
-3. Critically, for free-text queries it **does not filter** — it just sorts hits first, then concatenates every non-hit after. So the user sees every recent email mixed in.
-4. `searchGmailAndIngest` does run server-side and pulls body-match messages from Gmail into the local DB, but the UI has no way to mark those as hits — their `snippet` may not contain "indeed", so they fall into the non-hit tail too.
+In `src/components/folders/FolderEditor.tsx`, alongside the existing filter editor — a section labeled **"Scan Gmail for matches"** with:
+- A months window selector (default 6, options 1 / 3 / 6 / 12).
+- A "Scan now" button.
+- Result line ("Found N messages, added M new") and a spinner while running.
 
-Result: Tony's search looks broken because the list is the entire recent inbox, with "indeed" matches at the top and a long tail of unrelated mail below.
+Folder-level placement (not Settings) so the action is contextual to the folder whose rules drive the search.
 
-## Fix
+## Server function: `scanGmailForFolder`
 
-### 1. Free-text branch should filter, not sort
+New `createServerFn` in `src/lib/gmail.functions.ts`:
 
-In `src/routes/_authenticated/inbox.tsx`, the `filtered` useMemo:
-- Add `to_addrs` to the metadata haystack (currently missing).
-- Change the free-text path to **return only `hit` rows** (drop the concat-non-hits trick). The "metadata hits first, others after" ordering is what's confusing Tony — when he searches, he should see matches, not everything.
+Input: `{ folder_id: string; months?: 1 | 3 | 6 | 12 }`.
 
-### 2. Surface Gmail's body-match hits to the client
+Steps:
+1. Load the folder, its `folder_filters`, and (when present) walk `filter_tree` to collect leaf conditions.
+2. Translate each rule into a Gmail query string:
+   - `field: "domain"` → `from:@<value>`
+   - `field: "from"` → `from:<value>`
+   - `field: "to"` → `to:<value>`
+   - `field: "subject"` → `subject:"<value>"` (use `subject:<value>` for `starts_with`/`contains`)
+   - `field: "body"` → raw value as free text
+   - `field: "has_attachment"` (true) → `has:attachment`
+   - Wrap each with `newer_than:<months>m`.
+   - Skip `regex` rules (Gmail can't express them) and surface a count in the result.
+3. For each query, run the same Gmail listing + thread-expansion + upsert pipeline that `searchGmailAndIngest` already uses. Extract that pipeline into a shared helper (`ingestGmailQuery(accountId, userId, query, { maxPages })`) so both fns reuse it — that helper already runs `matchFilters` against folder rules at upsert time, so freshly-ingested messages land in this folder automatically.
+4. Tally totals across queries: `{ scanned, ingested, queries_run, skipped_regex }`.
 
-So a row that matched on body in Gmail still shows up even though its snippet doesn't contain the term:
+Caps: max 5 pages × 100 results per query, max 20 queries per scan, hard ceiling 1000 ingested per call. Above that, return `truncated: true` so the UI can suggest re-running.
 
-- `src/lib/gmail.functions.ts` → `searchGmailAndIngest`: in addition to `ingested` / `found`, return `hit_gmail_message_ids: string[]` — the union of `allMessageIds` per account (already computed; just expose it).
-- `inbox.tsx`: store the latest Gmail hit set in state, keyed by query string. In the `filtered` useMemo, treat a row as a hit when **either** the metadata haystack matches the free-text term **or** its `gmail_message_id` is in the current query's Gmail hit set.
-- Clear / replace the hit set whenever the query changes or Gmail search returns. While Gmail search is in flight (or below the 3-char threshold), fall back to metadata-only matching — same as today.
+## UI wiring
 
-### 3. Operator queries (`from:` / `to:`) unchanged
-
-Those already filter correctly server-side. Don't touch that path.
-
-## What this gives the user
-
-Typing `indeed` will return:
-- Anything whose sender name/address, recipient, or subject contains "indeed" (now including `to_addrs`).
-- Anything Gmail matched on full body — those rows get ingested by `searchGmailAndIngest` and recognized via the hit-id set.
-- Nothing else. No more "long tail of unrelated mail" mixed in.
+- `useServerFn(scanGmailForFolder)` + `useMutation`.
+- On success: toast `Scanned N messages, added M new` (or `No new matches found`), invalidate `["emails"]` and `["emails-summary"]`.
+- On error: toast the message.
+- Button disabled when there are zero translatable rules (show a hint: "Add a domain, sender, or subject rule first").
 
 ## Out of scope
 
-- Server-side body search (bodies are encrypted; this is why we delegate body matching to Gmail).
-- Changing operator-query behavior.
-- Search UI / debounce timing.
+- Background job with progress polling — start synchronous; if it proves too slow we can move to `backfill_jobs` later.
+- Re-classifying already-ingested local rows (that's what the existing `applyFilterRuleToPast` per-rule action does).
+- Settings-level "scan everything" button.
+- Touching the AI rule or `learned_profile` — this is deterministic filter-based pulling only.
+
+## Files touched
+
+- `src/lib/gmail.functions.ts` — extract shared `ingestGmailQuery` helper from `searchGmailAndIngest`; add `scanGmailForFolder`.
+- `src/components/folders/FolderEditor.tsx` — new "Scan Gmail for matches" section + mutation.
