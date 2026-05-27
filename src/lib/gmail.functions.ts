@@ -1538,6 +1538,7 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
         if (!existing) {
           await supabaseAdmin.from("inbox_overrides").insert({
             user_id: context.userId,
+            gmail_account_id: email.gmail_account_id,
             match_type: data.add_override,
             value,
           });
@@ -1556,27 +1557,32 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
 
 export const addInboxOverride = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { value: string; match_type: "email" | "domain"; reprocess_past?: boolean }) =>
+  .inputValidator((d: { value: string; match_type: "email" | "domain"; reprocess_past?: boolean; gmail_account_id?: string }) =>
     z.object({
       value: z.string().min(1).max(320),
       match_type: z.enum(["email", "domain"]),
       reprocess_past: z.boolean().optional(),
+      gmail_account_id: z.string().uuid().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const value = data.value.trim().toLowerCase().replace(/^@/, "");
     if (!value) throw new Error("Empty value");
-    const { data: existing } = await supabaseAdmin
+    let existQ = supabaseAdmin
       .from("inbox_overrides")
       .select("id")
       .eq("user_id", context.userId)
       .eq("match_type", data.match_type)
-      .eq("value", value)
-      .maybeSingle();
+      .eq("value", value);
+    existQ = data.gmail_account_id
+      ? existQ.eq("gmail_account_id", data.gmail_account_id)
+      : existQ.is("gmail_account_id", null);
+    const { data: existing } = await existQ.maybeSingle();
     const already = !!existing;
     if (!already) {
       const { error } = await supabaseAdmin.from("inbox_overrides").insert({
         user_id: context.userId,
+        gmail_account_id: data.gmail_account_id ?? null,
         match_type: data.match_type,
         value,
       });
