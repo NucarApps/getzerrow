@@ -180,3 +180,57 @@ export async function runFolderSummary(scheduleId: string): Promise<{ ok: boolea
     return { ok: false, error: msg };
   }
 }
+
+/**
+ * Enqueue a digest run as a background job. Returns the job id so the caller
+ * can poll for completion instead of blocking on the model.
+ */
+export async function enqueueFolderSummaryJob(args: { scheduleId: string; userId: string }): Promise<{ jobId: string }> {
+  const { data, error } = await supabaseAdmin
+    .from("folder_summary_jobs")
+    .insert({ schedule_id: args.scheduleId, user_id: args.userId, status: "pending" })
+    .select("id")
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Failed to enqueue digest job");
+  return { jobId: data.id };
+}
+
+/**
+ * Claim and process up to `limit` pending digest jobs. Called from the
+ * background cron worker.
+ */
+export async function processFolderSummaryJobs(limit: number): Promise<{ processed: number; succeeded: number; failed: number }> {
+  const { data: claimed, error } = await supabaseAdmin.rpc("claim_folder_summary_jobs", { p_limit: limit });
+  if (error) throw new Error(error.message);
+  const jobs = (claimed ?? []) as Array<{ id: string; schedule_id: string; user_id: string }>;
+
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const job of jobs) {
+    try {
+      const r = await runFolderSummary(job.schedule_id);
+      await supabaseAdmin.from("folder_summary_jobs").update({
+        status: r.ok ? "done" : "failed",
+        error: r.ok ? null : (r.error ?? "Unknown error").slice(0, 500),
+        emails_count: r.emails ?? null,
+        finished_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", job.id);
+      if (r.ok) succeeded++; else failed++;
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      console.error(`processFolderSummaryJobs ${job.id} crashed:`, msg);
+      await supabaseAdmin.from("folder_summary_jobs").update({
+        status: "failed",
+        error: msg.slice(0, 500),
+        finished_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", job.id);
+      failed++;
+    }
+  }
+
+  return { processed: jobs.length, succeeded, failed };
+}
+
