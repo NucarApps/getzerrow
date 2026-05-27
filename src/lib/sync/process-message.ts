@@ -293,6 +293,7 @@ export async function processGmailMessage(
       if (Object.keys(patch).length > 0) {
         await supabaseAdmin.from("emails").update(patch).eq("id", inserted.id);
       }
+    }
   } else if (classifiedBy === "inbox_override" && !inInbox) {
     // Always-inbox override matched but Gmail had already archived the
     // message (no INBOX label at sync time, e.g. a Gmail-side filter).
@@ -312,7 +313,6 @@ export async function processGmailMessage(
       is_archived: false,
       raw_labels: nextLabels,
     }).eq("id", inserted.id);
-  }
   }
 
   return { id: inserted.id, email_id: inserted.id, folder_id, parsed };
