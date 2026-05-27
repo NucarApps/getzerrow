@@ -39,6 +39,7 @@ import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
+import { AssistantPanel } from "@/components/inbox/AssistantPanel";
 import { PullToRefresh } from "@/components/inbox/PullToRefresh";
 import { useIsMobile } from "@/hooks/use-mobile";
 import DOMPurify from "dompurify";
