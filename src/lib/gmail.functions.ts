@@ -1798,7 +1798,12 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     let q: string;
     if (looksLikeEmail) q = `from:${raw}`;
     else if (looksLikeDomain) q = `from:${raw.replace(/^@/, "")}`;
-    else q = raw;
+    else if (/\s/.test(raw) && !/["()]/.test(raw)) {
+      // Multi-word free text (e.g. "rob morris"): wrap as an exact phrase so
+      // Gmail doesn't return messages that match only one of the tokens
+      // somewhere in their body.
+      q = `"${raw}"`;
+    } else q = raw;
 
     let totalIngested = 0;
     let totalFound = 0;

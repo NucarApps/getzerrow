@@ -570,9 +570,20 @@ function InboxPage() {
         if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
         if (rest) {
           const hay = `${fromName} ${fromAddr} ${toAddrs} ${subject} ${snippet}`;
-          const metaHit = hay.includes(rest);
-          const bodyHit = gmailHits && e.gmail_message_id ? gmailHits.has(e.gmail_message_id) : false;
-          if (!metaHit && !bodyHit) hit = false;
+          // Require every whitespace-separated token to appear in the
+          // visible metadata. This keeps name searches like "rob morris"
+          // from surfacing rows that only matched somewhere in the body via
+          // Gmail's broad full-text search.
+          const tokens = rest.split(/\s+/).filter(Boolean);
+          const allTokensInMeta = tokens.every((t) => hay.includes(t));
+          const phraseInMeta = hay.includes(rest);
+          const gmailPhraseHit =
+            tokens.length > 1 &&
+            !!gmailHits &&
+            !!e.gmail_message_id &&
+            gmailHits.has(e.gmail_message_id) &&
+            phraseInMeta;
+          if (!allTokensInMeta && !gmailPhraseHit) hit = false;
         }
         return { e, hit };
       });
