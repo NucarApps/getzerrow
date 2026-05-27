@@ -1,50 +1,59 @@
 ## Problem
 
-When you sent an assistant message, the server log shows:
+Server logs show the assistant is failing with:
 
 ```
-proposeAssistantChanges failed No object generated: response did not match schema.
+proposeAssistantChanges first attempt failed Model did not call propose_changes
+proposeAssistantChanges retry failed Model did not call propose_changes
 ```
 
-The AI gateway did reply — but the model's JSON didn't match our strict schema (discriminated union of 4 action types, each with required fields like `why`, `field`, `op`, etc.), so the AI SDK threw. Our catch block then showed the generic "Sorry, I couldn't reach the AI right now" message, which made it look like an outage.
+Your message ("Anything inside the signatures folder that starts with 'completed for signature' I want to go to notifications") is a valid request — it should become a `subject starts_with "completed for signature"` filter on the **Notifications** folder (and optionally remove any competing filter on **Signatures**).
+
+But we force Gemini to call the `propose_changes` tool with `toolChoice: { type: "tool", toolName: "propose_changes" }`. When Gemini is uncertain (no emails are selected, it wants to ask a clarifying question, or the wording is ambiguous to it) it sometimes refuses the forced tool call entirely. Our code then throws, the retry does the same thing, and the user sees the generic "I had trouble understanding that" fallback — which hides whatever the model actually wanted to say.
 
 ## Fix
 
-Make the assistant resilient to model output quirks and surface real errors instead of pretending it's offline.
+Edit only `src/lib/ai-assistant.server.ts`. Three changes:
 
-### 1. Switch to tool-calling for structured output
+### 1. Stop forcing the tool call
 
-`src/lib/ai-assistant.server.ts` — replace `generateText` + `Output.object(...)` with `generateText` + `tools` and `toolChoice`. Tool-calling is the pattern the project's own knowledge file recommends for structured output and is much more reliable on Gemini than JSON-schema response mode for discriminated unions.
+Change `toolChoice` from forced to `"auto"`. The model can still call `propose_changes`, but is also allowed to reply with plain text.
 
-### 2. Loosen the schema so the model can't fail validation on trivia
+### 2. Capture text when the tool isn't called
 
-- Make `why` optional with a default of `""` (was required, max 200).
-- Make `reply` and `clarifying_question` optional with `""` defaults.
-- Keep the discriminated union of action types, but allow `actions: []` (already allowed).
+In `callModel`, if the tool didn't fire, fall back to the model's `text` output and return it as a proposal with:
+- `reply` = the model's text (if it looks like a confirmation/summary), OR
+- `clarifying_question` = the model's text (if it ends with a question mark), and
+- `actions: []`.
 
-### 3. Use the project's default chat model
+This means the user always sees what the model actually said, instead of our canned fallback.
 
-Switch from `google/gemini-2.5-flash` to `google/gemini-3-flash-preview` (the project-wide default per the AI Gateway knowledge), which handles tool-calling more cleanly.
+### 3. Strengthen the prompt for filter-style requests
 
-### 4. Better error surface
+Update `buildPrompt` so the guidance explicitly covers this case:
 
-In the catch block in `proposeAssistantChanges`:
-- Still log the full error server-side.
-- Return a `clarifying_question` that distinguishes the real failure modes the user might hit:
-  - 402 → "AI credits are exhausted for this workspace."
-  - 429 → "Too many requests right now, try again in a moment."
-  - schema/parse error → "I had trouble understanding that — could you rephrase what you'd like me to do?"
-  - other → current generic message.
+- "If the user describes a routing rule by sender/domain/subject (with or without selected emails), propose `add_filter` on the target folder. You do NOT need a selected email to add a filter."
+- "If a user says 'anything that starts with X goes to folder Y', use `add_filter` with `field: subject, op: starts_with, value: X` on folder Y. If a folder currently has a filter that would catch the same mail and route it elsewhere, also propose `remove_filter` for that filter."
+- Reaffirm: "Prefer calling the `propose_changes` tool. Only reply in plain text if you genuinely need to ask a clarifying question and cannot express it via `clarifying_question`."
 
-### 5. (Optional) One automatic retry
+### 4. Keep the existing error surface
 
-If the first call throws a schema/no-object error, retry once with a slightly stronger system reminder ("Respond ONLY by calling the propose_changes tool."). Single retry, no loop.
+The 402 / 429 / generic catch block stays. The single retry stays too, but is now only meaningful for true gateway errors — not for "model declined to call tool", because we now handle that gracefully via the text fallback.
 
 ## Files touched
 
-- `src/lib/ai-assistant.server.ts` — only file changed. No DB, no UI, no other server fns.
+- `src/lib/ai-assistant.server.ts` — only file changed. No UI, no DB, no other server fns, no changes to the `AssistantProposal` shape the client consumes.
+
+## Expected result for your example
+
+For "Anything inside the signatures folder that starts with 'completed for signature' I want to go to notifications" the model should now propose:
+
+- `add_filter` on **Notifications**: `subject starts_with "completed for signature"`
+- optionally `remove_filter` on the Signatures filter that currently catches it
+
+…with a short `reply` summarizing what it will do, and you approve in the panel as usual.
 
 ## Out of scope
 
-- No changes to the AssistantPanel UI, the apply path, or the proposal data shape that the client consumes (`reply`, `clarifying_question`, `actions[]` stay identical).
-- No changes to `ai-assistant.functions.ts`.
+- No model swap, no schema rework, no changes to `ai-assistant.functions.ts` or `AssistantPanel.tsx`.
+- No changes to the apply path.
