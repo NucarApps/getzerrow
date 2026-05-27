@@ -158,6 +158,7 @@ export async function processGmailMessage(
   // 2) Classify. If this throws or times out, the email is already in
   //    Inbox.
   let folder_id: string | null = null;
+  let classifiedBy: string = "pending";
   try {
     const _tAi = performance.now();
     const c = await classifyParsedEmail(parsed, userId, accountId, {
