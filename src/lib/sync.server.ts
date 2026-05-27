@@ -445,29 +445,13 @@ async function applyLabelChange(
   added: string[],
   removed: string[],
 ) {
-  const patch: { raw_labels?: string[]; is_archived?: boolean; is_read?: boolean } = {};
-  if (currentLabels) {
-    // currentLabels is the snapshot from the history event payload, taken
-    // BEFORE the added/removed deltas were applied. Replay the deltas so
-    // raw_labels reflects the post-event state — otherwise rows archived
-    // in Gmail (labelsRemoved: ['INBOX']) keep INBOX in raw_labels and
-    // the Inbox view (which checks raw_labels.includes('INBOX')) keeps
-    // showing them.
-    const next = new Set(currentLabels);
-    for (const l of removed) next.delete(l);
-    for (const l of added) next.add(l);
-    patch.raw_labels = Array.from(next);
-  }
-  if (removed.includes("INBOX")) patch.is_archived = true;
-  if (added.includes("INBOX")) patch.is_archived = false;
-  if (removed.includes("UNREAD")) patch.is_read = true;
-  if (added.includes("UNREAD")) patch.is_read = false;
   if (added.includes("TRASH")) {
     await supabaseAdmin.from("emails").delete()
       .eq("gmail_account_id", accountId)
       .eq("gmail_message_id", messageId);
     return;
   }
+  const patch = computeLabelPatch(currentLabels, added, removed);
   if (Object.keys(patch).length === 0) return;
   await supabaseAdmin.from("emails").update(patch)
     .eq("gmail_account_id", accountId)
