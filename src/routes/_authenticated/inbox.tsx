@@ -295,6 +295,42 @@ function parseSearchQuery(input: string): { from: string | null; to: string | nu
   return { from, to, rest };
 }
 
+// Bounded Levenshtein — returns true if edit distance between a and b is ≤ max.
+function withinEditDistance(a: string, b: string, max: number): boolean {
+  if (Math.abs(a.length - b.length) > max) return false;
+  const m = a.length, n = b.length;
+  if (m === 0) return n <= max;
+  if (n === 0) return m <= max;
+  let prev = new Array(n + 1);
+  let curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    for (let j = 1; j <= n; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      if (curr[j] < rowMin) rowMin = curr[j];
+    }
+    if (rowMin > max) return false;
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n] <= max;
+}
+
+function tokenFuzzyMatches(token: string, words: string[]): boolean {
+  if (token.length < 3) {
+    // Too short for fuzzy — require exact substring somewhere.
+    return words.some((w) => w.includes(token));
+  }
+  const maxDist = token.length >= 5 ? 2 : 1;
+  for (const w of words) {
+    if (w.includes(token) || w.startsWith(token)) return true;
+    if (Math.abs(w.length - token.length) <= maxDist && withinEditDistance(w, token, maxDist)) return true;
+  }
+  return false;
+}
+
 
 function InboxPage() {
   const qc = useQueryClient();
@@ -570,20 +606,13 @@ function InboxPage() {
         if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
         if (rest) {
           const hay = `${fromName} ${fromAddr} ${toAddrs} ${subject} ${snippet}`;
-          // Require every whitespace-separated token to appear in the
-          // visible metadata. This keeps name searches like "rob morris"
-          // from surfacing rows that only matched somewhere in the body via
-          // Gmail's broad full-text search.
+          const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
+          // Every token must fuzzy-match some word in the visible metadata
+          // (substring, prefix, or small edit distance). Lets "rob" match
+          // "Robb" / "Robert" without surfacing unrelated rows.
           const tokens = rest.split(/\s+/).filter(Boolean);
-          const allTokensInMeta = tokens.every((t) => hay.includes(t));
-          const phraseInMeta = hay.includes(rest);
-          const gmailPhraseHit =
-            tokens.length > 1 &&
-            !!gmailHits &&
-            !!e.gmail_message_id &&
-            gmailHits.has(e.gmail_message_id) &&
-            phraseInMeta;
-          if (!allTokensInMeta && !gmailPhraseHit) hit = false;
+          const allTokensMatch = tokens.every((t) => tokenFuzzyMatches(t, words));
+          if (!allTokensMatch) hit = false;
         }
         return { e, hit };
       });
