@@ -84,7 +84,13 @@ export async function loadAccountContext(accountId: string, userId: string): Pro
       .select("*")
       .eq("gmail_account_id", accountId)
       .order("priority", { ascending: false }),
-    supabaseAdmin.from("inbox_overrides").select("id, match_type, value").eq("user_id", userId),
+    // Overrides scoped to this account (or unscoped legacy rows where
+    // gmail_account_id IS NULL — those apply to every account).
+    supabaseAdmin
+      .from("inbox_overrides")
+      .select("id, match_type, value")
+      .eq("user_id", userId)
+      .or(`gmail_account_id.eq.${accountId},gmail_account_id.is.null`),
     supabaseAdmin.from("inbox_override_exceptions").select("override_id, field, op, value").eq("user_id", userId),
   ]);
 
