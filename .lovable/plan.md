@@ -1,59 +1,103 @@
 ## Problem
 
-Server logs show the assistant is failing with:
+Even after relaxing `toolChoice` to `"auto"` and adding a text fallback, the preview sandbox log shows:
 
 ```
 proposeAssistantChanges first attempt failed Model did not call propose_changes
 proposeAssistantChanges retry failed Model did not call propose_changes
 ```
 
-Your message ("Anything inside the signatures folder that starts with 'completed for signature' I want to go to notifications") is a valid request — it should become a `subject starts_with "completed for signature"` filter on the **Notifications** folder (and optionally remove any competing filter on **Signatures**).
+For your message:
+> "Can you help me set up a filter inside of the signatures folder that if the subject starts with 'completed', I want it to go to notifications?"
 
-But we force Gemini to call the `propose_changes` tool with `toolChoice: { type: "tool", toolName: "propose_changes" }`. When Gemini is uncertain (no emails are selected, it wants to ask a clarifying question, or the wording is ambiguous to it) it sometimes refuses the forced tool call entirely. Our code then throws, the retry does the same thing, and the user sees the generic "I had trouble understanding that" fallback — which hides whatever the model actually wanted to say.
+That's a clean, unambiguous request. Gemini should easily produce `add_filter` on Notifications with `field: subject, op: starts_with, value: "completed"`. Instead it returns **nothing** — no tool call, no text — which means the AI SDK + OpenAI-compatible adapter + Gemini combination is choking on our tool schema.
+
+The root cause is the schema shape: a Zod `discriminatedUnion` of 4 action types nested inside an array, inside an object, sent through the `openai-compatible` provider. Gemini's structured-output path through OpenAI-compatible JSON Schema is unreliable for discriminated unions. When it can't satisfy the schema cleanly, it bails with an empty response instead of best-effort.
 
 ## Fix
 
-Edit only `src/lib/ai-assistant.server.ts`. Three changes:
+Stop going through the AI SDK's `generateText` + `tool()` abstraction for this call, and instead call the Lovable AI Gateway directly with hand-written OpenAI-style function-calling JSON Schema. This is the pattern the project's own AI Gateway knowledge file recommends for structured extraction, and it gives us full control over the schema shape Gemini sees.
 
-### 1. Stop forcing the tool call
+Edit only `src/lib/ai-assistant.server.ts`.
 
-Change `toolChoice` from forced to `"auto"`. The model can still call `propose_changes`, but is also allowed to reply with plain text.
+### 1. Replace `callModel` with a direct `fetch` to the gateway
 
-### 2. Capture text when the tool isn't called
+```ts
+fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.LOVABLE_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "google/gemini-3-flash-preview",
+    messages: [{ role: "user", content: prompt }],
+    tools: [{ type: "function", function: { name: "propose_changes", parameters: { ... } } }],
+    tool_choice: { type: "function", function: { name: "propose_changes" } },
+  }),
+});
+```
 
-In `callModel`, if the tool didn't fire, fall back to the model's `text` output and return it as a proposal with:
-- `reply` = the model's text (if it looks like a confirmation/summary), OR
-- `clarifying_question` = the model's text (if it ends with a question mark), and
-- `actions: []`.
+Then parse `choices[0].message.tool_calls[0].function.arguments` (JSON-parse the string) and validate it with the existing Zod schema. If `tool_calls` is missing, fall back to `choices[0].message.content` as the text-mode reply (already handled in the current code path).
 
-This means the user always sees what the model actually said, instead of our canned fallback.
+### 2. Flatten the action schema
 
-### 3. Strengthen the prompt for filter-style requests
+Gemini handles flat object schemas much better than discriminated unions. Replace the `discriminatedUnion` with a single `action` object that has all possible fields optional, plus a required `type` enum:
 
-Update `buildPrompt` so the guidance explicitly covers this case:
+```json
+{
+  "type": "object",
+  "properties": {
+    "reply": { "type": "string" },
+    "clarifying_question": { "type": "string" },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["move_email","add_filter","remove_filter","update_folder_rule"] },
+          "email_id": { "type": "string" },
+          "to_folder_id": { "type": "string" },
+          "folder_id": { "type": "string" },
+          "filter_id": { "type": "string" },
+          "field": { "type": "string", "enum": ["from","domain","subject"] },
+          "op": { "type": "string", "enum": ["contains","equals","starts_with"] },
+          "value": { "type": "string" },
+          "ai_rule": { "type": "string" },
+          "why": { "type": "string" }
+        },
+        "required": ["type"]
+      }
+    }
+  },
+  "required": ["actions"]
+}
+```
 
-- "If the user describes a routing rule by sender/domain/subject (with or without selected emails), propose `add_filter` on the target folder. You do NOT need a selected email to add a filter."
-- "If a user says 'anything that starts with X goes to folder Y', use `add_filter` with `field: subject, op: starts_with, value: X` on folder Y. If a folder currently has a filter that would catch the same mail and route it elsewhere, also propose `remove_filter` for that filter."
-- Reaffirm: "Prefer calling the `propose_changes` tool. Only reply in plain text if you genuinely need to ask a clarifying question and cannot express it via `clarifying_question`."
+Then, after parsing, run each action through the existing Zod `actionSchema` (the strict discriminated union) to drop invalid ones. The model gets a permissive schema; we still enforce strictness on our side before returning.
 
-### 4. Keep the existing error surface
+### 3. Keep the rest
 
-The 402 / 429 / generic catch block stays. The single retry stays too, but is now only meaningful for true gateway errors — not for "model declined to call tool", because we now handle that gracefully via the text fallback.
+- `proposalSchema` Zod still used for final validation of `reply`, `clarifying_question`, and per-action shapes.
+- Prompt content stays as-is (already improved last turn).
+- Retry-once and 402/429 error surfacing stay.
+- Text fallback (when no tool call but text present) stays.
+
+### 4. Drop the now-unused AI SDK imports
+
+`generateText` and `tool` from `"ai"` and `createLovableAiGatewayProvider` from `./ai-gateway` are no longer needed by this file. Remove only from this file (other files still use them).
+
+## Why this will work
+
+- Direct fetch + OpenAI-style function calling is exactly the pattern in the project's `connecting-to-ai-models` knowledge file under "Extracting structured output". Gemini through the Lovable gateway is well-tested with this shape.
+- Flat object schemas are reliably honored by Gemini; discriminated unions are not.
+- We keep strict validation in Zod after parsing, so the apply step is still safe.
 
 ## Files touched
 
-- `src/lib/ai-assistant.server.ts` — only file changed. No UI, no DB, no other server fns, no changes to the `AssistantProposal` shape the client consumes.
-
-## Expected result for your example
-
-For "Anything inside the signatures folder that starts with 'completed for signature' I want to go to notifications" the model should now propose:
-
-- `add_filter` on **Notifications**: `subject starts_with "completed for signature"`
-- optionally `remove_filter` on the Signatures filter that currently catches it
-
-…with a short `reply` summarizing what it will do, and you approve in the panel as usual.
+- `src/lib/ai-assistant.server.ts` — only file changed. No UI, no DB, no schema changes, no changes to `ai-assistant.functions.ts` or `AssistantPanel.tsx`. The `AssistantProposal` shape returned to callers is unchanged.
 
 ## Out of scope
 
-- No model swap, no schema rework, no changes to `ai-assistant.functions.ts` or `AssistantPanel.tsx`.
-- No changes to the apply path.
+- No model swap.
+- No changes to apply path or action validation in `ai-assistant.functions.ts` (that file already validates with its own discriminated union — perfect second line of defense).
