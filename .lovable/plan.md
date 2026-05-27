@@ -1,18 +1,40 @@
 ## Problem
 
-In the All Mail view, right-clicking an email that isn't archived and has no folder (just doesn't carry the `INBOX` label) shows no way to put it back into the inbox. The "Move to Inbox" context menu item in `src/routes/_authenticated/inbox.tsx` is currently gated on `e.is_archived || e.folder_id`, which misses this case.
+When a message arrives without Gmail's `INBOX` label (e.g. a Gmail-side filter auto-archived it, or it was synced via backfill) but matches an Always-inbox override, classify sets `classified_by = "inbox_override"` — but `process-message` never re-adds the `INBOX` label. The row stays `is_archived=true` with no `INBOX` in `raw_labels`, so the Zerrow Inbox view (which filters by `raw_labels.includes("INBOX") AND is_archived=false`) hides it.
 
-## Change
+Confirmed in the DB: every Mark Zarif row has `classified_by="inbox_override"`, `classification_reason='Always-inbox: domain "nucar.com"'`, yet `is_archived=true` and `raw_labels` lacks `INBOX`.
 
-In `src/routes/_authenticated/inbox.tsx`, broaden the gate so "Move to Inbox" appears whenever the row is not currently in the inbox:
+## Fix
 
-- Replace the condition `(e.is_archived || e.folder_id)` around the "Move to Inbox" `ContextMenuItem` with a check that also covers "no INBOX label": `!(e.raw_labels ?? []).includes("INBOX") || e.is_archived || e.folder_id`.
-- The existing `onSelect` already calls `moveInboxFn` (the `moveToInbox` server function) which adds `INBOX` back via Gmail and clears `folder_id`/`is_archived` — no server change needed.
-- Optimistic update already uses `withInbox(x.raw_labels)`, so the row reappears in the Inbox view immediately.
+### 1. `src/lib/sync/process-message.ts` — enforce inbox on override match
 
-No other views or business logic change. The "Move to folder → Inbox (no folder)" sub-item stays as-is.
+After classify returns, if `c.classified_by === "inbox_override"` and `!inInbox`:
+- Call `modifyMessage(accountId, gmailId, ["INBOX"], [])` to add the `INBOX` label in Gmail (best-effort, wrapped in try/catch with `logError("process_message.inbox_override_restore_failed", …)`).
+- Patch the local row: `is_archived = false` and `raw_labels = [...(parsed.raw_labels ?? []), "INBOX"]` (deduped).
+
+Place this branch alongside (mutually exclusive with) the existing `folder_id` side-effects block — when override wins, `folder_id` is null so the existing branch is skipped, and the new branch runs instead.
+
+### 2. One-shot repair migration
+
+Backfill the rows already stuck in this state:
+
+```sql
+UPDATE public.emails
+SET is_archived = false,
+    raw_labels = (
+      SELECT array_agg(DISTINCT l)
+      FROM unnest(coalesce(raw_labels, ARRAY[]::text[]) || ARRAY['INBOX']) AS l
+    ),
+    classification_reason = classification_reason || ' (restored to inbox)'
+WHERE classified_by = 'inbox_override'
+  AND is_archived = true
+  AND NOT ('INBOX' = ANY(coalesce(raw_labels, ARRAY[]::text[])));
+```
+
+This only touches override-classified, archived rows missing INBOX — exactly the bug's footprint. It does not re-add the label in Gmail for historical rows (would be 1 API call per row × many rows); the next user action (or natural sync) reconciles. If desired we can layer Gmail-side restoration later, but the immediate visibility issue is fixed by the local patch.
 
 ## Out of scope
 
-- No changes to server functions, sync pipeline, or Gmail label handling.
-- No UI changes outside this context menu.
+- No change to override exception logic, folder-beats-override logic, or AI classification.
+- No change to the Inbox view filter (`raw_labels.includes("INBOX")`).
+- No mass Gmail API call for historical rows in the repair migration.

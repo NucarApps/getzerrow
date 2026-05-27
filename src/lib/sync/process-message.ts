@@ -158,6 +158,7 @@ export async function processGmailMessage(
   // 2) Classify. If this throws or times out, the email is already in
   //    Inbox.
   let folder_id: string | null = null;
+  let classifiedBy: string = "pending";
   try {
     const _tAi = performance.now();
     const c = await classifyParsedEmail(parsed, userId, accountId, {
@@ -166,6 +167,7 @@ export async function processGmailMessage(
     });
     if (t) t.ai += performance.now() - _tAi;
     folder_id = c.folder_id ?? null;
+    classifiedBy = c.classified_by;
     const _tDb = performance.now();
     await supabaseAdmin.from("emails").update({
       folder_id,
@@ -292,6 +294,25 @@ export async function processGmailMessage(
         await supabaseAdmin.from("emails").update(patch).eq("id", inserted.id);
       }
     }
+  } else if (classifiedBy === "inbox_override" && !inInbox) {
+    // Always-inbox override matched but Gmail had already archived the
+    // message (no INBOX label at sync time, e.g. a Gmail-side filter).
+    // Restore INBOX both in Gmail and locally so the row shows up in the
+    // Zerrow inbox view.
+    try {
+      await modifyMessage(accountId, gmailId, ["INBOX"], []);
+    } catch (e) {
+      logError("process_message.inbox_override_restore_failed", {
+        account_id: accountId,
+        gmail_message_id: gmailId,
+        email_id: inserted.id,
+      }, e);
+    }
+    const nextLabels = Array.from(new Set([...(parsed.raw_labels ?? []), "INBOX"]));
+    await supabaseAdmin.from("emails").update({
+      is_archived: false,
+      raw_labels: nextLabels,
+    }).eq("id", inserted.id);
   }
 
   return { id: inserted.id, email_id: inserted.id, folder_id, parsed };
