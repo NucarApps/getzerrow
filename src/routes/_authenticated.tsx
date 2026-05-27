@@ -196,11 +196,15 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     const m = new Map<string, number>();
     let total = 0;
     for (const e of emailsQ.data ?? []) {
+      // "In inbox" == Gmail says the INBOX label is on the message.
+      // Using is_archived alone drifts when our local flag and Gmail's
+      // label state diverge (e.g. an archive call we didn't see).
+      const inInbox = (e.raw_labels ?? []).includes("INBOX");
       if (e.folder_id) {
         if (!e.is_read) m.set(e.folder_id, (m.get(e.folder_id) ?? 0) + 1);
-        if (!e.is_read && !e.is_archived) total++;
+        if (!e.is_read && inInbox) total++;
       } else {
-        if (!e.is_read && !e.is_archived) total++;
+        if (!e.is_read && inInbox) total++;
         const hasUserLabel = e.raw_labels?.some((l) => l.startsWith("Label_")) ?? false;
         if (!hasUserLabel) m.set("no_rules", (m.get("no_rules") ?? 0) + 1);
       }

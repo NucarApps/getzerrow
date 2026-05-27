@@ -631,8 +631,28 @@ export const archiveEmail = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
-    try { await modifyMessage(email.gmail_account_id, email.gmail_message_id, [], ["INBOX"]); } catch (e) { logError("gmail.archive.modify_failed", { email_id: data.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e); }
-    await supabaseAdmin.from("emails").update({ is_archived: true }).eq("id", data.id);
+    // Talk to Gmail first — if it fails, surface the error so we don't drift
+    // out of sync with the canonical mailbox state.
+    try {
+      await modifyMessage(email.gmail_account_id, email.gmail_message_id, [], ["INBOX"]);
+    } catch (e) {
+      logError("gmail.archive.modify_failed", { email_id: data.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e);
+      throw new Error((e as Error)?.message || "Failed to archive in Gmail");
+    }
+    // Pull the current raw_labels so we can strip INBOX in the same UPDATE
+    // the realtime subscribers will see. Without this, the cached list keeps
+    // raw_labels including INBOX → rowBelongsInList stays true → the row
+    // never leaves the Inbox view until a full refetch.
+    const { data: row } = await supabaseAdmin
+      .from("emails")
+      .select("raw_labels")
+      .eq("id", data.id)
+      .maybeSingle();
+    const nextLabels = (row?.raw_labels ?? []).filter((l: string) => l !== "INBOX");
+    await supabaseAdmin
+      .from("emails")
+      .update({ is_archived: true, raw_labels: nextLabels })
+      .eq("id", data.id);
     return { ok: true };
   });
 
@@ -1051,6 +1071,21 @@ async function performMove(
     ? `Re-categorized from "${from.name}" to "${to.name}"`
     : `Moved to "${to.name}" manually`);
 
+  // Read current raw_labels so we can mirror Gmail's label change in the same
+  // UPDATE — keeps the realtime subscribers' inbox view in sync immediately.
+  const { data: cur } = await supabaseAdmin
+    .from("emails")
+    .select("raw_labels")
+    .eq("id", email.id)
+    .maybeSingle();
+  const curLabels = (cur?.raw_labels ?? []) as string[];
+  const fromLabelId = from?.gmail_label_id ?? null;
+  const toLabelId = to.gmail_label_id ?? null;
+  const nextLabels = Array.from(new Set([
+    ...curLabels.filter((l) => l !== "INBOX" && (!fromLabelId || l !== fromLabelId)),
+    ...(toLabelId ? [toLabelId] : []),
+  ]));
+
   const { error: upErr } = await supabaseAdmin
     .from("emails")
     .update({
@@ -1059,14 +1094,15 @@ async function performMove(
       ai_confidence: 1,
       classification_reason: reason,
       is_archived: true,
+      raw_labels: nextLabels,
     })
     .eq("id", email.id);
   if (upErr) return { ok: false, error: upErr.message };
 
   // Always remove INBOX so the row leaves the user's Inbox view, mirroring
   // Gmail's "Move to label" behavior. Swap folder labels if defined.
-  const addLabels = to.gmail_label_id ? [to.gmail_label_id] : [];
-  const removeLabels = ["INBOX", ...(from?.gmail_label_id ? [from.gmail_label_id] : [])];
+  const addLabels = toLabelId ? [toLabelId] : [];
+  const removeLabels = ["INBOX", ...(fromLabelId ? [fromLabelId] : [])];
   try {
     await modifyMessage(
       email.gmail_account_id,
