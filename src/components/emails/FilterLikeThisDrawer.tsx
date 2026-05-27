@@ -128,24 +128,26 @@ export function FilterLikeThisDrawer({
       if (isInboxMode) {
         const matchType: "email" | "domain" = field === "domain" ? "domain" : "email";
         const r = await addOverrideFn({ data: { value: value.trim(), match_type: matchType } });
-        let pastSummary = "";
-        if (applyToPast) {
-          try {
-            const past = await stripLabelFn({ data: { value: value.trim(), match_type: matchType } });
-            if (past.stripped_count > 0) pastSummary = ` · cleaned ${past.stripped_count} past`;
-          } catch (e: any) {
-            toast.error(`Override saved, but cleaning past emails failed: ${e.message}`);
-          }
-        }
-        toast.success(
-          r.already
-            ? `Already on the inbox list${pastSummary}`
-            : `Future mail kept in inbox${pastSummary}`,
-        );
+        toast.success(r.already ? "Already on the inbox list" : "Future mail kept in inbox");
         qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
         qc.invalidateQueries({ queryKey: ["emails"] });
         qc.invalidateQueries({ queryKey: ["emails-summary"] });
         onOpenChange(false);
+        if (applyToPast) {
+          const trimmed = value.trim();
+          void stripLabelFn({ data: { value: trimmed, match_type: matchType } })
+            .then((past) => {
+              if (past.stripped_count > 0) {
+                toast.success(`Cleaned ${past.stripped_count} past email${past.stripped_count === 1 ? "" : "s"}`);
+                qc.invalidateQueries({ queryKey: ["emails"] });
+                qc.invalidateQueries({ queryKey: ["emails-summary"] });
+              }
+            })
+            .catch((e: unknown) => {
+              const msg = e instanceof Error ? e.message : String(e);
+              toast.error(`Override saved, but cleaning past emails failed: ${msg}`);
+            });
+        }
         return;
       }
 
@@ -153,37 +155,51 @@ export function FilterLikeThisDrawer({
         data: { folder_id: folderId, field, value: value.trim(), op },
       });
       const folderName = folders.find((f) => f.id === folderId)?.name ?? "folder";
-      let pastSummary = "";
-      if (applyToPast) {
-        try {
-          const past = await applyPastFn({
-            data: {
-              account_id: accountId,
-              to_folder_id: folderId,
-              field,
-              op,
-              value: value.trim(),
-              archive: archivePast,
-            },
-          });
-          if (past.moved > 0) pastSummary = ` · ${past.moved} past moved`;
-          if (past.archived > 0) pastSummary += ` · ${past.archived} archived`;
-          if (past.failed > 0) pastSummary += ` · ${past.failed} failed`;
-        } catch (e: any) {
-          toast.error(`Rule saved, but moving past emails failed: ${e.message}`);
-        }
-      }
       toast.success(
         r.already
-          ? `Rule already routed to ${folderName}${pastSummary}`
-          : `Future matches → ${folderName}${pastSummary}`,
+          ? `Rule already routed to ${folderName}`
+          : `Future matches → ${folderName}`,
       );
       qc.invalidateQueries({ queryKey: ["folder-filters"] });
       qc.invalidateQueries({ queryKey: ["emails"] });
       qc.invalidateQueries({ queryKey: ["emails-summary"] });
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e.message);
+
+      if (applyToPast) {
+        const trimmed = value.trim();
+        const currentField = field;
+        const currentOp = op;
+        const archive = archivePast;
+        const targetFolderId = folderId;
+        void applyPastFn({
+          data: {
+            account_id: accountId,
+            to_folder_id: targetFolderId,
+            field: currentField,
+            op: currentOp,
+            value: trimmed,
+            archive,
+          },
+        })
+          .then((past) => {
+            const parts: string[] = [];
+            if (past.moved > 0) parts.push(`${past.moved} moved`);
+            if (past.archived > 0) parts.push(`${past.archived} archived`);
+            if (past.failed > 0) parts.push(`${past.failed} failed`);
+            if (parts.length > 0) {
+              toast.success(`Past emails → ${folderName}: ${parts.join(" · ")}`);
+              qc.invalidateQueries({ queryKey: ["emails"] });
+              qc.invalidateQueries({ queryKey: ["emails-summary"] });
+            }
+          })
+          .catch((e: unknown) => {
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.error(`Rule saved, but moving past emails failed: ${msg}`);
+          });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
