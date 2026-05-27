@@ -1,40 +1,32 @@
 ## Problem
 
-When a message arrives without Gmail's `INBOX` label (e.g. a Gmail-side filter auto-archived it, or it was synced via backfill) but matches an Always-inbox override, classify sets `classified_by = "inbox_override"` — but `process-message` never re-adds the `INBOX` label. The row stays `is_archived=true` with no `INBOX` in `raw_labels`, so the Zerrow Inbox view (which filters by `raw_labels.includes("INBOX") AND is_archived=false`) hides it.
+The previous repair migration restored `INBOX` and `is_archived=false` on every historical row classified as `inbox_override`. That backfilled 3,747 old messages — many archived by Gmail or by the user long ago — back into the Zerrow inbox view, making it look like "all mail" instead of a curated inbox.
 
-Confirmed in the DB: every Mark Zarif row has `classified_by="inbox_override"`, `classification_reason='Always-inbox: domain "nucar.com"'`, yet `is_archived=true` and `raw_labels` lacks `INBOX`.
+The runtime fix in `process-message.ts` (restore INBOX only for newly arrived override matches) is correct and should stay. The mistake was applying the same logic retroactively to history.
 
 ## Fix
 
-### 1. `src/lib/sync/process-message.ts` — enforce inbox on override match
+### 1. Reversal migration
 
-After classify returns, if `c.classified_by === "inbox_override"` and `!inInbox`:
-- Call `modifyMessage(accountId, gmailId, ["INBOX"], [])` to add the `INBOX` label in Gmail (best-effort, wrapped in try/catch with `logError("process_message.inbox_override_restore_failed", …)`).
-- Patch the local row: `is_archived = false` and `raw_labels = [...(parsed.raw_labels ?? []), "INBOX"]` (deduped).
-
-Place this branch alongside (mutually exclusive with) the existing `folder_id` side-effects block — when override wins, `folder_id` is null so the existing branch is skipped, and the new branch runs instead.
-
-### 2. One-shot repair migration
-
-Backfill the rows already stuck in this state:
+Undo only the rows the previous migration touched. They are uniquely identified by the suffix appended to `classification_reason`:
 
 ```sql
 UPDATE public.emails
-SET is_archived = false,
-    raw_labels = (
-      SELECT array_agg(DISTINCT l)
-      FROM unnest(coalesce(raw_labels, ARRAY[]::text[]) || ARRAY['INBOX']) AS l
-    ),
-    classification_reason = classification_reason || ' (restored to inbox)'
-WHERE classified_by = 'inbox_override'
-  AND is_archived = true
-  AND NOT ('INBOX' = ANY(coalesce(raw_labels, ARRAY[]::text[])));
+SET is_archived = true,
+    raw_labels  = array_remove(raw_labels, 'INBOX'),
+    classification_reason = regexp_replace(
+      classification_reason, ' \(restored to inbox\)$', ''
+    )
+WHERE classification_reason LIKE '% (restored to inbox)';
 ```
 
-This only touches override-classified, archived rows missing INBOX — exactly the bug's footprint. It does not re-add the label in Gmail for historical rows (would be 1 API call per row × many rows); the next user action (or natural sync) reconciles. If desired we can layer Gmail-side restoration later, but the immediate visibility issue is fixed by the local patch.
+No Gmail API calls. We do not strip the `INBOX` label in Gmail because the original Gmail state already had it removed — restoring the local row to "archived" simply matches Gmail again.
 
-## Out of scope
+### 2. Keep the forward-looking behavior
 
-- No change to override exception logic, folder-beats-override logic, or AI classification.
-- No change to the Inbox view filter (`raw_labels.includes("INBOX")`).
-- No mass Gmail API call for historical rows in the repair migration.
+Leave `src/lib/sync/process-message.ts` as is. New incoming messages that match an "Always-inbox" override and arrive without `INBOX` (Gmail-side filter) still get restored — both in Gmail and locally — at process time. That was the original Mark Zarif bug; the runtime fix solves it without dragging history along.
+
+### Out of scope
+
+- No changes to override matching, folder logic, AI classification, or the inbox view filter.
+- No bulk Gmail API mutations on historical rows.
