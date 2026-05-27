@@ -107,12 +107,48 @@ export function FilterLikeThisDrawer({
     };
   }, [open, accountId, field, op, value, countFn]);
 
-  const canSave = !!folderId && value.trim().length > 0 && !saving;
+  const isInboxMode = folderId === INBOX_OVERRIDE;
+  // Inbox overrides only support sender or domain matches; auto-switch from subject.
+  useEffect(() => {
+    if (!isInboxMode) return;
+    if (field === "subject") {
+      const nextField: Field = fromAddr ? "from" : domain ? "domain" : "from";
+      setField(nextField);
+      setValue(nextField === "from" ? fromAddr ?? "" : domain ?? "");
+    }
+    if (op !== "equals") setOp("equals");
+  }, [isInboxMode, field, op, fromAddr, domain]);
+
+  const canSave = !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
 
   async function handleSave() {
     if (!folderId || !value.trim() || !accountId) return;
     setSaving(true);
     try {
+      if (isInboxMode) {
+        const matchType: "email" | "domain" = field === "domain" ? "domain" : "email";
+        const r = await addOverrideFn({ data: { value: value.trim(), match_type: matchType } });
+        let pastSummary = "";
+        if (applyToPast) {
+          try {
+            const past = await stripLabelFn({ data: { value: value.trim(), match_type: matchType } });
+            if (past.stripped_count > 0) pastSummary = ` · cleaned ${past.stripped_count} past`;
+          } catch (e: any) {
+            toast.error(`Override saved, but cleaning past emails failed: ${e.message}`);
+          }
+        }
+        toast.success(
+          r.already
+            ? `Already on the inbox list${pastSummary}`
+            : `Future mail kept in inbox${pastSummary}`,
+        );
+        qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
+        qc.invalidateQueries({ queryKey: ["emails"] });
+        qc.invalidateQueries({ queryKey: ["emails-summary"] });
+        onOpenChange(false);
+        return;
+      }
+
       const r = await addRuleFn({
         data: { folder_id: folderId, field, value: value.trim(), op },
       });
