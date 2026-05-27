@@ -36,6 +36,7 @@ import { useFolderSelection } from "@/lib/folder-selection";
 import { useAccountSelection } from "@/lib/account-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
+import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
 import { PullToRefresh } from "@/components/inbox/PullToRefresh";
