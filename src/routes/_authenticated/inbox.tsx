@@ -605,7 +605,10 @@ function InboxPage() {
         if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle))) hit = false;
         if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
         if (rest) {
-          const hay = `${fromName} ${fromAddr} ${toAddrs} ${subject} ${snippet}`;
+          // Exclude to_addrs from the haystack — it almost always contains
+          // the current user's own name/email, which would make every
+          // received email match a search for the user's own name.
+          const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
           const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
           // Every token must fuzzy-match some word in the visible metadata
           // (substring, prefix, or small edit distance). Lets "rob" match

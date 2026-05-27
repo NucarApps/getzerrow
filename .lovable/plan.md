@@ -1,22 +1,36 @@
-Add fuzzy matching so "rob" finds "Robb", "Robert", etc.
+## Plan
 
-1. Local fuzzy token matching (inbox.tsx)
-   - For each free-text token, match against any word in `from_name`/`from_addr`/`to_addrs`/`subject`/`snippet` if:
-     - the word contains the token as a substring (current behavior), OR
-     - the word starts with the token (prefix match — "rob" → "robb", "robert"), OR
-     - Levenshtein distance ≤ 1 for tokens 3–4 chars, ≤ 2 for tokens 5+ chars (handles "rob"↔"robb", "morris"↔"moris").
-   - Tokens shorter than 3 chars stay as exact substring to avoid noise.
-   - Keep the "all tokens must match" rule so unrelated rows still get filtered out.
+Fix the inbox search so `Robb Moris` / `rob morris` can still find close name matches, but does not let broad Gmail/body hits like Donald Gaskins through.
 
-2. Broaden Gmail query for short name searches (gmail.functions.ts)
-   - For multi-word free text, instead of an exact `"rob morris"` phrase (which Gmail won't match against "Robb Morris"), send each token as a separate required term: `rob morris` (default AND), letting Gmail's own tokenizer/stemming widen the net.
-   - Drop the forced quote-wrapping added in the last change; rely on the stricter local fuzzy filter to discard true noise.
-   - Keep `from:email` and `from:domain` shortcuts unchanged.
+### What I found
 
-3. Verify
-   - Search "rob morris" and confirm Robb Morris results appear and unrelated rows stay out.
-   - Confirm single-token searches still work and rate-limit/reconnect UI is intact.
+- The current local filter requires every search token to fuzzy-match visible metadata, but the fuzzy logic is too permissive:
+  - `moris` is allowed edit distance 2, so it can match `gaskins`.
+  - Gmail also returns broad full-text/body matches, then the UI fetches those rows by message ID.
+- That combination explains why Donald Gaskins appears even though the visible result has nothing to do with Robb Morris.
 
-Technical notes
-- Levenshtein implemented inline (small DP, ~15 lines) — no new dependency.
-- Tokenization splits metadata on `[^a-z0-9]+` for word-level fuzzy compare.
+### Changes
+
+1. **Make fuzzy matching stricter for names**
+   - Keep prefix/substring behavior so `rob` can match `robb`.
+   - Only allow edit-distance fuzzy matches between similarly sized words.
+   - Lower longer-token tolerance so `moris` can match `morris`, but not unrelated words like `gaskins`.
+
+2. **Score whole-query relevance, not just per-token existence**
+   - Prefer matches from sender name/email and subject over snippet-only matches.
+   - Require multi-word people searches to match strongly in visible fields before showing the row.
+
+3. **Prevent broad Gmail hit IDs from bypassing relevance**
+   - Continue using Gmail to discover older/archived messages.
+   - Keep the UI-side filter as the final gate so Gmail body-only noise is discarded.
+
+4. **Add focused unit coverage for the fuzzy helper**
+   - Cover `rob` → `robb`.
+   - Cover `moris` → `morris`.
+   - Cover `moris` not matching `gaskins`.
+   - Cover `rob moris` not matching Donald Gaskins-style metadata.
+
+### Verification
+
+- Run the relevant tests for the new search utility.
+- Verify the code path still keeps existing Gmail search behavior for older mail, while the visible inbox list only shows relevant results.
