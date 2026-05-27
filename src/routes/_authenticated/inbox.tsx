@@ -308,14 +308,12 @@ function InboxPage() {
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [folderRulePrompt, setFolderRulePrompt] = useState<null | {
-    emailId: string;
-    fromFolderId: string | null;
+  const [filterPrompt, setFilterPrompt] = useState<null | {
     fromAddr: string | null;
-    domain: string | null;
-    toFolder: Folder;
-    mode: "sender" | "domain";
+    subject: string | null;
+    currentFolderId: string | null;
   }>(null);
+
 
   const { activeAccountId } = useAccountSelection();
   const accountId = activeAccountId;
