@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
-  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
+  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox,
   loadOlderFromGmail, searchGmailAndIngest, resyncMessage,
   reclassifyEmails, suggestFolderFromSelection, createFolderAndAssign,
   reconcileInboxFromGmail,
