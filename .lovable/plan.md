@@ -1,24 +1,17 @@
-## Plan
+Plan:
 
-Fix the inbox so it mirrors Gmail’s Inbox state instead of relying on a stale local `is_archived` flag.
+1. **Fix the auto-archive pipeline**
+   - Update the message-processing side-effect logic so when a folder has `auto_archive` or `hide_from_inbox`, Zerrow removes `INBOX` from the email’s local `raw_labels` at the same time it marks the row archived.
+   - Only apply the local archive state after the Gmail label change succeeds, so Zerrow stays aligned with Gmail instead of showing processed-but-still-inbox rows.
 
-### 1. Make archive mutations update the same state the inbox reads
-- Update `archiveEmail` to patch `raw_labels` by removing `INBOX`, not just set `is_archived: true`.
-- If the Gmail archive API call fails, throw the error instead of silently marking the local row archived, so Zerrow cannot drift from Gmail.
-- Apply the same `raw_labels` sync to manual “move to folder” paths and folder auto-archive side effects where needed.
+2. **Repair the already-stuck rows**
+   - Add a safe repair path for existing emails that are already assigned to auto-archive folders, already marked archived, but still have `INBOX` in `raw_labels`.
+   - This will specifically clear the stale local Inbox label for messages like the StoneEagle Reports rows once Gmail has archived them.
 
-### 2. Make list/count logic use Gmail’s canonical Inbox label
-- Keep the inbox list filtered by `raw_labels contains INBOX`.
-- Update the top Inbox unread count to count unread rows with `raw_labels` containing `INBOX`, not unread rows where `is_archived = false`.
-- This fixes rows like the one currently visible in your network data: `is_archived: true` but `raw_labels: ["...", "INBOX"]`, which means Gmail still considers it in Inbox.
+3. **Protect the behavior with tests**
+   - Add or update regression tests around processed folder emails so an archived/report-classified message cannot continue to belong to the Inbox view because of stale `raw_labels`.
 
-### 3. Strengthen realtime cache patching
-- Change realtime `UPDATE` handling so when a row no longer belongs in the current Inbox view, it is removed from the cached list immediately.
-- Ensure optimistic archive actions remove rows from all current Inbox caches, not just flip fields in place.
-
-### 4. Add regression tests
-- Add/adjust unit tests for archive-label behavior and realtime list membership so `INBOX` label state remains the source of truth.
-
-### Verification
-- Run the relevant Vitest tests for realtime/list behavior.
-- Verify in the preview that archiving an Inbox email removes it immediately and that after refetch it stays removed unless Gmail still has the `INBOX` label.
+Technical details:
+- The current Inbox view correctly uses Gmail’s `INBOX` label as the source of truth.
+- The bug is in `process-message.ts`: folder auto-archive sets `is_archived: true` but does not update `raw_labels`, so realtime and refetches still see `INBOX` and keep the message visible.
+- The screenshot matches database state: the StoneEagle rows are classified into `Reports` and `is_archived=true`, but their `raw_labels` still include `INBOX`.

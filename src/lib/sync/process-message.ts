@@ -243,8 +243,15 @@ export async function processGmailMessage(
         forward_attempts?: number;
         forward_last_error?: string | null;
         forward_next_retry_at?: string | null;
+        raw_labels?: string[];
       } = {};
-      if (inInbox && effectiveArchive) patch.is_archived = true;
+      if (inInbox && effectiveArchive) {
+        patch.is_archived = true;
+        // Strip INBOX locally so the realtime subscribers immediately drop
+        // the row from the Inbox view. Without this, raw_labels keeps INBOX
+        // and the message sits in the inbox until a reconcile pass.
+        patch.raw_labels = (parsed.raw_labels ?? []).filter((l) => l !== "INBOX");
+      }
       if (folder.auto_mark_read) patch.is_read = true;
       if (folder.snooze_hours && folder.snooze_hours > 0) {
         patch.snoozed_until = new Date(Date.now() + folder.snooze_hours * 3600_000).toISOString();
