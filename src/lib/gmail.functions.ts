@@ -2583,6 +2583,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     field: "from" | "domain" | "subject";
     op: "contains" | "equals" | "starts_with";
     value: string;
+    archive?: boolean;
   }) =>
     z.object({
       account_id: z.string().uuid(),
@@ -2590,6 +2591,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
       field: z.enum(["from", "domain", "subject"]),
       op: z.enum(["contains", "equals", "starts_with"]),
       value: z.string().min(1).max(998),
+      archive: z.boolean().optional().default(false),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -2601,7 +2603,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     if (!folder || folder.user_id !== context.userId) throw new Error("Folder not found");
 
     const raw = data.value.trim();
-    if (!raw) return { moved: 0, failed: 0 };
+    if (!raw) return { moved: 0, failed: 0, archived: 0 };
     const v = data.field === "subject" ? raw : raw.toLowerCase().replace(/^@/, "");
     const esc = v.replace(/[\\%_]/g, (m) => `\\${m}`);
 
@@ -2626,7 +2628,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
 
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    if (!rows || rows.length === 0) return { moved: 0, failed: 0 };
+    if (!rows || rows.length === 0) return { moved: 0, failed: 0, archived: 0 };
 
     const classifiedBy = data.field === "domain" ? "domain_rule" : "filter";
     const reason =
@@ -2638,20 +2640,47 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
 
     let moved = 0;
     let failed = 0;
+    const movedIds: string[] = [];
     for (const row of rows) {
       const r = await performMove(context.userId, row.id, data.to_folder_id, reason);
-      if (r.ok) moved++;
-      else failed++;
+      if (r.ok) {
+        moved++;
+        movedIds.push(row.id);
+      } else failed++;
     }
     if (moved > 0) {
       await supabaseAdmin
         .from("emails")
         .update({ classified_by: classifiedBy })
         .eq("user_id", context.userId)
-        .in("id", rows.map((r) => r.id))
+        .in("id", movedIds)
         .eq("folder_id", data.to_folder_id);
     }
-    return { moved, failed };
+
+    let archived = 0;
+    if (data.archive && movedIds.length > 0) {
+      const { data: archRows } = await supabaseAdmin
+        .from("emails")
+        .select("id, gmail_message_id, raw_labels")
+        .in("id", movedIds)
+        .eq("is_archived", false);
+      const targetRows = archRows ?? [];
+      const gmailIds = targetRows.map((r) => r.gmail_message_id).filter(Boolean) as string[];
+      if (gmailIds.length > 0) {
+        try {
+          await batchModifyMessages(data.account_id, gmailIds, [], ["INBOX"]);
+        } catch (e) {
+          logError("gmail.filter_rule.archive_past_failed", { account_id: data.account_id, folder_id: data.to_folder_id }, e);
+        }
+      }
+      await Promise.all(targetRows.map((row) => supabaseAdmin
+        .from("emails")
+        .update({ is_archived: true, raw_labels: removeLabelsFromCurrent(row.raw_labels, ["INBOX"]) })
+        .eq("id", row.id)));
+      archived = targetRows.length;
+    }
+
+    return { moved, failed, archived };
   });
 
 /**
