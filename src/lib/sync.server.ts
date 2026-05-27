@@ -922,15 +922,29 @@ async function syncSinceHistoryLocked(
           labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
           const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
           if (matched.length === 0) continue;
+          // IMPORTANT: do NOT call getMessageMetadata here. A noisy mailbox
+          // produces hundreds of labelsAdded events per push; one Gmail
+          // round-trip per event burns the 250-req/min/user quota in
+          // seconds and stalls all subsequent syncs (history_id never
+          // advances → next push replays the same backlog → spiral).
+          // Source from/subject/snippet from the local emails row if it
+          // exists; otherwise skip — process-message will seed the folder
+          // example correctly when the message is later ingested through
+          // the normal pipeline (it's already in seenAdded if new).
           try {
-            const meta = await getMessageMetadata(accountId, ev.message.id);
-            const p = parseMessage(meta);
+            const { data: localRow } = await supabaseAdmin
+              .from("emails")
+              .select("from_addr, subject, snippet")
+              .eq("gmail_account_id", accountId)
+              .eq("gmail_message_id", ev.message.id)
+              .maybeSingle();
+            if (!localRow) continue;
             for (const folder of matched) {
               await recordManualMove(folder, accountId, account.user_id, {
-                gmail_message_id: p.gmail_message_id,
-                from_addr: p.from_addr,
-                subject: p.subject,
-                snippet: p.snippet,
+                gmail_message_id: ev.message.id,
+                from_addr: localRow.from_addr ?? "",
+                subject: localRow.subject ?? "",
+                snippet: localRow.snippet ?? "",
               });
             }
           } catch (e) { logError("sync.label_added_handler_failed", { account_id: accountId, gmail_message_id: ev.message.id, added_labels: ev.labelIds }, e); }
@@ -941,6 +955,15 @@ async function syncSinceHistoryLocked(
         for (const ev of h.messagesDeleted ?? []) {
           toDelete.add(ev.message.id);
         }
+      }
+      // Advance the stored history cursor AFTER each successful page, not
+      // only after the entire walk. If a later page 403s (quota) or 5xxs,
+      // the next push restarts from the page we already drained instead
+      // of replaying the whole backlog from the original startHistoryId.
+      // bump_history_id_if_greater is monotonic, so this is safe.
+      if (hist.historyId) {
+        try { await bumpHistoryAndWatch(accountId, hist.historyId); }
+        catch (e) { logError("sync.bump_history_page_failed", { account_id: accountId, page_history_id: hist.historyId }, e); }
       }
       pageToken = hist.nextPageToken;
       if (!pageToken) break;
