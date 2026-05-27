@@ -24,7 +24,7 @@ function fmtRelative(iso: string | null): string {
   return `${Math.round(ms / 86_400_000)}d ago`;
 }
 
-export function AccountHealthPanel() {
+export function AccountHealthPanel({ accountId }: { accountId: string | null }) {
   const qc = useQueryClient();
   const fetchHealth = useServerFn(getAccountHealth);
   const retryAll = useServerFn(retryDlqJobs);
@@ -49,11 +49,12 @@ export function AccountHealthPanel() {
     );
   }
 
-  const accounts = q.data?.accounts ?? [];
+  const allAccounts = q.data?.accounts ?? [];
+  const accounts = accountId ? allAccounts.filter((a) => a.accountId === accountId) : allAccounts;
   if (accounts.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-        No Gmail accounts connected yet.
+        {allAccounts.length === 0 ? "No Gmail accounts connected yet." : "Pick an inbox above to see its status."}
       </div>
     );
   }
