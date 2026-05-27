@@ -341,10 +341,16 @@ export function FilterLikeThisDrawer({
                 value="past"
                 current={applyToPast ? "past" : "future"}
                 label="Future and past matches"
-                hint={count !== null ? `${count >= 500 ? "500+" : count} existing email${count === 1 ? "" : "s"} will be moved.` : undefined}
+                hint={
+                  count !== null
+                    ? isInboxMode
+                      ? `${count >= 500 ? "500+" : count} past email${count === 1 ? "" : "s"} will be returned to the inbox.`
+                      : `${count >= 500 ? "500+" : count} existing email${count === 1 ? "" : "s"} will be moved.`
+                    : undefined
+                }
               />
             </RadioGroup>
-            {applyToPast && (
+            {applyToPast && !isInboxMode && (
               <label className="mt-2 flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-accent/20 px-3 py-2">
                 <Checkbox
                   checked={archivePast}
@@ -371,6 +377,8 @@ export function FilterLikeThisDrawer({
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
               </>
+            ) : isInboxMode ? (
+              "Add to inbox list"
             ) : (
               "Create filter"
             )}
