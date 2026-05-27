@@ -65,6 +65,7 @@ export function FilterLikeThisDrawer({
     setOp(initialField === "subject" ? "starts_with" : "contains");
     setFolderId(null);
     setApplyToPast(false);
+    setArchivePast(false);
     setCount(null);
   }, [open, fromAddr, subject, domain]);
 
