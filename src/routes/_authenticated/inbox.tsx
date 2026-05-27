@@ -377,6 +377,8 @@ function InboxPage() {
     queryKey: ["emails", accountId, selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
     enabled: !!accountId,
     queryFn: async () => {
+      const isNoRules = selectedFolder === "no_rules";
+      const isAllMail = selectedFolder === "all_mail";
       if (isSearching) {
         // Operator-aware search: when the user typed `from:` / `to:`, filter
         // server-side so we don't get capped by the 2000-newest window.
@@ -388,6 +390,13 @@ function InboxPage() {
             .eq("gmail_account_id", accountId!)
             .order("received_at", { ascending: false, nullsFirst: false })
             .limit(500);
+          if (!isAllMail) {
+            const nowIso = new Date().toISOString();
+            q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
+            if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]).eq("is_archived", false);
+            else if (isNoRules) q = q.is("folder_id", null);
+            else q = q.eq("folder_id", selectedFolder);
+          }
           if (parsedQuery.from) {
             const v = esc(parsedQuery.from);
             q = q.or(`from_addr.ilike.%${v}%,from_name.ilike.%${v}%`);
@@ -408,12 +417,21 @@ function InboxPage() {
           .from("emails")
           .select(LIST_COLUMNS)
           .eq("gmail_account_id", accountId!)
+          .contains("raw_labels", selectedFolder === "all" ? ["INBOX"] : [])
           .order("received_at", { ascending: false })
           .limit(2000);
-        return (data ?? []) as Email[];
+        let rows = (data ?? []) as Email[];
+        if (!isAllMail) {
+          rows = rows.filter((e) => {
+            const active = !e.snoozed_until || e.snoozed_until <= new Date().toISOString();
+            if (!active) return false;
+            if (selectedFolder === "all") return e.is_archived === false && (e.raw_labels ?? []).includes("INBOX");
+            if (isNoRules) return e.folder_id === null;
+            return e.folder_id === selectedFolder;
+          });
+        }
+        return rows;
       }
-      const isNoRules = selectedFolder === "no_rules";
-      const isAllMail = selectedFolder === "all_mail";
       let q = supabase
         .from("emails")
         .select(LIST_COLUMNS)
