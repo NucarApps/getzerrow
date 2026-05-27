@@ -835,6 +835,25 @@ function InboxPage() {
                     <p className="text-sm">No matches found.</p>
                     <p className="text-xs">Connect a Gmail account in Settings to search your full mailbox.</p>
                   </>
+                ) : lastGmailResult?.reason === "reauth_required" ? (
+                  <>
+                    <p className="text-sm">Gmail needs to be reconnected.</p>
+                    <p className="text-xs">Open Settings → Gmail to reauthorize, then search again.</p>
+                  </>
+                ) : lastGmailResult?.reason === "rate_limited" ? (
+                  <>
+                    <p className="text-sm">Gmail is rate-limiting search right now.</p>
+                    <p className="text-xs">
+                      {lastGmailResult.found
+                        ? `Found ${lastGmailResult.found} match${lastGmailResult.found === 1 ? "" : "es"} in Gmail — wait ~1 minute and search again to pull them in.`
+                        : "Wait about a minute and try the search again."}
+                    </p>
+                  </>
+                ) : (lastGmailResult?.found ?? 0) > 0 ? (
+                  <>
+                    <p className="text-sm">Pulling {lastGmailResult!.found} match{lastGmailResult!.found === 1 ? "" : "es"} from Gmail…</p>
+                    <p className="text-xs">Results will appear in a moment.</p>
+                  </>
                 ) : (
                   <>
                     <p className="text-sm">No matches in your inbox or Gmail for "{query.trim()}".</p>
