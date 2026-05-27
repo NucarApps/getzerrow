@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessageMetadata, parseMessage, listMessages, listHistory, ensureWatch, GmailApiError } from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "./ai.server";
 import { logError } from "./log.server";
+import { computeLabelPatch } from "./sync/label-merge";
 import {
   MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS,
   computeBackoffSeconds as _computeBackoffSeconds,
