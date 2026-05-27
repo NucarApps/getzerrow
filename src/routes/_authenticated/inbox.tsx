@@ -463,6 +463,35 @@ function InboxPage() {
     refetchInterval: 15_000,
   });
 
+  // Background self-heal: ask Gmail which currently-inbox messages have
+  // been archived externally, and reconcile our rows. Realtime UPDATE
+  // events on `emails` then drop the archived rows out of this view
+  // without the user touching anything.
+  const reconcileInboxFn = useServerFn(reconcileInboxFromGmail);
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await reconcileInboxFn({ data: { gmail_account_id: accountId } });
+        if (!cancelled && r && ((r as { reconciled?: number }).reconciled || (r as { deleted?: number }).deleted)) {
+          qc.invalidateQueries({ queryKey: ["emails"] });
+        }
+      } catch {
+        // best-effort; the cron reconcile path is the backstop.
+      }
+    };
+    // Initial run after a short delay so the page loads first.
+    const initial = setTimeout(tick, 3_000);
+    const handle = setInterval(tick, 45_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(initial);
+      clearInterval(handle);
+    };
+  }, [accountId, reconcileInboxFn, qc]);
+
+
   // When searching, also ask Gmail for matching messages and ingest any we
   // don't have locally — then refetch so they appear in the results.
   const searchGmailFn = useServerFn(searchGmailAndIngest);
