@@ -894,7 +894,7 @@ function InboxPage() {
                 </RowTag>
               </ContextMenuTrigger>
               <ContextMenuContent className="w-64">
-                {(e.is_archived || e.folder_id) && (
+                {(e.is_archived || e.folder_id || !(e.raw_labels ?? []).includes("INBOX")) && (
                   <>
                     <ContextMenuItem
                       onSelect={async () => {

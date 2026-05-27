@@ -1,16 +1,18 @@
-## Issue
+## Problem
 
-In Settings → Inbox filters, the **All / Emails / Domains** sub-tabs use the default shadcn Tabs styling. On the dark theme that renders as a gray pill (`bg-muted`) with `text-muted-foreground` triggers — gray text on gray, very low contrast, which is the "weird gray outline / can't read the text" the user is seeing.
+In the All Mail view, right-clicking an email that isn't archived and has no folder (just doesn't carry the `INBOX` label) shows no way to put it back into the inbox. The "Move to Inbox" context menu item in `src/routes/_authenticated/inbox.tsx` is currently gated on `e.is_archived || e.folder_id`, which misses this case.
 
-## Fix
+## Change
 
-Restyle that one `TabsList` / `TabsTrigger` instance in `src/components/settings/InboxOverrides.tsx` to a higher-contrast segmented look that matches the rest of the settings UI:
+In `src/routes/_authenticated/inbox.tsx`, broaden the gate so "Move to Inbox" appears whenever the row is not currently in the inbox:
 
-- `TabsList`: drop the muted pill — use `bg-card border border-border rounded-md p-0.5 h-auto` so the track sits cleanly on the page background instead of looking like a gray smudge.
-- `TabsTrigger`: inactive uses `text-foreground/70` (readable, not muted), active uses `bg-primary/10 text-primary` (already the project's accent treatment). Keep small padding (`px-3 py-1.5 text-xs`).
+- Replace the condition `(e.is_archived || e.folder_id)` around the "Move to Inbox" `ContextMenuItem` with a check that also covers "no INBOX label": `!(e.raw_labels ?? []).includes("INBOX") || e.is_archived || e.folder_id`.
+- The existing `onSelect` already calls `moveInboxFn` (the `moveToInbox` server function) which adds `INBOX` back via Gmail and clears `folder_id`/`is_archived` — no server change needed.
+- Optimistic update already uses `withInbox(x.raw_labels)`, so the row reappears in the Inbox view immediately.
 
-Scope: change is limited to the className props on the three `TabsTrigger`s and the `TabsList` in `InboxOverrides.tsx`. No edits to `src/components/ui/tabs.tsx` (keeps the global default intact for the rest of the app).
+No other views or business logic change. The "Move to folder → Inbox (no folder)" sub-item stays as-is.
 
 ## Out of scope
 
-- Outer settings tabs (Accounts / Inbox filters / Activity) — already styled with the underline variant and are not affected.
+- No changes to server functions, sync pipeline, or Gmail label handling.
+- No UI changes outside this context menu.
