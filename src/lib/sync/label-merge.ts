@@ -13,6 +13,14 @@ export type LabelPatch = {
   is_read?: boolean;
 };
 
+export function removeLabelsFromCurrent(
+  currentLabels: string[] | null | undefined,
+  labelsToRemove: string[],
+): string[] {
+  const remove = new Set(labelsToRemove);
+  return (currentLabels ?? []).filter((label) => !remove.has(label));
+}
+
 export function computeLabelPatch(
   currentLabels: string[] | undefined,
   added: string[],
