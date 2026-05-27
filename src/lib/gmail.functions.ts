@@ -1792,8 +1792,9 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     // Explicit Gmail-style operator queries (from:/to:) get a "deep" search:
     // page further into older results so old senders aren't capped by the
     // single-page 50-result window.
-    const hasOperator = /\b(from|to):/i.test(raw);
-    const isDeep = hasOperator || looksLikeEmail || looksLikeDomain;
+    // Always page deeply — free-text searches like "rob morris" need to
+    // reach older mail, not just the 50 newest Gmail hits.
+    const isDeep = true;
     let q: string;
     if (looksLikeEmail) q = `from:${raw}`;
     else if (looksLikeDomain) q = `from:${raw.replace(/^@/, "")}`;

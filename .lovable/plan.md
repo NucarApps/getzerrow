@@ -1,53 +1,37 @@
-# Per-folder "Scan Gmail for matches" button
+## Problem
 
-Add a button in each folder's edit dialog that scans the user's Gmail for any messages matching the folder's existing rules (domains, senders, subjects) and pulls them into Zerrow so they get classified into this folder.
+Searching "rob morris" in Zerrow returns nothing, but Gmail shows many hits. There are three compounding bugs in `src/routes/_authenticated/inbox.tsx` + `src/lib/gmail.functions.ts` that swallow the matches.
 
-## Where it lives
+### Bug 1 — Local corpus is capped at the 2000 newest emails
+For free-text queries (no `from:` / `to:`), `emailsQ` loads only the 2000 most recent rows for the account and scores them locally. Anything older (e.g. the "rob morris" thread from 2022) is never in the candidate set, even if we have ingested it.
 
-In `src/components/folders/FolderEditor.tsx`, alongside the existing filter editor — a section labeled **"Scan Gmail for matches"** with:
-- A months window selector (default 6, options 1 / 3 / 6 / 12).
-- A "Scan now" button.
-- Result line ("Found N messages, added M new") and a spinner while running.
+### Bug 2 — Gmail-ingested matches are hidden by the "All inbox" filter
+When the user is on **All inbox** (`selectedFolder === "all"`), the search query adds `raw_labels contains INBOX` and `is_archived = false`. Most older Gmail matches are archived, so even after `searchGmailAndIngest` pulls them, they don't appear. Gmail itself searches all mail regardless of inbox state — we should match that behavior while a search is active.
 
-Folder-level placement (not Settings) so the action is contextual to the folder whose rules drive the search.
+### Bug 3 — Free-text Gmail search only pulls 50 newest results
+In `searchGmailAndIngest`, plain text queries use `PAGE = 50, MAX_PAGES = 1`. With 50 newest matches across the mailbox, older "rob morris" hits never get ingested. Only `from:` / email / domain queries get the deep 5×100 path.
 
-## Server function: `scanGmailForFolder`
+## Fix
 
-New `createServerFn` in `src/lib/gmail.functions.ts`:
+### 1. `src/routes/_authenticated/inbox.tsx`
+- When `isSearching` is true, drop the `raw_labels contains INBOX` / `is_archived = false` constraints in both the server query (lines 396, 422) and the local post-filter (line 430) for `selectedFolder === "all"`. Search should span all mail in the account (still respecting `all_mail` vs a specific folder when the user picked one).
+- When `isSearching` is true, raise the free-text fetch limit from 2000 to a higher cap (e.g. 5000) and additionally fetch the rows for `gmailHitIds` directly by `gmail_message_id` so any Gmail hit gets rendered even if it falls outside the recency window. Merge + dedupe before scoring.
+- Keep operator path (`from:`/`to:`) unchanged — it already queries server-side with `.limit(500)` without the recency cap.
 
-Input: `{ folder_id: string; months?: 1 | 3 | 6 | 12 }`.
+### 2. `src/lib/gmail.functions.ts` — `searchGmailAndIngest`
+- Treat free-text searches as `isDeep` too (or add a separate `isText` branch) so we page through up to 5×100 results, not 1×50. Keep the existing 200-char query cap and per-account budget.
+- No change to the query-building logic (still `q = raw` for plain text, so Gmail does its own full-text matching across name/from/to/subject/body).
 
-Steps:
-1. Load the folder, its `folder_filters`, and (when present) walk `filter_tree` to collect leaf conditions.
-2. Translate each rule into a Gmail query string:
-   - `field: "domain"` → `from:@<value>`
-   - `field: "from"` → `from:<value>`
-   - `field: "to"` → `to:<value>`
-   - `field: "subject"` → `subject:"<value>"` (use `subject:<value>` for `starts_with`/`contains`)
-   - `field: "body"` → raw value as free text
-   - `field: "has_attachment"` (true) → `has:attachment`
-   - Wrap each with `newer_than:<months>m`.
-   - Skip `regex` rules (Gmail can't express them) and surface a count in the result.
-3. For each query, run the same Gmail listing + thread-expansion + upsert pipeline that `searchGmailAndIngest` already uses. Extract that pipeline into a shared helper (`ingestGmailQuery(accountId, userId, query, { maxPages })`) so both fns reuse it — that helper already runs `matchFilters` against folder rules at upsert time, so freshly-ingested messages land in this folder automatically.
-4. Tally totals across queries: `{ scanned, ingested, queries_run, skipped_regex }`.
-
-Caps: max 5 pages × 100 results per query, max 20 queries per scan, hard ceiling 1000 ingested per call. Above that, return `truncated: true` so the UI can suggest re-running.
-
-## UI wiring
-
-- `useServerFn(scanGmailForFolder)` + `useMutation`.
-- On success: toast `Scanned N messages, added M new` (or `No new matches found`), invalidate `["emails"]` and `["emails-summary"]`.
-- On error: toast the message.
-- Button disabled when there are zero translatable rules (show a hint: "Add a domain, sender, or subject rule first").
-
-## Out of scope
-
-- Background job with progress polling — start synchronous; if it proves too slow we can move to `backfill_jobs` later.
-- Re-classifying already-ingested local rows (that's what the existing `applyFilterRuleToPast` per-rule action does).
-- Settings-level "scan everything" button.
-- Touching the AI rule or `learned_profile` — this is deterministic filter-based pulling only.
+### 3. Verify
+- Search "rob morris" → expect the 2022/2024 threads from the screenshot to appear.
+- Search a current sender → still works, no regression.
+- Search inside a specific folder → still scoped to that folder.
 
 ## Files touched
+- `src/routes/_authenticated/inbox.tsx`
+- `src/lib/gmail.functions.ts`
 
-- `src/lib/gmail.functions.ts` — extract shared `ingestGmailQuery` helper from `searchGmailAndIngest`; add `scanGmailForFolder`.
-- `src/components/folders/FolderEditor.tsx` — new "Scan Gmail for matches" section + mutation.
+## Out of scope
+- Changing how non-search inbox lists are filtered.
+- Reworking the local search scoring / ranking.
+- Background reclassification of newly-ingested search hits.
