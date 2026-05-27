@@ -85,7 +85,7 @@ function AdminPage() {
     for (const u of users) {
       emails += u.stats.emails;
       contacts += u.stats.contacts;
-      if (u.gmail) connectedGmail += 1;
+      if (u.gmail_accounts.length > 0) connectedGmail += 1;
     }
     return { users: users.length, emails, contacts, connectedGmail };
   }, [usersQ.data]);
