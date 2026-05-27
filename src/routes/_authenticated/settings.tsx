@@ -42,6 +42,8 @@ function SettingsPage() {
     refetchInterval: 5000,
   });
   const [busy, setBusy] = useState<string | null>(null);
+  const { activeAccountId, setActiveAccountId } = useAccountSelection();
+  const [scopedEmail, setScopedEmail] = useState<string | null>(null);
 
 
   async function run(key: string, fn: () => Promise<any>, msg: string) {
@@ -177,24 +179,34 @@ function SettingsPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="filters" className="space-y-6">
-            <InboxOverrides />
+          <TabsContent value="filters" className="space-y-4">
+            <AccountPicker
+              value={activeAccountId}
+              onChange={(id, email) => { setActiveAccountId(id); setScopedEmail(email); }}
+              label="Inbox"
+            />
+            <InboxOverrides accountId={activeAccountId} accountEmail={scopedEmail} />
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-6">
+            <AccountPicker
+              value={activeAccountId}
+              onChange={(id, email) => { setActiveAccountId(id); setScopedEmail(email); }}
+              label="Inbox"
+            />
             <Card className="overflow-hidden p-0">
               <div className="border-b bg-muted/20 p-4 md:p-6">
                 <h2 className="font-display text-2xl">Account health</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Live status of each connected mailbox — auto-refreshes every 15 seconds.
+                  Live status for {scopedEmail ?? "the selected mailbox"} — auto-refreshes every 15 seconds.
                 </p>
               </div>
               <div className="p-4 md:p-6">
-                <AccountHealthPanel />
+                <AccountHealthPanel accountId={activeAccountId} />
               </div>
             </Card>
-            <PubsubActivity />
-            <ProcessingJobs />
+            <PubsubActivity accountId={activeAccountId} accountEmail={scopedEmail} />
+            <ProcessingJobs accountId={activeAccountId} />
           </TabsContent>
         </Tabs>
       </div>
