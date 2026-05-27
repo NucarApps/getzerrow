@@ -160,10 +160,10 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
       {rows.length > 0 && (
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | "email" | "domain")}>
-            <TabsList>
-              <TabsTrigger value="all">All ({rows.length})</TabsTrigger>
-              <TabsTrigger value="email">Emails ({emailCount})</TabsTrigger>
-              <TabsTrigger value="domain">Domains ({domainCount})</TabsTrigger>
+            <TabsList className="bg-card border border-border rounded-md p-0.5 h-auto gap-0.5">
+              <TabsTrigger value="all" className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none">All ({rows.length})</TabsTrigger>
+              <TabsTrigger value="email" className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none">Emails ({emailCount})</TabsTrigger>
+              <TabsTrigger value="domain" className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none">Domains ({domainCount})</TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="relative sm:w-64">
