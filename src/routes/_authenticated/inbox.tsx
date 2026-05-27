@@ -366,7 +366,7 @@ function InboxPage() {
   // the "no_rules" filter reads it. snoozed_until is included so local
   // search results can apply the same visibility filter as normal lists.
   // forward_* columns are operator-facing, not rendered in the inbox.
-  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels,snoozed_until";
+  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id";
 
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
