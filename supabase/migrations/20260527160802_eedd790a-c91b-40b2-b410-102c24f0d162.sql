@@ -1,0 +1,1 @@
+UPDATE public.gmail_accounts SET history_id = '21479322', updated_at = now() WHERE id = 'e4af232e-2676-4f7c-9cb8-cb0f090daba8' AND (history_id IS NULL OR history_id::bigint < 21479322);
