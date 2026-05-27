@@ -1,50 +1,50 @@
-## Plan
+## Problem
 
-Add an AI assistant chat panel inside the inbox that can reason about the currently selected email (or multi-selection) and propose folder / filter changes for the user to approve before anything is written.
+When you sent an assistant message, the server log shows:
 
-### What the user sees
+```
+proposeAssistantChanges failed No object generated: response did not match schema.
+```
 
-- A new **Ask AI** button in the inbox toolbar opens a side panel (sheet) on the right.
-- The panel header shows what the AI can see right now: the selected email's sender, subject, current folder. If multiple rows are selected, it says "12 emails selected".
-- A chat thread with a text input at the bottom. The user types things like:
-  - "These should go to Marketing instead of Sales."
-  - "Stop routing anything from this sender to Receipts."
-  - "Create a rule so emails from @acme.com always land in Clients."
-- The assistant replies with a short summary plus a **proposed change card** listing each change:
-  - Move this email (and/or matching past emails) from Folder A to Folder B.
-  - Add filter rule on Folder B: `from contains rob@acme.com`.
-  - Remove filter rule on Folder A: `domain contains acme.com`.
-  - Optional: tighten Folder A's AI rule / broaden Folder B's AI rule.
-- Each change has a checkbox so the user can toggle individual edits.
-- Two buttons: **Apply selected** and **Discard**. Nothing changes until Apply is clicked.
-- After Apply, the assistant confirms what was actually changed and stays open for follow-ups.
+The AI gateway did reply — but the model's JSON didn't match our strict schema (discriminated union of 4 action types, each with required fields like `why`, `field`, `op`, etc.), so the AI SDK threw. Our catch block then showed the generic "Sorry, I couldn't reach the AI right now" message, which made it look like an outage.
 
-### How it works under the hood
+## Fix
 
-1. **Context gathering** — when the user sends a message, the client passes the chat history plus the current selection (email IDs + selected folder). The server fn loads the email's metadata, its current folder, and the user's other folders + their existing filter rules.
-2. **AI planning** — call Lovable AI Gateway with tool-calling. The model returns a structured proposal: list of `move_email`, `add_filter`, `remove_filter`, `update_folder_rule` actions plus a one-paragraph summary and a per-change rationale. No DB writes yet.
-3. **Preview** — the proposal is rendered as the change card. The user toggles + approves.
-4. **Apply** — a second server fn validates the user owns every referenced folder/email/filter, then executes the approved subset using the existing helpers (`moveEmailToFolder`, `bulkMoveEmails`, insert/delete on `folder_filters`, update on `folders.ai_rule`).
-5. **Audit trail** — store each chat thread + applied changes so the user can review or undo later from the panel.
+Make the assistant resilient to model output quirks and surface real errors instead of pretending it's offline.
 
-### Guardrails
+### 1. Switch to tool-calling for structured output
 
-- Read-only by default. The AI cannot mutate anything; only the Apply action does.
-- Server-side ownership checks on every folder/email/filter ID before applying.
-- Hard cap on bulk-move size per proposal (e.g. 200 emails) — anything larger asks the user to confirm a follow-up.
-- Filter `value` length and field/op enums validated with zod.
-- The AI is told it can only use the listed tools and may only reference folders that exist for this user.
+`src/lib/ai-assistant.server.ts` — replace `generateText` + `Output.object(...)` with `generateText` + `tools` and `toolChoice`. Tool-calling is the pattern the project's own knowledge file recommends for structured output and is much more reliable on Gemini than JSON-schema response mode for discriminated unions.
 
-### Files / surfaces
+### 2. Loosen the schema so the model can't fail validation on trivia
 
-- New: `src/lib/ai-assistant.functions.ts` — `proposeFolderChanges`, `applyFolderChanges`.
-- New: `src/lib/ai-assistant.server.ts` — Lovable AI Gateway call with tool definitions + ownership-safe applier.
-- New table: `ai_assistant_threads` + `ai_assistant_messages` (RLS scoped to `auth.uid()`, grants for `authenticated` + `service_role`).
-- New: `src/components/inbox/AssistantPanel.tsx` — sheet, chat thread, proposal card.
-- Hook into `src/routes/_authenticated/inbox.tsx` toolbar with the new "Ask AI" button.
+- Make `why` optional with a default of `""` (was required, max 200).
+- Make `reply` and `clarifying_question` optional with `""` defaults.
+- Keep the discriminated union of action types, but allow `actions: []` (already allowed).
 
-### Out of scope for v1
+### 3. Use the project's default chat model
 
-- Editing the visual filter tree builder from chat (only flat `folder_filters` rows + `ai_rule` text in v1).
-- Cross-account moves.
-- Undo of an already-applied proposal (just leaves an audit row for now).
+Switch from `google/gemini-2.5-flash` to `google/gemini-3-flash-preview` (the project-wide default per the AI Gateway knowledge), which handles tool-calling more cleanly.
+
+### 4. Better error surface
+
+In the catch block in `proposeAssistantChanges`:
+- Still log the full error server-side.
+- Return a `clarifying_question` that distinguishes the real failure modes the user might hit:
+  - 402 → "AI credits are exhausted for this workspace."
+  - 429 → "Too many requests right now, try again in a moment."
+  - schema/parse error → "I had trouble understanding that — could you rephrase what you'd like me to do?"
+  - other → current generic message.
+
+### 5. (Optional) One automatic retry
+
+If the first call throws a schema/no-object error, retry once with a slightly stronger system reminder ("Respond ONLY by calling the propose_changes tool."). Single retry, no loop.
+
+## Files touched
+
+- `src/lib/ai-assistant.server.ts` — only file changed. No DB, no UI, no other server fns.
+
+## Out of scope
+
+- No changes to the AssistantPanel UI, the apply path, or the proposal data shape that the client consumes (`reply`, `clarifying_question`, `actions[]` stay identical).
+- No changes to `ai-assistant.functions.ts`.
