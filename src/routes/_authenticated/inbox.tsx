@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
   moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
-  loadOlderFromGmail, searchGmailAndIngest, resyncMessage, addFolderRule,
+  loadOlderFromGmail, searchGmailAndIngest, resyncMessage,
   reclassifyEmails, suggestFolderFromSelection, createFolderAndAssign,
   reconcileInboxFromGmail,
 } from "@/lib/gmail.functions";
