@@ -5,6 +5,8 @@ import {
   addFolderRule,
   countMatchingForRule,
   applyFilterRuleToPast,
+  addInboxOverride,
+  stripFolderLabelPast,
 } from "@/lib/gmail.functions";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -12,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AtSign, Globe, Type, Loader2 } from "lucide-react";
+import { AtSign, Globe, Type, Loader2, Inbox } from "lucide-react";
 import { toast } from "sonner";
 
 type Folder = { id: string; name: string; color: string };
