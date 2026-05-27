@@ -1475,7 +1475,7 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
       .from("emails")
-      .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr")
+      .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr, raw_labels")
       .eq("id", data.email_id)
       .single();
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
@@ -1490,6 +1490,14 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
       fromLabel = f?.gmail_label_id ?? null;
     }
 
+    // Recompute raw_labels: add INBOX, drop the moved-from folder label so the
+    // local row matches the Gmail mutation below. Without this, the inbox view
+    // (which filters on raw_labels @> ['INBOX']) keeps hiding the message.
+    const currentLabels = (email.raw_labels ?? []) as string[];
+    const nextLabels = Array.from(
+      new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
+    );
+
     await supabaseAdmin
       .from("emails")
       .update({
@@ -1499,6 +1507,7 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
         ai_confidence: 1,
         classification_reason: "Moved to Inbox manually",
         matched_filter_ids: [],
+        raw_labels: nextLabels,
       })
       .eq("id", email.id);
 
