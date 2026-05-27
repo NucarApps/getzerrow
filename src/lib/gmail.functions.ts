@@ -2676,7 +2676,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
           .limit(500),
       );
       const { data: archRows } = await archQ;
-      const targetRows = archRows ?? [];
+      const targetRows = (archRows ?? []) as Array<{ id: string; gmail_message_id: string | null; raw_labels: string[] | null }>;
       const gmailIds = targetRows.map((r) => r.gmail_message_id).filter(Boolean) as string[];
       if (gmailIds.length > 0) {
         try {
