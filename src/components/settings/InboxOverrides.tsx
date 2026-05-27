@@ -153,11 +153,46 @@ export function InboxOverrides() {
         <Button onClick={add} disabled={busy}>{busy ? "Adding…" : "Add"}</Button>
       </div>
 
+      {rows.length > 0 && (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | "email" | "domain")}>
+            <TabsList>
+              <TabsTrigger value="all">All ({rows.length})</TabsTrigger>
+              <TabsTrigger value="email">Emails ({emailCount})</TabsTrigger>
+              <TabsTrigger value="domain">Domains ({domainCount})</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div className="relative sm:w-64">
+            <Input
+              className="h-8 pr-8 text-xs"
+              placeholder="Search overrides…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 space-y-2">
         {rows.length === 0 && (
           <p className="text-sm italic text-muted-foreground">No overrides yet.</p>
         )}
-        {rows.map((r) => {
+        {rows.length > 0 && filteredRows.length === 0 && (
+          <p className="text-sm italic text-muted-foreground">
+            No {filter === "all" ? "" : filter === "email" ? "email " : "domain "}overrides match.
+          </p>
+        )}
+        {filteredRows.map((r) => {
           const isOpen = !!expanded[r.id];
           const rowEx = exceptions.filter((e) => e.override_id === r.id);
           return (
