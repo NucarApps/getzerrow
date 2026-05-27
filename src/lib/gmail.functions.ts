@@ -3160,7 +3160,7 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
               const p = parseMessage(raw);
               let folder_id: string | null = null;
               let classified_by: string = "gmail_search_ingest";
-              let classification_reason: string | null = `Scanned for folder: ${folder.name}`;
+              let classification_reason: string | null = `Scanned for folder: ${folderName}`;
               for (const lbl of p.raw_labels ?? []) {
                 const fid = labelToFolder.get(lbl);
                 if (fid) {
