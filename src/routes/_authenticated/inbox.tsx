@@ -374,6 +374,7 @@ function InboxPage() {
   const [page, setPage] = useState(1);
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const isNoRules = selectedFolder === "no_rules";
   useEffect(() => {
     setPage(1);
@@ -740,9 +741,20 @@ function InboxPage() {
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
             <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
           </div>
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => syncMut.mutate()} disabled={syncMut.isPending} title="Refresh">
-            <RefreshCw className={`h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={() => setAssistantOpen(true)}
+              title="Ask AI assistant"
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => syncMut.mutate()} disabled={syncMut.isPending} title="Refresh">
+              <RefreshCw className={`h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
         <div className="shrink-0 border-b border-border px-3 py-2">
           <div className="relative">
