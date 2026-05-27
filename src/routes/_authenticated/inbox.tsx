@@ -390,11 +390,10 @@ function InboxPage() {
             .eq("gmail_account_id", accountId!)
             .order("received_at", { ascending: false, nullsFirst: false })
             .limit(500);
-          if (!isAllMail) {
-            const nowIso = new Date().toISOString();
-            q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
-            if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]).eq("is_archived", false);
-            else if (isNoRules) q = q.is("folder_id", null);
+          // While searching, span all mail (Gmail itself does). Only scope
+          // when the user picked a specific folder.
+          if (!isAllMail && selectedFolder !== "all") {
+            if (isNoRules) q = q.is("folder_id", null);
             else q = q.eq("folder_id", selectedFolder);
           }
           if (parsedQuery.from) {
@@ -418,16 +417,13 @@ function InboxPage() {
           .select(LIST_COLUMNS)
           .eq("gmail_account_id", accountId!)
           .order("received_at", { ascending: false })
-          .limit(2000);
-        if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]);
+          .limit(5000);
+        // Don't restrict to INBOX while searching — Gmail's search spans all
+        // mail, and most older hits will be archived.
         const { data } = await q;
         let rows = (data ?? []) as Email[];
-        if (!isAllMail) {
-          const nowIso = new Date().toISOString();
+        if (!isAllMail && selectedFolder !== "all") {
           rows = rows.filter((e) => {
-            const active = !e.snoozed_until || e.snoozed_until <= nowIso;
-            if (!active) return false;
-            if (selectedFolder === "all") return e.is_archived === false && (e.raw_labels ?? []).includes("INBOX");
             if (isNoRules) return e.folder_id === null;
             return e.folder_id === selectedFolder;
           });
