@@ -981,7 +981,7 @@ function InboxPage() {
                 </ContextMenuSub>
 
 
-                {(e.from_addr || domain || e.subject) && folderList.length > 0 && (
+                {(e.from_addr || domain || e.subject) && (
                   <>
                     <ContextMenuSeparator />
                     <ContextMenuItem
