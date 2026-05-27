@@ -34,6 +34,7 @@ import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public
 import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
+import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/public/hooks/relearn-folders'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
@@ -168,6 +169,12 @@ const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
   path: '/contacts/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const ApiPublicHooksRunFolderSummaryJobsRoute =
+  ApiPublicHooksRunFolderSummaryJobsRouteImport.update({
+    id: '/api/public/hooks/run-folder-summary-jobs',
+    path: '/api/public/hooks/run-folder-summary-jobs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksRunFolderSummariesRoute =
   ApiPublicHooksRunFolderSummariesRouteImport.update({
     id: '/api/public/hooks/run-folder-summaries',
@@ -213,6 +220,7 @@ export interface FileRoutesByFullPath {
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
+  '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesByTo {
@@ -242,6 +250,7 @@ export interface FileRoutesByTo {
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
+  '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesById {
@@ -273,6 +282,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
+  '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRouteTypes {
@@ -304,6 +314,7 @@ export interface FileRouteTypes {
     | '/contacts/'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
+    | '/api/public/hooks/run-folder-summary-jobs'
     | '/api/public/og/card/$handle'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -333,6 +344,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
+    | '/api/public/hooks/run-folder-summary-jobs'
     | '/api/public/og/card/$handle'
   id:
     | '__root__'
@@ -363,6 +375,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
+    | '/api/public/hooks/run-folder-summary-jobs'
     | '/api/public/og/card/$handle'
   fileRoutesById: FileRoutesById
 }
@@ -385,6 +398,7 @@ export interface RootRouteChildren {
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
   ApiPublicHooksRelearnFoldersRoute: typeof ApiPublicHooksRelearnFoldersRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
+  ApiPublicHooksRunFolderSummaryJobsRoute: typeof ApiPublicHooksRunFolderSummaryJobsRoute
   ApiPublicOgCardHandleRoute: typeof ApiPublicOgCardHandleRoute
 }
 
@@ -565,6 +579,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/api/public/hooks/run-folder-summary-jobs': {
+      id: '/api/public/hooks/run-folder-summary-jobs'
+      path: '/api/public/hooks/run-folder-summary-jobs'
+      fullPath: '/api/public/hooks/run-folder-summary-jobs'
+      preLoaderRoute: typeof ApiPublicHooksRunFolderSummaryJobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/run-folder-summaries': {
       id: '/api/public/hooks/run-folder-summaries'
       path: '/api/public/hooks/run-folder-summaries'
@@ -636,6 +657,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicLogoRoute: ApiPublicLogoRoute,
   ApiPublicHooksRelearnFoldersRoute: ApiPublicHooksRelearnFoldersRoute,
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
+  ApiPublicHooksRunFolderSummaryJobsRoute:
+    ApiPublicHooksRunFolderSummaryJobsRoute,
   ApiPublicOgCardHandleRoute: ApiPublicOgCardHandleRoute,
 }
 export const routeTree = rootRouteImport
