@@ -167,6 +167,7 @@ export async function processGmailMessage(
     });
     if (t) t.ai += performance.now() - _tAi;
     folder_id = c.folder_id ?? null;
+    classifiedBy = c.classified_by;
     const _tDb = performance.now();
     await supabaseAdmin.from("emails").update({
       folder_id,
