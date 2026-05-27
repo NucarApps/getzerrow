@@ -121,9 +121,11 @@ export function FilterLikeThisDrawer({
               field,
               op,
               value: value.trim(),
+              archive: archivePast,
             },
           });
           if (past.moved > 0) pastSummary = ` · ${past.moved} past moved`;
+          if (past.archived > 0) pastSummary += ` · ${past.archived} archived`;
           if (past.failed > 0) pastSummary += ` · ${past.failed} failed`;
         } catch (e: any) {
           toast.error(`Rule saved, but moving past emails failed: ${e.message}`);
