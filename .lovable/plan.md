@@ -1,67 +1,87 @@
-# Make Zerrow inbox auto-update reliably (root cause: case-sensitive email match)
+## Problem
 
-## What's actually broken
+`useEmailRealtime` (`src/lib/use-email-realtime.ts`) ships incoming Postgres
+changes through `rowBelongsInList(row, queryKey)`. That helper expects the
+query key to look like `["emails", "all" | "inbox" | "archived" | folderId, ...]`.
 
-Tony's account is stored as `TPercoco@nucar.com`. Gmail's Pub/Sub pushes arrive with the address lower-cased: `tpercoco@nucar.com`. The webhook looks the account up with:
+But `src/routes/_authenticated/inbox.tsx` actually uses:
 
-```ts
-.eq("email_address", emailAddress)   // case-sensitive in Postgres
+```
+["emails", accountId, selectedFolder, paginationToken]
 ```
 
-So every push for him resolves to `accounts_matched = 0` and `synced_count = 0`. Confirmed in the database — the last 10 push events for his mailbox all show 0 accounts matched, 0 synced, despite the gmail_accounts row existing and being healthy (watch valid until June 2, no reconnect needed, no OAuth error).
+So `queryKey[1]` is the Gmail account UUID, not a scope tag. The helper sees
+a string, falls through to the "treat as folder id" branch, and compares
+`row.folder_id === accountId` — which is never true. Every realtime payload
+(new mail, read/archive/move from Gmail, deletions) gets rejected. The cache
+only refreshes on window focus or visibility change.
 
-The poll cron still runs every few minutes, which is why mail eventually shows up — but never in real time. The realtime websocket / `useEmailRealtime` hook itself is fine; there's just nothing being inserted for it to broadcast.
-
-Other users with all-lowercase stored addresses are unaffected, which is why this looks intermittent rather than global.
+Net effect for Chris (and every user): inbox feels frozen, state changes from
+Gmail don't reflect, and "new mail just appeared" only happens after a
+refocus refetch.
 
 ## Fix
 
-### 1. Make the webhook lookup case-insensitive
+Rewrite `rowBelongsInList` to match the real inbox queryKey shape:
 
-In `src/routes/api/public/gmail-webhook.ts` (the `.eq("email_address", emailAddress)` call), switch to a case-insensitive match. Two options; we'll use the first because it's a one-line change with no schema impact:
-
-```ts
-.ilike("email_address", emailAddress)   // exact match, case-insensitive
+```
+["emails", accountId?, scope?, paginationOrSearchKey?]
 ```
 
-(`ilike` without `%` wildcards is an exact case-insensitive equality — same semantics as `=` but folded.)
+Rules (in order):
+1. `queryKey.length <= 1` → true (top-level invalidations / unscoped lists).
+2. If `queryKey[1]` is a string AND it matches `row.gmail_account_id`,
+   continue. If it's a string but does NOT match the row's account id,
+   reject (it belongs to a different account's list).
+3. Inspect `queryKey[2]` (scope) and decide:
+   - `undefined` / `null` → accept.
+   - `"all_mail"` → accept (no filter — matches inbox.tsx).
+   - `"all"` → accept only if `raw_labels` includes `"INBOX"`.
+   - `"no_rules"` → accept only if `folder_id === null` AND no
+     `Label_*` user label in `raw_labels`.
+   - `"archived"` → accept only if `is_archived === true` (kept for
+     forward-compat; harmless if unused).
+   - `"inbox"` → accept only if `raw_labels` includes `"INBOX"` (legacy
+     scope, kept for safety).
+   - any other string → treat as folder UUID → accept if
+     `row.folder_id === scope`.
+4. If `queryKey[3]` starts with `"search:"` → reject inserts/updates from
+   realtime (search results are recomputed; let invalidation handle them).
+   For deletes we still allow the row removal.
 
-### 2. Normalize existing rows so the data is clean
+Extend `EmailRow` type to include `gmail_account_id?: string` and (optional)
+`folder_id`, so step 2 can read it. Payloads from Postgres include all
+columns; no DB change needed.
 
-One-off migration to lowercase any stored Gmail address that isn't already lowercase:
+Update `src/lib/realtime-belongs.test.ts` to cover:
+- accountId match + scope `"all"` with/without INBOX label
+- accountId mismatch → reject
+- `"no_rules"` scope filtering
+- folder-UUID scope match
+- `"search:..."` key → reject for INSERT/UPDATE
 
-```sql
-UPDATE public.gmail_accounts
-   SET email_address = lower(email_address),
-       updated_at = now()
- WHERE email_address <> lower(email_address);
-```
+No other files change. The `applyInsert` / `applyUpdate` / `applyDelete`
+plumbing already handles whatever the predicate accepts.
 
-### 3. Normalize on write going forward
+## Out of scope
 
-So a future reconnect or new connection can't reintroduce the bug:
+- Reconcile throughput for 40k+ mailboxes (Chris has 40,325 rows; reconcile
+  walks ~360/tick). It still self-heals over time. If real-time drift
+  remains after this fix, we can tune `HEAD_LIMIT` / `TAIL_LIMIT` /
+  archived window in a follow-up.
+- Gmail webhook / history sync — verified healthy via `pubsub_events`
+  (`accounts_matched=1`, `synced_count>0`, last push 30s before report).
+- Server-side label-change handling (`applyLabelChange`) — already writes
+  the correct patch; the issue is purely client-side cache filtering.
+- `useEmailRealtime` subscription wiring — already correct (mounted in
+  `_authenticated.tsx`, JWT re-auth in place, visibility catch-up works).
 
-- `src/routes/api/public/google-oauth-callback.ts` — lowercase the `email` we get from Google's userinfo before calling `upsert_gmail_oauth_account`.
-- Anywhere else we insert/update `gmail_accounts.email_address` (audit `src/lib/gmail.functions.ts`), apply `.toLowerCase()` at the boundary.
+## Verification
 
-### 4. Add a defensive index (optional but cheap)
-
-A functional index keeps `ilike` on an exact value fast even as the table grows:
-
-```sql
-CREATE INDEX IF NOT EXISTS gmail_accounts_email_lower_idx
-  ON public.gmail_accounts (lower(email_address));
-```
-
-### 5. Verify the fix
-
-After deploy:
-- Trigger a real send to Tony's mailbox (or wait for the next inbound).
-- Check the latest `pubsub_events` rows: expect `accounts_matched = 1`, `synced_count >= 1`.
-- Confirm Tony sees the new message appear in Zerrow without refresh.
-
-## Out of scope (intentionally)
-
-- No changes to `useEmailRealtime`, the realtime publication, or replica identity — those are working correctly.
-- No changes to the poll / reconcile / cron pipeline.
-- No new logging beyond what we added in the recent fidelity pass — the existing structured logs already surface this once we know what to look for; the data-layer fix is what's needed.
+1. Open inbox as Chris, watch a new mail arrive in Gmail → row should
+   appear in Zerrow without refresh.
+2. Archive/read/move a message in Gmail → corresponding row in Zerrow
+   should update within ~1s (push → DB UPDATE → realtime → cache patch).
+3. Move a message between folders inside Zerrow → row leaves source list,
+   appears in destination list without refresh.
+4. Run `bunx vitest run src/lib/realtime-belongs.test.ts`.
