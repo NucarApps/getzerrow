@@ -518,9 +518,37 @@ function InboxPage() {
     return () => clearTimeout(handle);
   }, [query, searchGmailFn, qc]);
 
+  // Supplemental fetch: pull rows for Gmail-hit ids in case they fall outside
+  // the 5000-newest local corpus (older mail, archived threads, etc.).
+  const gmailHitIdList = useMemo(
+    () => (isSearching && gmailHitIds.query === query.trim().toLowerCase() ? Array.from(gmailHitIds.ids) : []),
+    [isSearching, gmailHitIds, query],
+  );
+  const gmailHitRowsQ = useQuery<Email[]>({
+    queryKey: ["emails-gmail-hits", accountId, query.trim().toLowerCase(), gmailHitIdList.length],
+    enabled: !!accountId && gmailHitIdList.length > 0,
+    queryFn: async () => {
+      const ids = gmailHitIdList.slice(0, 500);
+      const { data } = await supabase
+        .from("emails")
+        .select(LIST_COLUMNS)
+        .eq("gmail_account_id", accountId!)
+        .in("gmail_message_id", ids);
+      return (data ?? []) as Email[];
+    },
+  });
+
   const rawEmails = emailsQ.data ?? [];
   const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
-  const pageRows = isSearching ? rawEmails : rawEmails.slice(0, PAGE_SIZE);
+  const pageRows = useMemo(() => {
+    if (!isSearching) return rawEmails.slice(0, PAGE_SIZE);
+    const extra = gmailHitRowsQ.data ?? [];
+    if (extra.length === 0) return rawEmails;
+    const seen = new Set(rawEmails.map((r) => r.id));
+    const merged = [...rawEmails];
+    for (const r of extra) if (!seen.has(r.id)) merged.push(r);
+    return merged;
+  }, [isSearching, rawEmails, gmailHitRowsQ.data]);
 
   const filtered = useMemo(() => {
     if (isSearching) {
