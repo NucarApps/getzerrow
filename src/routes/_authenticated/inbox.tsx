@@ -547,7 +547,7 @@ function InboxPage() {
         if (rest) {
           const hay = `${fromName} ${fromAddr} ${toAddrs} ${subject} ${snippet}`;
           const metaHit = hay.includes(rest);
-          const bodyHit = gmailHits?.has(e.gmail_message_id) ?? false;
+          const bodyHit = gmailHits && e.gmail_message_id ? gmailHits.has(e.gmail_message_id) : false;
           if (!metaHit && !bodyHit) hit = false;
         }
         return { e, hit };
