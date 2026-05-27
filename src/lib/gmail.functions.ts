@@ -1846,6 +1846,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
         );
 
         const idsArr = Array.from(allMessageIds);
+        for (const id of idsArr) hitGmailMessageIds.push(id);
         totalFound += idsArr.length;
         const { data: existing } = await supabaseAdmin
           .from("emails")
