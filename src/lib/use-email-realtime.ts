@@ -100,6 +100,8 @@ export function useEmailRealtime() {
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
 
     type CachedList = EmailRow[] | { rows: EmailRow[] };
     function patchOneQuery(
@@ -147,19 +149,14 @@ export function useEmailRealtime() {
         const present = rows.some((r) => r.id === row.id);
         const belongs = rowBelongsInList(row, key as unknown[]);
         if (present && !belongs) {
-          // Row was here but no longer belongs — drop it. The destination
-          // list will pick it up via its own INSERT event (if it's cached).
           patchOneQuery(key as unknown[], (curr) => curr.filter((r) => r.id !== row.id));
         } else if (present && belongs) {
           patchOneQuery(key as unknown[], (curr) => curr.map((r) => (r.id === row.id ? { ...r, ...row } : r)));
         } else if (!present && belongs) {
-          // Row newly belongs in this list — refetch so we get correct order.
           needsRefetch = true;
         }
       }
       if (needsRefetch) {
-        // Run AFTER the synchronous setQueryData calls above so React Query
-        // isn't re-entered mid-mutation.
         Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
       }
     }
@@ -179,12 +176,23 @@ export function useEmailRealtime() {
       qc.invalidateQueries({ queryKey: ["folders-full"] });
     };
 
+    function scheduleReconnect() {
+      if (cancelled || reconnectTimer) return;
+      const delays = [1000, 2000, 5000];
+      const delay = delays[Math.min(reconnectAttempt, delays.length - 1)];
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        teardown();
+        connect();
+      }, delay);
+    }
+
     async function connect() {
       const { data } = await supabase.auth.getSession();
       const session = data.session;
       if (!session || cancelled) return;
 
-      // Make sure the realtime socket carries the user's JWT so RLS allows row payloads.
       try {
         supabase.realtime.setAuth(session.access_token);
       } catch {
@@ -214,7 +222,20 @@ export function useEmailRealtime() {
           { event: "*", schema: "public", table: "folders", filter: userFilter },
           invalidateFolders,
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            reconnectAttempt = 0;
+            // Catch up on anything missed while disconnected.
+            qc.invalidateQueries({ queryKey: ["emails"] });
+            qc.invalidateQueries({ queryKey: ["folders"] });
+          } else if (
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            status === "CLOSED"
+          ) {
+            scheduleReconnect();
+          }
+        });
     }
 
     function teardown() {
@@ -226,17 +247,23 @@ export function useEmailRealtime() {
 
     connect();
 
-    // Reconnect when the session changes (login, token refresh, sign-out).
-    const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
+    // Reconnect / re-auth realtime on session changes. TOKEN_REFRESHED fires
+    // every ~hour; without re-applying the new JWT, RLS-filtered postgres_changes
+    // events silently stop flowing.
+    const { data: authSub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" && session) {
+        try {
+          supabase.realtime.setAuth(session.access_token);
+        } catch {
+          // ignore
+        }
+        return;
+      }
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
       teardown();
       connect();
     });
 
-    // Catch-up on tab visibility: realtime websockets can quietly drop after a
-    // long sleep. visibilitychange fires for both tab-focus and tab-hide; only
-    // refetch on the "visible" transition. (Old version ALSO listened for
-    // `focus`, which double-fired on tab switch.)
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         qc.invalidateQueries({ queryKey: ["emails"] });
@@ -247,6 +274,10 @@ export function useEmailRealtime() {
 
     return () => {
       cancelled = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       teardown();
       authSub.subscription.unsubscribe();
       document.removeEventListener("visibilitychange", onVisible);
