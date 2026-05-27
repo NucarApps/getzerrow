@@ -414,17 +414,19 @@ function InboxPage() {
           return (data ?? []) as Email[];
         }
         // Free-text search: load the most recent corpus and score locally.
-        const { data } = await supabase
+        let q = supabase
           .from("emails")
           .select(LIST_COLUMNS)
           .eq("gmail_account_id", accountId!)
-          .contains("raw_labels", selectedFolder === "all" ? ["INBOX"] : [])
           .order("received_at", { ascending: false })
           .limit(2000);
+        if (selectedFolder === "all") q = q.contains("raw_labels", ["INBOX"]);
+        const { data } = await q;
         let rows = (data ?? []) as Email[];
         if (!isAllMail) {
+          const nowIso = new Date().toISOString();
           rows = rows.filter((e) => {
-            const active = !e.snoozed_until || e.snoozed_until <= new Date().toISOString();
+            const active = !e.snoozed_until || e.snoozed_until <= nowIso;
             if (!active) return false;
             if (selectedFolder === "all") return e.is_archived === false && (e.raw_labels ?? []).includes("INBOX");
             if (isNoRules) return e.folder_id === null;
