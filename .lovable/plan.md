@@ -1,41 +1,67 @@
-## Verification of the 15:45 reconnect (step 0)
+# Make Zerrow inbox auto-update reliably (root cause: case-sensitive email match)
 
-Queried `gmail_accounts`:
+## What's actually broken
 
-| email | needs_reconnect | refresh_token present | updated_at |
-|---|---|---|---|
-| chris@nucar.com | false | yes | 20:50:30Z |
-| TPercoco@nucar.com | false | yes | 20:45:29Z |
-| chris@dagesse.com | false | yes | 20:43:07Z |
+Tony's account is stored as `TPercoco@nucar.com`. Gmail's Pub/Sub pushes arrive with the address lower-cased: `tpercoco@nucar.com`. The webhook looks the account up with:
 
-Reconnect flow works end-to-end. So any duplicate-key errors we still see are a real ingest race, not a side-effect of the dead-OAuth state.
+```ts
+.eq("email_address", emailAddress)   // case-sensitive in Postgres
+```
 
-## 1. Short-circuit reconcile on `needs_reconnect`
+So every push for him resolves to `accounts_matched = 0` and `synced_count = 0`. Confirmed in the database — the last 10 push events for his mailbox all show 0 accounts matched, 0 synced, despite the gmail_accounts row existing and being healthy (watch valid until June 2, no reconnect needed, no OAuth error).
 
-`src/routes/api/public/gmail-reconcile.ts` currently selects every `gmail_account` and calls `reconcileLocalInbox` on each. For dead-OAuth accounts every Gmail roundtrip inside `reconcile` throws — same noise pattern poll and renew-watches already filter out.
+The poll cron still runs every few minutes, which is why mail eventually shows up — but never in real time. The realtime websocket / `useEmailRealtime` hook itself is fine; there's just nothing being inserted for it to broadcast.
 
-Mirror the renew-watches pattern: add `.eq("needs_reconnect", false)` to the account select. One-line change; no logic change for healthy accounts.
+Other users with all-lowercase stored addresses are unaffected, which is why this looks intermittent rather than global.
 
-## 2. Make every `emails` INSERT conflict-safe
+## Fix
 
-There is a `UNIQUE(gmail_message_id)` index AND a `UNIQUE(gmail_account_id, gmail_message_id)` index, so any race that causes two ingest paths to touch the same message throws `23505` and aborts the surrounding batch. Three INSERT sites to fix:
+### 1. Make the webhook lookup case-insensitive
 
-**A. `src/lib/sync/process-message.ts:117` — primary ingest (push + poll)**
-This is the hot path. Switch from `.insert({...}).select("id").single()` to `.upsert({...}, { onConflict: "gmail_message_id" }).select("id").single()`. DO UPDATE semantics are appropriate here: a re-delivered push should refresh `snippet`, `body_text`, `body_html`, `raw_labels`, `is_read`, `received_at`, `published_at_ms`. Keep `folder_id: null` / `classified_by: "pending"` only on first insert — guard by not including them in the upsert payload, OR accept that re-pushes will reset classification (cheap: step 2 reclassifies immediately). Recommend the latter for simplicity, matching the "re-fetch refreshes everything" intent.
+In `src/routes/api/public/gmail-webhook.ts` (the `.eq("email_address", emailAddress)` call), switch to a case-insensitive match. Two options; we'll use the first because it's a one-line change with no schema impact:
 
-**B. `src/lib/sync/folder-learn.ts:263` and `:388` — label-seed + load-older**
-These are discovery walks; they already `.select(... gmail_message_id ...).in(...)` to skip known IDs, but a concurrent push between the select and the insert can still collide. DO NOTHING is the right semantic — the live ingest path owns content; the learner only assigns `folder_id`. Use `.upsert({...}, { onConflict: "gmail_message_id", ignoreDuplicates: true })`. After upsert returns 0 rows, do the existing `update({ folder_id, classified_by: "gmail_label", ... })` keyed on `gmail_message_id` so the learner still claims the row.
+```ts
+.ilike("email_address", emailAddress)   // exact match, case-insensitive
+```
 
-**C. `src/lib/gmail.functions.ts:1859` — `searchGmailAndIngest`**
-Same as B — discovery path. `.upsert({...}, { onConflict: "gmail_message_id", ignoreDuplicates: true })` and treat the no-op case as "already had it" rather than an error.
+(`ilike` without `%` wildcards is an exact case-insensitive equality — same semantics as `=` but folded.)
 
-Result: no INSERT in the codebase can ever throw `23505` for `gmail_message_id`. Batches stop aborting mid-stream.
+### 2. Normalize existing rows so the data is clean
 
-## Files changed
+One-off migration to lowercase any stored Gmail address that isn't already lowercase:
 
-- `src/routes/api/public/gmail-reconcile.ts` — add `needs_reconnect=false` filter
-- `src/lib/sync/process-message.ts` — `.insert` → `.upsert(..., { onConflict: "gmail_message_id" })`
-- `src/lib/sync/folder-learn.ts` — two inserts → `.upsert(..., { onConflict: "gmail_message_id", ignoreDuplicates: true })` + claim-by-message-id update
-- `src/lib/gmail.functions.ts` (searchGmailAndIngest) — same treatment
+```sql
+UPDATE public.gmail_accounts
+   SET email_address = lower(email_address),
+       updated_at = now()
+ WHERE email_address <> lower(email_address);
+```
 
-Pure backend hygiene; no schema migration, no UI change.
+### 3. Normalize on write going forward
+
+So a future reconnect or new connection can't reintroduce the bug:
+
+- `src/routes/api/public/google-oauth-callback.ts` — lowercase the `email` we get from Google's userinfo before calling `upsert_gmail_oauth_account`.
+- Anywhere else we insert/update `gmail_accounts.email_address` (audit `src/lib/gmail.functions.ts`), apply `.toLowerCase()` at the boundary.
+
+### 4. Add a defensive index (optional but cheap)
+
+A functional index keeps `ilike` on an exact value fast even as the table grows:
+
+```sql
+CREATE INDEX IF NOT EXISTS gmail_accounts_email_lower_idx
+  ON public.gmail_accounts (lower(email_address));
+```
+
+### 5. Verify the fix
+
+After deploy:
+- Trigger a real send to Tony's mailbox (or wait for the next inbound).
+- Check the latest `pubsub_events` rows: expect `accounts_matched = 1`, `synced_count >= 1`.
+- Confirm Tony sees the new message appear in Zerrow without refresh.
+
+## Out of scope (intentionally)
+
+- No changes to `useEmailRealtime`, the realtime publication, or replica identity — those are working correctly.
+- No changes to the poll / reconcile / cron pipeline.
+- No new logging beyond what we added in the recent fidelity pass — the existing structured logs already surface this once we know what to look for; the data-layer fix is what's needed.
