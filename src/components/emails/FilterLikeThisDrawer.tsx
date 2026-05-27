@@ -265,8 +265,8 @@ export function FilterLikeThisDrawer({
             </div>
           </div>
 
-          {/* Match type — subject only */}
-          {field === "subject" && (
+          {/* Match type — subject only, never in inbox mode */}
+          {field === "subject" && !isInboxMode && (
             <div>
               <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
                 Match type
