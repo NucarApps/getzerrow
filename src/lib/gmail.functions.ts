@@ -24,6 +24,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { signState, buildAuthorizeUrl, getRedirectUri } from "./google-oauth.server";
 import { getRequestHost } from "@tanstack/react-start/server";
 import { logError } from "./log.server";
+import { removeLabelsFromCurrent } from "./sync/label-merge";
 
 async function getOwnedAccount(userId: string, accountId: string) {
   const { data, error } = await supabaseAdmin
@@ -2413,7 +2414,7 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
     // Pick rows that still need the change.
     let query = supabaseAdmin
       .from("emails")
-      .select("id, gmail_message_id")
+      .select("id, gmail_message_id, raw_labels")
       .eq("folder_id", data.folderId)
       .eq("user_id", userId)
       .limit(10000);
@@ -2441,14 +2442,21 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
     }
 
     // DB side.
-    const patch: { is_read?: boolean; is_archived?: boolean } = {};
+    const patch: { is_read?: boolean; is_archived?: boolean; raw_labels?: string[] } = {};
     if (data.behavior === "mark_read") patch.is_read = true;
     else if (data.behavior === "archive") patch.is_archived = true;
     if (Object.keys(patch).length > 0) {
-      await supabaseAdmin
-        .from("emails")
-        .update(patch)
-        .in("id", rows.map((r) => r.id));
+      if (data.behavior === "archive") {
+        await Promise.all(rows.map((row) => supabaseAdmin
+          .from("emails")
+          .update({ ...patch, raw_labels: removeLabelsFromCurrent(row.raw_labels, ["INBOX"]) })
+          .eq("id", row.id)));
+      } else {
+        await supabaseAdmin
+          .from("emails")
+          .update(patch)
+          .in("id", rows.map((r) => r.id));
+      }
     }
 
     return { count: rows.length };
