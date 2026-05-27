@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Trash2, ShieldOff, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { Trash2, ShieldOff, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 type Override = {
