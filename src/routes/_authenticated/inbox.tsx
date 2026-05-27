@@ -1187,6 +1187,27 @@ function InboxPage() {
         />
       )}
 
+      <AssistantPanel
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        accountId={accountId}
+        folders={(foldersQ.data ?? []).map((f) => ({ id: f.id, name: f.name }))}
+        selectedEmails={(() => {
+          const ids = selectedIds.size > 0
+            ? Array.from(selectedIds)
+            : selected ? [selected.id] : [];
+          return ids
+            .map((id) => filtered.find((e) => e.id === id) ?? (selected?.id === id ? selected : null))
+            .filter((e): e is Email => !!e)
+            .map((e) => ({
+              id: e.id,
+              from_name: e.from_name,
+              from_addr: e.from_addr,
+              subject: e.subject,
+            }));
+        })()}
+      />
+
       <Dialog open={!!suggestion} onOpenChange={(v) => { if (!v) setSuggestion(null); }}>
         <DialogContent>
           <DialogHeader>
