@@ -91,6 +91,7 @@ type Email = {
   processed_at: string | null;
   raw_labels?: string[] | null;
   snoozed_until?: string | null;
+  gmail_message_id?: string | null;
 };
 
 type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
