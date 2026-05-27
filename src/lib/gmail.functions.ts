@@ -1803,48 +1803,38 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     let totalIngested = 0;
     let totalFound = 0;
     let reauthFailures = 0;
+    let rateLimited = false;
     const hitGmailMessageIds: string[] = [];
 
+    const isRateLimit = (e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      return /rateLimitExceeded|Quota exceeded|userRateLimitExceeded|429/i.test(msg);
+    };
 
     for (const accountId of accountIds) {
       try {
-        // For deep searches, page through up to ~500 IDs per account; for
-        // plain free-text keep the single-page 50-result cap.
-        const PAGE = isDeep ? 100 : 50;
-        const MAX_PAGES = isDeep ? 5 : 1;
+        // Page Gmail search results modestly. Going wider triggers per-user
+        // quota errors; 2x100 covers the vast majority of name searches.
+        const PAGE = 100;
+        const MAX_PAGES = isDeep ? 2 : 1;
         const hits: Array<{ id: string; threadId: string }> = [];
         let pageToken: string | undefined;
         for (let p = 0; p < MAX_PAGES; p++) {
-          const list = await listMessages(accountId, { q, maxResults: PAGE, pageToken });
-          for (const m of list.messages ?? []) hits.push(m);
-          pageToken = list.nextPageToken;
-          if (!pageToken) break;
+          try {
+            const list = await listMessages(accountId, { q, maxResults: PAGE, pageToken });
+            for (const m of list.messages ?? []) hits.push(m);
+            pageToken = list.nextPageToken;
+            if (!pageToken) break;
+          } catch (e) {
+            if (isRateLimit(e)) { rateLimited = true; break; }
+            throw e;
+          }
         }
         if (hits.length === 0) continue;
 
-        // Expand each hit to its full thread so replies that aren't direct hits
-        // also get pulled in (e.g. a "Re: ..." reply in a thread we already have).
-        const threadIds = Array.from(new Set(hits.map((m) => m.threadId).filter(Boolean)));
+        // Use only direct Gmail search hits (no thread expansion) so we don't
+        // burn Gmail per-minute quota fetching unrelated thread messages.
         const allMessageIds = new Set<string>(hits.map((m) => m.id));
-
-        const THREAD_CONCURRENCY = 6;
-        let ti = 0;
-        async function threadWorker() {
-          while (ti < threadIds.length) {
-            const tid = threadIds[ti++];
-            try {
-              const t = await getThread(accountId, tid);
-              for (const m of t.messages ?? []) {
-                if (m?.id) allMessageIds.add(m.id);
-              }
-            } catch (e) {
-              logError("gmail.search_ingest.thread_fetch_failed", { account_id: accountId, thread_id: tid }, e);
-            }
-          }
-        }
-        await Promise.all(
-          Array.from({ length: Math.min(THREAD_CONCURRENCY, threadIds.length) }, threadWorker)
-        );
 
         const idsArr = Array.from(allMessageIds);
         for (const id of idsArr) hitGmailMessageIds.push(id);
