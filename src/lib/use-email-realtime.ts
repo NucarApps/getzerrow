@@ -9,32 +9,80 @@ export type EmailRow = {
   received_at: string | null;
   is_archived: boolean | null;
   folder_id: string | null;
+  gmail_account_id?: string | null;
   raw_labels?: string[] | null;
   [key: string]: unknown;
 };
 
 /**
  * Heuristic: do we believe `row` belongs in the list identified by
- * `queryKey`? We inspect the key shape — without server-side knowledge of
- * the query's filters we conservatively reject any list whose key hints
- * at a scope (folder id, "archived", etc.) that doesn't match the row.
- * The top-level ["emails"] list is treated as the all-inbox view and
- * accepts everything.
+ * `queryKey`? Inbox queries use the shape:
+ *
+ *   ["emails", accountId, scope, paginationOrSearchKey]
+ *
+ * where `scope` is one of: "all" (INBOX label), "all_mail" (no filter),
+ * "no_rules" (folder_id null + no user Label_*), a folder UUID, or
+ * undefined/null. Top-level invalidations may pass just ["emails"].
  *
  * Exported for unit tests. Keep in sync with the inbox.tsx query keys.
  */
 export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): boolean {
   if (queryKey.length <= 1) return true;
-  const tag = queryKey[1];
-  if (typeof tag === "string") {
-    if (tag === "all") return true;
-    if (tag === "archived") return row.is_archived === true;
-    if (tag === "inbox") return Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
-    // Any other string segment is treated as a folder id.
-    return row.folder_id === tag;
+
+  // [1] = accountId (or legacy scope tag). If it's a string and the row
+  // exposes gmail_account_id, require an exact match — otherwise the row
+  // belongs to a different account's list. If the row payload doesn't
+  // carry gmail_account_id (defensive), fall through and let scope decide.
+  const accountTag = queryKey[1];
+  if (typeof accountTag === "string" && row.gmail_account_id != null) {
+    if (row.gmail_account_id !== accountTag) {
+      // Legacy fallback: support older query keys where [1] WAS the scope
+      // (e.g. ["emails", "all"]). Only honor recognised scope strings.
+      if (
+        accountTag === "all" || accountTag === "all_mail" ||
+        accountTag === "inbox" || accountTag === "archived" ||
+        accountTag === "no_rules"
+      ) {
+        return matchesScope(row, accountTag);
+      }
+      return false;
+    }
+  } else if (typeof accountTag !== "string" && accountTag != null) {
+    // Non-string, non-null tag (numbers, objects) — refuse to guess.
+    return false;
   }
-  return false;
+
+  // [2] = scope.
+  if (queryKey.length <= 2) return true;
+  const scope = queryKey[2];
+  if (scope == null) return true;
+  if (typeof scope !== "string") return false;
+
+  // Search results are recomputed by the query itself; don't try to splice
+  // realtime inserts/updates into them.
+  if (queryKey.length > 3) {
+    const pageKey = queryKey[3];
+    if (typeof pageKey === "string" && pageKey.startsWith("search:")) return false;
+  }
+
+  return matchesScope(row, scope);
 }
+
+function matchesScope(row: EmailRow, scope: string): boolean {
+  if (scope === "all_mail") return true;
+  if (scope === "all" || scope === "inbox") {
+    return Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
+  }
+  if (scope === "archived") return row.is_archived === true;
+  if (scope === "no_rules") {
+    if (row.folder_id !== null) return false;
+    const labels = Array.isArray(row.raw_labels) ? row.raw_labels : [];
+    return !labels.some((l) => typeof l === "string" && l.startsWith("Label_"));
+  }
+  // Any other string is treated as a folder UUID.
+  return row.folder_id === scope;
+}
+
 
 /**
  * Single source of truth for inbox realtime + catch-up.
