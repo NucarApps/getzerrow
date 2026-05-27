@@ -1993,9 +1993,9 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     }
 
     if (reauthFailures > 0 && reauthFailures === accountIds.length) {
-      return { ingested: 0, found: 0, reason: "reauth_required" as const };
+      return { ingested: 0, found: 0, reason: "reauth_required" as const, hit_gmail_message_ids: [] as string[] };
     }
-    return { ingested: totalIngested, found: totalFound };
+    return { ingested: totalIngested, found: totalFound, hit_gmail_message_ids: hitGmailMessageIds };
   });
 
 
