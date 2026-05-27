@@ -225,7 +225,7 @@ export function FilterLikeThisDrawer({
                 onClick={() => pickField("subject")}
                 icon={<Type className="h-3.5 w-3.5" />}
                 label="Subject"
-                disabled={!subject}
+                disabled={!subject || isInboxMode}
               />
             </div>
           </div>
