@@ -302,7 +302,7 @@ function InboxPage() {
   const moveInboxFn = useServerFn(moveEmailToInbox);
   const addOverrideFn = useServerFn(addInboxOverride);
   const stripLabelFn = useServerFn(stripFolderLabelPast);
-  const addFolderRuleFn = useServerFn(addFolderRule);
+  
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
   const { selected: selectedFolder } = useFolderSelection();
