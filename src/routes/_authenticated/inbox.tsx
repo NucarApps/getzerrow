@@ -497,19 +497,22 @@ function InboxPage() {
     | { query: string; ingested: number; found: number; reason?: string }
     | null
   >(null);
+  const [gmailHitIds, setGmailHitIds] = useState<{ query: string; ids: Set<string> }>({ query: "", ids: new Set() });
   useEffect(() => {
     const qstr = query.trim();
-    if (qstr.length < 3) { setLastGmailResult(null); return; }
+    if (qstr.length < 3) { setLastGmailResult(null); setGmailHitIds({ query: "", ids: new Set() }); return; }
     const handle = setTimeout(async () => {
       setGmailSearching(true);
       try {
-        const r: any = await searchGmailFn({ data: { query: qstr } });
+        const r: { ingested?: number; found?: number; reason?: string; hit_gmail_message_ids?: string[] } =
+          await searchGmailFn({ data: { query: qstr } });
         setLastGmailResult({ query: qstr, ingested: r?.ingested ?? 0, found: r?.found ?? 0, reason: r?.reason });
-        if (r?.ingested > 0) {
+        setGmailHitIds({ query: qstr.toLowerCase(), ids: new Set(r?.hit_gmail_message_ids ?? []) });
+        if ((r?.ingested ?? 0) > 0) {
           await qc.refetchQueries({ queryKey: ["emails"] });
           toast.success(`Pulled ${r.ingested} email${r.ingested === 1 ? "" : "s"} from Gmail.`);
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("gmail search failed", e);
       } finally {
         setGmailSearching(false);
