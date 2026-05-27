@@ -25,18 +25,20 @@ export const getAdminMe = createServerFn({ method: "GET" })
     return { email };
   });
 
+export type AdminGmailAccount = {
+  email_address: string | null;
+  last_poll_at: string | null;
+  last_push_at: string | null;
+  watch_expiration: string | null;
+  has_history_id: boolean;
+};
+
 export type AdminUser = {
   user_id: string;
   email: string;
   created_at: string;
   last_sign_in_at: string | null;
-  gmail: {
-    email_address: string | null;
-    last_poll_at: string | null;
-    last_push_at: string | null;
-    watch_expiration: string | null;
-    has_history_id: boolean;
-  } | null;
+  gmail_accounts: AdminGmailAccount[];
   stats: {
     emails: number;
     folders: number;
@@ -103,17 +105,20 @@ export const listAdminUsers = createServerFn({ method: "GET" })
       });
     }
 
-    const gmailByUser = new Map<string, AdminUser["gmail"]>();
+    const gmailByUser = new Map<string, AdminGmailAccount[]>();
     for (const g of gmailRes.data ?? []) {
-      // First gmail account wins (most users have one).
-      if (gmailByUser.has(g.user_id)) continue;
-      gmailByUser.set(g.user_id, {
+      const list = gmailByUser.get(g.user_id) ?? [];
+      list.push({
         email_address: g.email_address ?? null,
         last_poll_at: g.last_poll_at ?? null,
         last_push_at: g.last_push_at ?? null,
         watch_expiration: g.watch_expiration ?? null,
         has_history_id: !!g.history_id,
       });
+      gmailByUser.set(g.user_id, list);
+    }
+    for (const list of gmailByUser.values()) {
+      list.sort((a, b) => (a.email_address ?? "").localeCompare(b.email_address ?? ""));
     }
 
     const users: AdminUser[] = authUsers.map((u) => ({
@@ -121,7 +126,7 @@ export const listAdminUsers = createServerFn({ method: "GET" })
       email: u.email ?? "(no email)",
       created_at: u.created_at,
       last_sign_in_at: u.last_sign_in_at,
-      gmail: gmailByUser.get(u.id) ?? null,
+      gmail_accounts: gmailByUser.get(u.id) ?? [],
       stats: statsByUser.get(u.id) ?? {
         emails: 0,
         folders: 0,
