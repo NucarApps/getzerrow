@@ -1605,7 +1605,7 @@ export const addInboxOverride = createServerFn({ method: "POST" })
     if (data.reprocess_past) {
       let q = supabaseAdmin
         .from("emails")
-        .select("id, gmail_message_id, gmail_account_id, folder_id, from_addr")
+        .select("id, gmail_message_id, gmail_account_id, folder_id, from_addr, raw_labels")
         .eq("user_id", context.userId)
         .not("folder_id", "is", null);
       if (data.match_type === "email") {
@@ -1626,7 +1626,7 @@ export const addInboxOverride = createServerFn({ method: "POST" })
           .select("id, gmail_label_id")
           .in("id", folderIds);
         const labelById = new Map((fs ?? []).map((f) => [f.id, f.gmail_label_id]));
-        const reason = `Global inbox list: ${data.match_type} "${value}"`;
+        const reason = `Always-inbox: ${data.match_type} "${value}"`;
 
         const concurrency = 5;
         let i = 0;
@@ -1634,23 +1634,37 @@ export const addInboxOverride = createServerFn({ method: "POST" })
           while (i < matches.length) {
             const m = matches[i++];
             try {
+              const oldLabel = m.folder_id ? labelById.get(m.folder_id) : null;
+              const currentLabels = ((m as { raw_labels: string[] | null }).raw_labels ?? []) as string[];
+              // Reprocess past path: row was filed into a folder (often
+              // auto-archived with INBOX stripped). Restore INBOX locally
+              // AND in Gmail so the row matches the inbox view filter
+              // (raw_labels @> ['INBOX']) just like the runtime
+              // inbox_override path in process-message.
+              const nextLabels = Array.from(
+                new Set(currentLabels.filter((l) => !oldLabel || l !== oldLabel).concat(["INBOX"])),
+              );
               await supabaseAdmin
                 .from("emails")
                 .update({
                   folder_id: null,
-                  classified_by: "global_exclude",
+                  is_archived: false,
+                  classified_by: "inbox_override",
                   classification_reason: reason,
                   matched_filter_ids: [],
                   ai_summary: null,
+                  raw_labels: nextLabels,
                 })
                 .eq("id", m.id);
-              const oldLabel = m.folder_id ? labelById.get(m.folder_id) : null;
-              if (oldLabel) {
-                try {
-                  await modifyMessage(m.gmail_account_id, m.gmail_message_id, [], [oldLabel]);
-                } catch (e) {
-                  logError("gmail.reprocess.label_strip_failed", { email_id: m.id }, e);
-                }
+              try {
+                await modifyMessage(
+                  m.gmail_account_id,
+                  m.gmail_message_id,
+                  ["INBOX"],
+                  oldLabel ? [oldLabel] : [],
+                );
+              } catch (e) {
+                logError("gmail.reprocess.label_sync_failed", { email_id: m.id }, e);
               }
               reprocessed_count++;
             } catch (e) {
