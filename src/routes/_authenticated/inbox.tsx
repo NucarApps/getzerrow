@@ -88,6 +88,7 @@ type Email = {
   has_attachment: boolean;
   processed_at: string | null;
   raw_labels?: string[] | null;
+  snoozed_until?: string | null;
 };
 
 type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
@@ -363,10 +364,10 @@ function InboxPage() {
   // (often multi-MB) — those are fetched on-demand via selectedFullQ when
   // the user actually opens an email. Keeps both the initial fetch AND
   // every realtime UPDATE payload small. raw_labels is included because
-  // the "no_rules" filter reads it. snoozed_until is a DB-side predicate
-  // only, so we don't select it; forward_* columns are operator-facing,
-  // not rendered in the inbox.
-  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels";
+  // the "no_rules" filter reads it. snoozed_until is included so local
+  // search results can apply the same visibility filter as normal lists.
+  // forward_* columns are operator-facing, not rendered in the inbox.
+  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels,snoozed_until";
 
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
