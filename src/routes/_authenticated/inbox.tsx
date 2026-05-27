@@ -1170,19 +1170,18 @@ function InboxPage() {
         )}
       </div>
 
-      {folderRulePrompt && (
-        <MoveSimilarDialog
-          open={!!folderRulePrompt}
-          onOpenChange={(v) => { if (!v) setFolderRulePrompt(null); }}
-          emailId={folderRulePrompt.emailId}
-          fromFolderId={folderRulePrompt.fromFolderId}
-          fromAddr={folderRulePrompt.fromAddr}
-          domain={folderRulePrompt.domain}
-          toFolder={folderRulePrompt.toFolder}
+      {filterPrompt && (
+        <FilterLikeThisDrawer
+          open={!!filterPrompt}
+          onOpenChange={(v) => { if (!v) setFilterPrompt(null); }}
+          accountId={accountId}
+          fromAddr={filterPrompt.fromAddr}
+          subject={filterPrompt.subject}
           folders={foldersQ.data ?? []}
-          defaultMode={folderRulePrompt.mode}
+          currentFolderId={filterPrompt.currentFolderId}
         />
       )}
+
       <Dialog open={!!suggestion} onOpenChange={(v) => { if (!v) setSuggestion(null); }}>
         <DialogContent>
           <DialogHeader>
