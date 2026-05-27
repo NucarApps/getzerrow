@@ -379,6 +379,9 @@ function InboxPage() {
     setCursors([null]);
     setSelectedId(null);
     setSelectedIds(new Set());
+    setQuery("");
+    setLastGmailResult(null);
+    setGmailHitIds({ query: "", ids: new Set() });
   }, [selectedFolder]);
   const cursor = cursors[page - 1] ?? null;
 
