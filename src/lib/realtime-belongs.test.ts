@@ -5,6 +5,8 @@
 import { describe, it, expect } from "vitest";
 import { rowBelongsInList, type EmailRow } from "./use-email-realtime";
 
+const ACC = "acc-1";
+
 function row(over: Partial<EmailRow> = {}): EmailRow {
   return {
     id: over.id ?? "row-1",
@@ -13,6 +15,7 @@ function row(over: Partial<EmailRow> = {}): EmailRow {
     received_at: over.received_at ?? new Date().toISOString(),
     is_archived: over.is_archived ?? false,
     folder_id: over.folder_id ?? null,
+    gmail_account_id: "gmail_account_id" in over ? over.gmail_account_id : ACC,
     raw_labels: "raw_labels" in over ? over.raw_labels : ["INBOX"],
   };
 }
@@ -23,45 +26,58 @@ describe("rowBelongsInList", () => {
     expect(rowBelongsInList(row({ is_archived: true, folder_id: "f-1" }), ["emails"])).toBe(true);
   });
 
-  it("['emails', 'all'] accepts any row", () => {
-    expect(rowBelongsInList(row({ folder_id: "f-1", is_archived: true }), ["emails", "all"])).toBe(true);
-    expect(rowBelongsInList(row({ folder_id: null, is_archived: false }), ["emails", "all"])).toBe(true);
+  it("['emails', accountId] (no scope) accepts any row for that account", () => {
+    expect(rowBelongsInList(row(), ["emails", ACC])).toBe(true);
+    expect(rowBelongsInList(row({ gmail_account_id: "other" }), ["emails", ACC])).toBe(false);
   });
 
-  it("['emails', 'inbox'] accepts ONLY rows whose raw_labels include INBOX (mirrors Gmail INBOX)", () => {
-    expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), ["emails", "inbox"])).toBe(true);
-    // Foldered rows that still have INBOX should appear (e.g. Zerrow folder without auto-archive).
-    expect(rowBelongsInList(row({ raw_labels: ["INBOX", "Label_123"], folder_id: "f-1" }), ["emails", "inbox"])).toBe(true);
-    // No INBOX label → not in inbox, regardless of is_archived/folder_id.
-    expect(rowBelongsInList(row({ raw_labels: ["Label_123"], folder_id: "f-1" }), ["emails", "inbox"])).toBe(false);
-    expect(rowBelongsInList(row({ raw_labels: [] }), ["emails", "inbox"])).toBe(false);
-    expect(rowBelongsInList(row({ raw_labels: null }), ["emails", "inbox"])).toBe(false);
+  it("['emails', accountId, 'all'] accepts ONLY rows whose raw_labels include INBOX", () => {
+    expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), ["emails", ACC, "all"])).toBe(true);
+    expect(rowBelongsInList(row({ raw_labels: ["INBOX", "Label_123"], folder_id: "f-1" }), ["emails", ACC, "all"])).toBe(true);
+    expect(rowBelongsInList(row({ raw_labels: ["Label_123"] }), ["emails", ACC, "all"])).toBe(false);
+    expect(rowBelongsInList(row({ raw_labels: [] }), ["emails", ACC, "all"])).toBe(false);
+    expect(rowBelongsInList(row({ raw_labels: null }), ["emails", ACC, "all"])).toBe(false);
   });
 
-  it("['emails', 'archived'] accepts ONLY archived rows", () => {
-    expect(rowBelongsInList(row({ is_archived: true }), ["emails", "archived"])).toBe(true);
-    expect(rowBelongsInList(row({ is_archived: false }), ["emails", "archived"])).toBe(false);
-    expect(rowBelongsInList(row({ is_archived: null }), ["emails", "archived"])).toBe(false);
+  it("['emails', accountId, 'all_mail'] accepts everything for that account", () => {
+    expect(rowBelongsInList(row({ raw_labels: [], is_archived: true, folder_id: "f-1" }), ["emails", ACC, "all_mail"])).toBe(true);
+    expect(rowBelongsInList(row({ gmail_account_id: "other" }), ["emails", ACC, "all_mail"])).toBe(false);
   });
 
-  it("['emails', <folder-id>] accepts ONLY rows whose folder_id matches", () => {
-    expect(rowBelongsInList(row({ folder_id: "f-abc" }), ["emails", "f-abc"])).toBe(true);
-    expect(rowBelongsInList(row({ folder_id: "f-xyz" }), ["emails", "f-abc"])).toBe(false);
-    expect(rowBelongsInList(row({ folder_id: null }), ["emails", "f-abc"])).toBe(false);
+  it("['emails', accountId, 'archived'] accepts ONLY archived rows", () => {
+    expect(rowBelongsInList(row({ is_archived: true }), ["emails", ACC, "archived"])).toBe(true);
+    expect(rowBelongsInList(row({ is_archived: false }), ["emails", ACC, "archived"])).toBe(false);
   });
 
-  it("treats unknown non-string tags as 'don't insert' (safer than guess)", () => {
+  it("['emails', accountId, 'no_rules'] requires folder_id null and no user labels", () => {
+    expect(rowBelongsInList(row({ folder_id: null, raw_labels: ["INBOX"] }), ["emails", ACC, "no_rules"])).toBe(true);
+    expect(rowBelongsInList(row({ folder_id: "f-1", raw_labels: ["INBOX"] }), ["emails", ACC, "no_rules"])).toBe(false);
+    expect(rowBelongsInList(row({ folder_id: null, raw_labels: ["INBOX", "Label_5"] }), ["emails", ACC, "no_rules"])).toBe(false);
+  });
+
+  it("['emails', accountId, <folder-id>] accepts ONLY rows whose folder_id matches", () => {
+    expect(rowBelongsInList(row({ folder_id: "f-abc" }), ["emails", ACC, "f-abc"])).toBe(true);
+    expect(rowBelongsInList(row({ folder_id: "f-xyz" }), ["emails", ACC, "f-abc"])).toBe(false);
+    expect(rowBelongsInList(row({ folder_id: null }), ["emails", ACC, "f-abc"])).toBe(false);
+  });
+
+  it("search query keys reject realtime inserts/updates", () => {
+    const key = ["emails", ACC, "all", "search:foo bar"];
+    expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), key)).toBe(false);
+  });
+
+  it("pagination query keys still accept matching rows", () => {
+    const key = ["emails", ACC, "all", "page:0:start"];
+    expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), key)).toBe(true);
+  });
+
+  it("legacy ['emails', '<scope>'] keys still work when accountId not present in row", () => {
+    expect(rowBelongsInList(row({ gmail_account_id: null, raw_labels: ["INBOX"] }), ["emails", "all"])).toBe(true);
+    expect(rowBelongsInList(row({ gmail_account_id: null, is_archived: true }), ["emails", "archived"])).toBe(true);
+  });
+
+  it("rejects unknown non-string tags at [1]", () => {
     expect(rowBelongsInList(row(), ["emails", 42])).toBe(false);
     expect(rowBelongsInList(row(), ["emails", { folderId: "f" }])).toBe(false);
-    expect(rowBelongsInList(row(), ["emails", null])).toBe(false);
-  });
-
-  it("the special tags don't get confused with folder ids", () => {
-    // A folder literally named "inbox" is unusual but possible. The folder
-    // id should be a UUID — not "inbox"/"archived"/"all" — so we can keep
-    // those as reserved tags without conflict.
-    expect(rowBelongsInList(row({ folder_id: "inbox", raw_labels: [] }), ["emails", "inbox"])).toBe(false);
-    // (Caller's responsibility: never use a literal "inbox"/"archived"/"all"
-    // as a folder id when constructing query keys.)
   });
 });
