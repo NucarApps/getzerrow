@@ -757,6 +757,14 @@ export const createContactFromScan = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    // Mirror sensitive fields into the encrypted columns (dual-write).
+    await setContactEncryptedFields({
+      contact_id: row.id,
+      phone: payload.phone ?? undefined,
+      notes: payload.notes ?? undefined,
+      address_line1: payload.address_line1 ?? undefined,
+      address_line2: payload.address_line2 ?? undefined,
+    });
 
     if (phones && phones.length > 0) {
       // Replace any existing phones for this contact.
