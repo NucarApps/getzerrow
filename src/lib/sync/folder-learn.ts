@@ -196,19 +196,16 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   const seededFromLocal = new Set<string>();
   for (const row of localRows ?? []) {
     if (knownSet.has(row.gmail_message_id)) continue;
-    const { error } = await supabaseAdmin.from("folder_examples").upsert(
-      {
-        folder_id: folderId,
-        gmail_account_id: accountId,
-        user_id: userId,
-        gmail_message_id: row.gmail_message_id,
-        from_addr: row.from_addr,
-        subject: row.subject,
-        snippet: row.snippet,
-        source: "seed",
-      },
-      { onConflict: "folder_id,gmail_message_id" },
-    );
+    const { error } = await insertFolderExampleEncrypted({
+      folder_id: folderId,
+      gmail_account_id: accountId,
+      user_id: userId,
+      gmail_message_id: row.gmail_message_id,
+      from_addr: row.from_addr,
+      subject: row.subject,
+      snippet: row.snippet,
+      source: "seed",
+    });
     if (!error) {
       learned++;
       seededFromLocal.add(row.gmail_message_id);
