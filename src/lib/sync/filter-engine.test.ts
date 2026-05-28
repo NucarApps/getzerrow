@@ -3,7 +3,7 @@
 // in isolation — useful for pinning the priority-ordering, exclude-rule,
 // and ReDoS-safety contracts.
 import { describe, it, expect } from "vitest";
-import { applyFilter, matchByFilters, labelOf, EXCLUDE_OPS, type EmailForFilter } from "./filter-engine";
+import { applyFilter, matchByFilters, labelOf, collectMatchingLeaves, EXCLUDE_OPS, type EmailForFilter } from "./filter-engine";
 import type { Filter, Folder, RuleNode } from "./types";
 
 function email(over: Partial<EmailForFilter> = {}): EmailForFilter {
