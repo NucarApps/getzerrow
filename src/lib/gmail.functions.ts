@@ -1253,11 +1253,8 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
-    const { data: email } = await supabaseAdmin
-      .from("emails_decrypted")
-      .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
-      .eq("id", data.email_id)
-      .single();
+    const { rows } = await getEmailsDecrypted([data.email_id]);
+    const email = rows[0];
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
     if (!email.id || !email.gmail_account_id || !email.gmail_message_id) {
       throw new Error("Email is missing required identifiers");
