@@ -801,12 +801,10 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    const { data: email, error: emailErr } = await supabase
-      .from("emails_decrypted")
-      .select("from_addr,from_name,subject,body_text,snippet")
-      .eq("id", data.emailId)
-      .single();
+    const { rows: emailRows, error: emailErr } = await getEmailsDecrypted([data.emailId]);
+    const email = emailRows[0];
     if (emailErr || !email) throw new Error("Email not found");
+    if (email.user_id !== userId) throw new Error("Not authorized");
 
     const addr = (email.from_addr || "").trim().toLowerCase();
     if (!addr || !/@/.test(addr)) throw new Error("This email has no sender address");
