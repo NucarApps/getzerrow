@@ -50,11 +50,21 @@ function PrivacyPage() {
             Security procedures are in place to protect the confidentiality of your data. We use encryption to protect your information, both in transit and at rest:
             <ul className="mt-3 list-disc space-y-2 pl-6">
               <li>All traffic between your browser, Gmail, and Zerrow is encrypted in transit using TLS 1.2 or higher.</li>
-              <li>Synced messages, metadata, summaries, and folder rules are encrypted at rest in our managed database.</li>
+              <li>Email message bodies and AI-generated summaries are encrypted at the column level using authenticated encryption (pgsodium AEAD) with a server-held key, so the raw text is unreadable directly from the database. Other fields (such as subject, sender, and your folder rules) are stored in our managed Postgres database with disk-level encryption at rest provided by our infrastructure provider.</li>
               <li>Google OAuth access and refresh tokens are encrypted at the column level using a server-held key (pgcrypto) and are never exposed to the browser.</li>
-              <li>Row-level security ensures each user can only access their own data, and our services run with least-privilege credentials.</li>
-              <li>Secrets are stored in a managed secret store, production access is restricted to a small number of staff, and access is audit-logged.</li>
+              <li>Row-level security ensures each authenticated user can only access their own data. Server-side database access is gated by authenticated server functions that verify the requesting user before touching their data.</li>
+              <li>Secrets are stored in a managed secret store rather than in source code or shipped to the browser, and production access is restricted.</li>
               <li>We periodically review our security procedures, dependencies, and access policies to keep your data protected.</li>
+            </ul>
+          </Section>
+          <Section title="Limited Use of Google user data">
+            Zerrow's use and transfer to any other app of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noreferrer" style={{ color: INK, textDecoration: "underline" }}>Google API Services User Data Policy</a>, including the Limited Use requirements.
+            <ul className="mt-3 list-disc space-y-2 pl-6">
+              <li>We use Google user data only to provide and improve the user-facing features of Zerrow (classifying, filing, summarizing, and drafting replies to your email).</li>
+              <li>We do not sell Google user data and we do not use it for advertising.</li>
+              <li>We do not transfer Google user data to others except as necessary to provide or improve these features, comply with applicable law, or as part of a merger, acquisition, or sale of assets with notice to users.</li>
+              <li>We do not allow humans to read your Google user data, except with your explicit consent, for security and abuse investigations, to comply with applicable law, or where the data has been aggregated and anonymized.</li>
+              <li>Email content sent to our AI provider for classification, summarization, and reply drafting is processed under that provider's API data-processing terms, which prohibit using customer API content to train their generalized models. We do not separately train any models on your email content.</li>
             </ul>
           </Section>
           <Section title="Limited Use of Google user data">
