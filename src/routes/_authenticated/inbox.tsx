@@ -1551,14 +1551,18 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                 try {
                   const r = await addContactFn({ data: { emailId: email.id } });
                   qc.invalidateQueries({ queryKey: ["contacts"] });
-                  toast.success(
-                    <span>
-                      Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
-                      <Link to="/contacts/$id" params={{ id: r.contact.id }} className="underline">
-                        View
-                      </Link>
-                    </span>
-                  );
+                  if (!r.contact) {
+                    toast.success("Added to contacts");
+                  } else {
+                    toast.success(
+                      <span>
+                        Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
+                        <Link to="/contacts/$id" params={{ id: r.contact.id }} className="underline">
+                          View
+                        </Link>
+                      </span>
+                    );
+                  }
                 } catch (e: any) {
                   toast.error(e.message);
                 } finally {
