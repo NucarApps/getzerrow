@@ -483,6 +483,14 @@ ${convoSample}`,
       .select("*")
       .single();
     if (upErr) throw new Error(upErr.message);
+    // Mirror sensitive fields into the encrypted columns (dual-write).
+    await setContactEncryptedFields({
+      contact_id: contact.id,
+      phone: patch.phone ?? undefined,
+      relationship_summary: patch.relationship_summary ?? undefined,
+      address_line1: patch.address_line1 ?? undefined,
+      address_line2: patch.address_line2 ?? undefined,
+    });
     return { contact: updated, skipped: false as const };
   });
 
