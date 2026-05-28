@@ -27,26 +27,27 @@ RPCs (`public` schema, locked to `service_role`):
 - `set_contact_encrypted_fields` (NULL = leave unchanged) / `get_contact_decrypted`.
 - `insert_folder_example_encrypted` / `get_folder_examples_decrypted`.
 
-## Phase 2 — IN PROGRESS: route ingest writes through the RPCs (dual-write)
+## Phase 2 — DONE: route ingest writes through the RPCs (dual-write)
 
-Migration `20260528_*_phase2_dual_write.sql` shipped: every encryption RPC (`insert_email_encrypted`, `update_email_encrypted`, `set_reply_draft_encrypted`, `set_contact_encrypted_fields`, `insert_folder_example_encrypted`) now writes BOTH plaintext + `*_enc`. New `upsert_email_encrypted` handles the main ingest path (on conflict gmail_message_id → update, refreshes search index). `update_email_encrypted` was extended to also accept `folder_id` / `ai_confidence` / `classified_by` / `matched_filter_ids` / `matched_folder_ids` so classify needs one call instead of two. All RPCs are still service_role only (key passed via `p_key`).
+Migration `20260528_*_phase2_dual_write.sql` shipped: every encryption RPC now writes BOTH plaintext + `*_enc`. `upsert_email_encrypted` handles the main ingest path and refreshes the search index. Follow-up migration made `insert_folder_example_encrypted` upsert on `(folder_id, gmail_message_id)`.
 
-Typed wrapper module: `src/lib/sync/encrypted-writer.ts` — exports `upsertEmailEncrypted`, `updateEmailEncrypted`, `setReplyDraftEncrypted`, `setContactEncryptedFields`, `insertFolderExampleEncrypted`. Reads `EMAIL_ENC_KEY` once and forwards.
+Typed wrapper: `src/lib/sync/encrypted-writer.ts`.
 
-Done in 2a:
-- `src/lib/sync/process-message.ts` — main upsert + repair-update + classify-update + classify-fail-update now go through the wrappers. Flag-only updates (is_read, is_archived, forward_*, raw_labels, snoozed_until) stay on direct `.update()`.
+Routed through wrappers in 2a + 2b:
+- `src/lib/sync/process-message.ts` (2a)
+- `src/lib/sync/reconcile.ts` — repair-update at line 126.
+- `src/lib/sync/folder-learn.ts` — all three `folder_examples` upserts + both `emails.upsert` sites (learnFromLinkedLabel + loadOlderFromLabel).
+- `src/lib/sync.server.ts` — batch AI classify update + per-message classify + classify-fail (lines 812 / 835 / 846).
+- `src/lib/gmail.functions.ts` — search-ingest upsert (1853), scan-folder upsert (3060), and `reply_drafts.insert` (693).
+- `src/lib/contacts.functions.ts` — enrichment update, manual update, business-card upsert, and addContactFromEmail patch now mirror sensitive fields (phone / notes / relationship_summary / address_line1 / address_line2) into the encrypted columns via `setContactEncryptedFields`.
 
-Pending in 2b (each is a focused edit on top of the same wrappers — no more migrations needed):
-- `src/lib/sync/reconcile.ts` — three update sites at lines 126 / 174 / 218.
-- `src/lib/sync/folder-learn.ts` — two `emails.upsert` sites (264, 389) → `upsertEmailEncrypted`; folder-example inserts → `insertFolderExampleEncrypted`.
-- `src/lib/sync/classify.ts` — any direct email writes (mostly already goes through the return that process-message persists).
-- `src/lib/sync/forward-retry.ts` — four flag/forward_* updates (safe to leave direct since no sensitive text changes); read path still pulls plaintext `body_text`/`subject` which is fine until Phase 3.
-- `src/lib/sync.server.ts` — three sync update sites (485, 812, 835, 846); these mutate body/subject during reconcile, so route through `updateEmailEncrypted`.
-- `src/lib/gmail.functions.ts` — upserts at 1853 (backfill insert) and 3047 (re-fetch) → `upsertEmailEncrypted`; update at 2104 / 2185 → `updateEmailEncrypted` if it touches sensitive fields.
-- Reply drafts writer (search `from('reply_drafts').insert`) → `setReplyDraftEncrypted`.
-- `src/lib/contacts.functions.ts` — every write that sets `notes`/`relationship_summary`/`phone`/`address_*` → `setContactEncryptedFields`. Other contact fields stay direct.
+Intentionally left direct (no sensitive text changes):
+- Flag-only updates: is_read, is_archived, raw_labels, snoozed_until, forward_* — in reconcile, sync.server label-apply, resyncMessage, reconcileInboxFromGmail, forward-retry.
+- contacts bulk import (lines 939 / 1048) — only writes email + name, no sensitive columns.
+- folder_id-only / classified_by-only label echoes in sync.server.applyLabelChange.
 
-Reads stay on plaintext columns through Phase 2 — dual-write means readers still see correct data. Switching reads to `get_emails_decrypted` / `get_contact_decrypted` / `search_emails` happens in Phase 3 right before plaintext columns are dropped, after backfill fills `*_enc` for historical rows.
+Reads stay on plaintext columns through Phase 2.
+
 
 
 
