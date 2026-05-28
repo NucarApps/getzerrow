@@ -7,6 +7,7 @@ import { createLovableAiGatewayProvider } from "./ai-gateway";
 import { sendContactShareEmail } from "./cards.server";
 import { listMessages, getMessage, parseMessage } from "./gmail.server";
 import { setContactEncryptedFields } from "./sync/encrypted-writer";
+import { getEmailsDecrypted } from "./sync/encrypted-reader";
 
 /** Fetch recent Gmail messages matching a query, for a user's connected accounts.
  * Returns parsed messages mapped into the same shape as our local emails_decrypted rows.
@@ -223,15 +224,19 @@ export const enrichContact = createServerFn({ method: "POST" })
       if (age < 30 * 24 * 60 * 60 * 1000) return { contact, skipped: true as const };
     }
 
-    const { data: localEmails } = await supabase
-      // emails_decrypted view: same columns, body_text/body_html
-      // auto-decrypted from the pgsodium-encrypted bytea backing
-      // columns. RLS on emails still applies via security_invoker.
-      .from("emails_decrypted")
-      .select("subject,body_text,snippet,from_name")
+    // 2-step: filter on plaintext from_addr to get ids, then decrypt
+    // bodies via get_emails_decrypted. Keeps Postgres-side filter cheap
+    // and works after the plaintext body columns are dropped.
+    const { data: idRows } = await supabase
+      .from("emails")
+      .select("id")
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
       .limit(40);
+    const { rows: decrypted } = await getEmailsDecrypted((idRows ?? []).map((r) => r.id));
+    const localEmails = decrypted.map((r) => ({
+      subject: r.subject, body_text: r.body_text, snippet: r.snippet, from_name: r.from_name,
+    }));
 
     // Lazy-load the user's Gmail accounts — used as a fallback below when
     // local storage has nothing for this address yet (new contacts, or
@@ -406,15 +411,18 @@ ${sample}`,
     // === Relationship summary: who are they, what have you discussed? ===
     try {
       const addr = contact.email;
-      const { data: localConvo } = await supabase
-        .from("emails_decrypted")
-        .select("subject,body_text,snippet,from_addr,to_addrs,received_at")
+      const { data: idRows } = await supabase
+        .from("emails")
+        .select("id")
         .or(`from_addr.eq.${addr},to_addrs.ilike.%${addr}%`)
         .order("received_at", { ascending: false })
         .limit(30);
-
+      const { rows: decryptedConvo } = await getEmailsDecrypted((idRows ?? []).map((r) => r.id));
       let convo: Array<{ subject: string | null; body_text: string | null; snippet: string | null; from_addr: string | null; to_addrs: string | null; received_at: string | null }> =
-        (localConvo ?? []) as any;
+        decryptedConvo.map((r) => ({
+          subject: r.subject, body_text: r.body_text, snippet: r.snippet,
+          from_addr: r.from_addr, to_addrs: r.to_addrs, received_at: r.received_at,
+        }));
 
       if (convo.length === 0) {
         const accountIds = await getGmailAccountIds();
@@ -793,12 +801,10 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    const { data: email, error: emailErr } = await supabase
-      .from("emails_decrypted")
-      .select("from_addr,from_name,subject,body_text,snippet")
-      .eq("id", data.emailId)
-      .single();
+    const { rows: emailRows, error: emailErr } = await getEmailsDecrypted([data.emailId]);
+    const email = emailRows[0];
     if (emailErr || !email) throw new Error("Email not found");
+    if (email.user_id !== userId) throw new Error("Not authorized");
 
     const addr = (email.from_addr || "").trim().toLowerCase();
     if (!addr || !/@/.test(addr)) throw new Error("This email has no sender address");

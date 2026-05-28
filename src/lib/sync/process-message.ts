@@ -59,12 +59,12 @@ export async function processGmailMessage(
   const t = opts.timings;
 
   const _t0 = performance.now();
-  // Phase 2 dual-write: plaintext columns are still populated alongside
-  // *_enc, so reading them here is fine. Phase 3 will switch this to
-  // get_emails_decrypted and drop the plaintext columns.
+  // Read encrypted-column presence (body_text_enc / body_html_enc) to
+  // detect rows that need a re-parse — avoids decrypting just to check
+  // existence, and works after the plaintext columns are dropped.
   const { data: existing } = await supabaseAdmin
     .from("emails")
-    .select("id, from_addr, subject, body_text, body_html, received_at")
+    .select("id, from_addr, subject, body_text_enc, body_html_enc, received_at")
     .eq("gmail_message_id", gmailId)
     .eq("gmail_account_id", accountId)
     .maybeSingle();
@@ -85,7 +85,7 @@ export async function processGmailMessage(
     const needsRepair =
       !existing.from_addr ||
       !existing.subject ||
-      (!existing.body_text && !existing.body_html) ||
+      (!existing.body_text_enc && !existing.body_html_enc) ||
       !existing.received_at;
     if (needsRepair) {
       await updateEmailEncrypted({

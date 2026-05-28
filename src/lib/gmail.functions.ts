@@ -29,6 +29,7 @@ import { buildGmailQueries } from "./sync/gmail-query-builder";
 import { matchByFilters } from "./sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "./sync/types";
 import { upsertEmailEncrypted, updateEmailEncrypted, setReplyDraftEncrypted, insertFolderExampleEncrypted } from "./sync/encrypted-writer";
+import { getEmailsDecrypted } from "./sync/encrypted-reader";
 
 async function getOwnedAccount(userId: string, accountId: string) {
   const { data, error } = await supabaseAdmin
@@ -42,14 +43,13 @@ async function getOwnedAccount(userId: string, accountId: string) {
 }
 
 async function getEmailAccount(userId: string, emailId: string) {
-  // emails_decrypted view decrypts body_text on read. RLS doesn't apply
-  // to supabaseAdmin (service role); we enforce the user_id check below.
-  const { data, error } = await supabaseAdmin
-    .from("emails_decrypted")
-    .select("gmail_message_id, gmail_account_id, user_id, thread_id, from_addr, subject, body_text, from_name")
-    .eq("id", emailId)
-    .single();
-  if (error || !data) throw new Error("Email not found");
+  // Decrypts body_text + subject + from_name via the SECURITY DEFINER
+  // get_emails_decrypted RPC. supabaseAdmin bypasses RLS; we enforce
+  // user_id below.
+  const { rows, error } = await getEmailsDecrypted([emailId]);
+  if (error) throw new Error(error);
+  const data = rows[0];
+  if (!data) throw new Error("Email not found");
   if (data.user_id !== userId) throw new Error("Not authorized");
   if (!data.gmail_message_id || !data.gmail_account_id) throw new Error("Email is missing Gmail identifiers");
   return {
@@ -755,10 +755,8 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
     z.object({ email_id: z.string().uuid(), to_folder_id: z.string().uuid() }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { data: email } = await supabaseAdmin
-      .from("emails_decrypted")
-      .select("id, user_id, folder_id, from_addr, from_name, subject, snippet, body_text")
-      .eq("id", data.email_id).single();
+    const { rows } = await getEmailsDecrypted([data.email_id]);
+    const email = rows[0];
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
     if (!email.folder_id) throw new Error("Email has no source folder");
     if (email.folder_id === data.to_folder_id) throw new Error("Source and target folders must differ");
@@ -1255,11 +1253,8 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
-    const { data: email } = await supabaseAdmin
-      .from("emails_decrypted")
-      .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
-      .eq("id", data.email_id)
-      .single();
+    const { rows } = await getEmailsDecrypted([data.email_id]);
+    const email = rows[0];
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
     if (!email.id || !email.gmail_account_id || !email.gmail_message_id) {
       throw new Error("Email is missing required identifiers");
@@ -2753,11 +2748,8 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
-    const { data: rows } = await supabaseAdmin
-      .from("emails_decrypted")
-      .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
-      .in("id", data.email_ids);
-    if (!rows) return { routed: 0, unchanged: 0, failed: 0 };
+    const { rows } = await getEmailsDecrypted(data.email_ids);
+    if (rows.length === 0) return { routed: 0, unchanged: 0, failed: 0 };
 
     let routed = 0;
     let unchanged = 0;
