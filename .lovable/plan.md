@@ -1,84 +1,83 @@
-# Phase 3 — Drop plaintext, batch-decrypt for list views
+# Fix empty inbox / "All mail" after Phase 3 encryption migration
 
-## Scope
+## Root cause
 
-Drop 11 plaintext columns: `emails.body_text/body_html/ai_summary/classification_reason`, `reply_drafts.draft_text`, `contacts.notes/relationship_summary/address_line1/address_line2/phone`.
+Phase 3 dropped the plaintext columns `subject`, `snippet`, `from_name`, `to_addrs`, `cc` from `public.emails` (only `*_enc` bytea columns remain). The inbox query in `src/routes/_authenticated/inbox.tsx` still selects them via:
 
-To keep list-view rendering, add **batch decrypt RPCs** that the inbox and contacts lists call for the rows currently visible, returning only the small fields needed (no body_text/body_html).
-
-## Step 1 — New batch-decrypt RPCs (Migration A)
-
-```sql
--- Returns just the small derived fields per email id.
-CREATE FUNCTION public.get_emails_list_fields_decrypted(p_ids uuid[], p_key text)
-  RETURNS TABLE(id uuid, ai_summary text, classification_reason text)
-  LANGUAGE sql STABLE SECURITY DEFINER ...;
-
--- Same for contacts.
-CREATE FUNCTION public.get_contacts_list_fields_decrypted(p_ids uuid[], p_key text)
-  RETURNS TABLE(id uuid, relationship_summary text)
-  LANGUAGE sql STABLE SECURITY DEFINER ...;
+```
+const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,...,to_addrs,...";
 ```
 
-Both filter rows by `auth.uid()` via the calling context to prevent leakage even with arbitrary ids.
+PostgREST rejects the request with a column-not-found error, the catch falls through to `data ?? []`, and every folder (All mail, INBOX, folder views, search) renders as empty. The user noticed it on "All mail" but every list is affected.
 
-Add a `claim_forward_retries(p_limit, p_key)` overload that returns decrypted `body_text` so forward-retry continues working.
+`getEmailListFields` already round-trips through a SECURITY DEFINER RPC to hydrate `ai_summary` + `classification_reason`. We extend that same RPC to also return the four missing list-row fields and drop them from the client-side select.
 
-Wrap them in `encrypted-reader.ts`: `getEmailListFields(ids)`, `getContactListFields(ids)`, `claimForwardRetries(limit)`.
+## Steps
 
-## Step 2 — Refactor remaining read sites
+### 1. Migration — extend the list-fields RPC
 
-| File | Current | New |
-|---|---|---|
-| `src/routes/_authenticated/inbox.tsx` | `LIST_COLUMNS` includes `ai_summary, classification_reason` | Drop both from `LIST_COLUMNS`. After list fetch + on realtime update, call `getEmailListFields` for visible ids and merge into row state. |
-| `src/routes/_authenticated/contacts.index.tsx` (list) | Selects `relationship_summary` plaintext | Drop from select, call `getContactListFields` for visible ids, merge. |
-| `src/components/contacts/ContactDetailView.tsx` | Selects plaintext PII | Switch to `getContactDecrypted` via existing `getContact` serverFn (or add one). |
-| `src/lib/contacts.functions.ts` line 154 | `.select(..., relationship_summary)` | Drop column from select, fetch via `getContactDecrypted` per row only when needed. |
-| `src/lib/contacts.functions.ts` line 916 | `.select(..., address_*, phone)` | Same pattern. |
-| `src/lib/sync/forward-retry.ts` | calls `claim_forward_retries` returning `body_text` plaintext | Call new key-aware overload. |
-| `src/lib/move-email.server.ts` line 56 | direct `.update({ classification_reason })` | Route through `updateEmailEncrypted`. |
-| `src/lib/sync/reconcile.ts` line 129 | passes body_text/body_html into encrypted-writer | Already correct, no change. |
-
-## Step 3 — Update existing RPCs (same Migration A)
-
-- `upsert_email_encrypted`, `insert_email_encrypted`, `update_email_encrypted`: stop writing plaintext into `body_text/body_html/ai_summary/classification_reason`; still write `*_enc`.
-- `set_reply_draft_encrypted`: stop writing `draft_text`.
-- `set_contact_encrypted_fields`: stop writing `notes/relationship_summary/address_line1/address_line2/phone` plaintext.
-- `get_emails_decrypted`, `get_contact_decrypted`, `get_reply_draft_decrypted`: drop `COALESCE(decrypt, plaintext)` — just `private.decrypt_text(...)`.
-- `claim_forward_retries`: replace with key-aware version that decrypts body_text.
-- `backfill_*_encryption`: drop (no longer needed — no plaintext source to backfill from).
-
-## Step 4 — Drop columns (Migration B)
+Replace `public.get_emails_list_fields_decrypted` so it also decrypts `subject`, `snippet`, `from_name`, `to_addrs`, `cc`:
 
 ```sql
-ALTER TABLE public.emails
-  DROP COLUMN body_text, DROP COLUMN body_html,
-  DROP COLUMN ai_summary, DROP COLUMN classification_reason;
-ALTER TABLE public.reply_drafts DROP COLUMN draft_text;
-ALTER TABLE public.contacts
-  DROP COLUMN notes, DROP COLUMN relationship_summary,
-  DROP COLUMN address_line1, DROP COLUMN address_line2,
-  DROP COLUMN phone;
+CREATE OR REPLACE FUNCTION public.get_emails_list_fields_decrypted(p_ids uuid[], p_key text)
+RETURNS TABLE (
+  id uuid,
+  ai_summary text,
+  classification_reason text,
+  subject text,
+  snippet text,
+  from_name text,
+  to_addrs text,
+  cc text
+)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path TO 'public','private','extensions'
+AS $$
+  SELECT
+    e.id,
+    private.decrypt_text(e.ai_summary_enc, p_key),
+    private.decrypt_text(e.classification_reason_enc, p_key),
+    private.decrypt_text(e.subject_enc, p_key),
+    private.decrypt_text(e.snippet_enc, p_key),
+    private.decrypt_text(e.from_name_enc, p_key),
+    private.decrypt_text(e.to_addrs_enc, p_key),
+    private.decrypt_text(e.cc_enc, p_key)
+  FROM public.emails e
+  WHERE e.id = ANY(p_ids);
+$$;
 ```
 
-Then regenerate types (auto).
+(No new grants needed; existing EXECUTE grants on the function remain.)
 
-## Order of execution
+### 2. Update reader types — `src/lib/sync/encrypted-reader.ts`
 
-1. Migration A (new + updated RPCs, *before* code changes — so the new RPCs exist and the old RPCs still write plaintext as a safety net).
-2. Refactor all code call sites (Steps 2). After this turn the app reads exclusively via encrypted helpers and writes only via `*_encrypted` RPCs.
-3. Migration B (drop columns + drop COALESCE in read RPCs + drop backfills).
-4. Verify: inbox loads, list summaries appear after a brief lag, reanalyze works, forward retry works, contact drawer loads, reply draft round-trip works.
+Extend `EmailListFields` with the five new nullable string fields. `getEmailListFieldsDecrypted` already passes the rows through, so no logic change.
 
-## Risk
+### 3. Update the server fn that exposes it — `src/lib/gmail.functions.ts`
 
-- Drop is destructive. All 4 buckets confirmed fully encrypted (Phase 3a verification). Rollback = restore from backup.
-- Brief flicker on list views as summaries arrive after the initial fetch (acceptable tradeoff per Option 2 choice).
-- `email_search_index` keeps its tsvector built from plaintext at write time — substring search via `search_emails` continues working unchanged.
+Find the `getEmailListFields` createServerFn and add `subject`, `snippet`, `from_name`, `to_addrs`, `cc` to the returned shape (alongside `ai_summary` / `classification_reason`).
 
-## Estimated turns
+### 4. Update the inbox query — `src/routes/_authenticated/inbox.tsx`
 
-3-4 turns:
-1. Migration A.
-2. Refactor calls sites (1-2 turns).
-3. Migration B + verify.
+- Remove `subject,snippet,from_name,to_addrs` from `LIST_COLUMNS` (keep `from_addr` — still plaintext). The constant becomes:
+  `"id,from_addr,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id"`.
+- In the operator-search branch, drop the server-side `ilike` on `subject`, `snippet`, `from_name`, `to_addrs` (the columns are gone). Keep the server-side `from_addr` filter; defer subject / snippet / to_addrs matching to the existing client-side scorer that runs over hydrated rows.
+- Extend the `listFieldsQ` merge (around line 617-`pageRows`) so the page row gets `subject`, `snippet`, `from_name`, `to_addrs`, `cc` from the hydrated map in addition to `ai_summary` / `classification_reason`.
+- `gmailHitRowsQ` uses the same `LIST_COLUMNS` — automatically fixed once the constant changes; its ids will flow into `visibleIds` and hydrate the same way.
+
+### 5. Realtime — no change required
+
+`use-email-realtime.ts` merges raw INSERT/UPDATE payloads into the cached list. Those payloads now lack plaintext, but because `listFieldsQ.queryKey` is derived from `visibleIds`, a new id triggers a new hydration fetch automatically. Existing UPDATE events for `is_read` / `folder_id` / `raw_labels` carry no plaintext changes, so the in-place merge stays correct.
+
+## Files touched
+
+- new migration: `supabase/migrations/<timestamp>_extend_list_fields_rpc.sql`
+- `src/lib/sync/encrypted-reader.ts` — extend `EmailListFields` type
+- `src/lib/gmail.functions.ts` — extend `getEmailListFields` return shape
+- `src/routes/_authenticated/inbox.tsx` — trim `LIST_COLUMNS`, drop server-side ilike on dropped columns, merge new fields into `pageRows`
+
+## Verification
+
+- Run `bunx tsc --noEmit` (must remain 0 errors).
+- In the preview: open All mail, INBOX, a user folder, "no rules", and a search query — each should render rows with subject/snippet/from name populated.
+- Confirm a newly arrived email (realtime INSERT) shows its subject within ~1 round-trip of the hydration query.
