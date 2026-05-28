@@ -59,9 +59,9 @@ export async function processGmailMessage(
   const t = opts.timings;
 
   const _t0 = performance.now();
-  // Check body presence via the encrypted columns. Plaintext body_text /
-  // body_html columns are zeroed by the emails_encrypt_body BEFORE
-  // trigger, so reading them would always look empty.
+  // Phase 2 dual-write: plaintext columns are still populated alongside
+  // *_enc, so reading them here is fine. Phase 3 will switch this to
+  // get_emails_decrypted and drop the plaintext columns.
   const { data: existing } = await supabaseAdmin
     .from("emails")
     .select("id, from_addr, subject, body_text, body_html, received_at")
