@@ -286,3 +286,49 @@ describe("labelOf", () => {
     expect(labelOf([], "missing")).toBe("folder");
   });
 });
+
+describe("collectMatchingLeaves", () => {
+  const tree: RuleNode = {
+    type: "group",
+    op: "or",
+    children: [
+      { type: "cond", field: "domain", op: "contains", value: "docusign" },
+      { type: "cond", field: "subject", op: "starts_with", value: "Completed" },
+    ],
+  };
+
+  it("returns only the leaves that match", () => {
+    const e = email({ from_addr: "dse@docusign.net", subject: "Hello there" });
+    const leaves = collectMatchingLeaves(e, tree);
+    expect(leaves).toEqual([{ field: "domain", op: "contains", value: "docusign" }]);
+  });
+
+  it("returns multiple leaves when several match", () => {
+    const e = email({ from_addr: "dse@docusign.net", subject: "Completed: doc" });
+    expect(collectMatchingLeaves(e, tree)).toHaveLength(2);
+  });
+
+  it("returns empty when no leaf matches", () => {
+    const e = email({ from_addr: "alice@example.com", subject: "Hi" });
+    expect(collectMatchingLeaves(e, tree)).toEqual([]);
+  });
+
+  it("walks nested groups", () => {
+    const nested: RuleNode = {
+      type: "group", op: "and",
+      children: [
+        { type: "cond", field: "subject", op: "contains", value: "credit" },
+        { type: "group", op: "or", children: [
+          { type: "cond", field: "domain", op: "equals", value: "docusign.net" },
+          { type: "cond", field: "from", op: "contains", value: "noreply" },
+        ]},
+      ],
+    };
+    const e = email({ from_addr: "dse@docusign.net", subject: "credit app" });
+    const leaves = collectMatchingLeaves(e, nested);
+    expect(leaves).toEqual([
+      { field: "subject", op: "contains", value: "credit" },
+      { field: "domain", op: "equals", value: "docusign.net" },
+    ]);
+  });
+});
