@@ -219,19 +219,16 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
     try {
       const raw = await getMessageMetadata(accountId, id);
       const p = parseMessage(raw);
-      const { error } = await supabaseAdmin.from("folder_examples").upsert(
-        {
-          folder_id: folderId,
-          gmail_account_id: accountId,
-          user_id: userId,
-          gmail_message_id: p.gmail_message_id,
-          from_addr: p.from_addr,
-          subject: p.subject,
-          snippet: p.snippet,
-          source: "seed",
-        },
-        { onConflict: "folder_id,gmail_message_id" },
-      );
+      const { error } = await insertFolderExampleEncrypted({
+        folder_id: folderId,
+        gmail_account_id: accountId,
+        user_id: userId,
+        gmail_message_id: p.gmail_message_id,
+        from_addr: p.from_addr,
+        subject: p.subject,
+        snippet: p.snippet,
+        source: "seed",
+      });
       if (!error) learned++;
 
       // Tag a local email if it exists; insert a lightweight row otherwise.
@@ -244,19 +241,17 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
         .maybeSingle();
       if (existing) {
         if (existing.folder_id !== folderId) {
-          await supabaseAdmin
-            .from("emails")
-            .update({
-              folder_id: folderId,
-              classified_by: "gmail_label",
-              ai_confidence: 1,
-              classification_reason: `Matched Gmail label "${folder.name}"`,
-            })
-            .eq("id", existing.id);
+          await updateEmailEncrypted({
+            email_id: existing.id,
+            folder_id: folderId,
+            classified_by: "gmail_label",
+            ai_confidence: 1,
+            classification_reason: `Matched Gmail label "${folder.name}"`,
+          });
           claimed++;
         }
       } else {
-        const { error: insErr } = await supabaseAdmin.from("emails").upsert({
+        const { id: newId, error: insErr } = await upsertEmailEncrypted({
           user_id: userId,
           gmail_account_id: accountId,
           gmail_message_id: p.gmail_message_id,
@@ -264,20 +259,34 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           from_addr: p.from_addr,
           from_name: p.from_name,
           to_addrs: p.to_addrs,
+          cc: null,
+          list_id: null,
+          in_reply_to: null,
           subject: p.subject,
           snippet: p.snippet,
+          body_text: null,
+          body_html: null,
           received_at: p.received_at,
           is_read: p.is_read,
           is_archived: !p.raw_labels?.includes("INBOX"),
           has_attachment: p.has_attachment,
           raw_labels: p.raw_labels,
-          folder_id: folderId,
           classified_by: "gmail_label",
-          ai_confidence: 1,
-          classification_reason: `Matched Gmail label "${folder.name}"`,
-        }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
-        if (!insErr) ingested++;
-        else logError("folder_learn.ingest_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: p.gmail_message_id }, insErr);
+          processed_at: null,
+          published_at_ms: null,
+        });
+        if (!insErr) {
+          ingested++;
+          if (newId) {
+            await updateEmailEncrypted({
+              email_id: newId,
+              folder_id: folderId,
+              ai_confidence: 1,
+              classification_reason: `Matched Gmail label "${folder.name}"`,
+            });
+          }
+        }
+        else logError("folder_learn.ingest_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: p.gmail_message_id }, { message: insErr });
       }
     } catch (e) {
       logError("folder_learn.seed_example_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: id }, e);
