@@ -544,6 +544,14 @@ export const updateContact = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    // Mirror sensitive fields into the encrypted columns (dual-write).
+    await setContactEncryptedFields({
+      contact_id: id,
+      phone: patch.phone ?? undefined,
+      notes: patch.notes ?? undefined,
+      address_line1: patch.address_line1 ?? undefined,
+      address_line2: patch.address_line2 ?? undefined,
+    });
 
     if (phones) {
       // Replace-all strategy. RLS scopes deletes/inserts to the user.
