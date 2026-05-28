@@ -43,14 +43,13 @@ async function getOwnedAccount(userId: string, accountId: string) {
 }
 
 async function getEmailAccount(userId: string, emailId: string) {
-  // emails_decrypted view decrypts body_text on read. RLS doesn't apply
-  // to supabaseAdmin (service role); we enforce the user_id check below.
-  const { data, error } = await supabaseAdmin
-    .from("emails_decrypted")
-    .select("gmail_message_id, gmail_account_id, user_id, thread_id, from_addr, subject, body_text, from_name")
-    .eq("id", emailId)
-    .single();
-  if (error || !data) throw new Error("Email not found");
+  // Decrypts body_text + subject + from_name via the SECURITY DEFINER
+  // get_emails_decrypted RPC. supabaseAdmin bypasses RLS; we enforce
+  // user_id below.
+  const { rows, error } = await getEmailsDecrypted([emailId]);
+  if (error) throw new Error(error);
+  const data = rows[0];
+  if (!data) throw new Error("Email not found");
   if (data.user_id !== userId) throw new Error("Not authorized");
   if (!data.gmail_message_id || !data.gmail_account_id) throw new Error("Email is missing Gmail identifiers");
   return {
