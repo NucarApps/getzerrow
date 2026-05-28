@@ -755,10 +755,8 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
     z.object({ email_id: z.string().uuid(), to_folder_id: z.string().uuid() }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { data: email } = await supabaseAdmin
-      .from("emails_decrypted")
-      .select("id, user_id, folder_id, from_addr, from_name, subject, snippet, body_text")
-      .eq("id", data.email_id).single();
+    const { rows } = await getEmailsDecrypted([data.email_id]);
+    const email = rows[0];
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
     if (!email.folder_id) throw new Error("Email has no source folder");
     if (email.folder_id === data.to_folder_id) throw new Error("Source and target folders must differ");
