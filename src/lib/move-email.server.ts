@@ -5,6 +5,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { modifyMessage } from "./gmail.server";
 import { logError } from "./log.server";
+import { insertFolderExampleEncrypted } from "./sync/encrypted-writer";
 
 export async function performMove(
   userId: string,
@@ -79,19 +80,16 @@ export async function performMove(
       .eq("folder_id", from.id)
       .eq("gmail_message_id", email.gmail_message_id);
   }
-  await supabaseAdmin.from("folder_examples").upsert(
-    {
-      folder_id: toFolderId,
-      user_id: userId,
-      gmail_account_id: email.gmail_account_id,
-      gmail_message_id: email.gmail_message_id,
-      from_addr: email.from_addr,
-      subject: email.subject,
-      snippet: email.snippet,
-      source: "correction",
-    },
-    { onConflict: "folder_id,gmail_message_id" },
-  );
+  await insertFolderExampleEncrypted({
+    folder_id: toFolderId,
+    user_id: userId,
+    gmail_account_id: email.gmail_account_id,
+    gmail_message_id: email.gmail_message_id,
+    from_addr: email.from_addr,
+    subject: email.subject,
+    snippet: email.snippet,
+    source: "correction",
+  });
 
   try {
     const { regenerateFolderProfile } = await import("./sync.server");

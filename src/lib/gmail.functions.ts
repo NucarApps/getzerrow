@@ -28,7 +28,7 @@ import { removeLabelsFromCurrent } from "./sync/label-merge";
 import { buildGmailQueries } from "./sync/gmail-query-builder";
 import { matchByFilters } from "./sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "./sync/types";
-import { upsertEmailEncrypted, updateEmailEncrypted, setReplyDraftEncrypted } from "./sync/encrypted-writer";
+import { upsertEmailEncrypted, updateEmailEncrypted, setReplyDraftEncrypted, insertFolderExampleEncrypted } from "./sync/encrypted-writer";
 
 async function getOwnedAccount(userId: string, accountId: string) {
   const { data, error } = await supabaseAdmin
@@ -480,8 +480,17 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
         gmail_account_id: e.gmail_account_id,
         source: "reassigned",
       }));
-      if (mirrored.length > 0) {
-        await supabaseAdmin.from("folder_examples").insert(mirrored);
+      for (const m of mirrored) {
+        await insertFolderExampleEncrypted({
+          folder_id: m.folder_id,
+          user_id: m.user_id,
+          gmail_account_id: m.gmail_account_id,
+          gmail_message_id: m.gmail_message_id,
+          from_addr: m.from_addr ?? null,
+          subject: m.subject ?? null,
+          snippet: m.snippet ?? null,
+          source: m.source,
+        });
       }
     }
 
@@ -873,7 +882,7 @@ export const applyRecategorization = createServerFn({ method: "POST" })
     // Move example from source → target so AI signal reflects the correction
     await supabaseAdmin.from("folder_examples")
       .delete().eq("folder_id", fromFolderId).eq("gmail_message_id", email.gmail_message_id);
-    await supabaseAdmin.from("folder_examples").insert({
+    await insertFolderExampleEncrypted({
       folder_id: data.to_folder_id,
       user_id: context.userId,
       gmail_message_id: email.gmail_message_id,
