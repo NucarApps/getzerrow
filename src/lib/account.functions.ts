@@ -58,7 +58,9 @@ export const deleteAccount = createServerFn({ method: "POST" })
     ] as const;
 
     for (const table of tables) {
-      const { error } = await supabaseAdmin.from(table).delete().eq("user_id", userId);
+      const { error } = await (supabaseAdmin.from(table) as unknown as {
+        delete: () => { eq: (col: string, val: string) => Promise<{ error: { message: string } | null }> };
+      }).delete().eq("user_id", userId);
       if (error) {
         logError("account.delete.table_failed", { user_id: userId, table }, error);
       }
