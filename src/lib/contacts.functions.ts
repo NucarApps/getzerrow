@@ -761,7 +761,7 @@ export const createContactFromScan = createServerFn({ method: "POST" })
     await setContactEncryptedFields({
       contact_id: row.id,
       phone: payload.phone ?? undefined,
-      notes: payload.notes ?? undefined,
+      notes: undefined,
       address_line1: payload.address_line1 ?? undefined,
       address_line2: payload.address_line2 ?? undefined,
     });
