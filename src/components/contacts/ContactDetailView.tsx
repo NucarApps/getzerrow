@@ -431,7 +431,6 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
             {q.data.recentEmails.map((e) => (
               <li key={e.id} className="px-4 py-2 text-sm">
-                <div className="truncate font-medium text-foreground">{e.subject || "(no subject)"}</div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>{e.received_at ? new Date(e.received_at).toLocaleString() : ""}</span>
                 </div>

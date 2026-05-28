@@ -508,7 +508,7 @@ ${convoSample}`,
     }
     const { data: updated, error: upErr } = await supabase
       .from("contacts")
-      .update(patch)
+      .update(patch as never)
       .eq("id", contact.id)
       .select("*")
       .single();
@@ -582,7 +582,7 @@ export const updateContact = createServerFn({ method: "POST" })
 
     const { data: updated, error } = await supabase
       .from("contacts")
-      .update(patch)
+      .update(patch as never)
       .eq("id", id)
       .select("*")
       .single();
@@ -1062,7 +1062,7 @@ export const listUniqueInboxSenders = createServerFn({ method: "POST" })
     // Pull a chunk of recent emails (cap at 5k to keep aggregation fast).
     let q = supabase
       .from("emails")
-      .select("from_addr,from_name,received_at,folder_id")
+      .select("id,from_addr,received_at,folder_id")
       .eq("user_id", userId)
       .not("from_addr", "is", null)
       .order("received_at", { ascending: false })
@@ -1087,7 +1087,7 @@ export const listUniqueInboxSenders = createServerFn({ method: "POST" })
       if (!addr || !isLikelyHuman(addr)) continue;
       if (existingSet.has(addr)) continue;
       const cur = agg.get(addr);
-      const nm = normalizeName(r.from_name);
+      const nm = normalizeName(null);
       if (!cur) {
         agg.set(addr, { email: addr, name: nm, count: 1, lastReceivedAt: r.received_at ?? null });
       } else {
