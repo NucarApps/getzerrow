@@ -613,7 +613,18 @@ function InboxPage() {
     if (!map || map.size === 0) return baseRows;
     return baseRows.map((r) => {
       const extra = map.get(r.id);
-      return extra ? { ...r, ai_summary: extra.ai_summary, classification_reason: extra.classification_reason } : r;
+      return extra
+        ? {
+            ...r,
+            ai_summary: extra.ai_summary,
+            classification_reason: extra.classification_reason,
+            subject: extra.subject,
+            snippet: extra.snippet,
+            from_name: extra.from_name,
+            to_addrs: extra.to_addrs,
+            cc: extra.cc,
+          }
+        : r;
     });
   }, [baseRows, listFieldsQ.data]);
 
