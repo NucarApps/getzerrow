@@ -90,7 +90,14 @@ function AuthSync() {
   const qc = useQueryClient();
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
+      if (event === "SIGNED_OUT") {
+        // Drop all cached queries so mounted observers don't refetch
+        // protected server fns without a bearer token.
+        qc.clear();
+        router.invalidate();
+        return;
+      }
+      if (event !== "SIGNED_IN") return;
       router.invalidate();
       qc.invalidateQueries();
     });
