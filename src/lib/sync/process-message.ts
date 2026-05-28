@@ -88,14 +88,17 @@ export async function processGmailMessage(
       (!existing.body_text && !existing.body_html) ||
       !existing.received_at;
     if (needsRepair) {
+      await updateEmailEncrypted({
+        email_id: existing.id,
+        subject: parsed.subject ?? "",
+        snippet: parsed.snippet ?? "",
+        body_text: parsed.body_text ?? "",
+        body_html: parsed.body_html ?? "",
+        from_name: parsed.from_name ?? "",
+        to_addrs: parsed.to_addrs ?? "",
+      });
       await supabaseAdmin.from("emails").update({
         from_addr: parsed.from_addr,
-        from_name: parsed.from_name,
-        to_addrs: parsed.to_addrs,
-        subject: parsed.subject,
-        snippet: parsed.snippet,
-        body_text: parsed.body_text,
-        body_html: parsed.body_html,
         received_at: parsed.received_at,
         has_attachment: parsed.has_attachment,
         raw_labels: parsed.raw_labels,
