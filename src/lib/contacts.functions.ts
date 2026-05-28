@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 import { sendContactShareEmail } from "./cards.server";
 import { listMessages, getMessage, parseMessage } from "./gmail.server";
+import { setContactEncryptedFields } from "./sync/encrypted-writer";
 
 /** Fetch recent Gmail messages matching a query, for a user's connected accounts.
  * Returns parsed messages mapped into the same shape as our local emails_decrypted rows.
@@ -483,6 +484,14 @@ ${convoSample}`,
       .select("*")
       .single();
     if (upErr) throw new Error(upErr.message);
+    // Mirror sensitive fields into the encrypted columns (dual-write).
+    await setContactEncryptedFields({
+      contact_id: contact.id,
+      phone: patch.phone ?? undefined,
+      relationship_summary: patch.relationship_summary ?? undefined,
+      address_line1: patch.address_line1 ?? undefined,
+      address_line2: patch.address_line2 ?? undefined,
+    });
     return { contact: updated, skipped: false as const };
   });
 
@@ -535,6 +544,14 @@ export const updateContact = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    // Mirror sensitive fields into the encrypted columns (dual-write).
+    await setContactEncryptedFields({
+      contact_id: id,
+      phone: patch.phone ?? undefined,
+      notes: patch.notes ?? undefined,
+      address_line1: patch.address_line1 ?? undefined,
+      address_line2: patch.address_line2 ?? undefined,
+    });
 
     if (phones) {
       // Replace-all strategy. RLS scopes deletes/inserts to the user.
@@ -740,6 +757,14 @@ export const createContactFromScan = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    // Mirror sensitive fields into the encrypted columns (dual-write).
+    await setContactEncryptedFields({
+      contact_id: row.id,
+      phone: payload.phone ?? undefined,
+      notes: undefined,
+      address_line1: payload.address_line1 ?? undefined,
+      address_line2: payload.address_line2 ?? undefined,
+    });
 
     if (phones && phones.length > 0) {
       // Replace any existing phones for this contact.
@@ -857,6 +882,12 @@ ${body}`,
       .select("*")
       .single();
     if (updErr) throw new Error(updErr.message);
+    await setContactEncryptedFields({
+      contact_id: base.id,
+      phone: patch.phone ?? undefined,
+      address_line1: patch.address_line1 ?? undefined,
+      address_line2: patch.address_line2 ?? undefined,
+    });
 
     return { contact: updated };
   });

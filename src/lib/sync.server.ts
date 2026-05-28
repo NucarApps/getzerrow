@@ -40,6 +40,7 @@ import {
   type ClassificationResult as _ClassificationResult,
 } from "./sync/classify";
 import { reconcileLocalInbox as _reconcileLocalInbox } from "./sync/reconcile";
+import { updateEmailEncrypted } from "./sync/encrypted-writer";
 import {
   recordManualMove as _recordManualMove,
   regenerateFolderProfile as _regenerateFolderProfile,
@@ -809,7 +810,8 @@ export async function runMessageJobs(
                 const candidate = r?.folder_id ? ctx.folders.find((f) => f.id === r.folder_id) : null;
                 const threshold = candidate?.min_ai_confidence ?? 0;
                 const passes = r?.folder_id && (r.confidence ?? 0) >= threshold;
-                await supabaseAdmin.from("emails").update({
+                await updateEmailEncrypted({
+                  email_id: c.emailRowId,
                   folder_id: passes ? r!.folder_id : null,
                   ai_summary: r?.summary || null,
                   ai_confidence: r?.confidence ?? 0,
@@ -819,7 +821,7 @@ export async function runMessageJobs(
                     : (r?.folder_id
                         ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
                         : (r?.reason || null)),
-                }).eq("id", c.emailRowId);
+                });
                 if (passes && r?.folder_id) void bumpEmailsSinceLearn(r.folder_id);
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                 results.push({ id: c.job.id, ok: true });
@@ -832,21 +834,23 @@ export async function runMessageJobs(
               chunk.map(async (c) => {
                 try {
                   const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
-                  await supabaseAdmin.from("emails").update({
+                  await updateEmailEncrypted({
+                    email_id: c.emailRowId,
                     folder_id: single.folder_id,
                     ai_summary: single.summary || null,
                     ai_confidence: single.confidence,
                     classified_by: "ai",
                     classification_reason: single.reason || null,
-                  }).eq("id", c.emailRowId);
+                  });
                   if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
                 } catch (innerErr: any) {
-                  await supabaseAdmin.from("emails").update({
+                  await updateEmailEncrypted({
+                    email_id: c.emailRowId,
                     classified_by: "unclassified",
                     classification_reason: `AI classifier failed: ${(innerErr?.message ?? "unknown").slice(0, 200)}`,
-                  }).eq("id", c.emailRowId);
+                  });
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
                 }

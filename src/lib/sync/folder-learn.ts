@@ -26,6 +26,7 @@ import { buildFolderProfile } from "../ai.server";
 import { listMessages, getMessageMetadata, parseMessage } from "../gmail.server";
 import type { Folder } from "./types";
 import { logError } from "../log.server";
+import { insertFolderExampleEncrypted, upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
 
 /** Promote an email to a folder + record a "manual_move" example.
  * Skips the example/promotion when the row was ALREADY in this folder
@@ -53,20 +54,17 @@ export async function recordManualMove(
     return;
   }
 
-  const { error } = await supabaseAdmin.from("folder_examples").upsert(
-    {
-      folder_id: folder.id,
-      gmail_account_id: accountId,
-      user_id: userId,
-      gmail_message_id: msg.gmail_message_id,
-      from_addr: msg.from_addr,
-      subject: msg.subject,
-      snippet: msg.snippet,
-      source: "manual_move",
-    },
-    { onConflict: "folder_id,gmail_message_id" },
-  );
-  if (error) logError("folder_learn.example_upsert_failed", { folder_id: folder.id, account_id: accountId, gmail_message_id: msg.gmail_message_id }, error);
+  const { error } = await insertFolderExampleEncrypted({
+    folder_id: folder.id,
+    gmail_account_id: accountId,
+    user_id: userId,
+    gmail_message_id: msg.gmail_message_id,
+    from_addr: msg.from_addr,
+    subject: msg.subject,
+    snippet: msg.snippet,
+    source: "manual_move",
+  });
+  if (error) logError("folder_learn.example_upsert_failed", { folder_id: folder.id, account_id: accountId, gmail_message_id: msg.gmail_message_id }, { message: error });
 
   await supabaseAdmin
     .from("emails")
@@ -198,19 +196,16 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   const seededFromLocal = new Set<string>();
   for (const row of localRows ?? []) {
     if (knownSet.has(row.gmail_message_id)) continue;
-    const { error } = await supabaseAdmin.from("folder_examples").upsert(
-      {
-        folder_id: folderId,
-        gmail_account_id: accountId,
-        user_id: userId,
-        gmail_message_id: row.gmail_message_id,
-        from_addr: row.from_addr,
-        subject: row.subject,
-        snippet: row.snippet,
-        source: "seed",
-      },
-      { onConflict: "folder_id,gmail_message_id" },
-    );
+    const { error } = await insertFolderExampleEncrypted({
+      folder_id: folderId,
+      gmail_account_id: accountId,
+      user_id: userId,
+      gmail_message_id: row.gmail_message_id,
+      from_addr: row.from_addr,
+      subject: row.subject,
+      snippet: row.snippet,
+      source: "seed",
+    });
     if (!error) {
       learned++;
       seededFromLocal.add(row.gmail_message_id);
@@ -224,19 +219,16 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
     try {
       const raw = await getMessageMetadata(accountId, id);
       const p = parseMessage(raw);
-      const { error } = await supabaseAdmin.from("folder_examples").upsert(
-        {
-          folder_id: folderId,
-          gmail_account_id: accountId,
-          user_id: userId,
-          gmail_message_id: p.gmail_message_id,
-          from_addr: p.from_addr,
-          subject: p.subject,
-          snippet: p.snippet,
-          source: "seed",
-        },
-        { onConflict: "folder_id,gmail_message_id" },
-      );
+      const { error } = await insertFolderExampleEncrypted({
+        folder_id: folderId,
+        gmail_account_id: accountId,
+        user_id: userId,
+        gmail_message_id: p.gmail_message_id,
+        from_addr: p.from_addr,
+        subject: p.subject,
+        snippet: p.snippet,
+        source: "seed",
+      });
       if (!error) learned++;
 
       // Tag a local email if it exists; insert a lightweight row otherwise.
@@ -249,19 +241,17 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
         .maybeSingle();
       if (existing) {
         if (existing.folder_id !== folderId) {
-          await supabaseAdmin
-            .from("emails")
-            .update({
-              folder_id: folderId,
-              classified_by: "gmail_label",
-              ai_confidence: 1,
-              classification_reason: `Matched Gmail label "${folder.name}"`,
-            })
-            .eq("id", existing.id);
+          await updateEmailEncrypted({
+            email_id: existing.id,
+            folder_id: folderId,
+            classified_by: "gmail_label",
+            ai_confidence: 1,
+            classification_reason: `Matched Gmail label "${folder.name}"`,
+          });
           claimed++;
         }
       } else {
-        const { error: insErr } = await supabaseAdmin.from("emails").upsert({
+        const { id: newId, error: insErr } = await upsertEmailEncrypted({
           user_id: userId,
           gmail_account_id: accountId,
           gmail_message_id: p.gmail_message_id,
@@ -269,20 +259,34 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           from_addr: p.from_addr,
           from_name: p.from_name,
           to_addrs: p.to_addrs,
+          cc: null,
+          list_id: null,
+          in_reply_to: null,
           subject: p.subject,
           snippet: p.snippet,
+          body_text: null,
+          body_html: null,
           received_at: p.received_at,
           is_read: p.is_read,
           is_archived: !p.raw_labels?.includes("INBOX"),
           has_attachment: p.has_attachment,
           raw_labels: p.raw_labels,
-          folder_id: folderId,
           classified_by: "gmail_label",
-          ai_confidence: 1,
-          classification_reason: `Matched Gmail label "${folder.name}"`,
-        }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
-        if (!insErr) ingested++;
-        else logError("folder_learn.ingest_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: p.gmail_message_id }, insErr);
+          processed_at: null,
+          published_at_ms: null,
+        });
+        if (!insErr) {
+          ingested++;
+          if (newId) {
+            await updateEmailEncrypted({
+              email_id: newId,
+              folder_id: folderId,
+              ai_confidence: 1,
+              classification_reason: `Matched Gmail label "${folder.name}"`,
+            });
+          }
+        }
+        else logError("folder_learn.ingest_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: p.gmail_message_id }, { message: insErr });
       }
     } catch (e) {
       logError("folder_learn.seed_example_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: id }, e);
@@ -371,22 +375,20 @@ export async function loadOlderFromLabel(
         const k = known.get(id);
         if (k) {
           if (k.folder_id !== folderId) {
-            await supabaseAdmin
-              .from("emails")
-              .update({
-                folder_id: folderId,
-                classified_by: "gmail_label",
-                ai_confidence: 1,
-                classification_reason: `Matched Gmail label "${folder.name}"`,
-              })
-              .eq("id", k.id);
+            await updateEmailEncrypted({
+              email_id: k.id,
+              folder_id: folderId,
+              classified_by: "gmail_label",
+              ai_confidence: 1,
+              classification_reason: `Matched Gmail label "${folder.name}"`,
+            });
             claimed++;
           }
           return;
         }
         const raw = await getMessageMetadata(folder.gmail_account_id, id);
         const p = parseMessage(raw);
-        const { error } = await supabaseAdmin.from("emails").upsert({
+        const { id: newId, error } = await upsertEmailEncrypted({
           user_id: userId,
           gmail_account_id: folder.gmail_account_id,
           gmail_message_id: p.gmail_message_id,
@@ -394,20 +396,32 @@ export async function loadOlderFromLabel(
           from_addr: p.from_addr,
           from_name: p.from_name,
           to_addrs: p.to_addrs,
+          cc: null,
+          list_id: null,
+          in_reply_to: null,
           subject: p.subject,
           snippet: p.snippet,
+          body_text: null,
+          body_html: null,
           received_at: p.received_at,
           is_read: p.is_read,
           is_archived: !p.raw_labels?.includes("INBOX"),
           has_attachment: p.has_attachment,
           raw_labels: p.raw_labels,
-          folder_id: folderId,
           classified_by: "gmail_label",
-          ai_confidence: 1,
-          classification_reason: `Matched Gmail label "${folder.name}"`,
-        }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
+          processed_at: null,
+          published_at_ms: null,
+        });
         if (!error) {
           ingested++;
+          if (newId) {
+            await updateEmailEncrypted({
+              email_id: newId,
+              folder_id: folderId,
+              ai_confidence: 1,
+              classification_reason: `Matched Gmail label "${folder.name}"`,
+            });
+          }
           if (p.received_at && (!oldestSeen || p.received_at < oldestSeen)) {
             oldestSeen = p.received_at;
           }

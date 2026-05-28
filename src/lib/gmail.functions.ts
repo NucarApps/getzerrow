@@ -28,6 +28,7 @@ import { removeLabelsFromCurrent } from "./sync/label-merge";
 import { buildGmailQueries } from "./sync/gmail-query-builder";
 import { matchByFilters } from "./sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "./sync/types";
+import { upsertEmailEncrypted, updateEmailEncrypted, setReplyDraftEncrypted } from "./sync/encrypted-writer";
 
 async function getOwnedAccount(userId: string, accountId: string) {
   const { data, error } = await supabaseAdmin
@@ -689,7 +690,7 @@ export const generateReply = createServerFn({ method: "POST" })
       subject: email.subject || "",
       body_text: email.body_text || "",
     });
-    await supabaseAdmin.from("reply_drafts").insert({ email_id: data.id, user_id: context.userId, draft_text: draft });
+    await setReplyDraftEncrypted({ email_id: data.id, user_id: context.userId, draft_text: draft });
     return { draft };
   });
 
@@ -1850,7 +1851,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                       : `Folder rule: ${m.field} ${m.value}`;
                 }
               }
-              const { error } = await supabaseAdmin.from("emails").upsert({
+              const { id: newId, error } = await upsertEmailEncrypted({
                 user_id: context.userId,
                 gmail_account_id: accountId,
                 gmail_message_id: p.gmail_message_id,
@@ -1858,6 +1859,9 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                 from_addr: p.from_addr,
                 from_name: p.from_name,
                 to_addrs: p.to_addrs,
+                cc: null,
+                list_id: null,
+                in_reply_to: null,
                 subject: p.subject,
                 snippet: p.snippet,
                 body_text: p.body_text,
@@ -1867,13 +1871,22 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                 is_archived: !(p.raw_labels ?? []).includes("INBOX"),
                 has_attachment: p.has_attachment,
                 raw_labels: p.raw_labels,
-                folder_id,
-                classified_by,
-                ai_confidence: folder_id ? 1 : null,
-                classification_reason,
-              }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
-              if (!error) totalIngested++;
-              else logError("gmail.search_ingest.insert_failed", { account_id: accountId, gmail_message_id: id }, error);
+                classified_by: classified_by ?? "pending",
+                processed_at: null,
+                published_at_ms: null,
+              });
+              if (!error) {
+                totalIngested++;
+                if (newId && folder_id) {
+                  await updateEmailEncrypted({
+                    email_id: newId,
+                    folder_id,
+                    ai_confidence: 1,
+                    classification_reason,
+                  });
+                }
+              }
+              else logError("gmail.search_ingest.insert_failed", { account_id: accountId, gmail_message_id: id }, { message: error });
             } catch (e) {
               if (isRateLimit(e)) {
                 rateLimited = true;
@@ -3044,7 +3057,7 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
                   }
                 }
               }
-              const { error } = await supabaseAdmin.from("emails").upsert({
+              const { id: newId, error } = await upsertEmailEncrypted({
                 user_id: context.userId,
                 gmail_account_id: accountId,
                 gmail_message_id: p.gmail_message_id,
@@ -3052,6 +3065,9 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
                 from_addr: p.from_addr,
                 from_name: p.from_name,
                 to_addrs: p.to_addrs,
+                cc: null,
+                list_id: null,
+                in_reply_to: null,
                 subject: p.subject,
                 snippet: p.snippet,
                 body_text: p.body_text,
@@ -3061,15 +3077,24 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
                 is_archived: !(p.raw_labels ?? []).includes("INBOX"),
                 has_attachment: p.has_attachment,
                 raw_labels: p.raw_labels,
-                folder_id,
-                classified_by,
-                ai_confidence: folder_id ? 1 : null,
-                classification_reason,
-                matched_filter_ids,
-              }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
+                classified_by: classified_by ?? "pending",
+                processed_at: null,
+                published_at_ms: null,
+              });
 
-              if (!error) totalIngested++;
-              else logError("gmail.scan_folder.insert_failed", { account_id: accountId, gmail_message_id: id }, error);
+              if (!error) {
+                totalIngested++;
+                if (newId && folder_id) {
+                  await updateEmailEncrypted({
+                    email_id: newId,
+                    folder_id,
+                    ai_confidence: 1,
+                    classification_reason,
+                    matched_filter_ids,
+                  });
+                }
+              }
+              else logError("gmail.scan_folder.insert_failed", { account_id: accountId, gmail_message_id: id }, { message: error });
             } catch (e) {
               logError("gmail.scan_folder.one_failed", { account_id: accountId, gmail_message_id: id }, e);
             }
