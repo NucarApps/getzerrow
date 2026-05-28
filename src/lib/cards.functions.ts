@@ -186,6 +186,7 @@ export const submitCardLead = createServerFn({ method: "POST" })
       .eq("email", email)
       .maybeSingle();
 
+    let contactId: string | null = null;
     if (existing) {
       const merged = existing.notes ? `${existing.notes}\n\n${notes}` : notes;
       await supabaseAdmin
@@ -198,8 +199,14 @@ export const submitCardLead = createServerFn({ method: "POST" })
           source: "card_lead",
         })
         .eq("id", existing.id);
+      contactId = existing.id;
+      await setContactEncryptedFields({
+        contact_id: existing.id,
+        phone: data.phone || undefined,
+        notes: merged,
+      });
     } else {
-      await supabaseAdmin.from("contacts").insert({
+      const { data: inserted } = await supabaseAdmin.from("contacts").insert({
         user_id: card.user_id,
         email,
         name: data.name,
@@ -207,8 +214,17 @@ export const submitCardLead = createServerFn({ method: "POST" })
         phone: data.phone || null,
         notes,
         source: "card_lead",
-      });
+      }).select("id").single();
+      contactId = inserted?.id ?? null;
+      if (contactId) {
+        await setContactEncryptedFields({
+          contact_id: contactId,
+          phone: data.phone || undefined,
+          notes,
+        });
+      }
     }
+
 
     // Log analytics event (best-effort).
     await supabaseAdmin.from("card_events").insert({
