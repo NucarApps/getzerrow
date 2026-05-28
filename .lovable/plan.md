@@ -1,71 +1,95 @@
-# At-rest encryption rollout — progress
+# Phase 3b — Option B: Drop high-sensitivity plaintext
 
-In transit: already covered by TLS 1.2+ end-to-end (Cloudflare ↔ browser, Worker ↔ Google, Worker ↔ Supabase).
-At rest: rolling out column-level pgcrypto AEAD with the existing server-held `EMAIL_ENC_KEY`, same pattern as the OAuth-token helpers.
+Goal: drop the columns that hold body and PII content; keep subject/snippet/from_name/to_addrs/cc plaintext so the inbox UI and substring filtering keep working.
 
-## Phase 1 — DONE (migration `20260528_*_phase1_at_rest_encryption.sql`)
+## Columns dropped
 
-Foundation only. Additive, dual-write friendly: nothing breaks because plaintext columns are still populated and still read.
+| Table | Columns dropped | Kept plaintext |
+|---|---|---|
+| `emails` | `body_text`, `body_html`, `ai_summary`, `classification_reason` | `subject`, `snippet`, `from_name`, `from_addr`, `to_addrs`, `cc` |
+| `reply_drafts` | `draft_text` | — |
+| `contacts` | `notes`, `relationship_summary`, `address_line1`, `address_line2`, `phone` | `email`, `name`, `title`, `company`, address city/region/postal/country |
+| `folder_examples` | (none — already only `*_enc`) | `subject`, `snippet` already kept plaintext + enc |
 
-Schema:
-- `emails`: added `subject_enc`, `snippet_enc`, `from_name_enc`, `to_addrs_enc`, `cc_enc`, `ai_summary_enc`, `classification_reason_enc`, `body_text_enc`, `body_html_enc`, `key_version`.
-- `reply_drafts`: added `draft_text_enc`, `key_version`.
-- `contacts`: added `notes_enc`, `relationship_summary_enc`, `address_line1_enc`, `address_line2_enc`, `phone_enc`, `key_version`.
-- `folder_examples`: added `subject_enc`, `snippet_enc`, `key_version`.
-- New table `email_search_index(email_id PK, user_id, tsv tsvector, GIN)` with RLS scoped to `auth.uid()`.
+## Step 1 — Helper layer (new)
 
-Helpers (`private` schema, `SECURITY DEFINER`, granted only to `service_role`):
-- `private.encrypt_text(plaintext, p_key) → bytea` (pgp_sym_encrypt)
-- `private.decrypt_text(ciphertext, p_key) → text` (pgp_sym_decrypt; returns NULL on failure)
+Add `src/lib/sync/encrypted-reader.ts`:
+- `getEmailsDecrypted(ids: string[])` → wraps `get_emails_decrypted` RPC; returns body_text/body_html/ai_summary/classification_reason via decrypt.
+- `getContactDecrypted(id)` → wraps `get_contact_decrypted` RPC.
+- `getReplyDraftDecrypted(emailId)` → wraps `get_reply_draft_decrypted` RPC.
 
-RPCs (`public` schema, locked to `service_role`):
-- `insert_email_encrypted(...payload, p_key) → uuid` — encrypts every sensitive column AND populates `email_search_index.tsv` from the plaintext subject/snippet/body before encryption.
-- `update_email_encrypted(p_email_id, subject?, snippet?, body_text?, body_html?, ai_summary?, classification_reason?, p_key)` — NULL = leave unchanged; refreshes search index when subject/snippet/body change.
-- `get_emails_decrypted(p_ids uuid[], p_key) → table(...)` — bulk decrypt for list/detail.
-- `search_emails(p_user_id, p_query, p_limit, p_offset, p_key) → table(...)` — `tsv @@ websearch_to_tsquery(...)`, ranked, decrypted.
-- `set_reply_draft_encrypted` / `get_reply_draft_decrypted`.
-- `set_contact_encrypted_fields` (NULL = leave unchanged) / `get_contact_decrypted`.
-- `insert_folder_example_encrypted` / `get_folder_examples_decrypted`.
+Pattern at every refactored call site:
+1. Select the rows you need (id + non-sensitive columns) with normal `.select(...)`.
+2. If you also need `body_text`/`body_html`/`ai_summary`/`classification_reason`, call `getEmailsDecrypted(ids)` and merge.
+3. Never select dropped columns directly.
 
-## Phase 2 — DONE: route ingest writes through the RPCs (dual-write)
+## Step 2 — Refactor read sites
 
-Migration `20260528_*_phase2_dual_write.sql` shipped: every encryption RPC now writes BOTH plaintext + `*_enc`. `upsert_email_encrypted` handles the main ingest path and refreshes the search index. Follow-up migration made `insert_folder_example_encrypted` upsert on `(folder_id, gmail_message_id)`.
+### Sync pipeline (server, hot path)
+- `src/lib/sync/process-message.ts` — uses parsed `body_text` from Gmail, not DB read — no change.
+- `src/lib/sync/classify.ts` — same; receives parsed payload, no DB read of body.
+- `src/lib/sync/folder-learn.ts` — reads `body_text` of past emails for learning → switch to `getEmailsDecrypted`.
+- `src/lib/sync/reconcile.ts` — verify what it reads; refactor if needed.
+- `src/lib/sync/forward-retry.ts` — uses `claim_forward_retries` RPC (already selects body_text from emails table). Update RPC to read from decrypted RPC OR keep body_text plaintext temporarily — TBD.
 
-Typed wrapper: `src/lib/sync/encrypted-writer.ts`.
+### App server functions
+- `src/lib/gmail.functions.ts` (8 sites with body_text/body_html/ai_summary/classification_reason):
+  - Lines 49, 700, 760, 1260, 2758: scan/repeat-classify flows that need body for AI → `getEmailsDecrypted`.
+  - Writes of `classification_reason`/`ai_summary` → already go via `updateEmailEncrypted` for some; audit the direct `.update({ classification_reason: … })` calls and route through `updateEmailEncrypted` (which writes `*_enc` and stops writing the dropped plaintext col).
+- `src/lib/contacts.functions.ts`:
+  - 3 places read sender's emails (`subject,body_text,snippet,from_*`) for AI summarization/extraction → `getEmailsDecrypted` for the body_text column.
+- `src/lib/cards.server.ts`, `src/lib/summaries.server.ts`, `src/lib/ai.server.ts`, `src/lib/sync.server.ts`, `src/lib/move-email.server.ts`, `src/lib/gmail.server.ts` — audit & refactor each remaining body/ai_summary/classification_reason read.
 
-Routed through wrappers in 2a + 2b:
-- `src/lib/sync/process-message.ts` (2a)
-- `src/lib/sync/reconcile.ts` — repair-update at line 126.
-- `src/lib/sync/folder-learn.ts` — all three `folder_examples` upserts + both `emails.upsert` sites (learnFromLinkedLabel + loadOlderFromLabel).
-- `src/lib/sync.server.ts` — batch AI classify update + per-message classify + classify-fail (lines 812 / 835 / 846).
-- `src/lib/gmail.functions.ts` — search-ingest upsert (1853), scan-folder upsert (3060), and `reply_drafts.insert` (693).
-- `src/lib/contacts.functions.ts` — enrichment update, manual update, business-card upsert, and addContactFromEmail patch now mirror sensitive fields (phone / notes / relationship_summary / address_line1 / address_line2) into the encrypted columns via `setContactEncryptedFields`.
+### UI (browser)
+- `src/routes/_authenticated/inbox.tsx` — confirm it doesn't select dropped columns. (Inbox list uses subject/snippet which stay.)
+- `src/routes/_authenticated/contacts.index.tsx`, `contacts.scan.tsx`, `src/components/contacts/ContactDetailView.tsx` — switch `relationship_summary`/`notes`/`phone`/`address_*` reads to `get_contact_decrypted` RPC via a server fn wrapper.
+- `src/components/folders/FolderEditor.tsx` — review for any dropped-column reads.
 
-Intentionally left direct (no sensitive text changes):
-- Flag-only updates: is_read, is_archived, raw_labels, snoozed_until, forward_* — in reconcile, sync.server label-apply, resyncMessage, reconcileInboxFromGmail, forward-retry.
-- contacts bulk import (lines 939 / 1048) — only writes email + name, no sensitive columns.
-- folder_id-only / classified_by-only label echoes in sync.server.applyLabelChange.
+## Step 3 — Update writer RPCs
 
-Reads stay on plaintext columns through Phase 2.
+Migration updates the writer functions to stop writing plaintext into dropped columns (since the columns won't exist):
 
+- `upsert_email_encrypted`, `insert_email_encrypted`, `update_email_encrypted` — remove `body_text`, `body_html`, `ai_summary`, `classification_reason` from the INSERT/UPDATE column lists.
+- `set_reply_draft_encrypted` — remove `draft_text`.
+- `set_contact_encrypted_fields` — remove `notes`, `relationship_summary`, `address_line1`, `address_line2`, `phone` plaintext writes.
+- `get_emails_decrypted` / `get_contact_decrypted` / `get_reply_draft_decrypted` — remove the `COALESCE(decrypt, plaintext)` fallback (just `decrypt_text(...)`).
+- `claim_forward_retries` — replace `e.body_text` with `private.decrypt_text(e.body_text_enc, key)`. Needs key parameter added.
+- `backfill_emails_encryption`, `backfill_reply_drafts_encryption`, `backfill_contacts_encryption` — no longer needed; can be dropped or left as no-ops.
 
+## Step 4 — Drop columns migration
 
+Single migration at the end:
+```sql
+ALTER TABLE public.emails
+  DROP COLUMN body_text,
+  DROP COLUMN body_html,
+  DROP COLUMN ai_summary,
+  DROP COLUMN classification_reason;
 
-## Phase 3 — IN PROGRESS: backfill legacy rows, then drop plaintext
+ALTER TABLE public.reply_drafts DROP COLUMN draft_text;
 
-Audit (rg over `from('emails'|'reply_drafts'|'contacts'|'folder_examples')` for `.insert/.update` of sensitive fields): clean — all remaining direct writes are flag-only (is_read/labels/forward_*) or non-sensitive bulk imports, as already documented in Phase 2.
+ALTER TABLE public.contacts
+  DROP COLUMN notes,
+  DROP COLUMN relationship_summary,
+  DROP COLUMN address_line1,
+  DROP COLUMN address_line2,
+  DROP COLUMN phone;
+```
 
-3a — DONE: Server-side batch backfill RPCs (`backfill_emails_encryption`, `backfill_reply_drafts_encryption`, `backfill_contacts_encryption`, `backfill_folder_examples_encryption`), service-role only. Cron route `/api/public/encryption-backfill` (CRON_SECRET-gated) drains them in batches and refreshes `email_search_index` for legacy emails. Scheduled daily at 04:17 UTC (`encryption-backfill-daily`).
+## Order of execution
 
-Starting state at deploy: 76,943 emails / 7 drafts / 40 contacts / 3,262 folder_examples lacking `*_enc`; 0 rows in `email_search_index`. Daily cron with default batch sizes (500×10 emails per run) drains the email backlog in ~16 days; tune via `?email_batches=` for a faster initial sweep, or invoke the route manually.
+1. Add `encrypted-reader.ts` helper.
+2. Migration A: update read RPCs to drop `COALESCE` fallback + add key param to `claim_forward_retries` + update writer RPCs to stop writing dropped columns.
+3. Refactor code call sites (all 20 files).
+4. Migration B: drop the columns.
+5. Verify: realtime inbox loads, classify still works, contacts page reads, reply draft round-trip.
 
-3b — TODO once backfill is fully drained (verify via `SELECT COUNT(*) FROM emails WHERE subject_enc IS NULL`): migration to drop the plaintext columns — `emails.{subject,snippet,body_text,body_html,from_name,to_addrs,cc,ai_summary,classification_reason}`, `reply_drafts.draft_text`, `contacts.{notes,relationship_summary,address_line1,address_line2,phone}`, `folder_examples.{subject,snippet}`. Read RPCs already `COALESCE(decrypt_text(...enc), <plaintext>)` so they keep working once the plaintext arg goes away, but the wrappers in `encrypted-writer.ts` and the dual-write RPCs must stop passing the plaintext column first.
+## Risk / rollback
 
-3c — DONE: `src/routes/privacy.tsx` updated from "disk-level + OAuth tokens" to "column-level AEAD on bodies, subjects, summaries, drafts, and contact notes/phones/addresses".
+- Migration B is destructive (column drops). Once shipped, rollback means restoring from backup. Realtime ingestion will continue producing only `*_enc` data.
+- All encryption is real today (verified Phase 3a: 0 rows unencrypted in any of the 4 buckets). Dropping the plaintext mirrors loses no information.
+- `email_search_index` keeps its tsvector — substring search via `search_emails` RPC continues working.
 
-## Out of scope
+## Estimated turns
 
-- pgsodium / managed key vault — not available on the current plan; pgcrypto + `EMAIL_ENC_KEY` is the established pattern.
-- Client-side / end-to-end encryption — incompatible with server-side AI classification.
-- Encrypting `from_addr`, gmail/thread/message ids, raw labels — needed plaintext for filter joins, dedupe, Gmail API calls, and contact derivation.
-- Automatic key rotation — `key_version` column is in place; rotate job is a separate plan.
+~6-10 turns: 1 helper file, 1 migration for RPCs, 4-6 turns to refactor the 20 call sites, 1 final drop-column migration, 1 verification.
