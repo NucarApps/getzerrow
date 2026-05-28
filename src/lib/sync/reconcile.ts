@@ -107,7 +107,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       const needsRepair =
         !row.from_addr ||
         !row.subject ||
-        (!row.body_text && !row.body_html) ||
+        (!row.body_text_enc && !row.body_html_enc) ||
         !row.received_at;
 
       if (needsRepair) {
