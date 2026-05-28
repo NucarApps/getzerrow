@@ -22,6 +22,8 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, getMessageLabels, parseMessage } from "../gmail.server";
 import { logError } from "../log.server";
+import { updateEmailEncrypted } from "./encrypted-writer";
+
 
 export async function reconcileLocalInbox(accountId: string, limit = 100) {
   const { data: acc } = await supabaseAdmin
