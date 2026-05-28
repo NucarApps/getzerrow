@@ -1301,10 +1301,10 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
     // (AI no-match, excluded by rule, global override, etc.). Reanalyze should
     // only move emails to a better folder, never silently clear them.
     if (result.folder_id === null && email.folder_id) {
-      await supabaseAdmin
-        .from("emails")
-        .update({ ai_summary: summary || null })
-        .eq("id", email.id);
+      await updateEmailEncrypted({
+        email_id: email.id,
+        ai_summary: summary || "",
+      });
       return {
         ok: true,
         folder_id: email.folder_id,
