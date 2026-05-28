@@ -7,7 +7,7 @@ import { createLovableAiGatewayProvider } from "./ai-gateway";
 import { sendContactShareEmail } from "./cards.server";
 import { listMessages, getMessage, parseMessage } from "./gmail.server";
 import { setContactEncryptedFields } from "./sync/encrypted-writer";
-import { getEmailsDecrypted } from "./sync/encrypted-reader";
+import { getContactDecrypted, getContactListFieldsDecrypted, getEmailsDecrypted } from "./sync/encrypted-reader";
 
 /** Fetch recent Gmail messages matching a query, for a user's connected accounts.
  * Returns parsed messages mapped into the same shape as our local emails_decrypted rows.
@@ -151,7 +151,7 @@ export const listContacts = createServerFn({ method: "GET" })
     const { supabase } = context;
     const { data, error } = await supabase
       .from("contacts")
-      .select("id,email,name,title,company,phone,website,avatar_url,source,enriched_at,created_at,relationship_summary")
+      .select("id,email,name,title,company,website,avatar_url,source,enriched_at,created_at")
       .limit(2000);
     if (error) throw new Error(error.message);
     const rows = (data ?? []).slice().sort((a, b) => {
@@ -161,8 +161,15 @@ export const listContacts = createServerFn({ method: "GET" })
       if (ka && !kb) return -1;
       return ka.localeCompare(kb);
     });
-    return { contacts: rows };
-
+    // Batch decrypt the small per-row fields the list view renders
+    // (relationship_summary preview, phone in the company bucket).
+    const { rows: decRows } = await getContactListFieldsDecrypted(rows.map((r) => r.id));
+    const decMap = new Map(decRows.map((r) => [r.id, r] as const));
+    const contacts = rows.map((r) => {
+      const d = decMap.get(r.id);
+      return { ...r, phone: d?.phone ?? null, relationship_summary: d?.relationship_summary ?? null };
+    });
+    return { contacts };
   });
 
 /** Get a single contact + their last few emails + phones. */
