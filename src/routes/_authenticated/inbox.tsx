@@ -29,6 +29,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw, Reply, UserPlus } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
+import { getEmailBody } from "@/lib/email-body.functions";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -338,6 +339,7 @@ function tokenFuzzyMatches(token: string, words: string[]): boolean {
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
+  const fetchEmailBody = useServerFn(getEmailBody);
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
   
@@ -690,11 +692,19 @@ function InboxPage() {
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       if (!selectedId) return null;
-      // emails_decrypted is a security_invoker view that auto-decrypts
-      // body_text + body_html via pgsodium AEAD. The user's RLS still
-      // applies — they can only fetch their own email bodies.
-      const { data } = await supabase.from("emails_decrypted").select("*").eq("id", selectedId).maybeSingle();
-      return (data ?? null) as Email | null;
+      // Body / AI summary / classification reason are encrypted at rest;
+      // fetch via server fn that calls the SECURITY DEFINER decrypt RPC
+      // with the server-held EMAIL_ENC_KEY. The list row already carries
+      // subject/snippet/from_name (still plaintext) — we merge below.
+      const res = await fetchEmailBody({ data: { email_id: selectedId } });
+      if (!res.body) return null;
+      return {
+        id: res.body.id,
+        body_text: res.body.body_text,
+        body_html: res.body.body_html,
+        ai_summary: res.body.ai_summary,
+        classification_reason: res.body.classification_reason,
+      } as unknown as Email;
     },
   });
   // Detail pane shows header + body. The on-demand full row carries
