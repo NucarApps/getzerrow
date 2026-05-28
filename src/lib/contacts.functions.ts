@@ -882,6 +882,12 @@ ${body}`,
       .select("*")
       .single();
     if (updErr) throw new Error(updErr.message);
+    await setContactEncryptedFields({
+      contact_id: base.id,
+      phone: patch.phone ?? undefined,
+      address_line1: patch.address_line1 ?? undefined,
+      address_line2: patch.address_line2 ?? undefined,
+    });
 
     return { contact: updated };
   });
