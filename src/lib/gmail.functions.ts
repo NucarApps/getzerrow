@@ -2992,6 +2992,7 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
               let folder_id: string | null = null;
               let classified_by: string = "gmail_search_ingest";
               let classification_reason: string | null = `Scanned for folder: ${folderName}`;
+              let matched_filter_ids: string[] = [];
               for (const lbl of p.raw_labels ?? []) {
                 const fid = labelToFolder.get(lbl);
                 if (fid) {
@@ -3002,21 +3003,33 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
                 }
               }
               if (!folder_id) {
-                const m = matchFilters({
-                  from_addr: p.from_addr ?? "",
-                  from_name: p.from_name ?? "",
-                  to_addrs: p.to_addrs ?? "",
-                  subject: p.subject ?? "",
-                  body_text: p.body_text ?? "",
-                  has_attachment: !!p.has_attachment,
-                });
-                if (m) {
-                  folder_id = m.folder_id;
-                  classified_by = m.field === "domain" ? "domain_rule" : "filter";
-                  classification_reason =
-                    m.field === "domain"
-                      ? `Domain rule: ${m.value}`
-                      : `Folder rule: ${m.field} ${m.value}`;
+                const result = matchByFilters(
+                  {
+                    from_addr: p.from_addr ?? "",
+                    from_name: p.from_name ?? "",
+                    to_addrs: p.to_addrs ?? "",
+                    subject: p.subject ?? "",
+                    body_text: p.body_text ?? "",
+                    has_attachment: !!p.has_attachment,
+                  },
+                  allFolders,
+                  allFilters,
+                );
+                if (result?.kind === "match") {
+                  folder_id = result.folder_id;
+                  matched_filter_ids = result.matched_filters.map((f) => f.id);
+                  if (result.tree_used) {
+                    classified_by = "filter";
+                    classification_reason = `Rule group matched for "${allFolders.find((f) => f.id === result.folder_id)?.name ?? folderName}"`;
+                  } else if (result.filter) {
+                    classified_by = result.filter.field === "domain" ? "domain_rule" : "filter";
+                    classification_reason = result.filter.field === "domain"
+                      ? `Domain rule: ${result.filter.value}`
+                      : `Folder rule: ${result.filter.field} ${result.filter.value}`;
+                  } else {
+                    classified_by = "filter";
+                    classification_reason = "Folder rule matched";
+                  }
                 }
               }
               const { error } = await supabaseAdmin.from("emails").upsert({
@@ -3040,7 +3053,9 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
                 classified_by,
                 ai_confidence: folder_id ? 1 : null,
                 classification_reason,
+                matched_filter_ids,
               }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
+
               if (!error) totalIngested++;
               else logError("gmail.scan_folder.insert_failed", { account_id: accountId, gmail_message_id: id }, error);
             } catch (e) {
