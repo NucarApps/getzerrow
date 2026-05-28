@@ -185,7 +185,10 @@ function SettingsPage() {
 
               </div>
             </Card>
+
+            <DangerZone />
           </TabsContent>
+
 
           <TabsContent value="filters" className="space-y-4">
             <AccountPicker
