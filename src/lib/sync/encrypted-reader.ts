@@ -61,11 +61,30 @@ export async function getEmailsDecrypted(
 
 export type DecryptedContact = {
   id: string;
-  notes: string | null;
-  relationship_summary: string | null;
+  user_id: string;
+  email: string;
+  name: string | null;
+  avatar_url: string | null;
+  title: string | null;
+  company: string | null;
+  phone: string | null;
+  website: string | null;
+  card_image_url: string | null;
   address_line1: string | null;
   address_line2: string | null;
-  phone: string | null;
+  city: string | null;
+  region: string | null;
+  postal_code: string | null;
+  country: string | null;
+  linkedin: string | null;
+  twitter: string | null;
+  relationship_summary: string | null;
+  summary_generated_at: string | null;
+  notes: string | null;
+  source: string;
+  enriched_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export async function getContactDecrypted(
