@@ -29,6 +29,7 @@ import { buildGmailQueries } from "./sync/gmail-query-builder";
 import { matchByFilters } from "./sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "./sync/types";
 import { upsertEmailEncrypted, updateEmailEncrypted, setReplyDraftEncrypted, insertFolderExampleEncrypted } from "./sync/encrypted-writer";
+import { getEmailsDecrypted } from "./sync/encrypted-reader";
 
 async function getOwnedAccount(userId: string, accountId: string) {
   const { data, error } = await supabaseAdmin
