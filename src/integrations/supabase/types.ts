@@ -1402,8 +1402,13 @@ export type Database = {
         Args: { p_ids: string[]; p_key: string }
         Returns: {
           ai_summary: string
+          cc: string
           classification_reason: string
+          from_name: string
           id: string
+          snippet: string
+          subject: string
+          to_addrs: string
         }[]
       }
       get_folder_examples_decrypted: {

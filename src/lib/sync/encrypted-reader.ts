@@ -117,6 +117,11 @@ export type EmailListFields = {
   id: string;
   ai_summary: string | null;
   classification_reason: string | null;
+  subject: string | null;
+  snippet: string | null;
+  from_name: string | null;
+  to_addrs: string | null;
+  cc: string | null;
 };
 
 export async function getEmailListFieldsDecrypted(

@@ -411,7 +411,7 @@ function InboxPage() {
   // the "no_rules" filter reads it. snoozed_until is included so local
   // search results can apply the same visibility filter as normal lists.
   // forward_* columns are operator-facing, not rendered in the inbox.
-  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id";
+  const LIST_COLUMNS = "id,from_addr,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id";
 
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
@@ -443,15 +443,9 @@ function InboxPage() {
           }
           if (parsedQuery.from) {
             const v = esc(parsedQuery.from);
-            q = q.or(`from_addr.ilike.%${v}%,from_name.ilike.%${v}%`);
-          }
-          if (parsedQuery.to) {
-            const v = esc(parsedQuery.to);
-            q = q.ilike("to_addrs", `%${v}%`);
-          }
-          if (parsedQuery.rest) {
-            const v = esc(parsedQuery.rest);
-            q = q.or(`subject.ilike.%${v}%,snippet.ilike.%${v}%`);
+            // from_name / to_addrs / subject / snippet are encrypted; filter
+            // those client-side after hydration. from_addr is still plaintext.
+            q = q.ilike("from_addr", `%${v}%`);
           }
           const { data } = await q;
           return (data ?? []) as unknown as Email[];
@@ -607,9 +601,25 @@ function InboxPage() {
     staleTime: 60_000,
     queryFn: async () => {
       const r = await fetchListFields({ data: { ids: visibleIds } });
-      const map = new Map<string, { ai_summary: string | null; classification_reason: string | null }>();
+      const map = new Map<string, {
+        ai_summary: string | null;
+        classification_reason: string | null;
+        subject: string | null;
+        snippet: string | null;
+        from_name: string | null;
+        to_addrs: string | null;
+        cc: string | null;
+      }>();
       for (const f of r.fields ?? []) {
-        map.set(f.id, { ai_summary: f.ai_summary ?? null, classification_reason: f.classification_reason ?? null });
+        map.set(f.id, {
+          ai_summary: f.ai_summary ?? null,
+          classification_reason: f.classification_reason ?? null,
+          subject: f.subject ?? null,
+          snippet: f.snippet ?? null,
+          from_name: f.from_name ?? null,
+          to_addrs: f.to_addrs ?? null,
+          cc: f.cc ?? null,
+        });
       }
       return map;
     },
@@ -619,7 +629,18 @@ function InboxPage() {
     if (!map || map.size === 0) return baseRows;
     return baseRows.map((r) => {
       const extra = map.get(r.id);
-      return extra ? { ...r, ai_summary: extra.ai_summary, classification_reason: extra.classification_reason } : r;
+      return extra
+        ? {
+            ...r,
+            ai_summary: extra.ai_summary,
+            classification_reason: extra.classification_reason,
+            subject: extra.subject,
+            snippet: extra.snippet,
+            from_name: extra.from_name,
+            to_addrs: extra.to_addrs,
+            cc: extra.cc,
+          }
+        : r;
     });
   }, [baseRows, listFieldsQ.data]);
 
