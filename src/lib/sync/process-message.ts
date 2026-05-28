@@ -31,6 +31,7 @@ import {
 import type { AccountContext } from "./account-context";
 import { jitter } from "./backoff";
 import { classifyParsedEmail } from "./classify";
+import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { logError } from "../log.server";
 
