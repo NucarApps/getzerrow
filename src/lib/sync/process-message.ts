@@ -188,10 +188,11 @@ export async function processGmailMessage(
       email_id: inserted.id,
       ai_ms: t?.ai,
     }, e);
-    await supabaseAdmin.from("emails").update({
+    await updateEmailEncrypted({
+      email_id: inserted.id,
       classified_by: "unclassified",
       classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
-    }).eq("id", inserted.id);
+    });
     return { id: inserted.id, classify_failed: true };
   }
 
