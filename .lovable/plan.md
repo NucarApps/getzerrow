@@ -27,23 +27,28 @@ RPCs (`public` schema, locked to `service_role`):
 - `set_contact_encrypted_fields` (NULL = leave unchanged) / `get_contact_decrypted`.
 - `insert_folder_example_encrypted` / `get_folder_examples_decrypted`.
 
-## Phase 2 — TODO: route ingest writes through the new RPCs
+## Phase 2 — IN PROGRESS: route ingest writes through the RPCs (dual-write)
 
-Goal: every new row written goes through the encrypted RPC. Plaintext columns are also written for now (dual-write) so existing reads still work.
+Migration `20260528_*_phase2_dual_write.sql` shipped: every encryption RPC (`insert_email_encrypted`, `update_email_encrypted`, `set_reply_draft_encrypted`, `set_contact_encrypted_fields`, `insert_folder_example_encrypted`) now writes BOTH plaintext + `*_enc`. New `upsert_email_encrypted` handles the main ingest path (on conflict gmail_message_id → update, refreshes search index). `update_email_encrypted` was extended to also accept `folder_id` / `ai_confidence` / `classified_by` / `matched_filter_ids` / `matched_folder_ids` so classify needs one call instead of two. All RPCs are still service_role only (key passed via `p_key`).
 
-Touch points (all server-side, use `supabaseAdmin.rpc(...)`):
-- `src/lib/sync/process-message.ts` — `supabaseAdmin.from('emails').insert(...)` → `rpc('insert_email_encrypted', { ..., p_key: process.env.EMAIL_ENC_KEY })`. Same for the `.update(...)` calls that touch subject/snippet/body/ai_summary/classification_reason → `rpc('update_email_encrypted', ...)`. Calls that only mutate flags (`is_read`, `is_archived`, `folder_id`, etc.) stay on direct `.update()`.
-- `src/lib/sync/classify.ts` and `src/lib/sync/folder-learn.ts` — `ai_summary` / `classification_reason` updates → `update_email_encrypted`. New folder examples → `insert_folder_example_encrypted`.
-- `src/lib/sync/forward-retry.ts` — `claim_forward_retries` RPC needs a sibling that decrypts `body_text`/`subject`/`from_name` for the forward composer (mirror the OAuth-token decrypt pattern). Stop reading the plaintext columns there.
-- `src/lib/sync/reconcile.ts` — same as process-message.
-- `src/lib/ai-assistant.functions.ts`, `src/lib/summaries.server.ts`, `src/lib/reports.functions.ts`, `src/lib/move-email.server.ts` — anywhere these read subject/snippet/body/from_name from `emails`, switch to `get_emails_decrypted`.
-- `src/lib/contacts.functions.ts` — contact writes/reads of phone/notes/relationship_summary/address_* → `set_contact_encrypted_fields` / `get_contact_decrypted`.
-- Reply drafts (writer + reader) → `set_reply_draft_encrypted` / `get_reply_draft_decrypted`.
+Typed wrapper module: `src/lib/sync/encrypted-writer.ts` — exports `upsertEmailEncrypted`, `updateEmailEncrypted`, `setReplyDraftEncrypted`, `setContactEncryptedFields`, `insertFolderExampleEncrypted`. Reads `EMAIL_ENC_KEY` once and forwards.
 
-Inbox UI (`src/routes/_authenticated/inbox.tsx`):
-- The list query currently selects subject/snippet/from_name directly from `emails`. Move list rendering through a new `listInboxEmails` server fn that calls `get_emails_decrypted` for the visible page. Detail view already fetches by id — same fn, single id array.
-- Realtime: keep the existing channel as a "row changed" signal; on event, the UI calls the list/detail server fn for the affected id instead of reading the row from the realtime payload.
-- Search box: new `searchInbox` server fn → `search_emails`.
+Done in 2a:
+- `src/lib/sync/process-message.ts` — main upsert + repair-update + classify-update + classify-fail-update now go through the wrappers. Flag-only updates (is_read, is_archived, forward_*, raw_labels, snoozed_until) stay on direct `.update()`.
+
+Pending in 2b (each is a focused edit on top of the same wrappers — no more migrations needed):
+- `src/lib/sync/reconcile.ts` — three update sites at lines 126 / 174 / 218.
+- `src/lib/sync/folder-learn.ts` — two `emails.upsert` sites (264, 389) → `upsertEmailEncrypted`; folder-example inserts → `insertFolderExampleEncrypted`.
+- `src/lib/sync/classify.ts` — any direct email writes (mostly already goes through the return that process-message persists).
+- `src/lib/sync/forward-retry.ts` — four flag/forward_* updates (safe to leave direct since no sensitive text changes); read path still pulls plaintext `body_text`/`subject` which is fine until Phase 3.
+- `src/lib/sync.server.ts` — three sync update sites (485, 812, 835, 846); these mutate body/subject during reconcile, so route through `updateEmailEncrypted`.
+- `src/lib/gmail.functions.ts` — upserts at 1853 (backfill insert) and 3047 (re-fetch) → `upsertEmailEncrypted`; update at 2104 / 2185 → `updateEmailEncrypted` if it touches sensitive fields.
+- Reply drafts writer (search `from('reply_drafts').insert`) → `setReplyDraftEncrypted`.
+- `src/lib/contacts.functions.ts` — every write that sets `notes`/`relationship_summary`/`phone`/`address_*` → `setContactEncryptedFields`. Other contact fields stay direct.
+
+Reads stay on plaintext columns through Phase 2 — dual-write means readers still see correct data. Switching reads to `get_emails_decrypted` / `get_contact_decrypted` / `search_emails` happens in Phase 3 right before plaintext columns are dropped, after backfill fills `*_enc` for historical rows.
+
+
 
 ## Phase 3 — TODO: stop writing plaintext, then drop the columns
 

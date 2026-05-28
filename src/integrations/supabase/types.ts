@@ -1747,16 +1747,51 @@ export type Database = {
       }
       update_email_encrypted: {
         Args: {
+          p_ai_confidence: number
           p_ai_summary: string
           p_body_html: string
           p_body_text: string
           p_classification_reason: string
+          p_classified_by: string
           p_email_id: string
+          p_folder_id: string
+          p_from_name: string
           p_key: string
+          p_matched_filter_ids: string[]
+          p_matched_folder_ids: string[]
           p_snippet: string
           p_subject: string
+          p_to_addrs: string
         }
         Returns: undefined
+      }
+      upsert_email_encrypted: {
+        Args: {
+          p_body_html: string
+          p_body_text: string
+          p_cc: string
+          p_classified_by: string
+          p_from_addr: string
+          p_from_name: string
+          p_gmail_account_id: string
+          p_gmail_message_id: string
+          p_has_attachment: boolean
+          p_in_reply_to: string
+          p_is_archived: boolean
+          p_is_read: boolean
+          p_key: string
+          p_list_id: string
+          p_processed_at: string
+          p_published_at_ms: number
+          p_raw_labels: string[]
+          p_received_at: string
+          p_snippet: string
+          p_subject: string
+          p_thread_id: string
+          p_to_addrs: string
+          p_user_id: string
+        }
+        Returns: string
       }
       upsert_gmail_oauth_account: {
         Args: {

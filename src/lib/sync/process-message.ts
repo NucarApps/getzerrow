@@ -31,6 +31,7 @@ import {
 import type { AccountContext } from "./account-context";
 import { jitter } from "./backoff";
 import { classifyParsedEmail } from "./classify";
+import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { logError } from "../log.server";
 
@@ -58,9 +59,9 @@ export async function processGmailMessage(
   const t = opts.timings;
 
   const _t0 = performance.now();
-  // Check body presence via the encrypted columns. Plaintext body_text /
-  // body_html columns are zeroed by the emails_encrypt_body BEFORE
-  // trigger, so reading them would always look empty.
+  // Phase 2 dual-write: plaintext columns are still populated alongside
+  // *_enc, so reading them here is fine. Phase 3 will switch this to
+  // get_emails_decrypted and drop the plaintext columns.
   const { data: existing } = await supabaseAdmin
     .from("emails")
     .select("id, from_addr, subject, body_text, body_html, received_at")
@@ -87,14 +88,17 @@ export async function processGmailMessage(
       (!existing.body_text && !existing.body_html) ||
       !existing.received_at;
     if (needsRepair) {
+      await updateEmailEncrypted({
+        email_id: existing.id,
+        subject: parsed.subject ?? "",
+        snippet: parsed.snippet ?? "",
+        body_text: parsed.body_text ?? "",
+        body_html: parsed.body_html ?? "",
+        from_name: parsed.from_name ?? "",
+        to_addrs: parsed.to_addrs ?? "",
+      });
       await supabaseAdmin.from("emails").update({
         from_addr: parsed.from_addr,
-        from_name: parsed.from_name,
-        to_addrs: parsed.to_addrs,
-        subject: parsed.subject,
-        snippet: parsed.snippet,
-        body_text: parsed.body_text,
-        body_html: parsed.body_html,
         received_at: parsed.received_at,
         has_attachment: parsed.has_attachment,
         raw_labels: parsed.raw_labels,
@@ -116,44 +120,40 @@ export async function processGmailMessage(
   // races with the push) must not throw 23505 and abort the surrounding
   // batch. DO UPDATE refreshes content fields; classification is reset
   // to "pending" and step 2 reclassifies immediately.
-  const { data: inserted, error } = await supabaseAdmin
-    .from("emails")
-    .upsert({
-      user_id: userId,
-      gmail_account_id: accountId,
-      gmail_message_id: parsed.gmail_message_id,
-      thread_id: parsed.thread_id,
-      from_addr: parsed.from_addr,
-      from_name: parsed.from_name,
-      to_addrs: parsed.to_addrs,
-      cc: parsed.cc || null,
-      list_id: parsed.list_id || null,
-      in_reply_to: parsed.in_reply_to || null,
-      subject: parsed.subject,
-      snippet: parsed.snippet,
-      body_text: parsed.body_text,
-      body_html: parsed.body_html,
-      received_at: parsed.received_at,
-      is_read: parsed.is_read,
-      has_attachment: parsed.has_attachment,
-      raw_labels: parsed.raw_labels,
-      folder_id: null,
-      is_archived: !inInbox,
-      classified_by: "pending",
-      processed_at: new Date().toISOString(),
-      published_at_ms: publishedAtMs,
-    }, { onConflict: "gmail_message_id" })
-    .select("id")
-    .single();
+  const { id: insertedId, error } = await upsertEmailEncrypted({
+    user_id: userId,
+    gmail_account_id: accountId,
+    gmail_message_id: parsed.gmail_message_id,
+    thread_id: parsed.thread_id,
+    from_addr: parsed.from_addr,
+    from_name: parsed.from_name,
+    to_addrs: parsed.to_addrs,
+    cc: parsed.cc || null,
+    list_id: parsed.list_id || null,
+    in_reply_to: parsed.in_reply_to || null,
+    subject: parsed.subject,
+    snippet: parsed.snippet,
+    body_text: parsed.body_text,
+    body_html: parsed.body_html,
+    received_at: parsed.received_at,
+    is_read: parsed.is_read,
+    is_archived: !inInbox,
+    has_attachment: parsed.has_attachment,
+    raw_labels: parsed.raw_labels,
+    classified_by: "pending",
+    processed_at: new Date().toISOString(),
+    published_at_ms: publishedAtMs,
+  });
 
-  if (error) {
+  if (error || !insertedId) {
     logError("process_message.insert_failed", {
       account_id: accountId,
       gmail_message_id: gmailId,
       user_id: userId,
-    }, error);
-    return { error: error.message };
+    }, error ? new Error(error) : new Error("no id returned"));
+    return { error: error ?? "no id returned" };
   }
+  const inserted = { id: insertedId };
 
   // 2) Classify. If this throws or times out, the email is already in
   //    Inbox.
@@ -169,15 +169,16 @@ export async function processGmailMessage(
     folder_id = c.folder_id ?? null;
     classifiedBy = c.classified_by;
     const _tDb = performance.now();
-    await supabaseAdmin.from("emails").update({
+    await updateEmailEncrypted({
+      email_id: inserted.id,
       folder_id,
-      ai_summary: c.ai_summary || null,
+      ai_summary: c.ai_summary || "",
       ai_confidence: c.ai_confidence,
       classified_by: c.classified_by,
-      classification_reason: c.classification_reason,
+      classification_reason: c.classification_reason ?? "",
       matched_filter_ids: c.matched_filter_ids,
       matched_folder_ids: c.matched_folder_ids,
-    }).eq("id", inserted.id);
+    });
     if (folder_id) void bumpEmailsSinceLearn(folder_id);
     if (t) t.db += performance.now() - _tDb;
   } catch (e) {
@@ -187,10 +188,11 @@ export async function processGmailMessage(
       email_id: inserted.id,
       ai_ms: t?.ai,
     }, e);
-    await supabaseAdmin.from("emails").update({
+    await updateEmailEncrypted({
+      email_id: inserted.id,
       classified_by: "unclassified",
       classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
-    }).eq("id", inserted.id);
+    });
     return { id: inserted.id, classify_failed: true };
   }
 
