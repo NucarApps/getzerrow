@@ -177,13 +177,13 @@ export const getContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const { data: contact, error } = await supabase
-      .from("contacts")
-      .select("*")
-      .eq("id", data.id)
-      .single();
-    if (error || !contact) throw new Error("Contact not found");
+    const { supabase, userId } = context;
+    // Decrypt via SECURITY DEFINER RPC; returns the full contact row including
+    // all encrypted PII fields. Verify ownership before returning.
+    const { row, error } = await getContactDecrypted(data.id);
+    if (error || !row) throw new Error("Contact not found");
+    if ((row as any).user_id !== userId) throw new Error("Forbidden");
+    const contact = row;
     const [{ data: emails }, { data: phones }] = await Promise.all([
       supabase
         .from("emails")
