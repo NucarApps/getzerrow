@@ -120,44 +120,40 @@ export async function processGmailMessage(
   // races with the push) must not throw 23505 and abort the surrounding
   // batch. DO UPDATE refreshes content fields; classification is reset
   // to "pending" and step 2 reclassifies immediately.
-  const { data: inserted, error } = await supabaseAdmin
-    .from("emails")
-    .upsert({
-      user_id: userId,
-      gmail_account_id: accountId,
-      gmail_message_id: parsed.gmail_message_id,
-      thread_id: parsed.thread_id,
-      from_addr: parsed.from_addr,
-      from_name: parsed.from_name,
-      to_addrs: parsed.to_addrs,
-      cc: parsed.cc || null,
-      list_id: parsed.list_id || null,
-      in_reply_to: parsed.in_reply_to || null,
-      subject: parsed.subject,
-      snippet: parsed.snippet,
-      body_text: parsed.body_text,
-      body_html: parsed.body_html,
-      received_at: parsed.received_at,
-      is_read: parsed.is_read,
-      has_attachment: parsed.has_attachment,
-      raw_labels: parsed.raw_labels,
-      folder_id: null,
-      is_archived: !inInbox,
-      classified_by: "pending",
-      processed_at: new Date().toISOString(),
-      published_at_ms: publishedAtMs,
-    }, { onConflict: "gmail_message_id" })
-    .select("id")
-    .single();
+  const { id: insertedId, error } = await upsertEmailEncrypted({
+    user_id: userId,
+    gmail_account_id: accountId,
+    gmail_message_id: parsed.gmail_message_id,
+    thread_id: parsed.thread_id,
+    from_addr: parsed.from_addr,
+    from_name: parsed.from_name,
+    to_addrs: parsed.to_addrs,
+    cc: parsed.cc || null,
+    list_id: parsed.list_id || null,
+    in_reply_to: parsed.in_reply_to || null,
+    subject: parsed.subject,
+    snippet: parsed.snippet,
+    body_text: parsed.body_text,
+    body_html: parsed.body_html,
+    received_at: parsed.received_at,
+    is_read: parsed.is_read,
+    is_archived: !inInbox,
+    has_attachment: parsed.has_attachment,
+    raw_labels: parsed.raw_labels,
+    classified_by: "pending",
+    processed_at: new Date().toISOString(),
+    published_at_ms: publishedAtMs,
+  });
 
-  if (error) {
+  if (error || !insertedId) {
     logError("process_message.insert_failed", {
       account_id: accountId,
       gmail_message_id: gmailId,
       user_id: userId,
-    }, error);
-    return { error: error.message };
+    }, error ? new Error(error) : new Error("no id returned"));
+    return { error: error ?? "no id returned" };
   }
+  const inserted = { id: insertedId };
 
   // 2) Classify. If this throws or times out, the email is already in
   //    Inbox.
