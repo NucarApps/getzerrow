@@ -375,22 +375,20 @@ export async function loadOlderFromLabel(
         const k = known.get(id);
         if (k) {
           if (k.folder_id !== folderId) {
-            await supabaseAdmin
-              .from("emails")
-              .update({
-                folder_id: folderId,
-                classified_by: "gmail_label",
-                ai_confidence: 1,
-                classification_reason: `Matched Gmail label "${folder.name}"`,
-              })
-              .eq("id", k.id);
+            await updateEmailEncrypted({
+              email_id: k.id,
+              folder_id: folderId,
+              classified_by: "gmail_label",
+              ai_confidence: 1,
+              classification_reason: `Matched Gmail label "${folder.name}"`,
+            });
             claimed++;
           }
           return;
         }
         const raw = await getMessageMetadata(folder.gmail_account_id, id);
         const p = parseMessage(raw);
-        const { error } = await supabaseAdmin.from("emails").upsert({
+        const { id: newId, error } = await upsertEmailEncrypted({
           user_id: userId,
           gmail_account_id: folder.gmail_account_id,
           gmail_message_id: p.gmail_message_id,
@@ -398,20 +396,32 @@ export async function loadOlderFromLabel(
           from_addr: p.from_addr,
           from_name: p.from_name,
           to_addrs: p.to_addrs,
+          cc: null,
+          list_id: null,
+          in_reply_to: null,
           subject: p.subject,
           snippet: p.snippet,
+          body_text: null,
+          body_html: null,
           received_at: p.received_at,
           is_read: p.is_read,
           is_archived: !p.raw_labels?.includes("INBOX"),
           has_attachment: p.has_attachment,
           raw_labels: p.raw_labels,
-          folder_id: folderId,
           classified_by: "gmail_label",
-          ai_confidence: 1,
-          classification_reason: `Matched Gmail label "${folder.name}"`,
-        }, { onConflict: "gmail_message_id", ignoreDuplicates: true });
+          processed_at: null,
+          published_at_ms: null,
+        });
         if (!error) {
           ingested++;
+          if (newId) {
+            await updateEmailEncrypted({
+              email_id: newId,
+              folder_id: folderId,
+              ai_confidence: 1,
+              classification_reason: `Matched Gmail label "${folder.name}"`,
+            });
+          }
           if (p.received_at && (!oldestSeen || p.received_at < oldestSeen)) {
             oldestSeen = p.received_at;
           }
