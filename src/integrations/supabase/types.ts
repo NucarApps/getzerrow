@@ -304,7 +304,9 @@ export type Database = {
       contacts: {
         Row: {
           address_line1: string | null
+          address_line1_enc: string | null
           address_line2: string | null
+          address_line2_enc: string | null
           avatar_url: string | null
           card_image_url: string | null
           city: string | null
@@ -314,13 +316,17 @@ export type Database = {
           email: string
           enriched_at: string | null
           id: string
+          key_version: number
           linkedin: string | null
           name: string | null
           notes: string | null
+          notes_enc: string | null
           phone: string | null
+          phone_enc: string | null
           postal_code: string | null
           region: string | null
           relationship_summary: string | null
+          relationship_summary_enc: string | null
           source: string
           summary_generated_at: string | null
           title: string | null
@@ -331,7 +337,9 @@ export type Database = {
         }
         Insert: {
           address_line1?: string | null
+          address_line1_enc?: string | null
           address_line2?: string | null
+          address_line2_enc?: string | null
           avatar_url?: string | null
           card_image_url?: string | null
           city?: string | null
@@ -341,13 +349,17 @@ export type Database = {
           email: string
           enriched_at?: string | null
           id?: string
+          key_version?: number
           linkedin?: string | null
           name?: string | null
           notes?: string | null
+          notes_enc?: string | null
           phone?: string | null
+          phone_enc?: string | null
           postal_code?: string | null
           region?: string | null
           relationship_summary?: string | null
+          relationship_summary_enc?: string | null
           source?: string
           summary_generated_at?: string | null
           title?: string | null
@@ -358,7 +370,9 @@ export type Database = {
         }
         Update: {
           address_line1?: string | null
+          address_line1_enc?: string | null
           address_line2?: string | null
+          address_line2_enc?: string | null
           avatar_url?: string | null
           card_image_url?: string | null
           city?: string | null
@@ -368,13 +382,17 @@ export type Database = {
           email?: string
           enriched_at?: string | null
           id?: string
+          key_version?: number
           linkedin?: string | null
           name?: string | null
           notes?: string | null
+          notes_enc?: string | null
           phone?: string | null
+          phone_enc?: string | null
           postal_code?: string | null
           region?: string | null
           relationship_summary?: string | null
+          relationship_summary_enc?: string | null
           source?: string
           summary_generated_at?: string | null
           title?: string | null
@@ -385,14 +403,40 @@ export type Database = {
         }
         Relationships: []
       }
+      email_search_index: {
+        Row: {
+          email_id: string
+          tsv: unknown
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          email_id: string
+          tsv: unknown
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          email_id?: string
+          tsv?: unknown
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       emails: {
         Row: {
           ai_confidence: number | null
           ai_summary: string | null
+          ai_summary_enc: string | null
           body_html: string | null
+          body_html_enc: string | null
           body_text: string | null
+          body_text_enc: string | null
           cc: string | null
+          cc_enc: string | null
           classification_reason: string | null
+          classification_reason_enc: string | null
           classified_by: string | null
           created_at: string
           folder_id: string | null
@@ -404,6 +448,7 @@ export type Database = {
           forwarded_to: string | null
           from_addr: string | null
           from_name: string | null
+          from_name_enc: string | null
           gmail_account_id: string
           gmail_message_id: string
           has_attachment: boolean
@@ -411,6 +456,7 @@ export type Database = {
           in_reply_to: string | null
           is_archived: boolean
           is_read: boolean
+          key_version: number
           list_id: string | null
           matched_filter_ids: string[]
           matched_folder_ids: string[]
@@ -419,19 +465,27 @@ export type Database = {
           raw_labels: string[] | null
           received_at: string | null
           snippet: string | null
+          snippet_enc: string | null
           snoozed_until: string | null
           subject: string | null
+          subject_enc: string | null
           thread_id: string | null
           to_addrs: string | null
+          to_addrs_enc: string | null
           user_id: string
         }
         Insert: {
           ai_confidence?: number | null
           ai_summary?: string | null
+          ai_summary_enc?: string | null
           body_html?: string | null
+          body_html_enc?: string | null
           body_text?: string | null
+          body_text_enc?: string | null
           cc?: string | null
+          cc_enc?: string | null
           classification_reason?: string | null
+          classification_reason_enc?: string | null
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
@@ -443,6 +497,7 @@ export type Database = {
           forwarded_to?: string | null
           from_addr?: string | null
           from_name?: string | null
+          from_name_enc?: string | null
           gmail_account_id: string
           gmail_message_id: string
           has_attachment?: boolean
@@ -450,6 +505,7 @@ export type Database = {
           in_reply_to?: string | null
           is_archived?: boolean
           is_read?: boolean
+          key_version?: number
           list_id?: string | null
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
@@ -458,19 +514,27 @@ export type Database = {
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
+          snippet_enc?: string | null
           snoozed_until?: string | null
           subject?: string | null
+          subject_enc?: string | null
           thread_id?: string | null
           to_addrs?: string | null
+          to_addrs_enc?: string | null
           user_id: string
         }
         Update: {
           ai_confidence?: number | null
           ai_summary?: string | null
+          ai_summary_enc?: string | null
           body_html?: string | null
+          body_html_enc?: string | null
           body_text?: string | null
+          body_text_enc?: string | null
           cc?: string | null
+          cc_enc?: string | null
           classification_reason?: string | null
+          classification_reason_enc?: string | null
           classified_by?: string | null
           created_at?: string
           folder_id?: string | null
@@ -482,6 +546,7 @@ export type Database = {
           forwarded_to?: string | null
           from_addr?: string | null
           from_name?: string | null
+          from_name_enc?: string | null
           gmail_account_id?: string
           gmail_message_id?: string
           has_attachment?: boolean
@@ -489,6 +554,7 @@ export type Database = {
           in_reply_to?: string | null
           is_archived?: boolean
           is_read?: boolean
+          key_version?: number
           list_id?: string | null
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
@@ -497,10 +563,13 @@ export type Database = {
           raw_labels?: string[] | null
           received_at?: string | null
           snippet?: string | null
+          snippet_enc?: string | null
           snoozed_until?: string | null
           subject?: string | null
+          subject_enc?: string | null
           thread_id?: string | null
           to_addrs?: string | null
+          to_addrs_enc?: string | null
           user_id?: string
         }
         Relationships: [
@@ -528,9 +597,12 @@ export type Database = {
           gmail_account_id: string
           gmail_message_id: string
           id: string
+          key_version: number
           snippet: string | null
+          snippet_enc: string | null
           source: string
           subject: string | null
+          subject_enc: string | null
           user_id: string
         }
         Insert: {
@@ -540,9 +612,12 @@ export type Database = {
           gmail_account_id: string
           gmail_message_id: string
           id?: string
+          key_version?: number
           snippet?: string | null
+          snippet_enc?: string | null
           source?: string
           subject?: string | null
+          subject_enc?: string | null
           user_id: string
         }
         Update: {
@@ -552,9 +627,12 @@ export type Database = {
           gmail_account_id?: string
           gmail_message_id?: string
           id?: string
+          key_version?: number
           snippet?: string | null
+          snippet_enc?: string | null
           source?: string
           subject?: string | null
+          subject_enc?: string | null
           user_id?: string
         }
         Relationships: [
@@ -1145,22 +1223,28 @@ export type Database = {
         Row: {
           created_at: string
           draft_text: string
+          draft_text_enc: string | null
           email_id: string
           id: string
+          key_version: number
           user_id: string
         }
         Insert: {
           created_at?: string
           draft_text: string
+          draft_text_enc?: string | null
           email_id: string
           id?: string
+          key_version?: number
           user_id: string
         }
         Update: {
           created_at?: string
           draft_text?: string
+          draft_text_enc?: string | null
           email_id?: string
           id?: string
+          key_version?: number
           user_id?: string
         }
         Relationships: [
@@ -1430,6 +1514,89 @@ export type Database = {
         }[]
       }
       cron_secret_matches: { Args: { provided: string }; Returns: boolean }
+      get_contact_decrypted: {
+        Args: { p_contact_id: string; p_key: string }
+        Returns: {
+          address_line1: string
+          address_line2: string
+          avatar_url: string
+          card_image_url: string
+          city: string
+          company: string
+          country: string
+          created_at: string
+          email: string
+          enriched_at: string
+          id: string
+          linkedin: string
+          name: string
+          notes: string
+          phone: string
+          postal_code: string
+          region: string
+          relationship_summary: string
+          source: string
+          summary_generated_at: string
+          title: string
+          twitter: string
+          updated_at: string
+          user_id: string
+          website: string
+        }[]
+      }
+      get_emails_decrypted: {
+        Args: { p_ids: string[]; p_key: string }
+        Returns: {
+          ai_confidence: number
+          ai_summary: string
+          body_html: string
+          body_text: string
+          cc: string
+          classification_reason: string
+          classified_by: string
+          created_at: string
+          folder_id: string
+          forwarded_at: string
+          forwarded_to: string
+          from_addr: string
+          from_name: string
+          gmail_account_id: string
+          gmail_message_id: string
+          has_attachment: boolean
+          id: string
+          in_reply_to: string
+          is_archived: boolean
+          is_read: boolean
+          list_id: string
+          matched_filter_ids: string[]
+          matched_folder_ids: string[]
+          processed_at: string
+          published_at_ms: number
+          raw_labels: string[]
+          received_at: string
+          snippet: string
+          snoozed_until: string
+          subject: string
+          thread_id: string
+          to_addrs: string
+          user_id: string
+        }[]
+      }
+      get_folder_examples_decrypted: {
+        Args: { p_folder_id: string; p_key: string }
+        Returns: {
+          created_at: string
+          folder_id: string
+          from_addr: string
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          snippet: string
+          source: string
+          subject: string
+          user_id: string
+        }[]
+      }
       get_gmail_oauth_tokens: {
         Args: { p_account_id: string; p_key: string }
         Returns: {
@@ -1439,6 +1606,16 @@ export type Database = {
         }[]
       }
       get_invader_stats: { Args: never; Returns: Json }
+      get_reply_draft_decrypted: {
+        Args: { p_email_id: string; p_key: string }
+        Returns: {
+          created_at: string
+          draft_text: string
+          email_id: string
+          id: string
+          user_id: string
+        }[]
+      }
       get_sync_latency_stats:
         | {
             Args: { p_lookback_hours?: number; p_user_id: string }
@@ -1452,6 +1629,44 @@ export type Database = {
             }
             Returns: Json
           }
+      insert_email_encrypted: {
+        Args: {
+          p_body_html: string
+          p_body_text: string
+          p_cc: string
+          p_from_addr: string
+          p_from_name: string
+          p_gmail_account_id: string
+          p_gmail_message_id: string
+          p_has_attachment: boolean
+          p_in_reply_to: string
+          p_key: string
+          p_list_id: string
+          p_published_at_ms: number
+          p_raw_labels: string[]
+          p_received_at: string
+          p_snippet: string
+          p_subject: string
+          p_thread_id: string
+          p_to_addrs: string
+          p_user_id: string
+        }
+        Returns: string
+      }
+      insert_folder_example_encrypted: {
+        Args: {
+          p_folder_id: string
+          p_from_addr: string
+          p_gmail_account_id: string
+          p_gmail_message_id: string
+          p_key: string
+          p_snippet: string
+          p_source: string
+          p_subject: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       list_decryption_audit: {
         Args: { p_limit?: number }
         Returns: {
@@ -1475,6 +1690,42 @@ export type Database = {
           watch_expiration: string
         }[]
       }
+      search_emails: {
+        Args: {
+          p_key: string
+          p_limit: number
+          p_offset: number
+          p_query: string
+          p_user_id: string
+        }
+        Returns: {
+          folder_id: string
+          from_addr: string
+          from_name: string
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          is_archived: boolean
+          is_read: boolean
+          rank: number
+          received_at: string
+          snippet: string
+          subject: string
+          thread_id: string
+        }[]
+      }
+      set_contact_encrypted_fields: {
+        Args: {
+          p_address_line1: string
+          p_address_line2: string
+          p_contact_id: string
+          p_key: string
+          p_notes: string
+          p_phone: string
+          p_relationship_summary: string
+        }
+        Returns: undefined
+      }
       set_gmail_oauth_tokens: {
         Args: {
           p_access_token: string
@@ -1482,6 +1733,28 @@ export type Database = {
           p_key: string
           p_refresh_token: string
           p_token_expires_at: string
+        }
+        Returns: undefined
+      }
+      set_reply_draft_encrypted: {
+        Args: {
+          p_draft_text: string
+          p_email_id: string
+          p_key: string
+          p_user_id: string
+        }
+        Returns: string
+      }
+      update_email_encrypted: {
+        Args: {
+          p_ai_summary: string
+          p_body_html: string
+          p_body_text: string
+          p_classification_reason: string
+          p_email_id: string
+          p_key: string
+          p_snippet: string
+          p_subject: string
         }
         Returns: undefined
       }

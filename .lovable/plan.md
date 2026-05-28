@@ -1,80 +1,60 @@
-# At-rest encryption for email and contact content
+# At-rest encryption rollout — progress
 
-Goal: every piece of user-readable content Zerrow stores is encrypted at rest with a server-held key, while in-transit encryption (TLS 1.2+) and in-app search both keep working.
+In transit: already covered by TLS 1.2+ end-to-end (Cloudflare ↔ browser, Worker ↔ Google, Worker ↔ Supabase).
+At rest: rolling out column-level pgcrypto AEAD with the existing server-held `EMAIL_ENC_KEY`, same pattern as the OAuth-token helpers.
 
-## What gets encrypted
+## Phase 1 — DONE (migration `20260528_*_phase1_at_rest_encryption.sql`)
 
-Convert these plaintext columns to `bytea` (pgcrypto AEAD), one ciphertext per column:
+Foundation only. Additive, dual-write friendly: nothing breaks because plaintext columns are still populated and still read.
 
-- `emails`: `subject`, `snippet`, `body_text`, `body_html`, `ai_summary`, `from_name`, `to_addrs`, `cc`, `classification_reason`
-- `folder_examples`: `subject`, `snippet`
-- `reply_drafts`: `draft_text`
-- `contacts`: `notes`, `relationship_summary`, `address_line1`, `address_line2`, `phone`
+Schema:
+- `emails`: added `subject_enc`, `snippet_enc`, `from_name_enc`, `to_addrs_enc`, `cc_enc`, `ai_summary_enc`, `classification_reason_enc`, `body_text_enc`, `body_html_enc`, `key_version`.
+- `reply_drafts`: added `draft_text_enc`, `key_version`.
+- `contacts`: added `notes_enc`, `relationship_summary_enc`, `address_line1_enc`, `address_line2_enc`, `phone_enc`, `key_version`.
+- `folder_examples`: added `subject_enc`, `snippet_enc`, `key_version`.
+- New table `email_search_index(email_id PK, user_id, tsv tsvector, GIN)` with RLS scoped to `auth.uid()`.
 
-Left as plaintext on purpose (needed for routing, joins, dedupe, deliverability):
-`emails.from_addr`, `emails.gmail_message_id`, `thread_id`, `list_id`, `in_reply_to`, `raw_labels`, `received_at`, all `*_id` and boolean flags.
+Helpers (`private` schema, `SECURITY DEFINER`, granted only to `service_role`):
+- `private.encrypt_text(plaintext, p_key) → bytea` (pgp_sym_encrypt)
+- `private.decrypt_text(ciphertext, p_key) → text` (pgp_sym_decrypt; returns NULL on failure)
 
-Key source: existing `EMAIL_ENC_KEY` secret (already used for OAuth tokens). Add a `key_version smallint NOT NULL DEFAULT 1` column on every encrypted table so we can rotate later without a schema change.
+RPCs (`public` schema, locked to `service_role`):
+- `insert_email_encrypted(...payload, p_key) → uuid` — encrypts every sensitive column AND populates `email_search_index.tsv` from the plaintext subject/snippet/body before encryption.
+- `update_email_encrypted(p_email_id, subject?, snippet?, body_text?, body_html?, ai_summary?, classification_reason?, p_key)` — NULL = leave unchanged; refreshes search index when subject/snippet/body change.
+- `get_emails_decrypted(p_ids uuid[], p_key) → table(...)` — bulk decrypt for list/detail.
+- `search_emails(p_user_id, p_query, p_limit, p_offset, p_key) → table(...)` — `tsv @@ websearch_to_tsquery(...)`, ranked, decrypted.
+- `set_reply_draft_encrypted` / `get_reply_draft_decrypted`.
+- `set_contact_encrypted_fields` (NULL = leave unchanged) / `get_contact_decrypted`.
+- `insert_folder_example_encrypted` / `get_folder_examples_decrypted`.
 
-## How search keeps working
+## Phase 2 — TODO: route ingest writes through the new RPCs
 
-Add an encrypted-but-searchable sidecar so the UI can still do "search my inbox" without ever putting plaintext content back on disk:
+Goal: every new row written goes through the encrypted RPC. Plaintext columns are also written for now (dual-write) so existing reads still work.
 
-- New table `email_search_index(email_id uuid PK, user_id uuid, tsv tsvector, GIN index)` — built server-side from the decrypted subject+snippet+body at write time. RLS scoped to `auth.uid()`.
-- `tsv` is a derived token vector, not the plaintext. It leaks token shape (standard tradeoff for any searchable encryption that isn't fully homomorphic) but not raw bodies.
-- Search server fn: takes the user's query, builds a `tsquery`, returns matching `email_id`s, then a second decrypt-and-return step in the same server fn streams back the rendered rows.
+Touch points (all server-side, use `supabaseAdmin.rpc(...)`):
+- `src/lib/sync/process-message.ts` — `supabaseAdmin.from('emails').insert(...)` → `rpc('insert_email_encrypted', { ..., p_key: process.env.EMAIL_ENC_KEY })`. Same for the `.update(...)` calls that touch subject/snippet/body/ai_summary/classification_reason → `rpc('update_email_encrypted', ...)`. Calls that only mutate flags (`is_read`, `is_archived`, `folder_id`, etc.) stay on direct `.update()`.
+- `src/lib/sync/classify.ts` and `src/lib/sync/folder-learn.ts` — `ai_summary` / `classification_reason` updates → `update_email_encrypted`. New folder examples → `insert_folder_example_encrypted`.
+- `src/lib/sync/forward-retry.ts` — `claim_forward_retries` RPC needs a sibling that decrypts `body_text`/`subject`/`from_name` for the forward composer (mirror the OAuth-token decrypt pattern). Stop reading the plaintext columns there.
+- `src/lib/sync/reconcile.ts` — same as process-message.
+- `src/lib/ai-assistant.functions.ts`, `src/lib/summaries.server.ts`, `src/lib/reports.functions.ts`, `src/lib/move-email.server.ts` — anywhere these read subject/snippet/body/from_name from `emails`, switch to `get_emails_decrypted`.
+- `src/lib/contacts.functions.ts` — contact writes/reads of phone/notes/relationship_summary/address_* → `set_contact_encrypted_fields` / `get_contact_decrypted`.
+- Reply drafts (writer + reader) → `set_reply_draft_encrypted` / `get_reply_draft_decrypted`.
 
-For filter-engine matches on subject/body, the engine already runs server-side in `process-message` — it just receives decrypted strings from the new RPC instead of reading the columns directly. No client change.
+Inbox UI (`src/routes/_authenticated/inbox.tsx`):
+- The list query currently selects subject/snippet/from_name directly from `emails`. Move list rendering through a new `listInboxEmails` server fn that calls `get_emails_decrypted` for the visible page. Detail view already fetches by id — same fn, single id array.
+- Realtime: keep the existing channel as a "row changed" signal; on event, the UI calls the list/detail server fn for the affected id instead of reading the row from the realtime payload.
+- Search box: new `searchInbox` server fn → `search_emails`.
 
-## Database changes (one migration per phase; backfill is a job, not a migration)
+## Phase 3 — TODO: stop writing plaintext, then drop the columns
 
-Phase 1 — schema + RPCs (additive, dual-write):
-1. Add `_enc bytea` and `key_version smallint` columns next to each target column (e.g. `subject_enc`, `body_text_enc`). Keep the plaintext columns for now.
-2. Create `email_search_index` table + GIN index, RLS, GRANTs.
-3. Create `SECURITY DEFINER` RPCs (mirroring the OAuth pattern):
-   - `insert_email_encrypted(...payload..., p_key text) returns uuid` — encrypts + writes `_enc` columns + updates `email_search_index`.
-   - `update_email_encrypted(p_email_id uuid, ...patch..., p_key text)`.
-   - `get_emails_decrypted(p_ids uuid[], p_key text) returns table(...)` — bulk decrypt for list/detail views.
-   - `search_emails(p_user_id uuid, p_query text, p_key text, p_limit int, p_offset int) returns table(...)` — uses `tsv @@ websearch_to_tsquery(...)`, returns decrypted rows.
-   - Analogous helpers for `folder_examples`, `reply_drafts`, `contacts`.
-4. Wire `process-message`, `classify`, `folder-learn`, `forward-retry`, reply-draft writer, and contact enrichment to call the new RPCs.
+1. Audit: confirm no code path still writes to the plaintext columns (rg over `from('emails')`, `from('reply_drafts')`, `from('contacts')`, `from('folder_examples')` for `.insert` / `.update` of sensitive fields).
+2. Cron-driven backfill: new `/api/public/cron/encryption-backfill` (CRON_SECRET-gated) that batches old rows through `update_email_encrypted` / `set_contact_encrypted_fields` / equivalents to fill `*_enc` for legacy data, and writes the search index for old emails.
+3. Migration drops the plaintext columns: `subject`, `snippet`, `body_text`, `body_html`, `from_name`, `to_addrs`, `cc`, `ai_summary`, `classification_reason`, `reply_drafts.draft_text`, `contacts.{notes,relationship_summary,address_line1,address_line2,phone}`, `folder_examples.{subject,snippet}`.
+4. Tighten `src/routes/privacy.tsx` from "disk-level encryption + column-level on OAuth tokens" to "column-level AEAD on bodies, subjects, summaries, drafts, and contact notes".
 
-Phase 2 — backfill:
-- New `encryption_backfill_jobs` table + a `/api/public/cron/encryption-backfill` route (CRON_SECRET-gated) that batches 500 rows at a time per table, reads plaintext, calls the encrypted RPC, marks the row, and yields. Idempotent; safe to re-run.
+## Out of scope
 
-Phase 3 — flip reads + drop plaintext:
-- Switch all server fns and the realtime UI path to read via `get_emails_decrypted` / `search_emails`. Components no longer touch `emails.body_text` directly.
-- Once backfill reports 100% and no code references the plaintext columns, a follow-up migration drops them.
-
-## Realtime
-
-`emails` is on `supabase_realtime`. After Phase 1 it would broadcast `bytea` blobs subscribers can't decrypt, so:
-
-- Drop the encrypted columns from the realtime publication; keep only metadata (`id`, `user_id`, `gmail_account_id`, `folder_id`, `is_read`, `is_archived`, `snoozed_until`, `received_at`, flags).
-- `use-email-realtime.ts` treats the realtime event as a "something changed, refetch this id" signal and then calls `get_emails_decrypted([id])` via a server fn. UI behaviour is unchanged; only the transport changes.
-
-## Server-fn surface (new files)
-
-- `src/lib/email-crypto.functions.ts` — `listEmails`, `getEmail`, `searchEmails`, all `requireSupabaseAuth`, all call the new RPCs with `p_key = process.env.EMAIL_ENC_KEY`.
-- `src/lib/contact-crypto.functions.ts` — same shape for contacts/reply drafts/folder examples.
-- `src/lib/sync/encrypted-writer.ts` — single helper used by every ingest path; never write plaintext to the encrypted columns again.
-
-Filter engine stays pure; it just receives the decrypted struct from `encrypted-writer.ts`.
-
-## Privacy policy update
-
-After Phase 3 ships, tighten `src/routes/privacy.tsx` to say email bodies, subjects, summaries, drafts, and contact notes are stored with column-level AEAD encryption using a server-held key, in addition to disk-level encryption. Until then, leave the current wording (which already distinguishes column-level from disk-level) as-is.
-
-## Out of scope (call out explicitly)
-
-- End-to-end / client-side keys: incompatible with server-side AI classification.
-- Encrypting `from_addr`, message ids, or label arrays: needed in plaintext for filter joins, dedupe, Gmail API calls, and contact derivation.
-- Automatic key rotation: `key_version` column is added now; the actual rotate job is a separate plan.
-
-## Rollout order
-
-1. Phase 1 migration + RPCs + ingest writes both plaintext and ciphertext (dual-write).
-2. Backfill job runs to completion across all target tables.
-3. Phase 3 migration: flip realtime publication, swap all readers to RPCs, drop plaintext columns, update privacy policy.
-
-Each phase is independently shippable and reversible up to the Phase 3 drop.
+- pgsodium / managed key vault — not available on the current plan; pgcrypto + `EMAIL_ENC_KEY` is the established pattern.
+- Client-side / end-to-end encryption — incompatible with server-side AI classification.
+- Encrypting `from_addr`, gmail/thread/message ids, raw labels — needed plaintext for filter joins, dedupe, Gmail API calls, and contact derivation.
+- Automatic key rotation — `key_version` column is in place; rotate job is a separate plan.
