@@ -7,10 +7,18 @@ import {
   triggerBackfill, triggerWeekBackfill, triggerSync, renewGmailWatch,
   startDeepBackfill, cancelDeepBackfill, getBackfillStatus,
 } from "@/lib/gmail.functions";
+import { deleteAccount } from "@/lib/account.functions";
+import { supabase } from "@/integrations/supabase/client";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 import { InboxOverrides } from "@/components/settings/InboxOverrides";
