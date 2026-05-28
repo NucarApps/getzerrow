@@ -745,18 +745,22 @@ export const listFolderHistory = createServerFn({ method: "POST" })
       .order("received_at", { ascending: false })
       .range(offset, offset + limit); // fetch one extra to detect has_more
     const baseRows = rows ?? [];
-    // ai_summary is encrypted — hydrate via the list-fields RPC.
-    let withSummary: Array<Record<string, unknown>> = baseRows;
+    type Row = {
+      id: string; subject: string | null; from_addr: string | null; from_name: string | null;
+      received_at: string | null; classified_by: string | null; ai_confidence: number | null;
+      snippet: string | null; ai_summary: string | null;
+    };
+    let withSummary: Row[] = baseRows.map((r) => ({ ...r, ai_summary: null }));
     if (baseRows.length > 0) {
       const { data: dec } = await supabaseAdmin.rpc("get_emails_list_fields_decrypted", {
         p_ids: baseRows.map((r) => r.id),
         p_key: process.env.EMAIL_ENC_KEY!,
       });
-      const map = new Map<string, { ai_summary: string | null }>();
+      const map = new Map<string, string | null>();
       for (const d of (dec as Array<{ id: string; ai_summary: string | null }> | null) ?? []) {
-        map.set(d.id, { ai_summary: d.ai_summary });
+        map.set(d.id, d.ai_summary);
       }
-      withSummary = baseRows.map((r) => ({ ...r, ai_summary: map.get(r.id)?.ai_summary ?? null }));
+      withSummary = withSummary.map((r) => ({ ...r, ai_summary: map.get(r.id) ?? null }));
     }
     const has_more = withSummary.length > limit;
     return { emails: has_more ? withSummary.slice(0, limit) : withSummary, has_more, next_offset: offset + limit };
