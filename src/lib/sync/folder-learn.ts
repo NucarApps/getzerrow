@@ -26,6 +26,7 @@ import { buildFolderProfile } from "../ai.server";
 import { listMessages, getMessageMetadata, parseMessage } from "../gmail.server";
 import type { Folder } from "./types";
 import { logError } from "../log.server";
+import { insertFolderExampleEncrypted, upsertEmailEncrypted } from "./encrypted-writer";
 
 /** Promote an email to a folder + record a "manual_move" example.
  * Skips the example/promotion when the row was ALREADY in this folder
