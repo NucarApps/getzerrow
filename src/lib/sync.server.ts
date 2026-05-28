@@ -40,6 +40,7 @@ import {
   type ClassificationResult as _ClassificationResult,
 } from "./sync/classify";
 import { reconcileLocalInbox as _reconcileLocalInbox } from "./sync/reconcile";
+import { updateEmailEncrypted } from "./sync/encrypted-writer";
 import {
   recordManualMove as _recordManualMove,
   regenerateFolderProfile as _regenerateFolderProfile,
