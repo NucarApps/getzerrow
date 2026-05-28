@@ -1,50 +1,80 @@
-## Make privacy policy claims true (or correct the wording)
+# At-rest encryption for email and contact content
 
-Audit found three real gaps and two wording overstatements. This plan fixes what's cheap to fix in code, and softens claims we can't honestly back.
+Goal: every piece of user-readable content Zerrow stores is encrypted at rest with a server-held key, while in-transit encryption (TLS 1.2+) and in-app search both keep working.
 
-### 1. Fix in code
+## What gets encrypted
 
-**a. Revoke Google OAuth on disconnect** — `src/lib/gmail.functions.ts` `disconnectGmailAccount`
-- Before deleting the `gmail_accounts` row, fetch the decrypted refresh token and `POST https://oauth2.googleapis.com/revoke?token=<refresh_token>`.
-- Best-effort: log failures, don't block the delete — but actually call it. This makes claim #9 true.
+Convert these plaintext columns to `bytea` (pgcrypto AEAD), one ciphertext per column:
 
-**b. Add an account-deletion server function** — new `src/lib/account.functions.ts` with `deleteAccount` (`requireSupabaseAuth`)
-- Revoke Google tokens (reuse step a) for each connected Gmail account.
-- Delete rows in `gmail_accounts`, `emails`, `folders`, `folder_examples`, `folder_filters`, `reply_drafts`, `inbox_overrides`, `message_jobs`, `contacts`, `cards` for `auth.uid()`.
-- Call `supabaseAdmin.auth.admin.deleteUser(userId)` to remove the auth user.
-- Wire a "Delete account" button in Settings with a confirm dialog. This makes claim #10 true (and the "within 30 days" line becomes immediate).
+- `emails`: `subject`, `snippet`, `body_text`, `body_html`, `ai_summary`, `from_name`, `to_addrs`, `cc`, `classification_reason`
+- `folder_examples`: `subject`, `snippet`
+- `reply_drafts`: `draft_text`
+- `contacts`: `notes`, `relationship_summary`, `address_line1`, `address_line2`, `phone`
 
-### 2. Soften policy wording where code doesn't (yet) match
+Left as plaintext on purpose (needed for routing, joins, dedupe, deliverability):
+`emails.from_addr`, `emails.gmail_message_id`, `thread_id`, `list_id`, `in_reply_to`, `raw_labels`, `received_at`, all `*_id` and boolean flags.
 
-Edits to `src/routes/privacy.tsx`:
+Key source: existing `EMAIL_ENC_KEY` secret (already used for OAuth tokens). Add a `key_version smallint NOT NULL DEFAULT 1` column on every encrypted table so we can rotate later without a schema change.
 
-**Claim 2 (encryption at rest)** — replace the current bullet:
-> "Synced messages, metadata, summaries, and folder rules are encrypted at rest in our managed database."
+## How search keeps working
 
-with:
-> "Synced messages, metadata, summaries, and folder rules are stored in our managed Postgres database with disk-level encryption at rest provided by our infrastructure provider."
+Add an encrypted-but-searchable sidecar so the UI can still do "search my inbox" without ever putting plaintext content back on disk:
 
-(Keeps it honest. We can re-tighten this if/when the planned pgcrypto column encryption lands.)
+- New table `email_search_index(email_id uuid PK, user_id uuid, tsv tsvector, GIN index)` — built server-side from the decrypted subject+snippet+body at write time. RLS scoped to `auth.uid()`.
+- `tsv` is a derived token vector, not the plaintext. It leaks token shape (standard tradeoff for any searchable encryption that isn't fully homomorphic) but not raw bodies.
+- Search server fn: takes the user's query, builds a `tsquery`, returns matching `email_id`s, then a second decrypt-and-return step in the same server fn streams back the rendered rows.
 
-**Claim 5 (least-privilege)** — replace:
-> "...our services run with least-privilege credentials."
+For filter-engine matches on subject/body, the engine already runs server-side in `process-message` — it just receives decrypted strings from the new RPC instead of reading the columns directly. No client change.
 
-with:
-> "...server-side database access is gated by authenticated server functions that verify the requesting user before touching their data."
+## Database changes (one migration per phase; backfill is a job, not a migration)
 
-**Claim 7 (AI training)** — replace:
-> "No Google user data is used to train generalized or third-party AI models."
+Phase 1 — schema + RPCs (additive, dual-write):
+1. Add `_enc bytea` and `key_version smallint` columns next to each target column (e.g. `subject_enc`, `body_text_enc`). Keep the plaintext columns for now.
+2. Create `email_search_index` table + GIN index, RLS, GRANTs.
+3. Create `SECURITY DEFINER` RPCs (mirroring the OAuth pattern):
+   - `insert_email_encrypted(...payload..., p_key text) returns uuid` — encrypts + writes `_enc` columns + updates `email_search_index`.
+   - `update_email_encrypted(p_email_id uuid, ...patch..., p_key text)`.
+   - `get_emails_decrypted(p_ids uuid[], p_key text) returns table(...)` — bulk decrypt for list/detail views.
+   - `search_emails(p_user_id uuid, p_query text, p_key text, p_limit int, p_offset int) returns table(...)` — uses `tsv @@ websearch_to_tsquery(...)`, returns decrypted rows.
+   - Analogous helpers for `folder_examples`, `reply_drafts`, `contacts`.
+4. Wire `process-message`, `classify`, `folder-learn`, `forward-retry`, reply-draft writer, and contact enrichment to call the new RPCs.
 
-with:
-> "Email content sent to our AI provider for classification, summarization, and reply drafting is processed under that provider's API data-processing terms, which prohibit using customer API content to train their generalized models. We do not separately train any models on your email content."
+Phase 2 — backfill:
+- New `encryption_backfill_jobs` table + a `/api/public/cron/encryption-backfill` route (CRON_SECRET-gated) that batches 500 rows at a time per table, reads plaintext, calls the encrypted RPC, marks the row, and yields. Idempotent; safe to re-run.
 
-### 3. Out of scope (call out, don't do now)
+Phase 3 — flip reads + drop plaintext:
+- Switch all server fns and the realtime UI path to read via `get_emails_decrypted` / `search_emails`. Components no longer touch `emails.body_text` directly.
+- Once backfill reports 100% and no code references the plaintext columns, a follow-up migration drops them.
 
-- Actual column-level pgcrypto encryption for email bodies/summaries — this is a bigger migration + read-path change. Tracked as a follow-up; not required to make the policy truthful once #2 wording is softened.
+## Realtime
 
-### Files touched
+`emails` is on `supabase_realtime`. After Phase 1 it would broadcast `bytea` blobs subscribers can't decrypt, so:
 
-- `src/lib/gmail.functions.ts` (revoke on disconnect)
-- `src/lib/account.functions.ts` (new — account deletion)
-- `src/routes/_authenticated/settings.tsx` or equivalent (Delete account button + confirm)
-- `src/routes/privacy.tsx` (3 wording edits)
+- Drop the encrypted columns from the realtime publication; keep only metadata (`id`, `user_id`, `gmail_account_id`, `folder_id`, `is_read`, `is_archived`, `snoozed_until`, `received_at`, flags).
+- `use-email-realtime.ts` treats the realtime event as a "something changed, refetch this id" signal and then calls `get_emails_decrypted([id])` via a server fn. UI behaviour is unchanged; only the transport changes.
+
+## Server-fn surface (new files)
+
+- `src/lib/email-crypto.functions.ts` — `listEmails`, `getEmail`, `searchEmails`, all `requireSupabaseAuth`, all call the new RPCs with `p_key = process.env.EMAIL_ENC_KEY`.
+- `src/lib/contact-crypto.functions.ts` — same shape for contacts/reply drafts/folder examples.
+- `src/lib/sync/encrypted-writer.ts` — single helper used by every ingest path; never write plaintext to the encrypted columns again.
+
+Filter engine stays pure; it just receives the decrypted struct from `encrypted-writer.ts`.
+
+## Privacy policy update
+
+After Phase 3 ships, tighten `src/routes/privacy.tsx` to say email bodies, subjects, summaries, drafts, and contact notes are stored with column-level AEAD encryption using a server-held key, in addition to disk-level encryption. Until then, leave the current wording (which already distinguishes column-level from disk-level) as-is.
+
+## Out of scope (call out explicitly)
+
+- End-to-end / client-side keys: incompatible with server-side AI classification.
+- Encrypting `from_addr`, message ids, or label arrays: needed in plaintext for filter joins, dedupe, Gmail API calls, and contact derivation.
+- Automatic key rotation: `key_version` column is added now; the actual rotate job is a separate plan.
+
+## Rollout order
+
+1. Phase 1 migration + RPCs + ingest writes both plaintext and ciphertext (dual-write).
+2. Backfill job runs to completion across all target tables.
+3. Phase 3 migration: flip realtime publication, swap all readers to RPCs, drop plaintext columns, update privacy policy.
+
+Each phase is independently shippable and reversible up to the Phase 3 drop.
