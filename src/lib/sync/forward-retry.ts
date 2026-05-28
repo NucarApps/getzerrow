@@ -93,5 +93,5 @@ export async function retryForwardAttempts(maxRows = 50) {
       }
     }
   }
-  return { processed: rows?.length ?? 0, ok, failed, gaveUp };
+  return { processed: rows.length, ok, failed, gaveUp };
 }
