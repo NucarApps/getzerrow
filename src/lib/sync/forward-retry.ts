@@ -33,7 +33,7 @@ export async function retryForwardAttempts(maxRows = 50) {
   let ok = 0;
   let failed = 0;
   let gaveUp = 0;
-  for (const row of rows ?? []) {
+  for (const row of rows) {
     let forwardTo: string | null = null;
     if (row.folder_id) {
       const { data: folder } = await supabaseAdmin
