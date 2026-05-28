@@ -267,3 +267,31 @@ export async function clearNeedsReconnect(accountId: string): Promise<void> {
 export function getRedirectUri(origin: string): string {
   return `${origin}/api/public/google-oauth-callback`;
 }
+
+/**
+ * Best-effort: revoke the Google OAuth grant for an account so that the
+ * refresh token is invalidated at Google. Caller should swallow errors —
+ * this runs before we delete our encrypted copy and we still want the local
+ * delete to succeed even if Google is unreachable.
+ */
+export async function revokeGoogleOAuthForAccount(accountId: string): Promise<void> {
+  const key = requireEncKey();
+  const { data: rows, error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
+    "get_gmail_oauth_tokens",
+    { p_account_id: accountId, p_key: key },
+  );
+  if (error || !rows || rows.length === 0) return;
+  const acc = rows[0];
+  const token = acc.refresh_token || acc.access_token;
+  if (!token) return;
+  const res = await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+  // Google returns 200 on success; 400 with "invalid_token" if already
+  // revoked or expired. Either is acceptable for our purposes.
+  if (!res.ok && res.status !== 400) {
+    throw new Error(`Google revoke returned ${res.status}`);
+  }
+}
+
