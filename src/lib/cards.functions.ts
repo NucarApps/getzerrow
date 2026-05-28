@@ -186,7 +186,6 @@ export const submitCardLead = createServerFn({ method: "POST" })
       .eq("email", email)
       .maybeSingle();
 
-    let contactId: string | null = null;
     if (existing) {
       const merged = existing.notes ? `${existing.notes}\n\n${notes}` : notes;
       await supabaseAdmin
@@ -199,7 +198,6 @@ export const submitCardLead = createServerFn({ method: "POST" })
           source: "card_lead",
         })
         .eq("id", existing.id);
-      contactId = existing.id;
       await setContactEncryptedFields({
         contact_id: existing.id,
         phone: data.phone || undefined,
