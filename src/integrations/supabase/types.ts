@@ -1498,6 +1498,22 @@ export type Database = {
           subject: string
         }[]
       }
+      claim_forward_retries_v2: {
+        Args: { p_key: string; p_limit: number }
+        Returns: {
+          body_text: string
+          folder_id: string
+          forward_attempts: number
+          from_addr: string
+          from_name: string
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          received_at: string
+          snippet: string
+          subject: string
+        }[]
+      }
       claim_message_jobs: {
         Args: { p_limit: number; p_priority?: number }
         Returns: {
@@ -1560,6 +1576,14 @@ export type Database = {
           website: string
         }[]
       }
+      get_contacts_list_fields_decrypted: {
+        Args: { p_ids: string[]; p_key: string }
+        Returns: {
+          id: string
+          phone: string
+          relationship_summary: string
+        }[]
+      }
       get_emails_decrypted: {
         Args: { p_ids: string[]; p_key: string }
         Returns: {
@@ -1596,6 +1620,14 @@ export type Database = {
           thread_id: string
           to_addrs: string
           user_id: string
+        }[]
+      }
+      get_emails_list_fields_decrypted: {
+        Args: { p_ids: string[]; p_key: string }
+        Returns: {
+          ai_summary: string
+          classification_reason: string
+          id: string
         }[]
       }
       get_folder_examples_decrypted: {
