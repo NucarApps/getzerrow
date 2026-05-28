@@ -200,8 +200,9 @@ export function useEmailRealtime() {
       }
 
       const userFilter = `user_id=eq.${session.user.id}`;
+      const channelId = `inbox-rt-${session.user.id}-${Math.random().toString(36).slice(2, 10)}`;
       channel = supabase
-        .channel(`inbox-rt-${session.user.id}`)
+        .channel(channelId)
         .on(
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "emails", filter: userFilter },
