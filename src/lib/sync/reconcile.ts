@@ -41,7 +41,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     // Reads encrypted-column presence (body_text_enc / body_html_enc) to
     // detect rows that need a re-parse. Avoids decrypting bodies just to
     // check existence, and works after the plaintext columns are dropped.
-    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text_enc, body_html_enc, received_at, folder_id")
+    .select("id, gmail_message_id, raw_labels, from_addr, body_text_enc, body_html_enc, received_at, folder_id")
     .eq("gmail_account_id", accountId)
     .eq("is_archived", false)
     .order("received_at", { ascending: false, nullsFirst: true })
@@ -60,7 +60,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     const tailAnchor = cursor ?? headOldest;
     let q = supabaseAdmin
       .from("emails")
-      .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text_enc, body_html_enc, received_at, folder_id")
+      .select("id, gmail_message_id, raw_labels, from_addr, body_text_enc, body_html_enc, received_at, folder_id")
       .eq("gmail_account_id", accountId)
       .eq("is_archived", false);
     if (tailAnchor) q = q.lt("received_at", tailAnchor);
@@ -106,7 +106,6 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     try {
       const needsRepair =
         !row.from_addr ||
-        !row.subject ||
         (!row.body_text_enc && !row.body_html_enc) ||
         !row.received_at;
 

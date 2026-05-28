@@ -8,6 +8,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { performMove } from "./move-email.server";
+import { getEmailsDecrypted } from "./sync/encrypted-reader";
 import {
   proposeAssistantChanges as proposeAi,
   type AssistantAction,
@@ -108,17 +109,22 @@ export const proposeAssistantChanges = createServerFn({ method: "POST" })
     if (data.selected_email_ids.length > 0) {
       const { data: emailRows } = await supabaseAdmin
         .from("emails")
-        .select("id, from_addr, from_name, subject, snippet, folder_id, user_id")
+        .select("id, from_addr, folder_id, user_id")
         .in("id", data.selected_email_ids)
         .eq("user_id", context.userId);
-      emails = (emailRows ?? []).map((e) => ({
-        id: e.id,
-        from_addr: e.from_addr,
-        from_name: e.from_name,
-        subject: e.subject,
-        snippet: e.snippet,
-        folder_id: e.folder_id,
-      }));
+      const decRes = await getEmailsDecrypted((emailRows ?? []).map((r) => r.id));
+      const decMap = new Map(decRes.rows.map((r) => [r.id, r]));
+      emails = (emailRows ?? []).map((e) => {
+        const d = decMap.get(e.id);
+        return {
+          id: e.id,
+          from_addr: e.from_addr,
+          from_name: d?.from_name ?? null,
+          subject: d?.subject ?? null,
+          snippet: d?.snippet ?? null,
+          folder_id: e.folder_id,
+        };
+      });
     }
 
     return proposeAi({

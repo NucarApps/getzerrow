@@ -187,7 +187,7 @@ export const getContact = createServerFn({ method: "POST" })
     const [{ data: emails }, { data: phones }] = await Promise.all([
       supabase
         .from("emails")
-        .select("id,subject,snippet,received_at")
+        .select("id,received_at")
         .eq("from_addr", contact.email)
         .order("received_at", { ascending: false })
         .limit(10),
@@ -412,7 +412,7 @@ ${sample}`,
         if (best && best !== contact.name) patch.name = best;
         continue;
       }
-      if (v && (!contact[k] || data.force)) patch[k] = v;
+      if (v && (!(contact as Record<string, unknown>)[k] || data.force)) patch[k] = v;
     }
     // Fields persisted only via the encrypted RPC — strip from the
     // plaintext patch since the columns are gone post-Migration B.

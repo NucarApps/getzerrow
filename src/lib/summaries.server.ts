@@ -124,17 +124,20 @@ export async function runFolderSummary(scheduleId: string): Promise<{ ok: boolea
       ? new Date(schedule.last_run_at)
       : new Date(windowEnd.getTime() - 24 * 60 * 60 * 1000);
 
-    const { data: emails } = await supabaseAdmin
+    const { data: emailIds } = await supabaseAdmin
       .from("emails")
-      .select("from_addr, from_name, subject, snippet, received_at")
+      .select("id, received_at")
       .eq("user_id", schedule.user_id)
       .eq("folder_id", schedule.folder_id)
       .gte("received_at", windowStart.toISOString())
       .lt("received_at", windowEnd.toISOString())
       .order("received_at", { ascending: false })
       .limit(200);
+    const { getEmailsDecrypted } = await import("./sync/encrypted-reader");
+    const { rows: emailRows } = await getEmailsDecrypted((emailIds ?? []).map((r) => r.id));
+    const emails = emailRows.length > 0 ? emailRows : null;
 
-    const emailCount = emails?.length ?? 0;
+    const emailCount = emailRows.length;
 
     if (emailCount === 0) {
       await supabaseAdmin.from("folder_summary_schedules").update({
@@ -148,7 +151,7 @@ export async function runFolderSummary(scheduleId: string): Promise<{ ok: boolea
     const summary = await summarizeFolderEmails({
       folderName: folder.name,
       instructions: schedule.instructions,
-      emails: emails ?? [],
+      emails: emailRows,
     });
 
     const raw = buildRfc822({

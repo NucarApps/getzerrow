@@ -974,7 +974,7 @@ async function syncSinceHistoryLocked(
           try {
             const { data: localRow } = await supabaseAdmin
               .from("emails")
-              .select("from_addr, subject, snippet")
+              .select("id")
               .eq("gmail_account_id", accountId)
               .eq("gmail_message_id", ev.message.id)
               .maybeSingle();
@@ -982,9 +982,9 @@ async function syncSinceHistoryLocked(
             for (const folder of matched) {
               await recordManualMove(folder, accountId, account.user_id, {
                 gmail_message_id: ev.message.id,
-                from_addr: localRow.from_addr ?? "",
-                subject: localRow.subject ?? "",
-                snippet: localRow.snippet ?? "",
+                from_addr: "",
+                subject: "",
+                snippet: "",
               });
             }
           } catch (e) { logError("sync.label_added_handler_failed", { account_id: accountId, gmail_message_id: ev.message.id, added_labels: ev.labelIds }, e); }

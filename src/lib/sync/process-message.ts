@@ -64,7 +64,7 @@ export async function processGmailMessage(
   // existence, and works after the plaintext columns are dropped.
   const { data: existing } = await supabaseAdmin
     .from("emails")
-    .select("id, from_addr, subject, body_text_enc, body_html_enc, received_at")
+    .select("id, from_addr, body_text_enc, body_html_enc, received_at")
     .eq("gmail_message_id", gmailId)
     .eq("gmail_account_id", accountId)
     .maybeSingle();
@@ -84,7 +84,6 @@ export async function processGmailMessage(
     // Repair rows that were inserted with missing/blank metadata.
     const needsRepair =
       !existing.from_addr ||
-      !existing.subject ||
       (!existing.body_text_enc && !existing.body_html_enc) ||
       !existing.received_at;
     if (needsRepair) {
