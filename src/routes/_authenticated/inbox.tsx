@@ -454,7 +454,7 @@ function InboxPage() {
             q = q.or(`subject.ilike.%${v}%,snippet.ilike.%${v}%`);
           }
           const { data } = await q;
-          return (data ?? []) as Email[];
+          return (data ?? []) as unknown as Email[];
         }
         // Free-text search: load the most recent corpus and score locally.
         let q = supabase
@@ -466,7 +466,7 @@ function InboxPage() {
         // Don't restrict to INBOX while searching — Gmail's search spans all
         // mail, and most older hits will be archived.
         const { data } = await q;
-        let rows = (data ?? []) as Email[];
+        let rows = (data ?? []) as unknown as Email[];
         if (!isAllMail && selectedFolder !== "all") {
           rows = rows.filter((e) => {
             if (isNoRules) return e.folder_id === null;
@@ -492,7 +492,7 @@ function InboxPage() {
         else q = q.eq("folder_id", selectedFolder);
       }
       const { data } = await q;
-      let rows = (data ?? []) as Email[];
+      let rows = (data ?? []) as unknown as Email[];
       if (isNoRules) {
         rows = rows.filter((e) => !(e as any).raw_labels?.some((l: string) => l.startsWith("Label_")));
       }
@@ -579,7 +579,7 @@ function InboxPage() {
         .select(LIST_COLUMNS)
         .eq("gmail_account_id", accountId!)
         .in("gmail_message_id", ids);
-      return (data ?? []) as Email[];
+      return (data ?? []) as unknown as Email[];
     },
   });
 

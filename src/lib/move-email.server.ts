@@ -15,7 +15,7 @@ export async function performMove(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { data: email } = await supabaseAdmin
     .from("emails")
-    .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr, subject, snippet")
+    .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr")
     .eq("id", emailId)
     .single();
   if (!email || email.user_id !== userId) return { ok: false, error: "Email not found" };
@@ -92,8 +92,8 @@ export async function performMove(
     gmail_account_id: email.gmail_account_id,
     gmail_message_id: email.gmail_message_id,
     from_addr: email.from_addr,
-    subject: email.subject,
-    snippet: email.snippet,
+    subject: null,
+    snippet: null,
     source: "correction",
   });
 

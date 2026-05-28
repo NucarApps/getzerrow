@@ -61,12 +61,12 @@ export const getInboxReport = createServerFn({ method: "GET" })
       const to = Math.min(from + PAGE_SIZE - 1, ROW_CAP - 1);
       const { data, error } = await supabase
         .from("emails")
-        .select("from_addr,from_name,received_at,folder_id,is_read,has_attachment")
+        .select("from_addr,received_at,folder_id,is_read,has_attachment")
         .gte("received_at", since)
         .order("received_at", { ascending: false })
         .range(from, to);
       if (error) break;
-      const batch = (data ?? []) as EmailRow[];
+      const batch = (data ?? []) as unknown as EmailRow[];
       emails.push(...batch);
       if (batch.length < PAGE_SIZE) break;
     }

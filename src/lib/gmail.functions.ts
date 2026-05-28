@@ -431,16 +431,17 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
     const ids = (matches ?? []).map((m) => m.id);
 
     if (ids.length > 0) {
+      const classReason = `Domain rule: ${domain} → ${to.name}`;
       const { error: upErr } = await supabaseAdmin
         .from("emails")
         .update({
           folder_id: data.to_folder_id,
           classified_by: "domain_rule",
           ai_confidence: 1,
-          classification_reason: `Domain rule: ${domain} → ${to.name}`,
         })
         .in("id", ids);
       if (upErr) throw new Error(upErr.message);
+      await Promise.all(ids.map((id) => updateEmailEncrypted({ email_id: id, classification_reason: classReason })));
 
       // Best-effort Gmail label sync
       if (from.gmail_label_id || to.gmail_label_id) {
@@ -461,7 +462,7 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
     // Remove source folder examples for this domain so the suggestion stops reappearing
     const { data: srcExamples } = await supabaseAdmin
       .from("folder_examples")
-      .select("id, from_addr, gmail_message_id, subject, snippet, gmail_account_id")
+      .select("id, from_addr, gmail_message_id, gmail_account_id")
       .eq("folder_id", data.from_folder_id)
       .ilike("from_addr", `%@${domain}%`);
 
@@ -475,8 +476,8 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
         user_id: context.userId,
         gmail_message_id: e.gmail_message_id,
         from_addr: e.from_addr,
-        subject: e.subject,
-        snippet: e.snippet,
+        subject: null,
+        snippet: null,
         gmail_account_id: e.gmail_account_id,
         source: "reassigned",
       }));
@@ -739,7 +740,7 @@ export const listFolderHistory = createServerFn({ method: "POST" })
     const offset = data.offset ?? 0;
     const { data: rows } = await supabaseAdmin
       .from("emails")
-      .select("id, subject, from_addr, from_name, received_at, classified_by, ai_confidence, snippet")
+      .select("id, from_addr, received_at, classified_by, ai_confidence")
       .eq("user_id", context.userId)
       .eq("folder_id", data.folder_id)
       .order("received_at", { ascending: false })
@@ -750,7 +751,7 @@ export const listFolderHistory = createServerFn({ method: "POST" })
       received_at: string | null; classified_by: string | null; ai_confidence: number | null;
       snippet: string | null; ai_summary: string | null;
     };
-    let withSummary: Row[] = baseRows.map((r) => ({ ...r, ai_summary: null }));
+    let withSummary: Row[] = (baseRows as unknown[]).map((r) => ({ ...(r as object), subject: null, from_name: null, snippet: null, ai_summary: null })) as Row[];
     if (baseRows.length > 0) {
       const { data: dec } = await supabaseAdmin.rpc("get_emails_list_fields_decrypted", {
         p_ids: baseRows.map((r) => r.id),
@@ -855,7 +856,7 @@ export const applyRecategorization = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
       .from("emails")
-      .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr, subject, snippet")
+      .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr")
       .eq("id", data.email_id).single();
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
     if (!email.folder_id) throw new Error("Email has no source folder");
@@ -873,13 +874,15 @@ export const applyRecategorization = createServerFn({ method: "POST" })
     }
 
     // Move the email
+    await updateEmailEncrypted({
+      email_id: email.id,
+      folder_id: data.to_folder_id,
+      classified_by: "manual_move",
+      ai_confidence: 1,
+      classification_reason: `Re-categorized from "${from.name}" to "${to.name}"`,
+    });
     await supabaseAdmin.from("emails")
-      .update({
-        folder_id: data.to_folder_id,
-        classified_by: "manual_move",
-        ai_confidence: 1,
-        classification_reason: `Re-categorized from "${from.name}" to "${to.name}"`,
-      })
+      .update({ folder_id: data.to_folder_id, classified_by: "manual_move", ai_confidence: 1 })
       .eq("id", email.id);
 
     // Best-effort Gmail label sync
@@ -903,8 +906,8 @@ export const applyRecategorization = createServerFn({ method: "POST" })
       gmail_message_id: email.gmail_message_id,
       gmail_account_id: email.gmail_account_id,
       from_addr: email.from_addr,
-      subject: email.subject,
-      snippet: email.snippet,
+      subject: null,
+      snippet: null,
       source: "correction",
     });
 
@@ -1160,7 +1163,7 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
 
     let query = supabaseAdmin
       .from("emails")
-      .select("id, subject, from_addr, from_name, received_at, snippet")
+      .select("id, from_addr, received_at")
       .eq("user_id", context.userId)
       .neq("id", data.email_id)
       .order("received_at", { ascending: false })
@@ -1179,7 +1182,10 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
     }
     const { data: rows } = await query;
     return {
-      matches: (rows ?? []) as Array<{
+      matches: (rows ?? []).map((r) => ({
+        id: r.id, from_addr: r.from_addr, received_at: r.received_at,
+        subject: null, from_name: null, snippet: null,
+      })) as Array<{
         id: string; subject: string | null; from_addr: string | null;
         from_name: string | null; received_at: string | null; snippet: string | null;
       }>,
@@ -1335,14 +1341,21 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
     }
 
 
+    await updateEmailEncrypted({
+      email_id: email.id,
+      folder_id: result.folder_id ?? undefined,
+      classified_by: result.classified_by,
+      ai_confidence: result.ai_confidence ?? undefined,
+      ai_summary: summary || "",
+      classification_reason: result.classification_reason ?? "",
+      matched_filter_ids: result.matched_filter_ids,
+    });
     await supabaseAdmin
       .from("emails")
       .update({
         folder_id: result.folder_id,
         classified_by: result.classified_by,
         ai_confidence: result.ai_confidence,
-        ai_summary: summary || null,
-        classification_reason: result.classification_reason,
         matched_filter_ids: result.matched_filter_ids,
       })
       .eq("id", email.id);
@@ -1427,6 +1440,7 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
       new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
     );
 
+    await updateEmailEncrypted({ email_id: email.id, classification_reason: "Moved to Inbox manually" });
     await supabaseAdmin
       .from("emails")
       .update({
@@ -1434,7 +1448,6 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
         is_archived: false,
         classified_by: "manual_inbox",
         ai_confidence: 1,
-        classification_reason: "Moved to Inbox manually",
         matched_filter_ids: [],
         raw_labels: nextLabels,
       })
@@ -1573,15 +1586,14 @@ export const addInboxOverride = createServerFn({ method: "POST" })
               const nextLabels = Array.from(
                 new Set(currentLabels.filter((l) => !oldLabel || l !== oldLabel).concat(["INBOX"])),
               );
+              await updateEmailEncrypted({ email_id: m.id, classification_reason: reason, ai_summary: "" });
               await supabaseAdmin
                 .from("emails")
                 .update({
                   folder_id: null,
                   is_archived: false,
                   classified_by: "inbox_override",
-                  classification_reason: reason,
                   matched_filter_ids: [],
-                  ai_summary: null,
                   raw_labels: nextLabels,
                 })
                 .eq("id", m.id);
@@ -1652,15 +1664,14 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
         while (i < matches.length) {
           const m = matches[i++];
           try {
+            await updateEmailEncrypted({ email_id: m.id, classification_reason: reason, ai_summary: "" });
             await supabaseAdmin
               .from("emails")
               .update({
                 folder_id: null,
                 is_archived: !((m.raw_labels ?? []) as string[]).includes("INBOX"),
                 classified_by: "manual_strip",
-                classification_reason: reason,
                 matched_filter_ids: [],
-                ai_summary: null,
               })
               .eq("id", m.id);
             const oldLabel = m.folder_id ? labelById.get(m.folder_id) : null;
@@ -2790,13 +2801,13 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
         };
         const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, { skipGmailLabelMatch: true });
         if (result.folder_id && result.folder_id !== email.folder_id) {
+          await updateEmailEncrypted({ email_id: email.id, classification_reason: result.classification_reason ?? "" });
           await supabaseAdmin
             .from("emails")
             .update({
               folder_id: result.folder_id,
               classified_by: result.classified_by,
               ai_confidence: result.ai_confidence,
-              classification_reason: result.classification_reason,
               matched_filter_ids: result.matched_filter_ids,
             })
             .eq("id", email.id);
@@ -2820,13 +2831,13 @@ export const suggestFolderFromSelection = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: rows } = await supabaseAdmin
       .from("emails")
-      .select("user_id, from_addr, from_name, subject, snippet")
+      .select("user_id, from_addr")
       .in("id", data.email_ids)
       .limit(50);
     const safe = (rows ?? []).filter((r) => r.user_id === context.userId);
     if (safe.length === 0) throw new Error("No emails found");
     const suggestion = await suggestFolderFromEmails(safe.map((r) => ({
-      from_addr: r.from_addr, from_name: r.from_name, subject: r.subject, snippet: r.snippet,
+      from_addr: r.from_addr, from_name: null, subject: null, snippet: null,
     })));
     return suggestion;
   });
@@ -2877,13 +2888,13 @@ export const createFolderAndAssign = createServerFn({ method: "POST" })
     }
 
     if (data.email_ids.length > 0) {
+      await Promise.all(data.email_ids.map((id) => updateEmailEncrypted({ email_id: id, classification_reason: `Moved into new folder "${data.name}"` })));
       await supabaseAdmin
         .from("emails")
         .update({
           folder_id: folder.id,
           classified_by: "manual_move",
           ai_confidence: 1,
-          classification_reason: `Moved into new folder "${data.name}"`,
         })
         .eq("user_id", context.userId)
         .in("id", data.email_ids);

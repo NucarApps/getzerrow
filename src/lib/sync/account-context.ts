@@ -55,7 +55,7 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   if (folders.length === 0) return [];
   const { data: examples } = await supabaseAdmin
     .from("folder_examples")
-    .select("folder_id, from_addr, subject")
+    .select("folder_id, from_addr")
     .in("folder_id", folders.map((f) => f.id))
     .order("created_at", { ascending: false })
     .limit(200);
@@ -63,7 +63,7 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   for (const e of examples ?? []) {
     if (!byFolder.has(e.folder_id)) byFolder.set(e.folder_id, []);
     const arr = byFolder.get(e.folder_id)!;
-    if (arr.length < 5) arr.push({ from_addr: e.from_addr, subject: e.subject });
+    if (arr.length < 5) arr.push({ from_addr: e.from_addr, subject: null });
   }
   return folders.map((f) => ({
     id: f.id,

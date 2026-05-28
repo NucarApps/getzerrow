@@ -111,11 +111,11 @@ export async function regenerateFolderProfile(folderId: string): Promise<string 
   if (!folder) return;
   const { data: examples } = await supabaseAdmin
     .from("folder_examples")
-    .select("from_addr, subject, snippet")
+    .select("from_addr")
     .eq("folder_id", folderId)
     .order("created_at", { ascending: false })
     .limit(50);
-  const profile = await buildFolderProfile(folder.name, folder.ai_rule, examples ?? []);
+  const profile = await buildFolderProfile(folder.name, folder.ai_rule, (examples ?? []).map((e) => ({ from_addr: e.from_addr, subject: null, snippet: null })));
   await supabaseAdmin
     .from("folders")
     .update({
@@ -176,7 +176,7 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
 
   const { data: localRows } = await supabaseAdmin
     .from("emails")
-    .select("gmail_message_id, from_addr, subject, snippet")
+    .select("gmail_message_id, from_addr")
     .eq("folder_id", folderId)
     .order("received_at", { ascending: false })
     .limit(MAX_MESSAGES);
@@ -209,8 +209,8 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
       user_id: userId,
       gmail_message_id: row.gmail_message_id,
       from_addr: row.from_addr,
-      subject: row.subject,
-      snippet: row.snippet,
+      subject: null,
+      snippet: null,
       source: "seed",
     });
     if (!error) {
