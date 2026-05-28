@@ -38,11 +38,10 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
 
   const { data: headData } = await supabaseAdmin
     .from("emails")
-    // body_text / body_html plaintext columns are zeroed by the
-    // emails_encrypt_body trigger after the first write; we only need
-    // to know whether body content EXISTS, so we read the encrypted-
-    // column presence instead.
-    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
+    // Reads encrypted-column presence (body_text_enc / body_html_enc) to
+    // detect rows that need a re-parse. Avoids decrypting bodies just to
+    // check existence, and works after the plaintext columns are dropped.
+    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text_enc, body_html_enc, received_at, folder_id")
     .eq("gmail_account_id", accountId)
     .eq("is_archived", false)
     .order("received_at", { ascending: false, nullsFirst: true })
@@ -61,11 +60,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     const tailAnchor = cursor ?? headOldest;
     let q = supabaseAdmin
       .from("emails")
-      // body_text / body_html plaintext columns are zeroed by the
-    // emails_encrypt_body trigger after the first write; we only need
-    // to know whether body content EXISTS, so we read the encrypted-
-    // column presence instead.
-    .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text, body_html, received_at, folder_id")
+      .select("id, gmail_message_id, raw_labels, from_addr, subject, body_text_enc, body_html_enc, received_at, folder_id")
       .eq("gmail_account_id", accountId)
       .eq("is_archived", false);
     if (tailAnchor) q = q.lt("received_at", tailAnchor);
