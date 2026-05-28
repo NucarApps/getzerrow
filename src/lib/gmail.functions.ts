@@ -28,6 +28,7 @@ import { removeLabelsFromCurrent } from "./sync/label-merge";
 import { buildGmailQueries } from "./sync/gmail-query-builder";
 import { matchByFilters } from "./sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "./sync/types";
+import { upsertEmailEncrypted, updateEmailEncrypted, setReplyDraftEncrypted } from "./sync/encrypted-writer";
 
 async function getOwnedAccount(userId: string, accountId: string) {
   const { data, error } = await supabaseAdmin
