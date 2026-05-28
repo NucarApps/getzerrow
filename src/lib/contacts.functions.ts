@@ -414,6 +414,9 @@ ${sample}`,
       }
       if (v && (!contact[k] || data.force)) patch[k] = v;
     }
+    // Fields persisted only via the encrypted RPC — strip from the
+    // plaintext patch since the columns are gone post-Migration B.
+    const ENCRYPTED_ONLY = ["phone", "address_line1", "address_line2"] as const;
 
     // === Relationship summary: who are they, what have you discussed? ===
     try {
