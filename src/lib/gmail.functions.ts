@@ -2748,11 +2748,8 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
-    const { data: rows } = await supabaseAdmin
-      .from("emails_decrypted")
-      .select("id, user_id, gmail_account_id, gmail_message_id, folder_id, from_addr, from_name, to_addrs, subject, snippet, body_text, body_html, has_attachment, received_at, raw_labels")
-      .in("id", data.email_ids);
-    if (!rows) return { routed: 0, unchanged: 0, failed: 0 };
+    const { rows } = await getEmailsDecrypted(data.email_ids);
+    if (rows.length === 0) return { routed: 0, unchanged: 0, failed: 0 };
 
     let routed = 0;
     let unchanged = 0;
