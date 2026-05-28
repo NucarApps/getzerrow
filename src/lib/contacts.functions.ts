@@ -224,15 +224,19 @@ export const enrichContact = createServerFn({ method: "POST" })
       if (age < 30 * 24 * 60 * 60 * 1000) return { contact, skipped: true as const };
     }
 
-    const { data: localEmails } = await supabase
-      // emails_decrypted view: same columns, body_text/body_html
-      // auto-decrypted from the pgsodium-encrypted bytea backing
-      // columns. RLS on emails still applies via security_invoker.
-      .from("emails_decrypted")
-      .select("subject,body_text,snippet,from_name")
+    // 2-step: filter on plaintext from_addr to get ids, then decrypt
+    // bodies via get_emails_decrypted. Keeps Postgres-side filter cheap
+    // and works after the plaintext body columns are dropped.
+    const { data: idRows } = await supabase
+      .from("emails")
+      .select("id")
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
       .limit(40);
+    const { rows: decrypted } = await getEmailsDecrypted((idRows ?? []).map((r) => r.id));
+    const localEmails = decrypted.map((r) => ({
+      subject: r.subject, body_text: r.body_text, snippet: r.snippet, from_name: r.from_name,
+    }));
 
     // Lazy-load the user's Gmail accounts — used as a fallback below when
     // local storage has nothing for this address yet (new contacts, or
