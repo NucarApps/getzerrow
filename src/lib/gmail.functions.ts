@@ -25,6 +25,9 @@ import { signState, buildAuthorizeUrl, getRedirectUri } from "./google-oauth.ser
 import { getRequestHost } from "@tanstack/react-start/server";
 import { logError } from "./log.server";
 import { removeLabelsFromCurrent } from "./sync/label-merge";
+import { buildGmailQueries } from "./sync/gmail-query-builder";
+import { matchByFilters } from "./sync/filter-engine";
+import type { Folder, Filter, RuleNode } from "./sync/types";
 
 async function getOwnedAccount(userId: string, accountId: string) {
   const { data, error } = await supabaseAdmin
