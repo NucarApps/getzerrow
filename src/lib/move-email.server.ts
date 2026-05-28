@@ -5,7 +5,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { modifyMessage } from "./gmail.server";
 import { logError } from "./log.server";
-import { insertFolderExampleEncrypted } from "./sync/encrypted-writer";
+import { insertFolderExampleEncrypted, updateEmailEncrypted } from "./sync/encrypted-writer";
 
 export async function performMove(
   userId: string,
