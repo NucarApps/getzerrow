@@ -176,25 +176,37 @@ export const submitCardLead = createServerFn({ method: "POST" })
     if (!card) throw new Error("Card not found");
 
     const email = data.email.toLowerCase();
-    const notes = data.message ? `Lead via /c/${handle}: ${data.message}` : `Lead via /c/${handle}`;
+    const note = data.message ? `Lead via /c/${handle}: ${data.message}` : `Lead via /c/${handle}`;
 
     // Upsert-style: if a contact already exists for this owner+email, append a note.
+    // notes/phone live in encrypted columns only — read existing notes via the
+    // SECURITY DEFINER decrypt RPC, never via a plaintext column.
     const { data: existing } = await supabaseAdmin
       .from("contacts")
-      .select("id, notes")
+      .select("id")
       .eq("user_id", card.user_id)
       .eq("email", email)
       .maybeSingle();
 
     if (existing) {
-      const merged = existing.notes ? `${existing.notes}\n\n${notes}` : notes;
+      const { data: decRows } = await supabaseAdmin.rpc("get_contacts_list_fields_decrypted", {
+        p_ids: [existing.id],
+        p_key: process.env.EMAIL_ENC_KEY!,
+      });
+      const existingNotes = (decRows?.[0] as { relationship_summary?: string | null } | undefined);
+      // get_contacts_list_fields_decrypted doesn't expose notes; fetch full decrypted row instead.
+      const { data: fullRows } = await supabaseAdmin.rpc("get_contact_decrypted", {
+        p_contact_id: existing.id,
+        p_key: process.env.EMAIL_ENC_KEY!,
+      });
+      const prevNotes = (fullRows?.[0] as { notes?: string | null } | undefined)?.notes ?? null;
+      const merged = prevNotes ? `${prevNotes}\n\n${note}` : note;
+      void existingNotes;
       await supabaseAdmin
         .from("contacts")
         .update({
           name: data.name,
           company: data.company || null,
-          phone: data.phone || null,
-          notes: merged,
           source: "card_lead",
         })
         .eq("id", existing.id);
@@ -209,15 +221,13 @@ export const submitCardLead = createServerFn({ method: "POST" })
         email,
         name: data.name,
         company: data.company || null,
-        phone: data.phone || null,
-        notes,
         source: "card_lead",
       }).select("id").single();
       if (inserted?.id) {
         await setContactEncryptedFields({
           contact_id: inserted.id,
           phone: data.phone || undefined,
-          notes,
+          notes: note,
         });
       }
     }

@@ -739,14 +739,31 @@ export const listFolderHistory = createServerFn({ method: "POST" })
     const offset = data.offset ?? 0;
     const { data: rows } = await supabaseAdmin
       .from("emails")
-      .select("id, subject, from_addr, from_name, received_at, classified_by, ai_confidence, ai_summary, snippet")
+      .select("id, subject, from_addr, from_name, received_at, classified_by, ai_confidence, snippet")
       .eq("user_id", context.userId)
       .eq("folder_id", data.folder_id)
       .order("received_at", { ascending: false })
       .range(offset, offset + limit); // fetch one extra to detect has_more
-    const all = rows ?? [];
-    const has_more = all.length > limit;
-    return { emails: has_more ? all.slice(0, limit) : all, has_more, next_offset: offset + limit };
+    const baseRows = rows ?? [];
+    type Row = {
+      id: string; subject: string | null; from_addr: string | null; from_name: string | null;
+      received_at: string | null; classified_by: string | null; ai_confidence: number | null;
+      snippet: string | null; ai_summary: string | null;
+    };
+    let withSummary: Row[] = baseRows.map((r) => ({ ...r, ai_summary: null }));
+    if (baseRows.length > 0) {
+      const { data: dec } = await supabaseAdmin.rpc("get_emails_list_fields_decrypted", {
+        p_ids: baseRows.map((r) => r.id),
+        p_key: process.env.EMAIL_ENC_KEY!,
+      });
+      const map = new Map<string, string | null>();
+      for (const d of (dec as Array<{ id: string; ai_summary: string | null }> | null) ?? []) {
+        map.set(d.id, d.ai_summary);
+      }
+      withSummary = withSummary.map((r) => ({ ...r, ai_summary: map.get(r.id) ?? null }));
+    }
+    const has_more = withSummary.length > limit;
+    return { emails: has_more ? withSummary.slice(0, limit) : withSummary, has_more, next_offset: offset + limit };
   });
 
 export const suggestRecategorization = createServerFn({ method: "POST" })

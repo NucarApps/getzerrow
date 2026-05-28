@@ -784,30 +784,30 @@ export const createContactFromScan = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const email = data.email.trim().toLowerCase();
-    const { phones, ...rest } = data;
-    // Derive legacy contacts.phone mirror from primary phone (if provided).
+    const { phones, phone: phoneFromData, address_line1, address_line2, ...rest } = data;
+    // Derive primary phone from phones[] (if provided), else from `phone`.
     const primary = phones?.find((p) => p.is_primary) ?? phones?.[0];
-    const payload = {
+    const primaryPhone = primary?.number?.trim() || phoneFromData || null;
+    const plaintextPayload = {
       ...rest,
       name: normalizeName(rest.name ?? null),
-      phone: primary?.number?.trim() || rest.phone || null,
     };
     const { data: row, error } = await supabaseAdmin
       .from("contacts")
       .upsert(
-        { user_id: userId, ...payload, email, source: "scan", enriched_at: new Date().toISOString() },
+        { user_id: userId, ...plaintextPayload, email, source: "scan", enriched_at: new Date().toISOString() },
         { onConflict: "user_id,email" }
       )
       .select("*")
       .single();
     if (error) throw new Error(error.message);
-    // Mirror sensitive fields into the encrypted columns (dual-write).
+    // Sensitive fields (phone, address lines) are encrypted-only after Phase 3.
     await setContactEncryptedFields({
       contact_id: row.id,
-      phone: payload.phone ?? undefined,
+      phone: primaryPhone ?? undefined,
       notes: undefined,
-      address_line1: payload.address_line1 ?? undefined,
-      address_line2: payload.address_line2 ?? undefined,
+      address_line1: address_line1 ?? undefined,
+      address_line2: address_line2 ?? undefined,
     });
 
     if (phones && phones.length > 0) {
@@ -900,14 +900,19 @@ ${body}`,
       }
     }
 
+    // After Phase 3, phone/address_line1/address_line2 live only in encrypted
+    // columns. Split extracted fields into plaintext patch + encrypted-only.
+    const ENCRYPTED_ONLY = ["phone", "address_line1", "address_line2"] as const;
+    type EncKey = typeof ENCRYPTED_ONLY[number];
     const patch: {
       enriched_at: string;
       name?: string | null; title?: string | null; company?: string | null;
-      phone?: string | null; website?: string | null; linkedin?: string | null; twitter?: string | null;
-      address_line1?: string | null; address_line2?: string | null; city?: string | null;
-      region?: string | null; postal_code?: string | null; country?: string | null;
+      website?: string | null; linkedin?: string | null; twitter?: string | null;
+      city?: string | null; region?: string | null; postal_code?: string | null; country?: string | null;
     } = { enriched_at: new Date().toISOString() };
-    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter", ...ADDRESS_FIELDS] as const) {
+    const encPatch: Partial<Record<EncKey, string | null>> = {};
+    const plaintextFields = ["name", "title", "company", "website", "linkedin", "twitter", "city", "region", "postal_code", "country"] as const;
+    for (const k of plaintextFields) {
       const v = extracted[k];
       if (k === "name") {
         const better = pickBetterName((base as any).name, v);
@@ -916,21 +921,23 @@ ${body}`,
       }
       if (v && !(base as any)[k]) patch[k] = v;
     }
+    for (const k of ENCRYPTED_ONLY) {
+      const v = extracted[k];
+      if (v) encPatch[k] = v;
+    }
 
-    const { data: updated, error: updErr } = await supabase
+    const { error: updErr } = await supabase
       .from("contacts")
       .update(patch)
-      .eq("id", base.id)
-      .select("*")
-      .single();
+      .eq("id", base.id);
     if (updErr) throw new Error(updErr.message);
     await setContactEncryptedFields({
       contact_id: base.id,
-      phone: patch.phone ?? undefined,
-      address_line1: patch.address_line1 ?? undefined,
-      address_line2: patch.address_line2 ?? undefined,
+      phone: encPatch.phone ?? undefined,
+      address_line1: encPatch.address_line1 ?? undefined,
+      address_line2: encPatch.address_line2 ?? undefined,
     });
-
+    const { row: updated } = await getContactDecrypted(base.id);
     return { contact: updated };
   });
 
@@ -945,15 +952,13 @@ export const shareContactByEmail = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { userId, supabase } = context;
+    const { userId } = context;
 
-    const { data: contact, error } = await supabase
-      .from("contacts")
-      .select("name,title,company,email,phone,website,linkedin,twitter,address_line1,address_line2,city,region,postal_code,country")
-      .eq("id", data.contactId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!contact) throw new Error("Contact not found");
+    // phone / address_line1 / address_line2 live in encrypted columns only —
+    // read the full decrypted row via SECURITY DEFINER RPC.
+    const { row: contact, error } = await getContactDecrypted(data.contactId);
+    if (error) throw new Error(error);
+    if (!contact || contact.user_id !== userId) throw new Error("Contact not found");
 
     const { data: account } = await supabaseAdmin
       .from("gmail_accounts")
@@ -968,7 +973,12 @@ export const shareContactByEmail = createServerFn({ method: "POST" })
       accountId: account.id,
       fromEmail: account.email_address,
       toEmail: data.toEmail,
-      contact,
+      contact: {
+        name: contact.name, title: contact.title, company: contact.company, email: contact.email,
+        phone: contact.phone, website: contact.website, linkedin: contact.linkedin, twitter: contact.twitter,
+        address_line1: contact.address_line1, address_line2: contact.address_line2,
+        city: contact.city, region: contact.region, postal_code: contact.postal_code, country: contact.country,
+      },
       note: data.note ?? null,
     });
 
@@ -994,17 +1004,16 @@ export const createContactManual = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
+    // phone / notes live in encrypted columns only after Phase 3.
     const payload = {
       user_id: userId,
       email: data.email,
       name: normalizeName(data.name ?? null),
       title: data.title || null,
       company: data.company || null,
-      phone: data.phone || null,
       website: data.website || null,
       linkedin: data.linkedin || null,
       twitter: data.twitter || null,
-      notes: data.notes || null,
       source: "manual",
     };
     const { data: row, error } = await supabaseAdmin
@@ -1013,7 +1022,6 @@ export const createContactManual = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
-    // Dual-write encrypted columns for fields the Phase 3 migration will drop.
     if (row && (data.phone || data.notes)) {
       await setContactEncryptedFields({
         contact_id: row.id,

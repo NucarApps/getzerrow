@@ -29,7 +29,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw, Reply, UserPlus } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
-import { getEmailBody } from "@/lib/email-body.functions";
+import { getEmailBody, getEmailListFields } from "@/lib/email-body.functions";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -411,7 +411,7 @@ function InboxPage() {
   // the "no_rules" filter reads it. snoozed_until is included so local
   // search results can apply the same visibility filter as normal lists.
   // forward_* columns are operator-facing, not rendered in the inbox.
-  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id";
+  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id";
 
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
@@ -585,7 +585,7 @@ function InboxPage() {
 
   const rawEmails = emailsQ.data ?? [];
   const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
-  const pageRows = useMemo(() => {
+  const baseRows = useMemo(() => {
     if (!isSearching) return rawEmails.slice(0, PAGE_SIZE);
     const extra = gmailHitRowsQ.data ?? [];
     if (extra.length === 0) return rawEmails;
@@ -594,6 +594,34 @@ function InboxPage() {
     for (const r of extra) if (!seen.has(r.id)) merged.push(r);
     return merged;
   }, [isSearching, rawEmails, gmailHitRowsQ.data]);
+
+  // ai_summary / classification_reason live in encrypted columns only after
+  // Phase 3. Batch-decrypt the visible page via the SECURITY DEFINER RPC and
+  // merge into list rows for rendering.
+  const visibleIds = useMemo(() => baseRows.map((r) => r.id), [baseRows]);
+  const visibleIdsKey = useMemo(() => visibleIds.join(","), [visibleIds]);
+  const fetchListFields = useServerFn(getEmailListFields);
+  const listFieldsQ = useQuery({
+    queryKey: ["emails-list-fields", visibleIdsKey],
+    enabled: visibleIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const r = await fetchListFields({ data: { ids: visibleIds } });
+      const map = new Map<string, { ai_summary: string | null; classification_reason: string | null }>();
+      for (const f of r.fields ?? []) {
+        map.set(f.id, { ai_summary: f.ai_summary ?? null, classification_reason: f.classification_reason ?? null });
+      }
+      return map;
+    },
+  });
+  const pageRows = useMemo(() => {
+    const map = listFieldsQ.data;
+    if (!map || map.size === 0) return baseRows;
+    return baseRows.map((r) => {
+      const extra = map.get(r.id);
+      return extra ? { ...r, ai_summary: extra.ai_summary, classification_reason: extra.classification_reason } : r;
+    });
+  }, [baseRows, listFieldsQ.data]);
 
   const filtered = useMemo(() => {
     if (isSearching) {
@@ -1551,14 +1579,18 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                 try {
                   const r = await addContactFn({ data: { emailId: email.id } });
                   qc.invalidateQueries({ queryKey: ["contacts"] });
-                  toast.success(
-                    <span>
-                      Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
-                      <Link to="/contacts/$id" params={{ id: r.contact.id }} className="underline">
-                        View
-                      </Link>
-                    </span>
-                  );
+                  if (!r.contact) {
+                    toast.success("Added to contacts");
+                  } else {
+                    toast.success(
+                      <span>
+                        Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
+                        <Link to="/contacts/$id" params={{ id: r.contact.id }} className="underline">
+                          View
+                        </Link>
+                      </span>
+                    );
+                  }
                 } catch (e: any) {
                   toast.error(e.message);
                 } finally {
