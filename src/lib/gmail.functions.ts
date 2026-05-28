@@ -187,9 +187,18 @@ export const disconnectGmailAccount = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     try { await stopWatch(data.account_id); } catch (e) { logError("gmail.disconnect.stop_watch_failed", { account_id: data.account_id, user_id: context.userId }, e); }
+    // Best-effort: revoke the Google OAuth grant so the refresh token is dead
+    // server-side at Google before we drop our encrypted copy.
+    try {
+      const { revokeGoogleOAuthForAccount } = await import("./google-oauth.server");
+      await revokeGoogleOAuthForAccount(data.account_id);
+    } catch (e) {
+      logError("gmail.disconnect.revoke_failed", { account_id: data.account_id, user_id: context.userId }, e);
+    }
     await supabaseAdmin.from("gmail_accounts").delete().eq("id", data.account_id);
     return { ok: true };
   });
+
 
 export const listGmailLabels = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
