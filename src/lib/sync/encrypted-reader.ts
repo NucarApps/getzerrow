@@ -61,11 +61,30 @@ export async function getEmailsDecrypted(
 
 export type DecryptedContact = {
   id: string;
-  notes: string | null;
-  relationship_summary: string | null;
+  user_id: string;
+  email: string;
+  name: string | null;
+  avatar_url: string | null;
+  title: string | null;
+  company: string | null;
+  phone: string | null;
+  website: string | null;
+  card_image_url: string | null;
   address_line1: string | null;
   address_line2: string | null;
-  phone: string | null;
+  city: string | null;
+  region: string | null;
+  postal_code: string | null;
+  country: string | null;
+  linkedin: string | null;
+  twitter: string | null;
+  relationship_summary: string | null;
+  summary_generated_at: string | null;
+  notes: string | null;
+  source: string;
+  enriched_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export async function getContactDecrypted(
@@ -90,4 +109,67 @@ export async function getReplyDraftDecrypted(
   if (error) return { draft_text: null, error: error.message };
   const rows = (data as Array<{ draft_text: string | null }> | null) ?? [];
   return { draft_text: rows[0]?.draft_text ?? null, error: null };
+}
+
+// Batch decrypt of the small AI-derived fields shown on inbox list rows.
+// Returns only id + the two fields so payloads stay tiny for big folders.
+export type EmailListFields = {
+  id: string;
+  ai_summary: string | null;
+  classification_reason: string | null;
+};
+
+export async function getEmailListFieldsDecrypted(
+  ids: string[],
+): Promise<{ rows: EmailListFields[]; error: string | null }> {
+  if (ids.length === 0) return { rows: [], error: null };
+  const { data, error } = await supabaseAdmin.rpc("get_emails_list_fields_decrypted", ({
+    p_ids: ids,
+    p_key: getKey(),
+  }) as never);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data as EmailListFields[] | null) ?? [], error: null };
+}
+
+export type ContactListFields = {
+  id: string;
+  relationship_summary: string | null;
+  phone: string | null;
+};
+
+export async function getContactListFieldsDecrypted(
+  ids: string[],
+): Promise<{ rows: ContactListFields[]; error: string | null }> {
+  if (ids.length === 0) return { rows: [], error: null };
+  const { data, error } = await supabaseAdmin.rpc("get_contacts_list_fields_decrypted", ({
+    p_ids: ids,
+    p_key: getKey(),
+  }) as never);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data as ContactListFields[] | null) ?? [], error: null };
+}
+
+export type ForwardRetryClaim = {
+  id: string;
+  gmail_account_id: string;
+  gmail_message_id: string;
+  folder_id: string | null;
+  subject: string | null;
+  from_addr: string | null;
+  from_name: string | null;
+  body_text: string | null;
+  snippet: string | null;
+  received_at: string | null;
+  forward_attempts: number;
+};
+
+export async function claimForwardRetriesDecrypted(
+  limit: number,
+): Promise<{ rows: ForwardRetryClaim[]; error: string | null }> {
+  const { data, error } = await supabaseAdmin.rpc("claim_forward_retries_v2", ({
+    p_limit: limit,
+    p_key: getKey(),
+  }) as never);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data as ForwardRetryClaim[] | null) ?? [], error: null };
 }
