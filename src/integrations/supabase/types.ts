@@ -303,9 +303,7 @@ export type Database = {
       }
       contacts: {
         Row: {
-          address_line1: string | null
           address_line1_enc: string | null
-          address_line2: string | null
           address_line2_enc: string | null
           avatar_url: string | null
           card_image_url: string | null
@@ -319,13 +317,10 @@ export type Database = {
           key_version: number
           linkedin: string | null
           name: string | null
-          notes: string | null
           notes_enc: string | null
-          phone: string | null
           phone_enc: string | null
           postal_code: string | null
           region: string | null
-          relationship_summary: string | null
           relationship_summary_enc: string | null
           source: string
           summary_generated_at: string | null
@@ -336,9 +331,7 @@ export type Database = {
           website: string | null
         }
         Insert: {
-          address_line1?: string | null
           address_line1_enc?: string | null
-          address_line2?: string | null
           address_line2_enc?: string | null
           avatar_url?: string | null
           card_image_url?: string | null
@@ -352,13 +345,10 @@ export type Database = {
           key_version?: number
           linkedin?: string | null
           name?: string | null
-          notes?: string | null
           notes_enc?: string | null
-          phone?: string | null
           phone_enc?: string | null
           postal_code?: string | null
           region?: string | null
-          relationship_summary?: string | null
           relationship_summary_enc?: string | null
           source?: string
           summary_generated_at?: string | null
@@ -369,9 +359,7 @@ export type Database = {
           website?: string | null
         }
         Update: {
-          address_line1?: string | null
           address_line1_enc?: string | null
-          address_line2?: string | null
           address_line2_enc?: string | null
           avatar_url?: string | null
           card_image_url?: string | null
@@ -385,13 +373,10 @@ export type Database = {
           key_version?: number
           linkedin?: string | null
           name?: string | null
-          notes?: string | null
           notes_enc?: string | null
-          phone?: string | null
           phone_enc?: string | null
           postal_code?: string | null
           region?: string | null
-          relationship_summary?: string | null
           relationship_summary_enc?: string | null
           source?: string
           summary_generated_at?: string | null
@@ -427,15 +412,10 @@ export type Database = {
       emails: {
         Row: {
           ai_confidence: number | null
-          ai_summary: string | null
           ai_summary_enc: string | null
-          body_html: string | null
           body_html_enc: string | null
-          body_text: string | null
           body_text_enc: string | null
-          cc: string | null
           cc_enc: string | null
-          classification_reason: string | null
           classification_reason_enc: string | null
           classified_by: string | null
           created_at: string
@@ -447,7 +427,6 @@ export type Database = {
           forwarded_at: string | null
           forwarded_to: string | null
           from_addr: string | null
-          from_name: string | null
           from_name_enc: string | null
           gmail_account_id: string
           gmail_message_id: string
@@ -464,27 +443,19 @@ export type Database = {
           published_at_ms: number | null
           raw_labels: string[] | null
           received_at: string | null
-          snippet: string | null
           snippet_enc: string | null
           snoozed_until: string | null
-          subject: string | null
           subject_enc: string | null
           thread_id: string | null
-          to_addrs: string | null
           to_addrs_enc: string | null
           user_id: string
         }
         Insert: {
           ai_confidence?: number | null
-          ai_summary?: string | null
           ai_summary_enc?: string | null
-          body_html?: string | null
           body_html_enc?: string | null
-          body_text?: string | null
           body_text_enc?: string | null
-          cc?: string | null
           cc_enc?: string | null
-          classification_reason?: string | null
           classification_reason_enc?: string | null
           classified_by?: string | null
           created_at?: string
@@ -496,7 +467,6 @@ export type Database = {
           forwarded_at?: string | null
           forwarded_to?: string | null
           from_addr?: string | null
-          from_name?: string | null
           from_name_enc?: string | null
           gmail_account_id: string
           gmail_message_id: string
@@ -513,27 +483,19 @@ export type Database = {
           published_at_ms?: number | null
           raw_labels?: string[] | null
           received_at?: string | null
-          snippet?: string | null
           snippet_enc?: string | null
           snoozed_until?: string | null
-          subject?: string | null
           subject_enc?: string | null
           thread_id?: string | null
-          to_addrs?: string | null
           to_addrs_enc?: string | null
           user_id: string
         }
         Update: {
           ai_confidence?: number | null
-          ai_summary?: string | null
           ai_summary_enc?: string | null
-          body_html?: string | null
           body_html_enc?: string | null
-          body_text?: string | null
           body_text_enc?: string | null
-          cc?: string | null
           cc_enc?: string | null
-          classification_reason?: string | null
           classification_reason_enc?: string | null
           classified_by?: string | null
           created_at?: string
@@ -545,7 +507,6 @@ export type Database = {
           forwarded_at?: string | null
           forwarded_to?: string | null
           from_addr?: string | null
-          from_name?: string | null
           from_name_enc?: string | null
           gmail_account_id?: string
           gmail_message_id?: string
@@ -562,13 +523,10 @@ export type Database = {
           published_at_ms?: number | null
           raw_labels?: string[] | null
           received_at?: string | null
-          snippet?: string | null
           snippet_enc?: string | null
           snoozed_until?: string | null
-          subject?: string | null
           subject_enc?: string | null
           thread_id?: string | null
-          to_addrs?: string | null
           to_addrs_enc?: string | null
           user_id?: string
         }
@@ -598,10 +556,8 @@ export type Database = {
           gmail_message_id: string
           id: string
           key_version: number
-          snippet: string | null
           snippet_enc: string | null
           source: string
-          subject: string | null
           subject_enc: string | null
           user_id: string
         }
@@ -613,10 +569,8 @@ export type Database = {
           gmail_message_id: string
           id?: string
           key_version?: number
-          snippet?: string | null
           snippet_enc?: string | null
           source?: string
-          subject?: string | null
           subject_enc?: string | null
           user_id: string
         }
@@ -628,10 +582,8 @@ export type Database = {
           gmail_message_id?: string
           id?: string
           key_version?: number
-          snippet?: string | null
           snippet_enc?: string | null
           source?: string
-          subject?: string | null
           subject_enc?: string | null
           user_id?: string
         }
@@ -1222,7 +1174,6 @@ export type Database = {
       reply_drafts: {
         Row: {
           created_at: string
-          draft_text: string
           draft_text_enc: string | null
           email_id: string
           id: string
@@ -1231,7 +1182,6 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          draft_text: string
           draft_text_enc?: string | null
           email_id: string
           id?: string
@@ -1240,7 +1190,6 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          draft_text?: string
           draft_text_enc?: string | null
           email_id?: string
           id?: string
@@ -1253,13 +1202,6 @@ export type Database = {
             columns: ["email_id"]
             isOneToOne: false
             referencedRelation: "emails"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "reply_drafts_email_id_fkey"
-            columns: ["email_id"]
-            isOneToOne: false
-            referencedRelation: "emails_decrypted"
             referencedColumns: ["id"]
           },
         ]
@@ -1293,141 +1235,7 @@ export type Database = {
       }
     }
     Views: {
-      emails_decrypted: {
-        Row: {
-          ai_confidence: number | null
-          ai_summary: string | null
-          body_html: string | null
-          body_text: string | null
-          cc: string | null
-          classification_reason: string | null
-          classified_by: string | null
-          created_at: string | null
-          folder_id: string | null
-          forward_attempts: number | null
-          forward_last_error: string | null
-          forward_locked_at: string | null
-          forward_next_retry_at: string | null
-          forwarded_at: string | null
-          forwarded_to: string | null
-          from_addr: string | null
-          from_name: string | null
-          gmail_account_id: string | null
-          gmail_message_id: string | null
-          has_attachment: boolean | null
-          id: string | null
-          in_reply_to: string | null
-          is_archived: boolean | null
-          is_read: boolean | null
-          list_id: string | null
-          matched_filter_ids: string[] | null
-          matched_folder_ids: string[] | null
-          processed_at: string | null
-          published_at_ms: number | null
-          raw_labels: string[] | null
-          received_at: string | null
-          snippet: string | null
-          snoozed_until: string | null
-          subject: string | null
-          thread_id: string | null
-          to_addrs: string | null
-          user_id: string | null
-        }
-        Insert: {
-          ai_confidence?: number | null
-          ai_summary?: string | null
-          body_html?: string | null
-          body_text?: string | null
-          cc?: string | null
-          classification_reason?: string | null
-          classified_by?: string | null
-          created_at?: string | null
-          folder_id?: string | null
-          forward_attempts?: number | null
-          forward_last_error?: string | null
-          forward_locked_at?: string | null
-          forward_next_retry_at?: string | null
-          forwarded_at?: string | null
-          forwarded_to?: string | null
-          from_addr?: string | null
-          from_name?: string | null
-          gmail_account_id?: string | null
-          gmail_message_id?: string | null
-          has_attachment?: boolean | null
-          id?: string | null
-          in_reply_to?: string | null
-          is_archived?: boolean | null
-          is_read?: boolean | null
-          list_id?: string | null
-          matched_filter_ids?: string[] | null
-          matched_folder_ids?: string[] | null
-          processed_at?: string | null
-          published_at_ms?: number | null
-          raw_labels?: string[] | null
-          received_at?: string | null
-          snippet?: string | null
-          snoozed_until?: string | null
-          subject?: string | null
-          thread_id?: string | null
-          to_addrs?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          ai_confidence?: number | null
-          ai_summary?: string | null
-          body_html?: string | null
-          body_text?: string | null
-          cc?: string | null
-          classification_reason?: string | null
-          classified_by?: string | null
-          created_at?: string | null
-          folder_id?: string | null
-          forward_attempts?: number | null
-          forward_last_error?: string | null
-          forward_locked_at?: string | null
-          forward_next_retry_at?: string | null
-          forwarded_at?: string | null
-          forwarded_to?: string | null
-          from_addr?: string | null
-          from_name?: string | null
-          gmail_account_id?: string | null
-          gmail_message_id?: string | null
-          has_attachment?: boolean | null
-          id?: string | null
-          in_reply_to?: string | null
-          is_archived?: boolean | null
-          is_read?: boolean | null
-          list_id?: string | null
-          matched_filter_ids?: string[] | null
-          matched_folder_ids?: string[] | null
-          processed_at?: string | null
-          published_at_ms?: number | null
-          raw_labels?: string[] | null
-          received_at?: string | null
-          snippet?: string | null
-          snoozed_until?: string | null
-          subject?: string | null
-          thread_id?: string | null
-          to_addrs?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "emails_folder_id_fkey"
-            columns: ["folder_id"]
-            isOneToOne: false
-            referencedRelation: "folders"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "emails_gmail_account_id_fkey"
-            columns: ["gmail_account_id"]
-            isOneToOne: false
-            referencedRelation: "gmail_accounts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+      [_ in never]: never
     }
     Functions: {
       admin_daily_activity: {
@@ -1450,22 +1258,6 @@ export type Database = {
           user_id: string
         }[]
       }
-      backfill_contacts_encryption: {
-        Args: { p_batch_limit: number; p_key: string }
-        Returns: number
-      }
-      backfill_emails_encryption: {
-        Args: { p_batch_limit: number; p_key: string }
-        Returns: number
-      }
-      backfill_folder_examples_encryption: {
-        Args: { p_batch_limit: number; p_key: string }
-        Returns: number
-      }
-      backfill_reply_drafts_encryption: {
-        Args: { p_batch_limit: number; p_key: string }
-        Returns: number
-      }
       bump_history_id_if_greater: {
         Args: {
           p_account_id: string
@@ -1480,22 +1272,6 @@ export type Database = {
           id: string
           schedule_id: string
           user_id: string
-        }[]
-      }
-      claim_forward_retries: {
-        Args: { p_limit: number }
-        Returns: {
-          body_text: string
-          folder_id: string
-          forward_attempts: number
-          from_addr: string
-          from_name: string
-          gmail_account_id: string
-          gmail_message_id: string
-          id: string
-          received_at: string
-          snippet: string
-          subject: string
         }[]
       }
       claim_forward_retries_v2: {

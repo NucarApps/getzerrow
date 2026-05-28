@@ -642,15 +642,23 @@ export async function runMessageJobs(
   // guarantees we never overwrite a successful classification.
   const finalizeStuckEmailRow = async (job: ClaimedJob, errMsg: string) => {
     try {
-      await supabaseAdmin
+      // Find the pending row for this job, then route the classification_reason
+      // through the encrypted writer (plaintext column is dropped in Phase 3B).
+      const { data: rows } = await supabaseAdmin
         .from("emails")
-        .update({
-          classified_by: "ai_error",
-          classification_reason: `Worker error: ${errMsg.slice(0, 300)}`,
-        })
+        .select("id")
         .eq("gmail_account_id", job.gmail_account_id)
         .eq("gmail_message_id", job.gmail_message_id)
-        .eq("classified_by", "pending");
+        .eq("classified_by", "pending")
+        .limit(1);
+      const stuckId = rows?.[0]?.id;
+      if (stuckId) {
+        await updateEmailEncrypted({
+          email_id: stuckId,
+          classified_by: "ai_error",
+          classification_reason: `Worker error: ${errMsg.slice(0, 300)}`,
+        });
+      }
     } catch (e) {
       logError("sync.finalize_stuck_email_failed", { job_id: job.id, account_id: job.gmail_account_id, gmail_message_id: job.gmail_message_id }, e);
     }
