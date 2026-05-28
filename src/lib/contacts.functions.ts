@@ -411,15 +411,18 @@ ${sample}`,
     // === Relationship summary: who are they, what have you discussed? ===
     try {
       const addr = contact.email;
-      const { data: localConvo } = await supabase
-        .from("emails_decrypted")
-        .select("subject,body_text,snippet,from_addr,to_addrs,received_at")
+      const { data: idRows } = await supabase
+        .from("emails")
+        .select("id")
         .or(`from_addr.eq.${addr},to_addrs.ilike.%${addr}%`)
         .order("received_at", { ascending: false })
         .limit(30);
-
+      const { rows: decryptedConvo } = await getEmailsDecrypted((idRows ?? []).map((r) => r.id));
       let convo: Array<{ subject: string | null; body_text: string | null; snippet: string | null; from_addr: string | null; to_addrs: string | null; received_at: string | null }> =
-        (localConvo ?? []) as any;
+        decryptedConvo.map((r) => ({
+          subject: r.subject, body_text: r.body_text, snippet: r.snippet,
+          from_addr: r.from_addr, to_addrs: r.to_addrs, received_at: r.received_at,
+        }));
 
       if (convo.length === 0) {
         const accountIds = await getGmailAccountIds();
