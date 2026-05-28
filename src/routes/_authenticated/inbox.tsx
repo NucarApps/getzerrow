@@ -601,9 +601,25 @@ function InboxPage() {
     staleTime: 60_000,
     queryFn: async () => {
       const r = await fetchListFields({ data: { ids: visibleIds } });
-      const map = new Map<string, { ai_summary: string | null; classification_reason: string | null }>();
+      const map = new Map<string, {
+        ai_summary: string | null;
+        classification_reason: string | null;
+        subject: string | null;
+        snippet: string | null;
+        from_name: string | null;
+        to_addrs: string | null;
+        cc: string | null;
+      }>();
       for (const f of r.fields ?? []) {
-        map.set(f.id, { ai_summary: f.ai_summary ?? null, classification_reason: f.classification_reason ?? null });
+        map.set(f.id, {
+          ai_summary: f.ai_summary ?? null,
+          classification_reason: f.classification_reason ?? null,
+          subject: f.subject ?? null,
+          snippet: f.snippet ?? null,
+          from_name: f.from_name ?? null,
+          to_addrs: f.to_addrs ?? null,
+          cc: f.cc ?? null,
+        });
       }
       return map;
     },
