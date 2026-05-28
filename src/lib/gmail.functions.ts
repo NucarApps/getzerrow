@@ -2897,56 +2897,18 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
     const accountId = folder.gmail_account_id;
     const folderName = folder.name;
 
-    // Collect rules from folder_filters + filter_tree leaves.
-    type Cond = { field: string; op: string; value: string };
-    const conds: Cond[] = [];
+    // Build Gmail search queries respecting AND/OR groups (filter_tree is
+    // authoritative when present, otherwise fall back to flat folder_filters).
     const { data: ff } = await supabaseAdmin
       .from("folder_filters")
       .select("field, op, value")
       .eq("folder_id", folder.id);
-    for (const f of (ff ?? []) as Cond[]) {
-      if (f.op === "not_contains" || f.op === "not_equals") continue;
-      conds.push(f);
-    }
-    function walk(node: unknown) {
-      if (!node || typeof node !== "object") return;
-      const n = node as { type?: string; children?: unknown[]; field?: string; op?: string; value?: string };
-      if (n.type === "group" && Array.isArray(n.children)) {
-        for (const c of n.children) walk(c);
-      } else if (n.type === "cond" && n.field && n.op && typeof n.value === "string") {
-        if (n.op === "not_contains" || n.op === "not_equals") return;
-        conds.push({ field: n.field, op: n.op, value: n.value });
-      }
-    }
-    walk(folder.filter_tree);
-
-    // Translate each rule into a Gmail query string. Skip ones Gmail can't express.
-    let skippedRegex = 0;
-    function quote(v: string): string {
-      const trimmed = v.trim();
-      if (!trimmed) return "";
-      return /[\s:]/.test(trimmed) ? `"${trimmed.replace(/"/g, '\\"')}"` : trimmed;
-    }
-    const queries = new Set<string>();
-    for (const c of conds) {
-      const v = c.value.trim();
-      if (!v) continue;
-      if (c.op === "regex") { skippedRegex++; continue; }
-      let q: string | null = null;
-      switch (c.field) {
-        case "domain": q = `from:${v.replace(/^@/, "")}`; break;
-        case "from":   q = `from:${quote(v)}`; break;
-        case "to":     q = `to:${quote(v)}`; break;
-        case "cc":     q = `cc:${quote(v)}`; break;
-        case "subject":q = `subject:${quote(v)}`; break;
-        case "body":   q = quote(v); break;
-        case "list_id":q = `list:${quote(v)}`; break;
-        case "has_attachment": q = v === "true" ? "has:attachment" : null; break;
-        default: q = null;
-      }
-      if (q) queries.add(`${q} newer_than:${months}m`);
-      if (queries.size >= 20) break;
-    }
+    const flatForThisFolder = (ff ?? []) as Array<{ field: string; op: string; value: string }>;
+    const { queries: queryList, skippedRegex } = buildGmailQueries(
+      { filter_tree: folder.filter_tree as RuleNode | null, filters: flatForThisFolder },
+      { suffix: ` newer_than:${months}m`, maxQueries: 20 },
+    );
+    const queries = new Set(queryList);
 
     if (queries.size === 0) {
       return {
@@ -2957,56 +2919,29 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
       };
     }
 
-    // Folder-rule cache for matchFilters (so messages get classified into the right folder).
-    const { data: folders } = await supabaseAdmin
+    // Folder-rule cache for the shared filter engine (so messages get
+    // classified into the right folder using the same AND/OR/priority logic
+    // as the live sync pipeline).
+    const { data: foldersRaw } = await supabaseAdmin
       .from("folders")
-      .select("id, gmail_label_id")
+      .select("*")
       .eq("user_id", context.userId)
       .eq("gmail_account_id", accountId);
+    const allFolders = (foldersRaw ?? []) as Folder[];
     const labelToFolder = new Map<string, string>();
-    for (const f of folders ?? []) {
+    for (const f of allFolders) {
       if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
     }
-    const folderIds = (folders ?? []).map((f) => f.id);
-    type FF = { id: string; folder_id: string; field: string; op: string; value: string };
-    let filters: FF[] = [];
+    const folderIds = allFolders.map((f) => f.id);
+    let allFilters: Filter[] = [];
     if (folderIds.length > 0) {
       const { data: allFF } = await supabaseAdmin
         .from("folder_filters")
         .select("id, folder_id, field, op, value")
         .in("folder_id", folderIds);
-      filters = (allFF ?? []) as FF[];
+      allFilters = (allFF ?? []) as Filter[];
     }
-    function matchFilters(parsed: {
-      from_addr: string; from_name: string; to_addrs: string;
-      subject: string; body_text: string; has_attachment: boolean;
-    }): { folder_id: string; field: string; value: string } | null {
-      for (const f of filters) {
-        const v = (f.value || "").toLowerCase();
-        const fieldVal = (() => {
-          switch (f.field) {
-            case "from": return `${parsed.from_addr} ${parsed.from_name}`.toLowerCase();
-            case "to": return (parsed.to_addrs || "").toLowerCase();
-            case "subject": return (parsed.subject || "").toLowerCase();
-            case "body": return (parsed.body_text || "").toLowerCase();
-            case "domain": return (parsed.from_addr.split("@")[1] || "").toLowerCase();
-            case "has_attachment": return parsed.has_attachment ? "true" : "false";
-            default: return "";
-          }
-        })();
-        const hit = (() => {
-          switch (f.op) {
-            case "contains": return fieldVal.includes(v);
-            case "equals": return fieldVal === v;
-            case "regex":
-              try { return new RegExp(f.value, "i").test(fieldVal); } catch { return false; }
-            default: return false;
-          }
-        })();
-        if (hit) return { folder_id: f.folder_id, field: f.field, value: v };
-      }
-      return null;
-    }
+
 
     const HARD_INGEST_CAP = 1000;
     const PAGE = 100;
