@@ -93,7 +93,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <section>
       <h2 className="mb-3 text-xl font-semibold" style={{ color: INK, ...sora }}>{title}</h2>
-      <p>{children}</p>
+      <div>{children}</div>
     </section>
   );
 }
