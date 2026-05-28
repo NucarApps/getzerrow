@@ -977,6 +977,14 @@ export const createContactManual = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    // Dual-write encrypted columns for fields the Phase 3 migration will drop.
+    if (row && (data.phone || data.notes)) {
+      await setContactEncryptedFields({
+        contact_id: row.id,
+        phone: data.phone ?? undefined,
+        notes: data.notes ?? undefined,
+      });
+    }
     return { contact: row };
   });
 
