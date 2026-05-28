@@ -54,20 +54,17 @@ export async function recordManualMove(
     return;
   }
 
-  const { error } = await supabaseAdmin.from("folder_examples").upsert(
-    {
-      folder_id: folder.id,
-      gmail_account_id: accountId,
-      user_id: userId,
-      gmail_message_id: msg.gmail_message_id,
-      from_addr: msg.from_addr,
-      subject: msg.subject,
-      snippet: msg.snippet,
-      source: "manual_move",
-    },
-    { onConflict: "folder_id,gmail_message_id" },
-  );
-  if (error) logError("folder_learn.example_upsert_failed", { folder_id: folder.id, account_id: accountId, gmail_message_id: msg.gmail_message_id }, error);
+  const { error } = await insertFolderExampleEncrypted({
+    folder_id: folder.id,
+    gmail_account_id: accountId,
+    user_id: userId,
+    gmail_message_id: msg.gmail_message_id,
+    from_addr: msg.from_addr,
+    subject: msg.subject,
+    snippet: msg.snippet,
+    source: "manual_move",
+  });
+  if (error) logError("folder_learn.example_upsert_failed", { folder_id: folder.id, account_id: accountId, gmail_message_id: msg.gmail_message_id }, { message: error });
 
   await supabaseAdmin
     .from("emails")
