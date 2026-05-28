@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 import { sendContactShareEmail } from "./cards.server";
 import { listMessages, getMessage, parseMessage } from "./gmail.server";
+import { setContactEncryptedFields } from "./sync/encrypted-writer";
 
 /** Fetch recent Gmail messages matching a query, for a user's connected accounts.
  * Returns parsed messages mapped into the same shape as our local emails_decrypted rows.
