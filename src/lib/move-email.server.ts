@@ -47,13 +47,19 @@ export async function performMove(
     ...(toLabelId ? [toLabelId] : []),
   ]));
 
+  // Route classification_reason through the encrypted writer (column is dropped
+  // from plaintext). Other (non-sensitive) fields stay on direct update.
+  const { error: encErr } = await updateEmailEncrypted({
+    email_id: email.id,
+    folder_id: toFolderId,
+    classified_by: "manual_move",
+    ai_confidence: 1,
+    classification_reason: reason,
+  });
+  if (encErr) return { ok: false, error: encErr };
   const { error: upErr } = await supabaseAdmin
     .from("emails")
     .update({
-      folder_id: toFolderId,
-      classified_by: "manual_move",
-      ai_confidence: 1,
-      classification_reason: reason,
       is_archived: true,
       raw_labels: nextLabels,
     })
