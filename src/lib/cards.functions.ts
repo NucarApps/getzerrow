@@ -213,10 +213,9 @@ export const submitCardLead = createServerFn({ method: "POST" })
         notes,
         source: "card_lead",
       }).select("id").single();
-      contactId = inserted?.id ?? null;
-      if (contactId) {
+      if (inserted?.id) {
         await setContactEncryptedFields({
-          contact_id: contactId,
+          contact_id: inserted.id,
           phone: data.phone || undefined,
           notes,
         });
