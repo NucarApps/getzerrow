@@ -66,16 +66,23 @@ export async function recordManualMove(
   });
   if (error) logError("folder_learn.example_upsert_failed", { folder_id: folder.id, account_id: accountId, gmail_message_id: msg.gmail_message_id }, { message: error });
 
-  await supabaseAdmin
+  // Look up the email row so we can route classification_reason through
+  // updateEmailEncrypted — the plaintext column is gone post-Migration B.
+  const { data: emailRow } = await supabaseAdmin
     .from("emails")
-    .update({
+    .select("id")
+    .eq("gmail_message_id", msg.gmail_message_id)
+    .eq("gmail_account_id", accountId)
+    .maybeSingle();
+  if (emailRow) {
+    await updateEmailEncrypted({
+      email_id: emailRow.id,
       folder_id: folder.id,
       classified_by: "manual_move",
       ai_confidence: 1,
       classification_reason: `Moved to "${folder.name}" manually in Gmail`,
-    })
-    .eq("gmail_message_id", msg.gmail_message_id)
-    .eq("gmail_account_id", accountId);
+    });
+  }
 
   // Trigger auto-relearn when ≥3 manual moves have piled up since the
   // last learn. The AI profile only consumes 50 examples, so frequent

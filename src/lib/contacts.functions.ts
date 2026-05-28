@@ -414,6 +414,9 @@ ${sample}`,
       }
       if (v && (!contact[k] || data.force)) patch[k] = v;
     }
+    // Fields persisted only via the encrypted RPC — strip from the
+    // plaintext patch since the columns are gone post-Migration B.
+    const ENCRYPTED_ONLY = ["phone", "address_line1", "address_line2"] as const;
 
     // === Relationship summary: who are they, what have you discussed? ===
     try {
@@ -492,6 +495,17 @@ ${convoSample}`,
       console.error("relationship summary failed", e?.message ?? e);
     }
 
+    // Persist sensitive fields ONLY via the encrypted RPC. Remove them
+    // from the plaintext patch — the columns no longer exist.
+    const encryptedPatch = {
+      phone: patch.phone,
+      relationship_summary: patch.relationship_summary,
+      address_line1: patch.address_line1,
+      address_line2: patch.address_line2,
+    };
+    for (const k of [...ENCRYPTED_ONLY, "relationship_summary"] as const) {
+      delete (patch as Record<string, unknown>)[k];
+    }
     const { data: updated, error: upErr } = await supabase
       .from("contacts")
       .update(patch)
@@ -499,15 +513,17 @@ ${convoSample}`,
       .select("*")
       .single();
     if (upErr) throw new Error(upErr.message);
-    // Mirror sensitive fields into the encrypted columns (dual-write).
     await setContactEncryptedFields({
       contact_id: contact.id,
-      phone: patch.phone ?? undefined,
-      relationship_summary: patch.relationship_summary ?? undefined,
-      address_line1: patch.address_line1 ?? undefined,
-      address_line2: patch.address_line2 ?? undefined,
+      phone: encryptedPatch.phone ?? undefined,
+      relationship_summary: encryptedPatch.relationship_summary ?? undefined,
+      address_line1: encryptedPatch.address_line1 ?? undefined,
+      address_line2: encryptedPatch.address_line2 ?? undefined,
     });
-    return { contact: updated, skipped: false as const };
+    // Re-hydrate decrypted fields onto the returned row so the caller
+    // (the inbox / contact drawer) sees the freshly-written values.
+    const { row: decRow } = await getContactDecrypted(contact.id);
+    return { contact: decRow ?? updated, skipped: false as const };
   });
 
 const PHONE_NUMBER_RE = /^[+\d\s().-]{3,60}$/;
@@ -552,6 +568,18 @@ export const updateContact = createServerFn({ method: "POST" })
       patch.phone = primary?.number?.trim() || null;
     }
 
+    // Split: sensitive fields go through the encrypted RPC only; their
+    // plaintext columns no longer exist (Phase 3 Migration B).
+    const encryptedPatch = {
+      phone: patch.phone,
+      notes: patch.notes,
+      address_line1: patch.address_line1,
+      address_line2: patch.address_line2,
+    };
+    for (const k of ["phone", "notes", "address_line1", "address_line2"] as const) {
+      delete (patch as Record<string, unknown>)[k];
+    }
+
     const { data: updated, error } = await supabase
       .from("contacts")
       .update(patch)
@@ -559,13 +587,12 @@ export const updateContact = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
-    // Mirror sensitive fields into the encrypted columns (dual-write).
     await setContactEncryptedFields({
       contact_id: id,
-      phone: patch.phone ?? undefined,
-      notes: patch.notes ?? undefined,
-      address_line1: patch.address_line1 ?? undefined,
-      address_line2: patch.address_line2 ?? undefined,
+      phone: encryptedPatch.phone ?? undefined,
+      notes: encryptedPatch.notes ?? undefined,
+      address_line1: encryptedPatch.address_line1 ?? undefined,
+      address_line2: encryptedPatch.address_line2 ?? undefined,
     });
 
     if (phones) {
@@ -573,7 +600,6 @@ export const updateContact = createServerFn({ method: "POST" })
       const { error: delErr } = await supabase.from("contact_phones").delete().eq("contact_id", id);
       if (delErr) throw new Error(delErr.message);
       if (phones.length > 0) {
-        // Ensure exactly one primary.
         const hasPrimary = phones.some((p) => p.is_primary);
         const normalized = phones.map((p, idx) => ({
           user_id: userId,
@@ -595,7 +621,10 @@ export const updateContact = createServerFn({ method: "POST" })
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
 
-    return { contact: updated, phones: refreshedPhones ?? [] };
+    // Return the decrypted view so the UI re-renders with the new
+    // phone/notes/address values written through the encrypted RPC.
+    const { row: decRow } = await getContactDecrypted(id);
+    return { contact: decRow ?? updated, phones: refreshedPhones ?? [] };
   });
 
 /** Delete a contact. */
