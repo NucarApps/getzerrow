@@ -98,6 +98,22 @@ function countConds(node: RuleNode): number {
   return node.type === "cond" ? 1 : node.children.reduce((n, c) => n + countConds(c), 0);
 }
 
+/** Walk a rule tree and return field/op/value for every leaf
+ * (`type: "cond"`) that evaluates true against `email`. The UI uses
+ * this to pinpoint which leaf(s) in a folder's filter_tree matched,
+ * since tree leaves don't have folder_filters row IDs. */
+export function collectMatchingLeaves(
+  email: EmailForFilter,
+  node: RuleNode,
+): Array<{ field: string; op: string; value: string }> {
+  if (node.type === "cond") {
+    return applyFilter(email, { id: "", folder_id: "", field: node.field, op: node.op, value: node.value })
+      ? [{ field: node.field, op: node.op, value: node.value }]
+      : [];
+  }
+  return node.children.flatMap((c) => collectMatchingLeaves(email, c));
+}
+
 // ─── Folder matching ────────────────────────────────────────────────────
 
 export type FolderMatch =

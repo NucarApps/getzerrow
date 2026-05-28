@@ -1,103 +1,46 @@
+# Pinpoint the exact rule that matched, even for tree-based folders
+
 ## Problem
 
-Even after relaxing `toolChoice` to `"auto"` and adding a text fallback, the preview sandbox log shows:
+The DocuSign email lives in the **Notifications** folder, which uses a rule **tree** (`OR` of `domain contains "docusign"` and `subject starts_with "Completed"`). Today, `src/lib/sync/classify.ts` only populates `emails.matched_filter_ids` when the folder uses flat filters — tree branches are skipped because tree leaves aren't rows in `folder_filters` and don't have IDs.
 
-```
-proposeAssistantChanges first attempt failed Model did not call propose_changes
-proposeAssistantChanges retry failed Model did not call propose_changes
-```
+Result: the email's "why" panel can't pinpoint the rule, so it falls back to listing every rule in the folder.
 
-For your message:
-> "Can you help me set up a filter inside of the signatures folder that if the subject starts with 'completed', I want it to go to notifications?"
+## Fix (UI + tiny pure-logic helper, no DB changes)
 
-That's a clean, unambiguous request. Gemini should easily produce `add_filter` on Notifications with `field: subject, op: starts_with, value: "completed"`. Instead it returns **nothing** — no tool call, no text — which means the AI SDK + OpenAI-compatible adapter + Gemini combination is choking on our tool schema.
+The filter engine is pure logic and safe to import client-side. Re-evaluate the folder's tree against the email in the browser to extract just the matching leaves, and render those.
 
-The root cause is the schema shape: a Zod `discriminatedUnion` of 4 action types nested inside an array, inside an object, sent through the `openai-compatible` provider. Gemini's structured-output path through OpenAI-compatible JSON Schema is unreliable for discriminated unions. When it can't satisfy the schema cleanly, it bails with an empty response instead of best-effort.
+### 1. `src/lib/sync/filter-engine.ts`
 
-## Fix
-
-Stop going through the AI SDK's `generateText` + `tool()` abstraction for this call, and instead call the Lovable AI Gateway directly with hand-written OpenAI-style function-calling JSON Schema. This is the pattern the project's own AI Gateway knowledge file recommends for structured extraction, and it gives us full control over the schema shape Gemini sees.
-
-Edit only `src/lib/ai-assistant.server.ts`.
-
-### 1. Replace `callModel` with a direct `fetch` to the gateway
+Add one exported helper:
 
 ```ts
-fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-  method: "POST",
-  headers: {
-    Authorization: `Bearer ${process.env.LOVABLE_API_KEY}`,
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    model: "google/gemini-3-flash-preview",
-    messages: [{ role: "user", content: prompt }],
-    tools: [{ type: "function", function: { name: "propose_changes", parameters: { ... } } }],
-    tool_choice: { type: "function", function: { name: "propose_changes" } },
-  }),
-});
+export function collectMatchingLeaves(
+  email: EmailForFilter,
+  node: RuleNode,
+): Array<{ field: string; op: string; value: string }>
 ```
 
-Then parse `choices[0].message.tool_calls[0].function.arguments` (JSON-parse the string) and validate it with the existing Zod schema. If `tool_calls` is missing, fall back to `choices[0].message.content` as the text-mode reply (already handled in the current code path).
+Walks the tree; for every `type: "cond"` leaf where `applyFilter(email, leafAsFilter)` returns true, collect `{field, op, value}`. Pure, no Supabase, fully unit-testable.
 
-### 2. Flatten the action schema
+### 2. `src/routes/_authenticated/inbox.tsx` — `TriggeredBy` component (around line 1803)
 
-Gemini handles flat object schemas much better than discriminated unions. Replace the `discriminatedUnion` with a single `action` object that has all possible fields optional, plus a required `type` enum:
+- Extend the existing `useQuery(["folder-rules", folder_id])` to also select `filter_tree` from `folders` (it already loads the folder row).
+- In the `useMemo` that computes `matched` (lines 1814–1827), add a third branch: when `classified_by === "filter"`, `matched_filter_ids` is empty, **and** the folder has a non-empty `filter_tree`, call `collectMatchingLeaves(email, filter_tree)` and render the returned leaves. These leaves have no `id`, so represent them as synthetic objects shaped like `{field, op, value}` (the list renderer at line 1840 already only reads those three fields).
+- Only fall back to "showing all rules for this folder" when neither persisted IDs, recomputed includes, nor tree leaves yield anything.
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "reply": { "type": "string" },
-    "clarifying_question": { "type": "string" },
-    "actions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "type": { "type": "string", "enum": ["move_email","add_filter","remove_filter","update_folder_rule"] },
-          "email_id": { "type": "string" },
-          "to_folder_id": { "type": "string" },
-          "folder_id": { "type": "string" },
-          "filter_id": { "type": "string" },
-          "field": { "type": "string", "enum": ["from","domain","subject"] },
-          "op": { "type": "string", "enum": ["contains","equals","starts_with"] },
-          "value": { "type": "string" },
-          "ai_rule": { "type": "string" },
-          "why": { "type": "string" }
-        },
-        "required": ["type"]
-      }
-    }
-  },
-  "required": ["actions"]
-}
-```
+### 3. (Optional, follow-up) Backfill new tree matches going forward
 
-Then, after parsing, run each action through the existing Zod `actionSchema` (the strict discriminated union) to drop invalid ones. The model gets a permissive schema; we still enforce strictness on our side before returning.
-
-### 3. Keep the rest
-
-- `proposalSchema` Zod still used for final validation of `reply`, `clarifying_question`, and per-action shapes.
-- Prompt content stays as-is (already improved last turn).
-- Retry-once and 402/429 error surfacing stay.
-- Text fallback (when no tool call but text present) stays.
-
-### 4. Drop the now-unused AI SDK imports
-
-`generateText` and `tool` from `"ai"` and `createLovableAiGatewayProvider` from `./ai-gateway` are no longer needed by this file. Remove only from this file (other files still use them).
-
-## Why this will work
-
-- Direct fetch + OpenAI-style function calling is exactly the pattern in the project's `connecting-to-ai-models` knowledge file under "Extracting structured output". Gemini through the Lovable gateway is well-tested with this shape.
-- Flat object schemas are reliably honored by Gemini; discriminated unions are not.
-- We keep strict validation in Zod after parsing, so the apply step is still safe.
-
-## Files touched
-
-- `src/lib/ai-assistant.server.ts` — only file changed. No UI, no DB, no schema changes, no changes to `ai-assistant.functions.ts` or `AssistantPanel.tsx`. The `AssistantProposal` shape returned to callers is unchanged.
+Not required for this fix, but worth a note: a later pass can update `src/lib/sync/classify.ts` to also persist matched leaf snippets in `classification_reason` (e.g. `Rule group matched for "Notifications": domain contains "docusign"`) so the why-panel has a server-rendered summary too. Out of scope for this change.
 
 ## Out of scope
 
-- No model swap.
-- No changes to apply path or action validation in `ai-assistant.functions.ts` (that file already validates with its own discriminated union — perfect second line of defense).
+- No schema migration (no new columns; matched_filter_ids stays as-is).
+- No change to the sync/classification pipeline.
+- No change to other classified_by branches (`ai`, `gmail_label`, `manual_move`, etc.).
+
+## Files touched
+
+- `src/lib/sync/filter-engine.ts` — add `collectMatchingLeaves`.
+- `src/lib/sync/filter-engine.test.ts` — add a small unit test for the new helper.
+- `src/routes/_authenticated/inbox.tsx` — extend folder query + `TriggeredBy` tree branch.

@@ -38,6 +38,8 @@ import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
+import { collectMatchingLeaves } from "@/lib/sync/filter-engine";
+import type { RuleNode } from "@/lib/sync/types";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
 import { AssistantPanel } from "@/components/inbox/AssistantPanel";
 import { PullToRefresh } from "@/components/inbox/PullToRefresh";
@@ -1321,11 +1323,11 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     enabled: !!email.folder_id,
     queryFn: async () => {
       const [folderRes, filtersRes] = await Promise.all([
-        supabase.from("folders").select("id, name, ai_rule, gmail_label_id").eq("id", email.folder_id!).maybeSingle(),
+        supabase.from("folders").select("id, name, ai_rule, gmail_label_id, filter_tree").eq("id", email.folder_id!).maybeSingle(),
         supabase.from("folder_filters").select("id, field, op, value").eq("folder_id", email.folder_id!),
       ]);
       return {
-        folder: folderRes.data as { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null,
+        folder: folderRes.data as { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null; filter_tree: RuleNode | null } | null,
         filters: (filtersRes.data ?? []) as Array<{ id: string; field: string; op: string; value: string }>,
       };
     },
@@ -1805,7 +1807,7 @@ function TriggeredBy({
 }: {
   classifiedBy: string | null;
   reason: string | null;
-  folder: { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null;
+  folder: { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null; filter_tree: RuleNode | null } | null;
   filters: Array<{ id: string; field: string; op: string; value: string }>;
   email: Email;
 }) {
@@ -1821,10 +1823,29 @@ function TriggeredBy({
       // Persisted ids exist but rules have since been removed/edited.
       return { matched: [], rulesChanged: true };
     }
+    // Tree-based folder: re-evaluate the tree to pinpoint matching leaves.
+    // Tree leaves have no folder_filters row id, so synthesize entries.
+    if (folder?.filter_tree) {
+      const emailForFilter = {
+        from_addr: email.from_addr ?? "",
+        from_name: email.from_name ?? "",
+        to_addrs: email.to_addrs ?? "",
+        subject: email.subject ?? "",
+        body_text: email.body_text ?? "",
+        has_attachment: email.has_attachment,
+      };
+      const leaves = collectMatchingLeaves(emailForFilter, folder.filter_tree);
+      if (leaves.length > 0) {
+        return {
+          matched: leaves.map((l, i) => ({ id: `tree-${i}`, ...l })),
+          rulesChanged: false,
+        };
+      }
+    }
     // Legacy email: recompute the matching includes client-side.
     const includes = filters.filter((f) => !EXCLUDE_OPS_CLIENT.has(f.op));
     return { matched: includes.filter((f) => applyFilterClient(email, f)), rulesChanged: false };
-  }, [by, email, filters]);
+  }, [by, email, filters, folder]);
 
   if (by === "filter" || by === "domain_rule") {
     const showAllFallback = matched.length === 0 && filters.length > 0;
