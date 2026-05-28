@@ -1,29 +1,50 @@
-## Update Privacy Policy with Google User Data protection details
+## Make privacy policy claims true (or correct the wording)
 
-Add a new "How we protect Google user data" section to `src/routes/privacy.tsx`, plus tighten existing sections so they explicitly meet Google's Limited Use / API Services User Data Policy disclosure requirements.
+Audit found three real gaps and two wording overstatements. This plan fixes what's cheap to fix in code, and softens claims we can't honestly back.
 
-### Changes to `src/routes/privacy.tsx`
+### 1. Fix in code
 
-1. **Bump "Last updated" date** to May 28, 2026.
+**a. Revoke Google OAuth on disconnect** — `src/lib/gmail.functions.ts` `disconnectGmailAccount`
+- Before deleting the `gmail_accounts` row, fetch the decrypted refresh token and `POST https://oauth2.googleapis.com/revoke?token=<refresh_token>`.
+- Best-effort: log failures, don't block the delete — but actually call it. This makes claim #9 true.
 
-2. **New section: "How we protect Google user data"** (placed after "How we use it"). Covers:
-   - Encryption in transit (TLS 1.2+) for all traffic between your browser, Gmail, and Zerrow.
-   - Encryption at rest for stored messages, metadata, and folder rules in our database.
-   - Google OAuth tokens stored encrypted with a server-held key (pgcrypto), never exposed to the browser.
-   - Access controls: row-level security so each user can only access their own data; least-privilege service credentials.
-   - Operational security: secrets stored in a managed secret store, audit logging, restricted production access for staff.
-   - Security procedures and reviews are in place to protect the confidentiality of your data.
+**b. Add an account-deletion server function** — new `src/lib/account.functions.ts` with `deleteAccount` (`requireSupabaseAuth`)
+- Revoke Google tokens (reuse step a) for each connected Gmail account.
+- Delete rows in `gmail_accounts`, `emails`, `folders`, `folder_examples`, `folder_filters`, `reply_drafts`, `inbox_overrides`, `message_jobs`, `contacts`, `cards` for `auth.uid()`.
+- Call `supabaseAdmin.auth.admin.deleteUser(userId)` to remove the auth user.
+- Wire a "Delete account" button in Settings with a confirm dialog. This makes claim #10 true (and the "within 30 days" line becomes immediate).
 
-3. **New section: "Limited Use of Google user data"** (right after the section above) — explicit Google-required language:
-   - Zerrow's use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements.
-   - Google user data is used only to provide and improve the user-facing features of Zerrow (classification, filing, summaries, reply drafts).
-   - We do not sell Google user data, do not use it for ads, do not transfer it except as necessary to provide the service, and do not allow humans to read it except with your consent, for security/abuse investigations, for legal reasons, or where data has been aggregated and anonymized.
-   - No Google user data is used to train generalized/third-party AI models.
+### 2. Soften policy wording where code doesn't (yet) match
 
-4. **Tighten "Sharing"** to name categories of subprocessors (hosting on Cloudflare, database/auth on Supabase via Lovable Cloud, AI classification via Lovable AI Gateway) and reiterate no sale/no ads.
+Edits to `src/routes/privacy.tsx`:
 
-5. **Tighten "Retention & deletion"** to clarify that disconnecting Gmail revokes OAuth tokens and stops further syncing, and that account deletion removes synced messages, jobs, and the encrypted OAuth record within 30 days.
+**Claim 2 (encryption at rest)** — replace the current bullet:
+> "Synced messages, metadata, summaries, and folder rules are encrypted at rest in our managed database."
 
-6. **Update meta description** to mention security and Google user data protection so the page is discoverable for Google's OAuth verification review.
+with:
+> "Synced messages, metadata, summaries, and folder rules are stored in our managed Postgres database with disk-level encryption at rest provided by our infrastructure provider."
 
-No business logic, routing, or backend changes. UI styling and structure (Section helper, color tokens, fonts) stay as-is.
+(Keeps it honest. We can re-tighten this if/when the planned pgcrypto column encryption lands.)
+
+**Claim 5 (least-privilege)** — replace:
+> "...our services run with least-privilege credentials."
+
+with:
+> "...server-side database access is gated by authenticated server functions that verify the requesting user before touching their data."
+
+**Claim 7 (AI training)** — replace:
+> "No Google user data is used to train generalized or third-party AI models."
+
+with:
+> "Email content sent to our AI provider for classification, summarization, and reply drafting is processed under that provider's API data-processing terms, which prohibit using customer API content to train their generalized models. We do not separately train any models on your email content."
+
+### 3. Out of scope (call out, don't do now)
+
+- Actual column-level pgcrypto encryption for email bodies/summaries — this is a bigger migration + read-path change. Tracked as a follow-up; not required to make the policy truthful once #2 wording is softened.
+
+### Files touched
+
+- `src/lib/gmail.functions.ts` (revoke on disconnect)
+- `src/lib/account.functions.ts` (new — account deletion)
+- `src/routes/_authenticated/settings.tsx` or equivalent (Delete account button + confirm)
+- `src/routes/privacy.tsx` (3 wording edits)
