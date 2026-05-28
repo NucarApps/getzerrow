@@ -495,6 +495,17 @@ ${convoSample}`,
       console.error("relationship summary failed", e?.message ?? e);
     }
 
+    // Persist sensitive fields ONLY via the encrypted RPC. Remove them
+    // from the plaintext patch — the columns no longer exist.
+    const encryptedPatch = {
+      phone: patch.phone,
+      relationship_summary: patch.relationship_summary,
+      address_line1: patch.address_line1,
+      address_line2: patch.address_line2,
+    };
+    for (const k of [...ENCRYPTED_ONLY, "relationship_summary"] as const) {
+      delete (patch as Record<string, unknown>)[k];
+    }
     const { data: updated, error: upErr } = await supabase
       .from("contacts")
       .update(patch)
@@ -502,15 +513,17 @@ ${convoSample}`,
       .select("*")
       .single();
     if (upErr) throw new Error(upErr.message);
-    // Mirror sensitive fields into the encrypted columns (dual-write).
     await setContactEncryptedFields({
       contact_id: contact.id,
-      phone: patch.phone ?? undefined,
-      relationship_summary: patch.relationship_summary ?? undefined,
-      address_line1: patch.address_line1 ?? undefined,
-      address_line2: patch.address_line2 ?? undefined,
+      phone: encryptedPatch.phone ?? undefined,
+      relationship_summary: encryptedPatch.relationship_summary ?? undefined,
+      address_line1: encryptedPatch.address_line1 ?? undefined,
+      address_line2: encryptedPatch.address_line2 ?? undefined,
     });
-    return { contact: updated, skipped: false as const };
+    // Re-hydrate decrypted fields onto the returned row so the caller
+    // (the inbox / contact drawer) sees the freshly-written values.
+    const { row: decRow } = await getContactDecrypted(contact.id);
+    return { contact: decRow ?? updated, skipped: false as const };
   });
 
 const PHONE_NUMBER_RE = /^[+\d\s().-]{3,60}$/;
