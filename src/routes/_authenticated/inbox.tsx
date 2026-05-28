@@ -339,6 +339,7 @@ function tokenFuzzyMatches(token: string, words: string[]): boolean {
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
+  const fetchEmailBody = useServerFn(getEmailBody);
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
   
