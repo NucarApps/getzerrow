@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildVCard, sendCardEmail, type CardData } from "./cards.server";
+import { setContactEncryptedFields } from "./sync/encrypted-writer";
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{2,30}$/;
 
