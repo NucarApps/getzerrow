@@ -125,14 +125,17 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
             deleted++;
             continue;
           }
-          await supabaseAdmin.from("emails").update({
-            from_addr: parsed.from_addr,
+          await updateEmailEncrypted({
+            email_id: row.id,
             from_name: parsed.from_name,
             to_addrs: parsed.to_addrs,
             subject: parsed.subject,
             snippet: parsed.snippet,
             body_text: parsed.body_text,
             body_html: parsed.body_html,
+          });
+          await supabaseAdmin.from("emails").update({
+            from_addr: parsed.from_addr,
             received_at: parsed.received_at,
             has_attachment: parsed.has_attachment,
             raw_labels: parsed.raw_labels,
