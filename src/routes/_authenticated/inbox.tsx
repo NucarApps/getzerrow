@@ -443,15 +443,9 @@ function InboxPage() {
           }
           if (parsedQuery.from) {
             const v = esc(parsedQuery.from);
-            q = q.or(`from_addr.ilike.%${v}%,from_name.ilike.%${v}%`);
-          }
-          if (parsedQuery.to) {
-            const v = esc(parsedQuery.to);
-            q = q.ilike("to_addrs", `%${v}%`);
-          }
-          if (parsedQuery.rest) {
-            const v = esc(parsedQuery.rest);
-            q = q.or(`subject.ilike.%${v}%,snippet.ilike.%${v}%`);
+            // from_name / to_addrs / subject / snippet are encrypted; filter
+            // those client-side after hydration. from_addr is still plaintext.
+            q = q.ilike("from_addr", `%${v}%`);
           }
           const { data } = await q;
           return (data ?? []) as unknown as Email[];
