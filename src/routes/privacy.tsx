@@ -4,7 +4,7 @@ export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
       { title: "Privacy Policy — Zerrow" },
-      { name: "description", content: "How Zerrow collects, uses, and protects your data when you connect your Gmail account." },
+      { name: "description", content: "How Zerrow collects, uses, and protects your data — including Google user data — with encryption and strict access controls." },
       { property: "og:title", content: "Privacy Policy — Zerrow" },
       { property: "og:description", content: "How Zerrow collects, uses, and protects your data." },
     ],
