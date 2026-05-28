@@ -15,6 +15,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendMessage } from "../gmail.server";
 import { jitter } from "./backoff";
 import { logError } from "../log.server";
+import { claimForwardRetriesDecrypted } from "./encrypted-reader";
 
 const FORWARD_MAX_ATTEMPTS = 5;
 // 1m → 5m → 30m → 2h → 6h. Wider spread than the message-job backoff
@@ -22,35 +23,11 @@ const FORWARD_MAX_ATTEMPTS = 5;
 // mailbox down, downstream rate limit, etc.).
 const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600];
 
-type ForwardClaim = {
-  id: string;
-  gmail_account_id: string;
-  gmail_message_id: string;
-  folder_id: string | null;
-  subject: string | null;
-  from_addr: string | null;
-  from_name: string | null;
-  body_text: string | null;
-  snippet: string | null;
-  received_at: string | null;
-  forward_attempts: number;
-};
-
-type ForwardClaimRpc = {
-  rpc: (
-    fn: "claim_forward_retries",
-    args: { p_limit: number },
-  ) => Promise<{ data: ForwardClaim[] | null; error: { message: string } | null }>;
-};
-
 export async function retryForwardAttempts(maxRows = 50) {
-  const { data: rows, error } = await (supabaseAdmin as unknown as ForwardClaimRpc).rpc(
-    "claim_forward_retries",
-    { p_limit: maxRows },
-  );
+  const { rows, error } = await claimForwardRetriesDecrypted(maxRows);
   if (error) {
-    logError("forward_retry.claim_rpc_failed", { max_rows: maxRows }, error);
-    return { processed: 0, ok: 0, failed: 0, gaveUp: 0, error: error.message };
+    logError("forward_retry.claim_rpc_failed", { max_rows: maxRows }, { message: error });
+    return { processed: 0, ok: 0, failed: 0, gaveUp: 0, error };
   }
 
   let ok = 0;
