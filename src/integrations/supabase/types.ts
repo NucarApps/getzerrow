@@ -1450,6 +1450,22 @@ export type Database = {
           user_id: string
         }[]
       }
+      backfill_contacts_encryption: {
+        Args: { p_batch_limit: number; p_key: string }
+        Returns: number
+      }
+      backfill_emails_encryption: {
+        Args: { p_batch_limit: number; p_key: string }
+        Returns: number
+      }
+      backfill_folder_examples_encryption: {
+        Args: { p_batch_limit: number; p_key: string }
+        Returns: number
+      }
+      backfill_reply_drafts_encryption: {
+        Args: { p_batch_limit: number; p_key: string }
+        Returns: number
+      }
       bump_history_id_if_greater: {
         Args: {
           p_account_id: string

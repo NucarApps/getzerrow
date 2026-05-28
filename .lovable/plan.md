@@ -51,12 +51,17 @@ Reads stay on plaintext columns through Phase 2.
 
 
 
-## Phase 3 — TODO: stop writing plaintext, then drop the columns
+## Phase 3 — IN PROGRESS: backfill legacy rows, then drop plaintext
 
-1. Audit: confirm no code path still writes to the plaintext columns (rg over `from('emails')`, `from('reply_drafts')`, `from('contacts')`, `from('folder_examples')` for `.insert` / `.update` of sensitive fields).
-2. Cron-driven backfill: new `/api/public/cron/encryption-backfill` (CRON_SECRET-gated) that batches old rows through `update_email_encrypted` / `set_contact_encrypted_fields` / equivalents to fill `*_enc` for legacy data, and writes the search index for old emails.
-3. Migration drops the plaintext columns: `subject`, `snippet`, `body_text`, `body_html`, `from_name`, `to_addrs`, `cc`, `ai_summary`, `classification_reason`, `reply_drafts.draft_text`, `contacts.{notes,relationship_summary,address_line1,address_line2,phone}`, `folder_examples.{subject,snippet}`.
-4. Tighten `src/routes/privacy.tsx` from "disk-level encryption + column-level on OAuth tokens" to "column-level AEAD on bodies, subjects, summaries, drafts, and contact notes".
+Audit (rg over `from('emails'|'reply_drafts'|'contacts'|'folder_examples')` for `.insert/.update` of sensitive fields): clean — all remaining direct writes are flag-only (is_read/labels/forward_*) or non-sensitive bulk imports, as already documented in Phase 2.
+
+3a — DONE: Server-side batch backfill RPCs (`backfill_emails_encryption`, `backfill_reply_drafts_encryption`, `backfill_contacts_encryption`, `backfill_folder_examples_encryption`), service-role only. Cron route `/api/public/encryption-backfill` (CRON_SECRET-gated) drains them in batches and refreshes `email_search_index` for legacy emails. Scheduled daily at 04:17 UTC (`encryption-backfill-daily`).
+
+Starting state at deploy: 76,943 emails / 7 drafts / 40 contacts / 3,262 folder_examples lacking `*_enc`; 0 rows in `email_search_index`. Daily cron with default batch sizes (500×10 emails per run) drains the email backlog in ~16 days; tune via `?email_batches=` for a faster initial sweep, or invoke the route manually.
+
+3b — TODO once backfill is fully drained (verify via `SELECT COUNT(*) FROM emails WHERE subject_enc IS NULL`): migration to drop the plaintext columns — `emails.{subject,snippet,body_text,body_html,from_name,to_addrs,cc,ai_summary,classification_reason}`, `reply_drafts.draft_text`, `contacts.{notes,relationship_summary,address_line1,address_line2,phone}`, `folder_examples.{subject,snippet}`. Read RPCs already `COALESCE(decrypt_text(...enc), <plaintext>)` so they keep working once the plaintext arg goes away, but the wrappers in `encrypted-writer.ts` and the dual-write RPCs must stop passing the plaintext column first.
+
+3c — DONE: `src/routes/privacy.tsx` updated from "disk-level + OAuth tokens" to "column-level AEAD on bodies, subjects, summaries, drafts, and contact notes/phones/addresses".
 
 ## Out of scope
 

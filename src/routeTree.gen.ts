@@ -32,6 +32,7 @@ import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/publ
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
 import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public/gmail-dlq-replay'
 import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
+import { Route as ApiPublicEncryptionBackfillRouteImport } from './routes/api/public/encryption-backfill'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
@@ -158,6 +159,12 @@ const ApiPublicGmailBackfillTickRoute =
     path: '/api/public/gmail-backfill-tick',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicEncryptionBackfillRoute =
+  ApiPublicEncryptionBackfillRouteImport.update({
+    id: '/api/public/encryption-backfill',
+    path: '/api/public/encryption-backfill',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedContactsScanRoute =
   AuthenticatedContactsScanRouteImport.update({
     id: '/contacts/scan',
@@ -207,6 +214,7 @@ export interface FileRoutesByFullPath {
   '/c/$handle': typeof CHandleRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -237,6 +245,7 @@ export interface FileRoutesByTo {
   '/c/$handle': typeof CHandleRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -269,6 +278,7 @@ export interface FileRoutesById {
   '/c/$handle': typeof CHandleRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -301,6 +311,7 @@ export interface FileRouteTypes {
     | '/c/$handle'
     | '/contacts/$id'
     | '/contacts/scan'
+    | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
@@ -331,6 +342,7 @@ export interface FileRouteTypes {
     | '/c/$handle'
     | '/contacts/$id'
     | '/contacts/scan'
+    | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
@@ -362,6 +374,7 @@ export interface FileRouteTypes {
     | '/c/$handle'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
+    | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
@@ -386,6 +399,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   CHandleRoute: typeof CHandleRoute
+  ApiPublicEncryptionBackfillRoute: typeof ApiPublicEncryptionBackfillRoute
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailDlqReplayRoute: typeof ApiPublicGmailDlqReplayRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
@@ -565,6 +579,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailBackfillTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/encryption-backfill': {
+      id: '/api/public/encryption-backfill'
+      path: '/api/public/encryption-backfill'
+      fullPath: '/api/public/encryption-backfill'
+      preLoaderRoute: typeof ApiPublicEncryptionBackfillRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/contacts/scan': {
       id: '/_authenticated/contacts/scan'
       path: '/contacts/scan'
@@ -645,6 +666,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   CHandleRoute: CHandleRoute,
+  ApiPublicEncryptionBackfillRoute: ApiPublicEncryptionBackfillRoute,
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailDlqReplayRoute: ApiPublicGmailDlqReplayRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
