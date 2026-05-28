@@ -38,6 +38,8 @@ import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
+import { collectMatchingLeaves } from "@/lib/sync/filter-engine";
+import type { RuleNode } from "@/lib/sync/types";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
 import { AssistantPanel } from "@/components/inbox/AssistantPanel";
 import { PullToRefresh } from "@/components/inbox/PullToRefresh";
