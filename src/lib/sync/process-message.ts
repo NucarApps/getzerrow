@@ -169,15 +169,16 @@ export async function processGmailMessage(
     folder_id = c.folder_id ?? null;
     classifiedBy = c.classified_by;
     const _tDb = performance.now();
-    await supabaseAdmin.from("emails").update({
+    await updateEmailEncrypted({
+      email_id: inserted.id,
       folder_id,
-      ai_summary: c.ai_summary || null,
+      ai_summary: c.ai_summary || "",
       ai_confidence: c.ai_confidence,
       classified_by: c.classified_by,
-      classification_reason: c.classification_reason,
+      classification_reason: c.classification_reason ?? "",
       matched_filter_ids: c.matched_filter_ids,
       matched_folder_ids: c.matched_folder_ids,
-    }).eq("id", inserted.id);
+    });
     if (folder_id) void bumpEmailsSinceLearn(folder_id);
     if (t) t.db += performance.now() - _tDb;
   } catch (e) {
