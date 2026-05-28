@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildVCard, sendCardEmail, type CardData } from "./cards.server";
+import { setContactEncryptedFields } from "./sync/encrypted-writer";
 
 const HANDLE_RE = /^[a-z0-9][a-z0-9-]{2,30}$/;
 
@@ -197,8 +198,13 @@ export const submitCardLead = createServerFn({ method: "POST" })
           source: "card_lead",
         })
         .eq("id", existing.id);
+      await setContactEncryptedFields({
+        contact_id: existing.id,
+        phone: data.phone || undefined,
+        notes: merged,
+      });
     } else {
-      await supabaseAdmin.from("contacts").insert({
+      const { data: inserted } = await supabaseAdmin.from("contacts").insert({
         user_id: card.user_id,
         email,
         name: data.name,
@@ -206,8 +212,16 @@ export const submitCardLead = createServerFn({ method: "POST" })
         phone: data.phone || null,
         notes,
         source: "card_lead",
-      });
+      }).select("id").single();
+      if (inserted?.id) {
+        await setContactEncryptedFields({
+          contact_id: inserted.id,
+          phone: data.phone || undefined,
+          notes,
+        });
+      }
     }
+
 
     // Log analytics event (best-effort).
     await supabaseAdmin.from("card_events").insert({
