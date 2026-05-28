@@ -67,22 +67,13 @@ function PrivacyPage() {
               <li>Email content sent to our AI provider for classification, summarization, and reply drafting is processed under that provider's API data-processing terms, which prohibit using customer API content to train their generalized models. We do not separately train any models on your email content.</li>
             </ul>
           </Section>
-          <Section title="Limited Use of Google user data">
-            Zerrow's use and transfer to any other app of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noreferrer" style={{ color: INK, textDecoration: "underline" }}>Google API Services User Data Policy</a>, including the Limited Use requirements.
-            <ul className="mt-3 list-disc space-y-2 pl-6">
-              <li>We use Google user data only to provide and improve the user-facing features of Zerrow (classifying, filing, summarizing, and drafting replies to your email).</li>
-              <li>We do not sell Google user data and we do not use it for advertising.</li>
-              <li>We do not transfer Google user data to others except as necessary to provide or improve these features, comply with applicable law, or as part of a merger, acquisition, or sale of assets with notice to users.</li>
-              <li>We do not allow humans to read your Google user data, except with your explicit consent, for security and abuse investigations, to comply with applicable law, or where the data has been aggregated and anonymized.</li>
-              <li>No Google user data is used to train generalized or third-party AI models.</li>
-            </ul>
-          </Section>
           <Section title="Sharing">
             We share data only with the infrastructure providers required to run Zerrow: hosting on Cloudflare, database and authentication on Supabase (via Lovable Cloud), and AI classification via the Lovable AI Gateway. Each provider is bound by their own data processing terms. We do not sell your data and we do not use it for advertising.
           </Section>
           <Section title="Retention &amp; deletion">
-            You can disconnect Gmail at any time from Settings. Disconnecting revokes your Google OAuth tokens and stops further syncing. When you delete your account, your synced messages, queued jobs, folder rules, and encrypted OAuth record are removed from our systems within 30 days.
+            You can disconnect Gmail at any time from Settings. Disconnecting revokes your Google OAuth tokens at Google, stops further syncing, and removes the encrypted token record from our database. You can also delete your entire Zerrow account from Settings — this revokes Google access on every connected mailbox and immediately removes your synced messages, queued jobs, folders, filters, contacts, and sign-in record from our systems.
           </Section>
+
           <Section title="Your rights">
             You can request a copy of the data we hold about you, or ask us to delete it, by contacting support. If you are in the EU or UK, you have additional rights under GDPR including objection and portability.
           </Section>
