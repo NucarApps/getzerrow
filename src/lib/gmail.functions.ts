@@ -690,7 +690,7 @@ export const generateReply = createServerFn({ method: "POST" })
       subject: email.subject || "",
       body_text: email.body_text || "",
     });
-    await supabaseAdmin.from("reply_drafts").insert({ email_id: data.id, user_id: context.userId, draft_text: draft });
+    await setReplyDraftEncrypted({ email_id: data.id, user_id: context.userId, draft_text: draft });
     return { draft };
   });
 
