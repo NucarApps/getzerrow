@@ -585,7 +585,7 @@ function InboxPage() {
 
   const rawEmails = emailsQ.data ?? [];
   const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
-  const pageRows = useMemo(() => {
+  const baseRows = useMemo(() => {
     if (!isSearching) return rawEmails.slice(0, PAGE_SIZE);
     const extra = gmailHitRowsQ.data ?? [];
     if (extra.length === 0) return rawEmails;
@@ -594,6 +594,34 @@ function InboxPage() {
     for (const r of extra) if (!seen.has(r.id)) merged.push(r);
     return merged;
   }, [isSearching, rawEmails, gmailHitRowsQ.data]);
+
+  // ai_summary / classification_reason live in encrypted columns only after
+  // Phase 3. Batch-decrypt the visible page via the SECURITY DEFINER RPC and
+  // merge into list rows for rendering.
+  const visibleIds = useMemo(() => baseRows.map((r) => r.id), [baseRows]);
+  const visibleIdsKey = useMemo(() => visibleIds.join(","), [visibleIds]);
+  const fetchListFields = useServerFn(getEmailListFields);
+  const listFieldsQ = useQuery({
+    queryKey: ["emails-list-fields", visibleIdsKey],
+    enabled: visibleIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const r = await fetchListFields({ data: { ids: visibleIds } });
+      const map = new Map<string, { ai_summary: string | null; classification_reason: string | null }>();
+      for (const f of r.fields ?? []) {
+        map.set(f.id, { ai_summary: f.ai_summary ?? null, classification_reason: f.classification_reason ?? null });
+      }
+      return map;
+    },
+  });
+  const pageRows = useMemo(() => {
+    const map = listFieldsQ.data;
+    if (!map || map.size === 0) return baseRows;
+    return baseRows.map((r) => {
+      const extra = map.get(r.id);
+      return extra ? { ...r, ai_summary: extra.ai_summary, classification_reason: extra.classification_reason } : r;
+    });
+  }, [baseRows, listFieldsQ.data]);
 
   const filtered = useMemo(() => {
     if (isSearching) {
