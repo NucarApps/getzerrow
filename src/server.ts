@@ -25,6 +25,60 @@ function brandedErrorResponse(): Response {
   });
 }
 
+function supabaseOrigins(): string {
+  const url = process.env.SUPABASE_URL ?? "";
+  try {
+    const { origin, host } = new URL(url);
+    // Realtime uses a wss:// connection to the same host.
+    return `${origin} wss://${host}`;
+  } catch {
+    return "";
+  }
+}
+
+// A hardened header set expected by OAuth restricted-scope (CASA) reviews.
+// CSP is tuned for this app: SSR injects inline hydration scripts, fonts come
+// from Google Fonts, logos/avatars are fetched from arbitrary company domains,
+// and the browser talks to Supabase (REST + realtime wss) and the Lovable
+// OAuth broker.
+function securityHeaders(): Record<string, string> {
+  const supabase = supabaseOrigins();
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https:",
+    `connect-src 'self' ${supabase} https://oauth.lovable.app`.replace(/\s+/g, " ").trim(),
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self' https://accounts.google.com",
+  ].join("; ");
+
+  return {
+    "content-security-policy": csp,
+    "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  };
+}
+
+// Merge the security headers onto an existing response, preserving its body,
+// status, and existing headers (content-type, redirect Location, etc.).
+function withSecurityHeaders(response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(securityHeaders())) {
+    headers.set(key, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 function isCatastrophicSsrErrorBody(body: string, responseStatus: number): boolean {
   let payload: unknown;
   try {
@@ -71,10 +125,10 @@ export default {
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      return withSecurityHeaders(await normalizeCatastrophicSsrResponse(response));
     } catch (error) {
       console.error(error);
-      return brandedErrorResponse();
+      return withSecurityHeaders(brandedErrorResponse());
     }
   },
 };

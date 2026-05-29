@@ -1,83 +1,64 @@
-# Fix empty inbox / "All mail" after Phase 3 encryption migration
+# CASA Tier 2 Remediation Plan
 
-## Root cause
+Goal: close the gaps a CASA Tier 2 lab will flag so the Google OAuth restricted-scope review passes. Three workstreams.
 
-Phase 3 dropped the plaintext columns `subject`, `snippet`, `from_name`, `to_addrs`, `cc` from `public.emails` (only `*_enc` bytea columns remain). The inbox query in `src/routes/_authenticated/inbox.tsx` still selects them via:
+## 1. HTTP security headers (the main gap)
 
-```
-const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,...,to_addrs,...";
-```
+`src/server.ts` currently returns responses with no security headers. The scan/lab expects a standard hardened set. We will add a single helper that decorates every outgoing response (success and error paths) with:
 
-PostgREST rejects the request with a column-not-found error, the catch falls through to `data ?? []`, and every folder (All mail, INBOX, folder views, search) renders as empty. The user noticed it on "All mail" but every list is affected.
+- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Content-Security-Policy` — a policy tuned for this app so nothing breaks:
+  - `default-src 'self'`
+  - `script-src 'self' 'unsafe-inline'` (TanStack SSR injects inline hydration scripts; `'unsafe-eval'` only if a runtime error shows it's needed)
+  - `style-src 'self' 'unsafe-inline'` + `https://fonts.googleapis.com`
+  - `font-src 'self' https://fonts.gstatic.com`
+  - `img-src 'self' data: https:` (logos/avatars are fetched from arbitrary company domains)
+  - `connect-src 'self'` + the Supabase URL + `https://oauth.lovable.app` + Lovable AI/realtime (wss) origins
+  - `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self' https://accounts.google.com`
 
-`getEmailListFields` already round-trips through a SECURITY DEFINER RPC to hydrate `ai_summary` + `classification_reason`. We extend that same RPC to also return the four missing list-row fields and drop them from the client-side select.
+Implementation detail: wrap the existing `fetch` flow in `server.ts` so the header set is applied to both `normalizeCatastrophicSsrResponse(...)` output and `brandedErrorResponse()`. Headers are merged onto a cloned response so existing `content-type`/redirect headers are preserved.
 
-## Steps
+Verification: load the app in preview, confirm no CSP violations in the console (inbox, settings, login, OAuth round-trip, contact card `/c/$handle`, logo fetching). Adjust `connect-src`/`img-src` if any legitimate request is blocked, then re-test.
 
-### 1. Migration — extend the list-fields RPC
+## 2. Complete the account-deletion cascade
 
-Replace `public.get_emails_list_fields_decrypted` so it also decrypts `subject`, `snippet`, `from_name`, `to_addrs`, `cc`:
+`deleteAccount` in `src/lib/account.functions.ts` deletes most per-user tables, but two tables that hold user-derived data are missed, so PII survives a "delete my account" request — a Tier 2 failure.
 
-```sql
-CREATE OR REPLACE FUNCTION public.get_emails_list_fields_decrypted(p_ids uuid[], p_key text)
-RETURNS TABLE (
-  id uuid,
-  ai_summary text,
-  classification_reason text,
-  subject text,
-  snippet text,
-  from_name text,
-  to_addrs text,
-  cc text
-)
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path TO 'public','private','extensions'
-AS $$
-  SELECT
-    e.id,
-    private.decrypt_text(e.ai_summary_enc, p_key),
-    private.decrypt_text(e.classification_reason_enc, p_key),
-    private.decrypt_text(e.subject_enc, p_key),
-    private.decrypt_text(e.snippet_enc, p_key),
-    private.decrypt_text(e.from_name_enc, p_key),
-    private.decrypt_text(e.to_addrs_enc, p_key),
-    private.decrypt_text(e.cc_enc, p_key)
-  FROM public.emails e
-  WHERE e.id = ANY(p_ids);
-$$;
-```
+- `email_search_index` — has a `user_id` column and stores a tsvector built from the user's email text. No foreign key to `emails`, so it is NOT cleaned up when emails are deleted. Add it to the deletion list (delete by `user_id`).
+- `pubsub_events` — has no `user_id`, but stores the user's Gmail `email_address` in raw push-notification logs. Before deleting `gmail_accounts`, collect the connected `email_address` values, then delete `pubsub_events` rows matching those addresses.
 
-(No new grants needed; existing EXECUTE grants on the function remain.)
+Changes (all inside the existing `deleteAccount` handler, admin client):
+1. Select `id` AND `email_address` from `gmail_accounts` up front (already selects `id`).
+2. Add `email_search_index` to the `tables` array (delete by `user_id`).
+3. After the loop, delete `pubsub_events` where `email_address` is in the collected list (skip if no addresses). Log failures via `logError`, consistent with existing behavior.
 
-### 2. Update reader types — `src/lib/sync/encrypted-reader.ts`
+Verification: type-check passes; manually trace that every public table with user data is now covered (cross-checked against the live table list).
 
-Extend `EmailListFields` with the five new nullable string fields. `getEmailListFieldsDecrypted` already passes the rows through, so no logic change.
+## 3. Privacy policy — verify Limited Use disclosure
 
-### 3. Update the server fn that exposes it — `src/lib/gmail.functions.ts`
+Good news: `src/routes/privacy.tsx` already contains a dedicated "Limited Use of Google user data" section with the required verbatim clause linking the Google API Services User Data Policy, plus encryption, retention, and deletion sections. This gap is effectively already closed.
 
-Find the `getEmailListFields` createServerFn and add `subject`, `snippet`, `from_name`, `to_addrs`, `cc` to the returned shape (alongside `ai_summary` / `classification_reason`).
+Minor polish only (optional, low risk):
+- In "Retention & deletion", add one line that deletion also clears the search index and push-notification logs, so the policy matches the cascade fix in step 2.
 
-### 4. Update the inbox query — `src/routes/_authenticated/inbox.tsx`
+No structural rewrite needed.
 
-- Remove `subject,snippet,from_name,to_addrs` from `LIST_COLUMNS` (keep `from_addr` — still plaintext). The constant becomes:
-  `"id,from_addr,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id"`.
-- In the operator-search branch, drop the server-side `ilike` on `subject`, `snippet`, `from_name`, `to_addrs` (the columns are gone). Keep the server-side `from_addr` filter; defer subject / snippet / to_addrs matching to the existing client-side scorer that runs over hydrated rows.
-- Extend the `listFieldsQ` merge (around line 617-`pageRows`) so the page row gets `subject`, `snippet`, `from_name`, `to_addrs`, `cc` from the hydrated map in addition to `ai_summary` / `classification_reason`.
-- `gmailHitRowsQ` uses the same `LIST_COLUMNS` — automatically fixed once the constant changes; its ids will flow into `visibleIds` and hydrate the same way.
+## Out of scope / already passing
 
-### 5. Realtime — no change required
-
-`use-email-realtime.ts` merges raw INSERT/UPDATE payloads into the cached list. Those payloads now lack plaintext, but because `listFieldsQ.queryKey` is derived from `visibleIds`, a new id triggers a new hydration fetch automatically. Existing UPDATE events for `is_read` / `folder_id` / `raw_labels` carry no plaintext changes, so the in-place merge stays correct.
+These were confirmed already in place and need no work: column-level pgcrypto AEAD encryption of tokens/bodies/PII, RLS scoped to `auth.uid()`, `requireSupabaseAuth` on server functions, Zod input validation, and `CRON_SECRET`/`GMAIL_WEBHOOK_TOKEN` protection on `/api/public/*` mutating endpoints.
 
 ## Files touched
 
-- new migration: `supabase/migrations/<timestamp>_extend_list_fields_rpc.sql`
-- `src/lib/sync/encrypted-reader.ts` — extend `EmailListFields` type
-- `src/lib/gmail.functions.ts` — extend `getEmailListFields` return shape
-- `src/routes/_authenticated/inbox.tsx` — trim `LIST_COLUMNS`, drop server-side ilike on dropped columns, merge new fields into `pageRows`
+- `src/server.ts` — add security-header helper, apply to all responses.
+- `src/lib/account.functions.ts` — add `email_search_index` + `pubsub_events` to deletion.
+- `src/routes/privacy.tsx` — one-line retention wording update (optional).
 
-## Verification
+## Final verification
 
-- Run `bunx tsc --noEmit` (must remain 0 errors).
-- In the preview: open All mail, INBOX, a user folder, "no rules", and a search query — each should render rows with subject/snippet/from name populated.
-- Confirm a newly arrived email (realtime INSERT) shows its subject within ~1 round-trip of the hydration query.
+- Build/type-check clean (0 errors).
+- Preview smoke test with console open: no CSP breakage across inbox, settings, login, OAuth, contact card, logo fetch.
+- Confirm header set present on a response (network panel).
