@@ -41,6 +41,7 @@ export const deleteAccount = createServerFn({ method: "POST" })
       "folder_summary_schedules",
       "message_jobs",
       "backfill_jobs",
+      "email_search_index",
       "emails",
       "folders",
       "inbox_override_exceptions",
