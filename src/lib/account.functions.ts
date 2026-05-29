@@ -20,8 +20,11 @@ export const deleteAccount = createServerFn({ method: "POST" })
     // 1. Revoke Google OAuth + stop Pub/Sub watches for every connected Gmail account.
     const { data: accounts } = await supabaseAdmin
       .from("gmail_accounts")
-      .select("id")
+      .select("id, email_address")
       .eq("user_id", userId);
+    const emailAddresses = (accounts ?? [])
+      .map((a) => a.email_address)
+      .filter((e): e is string => typeof e === "string" && e.length > 0);
     for (const acc of accounts ?? []) {
       try { await stopWatch(acc.id); } catch (e) { logError("account.delete.stop_watch_failed", { user_id: userId, account_id: acc.id }, e); }
       try { await revokeGoogleOAuthForAccount(acc.id); } catch (e) { logError("account.delete.revoke_failed", { user_id: userId, account_id: acc.id }, e); }
