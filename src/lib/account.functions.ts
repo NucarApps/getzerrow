@@ -70,6 +70,19 @@ export const deleteAccount = createServerFn({ method: "POST" })
       }
     }
 
+    // 2b. pubsub_events has no user_id — it's keyed by the Gmail address from
+    //     the push notification. Delete rows for every address we just removed.
+    if (emailAddresses.length > 0) {
+      const { error: pubsubErr } = await supabaseAdmin
+        .from("pubsub_events")
+        .delete()
+        .in("email_address", emailAddresses);
+      if (pubsubErr) {
+        logError("account.delete.table_failed", { user_id: userId, table: "pubsub_events" }, pubsubErr);
+      }
+    }
+
+
     // 3. Delete the auth user. After this the JWT is dead.
     const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(userId);
     if (authErr) {
