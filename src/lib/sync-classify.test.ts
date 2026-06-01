@@ -45,6 +45,8 @@ function ctx(over: Partial<AccountContext> = {}): AccountContext {
     overrides: over.overrides ?? [],
     overrideExceptions: over.overrideExceptions ?? [],
     enrichedFolders: over.enrichedFolders ?? [],
+    calendarGuardEnabled: over.calendarGuardEnabled ?? false,
+    calendarContacts: over.calendarContacts ?? new Set<string>(),
   };
 }
 
