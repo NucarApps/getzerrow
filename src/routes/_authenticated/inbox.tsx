@@ -507,7 +507,13 @@ function InboxPage() {
     const tick = async () => {
       try {
         const r = await reconcileInboxFn({ data: { gmail_account_id: accountId } });
-        if (!cancelled && r && ((r as { reconciled?: number }).reconciled || (r as { deleted?: number }).deleted)) {
+        const changed = r && (
+          (r as { reconciled?: number }).reconciled ||
+          (r as { deleted?: number }).deleted ||
+          (r as { restored?: number }).restored ||
+          (r as { ingested?: number }).ingested
+        );
+        if (!cancelled && changed) {
           qc.invalidateQueries({ queryKey: ["emails"] });
         }
       } catch {

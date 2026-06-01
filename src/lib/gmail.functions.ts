@@ -2186,7 +2186,6 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
       .limit(LIMIT);
 
     const rows = (localRows ?? []) as Array<{ id: string; gmail_message_id: string; received_at: string | null }>;
-    if (rows.length === 0) return { checked: 0, reconciled: 0, deleted: 0 };
 
     // Pull the current Gmail INBOX slice in one call. maxResults caps at 500.
     const gmailInbox = new Set<string>();
@@ -2202,15 +2201,15 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
         { account_id: data.gmail_account_id, user_id: context.userId },
         e,
       );
-      return { checked: 0, reconciled: 0, deleted: 0, error: (e as Error).message };
+      return { checked: 0, reconciled: 0, deleted: 0, restored: 0, ingested: 0, error: (e as Error).message };
     }
 
-    // Anchor: only consider local rows whose received_at is at or newer
-    // than the oldest message in the Gmail INBOX slice we just pulled.
-    // Older rows might genuinely still be in inbox but past our 500-row
-    // window. The deep reconcile path (cron) covers that.
+    // ── Outgoing pass ──────────────────────────────────────────────────
+    // Local rows that look like they're in the inbox but Gmail has since
+    // archived/trashed them. Anchor to the 500-row Gmail slice; older rows
+    // may genuinely still be in inbox but past our window — the cron
+    // reconcile covers those.
     const drifted = rows.filter((r) => !gmailInbox.has(r.gmail_message_id));
-    if (drifted.length === 0) return { checked: rows.length, reconciled: 0, deleted: 0 };
 
     // Cap per-call repair work so a one-off divergence can't hammer the
     // Gmail API on every poll. The cron reconcile mops up the rest.
@@ -2241,7 +2240,95 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
         );
       }
     }
-    return { checked: rows.length, drifted: drifted.length, reconciled, deleted };
+
+    // ── Incoming pass ──────────────────────────────────────────────────
+    // Messages that ARE in Gmail's inbox right now but are NOT visible in
+    // Zerrow's inbox — either archived locally / missing the INBOX label
+    // (e.g. un-snoozed, or manually moved back to the inbox in Gmail), or
+    // never ingested at all. Without this, the history `labelsAdded: INBOX`
+    // event being missed leaves them stuck out of the inbox forever.
+    let restored = 0;
+    let ingested = 0;
+    const gmailIds = Array.from(gmailInbox);
+    if (gmailIds.length > 0) {
+      // Fetch the local state of every Gmail-inbox message in chunks (the
+      // `.in()` list can be up to 500 ids).
+      type LocalState = { id: string; gmail_message_id: string; is_archived: boolean; raw_labels: string[] | null };
+      const localById = new Map<string, LocalState>();
+      for (let i = 0; i < gmailIds.length; i += 200) {
+        const chunk = gmailIds.slice(i, i + 200);
+        const { data: found } = await supabaseAdmin
+          .from("emails")
+          .select("id, gmail_message_id, is_archived, raw_labels")
+          .eq("gmail_account_id", data.gmail_account_id)
+          .eq("user_id", context.userId)
+          .in("gmail_message_id", chunk);
+        for (const row of (found ?? []) as LocalState[]) {
+          localById.set(row.gmail_message_id, row);
+        }
+      }
+
+      const missing: string[] = [];
+      // Rows that exist locally but aren't showing in the inbox view.
+      const toRestore = gmailIds.filter((id) => {
+        const row = localById.get(id);
+        if (!row) {
+          missing.push(id);
+          return false;
+        }
+        const hasInboxLabel = (row.raw_labels ?? []).includes("INBOX");
+        return row.is_archived || !hasInboxLabel;
+      });
+
+      // Restore local rows in-place: clear archived state, re-add the INBOX
+      // label, and lift any stale snooze so they resurface immediately via
+      // the realtime subscription. Capped to bound Gmail/DB work per call.
+      for (const id of toRestore.slice(0, MAX_REPAIR)) {
+        const row = localById.get(id)!;
+        try {
+          const nextLabels = Array.from(new Set([...(row.raw_labels ?? []), "INBOX"]));
+          await supabaseAdmin.from("emails").update({
+            is_archived: false,
+            raw_labels: nextLabels,
+            snoozed_until: null,
+          }).eq("id", row.id);
+          restored++;
+        } catch (e) {
+          logError(
+            "reconcile.inbox_restore_failed",
+            { account_id: data.gmail_account_id, gmail_message_id: id },
+            e,
+          );
+        }
+      }
+
+      // Messages with no local row at all — enqueue through the normal
+      // ingestion pipeline so they're parsed, classified, and inserted.
+      if (missing.length > 0) {
+        const toIngest = missing.slice(0, MAX_REPAIR);
+        for (const id of toIngest) {
+          try {
+            await enqueueMessageJob(data.gmail_account_id, context.userId, id);
+            ingested++;
+          } catch (e) {
+            logError(
+              "reconcile.inbox_ingest_enqueue_failed",
+              { account_id: data.gmail_account_id, gmail_message_id: id },
+              e,
+            );
+          }
+        }
+      }
+    }
+
+    return {
+      checked: rows.length,
+      drifted: drifted.length,
+      reconciled,
+      deleted,
+      restored,
+      ingested,
+    };
   });
 
 
