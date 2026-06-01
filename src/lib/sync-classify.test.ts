@@ -282,6 +282,62 @@ describe("classifyParsedEmail — filters", () => {
   });
 });
 
+describe("classifyParsedEmail — calendar cold-email guard", () => {
+  it("pins a known calendar contact to the inbox, beating folder filters", async () => {
+    const f = folder({ id: "f1", name: "Cold" });
+    const filters: Filter[] = [filter("f1", "from", "contains", "met@partner.com")];
+    const c = ctx({
+      folders: [f],
+      filters,
+      calendarGuardEnabled: true,
+      calendarContacts: new Set(["met@partner.com"]),
+    });
+    const r = await classifyParsedEmail(
+      email({ from_addr: "met@partner.com" }),
+      "user-1", "acc-1", { ...opts, context: c },
+    );
+    expect(r.folder_id).toBeNull();
+    expect(r.classified_by).toBe("calendar_contact");
+    expect(r.classification_reason).toContain("Google Calendar");
+  });
+
+  it("matches calendar contacts case-insensitively", async () => {
+    const c = ctx({
+      calendarGuardEnabled: true,
+      calendarContacts: new Set(["met@partner.com"]),
+    });
+    const r = await classifyParsedEmail(
+      email({ from_addr: "Met@Partner.com" }),
+      "user-1", "acc-1", { ...opts, context: c },
+    );
+    expect(r.classified_by).toBe("calendar_contact");
+  });
+
+  it("does not fire when the guard is disabled even if the contact is present", async () => {
+    const c = ctx({
+      calendarGuardEnabled: false,
+      calendarContacts: new Set(["met@partner.com"]),
+    });
+    const r = await classifyParsedEmail(
+      email({ from_addr: "met@partner.com" }),
+      "user-1", "acc-1", { ...opts, context: c },
+    );
+    expect(r.classified_by).not.toBe("calendar_contact");
+  });
+
+  it("does not fire for senders not in the calendar contact set", async () => {
+    const c = ctx({
+      calendarGuardEnabled: true,
+      calendarContacts: new Set(["met@partner.com"]),
+    });
+    const r = await classifyParsedEmail(
+      email({ from_addr: "stranger@cold.com" }),
+      "user-1", "acc-1", { ...opts, context: c },
+    );
+    expect(r.classified_by).not.toBe("calendar_contact");
+  });
+});
+
 describe("classifyParsedEmail — skipAi behavior", () => {
   it("returns null folder with classified_by='none' when no match and skipAi=true", async () => {
     const r = await classifyParsedEmail(
