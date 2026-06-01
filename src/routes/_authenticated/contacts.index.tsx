@@ -911,6 +911,84 @@ function AddContactsDialog({
               </Button>
             </DialogFooter>
           </TabsContent>
+
+          <TabsContent value="meetings" className="flex flex-col min-h-0 pt-3 gap-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(["past", "upcoming"] as const).map((w) => (
+                <button
+                  key={w}
+                  onClick={() => { setMeetingWhen(w); setSelected(new Set()); }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${meetingWhen === w ? "border-foreground/40 bg-accent text-accent-foreground" : "border-border bg-card/60 text-muted-foreground hover:text-foreground"}`}
+                >
+                  {w === "past" ? "Past meetings" : "Upcoming meetings"}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Search people by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <button onClick={selectAllVisible} disabled={meetingPeople.length === 0} className="underline-offset-2 hover:underline disabled:opacity-50">
+                {allVisibleSelected ? "Unselect all" : "Select all visible"}
+              </button>
+              <span>{selected.size} selected</span>
+            </div>
+
+            <div className="flex-1 min-h-[200px] max-h-[40vh] overflow-y-auto rounded-md border border-border bg-card/40">
+              {!meetingAccess ? (
+                <div className="p-4 text-sm text-muted-foreground">
+                  Connect a Google account and enable calendar access in{" "}
+                  <Link to="/settings" className="text-foreground underline underline-offset-2">Settings</Link>{" "}
+                  to pull people from your meetings.
+                </div>
+              ) : meetingsQ.isLoading ? (
+                <div className="p-4 text-sm text-muted-foreground">Loading people from your calendar…</div>
+              ) : meetingPeople.length === 0 ? (
+                <div className="p-4 text-sm text-muted-foreground">
+                  No new people found in your {meetingWhen} meetings.
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {meetingPeople.map((p) => {
+                    const checked = selected.has(p.email);
+                    return (
+                      <li key={p.email}>
+                        <button
+                          onClick={() => toggleSender(p.email)}
+                          className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/40"
+                        >
+                          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}>
+                            {checked && <Check className="h-3.5 w-3.5" />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-foreground">{p.name || p.email}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {p.eventTitle ? `${p.email} · ${p.eventTitle}` : p.email}
+                            </div>
+                          </div>
+                          {p.meetingAt && (
+                            <div className="text-right text-[11px] text-muted-foreground shrink-0">
+                              {new Date(p.meetingAt).toLocaleDateString()}
+                            </div>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={adding}>Cancel</Button>
+              <Button onClick={submitBulk} disabled={adding || selected.size === 0}>
+                {adding ? "Adding…" : `Add ${selected.size || ""} ${selected.size === 1 ? "contact" : "contacts"}`}
+              </Button>
+            </DialogFooter>
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
