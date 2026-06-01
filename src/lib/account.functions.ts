@@ -58,6 +58,7 @@ export const deleteAccount = createServerFn({ method: "POST" })
       "my_cards",
       "sync_state",
       "game_scores",
+      "calendar_contacts",
       "gmail_accounts",
     ] as const;
 
