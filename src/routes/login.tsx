@@ -45,7 +45,7 @@ function LoginPage() {
       const accessToken = session.provider_token;
       const refreshToken = session.provider_refresh_token;
       const email = session.user.email;
-      const expiresIn = (session as any).expires_in ?? 3600;
+      const expiresIn = session.expires_in ?? 3600;
 
       if (accessToken && refreshToken && email) {
         try {
@@ -57,9 +57,11 @@ function LoginPage() {
               email_address: email,
             },
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("Auto-connect Gmail failed", e);
-          toast.error(`Couldn't auto-connect Gmail: ${e?.message ?? "unknown error"}`);
+          toast.error(
+            `Couldn't auto-connect Gmail: ${e instanceof Error ? e.message : "unknown error"}`,
+          );
         }
       }
       nav({ to: "/inbox" });

@@ -248,11 +248,32 @@ type HealthState = {
   action?: React.ReactNode;
 };
 
+// Types derived from the listPubsubEvents server function payload so the
+// health/diagnostics UI stays in sync with the actual query shape.
+type PubsubData = Awaited<ReturnType<typeof listPubsubEvents>>;
+type PubsubStats = PubsubData["stats"];
+type PubsubDiagnostics = PubsubData["diagnostics"] & {
+  lastWebhookTest?: { received_at: string } | null;
+  pendingJobs?: number;
+  oldestPendingAt?: string | null;
+  stuckJobs?: StuckJob[];
+};
+type PubsubPush = NonNullable<PubsubData["diagnostics"]["lastPush"]>;
+type PubsubRenew = NonNullable<PubsubData["diagnostics"]["lastWatchRenew"]>;
+type StuckJob = {
+  id: string;
+  subject?: string | null;
+  from_addr?: string | null;
+  gmail_message_id: string;
+  attempt?: number;
+  locked_at?: string;
+};
+
 function deriveHealth(args: {
-  stats: any;
-  diag: any;
-  lastPush: any;
-  lastRenew: any;
+  stats: PubsubStats | undefined;
+  diag: PubsubDiagnostics | undefined;
+  lastPush: PubsubPush | null;
+  lastRenew: PubsubRenew | null;
   watchActive: boolean;
   webhookUrl: string | undefined;
   pubsubTopic: string | undefined;
@@ -339,7 +360,7 @@ function deriveHealth(args: {
   // AMBER: poll has stalled.
   const lastPollMs = stats?.lastPollAt ? new Date(stats.lastPollAt).getTime() : 0;
   const pollSilentMin = stats?.lastPollAt ? Math.floor((Date.now() - lastPollMs) / 60000) : null;
-  const pollStalled = (pollSilentMin === null || pollSilentMin >= 10) && stats?.push24 > 0;
+  const pollStalled = (pollSilentMin === null || pollSilentMin >= 10) && (stats?.push24 ?? 0) > 0;
   if (pollStalled) {
     return {
       kind: "warn",
@@ -475,14 +496,7 @@ export function PubsubActivity({
 
   const events = q.data?.events ?? [];
   const stats = q.data?.stats;
-  const diag = q.data?.diagnostics as
-    | (NonNullable<typeof q.data>["diagnostics"] & {
-        lastWebhookTest?: { received_at: string } | null;
-        pendingJobs?: number;
-        oldestPendingAt?: string | null;
-        stuckJobs?: any[];
-      })
-    | undefined;
+  const diag = q.data?.diagnostics as PubsubDiagnostics | undefined;
   const lastPush = diag?.lastPush ?? null;
   const lastRenew = diag?.lastWatchRenew ?? null;
   const lastWebhookTest = diag?.lastWebhookTest ?? null;

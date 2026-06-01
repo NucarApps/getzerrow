@@ -1,6 +1,6 @@
 // Per-user Google OAuth callback. Verifies signed state, exchanges code,
 // stores tokens, starts Gmail push watch, redirects back to settings.
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   exchangeCode,
@@ -25,7 +25,10 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
         const origin = `${url.protocol}//${url.host}`;
 
         if (errParam) {
-          return redirect({ to: "/settings", search: { error: errParam } } as any);
+          return new Response(null, {
+            status: 302,
+            headers: { Location: `/settings?error=${encodeURIComponent(errParam)}` },
+          });
         }
         if (!code || !state) {
           return new Response("Missing code or state", { status: 400 });
@@ -34,7 +37,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
         let userId: string;
         try {
           userId = verifyState(state);
-        } catch (e: any) {
+        } catch (e: unknown) {
           logError("oauth.invalid_state", { run_id: runId }, e);
           return new Response(
             "Invalid or expired authorization state. Please try connecting again.",
@@ -145,7 +148,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
             status: 302,
             headers: { Location: "/settings?connected=1" },
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           logError("oauth.callback_failed", { run_id: runId, user_id: userId }, e);
           return new Response("Something went wrong completing sign-in. Please try again.", {
             status: 500,

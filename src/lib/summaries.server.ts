@@ -196,15 +196,15 @@ export async function runFolderSummary(
       .update({
         last_run_at: windowEnd.toISOString(),
         next_run_at: advance(),
-        last_error: (summary as any)._fallback
+        last_error: summary._fallback
           ? "Sent using plain-text fallback (structured AI output failed once)."
           : null,
       })
       .eq("id", schedule.id);
 
     return { ok: true, emails: emailCount };
-  } catch (e: any) {
-    const msg = e?.message ?? String(e);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
     console.error(`runFolderSummary ${scheduleId} failed:`, msg);
     await supabaseAdmin
       .from("folder_summary_schedules")
@@ -265,8 +265,8 @@ export async function processFolderSummaryJobs(
         .eq("id", job.id);
       if (r.ok) succeeded++;
       else failed++;
-    } catch (e: any) {
-      const msg = e?.message ?? String(e);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error(`processFolderSummaryJobs ${job.id} crashed:`, msg);
       await supabaseAdmin
         .from("folder_summary_jobs")

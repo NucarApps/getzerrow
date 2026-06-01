@@ -42,8 +42,8 @@ export function AlwaysInboxDialog({
           : `Future mail from ${domain} will go to inbox`,
       );
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setBusy(null);
     }

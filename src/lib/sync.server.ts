@@ -376,7 +376,8 @@ export async function tickBackfillJobs(maxJobs = 2) {
     try {
       const r = await tickBackfillJob(job);
       results.push({ job_id: job.id, ...r });
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
       logError(
         "sync.tick_backfill_job_failed",
         { job_id: job.id, account_id: job.gmail_account_id, status: job.status },
@@ -384,9 +385,9 @@ export async function tickBackfillJobs(maxJobs = 2) {
       );
       await supabaseAdmin
         .from("backfill_jobs")
-        .update({ last_error: String(e?.message ?? e).slice(0, 500) })
+        .update({ last_error: message.slice(0, 500) })
         .eq("id", job.id);
-      results.push({ job_id: job.id, phase: "error", error: String(e?.message ?? e) });
+      results.push({ job_id: job.id, phase: "error", error: message });
     }
   }
   return { processed: results.length, results };
@@ -730,8 +731,8 @@ export async function runMessageJobs(
     }
   };
 
-  const handleError = async (job: ClaimedJob, e: any) => {
-    const msg = e?.message ?? String(e);
+  const handleError = async (job: ClaimedJob, e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
     const status: number | undefined = e instanceof GmailApiError ? e.status : undefined;
     const retryable: boolean =
       e instanceof GmailApiError
@@ -856,7 +857,7 @@ export async function runMessageJobs(
 
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
       results.push({ id: job.id, ok: true });
-    } catch (e: any) {
+    } catch (e: unknown) {
       await handleError(job, e);
     }
   };
@@ -918,7 +919,7 @@ export async function runMessageJobs(
                 results.push({ id: c.job.id, ok: true });
               }),
             );
-          } catch (e: any) {
+          } catch (e: unknown) {
             // Batch failed — fall back to per-message classify so the queue still drains.
             logError(
               "sync.batch_ai_classify_failed",
@@ -940,11 +941,12 @@ export async function runMessageJobs(
                   if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
-                } catch (innerErr: any) {
+                } catch (innerErr: unknown) {
+                  const innerMsg = innerErr instanceof Error ? innerErr.message : "unknown";
                   await updateEmailEncrypted({
                     email_id: c.emailRowId,
                     classified_by: "unclassified",
-                    classification_reason: `AI classifier failed: ${(innerErr?.message ?? "unknown").slice(0, 200)}`,
+                    classification_reason: `AI classifier failed: ${innerMsg.slice(0, 200)}`,
                   });
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });

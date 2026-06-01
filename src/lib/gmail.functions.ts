@@ -1044,7 +1044,7 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
         },
         error: null as string | null,
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       logError("gmail.suggest_recat.ai_failed", { user_id: context.userId }, e);
       return {
         source: {
@@ -1065,7 +1065,7 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
           proposed_profile: target.learned_profile ?? "",
           why: "AI suggestion unavailable — you can still apply the move.",
         },
-        error: e?.message ?? "AI request failed",
+        error: e instanceof Error ? e.message : "AI request failed",
       };
     }
   });
@@ -2448,7 +2448,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .in("event_type", ["push", "push_empty"])
       .order("received_at", { ascending: false })
       .limit(1);
-    const lastPush: any = anyPushRows?.[0] ?? null;
+    const lastPush = anyPushRows?.[0] ?? null;
 
     // Most recent webhook self-test (separate from real pushes).
     const { data: lastTestRows } = await supabaseAdmin
@@ -2884,7 +2884,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         mode,
         account_email,
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       return {
         url,
         ok: false,
@@ -2893,7 +2893,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
         mode,
         account_email,
-        error: e?.message ?? String(e),
+        error: e instanceof Error ? e.message : String(e),
       };
     }
   });
@@ -3133,7 +3133,9 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     const esc = v.replace(/[\\%_]/g, (m) => `\\${m}`);
 
     // Build a query with the rule predicate applied (without folder/archive scoping).
-    const applyRulePredicate = <T extends ReturnType<typeof supabaseAdmin.from>>(qb: any) => {
+    const applyRulePredicate = <T extends { ilike(column: string, pattern: string): T }>(
+      qb: T,
+    ): T => {
       if (data.field === "subject") {
         const pat = data.op === "equals" ? esc : data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
         return qb.ilike("subject", pat);

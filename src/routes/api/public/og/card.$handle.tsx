@@ -46,14 +46,13 @@ export const Route = createFileRoute("/api/public/og/card/$handle")({
 
         const W = 1200,
           H = 630;
-        const [c1, c2, c3] =
-          THEME_GRADIENTS[(card as any).theme ?? "default"] ?? THEME_GRADIENTS.default;
+        const [c1, c2, c3] = THEME_GRADIENTS[card.theme ?? "default"] ?? THEME_GRADIENTS.default;
         const name = truncate(card.name ?? card.handle, 40);
         const title = truncate([card.title, card.company].filter(Boolean).join(" · "), 60);
         const tagline = card.tagline ? truncate(card.tagline, 90) : "";
         const initial = (card.name ?? card.handle).slice(0, 1).toUpperCase();
-        const cover = (card as any).cover_url as string | null;
-        const avatar = (card as any).avatar_url as string | null;
+        const cover = card.cover_url;
+        const avatar = card.avatar_url;
 
         const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">

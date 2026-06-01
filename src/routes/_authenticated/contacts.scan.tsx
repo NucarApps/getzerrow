@@ -94,8 +94,9 @@ function ScanPage() {
         if (error) throw error;
         // Store the storage path; signed URLs are generated on read.
         setCardImageUrl(path);
-      } catch (e: any) {
-        toast.warning(`Couldn't save card image: ${e?.message ?? "unknown"}`);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "unknown";
+        toast.warning(`Couldn't save card image: ${message}`);
       } finally {
         setUploadingCard(false);
       }
@@ -135,8 +136,9 @@ function ScanPage() {
               ? [{ label: "mobile", number: d.phone, is_primary: true }]
               : [];
         setPhones(initial);
-      } catch (e: any) {
-        toast.error(e?.message ?? "Couldn't read the card");
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Couldn't read the card";
+        toast.error(message);
       } finally {
         setScanning(false);
       }
@@ -185,15 +187,17 @@ function ScanPage() {
             },
           });
           toast.success(`Saved & sent your card to ${draft.email}`);
-        } catch (e: any) {
-          toast.warning(`Saved, but couldn't send your card: ${e?.message ?? "unknown"}`);
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : "unknown";
+          toast.warning(`Saved, but couldn't send your card: ${message}`);
         }
       } else {
         toast.success("Contact saved");
       }
       navigate({ to: "/contacts/$id", params: { id: r.contact.id } });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Save failed");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Save failed";
+      toast.error(message);
     } finally {
       setSaving(false);
     }

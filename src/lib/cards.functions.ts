@@ -40,7 +40,7 @@ export const getMyCard = createServerFn({ method: "GET" })
 /** Create or update the signed-in user's card. */
 export const upsertMyCard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: any) =>
+  .inputValidator((d: unknown) =>
     z
       .object({
         handle: z
@@ -172,7 +172,7 @@ export const sendMyCard = createServerFn({ method: "POST" })
 
 /** Public — capture a lead from a public card. Creates a contact for the card owner. */
 export const submitCardLead = createServerFn({ method: "POST" })
-  .inputValidator((d: any) =>
+  .inputValidator((d: unknown) =>
     z
       .object({
         handle: z.string().regex(HANDLE_RE),

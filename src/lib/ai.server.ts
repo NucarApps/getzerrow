@@ -87,12 +87,18 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
   type Out = z.infer<typeof schema>;
   let lastError = "";
 
-  function describeError(e: any): string {
+  function describeError(e: unknown): string {
+    const err = e as {
+      name?: unknown;
+      status?: unknown;
+      message?: unknown;
+      responseBody?: unknown;
+    };
     const parts: string[] = [];
-    if (e?.name) parts.push(e.name);
-    if (typeof e?.status === "number") parts.push(`status=${e.status}`);
-    if (e?.message) parts.push(e.message);
-    if (e?.responseBody) parts.push(`body=${String(e.responseBody).slice(0, 200)}`);
+    if (typeof err?.name === "string") parts.push(err.name);
+    if (typeof err?.status === "number") parts.push(`status=${err.status}`);
+    if (typeof err?.message === "string") parts.push(err.message);
+    if (err?.responseBody != null) parts.push(`body=${String(err.responseBody).slice(0, 200)}`);
     return parts.join(" | ").slice(0, 400) || "unknown error";
   }
 
@@ -240,11 +246,12 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
   let parsed: Out | null = null;
   let lastError = "";
 
-  const describe = (e: any): string => {
+  const describe = (e: unknown): string => {
+    const err = e as { name?: unknown; status?: unknown; message?: unknown };
     const parts: string[] = [];
-    if (e?.name) parts.push(e.name);
-    if (typeof e?.status === "number") parts.push(`status=${e.status}`);
-    if (e?.message) parts.push(e.message);
+    if (typeof err?.name === "string") parts.push(err.name);
+    if (typeof err?.status === "number") parts.push(`status=${err.status}`);
+    if (typeof err?.message === "string") parts.push(err.message);
     return parts.join(" | ").slice(0, 300) || "unknown";
   };
 
@@ -404,8 +411,8 @@ Guidelines:
 - why: one short line.`,
     });
     return output as SuggestedFolderShape;
-  } catch (err: any) {
-    console.error("suggestFolderFromEmails failed", err?.message ?? err);
+  } catch (err: unknown) {
+    console.error("suggestFolderFromEmails failed", err instanceof Error ? err.message : err);
     return {
       name: "New folder",
       color: palette[0],
@@ -582,10 +589,10 @@ Be concise. Skip empty/duplicate content. If there are no emails, say so briefly
       "summarizeFolderEmails(primary)",
     );
     return output;
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.warn(
       "summarizeFolderEmails: structured output failed, falling back to plain text:",
-      err?.message ?? err,
+      err instanceof Error ? err.message : err,
     );
   }
 

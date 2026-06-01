@@ -277,9 +277,9 @@ export function FolderEditor({
       toast.success(`Now routing ${domain} → ${folder.name}`);
       qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
       qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
-    } catch (e: any) {
+    } catch (e: unknown) {
       qc.setQueryData(key, prev);
-      toast.error(e.message ?? "Failed to add");
+      toast.error(e instanceof Error ? e.message : "Failed to add");
     }
   }
   async function reassignDomain(domain: string, toFolderId: string, toName: string) {
@@ -300,9 +300,9 @@ export function FolderEditor({
       qc.invalidateQueries({ queryKey: ["folder-filters", toFolderId] });
       qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
-    } catch (e: any) {
+    } catch (e: unknown) {
       qc.setQueryData(key, prev);
-      toast.error(e.message ?? "Failed to move");
+      toast.error(e instanceof Error ? e.message : "Failed to move");
     }
   }
   async function learn() {
@@ -323,8 +323,8 @@ export function FolderEditor({
       qc.invalidateQueries({ queryKey: ["folder-example-count", folder.id] });
       qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
       qc.invalidateQueries({ queryKey: ["emails"] });
-    } catch (e: any) {
-      toast.error(e.message ?? "Failed to learn");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to learn");
     } finally {
       setLearning(false);
     }
@@ -344,8 +344,8 @@ export function FolderEditor({
           `Synced ${r.synced} of ${r.total} email${r.total === 1 ? "" : "s"} to Gmail${r.failed ? ` · ${r.failed} failed` : ""}.`,
         );
       qc.invalidateQueries({ queryKey: ["emails"] });
-    } catch (e: any) {
-      toast.error(e.message ?? "Failed to sync labels");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to sync labels");
     } finally {
       setSyncingLabel(false);
     }
@@ -363,11 +363,12 @@ export function FolderEditor({
       });
       setLocal((prev) => ({ ...prev, ai_rule: r.rule }));
       toast.success("AI rule generated. Review it, then save.");
-    } catch (e: any) {
-      const status = e?.status ?? e?.cause?.status;
+    } catch (e: unknown) {
+      const err = e as { status?: unknown; message?: unknown; cause?: { status?: unknown } };
+      const status = err?.status ?? err?.cause?.status;
       if (status === 429) toast.error("Rate limit reached. Try again in a moment.");
       else if (status === 402) toast.error("Out of AI credits. Add credits to keep generating.");
-      else toast.error(e?.message ?? "Failed to generate rule");
+      else toast.error(typeof err?.message === "string" ? err.message : "Failed to generate rule");
     } finally {
       setGeneratingRule(false);
     }
@@ -541,9 +542,9 @@ export function FolderEditor({
                       await setAutoRelearnFn({ data: { folder_id: folder.id, auto_relearn: v } });
                       toast.success(v ? "Auto-learning on" : "Auto-learning off");
                       qc.invalidateQueries({ queryKey: ["folders-full"] });
-                    } catch (e: any) {
+                    } catch (e: unknown) {
                       setLocal({ ...local, auto_relearn: !v });
-                      toast.error(e.message ?? "Failed to update");
+                      toast.error(e instanceof Error ? e.message : "Failed to update");
                     }
                   }}
                 />
@@ -1037,8 +1038,8 @@ function HistoryPanel({
       const r = await suggestFn({ data: { email_id: emailId, to_folder_id: toFolderId } });
       setSuggestion(r);
       if (r.error) toast.warning(r.error);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed to get suggestion");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to get suggestion");
       setActiveEmail(null);
     } finally {
       setLoadingSuggest(false);
@@ -1068,8 +1069,8 @@ function HistoryPanel({
       qc.invalidateQueries({ queryKey: ["folder-history", folder.id] });
       qc.invalidateQueries({ queryKey: ["emails"] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed to apply");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to apply");
     } finally {
       setApplying(false);
     }
@@ -1468,8 +1469,8 @@ function SummariesPanel({ folderId }: { folderId: string }) {
     try {
       await updateFn({ data: { id: s.id, enabled } });
       qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed");
     }
   }
   async function remove(s: Schedule) {
@@ -1510,8 +1511,8 @@ function SummariesPanel({ folderId }: { folderId: string }) {
         toast.error("Still running — check back in a moment", { id: toastId });
       }
       qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed", { id: toastId });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed", { id: toastId });
     } finally {
       setRunningId(null);
     }
@@ -1685,8 +1686,8 @@ function ScheduleForm({
         minute,
         timezone: tz.trim() || "UTC",
       });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setSaving(false);
     }

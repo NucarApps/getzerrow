@@ -105,7 +105,7 @@ export function normalizeName(input: string | null | undefined): string | null {
   // Strip surrounding quotes / angle brackets
   s = s.replace(/^["'`<\s]+|["'`>\s]+$/g, "");
   // Drop trailing parenthetical noise like "(via Acme)" or "[External]"
-  s = s.replace(/\s*[\(\[][^)\]]*[\)\]]\s*$/g, "");
+  s = s.replace(/\s*[([][^)\]]*[)\]]\s*$/g, "");
   // Collapse whitespace
   s = s.replace(/\s+/g, " ").trim();
   if (!s) return null;
@@ -116,7 +116,7 @@ export function normalizeName(input: string | null | undefined): string | null {
   const commaCount = (s.match(/,/g) ?? []).length;
   if (commaCount === 1) {
     const [last, rest] = s.split(",").map((x) => x.trim());
-    if (last && rest && /^[\p{L}'’\-\. ]+$/u.test(last) && /^[\p{L}'’\-\. ]+$/u.test(rest)) {
+    if (last && rest && /^[\p{L}'’\-. ]+$/u.test(last) && /^[\p{L}'’\-. ]+$/u.test(rest)) {
       s = `${rest} ${last}`.replace(/\s+/g, " ").trim();
     }
   }
@@ -211,7 +211,7 @@ export const getContact = createServerFn({ method: "POST" })
     // all encrypted PII fields. Verify ownership before returning.
     const { row, error } = await getContactDecrypted(data.id);
     if (error || !row) throw new Error("Contact not found");
-    if ((row as any).user_id !== userId) throw new Error("Forbidden");
+    if (row.user_id !== userId) throw new Error("Forbidden");
     const contact = row;
     const [{ data: emails }, { data: phones }] = await Promise.all([
       supabase
@@ -250,7 +250,7 @@ export const enrichContact = createServerFn({ method: "POST" })
       const normalized = normalizeName(contact.name);
       if (normalized && normalized !== contact.name) {
         await supabase.from("contacts").update({ name: normalized }).eq("id", contact.id);
-        (contact as any).name = normalized;
+        contact.name = normalized;
       }
     }
 
@@ -295,7 +295,7 @@ export const enrichContact = createServerFn({ method: "POST" })
       body_text: string | null;
       snippet: string | null;
       from_name: string | null;
-    }> = (localEmails ?? []) as any;
+    }> = localEmails ?? [];
 
     if (emails.length === 0) {
       const accountIds = await getGmailAccountIds();
@@ -438,8 +438,8 @@ Emails (most-signature-likely first):
 ${sample}`,
       });
       extracted = output as z.infer<typeof EXTRACT_SCHEMA>;
-    } catch (e: any) {
-      console.error("enrichContact failed", e?.message ?? e);
+    } catch (e: unknown) {
+      console.error("enrichContact failed", e instanceof Error ? e.message : e);
     }
 
     const patch: {
@@ -567,8 +567,8 @@ ${convoSample}`,
           patch.summary_generated_at = new Date().toISOString();
         }
       }
-    } catch (e: any) {
-      console.error("relationship summary failed", e?.message ?? e);
+    } catch (e: unknown) {
+      console.error("relationship summary failed", e instanceof Error ? e.message : e);
     }
 
     // Persist sensitive fields ONLY via the encrypted RPC. Remove them
@@ -1014,8 +1014,8 @@ Subject: ${email.subject ?? ""}
 ${body}`,
         });
         extracted = output as z.infer<typeof EXTRACT_SCHEMA>;
-      } catch (e: any) {
-        console.error("addContactFromEmail extract failed", e?.message ?? e);
+      } catch (e: unknown) {
+        console.error("addContactFromEmail extract failed", e instanceof Error ? e.message : e);
       }
     }
 
@@ -1052,11 +1052,11 @@ ${body}`,
     for (const k of plaintextFields) {
       const v = extracted[k];
       if (k === "name") {
-        const better = pickBetterName((base as any).name, v);
-        if (better && better !== (base as any).name) patch.name = better;
+        const better = pickBetterName(base.name, v);
+        if (better && better !== base.name) patch.name = better;
         continue;
       }
-      if (v && !(base as any)[k]) patch[k] = v;
+      if (v && !base[k]) patch[k] = v;
     }
     for (const k of ENCRYPTED_ONLY) {
       const v = extracted[k];
@@ -1078,7 +1078,7 @@ ${body}`,
 /** Share a saved contact's info with someone via the user's connected Gmail. */
 export const shareContactByEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: any) =>
+  .inputValidator((d: unknown) =>
     z
       .object({
         contactId: z.string().uuid(),
@@ -1134,7 +1134,7 @@ export const shareContactByEmail = createServerFn({ method: "POST" })
 /** Manually create a contact. */
 export const createContactManual = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: any) =>
+  .inputValidator((d: unknown) =>
     z
       .object({
         email: z.string().trim().toLowerCase().email().max(255),
@@ -1196,7 +1196,7 @@ export const listFoldersForPicker = createServerFn({ method: "GET" })
 /** List unique sender addresses from the user's emails, optionally scoped to folders, excluding existing contacts. */
 export const listUniqueInboxSenders = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: any) =>
+  .inputValidator((d: unknown) =>
     z
       .object({
         folderIds: z.array(z.string().uuid()).max(50).optional(),
@@ -1227,7 +1227,7 @@ export const listUniqueInboxSenders = createServerFn({ method: "POST" })
       .from("contacts")
       .select("email")
       .eq("user_id", userId);
-    const existingSet = new Set((existing ?? []).map((c: any) => (c.email || "").toLowerCase()));
+    const existingSet = new Set((existing ?? []).map((c) => (c.email || "").toLowerCase()));
 
     type Agg = { email: string; name: string | null; count: number; lastReceivedAt: string | null };
     const agg = new Map<string, Agg>();
@@ -1263,7 +1263,7 @@ export const listUniqueInboxSenders = createServerFn({ method: "POST" })
 /** Bulk-create contacts from a list of {email, name?}. */
 export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: any) =>
+  .inputValidator((d: unknown) =>
     z
       .object({
         items: z

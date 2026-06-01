@@ -192,7 +192,7 @@ function ContactsPage() {
     for (const c of filtered) {
       const rawDomain = extractDomain(c.email);
       const d = resolveCompanyDomain(rawDomain, aliasMap);
-      const webDomain = contactLogoDomain((c as any).website, c.email);
+      const webDomain = contactLogoDomain(c.website, c.email);
       const resolvedWeb = resolveCompanyDomain(webDomain, aliasMap);
       let key: string;
       let bucket: Bucket | undefined;
@@ -477,9 +477,9 @@ function ContactsPage() {
                                         <div className="truncate text-xs text-muted-foreground">
                                           {c.title || c.email}
                                         </div>
-                                        {(c as any).relationship_summary && (
+                                        {c.relationship_summary && (
                                           <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/80">
-                                            {(c as any).relationship_summary}
+                                            {c.relationship_summary}
                                           </div>
                                         )}
                                       </>
@@ -519,7 +519,7 @@ function ContactsPage() {
               <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
                 {filtered.map((c) => {
                   const gids = contactGroupMap.get(c.id) ?? [];
-                  const dom = contactLogoDomain((c as any).website, c.email);
+                  const dom = contactLogoDomain(c.website, c.email);
                   const resolvedDom = resolveCompanyDomain(dom, aliasMap);
                   const logoProv = resolvedDom
                     ? (logoProviderByDomain.get(resolvedDom) ?? null)
@@ -764,8 +764,8 @@ function GroupEditorDialog({
       }
       onChanged();
       onClose();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setSaving(false);
     }
@@ -780,8 +780,8 @@ function GroupEditorDialog({
       toast.success("Group deleted");
       onChanged();
       onClose();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setSaving(false);
     }
@@ -959,8 +959,8 @@ function AddContactsDialog({
       toast.success("Contact added");
       onAdded();
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Couldn't add contact");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add contact");
     } finally {
       setSaving(false);
     }
@@ -1016,8 +1016,8 @@ function AddContactsDialog({
       toast.success(`Added ${r.created} ${r.created === 1 ? "contact" : "contacts"}`);
       onAdded();
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Couldn't add contacts");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add contacts");
     } finally {
       setAdding(false);
     }
@@ -1126,7 +1126,7 @@ function AddContactsDialog({
                 >
                   All folders
                 </button>
-                {(foldersQ.data?.folders ?? []).map((f: any) => {
+                {(foldersQ.data?.folders ?? []).map((f) => {
                   const on = folderIds.includes(f.id);
                   return (
                     <button

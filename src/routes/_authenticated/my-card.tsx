@@ -50,7 +50,7 @@ function MyCardPage() {
 
   useEffect(() => {
     if (q.data?.card) {
-      const c: any = q.data.card;
+      const c = q.data.card;
       setForm({
         handle: c.handle ?? "",
         name: c.name ?? "",
@@ -91,8 +91,8 @@ function MyCardPage() {
       });
       toast.success("Card saved");
       qc.invalidateQueries({ queryKey: ["my-card"] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Save failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
     }
@@ -251,8 +251,9 @@ function MyCardPage() {
                       await navigator.clipboard.writeText(publicUrl);
                       toast.success("Link copied");
                     }
-                  } catch (e: any) {
-                    if (e?.name !== "AbortError") toast.error("Couldn't share");
+                  } catch (e: unknown) {
+                    if (!(e instanceof Error) || e.name !== "AbortError")
+                      toast.error("Couldn't share");
                   }
                 }}
               >

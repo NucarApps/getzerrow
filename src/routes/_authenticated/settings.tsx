@@ -61,22 +61,22 @@ function SettingsPage() {
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
   const backfillQ = useQuery({
     queryKey: ["backfill-status"],
-    queryFn: async () => (await getStatus({ data: {} })).job as any,
+    queryFn: async () => (await getStatus({ data: {} })).job,
     refetchInterval: 5000,
   });
   const [busy, setBusy] = useState<string | null>(null);
   const { activeAccountId, setActiveAccountId } = useAccountSelection();
   const [scopedEmail, setScopedEmail] = useState<string | null>(null);
 
-  async function run(key: string, fn: () => Promise<any>, msg: string) {
+  async function run(key: string, fn: () => Promise<unknown>, msg: string) {
     setBusy(key);
     try {
       await fn();
       if (msg) toast.success(msg);
       qc.invalidateQueries({ queryKey: ["gmail-accounts"] });
       qc.invalidateQueries({ queryKey: ["emails"] });
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong");
     }
     setBusy(null);
   }
@@ -86,8 +86,8 @@ function SettingsPage() {
     try {
       const { url } = await connect({ data: loginHint ? { login_hint: loginHint } : {} });
       window.location.href = url;
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong");
       setBusy(null);
     }
   }
@@ -234,7 +234,7 @@ function SettingsPage() {
                             run(
                               `week-${a.id}`,
                               async () => {
-                                const r: any = await weekBackfill({
+                                const r = await weekBackfill({
                                   data: { account_id: a.id, days: 7, max: 1000 },
                                 });
                                 toast.success(
@@ -256,7 +256,7 @@ function SettingsPage() {
                               run(
                                 `deep-${a.id}`,
                                 async () => {
-                                  const r: any = await startDeep({
+                                  const r = await startDeep({
                                     data: { account_id: a.id, months: 6 },
                                   });
                                   qc.invalidateQueries({ queryKey: ["backfill-status"] });

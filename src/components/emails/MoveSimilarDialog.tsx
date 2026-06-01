@@ -77,7 +77,10 @@ export function MoveSimilarDialog({
         setMatches(r.matches);
         setSelected(new Set(r.matches.map((m) => m.id)));
       })
-      .catch((e: any) => !cancelled && toast.error(e.message))
+      .catch(
+        (e: unknown) =>
+          !cancelled && toast.error(e instanceof Error ? e.message : "Something went wrong"),
+      )
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -119,8 +122,8 @@ export function MoveSimilarDialog({
       qc.invalidateQueries({ queryKey: ["emails-summary"] });
       qc.invalidateQueries({ queryKey: ["folder-filters"] });
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setMoving(false);
     }

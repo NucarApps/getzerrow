@@ -55,6 +55,12 @@ type Props = {
   onDeleted?: () => void;
 };
 
+function errorMessage(e: unknown): string | undefined {
+  return e instanceof Error ? e.message : undefined;
+}
+
+type ContactQueryData = Awaited<ReturnType<typeof getContact>>;
+
 export function ContactDetailView({ id, onDeleted }: Props) {
   const qc = useQueryClient();
   const fetchOne = useServerFn(getContact);
@@ -70,9 +76,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   const q = useQuery({ queryKey: ["contact", id], queryFn: () => fetchOne({ data: { id } }) });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
 
-  const hasCardImage = Boolean((q.data?.contact as any)?.card_image_url);
+  const hasCardImage = Boolean(q.data?.contact?.card_image_url);
   const cardUrlQ = useQuery({
-    queryKey: ["contact-card-url", id, (q.data?.contact as any)?.card_image_url ?? null],
+    queryKey: ["contact-card-url", id, q.data?.contact?.card_image_url ?? null],
     queryFn: () => fetchCardUrl({ data: { contactId: id } }),
     enabled: hasCardImage,
     staleTime: 8 * 60 * 1000, // refresh before the 10-minute signed URL expires
@@ -94,8 +100,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
     try {
       await setGroups({ data: { contactId: id, groupIds: [...next] } });
       qc.invalidateQueries({ queryKey: ["contact-groups"] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) ?? "Failed");
     }
   }
 
@@ -131,12 +137,12 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         linkedin: c.linkedin ?? "",
         twitter: c.twitter ?? "",
         notes: c.notes ?? "",
-        address_line1: (c as any).address_line1 ?? "",
-        address_line2: (c as any).address_line2 ?? "",
-        city: (c as any).city ?? "",
-        region: (c as any).region ?? "",
-        postal_code: (c as any).postal_code ?? "",
-        country: (c as any).country ?? "",
+        address_line1: c.address_line1 ?? "",
+        address_line2: c.address_line2 ?? "",
+        city: c.city ?? "",
+        region: c.region ?? "",
+        postal_code: c.postal_code ?? "",
+        country: c.country ?? "",
       });
       const serverPhones = (q.data.phones ?? []) as Array<{
         label: string;
@@ -182,7 +188,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       if (r.skipped) toast.info("Already enriched recently");
       else toast.success("Enriched from email signatures");
       if (r.contact) {
-        qc.setQueryData(["contact", id], (prev: any) => ({
+        qc.setQueryData(["contact", id], (prev: ContactQueryData | undefined) => ({
           contact: r.contact,
           recentEmails: prev?.recentEmails ?? [],
           phones: prev?.phones ?? [],
@@ -190,8 +196,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       }
       await qc.invalidateQueries({ queryKey: ["contact", id] });
       await qc.invalidateQueries({ queryKey: ["contacts"] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Enrich failed");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) ?? "Enrich failed");
     } finally {
       setEnriching(false);
     }
@@ -225,8 +231,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       toast.success("Saved");
       qc.invalidateQueries({ queryKey: ["contact", id] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Save failed");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) ?? "Save failed");
     }
   }
 
@@ -242,8 +248,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         },
       });
       toast.success(`Card sent to ${q.data.contact.email}`);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed to send card");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) ?? "Failed to send card");
     } finally {
       setSending(false);
     }
@@ -263,8 +269,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       await update({ data: { id, card_image_url: null } });
       qc.invalidateQueries({ queryKey: ["contact", id] });
       toast.success("Card image removed");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) ?? "Failed");
     }
   }
 
@@ -295,9 +301,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
           <Sparkles className="h-3.5 w-3.5" /> Relationship summary
         </div>
-        {(c as any).relationship_summary ? (
+        {c.relationship_summary ? (
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-            {(c as any).relationship_summary}
+            {c.relationship_summary}
           </p>
         ) : enriching ? (
           <p className="text-sm italic text-muted-foreground">
@@ -480,7 +486,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         </div>
       </div>
 
-      {(c as any).card_image_url ? (
+      {c.card_image_url ? (
         <div className="mt-6">
           <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
             <ImageIcon className="h-3.5 w-3.5" /> Business card
@@ -617,8 +623,8 @@ function ShareContactDialog({
       onOpenChange(false);
       setToEmail("");
       setNote("");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Couldn't send email");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) ?? "Couldn't send email");
     } finally {
       setSending(false);
     }

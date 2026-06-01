@@ -27,6 +27,25 @@ export class GmailApiError extends Error {
   }
 }
 
+// Minimal shapes for the Gmail message JSON fields this module reads.
+export type GmailMessagePartBody = { data?: string; size?: number; attachmentId?: string };
+export type GmailMessagePart = {
+  mimeType?: string;
+  filename?: string;
+  headers?: Array<{ name: string; value: string }>;
+  body?: GmailMessagePartBody;
+  parts?: GmailMessagePart[];
+};
+export type GmailMessage = {
+  id: string;
+  threadId: string;
+  snippet?: string;
+  internalDate?: string;
+  historyId?: string;
+  labelIds?: string[];
+  payload?: GmailMessagePart;
+};
+
 function isRetryableStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
 }
@@ -54,7 +73,7 @@ function parseQuotaReason(body: string): boolean {
   return /quotaExceeded|userRateLimitExceeded/.test(body);
 }
 
-async function gmailFetch<T = any>(
+async function gmailFetch<T = unknown>(
   accountId: string,
   path: string,
   init?: RequestInit,
@@ -71,12 +90,14 @@ async function gmailFetch<T = any>(
         ...(init?.headers || {}),
       },
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Network error or AbortSignal timeout — treat as retryable.
+    const name = e instanceof Error ? e.name : undefined;
+    const message = e instanceof Error ? e.message : String(e);
     const msg =
-      e?.name === "TimeoutError" || e?.name === "AbortError"
+      name === "TimeoutError" || name === "AbortError"
         ? `Gmail API timeout on ${path} (>${REQUEST_TIMEOUT_MS}ms)`
-        : `Gmail API network error on ${path}: ${e?.message ?? String(e)}`;
+        : `Gmail API network error on ${path}: ${message}`;
     throw new GmailApiError(msg, 0, true);
   }
   const text = await res.text();
@@ -123,11 +144,11 @@ export async function listMessages(
 }
 
 export async function getMessage(accountId: string, id: string) {
-  return gmailFetch<any>(accountId, `/users/me/messages/${id}?format=full`);
+  return gmailFetch<GmailMessage>(accountId, `/users/me/messages/${id}?format=full`);
 }
 
 export async function getThread(accountId: string, threadId: string) {
-  return gmailFetch<{ id: string; messages?: any[] }>(
+  return gmailFetch<{ id: string; messages?: GmailMessage[] }>(
     accountId,
     `/users/me/threads/${threadId}?format=full`,
   );
@@ -135,7 +156,7 @@ export async function getThread(accountId: string, threadId: string) {
 
 /** Headers-only fetch: From + Subject + snippet. ~10x smaller than format=full. */
 export async function getMessageMetadata(accountId: string, id: string) {
-  return gmailFetch<any>(
+  return gmailFetch<GmailMessage>(
     accountId,
     `/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
   );
@@ -149,8 +170,8 @@ export async function getMessageLabels(accountId: string, id: string): Promise<s
       `/users/me/messages/${id}?format=minimal`,
     );
     return r.labelIds ?? [];
-  } catch (e: any) {
-    if (typeof e?.message === "string" && e.message.includes("404")) return null;
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message.includes("404")) return null;
     throw e;
   }
 }
@@ -289,13 +310,18 @@ function decodeBase64Url(data: string) {
   return Buffer.from(norm, "base64").toString("utf-8");
 }
 
-function extractPart(payload: any, mimeType: string): string {
+function asPart(p: unknown): GmailMessagePart | undefined {
+  return p && typeof p === "object" ? (p as GmailMessagePart) : undefined;
+}
+
+function extractPart(raw: unknown, mimeType: string): string {
+  const payload = asPart(raw);
   if (!payload) return "";
   if (payload.mimeType === mimeType && payload.body?.data) {
     return decodeBase64Url(payload.body.data);
   }
   if (payload.parts) {
-    for (const p of payload.parts) {
+    for (const p of payload.parts as unknown[]) {
       const v = extractPart(p, mimeType);
       if (v) return v;
     }
@@ -303,8 +329,15 @@ function extractPart(payload: any, mimeType: string): string {
   return "";
 }
 
-export function parseMessage(msg: any) {
-  const payload = msg.payload || {};
+// parseMessage accepts the raw Gmail message JSON. Nested `parts` are typed
+// loosely (`unknown[]`) so callers building fixtures don't need to thread the
+// full recursive part type; the MIME walk narrows each element at runtime.
+export type ParsableGmailMessage = Omit<GmailMessage, "payload"> & {
+  payload?: Omit<GmailMessagePart, "parts"> & { parts?: unknown[] };
+};
+
+export function parseMessage(msg: ParsableGmailMessage) {
+  const payload = msg.payload ?? {};
   const headers: GmailHeader[] = payload.headers || [];
   const h = (n: string) =>
     headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value || "";
@@ -315,12 +348,13 @@ export function parseMessage(msg: any) {
   const bodyText = extractPart(payload, "text/plain");
   const bodyHtml = extractPart(payload, "text/html");
   const hasAttachment = (() => {
-    const walk = (p: any): boolean => {
+    const walk = (raw: unknown): boolean => {
+      const p = asPart(raw);
       if (!p) return false;
       if (p.filename) return true;
-      return (p.parts || []).some(walk);
+      return ((p.parts as unknown[]) || []).some(walk);
     };
-    return (payload.parts || []).some(walk);
+    return ((payload.parts as unknown[]) || []).some(walk);
   })();
   return {
     gmail_message_id: msg.id as string,
@@ -335,7 +369,7 @@ export function parseMessage(msg: any) {
     snippet: msg.snippet as string,
     body_text: bodyText,
     body_html: bodyHtml,
-    received_at: new Date(parseInt(msg.internalDate, 10)).toISOString(),
+    received_at: new Date(parseInt(msg.internalDate ?? "0", 10)).toISOString(),
     has_attachment: hasAttachment,
     raw_labels: (msg.labelIds || []) as string[],
     is_read: !(msg.labelIds || []).includes("UNREAD"),

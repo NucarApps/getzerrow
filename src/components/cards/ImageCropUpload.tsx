@@ -76,8 +76,8 @@ export function ImageCropUpload({
       setSrc(null);
       setZoom(1);
       setCrop({ x: 0, y: 0 });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Upload failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setUploading(false);
     }

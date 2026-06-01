@@ -123,6 +123,10 @@ function decodeEntities(s: string | null | undefined): string {
   });
 }
 
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 type Email = {
   id: string;
   from_addr: string | null;
@@ -297,7 +301,7 @@ function EmailBodyInline({ html }: { html: string }) {
     <div
       className="email-body-inline rounded-lg bg-white p-4 text-[14px] leading-relaxed text-[#111]"
       style={{ colorScheme: "light", wordWrap: "break-word", overflowWrap: "break-word" }}
-      // eslint-disable-next-line react/no-danger
+      // `clean` is DOMPurify-sanitized HTML (see useMemo above).
       dangerouslySetInnerHTML={{ __html: clean }}
     />
   );
@@ -584,9 +588,7 @@ function InboxPage() {
       const { data } = await q;
       let rows = (data ?? []) as unknown as Email[];
       if (isNoRules) {
-        rows = rows.filter(
-          (e) => !(e as any).raw_labels?.some((l: string) => l.startsWith("Label_")),
-        );
+        rows = rows.filter((e) => !e.raw_labels?.some((l: string) => l.startsWith("Label_")));
       }
       return rows;
     },
@@ -823,7 +825,7 @@ function InboxPage() {
         data: { folder_id: currentFolderObj.id, before_received_at: lastReceived },
       });
     },
-    onSuccess: async (r: any) => {
+    onSuccess: async (r) => {
       await qc.refetchQueries({ queryKey: ["emails", selectedFolder] });
       const pulled = (r?.ingested ?? 0) + (r?.claimed ?? 0);
       if (pulled > 0)
@@ -838,7 +840,7 @@ function InboxPage() {
       });
       setPage((p) => p + 1);
     },
-    onError: (e: any) => toast.error(e?.message ?? "Failed to pull from Gmail"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to pull from Gmail"),
   });
 
   function goNext() {
@@ -904,15 +906,17 @@ function InboxPage() {
       if (!accountId) throw new Error("Connect Gmail in Settings first");
       return sync({ data: { account_id: accountId } });
     },
-    onSuccess: async (res: any) => {
+    onSuccess: async (res) => {
       const r = res?.reconciled;
+      const synced = res && "synced" in res ? res.synced : undefined;
+      const error = res && "error" in res ? res.error : undefined;
       const parts: string[] = [];
-      if (typeof res?.synced === "number" && res.synced > 0) parts.push(`${res.synced} new`);
+      if (typeof synced === "number" && synced > 0) parts.push(`${synced} new`);
       if (r?.archived) parts.push(`${r.archived} archived`);
       if (r?.deleted) parts.push(`${r.deleted} removed`);
       if (r?.failed) parts.push(`${r.failed} failed`);
       const msg = parts.length ? `Synced · ${parts.join(", ")}` : "Synced";
-      if (res?.error) toast.error(`Sync error: ${res.error}`);
+      if (error) toast.error(`Sync error: ${error}`);
       else toast.success(msg);
       await Promise.all([
         qc.refetchQueries({ queryKey: ["emails"] }),
@@ -922,7 +926,7 @@ function InboxPage() {
         qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([, d]) => d ?? []) ?? [];
       if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
@@ -1030,14 +1034,14 @@ function InboxPage() {
                       const ids = Array.from(selectedIds);
                       setReclassifyBusy(true);
                       try {
-                        const r: any = await reclassifyFn({ data: { email_ids: ids } });
+                        const r = await reclassifyFn({ data: { email_ids: ids } });
                         toast.success(
                           `Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`,
                         );
                         setSelectedIds(new Set());
                         qc.invalidateQueries({ queryKey: ["emails"] });
-                      } catch (err: any) {
-                        toast.error(err?.message ?? "Re-classify failed");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Re-classify failed");
                       } finally {
                         setReclassifyBusy(false);
                       }
@@ -1056,7 +1060,7 @@ function InboxPage() {
                       const ids = Array.from(selectedIds);
                       setSuggestBusy(true);
                       try {
-                        const s: any = await suggestFolderFn({ data: { email_ids: ids } });
+                        const s = await suggestFolderFn({ data: { email_ids: ids } });
                         setSuggestion({
                           name: s.name,
                           color: s.color,
@@ -1067,8 +1071,10 @@ function InboxPage() {
                           why: s.why,
                           email_ids: ids,
                         });
-                      } catch (err: any) {
-                        toast.error(err?.message ?? "Couldn't suggest a folder");
+                      } catch (err) {
+                        toast.error(
+                          err instanceof Error ? err.message : "Couldn't suggest a folder",
+                        );
                       } finally {
                         setSuggestBusy(false);
                       }
@@ -1171,14 +1177,14 @@ function InboxPage() {
               });
             };
 
-            const RowTag: any = isNoRules ? "div" : "button";
+            const RowTag = isNoRules ? "div" : "button";
             const rowInner = (
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                   <RowTag
                     role={isNoRules ? "button" : undefined}
                     tabIndex={isNoRules ? 0 : undefined}
-                    onClick={(ev: any) => {
+                    onClick={() => {
                       if (isNoRules) {
                         toggleCheck();
                         return;
@@ -1264,9 +1270,9 @@ function InboxPage() {
                             await moveInboxFn({ data: { email_id: e.id } });
                             toast.success("Moved to inbox");
                             qc.invalidateQueries({ queryKey: ["emails"] });
-                          } catch (err: any) {
+                          } catch (err) {
                             qc.invalidateQueries({ queryKey: ["emails"] });
-                            toast.error(err.message);
+                            toast.error(errMsg(err));
                           }
                         }}
                       >
@@ -1304,9 +1310,9 @@ function InboxPage() {
                                 await moveInboxFn({ data: { email_id: e.id } });
                                 toast.success("Moved to inbox");
                                 qc.invalidateQueries({ queryKey: ["emails"] });
-                              } catch (err: any) {
+                              } catch (err) {
                                 qc.invalidateQueries({ queryKey: ["emails"] });
-                                toast.error(err.message);
+                                toast.error(errMsg(err));
                               }
                             }}
                           >
@@ -1355,9 +1361,9 @@ function InboxPage() {
                                   () => qc.invalidateQueries({ queryKey: ["emails"] }),
                                   1500,
                                 );
-                              } catch (err: any) {
+                              } catch (err) {
                                 qc.invalidateQueries({ queryKey: ["emails"] });
-                                toast.error(err.message);
+                                toast.error(errMsg(err));
                               }
                             }}
                           >
@@ -1402,9 +1408,9 @@ function InboxPage() {
                       try {
                         await archFnList({ data: { id: e.id } });
                         toast.success("Archived");
-                      } catch (err: any) {
+                      } catch (err) {
                         qc.invalidateQueries({ queryKey: ["emails"] });
-                        toast.error(err.message);
+                        toast.error(errMsg(err));
                       }
                     }}
                   >
@@ -1420,9 +1426,9 @@ function InboxPage() {
                       try {
                         await trashFnList({ data: { id: e.id } });
                         toast.success("Trashed");
-                      } catch (err: any) {
+                      } catch (err) {
                         qc.invalidateQueries({ queryKey: ["emails"] });
-                        toast.error(err.message);
+                        toast.error(errMsg(err));
                       }
                     }}
                   >
@@ -1445,9 +1451,9 @@ function InboxPage() {
                   try {
                     await archFnList({ data: { id: e.id } });
                     toast.success("Archived");
-                  } catch (err: any) {
+                  } catch (err) {
                     qc.invalidateQueries({ queryKey: ["emails"] });
-                    toast.error(err.message);
+                    toast.error(errMsg(err));
                   }
                 }}
               >
@@ -1618,8 +1624,8 @@ function InboxPage() {
                   setSelectedIds(new Set());
                   qc.invalidateQueries({ queryKey: ["folders"] });
                   qc.invalidateQueries({ queryKey: ["emails"] });
-                } catch (err: any) {
-                  toast.error(err?.message ?? "Failed to create folder");
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Failed to create folder");
                 }
               }}
             >
@@ -1752,9 +1758,9 @@ function Reader({
         domain: r.domain,
         toFolder: target,
       });
-    } catch (e: any) {
+    } catch (e) {
       qc.invalidateQueries({ queryKey: ["emails"] });
-      toast.error(e.message);
+      toast.error(errMsg(e));
     } finally {
       setMoving(false);
     }
@@ -1824,8 +1830,8 @@ function Reader({
                 } else {
                   toast.success("Re-analyzed → Inbox");
                 }
-              } catch (e: any) {
-                toast.error(e.message);
+              } catch (e) {
+                toast.error(errMsg(e));
               } finally {
                 setReanalyzing(false);
               }
@@ -1876,9 +1882,9 @@ function Reader({
                         if (r.from_addr || r.domain) {
                           setAlwaysInbox({ fromAddr: r.from_addr, domain: r.domain });
                         }
-                      } catch (e: any) {
+                      } catch (e) {
                         qc.invalidateQueries({ queryKey: ["emails"] });
-                        toast.error(e.message);
+                        toast.error(errMsg(e));
                       } finally {
                         setMoving(false);
                       }
@@ -1932,9 +1938,9 @@ function Reader({
               try {
                 await archFn({ data: { id: email.id } });
                 toast.success("Archived");
-              } catch (e: any) {
+              } catch (e) {
                 qc.invalidateQueries({ queryKey: ["emails"] });
-                toast.error(e.message);
+                toast.error(errMsg(e));
               }
             }}
           >
@@ -1951,9 +1957,9 @@ function Reader({
               try {
                 await trashFn({ data: { id: email.id } });
                 toast.success("Trashed");
-              } catch (e: any) {
+              } catch (e) {
                 qc.invalidateQueries({ queryKey: ["emails"] });
-                toast.error(e.message);
+                toast.error(errMsg(e));
               }
             }}
           >
@@ -1971,11 +1977,13 @@ function Reader({
                 const r = await resyncFn({ data: { id: email.id } });
                 qc.invalidateQueries({ queryKey: ["emails"] });
                 qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                if ((r as any).deleted) toast.message("Removed — no longer in Gmail");
-                else if ((r as any).in_inbox) toast.success("Resynced — back in Inbox");
+                if ((r as { deleted?: boolean }).deleted)
+                  toast.message("Removed — no longer in Gmail");
+                else if ((r as { in_inbox?: boolean }).in_inbox)
+                  toast.success("Resynced — back in Inbox");
                 else toast.success("Resynced from Gmail");
-              } catch (e: any) {
-                toast.error(e.message);
+              } catch (e) {
+                toast.error(errMsg(e));
               } finally {
                 setResyncing(false);
               }
@@ -2025,8 +2033,8 @@ function Reader({
                       </span>,
                     );
                   }
-                } catch (e: any) {
-                  toast.error(e.message);
+                } catch (e) {
+                  toast.error(errMsg(e));
                 } finally {
                   setAddingContact(false);
                 }
@@ -2190,8 +2198,8 @@ function Reader({
                 try {
                   const r = await genFn({ data: { id: email.id } });
                   setReply(r.draft);
-                } catch (e: any) {
-                  toast.error(e.message);
+                } catch (e) {
+                  toast.error(errMsg(e));
                 }
                 setGenerating(false);
               }}
@@ -2228,8 +2236,8 @@ function Reader({
                   toast.success("Sent");
                   setReply("");
                   setReplyOpen(false);
-                } catch (e: any) {
-                  toast.error(e.message);
+                } catch (e) {
+                  toast.error(errMsg(e));
                 }
                 setSending(false);
               }}

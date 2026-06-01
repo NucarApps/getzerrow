@@ -22,8 +22,8 @@ export function LeadForm({ handle, accentClass }: { handle: string; accentClass:
     try {
       await submit({ data: { handle, ...form } });
       setDone(true);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Couldn't send. Try again.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Couldn't send. Try again.");
     } finally {
       setSending(false);
     }

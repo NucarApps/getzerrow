@@ -116,8 +116,10 @@ export function AddFolderDialog({
           toast.success(
             `Folder created. Linked ${pulled} email${pulled === 1 ? "" : "s"} from Gmail.`,
           );
-        } catch (e: any) {
-          toast.warning(`Folder created. Couldn't pull from Gmail: ${e?.message ?? "error"}`);
+        } catch (e: unknown) {
+          toast.warning(
+            `Folder created. Couldn't pull from Gmail: ${e instanceof Error ? e.message : "error"}`,
+          );
         }
         qc.invalidateQueries({ queryKey: ["emails"] });
         qc.invalidateQueries({ queryKey: ["emails-summary"] });
