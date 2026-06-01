@@ -25,7 +25,7 @@ export const getCalendarGuardStatus = createServerFn({ method: "GET" })
     await assertOwnsAccount(data.accountId, context.userId);
     const { data: account } = await supabaseAdmin
       .from("gmail_accounts")
-      .select("calendar_guard_enabled, calendar_access, calendar_synced_at")
+      .select("calendar_guard_enabled, calendar_access, calendar_synced_at, calendar_sync_error")
       .eq("id", data.accountId)
       .maybeSingle();
     const { count } = await supabaseAdmin
@@ -37,6 +37,7 @@ export const getCalendarGuardStatus = createServerFn({ method: "GET" })
       calendarAccess: !!account?.calendar_access,
       syncedAt: account?.calendar_synced_at ?? null,
       contactCount: count ?? 0,
+      lastError: account?.calendar_sync_error ?? null,
     };
   });
 
@@ -59,16 +60,18 @@ export const setCalendarGuard = createServerFn({ method: "POST" })
     invalidateAccountContext(data.accountId);
 
     let synced: { contacts: number } | null = null;
+    let syncReason: CalendarErrorKind | null = null;
     if (data.enabled && calendarAccess) {
       try {
         const r = await syncCalendarContacts(data.accountId, context.userId);
         synced = { contacts: r.contacts };
         invalidateAccountContext(data.accountId);
       } catch (e) {
+        syncReason = e instanceof CalendarApiError ? e.kind : "unknown";
         logError("calendar.initial_sync_failed", { account_id: data.accountId, user_id: context.userId }, e);
       }
     }
-    return { enabled: data.enabled, calendarAccess, synced };
+    return { enabled: data.enabled, calendarAccess, synced, syncReason };
   });
 
 /** On-demand resync of calendar attendees for an account. */
@@ -78,17 +81,17 @@ export const syncCalendarNow = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { calendarAccess } = await assertOwnsAccount(data.accountId, context.userId);
     if (!calendarAccess) {
-      return { ok: false as const, reason: "no_calendar_access" as const };
+      return { ok: false as const, reason: "reconnect" as CalendarErrorKind };
     }
     try {
       const r = await syncCalendarContacts(data.accountId, context.userId);
       invalidateAccountContext(data.accountId);
       return { ok: true as const, contacts: r.contacts, truncated: r.truncated };
     } catch (e) {
-      if (e instanceof CalendarApiError && (e.status === 401 || e.status === 403)) {
-        return { ok: false as const, reason: "no_calendar_access" as const };
+      if (e instanceof CalendarApiError) {
+        return { ok: false as const, reason: e.kind };
       }
       logError("calendar.sync_now_failed", { account_id: data.accountId, user_id: context.userId }, e);
-      throw new Error("Couldn't sync your calendar. Please try again.");
+      return { ok: false as const, reason: "unknown" as CalendarErrorKind };
     }
   });
