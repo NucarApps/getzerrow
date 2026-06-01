@@ -31,6 +31,7 @@ function folder(over: Partial<Folder> = {}): Folder {
     min_ai_confidence: over.min_ai_confidence ?? 0,
     snooze_hours: over.snooze_hours ?? 0,
     overrides_inbox_override: over.overrides_inbox_override ?? false,
+    is_cold_email: over.is_cold_email ?? false,
   };
 }
 
@@ -311,11 +312,11 @@ describe("classifyParsedEmail — filters", () => {
 });
 
 describe("classifyParsedEmail — calendar cold-email guard", () => {
-  it("pins a known calendar contact to the inbox, beating folder filters", async () => {
-    const f = folder({ id: "f1", name: "Cold" });
-    const filters: Filter[] = [filter("f1", "from", "contains", "met@partner.com")];
+  it("keeps a known calendar contact OUT of a cold-email folder", async () => {
+    const cold = folder({ id: "f-cold", name: "Cold Email", is_cold_email: true });
+    const filters: Filter[] = [filter("f-cold", "from", "contains", "met@partner.com")];
     const c = ctx({
-      folders: [f],
+      folders: [cold],
       filters,
       calendarGuardEnabled: true,
       calendarContacts: new Set(["met@partner.com"]),
@@ -328,11 +329,34 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
     );
     expect(r.folder_id).toBeNull();
     expect(r.classified_by).toBe("calendar_contact");
-    expect(r.classification_reason).toContain("Google Calendar");
+    expect(r.classification_reason).toContain("Cold Email");
   });
 
-  it("matches calendar contacts case-insensitively", async () => {
+  it("still files a known calendar contact into a NON-cold folder (e.g. domain rule)", async () => {
+    const factory = folder({ id: "f-factory", name: "Factory" });
+    const filters: Filter[] = [filter("f-factory", "domain", "contains", "partner.com")];
     const c = ctx({
+      folders: [factory],
+      filters,
+      calendarGuardEnabled: true,
+      calendarContacts: new Set(["met@partner.com"]),
+    });
+    const r = await classifyParsedEmail(
+      email({ from_addr: "met@partner.com" }),
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
+    );
+    expect(r.folder_id).toBe("f-factory");
+    expect(r.classified_by).toBe("domain_rule");
+  });
+
+  it("matches cold-email folder case-insensitively on the sender", async () => {
+    const cold = folder({ id: "f-cold", name: "Cold Email", is_cold_email: true });
+    const filters: Filter[] = [filter("f-cold", "from", "contains", "met@partner.com")];
+    const c = ctx({
+      folders: [cold],
+      filters,
       calendarGuardEnabled: true,
       calendarContacts: new Set(["met@partner.com"]),
     });
@@ -345,8 +369,12 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
     expect(r.classified_by).toBe("calendar_contact");
   });
 
-  it("does not fire when the guard is disabled even if the contact is present", async () => {
+  it("does not fire when the guard is disabled even if the contact would hit cold email", async () => {
+    const cold = folder({ id: "f-cold", name: "Cold Email", is_cold_email: true });
+    const filters: Filter[] = [filter("f-cold", "from", "contains", "met@partner.com")];
     const c = ctx({
+      folders: [cold],
+      filters,
       calendarGuardEnabled: false,
       calendarContacts: new Set(["met@partner.com"]),
     });
@@ -357,10 +385,15 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
       { ...opts, context: c },
     );
     expect(r.classified_by).not.toBe("calendar_contact");
+    expect(r.folder_id).toBe("f-cold");
   });
 
   it("does not fire for senders not in the calendar contact set", async () => {
+    const cold = folder({ id: "f-cold", name: "Cold Email", is_cold_email: true });
+    const filters: Filter[] = [filter("f-cold", "from", "contains", "stranger@cold.com")];
     const c = ctx({
+      folders: [cold],
+      filters,
       calendarGuardEnabled: true,
       calendarContacts: new Set(["met@partner.com"]),
     });
@@ -371,8 +404,10 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
       { ...opts, context: c },
     );
     expect(r.classified_by).not.toBe("calendar_contact");
+    expect(r.folder_id).toBe("f-cold");
   });
 });
+
 
 describe("classifyParsedEmail — skipAi behavior", () => {
   it("returns null folder with classified_by='none' when no match and skipAi=true", async () => {

@@ -31,6 +31,9 @@ export type Folder = {
   min_ai_confidence: number;
   snooze_hours: number;
   overrides_inbox_override: boolean;
+  /** When true, the calendar cold-email guard keeps known contacts out of
+   * this folder (pins them to the inbox instead of filing them here). */
+  is_cold_email: boolean;
 };
 
 export type OverrideException = {

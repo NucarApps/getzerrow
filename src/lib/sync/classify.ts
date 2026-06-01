@@ -77,21 +77,18 @@ export async function classifyParsedEmail(
   const fromDomain = fromAddr.split("@")[1] || "";
 
   // Calendar cold-email guard: if the account has it enabled and the sender
-  // is someone the user has met in Google Calendar, pin the message to the
-  // inbox with no folder — same allowlist semantics as an inbox override.
-  // This beats folder filters and AI so a known contact is never treated as
-  // cold. Runs first so it short-circuits the rest of the decision tree.
-  if (context.calendarGuardEnabled && fromAddr && context.calendarContacts.has(fromAddr)) {
-    return {
-      folder_id: null,
-      classified_by: "calendar_contact",
-      ai_confidence: 0,
-      ai_summary: "",
-      classification_reason: "Met in Google Calendar — kept in inbox",
-      matched_filter_ids: [],
-      matched_folder_ids: [],
-    };
-  }
+  // is someone the user has met in Google Calendar, they are never treated as
+  // cold. The guard is NARROW — it only keeps known contacts OUT of folders
+  // flagged `is_cold_email`. Every other rule (gmail label, inbox override,
+  // domain/filter rules, other AI folders) still applies normally, so a known
+  // contact whose domain matches e.g. a Factory rule is still filed there.
+  const isGuardedContact =
+    context.calendarGuardEnabled && !!fromAddr && context.calendarContacts.has(fromAddr);
+  const coldEmailFolderIds = new Set(
+    folderList.filter((f) => f.is_cold_email).map((f) => f.id),
+  );
+  const isColdEmailFolder = (fid: string | null): boolean =>
+    !!fid && coldEmailFolderIds.has(fid);
 
   const overrideHit = overrides.find((o) => {
     const val = (o.value || "").toLowerCase();
@@ -185,9 +182,13 @@ export async function classifyParsedEmail(
   }
 
   if (!folder_id && !aiSkipped && !opts.skipAi && folderList.length > 0) {
-    // Exclude folders flagged skip_ai from the AI candidate set.
+    // Exclude folders flagged skip_ai from the AI candidate set. For a guarded
+    // calendar contact, also drop is_cold_email folders so the AI can never
+    // file a known contact as cold — it picks a real alternative or nothing.
     const skipAiIds = new Set(folderList.filter((f) => f.skip_ai).map((f) => f.id));
-    const aiFolders = context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
+    const aiFolders = context.enrichedFolders.filter(
+      (f) => !skipAiIds.has(f.id) && !(isGuardedContact && coldEmailFolderIds.has(f.id)),
+    );
     if (aiFolders.length > 0) {
       try {
         const r = await classifyEmail(parsed, aiFolders);
@@ -220,6 +221,21 @@ export async function classifyParsedEmail(
         classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
       }
     }
+  }
+
+  // Calendar guard, final pass: a known contact should never be filed as cold
+  // email. If any rule (filter, label, or AI) routed them into a cold-email
+  // folder, clear it and keep the message in the inbox instead.
+  if (isGuardedContact && isColdEmailFolder(folder_id)) {
+    return {
+      folder_id: null,
+      classified_by: "calendar_contact",
+      ai_confidence: 0,
+      ai_summary: summary,
+      classification_reason: "Met in Google Calendar — kept out of Cold Email",
+      matched_filter_ids: [],
+      matched_folder_ids: [],
+    };
   }
 
   return {

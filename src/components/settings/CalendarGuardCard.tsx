@@ -111,8 +111,8 @@ export function CalendarGuardCard({ accountId, accountEmail }: Props) {
               <p className="mt-0.5 text-sm font-medium text-foreground">{accountEmail}</p>
             )}
             <p className="mt-1 text-sm text-muted-foreground">
-              Anyone you've had a meeting with in Google Calendar (last 12 months) is kept in your
-              inbox and never auto-filed as cold email.
+              Anyone you've had a meeting with in Google Calendar (last 12 months) is never filed
+              into your Cold Email folder. Your other folder rules still apply as usual.
             </p>
           </div>
         </div>
