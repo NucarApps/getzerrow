@@ -187,6 +187,10 @@ function SettingsPage() {
               </div>
             </Card>
 
+            {accounts.map((a) => (
+              <CalendarGuardCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
+            ))}
+
             <DangerZone />
           </TabsContent>
 
