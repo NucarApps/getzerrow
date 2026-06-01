@@ -25,6 +25,7 @@ import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain, 
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import { listCompanyAliases } from "@/lib/company-aliases.functions";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
+import { listMeetingPeople } from "@/lib/calendar.functions";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
