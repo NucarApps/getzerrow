@@ -279,6 +279,21 @@ export function FolderEditor({
     finally { setSyncingLabel(false); }
   }
 
+  async function generateRule() {
+    if (!purpose.trim()) { toast.error("Describe what this folder is for first."); return; }
+    setGeneratingRule(true);
+    try {
+      const r = await generateRuleFn({ data: { purpose: purpose.trim(), folder_name: local.name } });
+      setLocal((prev) => ({ ...prev, ai_rule: r.rule }));
+      toast.success("AI rule generated. Review it, then save.");
+    } catch (e: any) {
+      const status = e?.status ?? e?.cause?.status;
+      if (status === 429) toast.error("Rate limit reached. Try again in a moment.");
+      else if (status === 402) toast.error("Out of AI credits. Add credits to keep generating.");
+      else toast.error(e?.message ?? "Failed to generate rule");
+    } finally { setGeneratingRule(false); }
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
