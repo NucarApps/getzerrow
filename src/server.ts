@@ -120,9 +120,29 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
+// On Cloudflare Workers, environment bindings (vars + secrets) are injected
+// per-request as the `env` argument to `fetch`, NOT automatically onto
+// `process.env`. The generated Supabase integration reads its config from
+// `process.env.*` during SSR (with `import.meta.env.VITE_*` as the build-time
+// path). When the published build can't inline the VITE_ values, SSR falls
+// back to `process.env`, which is empty unless we bridge the bindings here.
+// This copies any string-valued bindings into `process.env` once, on the
+// first request, without logging or hardcoding secret values.
+function bridgeEnvToProcess(env: unknown): void {
+  if (!env || typeof env !== "object") return;
+  const target = (globalThis as { process?: { env?: Record<string, string> } }).process?.env;
+  if (!target) return;
+  for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
+    if (typeof value === "string" && target[key] === undefined) {
+      target[key] = value;
+    }
+  }
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      bridgeEnvToProcess(env);
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return withSecurityHeaders(await normalizeCatastrophicSsrResponse(response));
