@@ -33,8 +33,17 @@ export default defineConfig({
       // Build-time fallbacks. Vite's managed env injection still takes priority
       // wherever the managed values are present; these literals only fill gaps
       // so the published runtime never ends up with an empty Supabase config.
+      //
+      // We define BOTH the non-prefixed server names (read by the generated
+      // server-side clients via `process.env.*`) AND the public `VITE_`-prefixed
+      // names (read by the generated browser client via `import.meta.env.VITE_*`).
+      // The published browser bundle has no `process.env`, so the `import.meta.env`
+      // fallbacks are what keep the client from throwing "Missing Supabase
+      // environment variable(s)" when the managed injection doesn't reach a chunk.
       "process.env.SUPABASE_URL": JSON.stringify(supabaseUrl),
       "process.env.SUPABASE_PUBLISHABLE_KEY": JSON.stringify(supabasePublishableKey),
+      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
+      "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(supabasePublishableKey),
     },
   },
 });
