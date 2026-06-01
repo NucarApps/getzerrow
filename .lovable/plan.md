@@ -1,37 +1,52 @@
-## Goal
+# Fix: Calendar guard should only block the Cold Email folder
 
-In the folder editor, let the user describe a folder's purpose in plain language (e.g. "This is an invitation folder for Google Meet, Zoom, and similar invitations") and have AI generate a concise AI rule, which fills the existing **AI rule** textarea.
+## Problem
 
-## UX
+Emails from senders you've met in Google Calendar (e.g. `james.decrispino@cadillac.com`) stopped filing into **Factory** and now sit in the inbox as "unclassified".
 
-In `src/components/folders/FolderEditor.tsx`, just above the existing AI rule textarea (lines 315–318):
+Root cause: the classifier runs the calendar guard **first** and stops there for any known contact — pinning them to the inbox and skipping all your folder rules. Before this sender was added to your calendar contacts (6/1), his mail correctly matched the `cadillac.com` → Factory domain rule.
 
-- Add a small "Generate from purpose" section: a one-line input/textarea where the user types the folder's purpose, plus a **Generate** button with a sparkle icon.
-- On click, call a new server function with the purpose text (and the folder name for extra context). While running, show a spinner / "Generating…" state.
-- On success, populate `local.ai_rule` with the returned rule (the user still reviews and saves via the existing Save flow). Show a success toast.
-- Surface AI gateway errors as toasts, including the 429 (rate limit) and 402 (out of credits) cases.
-- Keep the existing manual textarea fully editable — generation just pre-fills it.
+Your intent: the guard should only prevent a known contact from being filed as **cold email**. Every other rule (Factory domain rule, other filters, AI folders) should work normally.
 
-## Server side
+## Approach
 
-- Add `generateAiRuleFromPurpose` helper in `src/lib/ai.server.ts` (server-only), using the existing Lovable AI Gateway provider + `generateText` pattern already in that file (default model `google/gemini-2.5-flash`). Prompt: turn a short description of a folder's purpose into a concise, classifier-friendly AI rule (1–2 sentences describing the kind of email that belongs), returning plain text. Trim/cap output length.
-- Add a `generateFolderAiRule` server function in `src/lib/gmail.functions.ts` (mirroring the existing `createServerFn` + `requireSupabaseAuth` pattern used by the other folder functions), validating input (`purpose`, optional `folder_name`) with zod, and calling the helper.
-
-## Technical notes
+Identify which folder is the "Cold Email" folder explicitly (a folder flag), then change the guard from "pin everything to inbox" to "only block the Cold Email folder".
 
 ```text
-FolderEditor.tsx
-  └─ new "Describe purpose" input + Generate button (above AI rule textarea)
-        → useServerFn(generateFolderAiRule)({ data: { purpose, folder_name } })
-              → ai.server.ts: generateAiRuleFromPurpose() via Lovable AI Gateway
-        → setLocal({ ...local, ai_rule: result })
+Before:  known contact ──► INBOX (skips all rules)
+
+After:   known contact ──► run all rules normally
+                           │
+                           ├─ matches Factory domain rule ──► Factory ✓
+                           ├─ AI/filter would pick Cold Email ──► blocked, kept in inbox
+                           └─ nothing matches ──► inbox
 ```
 
-- No DB schema changes; the generated text only fills the existing `ai_rule` field and is persisted through the current Save button.
-- Never call AI from the client — generation goes through the server function only.
+## Changes
 
-## Verification
+### 1. Database
+Add an `is_cold_email` flag to folders (default off) and turn it on automatically for any existing folder named "Cold Email", so the fix works immediately for your current setup.
 
-- Type a purpose, click Generate, confirm the AI rule textarea fills with a sensible rule.
-- Confirm the textarea remains manually editable and Save persists it.
-- Confirm rate-limit / no-credit errors show a toast instead of failing silently.
+### 2. Classifier (`src/lib/sync/classify.ts`)
+- Remove the early guard short-circuit.
+- Compute `isGuardedContact = guard enabled AND sender is a known calendar contact`.
+- When the AI candidate set is built, drop `is_cold_email` folders for guarded contacts so the AI can't file them there.
+- After a folder is resolved (filter / label / AI), if the chosen folder is `is_cold_email` and the sender is a guarded contact, clear the assignment and keep the email in the inbox (`classified_by = "calendar_contact"`, reason "Met in Google Calendar — kept out of Cold Email").
+- All other paths (Factory domain rule, gmail-label match, inbox overrides, other AI folders) are untouched.
+
+### 3. Folder editor (`src/components/folders/FolderEditor.tsx`)
+Add a small toggle "Cold email folder — keep calendar contacts out" so you can designate which folder the guard protects against (pre-set for the existing Cold Email folder).
+
+### 4. Settings copy (`src/components/settings/CalendarGuardCard.tsx`)
+Tweak the description to reflect the narrower behavior: known contacts are never filed as cold email, but other folder rules still apply.
+
+### 5. Reclassify stuck emails
+Re-run classification on the recent emails currently pinned as `calendar_contact` so they flow into their correct folders (e.g. the cadillac.com messages move into Factory).
+
+### 6. Tests (`src/lib/sync-classify.test.ts`)
+- Update the existing guard tests (which assert the guard beats folder filters) to the new behavior.
+- Add: a guarded contact whose domain matches Factory files into Factory; a guarded contact that would land in Cold Email is kept in the inbox instead.
+
+## Technical notes
+- `account-context.ts` already loads folders with `select("*")`, so the new column flows through automatically; the `Folder` type in `src/lib/sync/types.ts` gains `is_cold_email: boolean`.
+- The account-context cache (TTL) means the new flag takes effect on the next cache refresh; reclassification in step 5 uses fresh context.
