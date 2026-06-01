@@ -101,6 +101,45 @@ export function extractAttendeeEmails(event: CalendarEvent, selfEmail: string): 
   return [...out];
 }
 
+/** A person seen on a calendar event, with the best name + meeting metadata we have. */
+export type CalendarPerson = {
+  email: string;
+  name: string | null;
+  meetingAt: string | null;
+  eventTitle: string | null;
+};
+
+/**
+ * Pure parser: extract distinct attendees/organizers from one event, keeping
+ * each person's display name (when present), the event start time, and the
+ * event title. Excludes the account owner and resource/room calendars.
+ * Lowercased emails. Kept pure so it stays unit-testable.
+ */
+export function extractAttendeePeople(event: CalendarEvent, selfEmail: string): CalendarPerson[] {
+  const self = selfEmail.toLowerCase();
+  const meetingAt = event.start?.dateTime ?? event.start?.date ?? null;
+  const eventTitle = event.summary?.trim() || null;
+  const out = new Map<string, CalendarPerson>();
+  const consider = (raw: string | undefined, isSelf: boolean | undefined, displayName: string | undefined) => {
+    if (!raw || isSelf) return;
+    const email = raw.toLowerCase().trim();
+    if (email === self) return;
+    if (email.endsWith(".calendar.google.com") || email.includes("resource.calendar")) return;
+    if (!EMAIL_RE.test(email)) return;
+    const name = displayName?.trim() || null;
+    const existing = out.get(email);
+    if (!existing) {
+      out.set(email, { email, name, meetingAt, eventTitle });
+    } else if (name && !existing.name) {
+      existing.name = name;
+    }
+  };
+  for (const a of event.attendees ?? []) consider(a.email, a.self, a.displayName);
+  consider(event.organizer?.email, event.organizer?.self, event.organizer?.displayName);
+  consider(event.creator?.email, event.creator?.self, event.creator?.displayName);
+  return [...out.values()];
+}
+
 async function calendarFetch<T>(accountId: string, path: string): Promise<T> {
   const token = await getAccessToken(accountId);
   let res: Response;
