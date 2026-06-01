@@ -33,16 +33,34 @@ describe("rowBelongsInList", () => {
 
   it("['emails', accountId, 'all'] accepts only unarchived rows whose raw_labels include INBOX", () => {
     expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), ["emails", ACC, "all"])).toBe(true);
-    expect(rowBelongsInList(row({ raw_labels: ["INBOX", "Label_123"], folder_id: "f-1" }), ["emails", ACC, "all"])).toBe(true);
-    expect(rowBelongsInList(row({ raw_labels: ["INBOX"], is_archived: true }), ["emails", ACC, "all"])).toBe(false);
-    expect(rowBelongsInList(row({ raw_labels: ["Label_123"] }), ["emails", ACC, "all"])).toBe(false);
+    expect(
+      rowBelongsInList(row({ raw_labels: ["INBOX", "Label_123"], folder_id: "f-1" }), [
+        "emails",
+        ACC,
+        "all",
+      ]),
+    ).toBe(true);
+    expect(
+      rowBelongsInList(row({ raw_labels: ["INBOX"], is_archived: true }), ["emails", ACC, "all"]),
+    ).toBe(false);
+    expect(rowBelongsInList(row({ raw_labels: ["Label_123"] }), ["emails", ACC, "all"])).toBe(
+      false,
+    );
     expect(rowBelongsInList(row({ raw_labels: [] }), ["emails", ACC, "all"])).toBe(false);
     expect(rowBelongsInList(row({ raw_labels: null }), ["emails", ACC, "all"])).toBe(false);
   });
 
   it("['emails', accountId, 'all_mail'] accepts everything for that account", () => {
-    expect(rowBelongsInList(row({ raw_labels: [], is_archived: true, folder_id: "f-1" }), ["emails", ACC, "all_mail"])).toBe(true);
-    expect(rowBelongsInList(row({ gmail_account_id: "other" }), ["emails", ACC, "all_mail"])).toBe(false);
+    expect(
+      rowBelongsInList(row({ raw_labels: [], is_archived: true, folder_id: "f-1" }), [
+        "emails",
+        ACC,
+        "all_mail",
+      ]),
+    ).toBe(true);
+    expect(rowBelongsInList(row({ gmail_account_id: "other" }), ["emails", ACC, "all_mail"])).toBe(
+      false,
+    );
   });
 
   it("['emails', accountId, 'archived'] accepts ONLY archived rows", () => {
@@ -51,9 +69,27 @@ describe("rowBelongsInList", () => {
   });
 
   it("['emails', accountId, 'no_rules'] requires folder_id null and no user labels", () => {
-    expect(rowBelongsInList(row({ folder_id: null, raw_labels: ["INBOX"] }), ["emails", ACC, "no_rules"])).toBe(true);
-    expect(rowBelongsInList(row({ folder_id: "f-1", raw_labels: ["INBOX"] }), ["emails", ACC, "no_rules"])).toBe(false);
-    expect(rowBelongsInList(row({ folder_id: null, raw_labels: ["INBOX", "Label_5"] }), ["emails", ACC, "no_rules"])).toBe(false);
+    expect(
+      rowBelongsInList(row({ folder_id: null, raw_labels: ["INBOX"] }), [
+        "emails",
+        ACC,
+        "no_rules",
+      ]),
+    ).toBe(true);
+    expect(
+      rowBelongsInList(row({ folder_id: "f-1", raw_labels: ["INBOX"] }), [
+        "emails",
+        ACC,
+        "no_rules",
+      ]),
+    ).toBe(false);
+    expect(
+      rowBelongsInList(row({ folder_id: null, raw_labels: ["INBOX", "Label_5"] }), [
+        "emails",
+        ACC,
+        "no_rules",
+      ]),
+    ).toBe(false);
   });
 
   it("['emails', accountId, <folder-id>] accepts ONLY rows whose folder_id matches", () => {
@@ -73,8 +109,12 @@ describe("rowBelongsInList", () => {
   });
 
   it("legacy ['emails', '<scope>'] keys still work when accountId not present in row", () => {
-    expect(rowBelongsInList(row({ gmail_account_id: null, raw_labels: ["INBOX"] }), ["emails", "all"])).toBe(true);
-    expect(rowBelongsInList(row({ gmail_account_id: null, is_archived: true }), ["emails", "archived"])).toBe(true);
+    expect(
+      rowBelongsInList(row({ gmail_account_id: null, raw_labels: ["INBOX"] }), ["emails", "all"]),
+    ).toBe(true);
+    expect(
+      rowBelongsInList(row({ gmail_account_id: null, is_archived: true }), ["emails", "archived"]),
+    ).toBe(true);
   });
 
   it("rejects unknown non-string tags at [1]", () => {

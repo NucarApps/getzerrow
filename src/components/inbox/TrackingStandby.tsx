@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import {
-  getInvaderStats,
-  submitInvaderScore,
-  type InvaderStats,
-} from "@/lib/invader.functions";
+import { getInvaderStats, submitInvaderScore, type InvaderStats } from "@/lib/invader.functions";
 import { useInvaderGame } from "@/lib/invader/useInvaderGame";
 import { DIFFICULTY } from "@/lib/invader/engine";
 import { GameField } from "@/components/inbox/invader/GameField";
@@ -111,8 +107,6 @@ export function TrackingStandby() {
     }
   };
 
-
-
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#02030a]">
       <style>{`
@@ -127,7 +121,10 @@ export function TrackingStandby() {
       `}</style>
 
       {/* Tracking HUD frame */}
-      <div className="launchpad__viewport is-tracking" style={{ position: "absolute", inset: 0, minHeight: 0 }}>
+      <div
+        className="launchpad__viewport is-tracking"
+        style={{ position: "absolute", inset: 0, minHeight: 0 }}
+      >
         <div className="tracking" aria-hidden="true" style={{ opacity: 1 }}>
           <div className="tracking__sky star-layer">
             <i style={{ left: "8%", top: "18%" }}></i>
@@ -146,18 +143,45 @@ export function TrackingStandby() {
             TRACKING · DOWNRANGE
           </div>
           <div className="tracking__hud tracking__hud--br">
-            <div className="tele-row"><span className="k">Downrange</span><span className="v orange">{t.downrange.toLocaleString("en-US")} km</span></div>
-            <div className="tele-row"><span className="k">Apogee</span><span className="v">{t.apogee.toFixed(1)} km</span></div>
+            <div className="tele-row">
+              <span className="k">Downrange</span>
+              <span className="v orange">{t.downrange.toLocaleString("en-US")} km</span>
+            </div>
+            <div className="tele-row">
+              <span className="k">Apogee</span>
+              <span className="v">{t.apogee.toFixed(1)} km</span>
+            </div>
           </div>
           <div className="tracking__hud tracking__hud--tr">
             <div className="attitude">
               <svg viewBox="0 0 40 40" className="attitude__ring">
-                <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,138,61,.35)" strokeWidth="1" />
-                <line x1="3" y1="20" x2="37" y2="20" stroke="rgba(255,138,61,.25)" strokeWidth="1" strokeDasharray="2 2" />
+                <circle
+                  cx="20"
+                  cy="20"
+                  r="17"
+                  fill="none"
+                  stroke="rgba(255,138,61,.35)"
+                  strokeWidth="1"
+                />
+                <line
+                  x1="3"
+                  y1="20"
+                  x2="37"
+                  y2="20"
+                  stroke="rgba(255,138,61,.25)"
+                  strokeWidth="1"
+                  strokeDasharray="2 2"
+                />
               </svg>
-              <div className="attitude__needle" style={{ transform: `translate(-50%, -100%) rotate(${90 - t.pitch}deg)` }}></div>
+              <div
+                className="attitude__needle"
+                style={{ transform: `translate(-50%, -100%) rotate(${90 - t.pitch}deg)` }}
+              ></div>
             </div>
-            <div className="tele-row"><span className="k">Pitch</span><span className="v orange">{t.pitch.toFixed(0)}°</span></div>
+            <div className="tele-row">
+              <span className="k">Pitch</span>
+              <span className="v orange">{t.pitch.toFixed(0)}°</span>
+            </div>
           </div>
         </div>
       </div>

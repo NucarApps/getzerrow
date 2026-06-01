@@ -6,7 +6,11 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { getCalendarGuardStatus, setCalendarGuard, syncCalendarNow } from "@/lib/calendar.functions";
+import {
+  getCalendarGuardStatus,
+  setCalendarGuard,
+  syncCalendarNow,
+} from "@/lib/calendar.functions";
 import { startConnectGmail } from "@/lib/gmail.functions";
 
 type Props = { accountId: string | null; accountEmail: string | null };

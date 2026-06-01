@@ -26,7 +26,11 @@ import { buildFolderProfile } from "../ai.server";
 import { listMessages, getMessageMetadata, parseMessage } from "../gmail.server";
 import type { Folder } from "./types";
 import { logError } from "../log.server";
-import { insertFolderExampleEncrypted, upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
+import {
+  insertFolderExampleEncrypted,
+  upsertEmailEncrypted,
+  updateEmailEncrypted,
+} from "./encrypted-writer";
 
 /** Promote an email to a folder + record a "manual_move" example.
  * Skips the example/promotion when the row was ALREADY in this folder
@@ -64,7 +68,12 @@ export async function recordManualMove(
     snippet: msg.snippet,
     source: "manual_move",
   });
-  if (error) logError("folder_learn.example_upsert_failed", { folder_id: folder.id, account_id: accountId, gmail_message_id: msg.gmail_message_id }, { message: error });
+  if (error)
+    logError(
+      "folder_learn.example_upsert_failed",
+      { folder_id: folder.id, account_id: accountId, gmail_message_id: msg.gmail_message_id },
+      { message: error },
+    );
 
   // Look up the email row so we can route classification_reason through
   // updateEmailEncrypted — the plaintext column is gone post-Migration B.
@@ -95,8 +104,11 @@ export async function recordManualMove(
     .eq("source", "manual_move")
     .gt("created_at", since);
   if ((count ?? 0) >= 3) {
-    try { await regenerateFolderProfile(folder.id); }
-    catch (e) { logError("folder_learn.auto_relearn_failed", { folder_id: folder.id }, e); }
+    try {
+      await regenerateFolderProfile(folder.id);
+    } catch (e) {
+      logError("folder_learn.auto_relearn_failed", { folder_id: folder.id }, e);
+    }
   }
 }
 
@@ -115,7 +127,11 @@ export async function regenerateFolderProfile(folderId: string): Promise<string 
     .eq("folder_id", folderId)
     .order("created_at", { ascending: false })
     .limit(50);
-  const profile = await buildFolderProfile(folder.name, folder.ai_rule, (examples ?? []).map((e) => ({ from_addr: e.from_addr, subject: null, snippet: null })));
+  const profile = await buildFolderProfile(
+    folder.name,
+    folder.ai_rule,
+    (examples ?? []).map((e) => ({ from_addr: e.from_addr, subject: null, snippet: null })),
+  );
   await supabaseAdmin
     .from("folders")
     .update({
@@ -181,10 +197,9 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
     .order("received_at", { ascending: false })
     .limit(MAX_MESSAGES);
 
-  const candidateIds = Array.from(new Set([
-    ...gmailIds,
-    ...(localRows ?? []).map((r) => r.gmail_message_id),
-  ]));
+  const candidateIds = Array.from(
+    new Set([...gmailIds, ...(localRows ?? []).map((r) => r.gmail_message_id)]),
+  );
   let knownSet = new Set<string>();
   if (candidateIds.length > 0) {
     const { data: known } = await supabaseAdmin
@@ -292,11 +307,19 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
               classification_reason: `Matched Gmail label "${folder.name}"`,
             });
           }
-        }
-        else logError("folder_learn.ingest_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: p.gmail_message_id }, { message: insErr });
+        } else
+          logError(
+            "folder_learn.ingest_failed",
+            { folder_id: folderId, account_id: accountId, gmail_message_id: p.gmail_message_id },
+            { message: insErr },
+          );
       }
     } catch (e) {
-      logError("folder_learn.seed_example_failed", { folder_id: folderId, account_id: accountId, gmail_message_id: id }, e);
+      logError(
+        "folder_learn.seed_example_failed",
+        { folder_id: folderId, account_id: accountId, gmail_message_id: id },
+        e,
+      );
     }
   }
 
@@ -367,9 +390,7 @@ export async function loadOlderFromLabel(
       .from("emails")
       .select("id, gmail_message_id, folder_id, received_at")
       .in("gmail_message_id", ids);
-    const known = new Map(
-      (existing ?? []).map((r) => [r.gmail_message_id, r] as const),
-    );
+    const known = new Map((existing ?? []).map((r) => [r.gmail_message_id, r] as const));
     for (const r of existing ?? []) {
       if (r.received_at && (!oldestSeen || r.received_at < oldestSeen)) {
         oldestSeen = r.received_at;
@@ -434,7 +455,11 @@ export async function loadOlderFromLabel(
           }
         }
       } catch (e) {
-        logError("folder_learn.load_older_one_failed", { folder_id: folderId, account_id: folder.gmail_account_id, gmail_message_id: id }, e);
+        logError(
+          "folder_learn.load_older_one_failed",
+          { folder_id: folderId, account_id: folder.gmail_account_id, gmail_message_id: id },
+          e,
+        );
       }
     }
     for (let i = 0; i < ids.length; i += CONCURRENCY) {

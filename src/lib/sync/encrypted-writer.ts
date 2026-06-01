@@ -38,8 +38,10 @@ export type UpsertEmailInput = {
   published_at_ms: number | null;
 };
 
-export async function upsertEmailEncrypted(input: UpsertEmailInput): Promise<{ id: string | null; error: string | null }> {
-  const { data, error } = await supabaseAdmin.rpc("upsert_email_encrypted", ({
+export async function upsertEmailEncrypted(
+  input: UpsertEmailInput,
+): Promise<{ id: string | null; error: string | null }> {
+  const { data, error } = await supabaseAdmin.rpc("upsert_email_encrypted", {
     p_user_id: input.user_id,
     p_gmail_account_id: input.gmail_account_id,
     p_gmail_message_id: input.gmail_message_id,
@@ -63,7 +65,7 @@ export async function upsertEmailEncrypted(input: UpsertEmailInput): Promise<{ i
     p_processed_at: input.processed_at,
     p_published_at_ms: input.published_at_ms,
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { id: null, error: error.message };
   return { id: (data as string | null) ?? null, error: null };
 }
@@ -86,8 +88,10 @@ export type UpdateEmailInput = {
   matched_folder_ids?: string[] | null;
 };
 
-export async function updateEmailEncrypted(input: UpdateEmailInput): Promise<{ error: string | null }> {
-  const { error } = await supabaseAdmin.rpc("update_email_encrypted", ({
+export async function updateEmailEncrypted(
+  input: UpdateEmailInput,
+): Promise<{ error: string | null }> {
+  const { error } = await supabaseAdmin.rpc("update_email_encrypted", {
     p_email_id: input.email_id,
     p_subject: input.subject ?? null,
     p_snippet: input.snippet ?? null,
@@ -103,7 +107,7 @@ export async function updateEmailEncrypted(input: UpdateEmailInput): Promise<{ e
     p_matched_filter_ids: input.matched_filter_ids ?? null,
     p_matched_folder_ids: input.matched_folder_ids ?? null,
     p_key: getKey(),
-  }) as never);
+  } as never);
   return { error: error?.message ?? null };
 }
 
@@ -112,12 +116,12 @@ export async function setReplyDraftEncrypted(input: {
   email_id: string;
   draft_text: string;
 }): Promise<{ id: string | null; error: string | null }> {
-  const { data, error } = await supabaseAdmin.rpc("set_reply_draft_encrypted", ({
+  const { data, error } = await supabaseAdmin.rpc("set_reply_draft_encrypted", {
     p_user_id: input.user_id,
     p_email_id: input.email_id,
     p_draft_text: input.draft_text,
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { id: null, error: error.message };
   return { id: (data as string | null) ?? null, error: null };
 }
@@ -130,7 +134,7 @@ export async function setContactEncryptedFields(input: {
   address_line2?: string | null;
   phone?: string | null;
 }): Promise<{ error: string | null }> {
-  const { error } = await supabaseAdmin.rpc("set_contact_encrypted_fields", ({
+  const { error } = await supabaseAdmin.rpc("set_contact_encrypted_fields", {
     p_contact_id: input.contact_id,
     p_notes: input.notes ?? null,
     p_relationship_summary: input.relationship_summary ?? null,
@@ -138,7 +142,7 @@ export async function setContactEncryptedFields(input: {
     p_address_line2: input.address_line2 ?? null,
     p_phone: input.phone ?? null,
     p_key: getKey(),
-  }) as never);
+  } as never);
   return { error: error?.message ?? null };
 }
 
@@ -152,7 +156,7 @@ export async function insertFolderExampleEncrypted(input: {
   snippet: string | null;
   source?: string | null;
 }): Promise<{ id: string | null; error: string | null }> {
-  const { data, error } = await supabaseAdmin.rpc("insert_folder_example_encrypted", ({
+  const { data, error } = await supabaseAdmin.rpc("insert_folder_example_encrypted", {
     p_user_id: input.user_id,
     p_gmail_account_id: input.gmail_account_id,
     p_folder_id: input.folder_id,
@@ -162,7 +166,7 @@ export async function insertFolderExampleEncrypted(input: {
     p_snippet: input.snippet,
     p_source: input.source ?? "seed",
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { id: null, error: error.message };
   return { id: (data as string | null) ?? null, error: null };
 }

@@ -8,7 +8,10 @@ export const Route = createFileRoute("/_authenticated/reports")({
   head: () => ({
     meta: [
       { title: "Inbox Report — Zerrow" },
-      { name: "description", content: "Stats about your inbox: top domains, busiest hours, daily volume." },
+      {
+        name: "description",
+        content: "Stats about your inbox: top domains, busiest hours, daily volume.",
+      },
     ],
   }),
   component: ReportsPage,
@@ -61,16 +64,30 @@ function Skeleton() {
 }
 
 function Report({ data }: { data: InboxReport }) {
-  const unreadPct = data.unread + data.read > 0 ? Math.round((data.unread / (data.unread + data.read)) * 100) : 0;
-  const attachPct = data.sampleSize > 0 ? Math.round((data.withAttachments / data.sampleSize) * 100) : 0;
+  const unreadPct =
+    data.unread + data.read > 0 ? Math.round((data.unread / (data.unread + data.read)) * 100) : 0;
+  const attachPct =
+    data.sampleSize > 0 ? Math.round((data.withAttachments / data.sampleSize) * 100) : 0;
 
   return (
     <div className="space-y-8">
       {/* Stat cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Stat icon={<Mail className="h-4 w-4" />} label="Last 7 days" value={data.totals.d7.toLocaleString()} />
-        <Stat icon={<TrendingUp className="h-4 w-4" />} label="Avg / day (30d)" value={data.avgPerDay30.toString()} />
-        <Stat icon={<Inbox className="h-4 w-4" />} label="Last 30 days" value={data.totals.d30.toLocaleString()} />
+        <Stat
+          icon={<Mail className="h-4 w-4" />}
+          label="Last 7 days"
+          value={data.totals.d7.toLocaleString()}
+        />
+        <Stat
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="Avg / day (30d)"
+          value={data.avgPerDay30.toString()}
+        />
+        <Stat
+          icon={<Inbox className="h-4 w-4" />}
+          label="Last 30 days"
+          value={data.totals.d30.toLocaleString()}
+        />
         <Stat
           icon={<Calendar className="h-4 w-4" />}
           label="Busiest day"
@@ -83,7 +100,12 @@ function Report({ data }: { data: InboxReport }) {
           value={data.busiestHour ? fmtHour(data.busiestHour.hour) : "—"}
           hint={data.busiestHour ? `${data.busiestHour.count} emails` : undefined}
         />
-        <Stat icon={<Paperclip className="h-4 w-4" />} label="With attachments" value={`${attachPct}%`} hint={`${data.withAttachments.toLocaleString()} emails`} />
+        <Stat
+          icon={<Paperclip className="h-4 w-4" />}
+          label="With attachments"
+          value={`${attachPct}%`}
+          hint={`${data.withAttachments.toLocaleString()} emails`}
+        />
       </div>
 
       {/* Daily volume sparkline */}
@@ -128,7 +150,9 @@ function Report({ data }: { data: InboxReport }) {
                       style={{ width: `${pct}%`, background: f.color }}
                     />
                   </div>
-                  <div className="w-14 text-right tabular-nums text-muted-foreground">{f.count.toLocaleString()}</div>
+                  <div className="w-14 text-right tabular-nums text-muted-foreground">
+                    {f.count.toLocaleString()}
+                  </div>
                 </div>
               );
             })}
@@ -145,7 +169,17 @@ function Report({ data }: { data: InboxReport }) {
   );
 }
 
-function Stat({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint?: string }) {
+function Stat({
+  icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div className="rounded-lg border border-border bg-card/40 p-4">
       <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-muted-foreground">
@@ -158,7 +192,15 @@ function Stat({ icon, label, value, hint }: { icon: React.ReactNode; label: stri
   );
 }
 
-function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+function Card({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-lg border border-border bg-card/40 p-5">
       <div className="mb-4 flex items-baseline justify-between">
@@ -170,7 +212,13 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
   );
 }
 
-function RankedList({ items, total }: { items: Array<{ label: string; count: number }>; total: number }) {
+function RankedList({
+  items,
+  total,
+}: {
+  items: Array<{ label: string; count: number }>;
+  total: number;
+}) {
   if (items.length === 0) return <p className="text-xs text-muted-foreground">No data.</p>;
   const max = items[0]?.count ?? 1;
   return (
@@ -180,12 +228,18 @@ function RankedList({ items, total }: { items: Array<{ label: string; count: num
         const share = total > 0 ? Math.round((it.count / total) * 100) : 0;
         return (
           <div key={it.label} className="flex items-center gap-3 text-sm">
-            <div className="w-48 truncate text-foreground" title={it.label}>{it.label}</div>
+            <div className="w-48 truncate text-foreground" title={it.label}>
+              {it.label}
+            </div>
             <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted/30">
-              <div className="absolute inset-y-0 left-0 rounded-full bg-primary/70" style={{ width: `${pct}%` }} />
+              <div
+                className="absolute inset-y-0 left-0 rounded-full bg-primary/70"
+                style={{ width: `${pct}%` }}
+              />
             </div>
             <div className="w-20 text-right tabular-nums text-muted-foreground">
-              {it.count.toLocaleString()} <span className="text-muted-foreground/60">· {share}%</span>
+              {it.count.toLocaleString()}{" "}
+              <span className="text-muted-foreground/60">· {share}%</span>
             </div>
           </div>
         );
@@ -195,7 +249,9 @@ function RankedList({ items, total }: { items: Array<{ label: string; count: num
 }
 
 function Sparkline({ daily }: { daily: Array<{ date: string; count: number }> }) {
-  const w = 800, h = 120, pad = 8;
+  const w = 800,
+    h = 120,
+    pad = 8;
   const max = Math.max(1, ...daily.map((d) => d.count));
   const step = (w - pad * 2) / Math.max(1, daily.length - 1);
   const pts = daily.map((d, i) => {
@@ -203,7 +259,9 @@ function Sparkline({ daily }: { daily: Array<{ date: string; count: number }> })
     const y = h - pad - (d.count / max) * (h - pad * 2);
     return [x, y] as const;
   });
-  const path = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const path = pts
+    .map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`)
+    .join(" ");
   const area = `${path} L${(pad + (daily.length - 1) * step).toFixed(1)},${h - pad} L${pad},${h - pad} Z`;
 
   return (
@@ -226,9 +284,15 @@ function HourBars({ hours }: { hours: number[] }) {
         return (
           <div key={i} className="flex flex-1 flex-col items-center gap-1">
             <div className="w-full flex-1 flex items-end">
-              <div className="w-full rounded-sm bg-primary/60" style={{ height: `${pct}%` }} title={`${fmtHour(i)} — ${c}`} />
+              <div
+                className="w-full rounded-sm bg-primary/60"
+                style={{ height: `${pct}%` }}
+                title={`${fmtHour(i)} — ${c}`}
+              />
             </div>
-            <div className="text-[9px] tabular-nums text-muted-foreground">{i % 3 === 0 ? i : ""}</div>
+            <div className="text-[9px] tabular-nums text-muted-foreground">
+              {i % 3 === 0 ? i : ""}
+            </div>
           </div>
         );
       })}

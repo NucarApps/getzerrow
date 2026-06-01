@@ -18,12 +18,19 @@ export const Route = createFileRoute("/api/public/gmail-backfill-tick")({
             const r = await tickBackfillJobs(limit);
             return Response.json({ ok: true, ...r, run_id: runId });
           } catch (e: unknown) {
-            logError("backfill_tick.failed", {
-              run_id: runId,
-              limit,
-              duration_ms: Date.now() - t0,
-            }, e);
-            return Response.json({ ok: false, error: "Backfill tick failed", run_id: runId }, { status: 500 });
+            logError(
+              "backfill_tick.failed",
+              {
+                run_id: runId,
+                limit,
+                duration_ms: Date.now() - t0,
+              },
+              e,
+            );
+            return Response.json(
+              { ok: false, error: "Backfill tick failed", run_id: runId },
+              { status: 500 },
+            );
           }
         });
       },

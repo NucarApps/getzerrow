@@ -16,7 +16,13 @@ type Props = {
 
 /** Company logo with multi-provider fallback, then monogram. */
 export function CompanyLogo({
-  domain, name, size = 32, className = "", onColor, provider, sourceDomain,
+  domain,
+  name,
+  size = 32,
+  className = "",
+  onColor,
+  provider,
+  sourceDomain,
 }: Props) {
   const fetchDomain = sourceDomain ?? domain;
   const candidates = useMemo(
@@ -28,13 +34,19 @@ export function CompanyLogo({
   const px = `${size}px`;
 
   // Reset retry index when domain changes.
-  useEffect(() => { setIdx(0); }, [fetchDomain, provider]);
+  useEffect(() => {
+    setIdx(0);
+  }, [fetchDomain, provider]);
 
   useEffect(() => {
     if (!onColor || !domain) return;
     let cancelled = false;
-    getLogoDominantColor(domain).then((c) => { if (!cancelled) onColor(c); });
-    return () => { cancelled = true; };
+    getLogoDominantColor(domain).then((c) => {
+      if (!cancelled) onColor(c);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [domain, onColor]);
 
   const exhausted = idx >= candidates.length;

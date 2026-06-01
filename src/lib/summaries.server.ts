@@ -7,13 +7,22 @@ import { insertMessage } from "./gmail.server";
  * Compute the next UTC instant whose local time (in IANA `tz`) equals hour:minute,
  * strictly AFTER `from`.
  */
-export function computeNextRun(hour: number, minute: number, tz: string, from: Date = new Date()): Date {
+export function computeNextRun(
+  hour: number,
+  minute: number,
+  tz: string,
+  from: Date = new Date(),
+): Date {
   // Walk forward minute by minute? Too slow. Use approximation then refine.
   // Strategy: try today's hour:minute in tz, if <= from then add days until > from.
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   });
 
@@ -22,8 +31,12 @@ export function computeNextRun(hour: number, minute: number, tz: string, from: D
     const parts = fmt.formatToParts(utc);
     const get = (t: string) => parseInt(parts.find((p) => p.type === t)!.value, 10);
     const asUtc = Date.UTC(
-      get("year"), get("month") - 1, get("day"),
-      get("hour") % 24, get("minute"), get("second")
+      get("year"),
+      get("month") - 1,
+      get("day"),
+      get("hour") % 24,
+      get("minute"),
+      get("second"),
     );
     return asUtc - utc.getTime();
   }
@@ -98,25 +111,36 @@ function buildRfc822(args: {
  * Run a single folder-summary schedule end-to-end. Records errors on the row,
  * always advances next_run_at. Returns ok flag for callers that want to surface it.
  */
-export async function runFolderSummary(scheduleId: string): Promise<{ ok: boolean; error?: string; emails?: number }> {
+export async function runFolderSummary(
+  scheduleId: string,
+): Promise<{ ok: boolean; error?: string; emails?: number }> {
   const { data: schedule, error: sErr } = await supabaseAdmin
     .from("folder_summary_schedules")
-    .select("id, user_id, folder_id, gmail_account_id, name, instructions, hour, minute, timezone, last_run_at")
+    .select(
+      "id, user_id, folder_id, gmail_account_id, name, instructions, hour, minute, timezone, last_run_at",
+    )
     .eq("id", scheduleId)
     .single();
   if (sErr || !schedule) {
     return { ok: false, error: sErr?.message ?? "Schedule not found" };
   }
 
-  const advance = () => computeNextRun(schedule.hour, schedule.minute, schedule.timezone).toISOString();
+  const advance = () =>
+    computeNextRun(schedule.hour, schedule.minute, schedule.timezone).toISOString();
 
   try {
     const { data: folder } = await supabaseAdmin
-      .from("folders").select("id, name, user_id, gmail_account_id").eq("id", schedule.folder_id).single();
+      .from("folders")
+      .select("id, name, user_id, gmail_account_id")
+      .eq("id", schedule.folder_id)
+      .single();
     if (!folder || folder.user_id !== schedule.user_id) throw new Error("Folder not found");
 
     const { data: account } = await supabaseAdmin
-      .from("gmail_accounts").select("id, email_address").eq("id", schedule.gmail_account_id).single();
+      .from("gmail_accounts")
+      .select("id, email_address")
+      .eq("id", schedule.gmail_account_id)
+      .single();
     if (!account) throw new Error("Gmail account not found");
 
     const windowEnd = new Date();
@@ -140,11 +164,14 @@ export async function runFolderSummary(scheduleId: string): Promise<{ ok: boolea
     const emailCount = emailRows.length;
 
     if (emailCount === 0) {
-      await supabaseAdmin.from("folder_summary_schedules").update({
-        last_run_at: windowEnd.toISOString(),
-        next_run_at: advance(),
-        last_error: null,
-      }).eq("id", schedule.id);
+      await supabaseAdmin
+        .from("folder_summary_schedules")
+        .update({
+          last_run_at: windowEnd.toISOString(),
+          next_run_at: advance(),
+          last_error: null,
+        })
+        .eq("id", schedule.id);
       return { ok: true, emails: 0 };
     }
 
@@ -164,22 +191,28 @@ export async function runFolderSummary(scheduleId: string): Promise<{ ok: boolea
 
     await insertMessage(schedule.gmail_account_id, raw, ["INBOX", "UNREAD"]);
 
-    await supabaseAdmin.from("folder_summary_schedules").update({
-      last_run_at: windowEnd.toISOString(),
-      next_run_at: advance(),
-      last_error: (summary as any)._fallback
-        ? "Sent using plain-text fallback (structured AI output failed once)."
-        : null,
-    }).eq("id", schedule.id);
+    await supabaseAdmin
+      .from("folder_summary_schedules")
+      .update({
+        last_run_at: windowEnd.toISOString(),
+        next_run_at: advance(),
+        last_error: summary._fallback
+          ? "Sent using plain-text fallback (structured AI output failed once)."
+          : null,
+      })
+      .eq("id", schedule.id);
 
     return { ok: true, emails: emailCount };
-  } catch (e: any) {
-    const msg = e?.message ?? String(e);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
     console.error(`runFolderSummary ${scheduleId} failed:`, msg);
-    await supabaseAdmin.from("folder_summary_schedules").update({
-      next_run_at: advance(),
-      last_error: msg.slice(0, 500),
-    }).eq("id", scheduleId);
+    await supabaseAdmin
+      .from("folder_summary_schedules")
+      .update({
+        next_run_at: advance(),
+        last_error: msg.slice(0, 500),
+      })
+      .eq("id", scheduleId);
     return { ok: false, error: msg };
   }
 }
@@ -188,7 +221,10 @@ export async function runFolderSummary(scheduleId: string): Promise<{ ok: boolea
  * Enqueue a digest run as a background job. Returns the job id so the caller
  * can poll for completion instead of blocking on the model.
  */
-export async function enqueueFolderSummaryJob(args: { scheduleId: string; userId: string }): Promise<{ jobId: string }> {
+export async function enqueueFolderSummaryJob(args: {
+  scheduleId: string;
+  userId: string;
+}): Promise<{ jobId: string }> {
   const { data, error } = await supabaseAdmin
     .from("folder_summary_jobs")
     .insert({ schedule_id: args.scheduleId, user_id: args.userId, status: "pending" })
@@ -202,8 +238,12 @@ export async function enqueueFolderSummaryJob(args: { scheduleId: string; userId
  * Claim and process up to `limit` pending digest jobs. Called from the
  * background cron worker.
  */
-export async function processFolderSummaryJobs(limit: number): Promise<{ processed: number; succeeded: number; failed: number }> {
-  const { data: claimed, error } = await supabaseAdmin.rpc("claim_folder_summary_jobs", { p_limit: limit });
+export async function processFolderSummaryJobs(
+  limit: number,
+): Promise<{ processed: number; succeeded: number; failed: number }> {
+  const { data: claimed, error } = await supabaseAdmin.rpc("claim_folder_summary_jobs", {
+    p_limit: limit,
+  });
   if (error) throw new Error(error.message);
   const jobs = (claimed ?? []) as Array<{ id: string; schedule_id: string; user_id: string }>;
 
@@ -213,27 +253,33 @@ export async function processFolderSummaryJobs(limit: number): Promise<{ process
   for (const job of jobs) {
     try {
       const r = await runFolderSummary(job.schedule_id);
-      await supabaseAdmin.from("folder_summary_jobs").update({
-        status: r.ok ? "done" : "failed",
-        error: r.ok ? null : (r.error ?? "Unknown error").slice(0, 500),
-        emails_count: r.emails ?? null,
-        finished_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq("id", job.id);
-      if (r.ok) succeeded++; else failed++;
-    } catch (e: any) {
-      const msg = e?.message ?? String(e);
+      await supabaseAdmin
+        .from("folder_summary_jobs")
+        .update({
+          status: r.ok ? "done" : "failed",
+          error: r.ok ? null : (r.error ?? "Unknown error").slice(0, 500),
+          emails_count: r.emails ?? null,
+          finished_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+      if (r.ok) succeeded++;
+      else failed++;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error(`processFolderSummaryJobs ${job.id} crashed:`, msg);
-      await supabaseAdmin.from("folder_summary_jobs").update({
-        status: "failed",
-        error: msg.slice(0, 500),
-        finished_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq("id", job.id);
+      await supabaseAdmin
+        .from("folder_summary_jobs")
+        .update({
+          status: "failed",
+          error: msg.slice(0, 500),
+          finished_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
       failed++;
     }
   }
 
   return { processed: jobs.length, succeeded, failed };
 }
-

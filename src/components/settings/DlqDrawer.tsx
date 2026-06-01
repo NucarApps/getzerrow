@@ -4,7 +4,13 @@ import { Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import { listDlqJobs, retryDlqJob, deleteDlqJob } from "@/lib/account-health.functions";
 
 type Props = {
@@ -77,13 +83,25 @@ export function DlqDrawer({ accountId, email, open, onClose }: Props) {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">{r.subject || "(no subject)"}</div>
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{r.fromAddr || "—"}</div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {r.fromAddr || "—"}
+                  </div>
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => handleRetry(r.id)} disabled={busy === r.id}>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => handleRetry(r.id)}
+                    disabled={busy === r.id}
+                  >
                     <RotateCcw className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => handleDelete(r.id)} disabled={busy === r.id}>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => handleDelete(r.id)}
+                    disabled={busy === r.id}
+                  >
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
                 </div>

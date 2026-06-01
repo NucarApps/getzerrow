@@ -2,31 +2,60 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check, Building2, CalendarClock } from "lucide-react";
+import {
+  Users,
+  ScanLine,
+  Search,
+  IdCard,
+  Plus,
+  Pencil,
+  Trash2,
+  UserPlus,
+  Inbox,
+  Check,
+  Building2,
+  CalendarClock,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  listContacts, createContactManual, listFoldersForPicker,
-  listUniqueInboxSenders, bulkCreateContactsFromEmails,
+  listContacts,
+  createContactManual,
+  listFoldersForPicker,
+  listUniqueInboxSenders,
+  bulkCreateContactsFromEmails,
 } from "@/lib/contacts.functions";
 import {
-  listContactGroups, createContactGroup, updateContactGroup, deleteContactGroup,
+  listContactGroups,
+  createContactGroup,
+  updateContactGroup,
+  deleteContactGroup,
 } from "@/lib/contact-groups.functions";
 import { toast } from "sonner";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
 import { CompanyAliasesDialog } from "@/components/contacts/CompanyAliasesDialog";
-import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain, resolveCompanyDomain } from "@/lib/company-domains";
+import {
+  extractDomain,
+  isPersonalDomain,
+  prettyCompanyName,
+  contactLogoDomain,
+  resolveCompanyDomain,
+} from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import { listCompanyAliases } from "@/lib/company-aliases.functions";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 import { listMeetingPeople } from "@/lib/calendar.functions";
-
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
   head: () => ({
@@ -39,7 +68,14 @@ export const Route = createFileRoute("/_authenticated/contacts/")({
 });
 
 const GROUP_COLORS = [
-  "#6366f1", "#ef4444", "#f59e0b", "#10b981", "#06b6d4", "#8b5cf6", "#ec4899", "#64748b",
+  "#6366f1",
+  "#ef4444",
+  "#f59e0b",
+  "#10b981",
+  "#06b6d4",
+  "#8b5cf6",
+  "#ec4899",
+  "#64748b",
 ];
 
 type GroupRow = { id: string; name: string; color: string; count: number };
@@ -53,13 +89,18 @@ function ContactsPage() {
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
-  const [groupDialog, setGroupDialog] = useState<null | { mode: "create" } | { mode: "edit"; group: GroupRow }>(null);
+  const [groupDialog, setGroupDialog] = useState<
+    null | { mode: "create" } | { mode: "edit"; group: GroupRow }
+  >(null);
   const [addOpen, setAddOpen] = useState(false);
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
-  const [aliasDialog, setAliasDialog] = useState<null | { domain: string; name: string; contactIds: string[] }>(null);
-
+  const [aliasDialog, setAliasDialog] = useState<null | {
+    domain: string;
+    name: string;
+    contactIds: string[];
+  }>(null);
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
@@ -112,7 +153,6 @@ function ContactsPage() {
     });
   }, [q.data, query, filter, contactGroupMap]);
 
-
   const ungroupedCount = useMemo(() => {
     const all = q.data?.contacts ?? [];
     let n = 0;
@@ -121,7 +161,13 @@ function ContactsPage() {
   }, [q.data, contactGroupMap]);
 
   type Contact = (typeof filtered)[number];
-  type Bucket = { key: string; domain: string | null; name: string; kind: "company" | "personal" | "other"; contacts: Contact[] };
+  type Bucket = {
+    key: string;
+    domain: string | null;
+    name: string;
+    kind: "company" | "personal" | "other";
+    contacts: Contact[];
+  };
 
   const aliasMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -146,7 +192,7 @@ function ContactsPage() {
     for (const c of filtered) {
       const rawDomain = extractDomain(c.email);
       const d = resolveCompanyDomain(rawDomain, aliasMap);
-      const webDomain = contactLogoDomain((c as any).website, c.email);
+      const webDomain = contactLogoDomain(c.website, c.email);
       const resolvedWeb = resolveCompanyDomain(webDomain, aliasMap);
       let key: string;
       let bucket: Bucket | undefined;
@@ -155,10 +201,22 @@ function ContactsPage() {
         bucket = map.get(key) ?? { key, domain: null, name: "Other", kind: "other", contacts: [] };
       } else if (isPersonalDomain(d)) {
         key = PERSONAL_KEY;
-        bucket = map.get(key) ?? { key, domain: null, name: "Personal email", kind: "personal", contacts: [] };
+        bucket = map.get(key) ?? {
+          key,
+          domain: null,
+          name: "Personal email",
+          kind: "personal",
+          contacts: [],
+        };
       } else {
         key = d;
-        bucket = map.get(key) ?? { key, domain: resolvedWeb ?? d, name: prettyCompanyName(d), kind: "company", contacts: [] };
+        bucket = map.get(key) ?? {
+          key,
+          domain: resolvedWeb ?? d,
+          name: prettyCompanyName(d),
+          kind: "company",
+          contacts: [],
+        };
         if (c.company && bucket.name === prettyCompanyName(d)) bucket.name = c.company;
         if (resolvedWeb && bucket.domain === d) bucket.domain = resolvedWeb;
       }
@@ -166,7 +224,8 @@ function ContactsPage() {
       map.set(key, bucket);
     }
     const arr = Array.from(map.values());
-    const companies = arr.filter((b) => b.kind === "company")
+    const companies = arr
+      .filter((b) => b.kind === "company")
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
     const personal = arr.filter((b) => b.kind === "personal");
     const other = arr.filter((b) => b.kind === "other");
@@ -176,7 +235,8 @@ function ContactsPage() {
   function toggleBucket(key: string) {
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
@@ -196,7 +256,6 @@ function ContactsPage() {
     }
   }, [companyBuckets, groupByCompany]);
 
-
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -212,26 +271,45 @@ function ContactsPage() {
           </div>
           <Button variant="outline" size="sm" asChild className="px-2 sm:px-3">
             <Link to="/my-card" aria-label="My card" title="My card">
-              <IdCard className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">My card</span>
+              <IdCard className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">My card</span>
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild className="px-2 sm:px-3">
             <Link to="/contacts/scan" aria-label="Scan card" title="Scan card">
-              <ScanLine className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Scan card</span>
+              <ScanLine className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Scan card</span>
             </Link>
           </Button>
-          <Button size="sm" onClick={() => setAddOpen(true)} className="px-2 sm:px-3" aria-label="Add contact" title="Add contact">
-            <Plus className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Add</span>
+          <Button
+            size="sm"
+            onClick={() => setAddOpen(true)}
+            className="px-2 sm:px-3"
+            aria-label="Add contact"
+            title="Add contact"
+          >
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Add</span>
           </Button>
         </header>
 
-
         {/* Mobile groups: horizontal pill scroller */}
         <div className="mb-4 -mx-4 px-4 md:hidden max-w-full overflow-hidden">
-
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <GroupPill active={filter === "all"} color="#a3a3a3" label="All" count={q.data?.contacts.length ?? 0} onClick={() => setFilter("all")} />
-            <GroupPill active={filter === "ungrouped"} color="#71717a" label="Ungrouped" count={ungroupedCount} onClick={() => setFilter("ungrouped")} />
+            <GroupPill
+              active={filter === "all"}
+              color="#a3a3a3"
+              label="All"
+              count={q.data?.contacts.length ?? 0}
+              onClick={() => setFilter("all")}
+            />
+            <GroupPill
+              active={filter === "ungrouped"}
+              color="#71717a"
+              label="Ungrouped"
+              count={ungroupedCount}
+              onClick={() => setFilter("ungrouped")}
+            />
             {(gq.data?.groups ?? []).map((g) => (
               <GroupPill
                 key={g.id}
@@ -256,7 +334,9 @@ function ContactsPage() {
           {/* Groups rail (desktop) */}
           <aside className="hidden md:block md:sticky md:top-2 md:self-start">
             <div className="mb-2 flex items-center justify-between px-2">
-              <span className="text-[11px] uppercase tracking-widest text-muted-foreground">Groups</span>
+              <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                Groups
+              </span>
               <button
                 onClick={() => setGroupDialog({ mode: "create" })}
                 className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -327,7 +407,10 @@ function ContactsPage() {
             {q.isLoading ? (
               <div className="grid gap-2">
                 {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="h-14 animate-pulse rounded-md border border-border bg-card/40" />
+                  <div
+                    key={i}
+                    className="h-14 animate-pulse rounded-md border border-border bg-card/40"
+                  />
                 ))}
               </div>
             ) : filtered.length === 0 ? (
@@ -346,12 +429,31 @@ function ContactsPage() {
                         count={b.contacts.length}
                         collapsed={isCollapsed}
                         onToggle={() => toggleBucket(b.key)}
-                        aliasCount={b.kind === "company" && b.domain ? (aliasesByPrimary.get(b.domain)?.length ?? 0) : 0}
-                        logoProvider={b.kind === "company" && b.domain ? (logoProviderByDomain.get(b.domain) ?? null) : null}
-                        logoSourceDomain={b.kind === "company" && b.domain ? (logoSourceByDomain.get(b.domain) ?? null) : null}
-                        onEdit={b.kind === "company" && b.domain
-                          ? () => setAliasDialog({ domain: b.domain!, name: b.name, contactIds: b.contacts.map((c) => c.id) })
-                          : undefined}
+                        aliasCount={
+                          b.kind === "company" && b.domain
+                            ? (aliasesByPrimary.get(b.domain)?.length ?? 0)
+                            : 0
+                        }
+                        logoProvider={
+                          b.kind === "company" && b.domain
+                            ? (logoProviderByDomain.get(b.domain) ?? null)
+                            : null
+                        }
+                        logoSourceDomain={
+                          b.kind === "company" && b.domain
+                            ? (logoSourceByDomain.get(b.domain) ?? null)
+                            : null
+                        }
+                        onEdit={
+                          b.kind === "company" && b.domain
+                            ? () =>
+                                setAliasDialog({
+                                  domain: b.domain!,
+                                  name: b.name,
+                                  contactIds: b.contacts.map((c) => c.id),
+                                })
+                            : undefined
+                        }
                       />
                       {!isCollapsed && (
                         <ul className="divide-y divide-border border-x border-b border-border bg-card/40">
@@ -367,18 +469,24 @@ function ContactsPage() {
                                     {(c.name || c.email).slice(0, 1).toUpperCase()}
                                   </div>
                                   <div className="min-w-0 flex-1">
-                                    <div className="truncate text-sm font-medium text-foreground">{c.name || c.email}</div>
+                                    <div className="truncate text-sm font-medium text-foreground">
+                                      {c.name || c.email}
+                                    </div>
                                     {b.kind === "company" ? (
                                       <>
-                                        <div className="truncate text-xs text-muted-foreground">{c.title || c.email}</div>
-                                        {(c as any).relationship_summary && (
+                                        <div className="truncate text-xs text-muted-foreground">
+                                          {c.title || c.email}
+                                        </div>
+                                        {c.relationship_summary && (
                                           <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/80">
-                                            {(c as any).relationship_summary}
+                                            {c.relationship_summary}
                                           </div>
                                         )}
                                       </>
                                     ) : (
-                                      <div className="truncate text-xs text-muted-foreground">{c.email}</div>
+                                      <div className="truncate text-xs text-muted-foreground">
+                                        {c.email}
+                                      </div>
                                     )}
                                   </div>
                                   {gids.length > 0 && (
@@ -387,7 +495,12 @@ function ContactsPage() {
                                         const g = groupsById.get(gid);
                                         if (!g) return null;
                                         return (
-                                          <span key={gid} className="h-2 w-2 rounded-full" style={{ background: g.color }} title={g.name} />
+                                          <span
+                                            key={gid}
+                                            className="h-2 w-2 rounded-full"
+                                            style={{ background: g.color }}
+                                            title={g.name}
+                                          />
                                         );
                                       })}
                                     </div>
@@ -406,10 +519,14 @@ function ContactsPage() {
               <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
                 {filtered.map((c) => {
                   const gids = contactGroupMap.get(c.id) ?? [];
-                  const dom = contactLogoDomain((c as any).website, c.email);
+                  const dom = contactLogoDomain(c.website, c.email);
                   const resolvedDom = resolveCompanyDomain(dom, aliasMap);
-                  const logoProv = resolvedDom ? (logoProviderByDomain.get(resolvedDom) ?? null) : null;
-                  const logoSrc = resolvedDom ? (logoSourceByDomain.get(resolvedDom) ?? null) : null;
+                  const logoProv = resolvedDom
+                    ? (logoProviderByDomain.get(resolvedDom) ?? null)
+                    : null;
+                  const logoSrc = resolvedDom
+                    ? (logoSourceByDomain.get(resolvedDom) ?? null)
+                    : null;
                   const showLogo = !!dom;
                   return (
                     <li key={c.id}>
@@ -418,16 +535,26 @@ function ContactsPage() {
                         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
                       >
                         {showLogo ? (
-                          <CompanyLogo domain={resolvedDom ?? dom} name={c.company ?? prettyCompanyName(dom!)} size={40} className="rounded-full" provider={logoProv} sourceDomain={logoSrc} />
+                          <CompanyLogo
+                            domain={resolvedDom ?? dom}
+                            name={c.company ?? prettyCompanyName(dom!)}
+                            size={40}
+                            className="rounded-full"
+                            provider={logoProv}
+                            sourceDomain={logoSrc}
+                          />
                         ) : (
                           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
                             {(c.name || c.email).slice(0, 1).toUpperCase()}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-foreground">{c.name || c.email}</div>
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {c.name || c.email}
+                          </div>
                           <div className="truncate text-xs text-muted-foreground">
-                            {c.company ? `${c.company} · ` : ""}{c.email}
+                            {c.company ? `${c.company} · ` : ""}
+                            {c.email}
                           </div>
                         </div>
                         {gids.length > 0 && (
@@ -491,18 +618,29 @@ function ContactsPage() {
   );
 }
 
-
 function GroupChip({
-  active, color, label, count, onClick, onEdit,
+  active,
+  color,
+  label,
+  count,
+  onClick,
+  onEdit,
 }: {
-  active: boolean; color: string; label: string; count?: number;
-  onClick: () => void; onEdit?: () => void;
+  active: boolean;
+  color: string;
+  label: string;
+  count?: number;
+  onClick: () => void;
+  onEdit?: () => void;
 }) {
   return (
     <div
       className={`group flex items-center rounded-md text-sm ${active ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-accent/40"}`}
     >
-      <button onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3 text-left">
+      <button
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3 text-left"
+      >
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {/* Fixed-width, right-aligned count column so every badge shares one line. */}
@@ -520,7 +658,10 @@ function GroupChip({
       {/* Always reserve the pencil slot so count badges line up across rows. */}
       {onEdit ? (
         <button
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
           className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-background/50 hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
           aria-label={`Edit ${label}`}
         >
@@ -534,23 +675,39 @@ function GroupChip({
 }
 
 function GroupPill({
-  active, color, label, count, onClick, onEdit,
+  active,
+  color,
+  label,
+  count,
+  onClick,
+  onEdit,
 }: {
-  active: boolean; color: string; label: string; count?: number;
-  onClick: () => void; onEdit?: () => void;
+  active: boolean;
+  color: string;
+  label: string;
+  count?: number;
+  onClick: () => void;
+  onEdit?: () => void;
 }) {
   return (
-    <div className={`inline-flex shrink-0 items-center rounded-full border text-xs ${active ? "border-foreground/30 bg-accent text-accent-foreground" : "border-border bg-card/60 text-foreground"}`}>
+    <div
+      className={`inline-flex shrink-0 items-center rounded-full border text-xs ${active ? "border-foreground/30 bg-accent text-accent-foreground" : "border-border bg-card/60 text-foreground"}`}
+    >
       <button onClick={onClick} className="flex items-center gap-1.5 py-1.5 pl-2.5 pr-1.5">
         <span className="h-2 w-2 rounded-full" style={{ background: color }} />
         <span className="max-w-[140px] truncate">{label}</span>
         {typeof count === "number" && (
-          <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">{count}</span>
+          <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">
+            {count}
+          </span>
         )}
       </button>
       {onEdit && active && (
         <button
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
           className="mr-1 grid h-5 w-5 place-items-center rounded-full text-muted-foreground hover:bg-background/50 hover:text-foreground"
           aria-label={`Edit ${label}`}
         >
@@ -562,7 +719,9 @@ function GroupPill({
 }
 
 function GroupEditorDialog({
-  state, onClose, onChanged,
+  state,
+  onClose,
+  onChanged,
 }: {
   state: null | { mode: "create" } | { mode: "edit"; group: GroupRow };
   onClose: () => void;
@@ -578,8 +737,13 @@ function GroupEditorDialog({
 
   useEffect(() => {
     if (!state) return;
-    if (state.mode === "edit") { setName(state.group.name); setColor(state.group.color); }
-    else { setName(""); setColor(GROUP_COLORS[0]); }
+    if (state.mode === "edit") {
+      setName(state.group.name);
+      setColor(state.group.color);
+    } else {
+      setName("");
+      setColor(GROUP_COLORS[0]);
+    }
   }, [state]);
 
   if (!state) return null;
@@ -600,8 +764,8 @@ function GroupEditorDialog({
       }
       onChanged();
       onClose();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setSaving(false);
     }
@@ -616,15 +780,20 @@ function GroupEditorDialog({
       toast.success("Group deleted");
       onChanged();
       onClose();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit group" : "New group"}</DialogTitle>
@@ -632,7 +801,12 @@ function GroupEditorDialog({
         <div className="space-y-3">
           <div>
             <Label className="text-xs text-muted-foreground">Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Work, Personal, Investors…" autoFocus />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Work, Personal, Investors…"
+              autoFocus
+            />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Color</Label>
@@ -652,12 +826,21 @@ function GroupEditorDialog({
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
           {editing && (
-            <Button variant="ghost" className="text-destructive mr-auto" onClick={remove} disabled={saving}>
+            <Button
+              variant="ghost"
+              className="text-destructive mr-auto"
+              onClick={remove}
+              disabled={saving}
+            >
               <Trash2 className="mr-1.5 h-4 w-4" /> Delete
             </Button>
           )}
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving || !name.trim()}>{saving ? "Saving…" : "Save"}</Button>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving || !name.trim()}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -665,7 +848,9 @@ function GroupEditorDialog({
 }
 
 function AddContactsDialog({
-  open, onOpenChange, onAdded,
+  open,
+  onOpenChange,
+  onAdded,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -680,7 +865,16 @@ function AddContactsDialog({
   const [tab, setTab] = useState<"manual" | "inbox" | "meetings">("manual");
 
   // Manual form state
-  const [m, setM] = useState({ email: "", name: "", title: "", company: "", phone: "", website: "", linkedin: "", twitter: "" });
+  const [m, setM] = useState({
+    email: "",
+    name: "",
+    title: "",
+    company: "",
+    phone: "",
+    website: "",
+    linkedin: "",
+    twitter: "",
+  });
   const [saving, setSaving] = useState(false);
 
   // Inbox tab state
@@ -700,8 +894,21 @@ function AddContactsDialog({
 
   useEffect(() => {
     if (!open) {
-      setM({ email: "", name: "", title: "", company: "", phone: "", website: "", linkedin: "", twitter: "" });
-      setFolderIds([]); setSearch(""); setDebounced(""); setSelected(new Set()); setTab("manual");
+      setM({
+        email: "",
+        name: "",
+        title: "",
+        company: "",
+        phone: "",
+        website: "",
+        linkedin: "",
+        twitter: "",
+      });
+      setFolderIds([]);
+      setSearch("");
+      setDebounced("");
+      setSelected(new Set());
+      setTab("manual");
       setMeetingWhen("past");
     }
   }, [open]);
@@ -714,7 +921,13 @@ function AddContactsDialog({
 
   const sendersQ = useQuery({
     queryKey: ["inbox-senders", folderIds.join(","), debounced],
-    queryFn: () => listSenders({ data: { folderIds: folderIds.length ? folderIds : undefined, search: debounced || undefined } }),
+    queryFn: () =>
+      listSenders({
+        data: {
+          folderIds: folderIds.length ? folderIds : undefined,
+          search: debounced || undefined,
+        },
+      }),
     enabled: open && tab === "inbox",
   });
 
@@ -724,33 +937,44 @@ function AddContactsDialog({
     enabled: open && tab === "meetings",
   });
 
-
-
   async function submitManual() {
-    if (!/.+@.+\..+/.test(m.email)) { toast.error("Enter a valid email"); return; }
+    if (!/.+@.+\..+/.test(m.email)) {
+      toast.error("Enter a valid email");
+      return;
+    }
     setSaving(true);
     try {
-      await createManual({ data: {
-        email: m.email,
-        name: m.name || null, title: m.title || null, company: m.company || null,
-        phone: m.phone || null, website: m.website || null, linkedin: m.linkedin || null, twitter: m.twitter || null,
-      } });
+      await createManual({
+        data: {
+          email: m.email,
+          name: m.name || null,
+          title: m.title || null,
+          company: m.company || null,
+          phone: m.phone || null,
+          website: m.website || null,
+          linkedin: m.linkedin || null,
+          twitter: m.twitter || null,
+        },
+      });
       toast.success("Contact added");
       onAdded();
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Couldn't add contact");
-    } finally { setSaving(false); }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add contact");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function toggleFolder(id: string) {
-    setFolderIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    setFolderIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   function toggleSender(email: string) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(email)) next.delete(email); else next.add(email);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
       return next;
     });
   }
@@ -792,51 +1016,109 @@ function AddContactsDialog({
       toast.success(`Added ${r.created} ${r.created === 1 ? "contact" : "contacts"}`);
       onAdded();
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Couldn't add contacts");
-    } finally { setAdding(false); }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add contacts");
+    } finally {
+      setAdding(false);
+    }
   }
-
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Add contacts</DialogTitle>
-          <DialogDescription>Enter someone manually, or pick from your inbox senders or calendar meetings.</DialogDescription>
+          <DialogDescription>
+            Enter someone manually, or pick from your inbox senders or calendar meetings.
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs
           value={tab}
-          onValueChange={(v) => { setSelected(new Set()); setSearch(""); setDebounced(""); setTab(v as typeof tab); }}
+          onValueChange={(v) => {
+            setSelected(new Set());
+            setSearch("");
+            setDebounced("");
+            setTab(v as typeof tab);
+          }}
           className="flex-1 flex flex-col min-h-0"
         >
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="manual"><UserPlus className="mr-2 h-4 w-4" /> Manual</TabsTrigger>
-            <TabsTrigger value="inbox"><Inbox className="mr-2 h-4 w-4" /> From inbox</TabsTrigger>
-            <TabsTrigger value="meetings"><CalendarClock className="mr-2 h-4 w-4" /> From meetings</TabsTrigger>
+            <TabsTrigger value="manual">
+              <UserPlus className="mr-2 h-4 w-4" /> Manual
+            </TabsTrigger>
+            <TabsTrigger value="inbox">
+              <Inbox className="mr-2 h-4 w-4" /> From inbox
+            </TabsTrigger>
+            <TabsTrigger value="meetings">
+              <CalendarClock className="mr-2 h-4 w-4" /> From meetings
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="manual" className="space-y-3 pt-3 overflow-y-auto">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Email *"><Input type="email" value={m.email} onChange={(e) => setM({ ...m, email: e.target.value })} placeholder="person@example.com" autoFocus /></Field>
-              <Field label="Name"><Input value={m.name} onChange={(e) => setM({ ...m, name: e.target.value })} placeholder="Jane Doe" /></Field>
-              <Field label="Title"><Input value={m.title} onChange={(e) => setM({ ...m, title: e.target.value })} /></Field>
-              <Field label="Company"><Input value={m.company} onChange={(e) => setM({ ...m, company: e.target.value })} /></Field>
-              <Field label="Phone"><Input value={m.phone} onChange={(e) => setM({ ...m, phone: e.target.value })} /></Field>
-              <Field label="Website"><Input value={m.website} onChange={(e) => setM({ ...m, website: e.target.value })} /></Field>
-              <Field label="LinkedIn"><Input value={m.linkedin} onChange={(e) => setM({ ...m, linkedin: e.target.value })} /></Field>
-              <Field label="Twitter / X"><Input value={m.twitter} onChange={(e) => setM({ ...m, twitter: e.target.value })} /></Field>
+              <Field label="Email *">
+                <Input
+                  type="email"
+                  value={m.email}
+                  onChange={(e) => setM({ ...m, email: e.target.value })}
+                  placeholder="person@example.com"
+                  autoFocus
+                />
+              </Field>
+              <Field label="Name">
+                <Input
+                  value={m.name}
+                  onChange={(e) => setM({ ...m, name: e.target.value })}
+                  placeholder="Jane Doe"
+                />
+              </Field>
+              <Field label="Title">
+                <Input value={m.title} onChange={(e) => setM({ ...m, title: e.target.value })} />
+              </Field>
+              <Field label="Company">
+                <Input
+                  value={m.company}
+                  onChange={(e) => setM({ ...m, company: e.target.value })}
+                />
+              </Field>
+              <Field label="Phone">
+                <Input value={m.phone} onChange={(e) => setM({ ...m, phone: e.target.value })} />
+              </Field>
+              <Field label="Website">
+                <Input
+                  value={m.website}
+                  onChange={(e) => setM({ ...m, website: e.target.value })}
+                />
+              </Field>
+              <Field label="LinkedIn">
+                <Input
+                  value={m.linkedin}
+                  onChange={(e) => setM({ ...m, linkedin: e.target.value })}
+                />
+              </Field>
+              <Field label="Twitter / X">
+                <Input
+                  value={m.twitter}
+                  onChange={(e) => setM({ ...m, twitter: e.target.value })}
+                />
+              </Field>
             </div>
             <DialogFooter className="pt-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-              <Button onClick={submitManual} disabled={saving || !m.email}>{saving ? "Adding…" : "Add contact"}</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button onClick={submitManual} disabled={saving || !m.email}>
+                {saving ? "Adding…" : "Add contact"}
+              </Button>
             </DialogFooter>
           </TabsContent>
 
           <TabsContent value="inbox" className="flex flex-col min-h-0 pt-3 gap-3">
             <div>
-              <Label className="mb-1.5 block text-xs uppercase tracking-widest text-muted-foreground">Search in folders</Label>
+              <Label className="mb-1.5 block text-xs uppercase tracking-widest text-muted-foreground">
+                Search in folders
+              </Label>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   onClick={() => setFolderIds([])}
@@ -844,7 +1126,7 @@ function AddContactsDialog({
                 >
                   All folders
                 </button>
-                {(foldersQ.data?.folders ?? []).map((f: any) => {
+                {(foldersQ.data?.folders ?? []).map((f) => {
                   const on = folderIds.includes(f.id);
                   return (
                     <button
@@ -863,11 +1145,20 @@ function AddContactsDialog({
 
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search senders by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+              <Input
+                placeholder="Search senders by name or email…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
             </div>
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <button onClick={selectAllVisible} disabled={senders.length === 0} className="underline-offset-2 hover:underline disabled:opacity-50">
+              <button
+                onClick={selectAllVisible}
+                disabled={senders.length === 0}
+                className="underline-offset-2 hover:underline disabled:opacity-50"
+              >
                 {allVisibleSelected ? "Unselect all" : "Select all visible"}
               </button>
               <span>{selected.size} selected</span>
@@ -877,7 +1168,9 @@ function AddContactsDialog({
               {sendersQ.isLoading ? (
                 <div className="p-4 text-sm text-muted-foreground">Loading senders…</div>
               ) : senders.length === 0 ? (
-                <div className="p-4 text-sm text-muted-foreground">No new senders found in this scope.</div>
+                <div className="p-4 text-sm text-muted-foreground">
+                  No new senders found in this scope.
+                </div>
               ) : (
                 <ul className="divide-y divide-border">
                   {senders.map((s) => {
@@ -888,16 +1181,24 @@ function AddContactsDialog({
                           onClick={() => toggleSender(s.email)}
                           className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/40"
                         >
-                          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}>
+                          <span
+                            className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}
+                          >
                             {checked && <Check className="h-3.5 w-3.5" />}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium text-foreground">{s.name || s.email}</div>
+                            <div className="truncate text-sm font-medium text-foreground">
+                              {s.name || s.email}
+                            </div>
                             <div className="truncate text-xs text-muted-foreground">{s.email}</div>
                           </div>
                           <div className="text-right text-[11px] text-muted-foreground shrink-0">
-                            <div>{s.count} {s.count === 1 ? "msg" : "msgs"}</div>
-                            {s.lastReceivedAt && <div>{new Date(s.lastReceivedAt).toLocaleDateString()}</div>}
+                            <div>
+                              {s.count} {s.count === 1 ? "msg" : "msgs"}
+                            </div>
+                            {s.lastReceivedAt && (
+                              <div>{new Date(s.lastReceivedAt).toLocaleDateString()}</div>
+                            )}
                           </div>
                         </button>
                       </li>
@@ -908,9 +1209,13 @@ function AddContactsDialog({
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={adding}>Cancel</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={adding}>
+                Cancel
+              </Button>
               <Button onClick={submitBulk} disabled={adding || selected.size === 0}>
-                {adding ? "Adding…" : `Add ${selected.size || ""} ${selected.size === 1 ? "contact" : "contacts"}`}
+                {adding
+                  ? "Adding…"
+                  : `Add ${selected.size || ""} ${selected.size === 1 ? "contact" : "contacts"}`}
               </Button>
             </DialogFooter>
           </TabsContent>
@@ -920,7 +1225,10 @@ function AddContactsDialog({
               {(["past", "upcoming"] as const).map((w) => (
                 <button
                   key={w}
-                  onClick={() => { setMeetingWhen(w); setSelected(new Set()); }}
+                  onClick={() => {
+                    setMeetingWhen(w);
+                    setSelected(new Set());
+                  }}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${meetingWhen === w ? "border-foreground/40 bg-accent text-accent-foreground" : "border-border bg-card/60 text-muted-foreground hover:text-foreground"}`}
                 >
                   {w === "past" ? "Past meetings" : "Upcoming meetings"}
@@ -930,11 +1238,20 @@ function AddContactsDialog({
 
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search people by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+              <Input
+                placeholder="Search people by name or email…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
             </div>
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <button onClick={selectAllVisible} disabled={meetingPeople.length === 0} className="underline-offset-2 hover:underline disabled:opacity-50">
+              <button
+                onClick={selectAllVisible}
+                disabled={meetingPeople.length === 0}
+                className="underline-offset-2 hover:underline disabled:opacity-50"
+              >
                 {allVisibleSelected ? "Unselect all" : "Select all visible"}
               </button>
               <span>{selected.size} selected</span>
@@ -944,11 +1261,15 @@ function AddContactsDialog({
               {!meetingAccess ? (
                 <div className="p-4 text-sm text-muted-foreground">
                   Connect a Google account and enable calendar access in{" "}
-                  <Link to="/settings" className="text-foreground underline underline-offset-2">Settings</Link>{" "}
+                  <Link to="/settings" className="text-foreground underline underline-offset-2">
+                    Settings
+                  </Link>{" "}
                   to pull people from your meetings.
                 </div>
               ) : meetingsQ.isLoading ? (
-                <div className="p-4 text-sm text-muted-foreground">Loading people from your calendar…</div>
+                <div className="p-4 text-sm text-muted-foreground">
+                  Loading people from your calendar…
+                </div>
               ) : meetingPeople.length === 0 ? (
                 <div className="p-4 text-sm text-muted-foreground">
                   No new people found in your {meetingWhen} meetings.
@@ -963,11 +1284,15 @@ function AddContactsDialog({
                           onClick={() => toggleSender(p.email)}
                           className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/40"
                         >
-                          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}>
+                          <span
+                            className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}
+                          >
                             {checked && <Check className="h-3.5 w-3.5" />}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium text-foreground">{p.name || p.email}</div>
+                            <div className="truncate text-sm font-medium text-foreground">
+                              {p.name || p.email}
+                            </div>
                             <div className="truncate text-xs text-muted-foreground">
                               {p.eventTitle ? `${p.email} · ${p.eventTitle}` : p.email}
                             </div>
@@ -986,9 +1311,13 @@ function AddContactsDialog({
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={adding}>Cancel</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={adding}>
+                Cancel
+              </Button>
               <Button onClick={submitBulk} disabled={adding || selected.size === 0}>
-                {adding ? "Adding…" : `Add ${selected.size || ""} ${selected.size === 1 ? "contact" : "contacts"}`}
+                {adding
+                  ? "Adding…"
+                  : `Add ${selected.size || ""} ${selected.size === 1 ? "contact" : "contacts"}`}
               </Button>
             </DialogFooter>
           </TabsContent>

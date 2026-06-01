@@ -2,7 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const DOMAIN = z.string().min(1).max(253).regex(/^[a-z0-9.-]+$/i);
+const DOMAIN = z
+  .string()
+  .min(1)
+  .max(253)
+  .regex(/^[a-z0-9.-]+$/i);
 
 /** List all company-level group assignments for the current user. */
 export const listCompanyGroupAssignments = createServerFn({ method: "GET" })
@@ -25,11 +29,13 @@ export const listCompanyGroupAssignments = createServerFn({ method: "GET" })
 export const setCompanyGroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { primaryDomain: string; contactIds: string[]; groupIds: string[] }) =>
-    z.object({
-      primaryDomain: DOMAIN,
-      contactIds: z.array(z.string().uuid()).max(5000),
-      groupIds: z.array(z.string().uuid()).max(50),
-    }).parse(d)
+    z
+      .object({
+        primaryDomain: DOMAIN,
+        contactIds: z.array(z.string().uuid()).max(5000),
+        groupIds: z.array(z.string().uuid()).max(50),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -58,7 +64,9 @@ export const setCompanyGroups = createServerFn({ method: "POST" })
     }
     if (toInsert.length > 0) {
       const rows = toInsert.map((group_id) => ({
-        user_id: userId, primary_domain: domain, group_id,
+        user_id: userId,
+        primary_domain: domain,
+        group_id,
       }));
       const { error } = await supabase.from("company_group_assignments").insert(rows);
       if (error) throw new Error(error.message);
@@ -68,7 +76,7 @@ export const setCompanyGroups = createServerFn({ method: "POST" })
     let tagged = 0;
     if (data.contactIds.length > 0 && data.groupIds.length > 0) {
       const rows = data.contactIds.flatMap((contact_id) =>
-        data.groupIds.map((group_id) => ({ user_id: userId, group_id, contact_id }))
+        data.groupIds.map((group_id) => ({ user_id: userId, group_id, contact_id })),
       );
       const { error } = await supabase
         .from("contact_group_members")

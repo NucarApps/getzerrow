@@ -71,8 +71,9 @@ export const getInboxReport = createServerFn({ method: "GET" })
       if (batch.length < PAGE_SIZE) break;
     }
 
-
-    const folderIds = Array.from(new Set(emails.map((e) => e.folder_id).filter((x): x is string => !!x)));
+    const folderIds = Array.from(
+      new Set(emails.map((e) => e.folder_id).filter((x): x is string => !!x)),
+    );
     let folders: FolderInfo[] = [];
     if (folderIds.length) {
       const { data: fdata } = await supabase
@@ -87,8 +88,11 @@ export const getInboxReport = createServerFn({ method: "GET" })
     const d7 = now - 7 * 86400000;
     const d30 = now - 30 * 86400000;
 
-    let total7 = 0, total30 = 0;
-    let unread = 0, read = 0, attach = 0;
+    let total7 = 0,
+      total30 = 0;
+    let unread = 0,
+      read = 0,
+      attach = 0;
     const dow = new Array(7).fill(0) as number[];
     const hour = new Array(24).fill(0) as number[];
     const domains = new Map<string, number>();
@@ -115,7 +119,8 @@ export const getInboxReport = createServerFn({ method: "GET" })
         if (dailyMap.has(dkey)) dailyMap.set(dkey, (dailyMap.get(dkey) ?? 0) + 1);
       }
 
-      if (e.is_read) read++; else unread++;
+      if (e.is_read) read++;
+      else unread++;
       if (e.has_attachment) attach++;
 
       const dt = new Date(t);

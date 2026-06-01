@@ -26,7 +26,11 @@ function requireEnv(name: string): string {
 }
 
 function b64url(input: Buffer | string): string {
-  return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function b64urlDecode(s: string): Buffer {
@@ -37,7 +41,9 @@ function b64urlDecode(s: string): Buffer {
 /** Sign { user_id, exp } with HMAC using the service role key as secret. Stateless OAuth state. */
 export function signState(userId: string, ttlSeconds = 600): string {
   const secret = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const payload = b64url(JSON.stringify({ u: userId, e: Math.floor(Date.now() / 1000) + ttlSeconds }));
+  const payload = b64url(
+    JSON.stringify({ u: userId, e: Math.floor(Date.now() / 1000) + ttlSeconds }),
+  );
   const sig = b64url(createHmac("sha256", secret).update(payload).digest());
   return `${payload}.${sig}`;
 }
@@ -112,7 +118,12 @@ export async function refreshAccessToken(refreshToken: string) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Token refresh failed ${res.status}: ${text.slice(0, 500)}`);
-  return JSON.parse(text) as { access_token: string; expires_in: number; scope: string; token_type: string };
+  return JSON.parse(text) as {
+    access_token: string;
+    expires_in: number;
+    scope: string;
+    token_type: string;
+  };
 }
 
 export async function fetchUserEmail(accessToken: string): Promise<string> {
@@ -162,7 +173,10 @@ async function markNeedsReconnect(accountId: string, reason: string): Promise<vo
       .update({ needs_reconnect: true, last_oauth_error: reason.slice(0, 500) })
       .eq("id", accountId);
   } catch (e) {
-    console.error("markNeedsReconnect failed", { account_id: accountId, err: (e as Error)?.message });
+    console.error("markNeedsReconnect failed", {
+      account_id: accountId,
+      err: (e as Error)?.message,
+    });
   }
 }
 
@@ -268,7 +282,10 @@ export async function clearNeedsReconnect(accountId: string): Promise<void> {
       .update({ needs_reconnect: false, last_oauth_error: null, consecutive_silent_ticks: 0 })
       .eq("id", accountId);
   } catch (e) {
-    console.error("clearNeedsReconnect failed", { account_id: accountId, err: (e as Error)?.message });
+    console.error("clearNeedsReconnect failed", {
+      account_id: accountId,
+      err: (e as Error)?.message,
+    });
   }
 }
 
@@ -292,14 +309,16 @@ export async function revokeGoogleOAuthForAccount(accountId: string): Promise<vo
   const acc = rows[0];
   const token = acc.refresh_token || acc.access_token;
   if (!token) return;
-  const res = await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  });
+  const res = await fetch(
+    `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    },
+  );
   // Google returns 200 on success; 400 with "invalid_token" if already
   // revoked or expired. Either is acceptable for our purposes.
   if (!res.ok && res.status !== 400) {
     throw new Error(`Google revoke returned ${res.status}`);
   }
 }
-

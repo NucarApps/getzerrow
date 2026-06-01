@@ -1,0 +1,30 @@
+# Server-side SECRETS for local development (Cloudflare Workers reads `.dev.vars`).
+# Copy to `.dev.vars` and fill in. NEVER commit `.dev.vars`.
+#
+# In production these are set as Cloudflare Worker secrets
+# (`wrangler secret put <NAME>`), NOT in any committed file or in wrangler.jsonc.
+
+# Supabase admin access (server-only — bypasses RLS, treat as highly sensitive)
+SUPABASE_SERVICE_ROLE_KEY="<supabase-service-role-key>"
+
+# Symmetric key used to encrypt PII / email content at rest (pgcrypto)
+EMAIL_ENC_KEY="<random-32+ byte secret>"
+
+# Google OAuth client (restricted Gmail + Calendar scopes)
+GOOGLE_OAUTH_CLIENT_ID="<google-oauth-client-id>"
+GOOGLE_OAUTH_CLIENT_SECRET="<google-oauth-client-secret>"
+
+# Gmail push notifications via Google Cloud Pub/Sub
+GMAIL_PUBSUB_TOPIC="projects/<gcp-project>/topics/<topic>"
+GMAIL_PUBSUB_SERVICE_ACCOUNT="<service-account-email-or-json>"
+GMAIL_WEBHOOK_TOKEN="<shared-secret-validating-pubsub-push>"
+
+# Shared secret guarding scheduled (cron) endpoints
+CRON_SECRET="<random secret>"
+
+# Lovable AI gateway (email classification / rule generation)
+LOVABLE_API_KEY="<lovable-api-key>"
+
+# logo.dev (company logo lookup)
+LOGO_DEV_TOKEN="<logo-dev-token>"
+LOGO_DEV_SECRET="<logo-dev-secret>"

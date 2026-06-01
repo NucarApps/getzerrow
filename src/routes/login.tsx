@@ -32,7 +32,9 @@ function LoginPage() {
   const handledRef = useRef(false);
 
   useEffect(() => {
-    async function handleSession(session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) {
+    async function handleSession(
+      session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"],
+    ) {
       if (!session?.user || handledRef.current) return;
       handledRef.current = true;
 
@@ -43,7 +45,7 @@ function LoginPage() {
       const accessToken = session.provider_token;
       const refreshToken = session.provider_refresh_token;
       const email = session.user.email;
-      const expiresIn = (session as any).expires_in ?? 3600;
+      const expiresIn = session.expires_in ?? 3600;
 
       if (accessToken && refreshToken && email) {
         try {
@@ -55,16 +57,22 @@ function LoginPage() {
               email_address: email,
             },
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("Auto-connect Gmail failed", e);
-          toast.error(`Couldn't auto-connect Gmail: ${e?.message ?? "unknown error"}`);
+          toast.error(
+            `Couldn't auto-connect Gmail: ${e instanceof Error ? e.message : "unknown error"}`,
+          );
         }
       }
       nav({ to: "/inbox" });
     }
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => { void handleSession(session); });
-    supabase.auth.getSession().then(({ data }) => { void handleSession(data.session); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      void handleSession(session);
+    });
+    supabase.auth.getSession().then(({ data }) => {
+      void handleSession(data.session);
+    });
     return () => sub.subscription.unsubscribe();
   }, [nav, connectFn]);
 
@@ -97,12 +105,30 @@ function LoginPage() {
           <p className="mt-2 text-sm text-muted-foreground">An inbox that sorts itself.</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-6">
-          <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={signInWithGoogle}>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={loading}
+            onClick={signInWithGoogle}
+          >
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.75h3.57c2.08-1.92 3.28-4.74 3.28-8.07z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.75c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.12c-.22-.66-.35-1.36-.35-2.12s.13-1.46.35-2.12V7.04H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.96l3.66-2.84z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.04l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/>
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.75h3.57c2.08-1.92 3.28-4.74 3.28-8.07z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.75c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.12c-.22-.66-.35-1.36-.35-2.12s.13-1.46.35-2.12V7.04H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.96l3.66-2.84z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.04l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"
+              />
             </svg>
             {loading ? "Redirecting…" : "Continue with Google"}
           </Button>

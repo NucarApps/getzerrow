@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # JS dependencies. Uses the "bun" ecosystem (GA Feb 2025) so Dependabot reads
+  # and updates bun.lock — the npm ecosystem can't parse bun.lock, which would
+  # leave PRs failing CI's `bun install --frozen-lockfile`.
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      # Batch low-risk dev/tooling bumps into one PR to cut noise; security
+      # updates are always raised individually and promptly.
+      dev-dependencies:
+        dependency-type: "development"
+      production-minor-patch:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+
+  # Keep CI action versions current (supply-chain hygiene for the pipeline).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"

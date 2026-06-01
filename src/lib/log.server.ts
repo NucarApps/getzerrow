@@ -29,7 +29,11 @@ export function serializeError(err: unknown): ErrorShape {
   if (err instanceof Error) {
     const out: ErrorShape = { name: err.name, message: err.message };
     if (err.stack) {
-      out.stack = err.stack.split("\n").slice(0, STACK_MAX_LINES).join("\n").slice(0, STACK_MAX_CHARS);
+      out.stack = err.stack
+        .split("\n")
+        .slice(0, STACK_MAX_LINES)
+        .join("\n")
+        .slice(0, STACK_MAX_CHARS);
     }
     const extra = err as unknown as { status?: unknown; code?: unknown };
     if (typeof extra.status === "number") out.status = extra.status;
@@ -41,9 +45,7 @@ export function serializeError(err: unknown): ErrorShape {
   if (err && typeof err === "object") {
     const o = err as Record<string, unknown>;
     const message =
-      typeof o.message === "string"
-        ? o.message
-        : JSON.stringify(o).slice(0, MESSAGE_FALLBACK_MAX);
+      typeof o.message === "string" ? o.message : JSON.stringify(o).slice(0, MESSAGE_FALLBACK_MAX);
     const shape: ErrorShape = { message };
     if (typeof o.status === "number") shape.status = o.status;
     if (typeof o.code === "string" || typeof o.code === "number") {
@@ -75,6 +77,19 @@ export function logInfo(scope: string, fields: LogFields = {}): void {
   emit("info", scope, fields);
 }
 
+/**
+ * Audit trail for security-relevant lifecycle events that grant, revoke, or
+ * delete access to restricted Google user data (OAuth connect/disconnect,
+ * account deletion). Emitted as `scope:"audit.<action>"` with `audit:true` so
+ * the trail is easy to isolate in a log aggregator.
+ *
+ * Metadata ONLY — pass ids and counts, never email content, tokens, or other
+ * restricted data, so the audit log itself can never become a leak vector.
+ */
+export function logAudit(action: string, fields: LogFields = {}): void {
+  emit("info", `audit.${action}`, { audit: true, ...fields });
+}
+
 export function newRunId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   return c?.randomUUID?.() ?? Math.random().toString(36).slice(2, 14);
@@ -98,11 +113,7 @@ export async function withCronRun<T>(
     });
     return result;
   } catch (e) {
-    logError(
-      `cron.${name}.crash`,
-      { run_id: runId, duration_ms: Date.now() - t0 },
-      e,
-    );
+    logError(`cron.${name}.crash`, { run_id: runId, duration_ms: Date.now() - t0 }, e);
     throw e;
   }
 }

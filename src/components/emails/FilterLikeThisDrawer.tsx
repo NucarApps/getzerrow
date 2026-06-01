@@ -8,7 +8,14 @@ import {
   addInboxOverride,
   stripFolderLabelPast,
 } from "@/lib/gmail.functions";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,7 +55,7 @@ export function FilterLikeThisDrawer({
   const stripLabelFn = useServerFn(stripFolderLabelPast);
 
   const domain = useMemo(
-    () => (fromAddr?.includes("@") ? fromAddr.split("@")[1]?.toLowerCase() ?? null : null),
+    () => (fromAddr?.includes("@") ? (fromAddr.split("@")[1]?.toLowerCase() ?? null) : null),
     [fromAddr],
   );
 
@@ -67,7 +74,13 @@ export function FilterLikeThisDrawer({
     if (!open) return;
     const initialField: Field = fromAddr ? "from" : subject ? "subject" : "domain";
     setField(initialField);
-    setValue(initialField === "from" ? fromAddr ?? "" : initialField === "domain" ? domain ?? "" : subject ?? "");
+    setValue(
+      initialField === "from"
+        ? (fromAddr ?? "")
+        : initialField === "domain"
+          ? (domain ?? "")
+          : (subject ?? ""),
+    );
     setOp(initialField === "subject" ? "starts_with" : "contains");
     setFolderId(null);
     setApplyToPast(false);
@@ -79,7 +92,7 @@ export function FilterLikeThisDrawer({
   // for that field.
   function pickField(f: Field) {
     setField(f);
-    setValue(f === "from" ? fromAddr ?? "" : f === "domain" ? domain ?? "" : subject ?? "");
+    setValue(f === "from" ? (fromAddr ?? "") : f === "domain" ? (domain ?? "") : (subject ?? ""));
     setOp(f === "subject" ? "starts_with" : "contains");
   }
 
@@ -94,7 +107,9 @@ export function FilterLikeThisDrawer({
     setCountLoading(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const r = await countFn({ data: { account_id: accountId, field, op, value: value.trim() } });
+        const r = await countFn({
+          data: { account_id: accountId, field, op, value: value.trim() },
+        });
         setCount(r.count);
       } catch {
         setCount(null);
@@ -114,12 +129,13 @@ export function FilterLikeThisDrawer({
     if (field === "subject") {
       const nextField: Field = fromAddr ? "from" : domain ? "domain" : "from";
       setField(nextField);
-      setValue(nextField === "from" ? fromAddr ?? "" : domain ?? "");
+      setValue(nextField === "from" ? (fromAddr ?? "") : (domain ?? ""));
     }
     if (op !== "equals") setOp("equals");
   }, [isInboxMode, field, op, fromAddr, domain]);
 
-  const canSave = !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
+  const canSave =
+    !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
 
   async function handleSave() {
     if (!folderId || !value.trim() || !accountId) return;
@@ -138,7 +154,9 @@ export function FilterLikeThisDrawer({
           void stripLabelFn({ data: { value: trimmed, match_type: matchType } })
             .then((past) => {
               if (past.stripped_count > 0) {
-                toast.success(`Cleaned ${past.stripped_count} past email${past.stripped_count === 1 ? "" : "s"}`);
+                toast.success(
+                  `Cleaned ${past.stripped_count} past email${past.stripped_count === 1 ? "" : "s"}`,
+                );
                 qc.invalidateQueries({ queryKey: ["emails"] });
                 qc.invalidateQueries({ queryKey: ["emails-summary"] });
               }
@@ -156,9 +174,7 @@ export function FilterLikeThisDrawer({
       });
       const folderName = folders.find((f) => f.id === folderId)?.name ?? "folder";
       toast.success(
-        r.already
-          ? `Rule already routed to ${folderName}`
-          : `Future matches → ${folderName}`,
+        r.already ? `Rule already routed to ${folderName}` : `Future matches → ${folderName}`,
       );
       qc.invalidateQueries({ queryKey: ["folder-filters"] });
       qc.invalidateQueries({ queryKey: ["emails"] });
@@ -248,7 +264,10 @@ export function FilterLikeThisDrawer({
 
           {/* Value */}
           <div>
-            <Label htmlFor="filter-value" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
+            <Label
+              htmlFor="filter-value"
+              className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground"
+            >
               {field === "from" ? "Sender address" : field === "domain" ? "Domain" : "Subject text"}
             </Label>
             <Input
@@ -259,8 +278,8 @@ export function FilterLikeThisDrawer({
                 field === "from"
                   ? "name@example.com"
                   : field === "domain"
-                  ? "example.com"
-                  : "Daily digest"
+                    ? "example.com"
+                    : "Daily digest"
               }
               autoFocus
             />
@@ -274,8 +293,8 @@ export function FilterLikeThisDrawer({
                   {count === 0
                     ? "No existing emails match."
                     : count >= 500
-                    ? "About 500+ existing emails match."
-                    : `About ${count} existing email${count === 1 ? "" : "s"} match.`}
+                      ? "About 500+ existing emails match."
+                      : `About ${count} existing email${count === 1 ? "" : "s"} match.`}
                 </>
               ) : null}
             </div>
@@ -288,9 +307,24 @@ export function FilterLikeThisDrawer({
                 Match type
               </Label>
               <RadioGroup value={op} onValueChange={(v) => setOp(v as Op)} className="space-y-1.5">
-                <OpRow value="starts_with" current={op} label="Starts with" hint="Best for newsletters with a fixed prefix." />
-                <OpRow value="contains" current={op} label="Contains" hint="Matches anywhere in the subject." />
-                <OpRow value="equals" current={op} label="Exact match" hint="Only an exact subject match counts." />
+                <OpRow
+                  value="starts_with"
+                  current={op}
+                  label="Starts with"
+                  hint="Best for newsletters with a fixed prefix."
+                />
+                <OpRow
+                  value="contains"
+                  current={op}
+                  label="Contains"
+                  hint="Matches anywhere in the subject."
+                />
+                <OpRow
+                  value="equals"
+                  current={op}
+                  label="Exact match"
+                  hint="Only an exact subject match counts."
+                />
               </RadioGroup>
             </div>
           )}
@@ -310,7 +344,9 @@ export function FilterLikeThisDrawer({
               >
                 <Inbox className="h-3.5 w-3.5 shrink-0" />
                 <span className="flex-1 truncate">Inbox — always show</span>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">keep visible</span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  keep visible
+                </span>
               </button>
               {folders.length === 0 && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No folders yet.</p>
@@ -334,7 +370,9 @@ export function FilterLikeThisDrawer({
                     />
                     <span className="flex-1 truncate">{f.name}</span>
                     {isCurrent && (
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">current</span>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        current
+                      </span>
                     )}
                   </button>
                 );
@@ -352,7 +390,11 @@ export function FilterLikeThisDrawer({
               onValueChange={(v) => setApplyToPast(v === "past")}
               className="space-y-1.5"
             >
-              <OpRow value="future" current={applyToPast ? "past" : "future"} label="Future emails only" />
+              <OpRow
+                value="future"
+                current={applyToPast ? "past" : "future"}
+                label="Future emails only"
+              />
               <OpRow
                 value="past"
                 current={applyToPast ? "past" : "future"}

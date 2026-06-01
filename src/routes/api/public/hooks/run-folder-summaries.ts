@@ -23,7 +23,8 @@ export const Route = createFileRoute("/api/public/hooks/run-folder-summaries")({
           if (error) {
             logError("folder_summaries.query_failed", { run_id: runId }, error);
             return new Response(JSON.stringify({ error: error.message }), {
-              status: 500, headers: { "Content-Type": "application/json" },
+              status: 500,
+              headers: { "Content-Type": "application/json" },
             });
           }
 
@@ -34,18 +35,25 @@ export const Route = createFileRoute("/api/public/hooks/run-folder-summaries")({
               await enqueueFolderSummaryJob({ scheduleId: row.id, userId: row.user_id });
               // Advance next_run_at immediately so we don't re-enqueue the same
               // schedule on the next tick before the worker has run it.
-              await supabaseAdmin.from("folder_summary_schedules").update({
-                next_run_at: computeNextRun(row.hour, row.minute, row.timezone).toISOString(),
-              }).eq("id", row.id);
+              await supabaseAdmin
+                .from("folder_summary_schedules")
+                .update({
+                  next_run_at: computeNextRun(row.hour, row.minute, row.timezone).toISOString(),
+                })
+                .eq("id", row.id);
               enqueued++;
             } catch (e) {
-              logError("folder_summaries.enqueue_failed", { run_id: runId, schedule_id: row.id }, e);
+              logError(
+                "folder_summaries.enqueue_failed",
+                { run_id: runId, schedule_id: row.id },
+                e,
+              );
               failed++;
             }
           }
           return new Response(
             JSON.stringify({ processed: due?.length ?? 0, enqueued, failed, run_id: runId }),
-            { headers: { "Content-Type": "application/json" } }
+            { headers: { "Content-Type": "application/json" } },
           );
         });
       },

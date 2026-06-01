@@ -1,7 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { backfillRecent, backfillWindow, syncSinceHistory, learnFromLinkedLabel, reconcileLocalInbox, loadOlderFromLabel, runMessageJobs, retryMessageJob, enqueueMessageJob, startBackfillJob, cancelBackfillJob, invalidateAccountContext, invalidateAccountContextForUser } from "./sync.server";
+import {
+  backfillRecent,
+  backfillWindow,
+  syncSinceHistory,
+  learnFromLinkedLabel,
+  reconcileLocalInbox,
+  loadOlderFromLabel,
+  runMessageJobs,
+  retryMessageJob,
+  enqueueMessageJob,
+  startBackfillJob,
+  cancelBackfillJob,
+  invalidateAccountContext,
+  invalidateAccountContextForUser,
+} from "./sync.server";
 import {
   listLabels,
   createLabel,
@@ -18,17 +32,27 @@ import {
   getThread,
   parseMessage,
 } from "./gmail.server";
-import { suggestReply, suggestRuleUpdates, suggestFolderFromEmails, generateAiRuleFromPurpose } from "./ai.server";
+import {
+  suggestReply,
+  suggestRuleUpdates,
+  suggestFolderFromEmails,
+  generateAiRuleFromPurpose,
+} from "./ai.server";
 import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "./summaries.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { signState, buildAuthorizeUrl, getRedirectUri } from "./google-oauth.server";
 import { getRequestHost } from "@tanstack/react-start/server";
-import { logError } from "./log.server";
+import { logError, logAudit } from "./log.server";
 import { removeLabelsFromCurrent } from "./sync/label-merge";
 import { buildGmailQueries } from "./sync/gmail-query-builder";
 import { matchByFilters } from "./sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "./sync/types";
-import { upsertEmailEncrypted, updateEmailEncrypted, setReplyDraftEncrypted, insertFolderExampleEncrypted } from "./sync/encrypted-writer";
+import {
+  upsertEmailEncrypted,
+  updateEmailEncrypted,
+  setReplyDraftEncrypted,
+  insertFolderExampleEncrypted,
+} from "./sync/encrypted-writer";
 import { getEmailsDecrypted } from "./sync/encrypted-reader";
 
 async function getOwnedAccount(userId: string, accountId: string) {
@@ -51,7 +75,8 @@ async function getEmailAccount(userId: string, emailId: string) {
   const data = rows[0];
   if (!data) throw new Error("Email not found");
   if (data.user_id !== userId) throw new Error("Not authorized");
-  if (!data.gmail_message_id || !data.gmail_account_id) throw new Error("Email is missing Gmail identifiers");
+  if (!data.gmail_message_id || !data.gmail_account_id)
+    throw new Error("Email is missing Gmail identifiers");
   return {
     gmail_message_id: data.gmail_message_id,
     gmail_account_id: data.gmail_account_id,
@@ -108,7 +133,7 @@ export const listMyGmailAccounts = createServerFn({ method: "GET" })
 export const startConnectGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { login_hint?: string } | undefined) =>
-    z.object({ login_hint: z.string().email().optional() }).parse(d ?? {})
+    z.object({ login_hint: z.string().email().optional() }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
     const host = getRequestHost();
@@ -120,25 +145,42 @@ export const startConnectGmail = createServerFn({ method: "POST" })
 
 export const connectGmailFromSession = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { access_token: string; refresh_token: string; expires_in: number; email_address: string }) =>
-    z.object({
-      access_token: z.string().min(1),
-      refresh_token: z.string().min(1),
-      expires_in: z.number().int().positive().max(60 * 60 * 24),
-      email_address: z.string().email(),
-    }).parse(d)
+  .inputValidator(
+    (d: {
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+      email_address: string;
+    }) =>
+      z
+        .object({
+          access_token: z.string().min(1),
+          refresh_token: z.string().min(1),
+          expires_in: z
+            .number()
+            .int()
+            .positive()
+            .max(60 * 60 * 24),
+          email_address: z.string().email(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
     // Goes through upsert_gmail_oauth_account so the tokens are encrypted
     // with pgsodium AEAD before they touch the table.
-    type UpsertRpc = { rpc: (fn: "upsert_gmail_oauth_account", args: {
-      p_user_id: string;
-      p_email_address: string;
-      p_access_token: string;
-      p_refresh_token: string;
-      p_token_expires_at: string;
-    }) => Promise<{ data: string | null; error: { message: string } | null }> };
+    type UpsertRpc = {
+      rpc: (
+        fn: "upsert_gmail_oauth_account",
+        args: {
+          p_user_id: string;
+          p_email_address: string;
+          p_access_token: string;
+          p_refresh_token: string;
+          p_token_expires_at: string;
+        },
+      ) => Promise<{ data: string | null; error: { message: string } | null }>;
+    };
     const { data: accountId, error } = await (supabaseAdmin as unknown as UpsertRpc).rpc(
       "upsert_gmail_oauth_account",
       {
@@ -151,23 +193,36 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
     );
     if (error || !accountId) throw new Error(`Failed to save account: ${error?.message}`);
     const account = { id: accountId };
+    // Audit: a Gmail mailbox was granted restricted-scope access for this user.
+    logAudit("gmail.connected", { user_id: context.userId, account_id: account.id });
 
     try {
       const watch = await ensureWatch(account.id, null);
       if (watch) {
-        await supabaseAdmin.from("gmail_accounts").update({
-          history_id: watch.historyId,
-          watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
-        }).eq("id", account.id);
+        await supabaseAdmin
+          .from("gmail_accounts")
+          .update({
+            history_id: watch.historyId,
+            watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
+          })
+          .eq("id", account.id);
       }
     } catch (e) {
-      logError("gmail.auto_connect.ensure_watch_failed", { account_id: account.id, user_id: context.userId }, e);
+      logError(
+        "gmail.auto_connect.ensure_watch_failed",
+        { account_id: account.id, user_id: context.userId },
+        e,
+      );
     }
 
     try {
       await backfillRecent(account.id, context.userId, 30);
     } catch (e) {
-      logError("gmail.auto_connect.backfill_failed", { account_id: account.id, user_id: context.userId }, e);
+      logError(
+        "gmail.auto_connect.backfill_failed",
+        { account_id: account.id, user_id: context.userId },
+        e,
+      );
     }
 
     // Kick off a deep 6-month background import. Idempotent — won't spawn
@@ -175,35 +230,98 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
     try {
       await startBackfillJob(account.id, context.userId, { months: 6 });
     } catch (e) {
-      logError("gmail.auto_connect.start_backfill_failed", { account_id: account.id, user_id: context.userId }, e);
+      logError(
+        "gmail.auto_connect.start_backfill_failed",
+        { account_id: account.id, user_id: context.userId },
+        e,
+      );
     }
-
 
     return { account_id: account.id };
   });
 
 export const disconnectGmailAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { account_id: string }) =>
+    z.object({ account_id: z.string().uuid() }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
-    try { await stopWatch(data.account_id); } catch (e) { logError("gmail.disconnect.stop_watch_failed", { account_id: data.account_id, user_id: context.userId }, e); }
+    try {
+      await stopWatch(data.account_id);
+    } catch (e) {
+      logError(
+        "gmail.disconnect.stop_watch_failed",
+        { account_id: data.account_id, user_id: context.userId },
+        e,
+      );
+    }
     // Best-effort: revoke the Google OAuth grant so the refresh token is dead
     // server-side at Google before we drop our encrypted copy.
     try {
       const { revokeGoogleOAuthForAccount } = await import("./google-oauth.server");
       await revokeGoogleOAuthForAccount(data.account_id);
     } catch (e) {
-      logError("gmail.disconnect.revoke_failed", { account_id: data.account_id, user_id: context.userId }, e);
+      logError(
+        "gmail.disconnect.revoke_failed",
+        { account_id: data.account_id, user_id: context.userId },
+        e,
+      );
     }
+
+    // Purge this mailbox's synced content so disconnecting actually removes the
+    // restricted Gmail/Calendar data we hold (data minimisation / Limited Use),
+    // rather than leaving it orphaned under a now-dangling gmail_account_id.
+    // Done server-side in one transactional RPC (see migration
+    // delete_gmail_account_content) so a large mailbox can't time out mid-purge.
+    // User-level config (folders, filters, contacts) is shared across mailboxes
+    // and is intentionally left intact.
+    const userId = context.userId;
+    const accountId = data.account_id;
+    let purgedEmails = 0;
+    let purgeOk = false;
+    try {
+      type PurgeRpc = {
+        rpc: (
+          fn: "delete_gmail_account_content",
+          args: { p_account_id: string; p_user_id: string },
+        ) => Promise<{ data: number | null; error: { message: string } | null }>;
+      };
+      const { data: deleted, error } = await (supabaseAdmin as unknown as PurgeRpc).rpc(
+        "delete_gmail_account_content",
+        { p_account_id: accountId, p_user_id: userId },
+      );
+      if (error) {
+        logError(
+          "gmail.disconnect.purge_failed",
+          { account_id: accountId, user_id: userId },
+          error,
+        );
+      } else {
+        purgedEmails = deleted ?? 0;
+        purgeOk = true;
+      }
+    } catch (e) {
+      logError("gmail.disconnect.purge_failed", { account_id: accountId, user_id: userId }, e);
+    }
+
     await supabaseAdmin.from("gmail_accounts").delete().eq("id", data.account_id);
+    // Audit: restricted-scope access revoked and this mailbox's synced data purged.
+    // purge_ok=false flags residual data left behind (e.g. RPC error) for follow-up.
+    logAudit("gmail.disconnected", {
+      user_id: userId,
+      account_id: accountId,
+      emails_purged: purgedEmails,
+      purge_ok: purgeOk,
+    });
     return { ok: true };
   });
 
-
 export const listGmailLabels = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { account_id: string }) =>
+    z.object({ account_id: z.string().uuid() }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const r = await listLabels(data.account_id);
@@ -214,26 +332,31 @@ export const listGmailLabels = createServerFn({ method: "POST" })
 export const generateFolderAiRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { purpose: string; folder_name?: string }) =>
-    z.object({
-      purpose: z.string().min(1).max(1000),
-      folder_name: z.string().min(1).max(100).optional(),
-    }).parse(d)
+    z
+      .object({
+        purpose: z.string().min(1).max(1000),
+        folder_name: z.string().min(1).max(100).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const rule = await generateAiRuleFromPurpose({ purpose: data.purpose, folderName: data.folder_name });
+    const rule = await generateAiRuleFromPurpose({
+      purpose: data.purpose,
+      folderName: data.folder_name,
+    });
     return { rule };
   });
-
-
 
 export const createGmailLabel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; name: string; parent_label_id?: string }) =>
-    z.object({
-      account_id: z.string().uuid(),
-      name: z.string().min(1).max(100),
-      parent_label_id: z.string().min(1).optional(),
-    }).parse(d)
+    z
+      .object({
+        account_id: z.string().uuid(),
+        name: z.string().min(1).max(100),
+        parent_label_id: z.string().min(1).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
@@ -290,7 +413,7 @@ export const applyFolderLabelToLocal = createServerFn({ method: "POST" })
     );
     const newLabels = [labelId];
 
-    async function one(r: typeof todo[number]) {
+    async function one(r: (typeof todo)[number]) {
       try {
         await modifyMessage(r.gmail_account_id, r.gmail_message_id, newLabels, ["INBOX"]);
         const merged = Array.from(new Set([...(r.raw_labels ?? []), labelId])).filter(
@@ -313,7 +436,6 @@ export const applyFolderLabelToLocal = createServerFn({ method: "POST" })
     return { total: todo.length, synced, failed };
   });
 
-
 export const loadOlderFromGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; before_received_at: string | null }) =>
@@ -322,7 +444,7 @@ export const loadOlderFromGmail = createServerFn({ method: "POST" })
         folder_id: z.string().uuid(),
         before_received_at: z.string().datetime({ offset: true }).nullable(),
       })
-      .parse(d)
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     return loadOlderFromLabel(data.folder_id, context.userId, data.before_received_at);
@@ -340,10 +462,7 @@ export const listFolderDomainSuggestions = createServerFn({ method: "POST" })
     if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
 
     const [{ data: examples }, { data: existingFilters }] = await Promise.all([
-      supabaseAdmin
-        .from("folder_examples")
-        .select("from_addr")
-        .eq("folder_id", data.folder_id),
+      supabaseAdmin.from("folder_examples").select("from_addr").eq("folder_id", data.folder_id),
       supabaseAdmin
         .from("folder_filters")
         .select("value")
@@ -372,10 +491,16 @@ export const listFolderDomainSuggestions = createServerFn({ method: "POST" })
 export const addDomainFilter = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; domain: string }) =>
-    z.object({
-      folder_id: z.string().uuid(),
-      domain: z.string().min(1).max(253).regex(/^[a-z0-9.-]+$/i),
-    }).parse(d)
+    z
+      .object({
+        folder_id: z.string().uuid(),
+        domain: z
+          .string()
+          .min(1)
+          .max(253)
+          .regex(/^[a-z0-9.-]+$/i),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
@@ -398,11 +523,17 @@ export const addDomainFilter = createServerFn({ method: "POST" })
 export const reassignDomainToFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { from_folder_id: string; to_folder_id: string; domain: string }) =>
-    z.object({
-      from_folder_id: z.string().uuid(),
-      to_folder_id: z.string().uuid(),
-      domain: z.string().min(1).max(253).regex(/^[a-z0-9.-]+$/i),
-    }).parse(d)
+    z
+      .object({
+        from_folder_id: z.string().uuid(),
+        to_folder_id: z.string().uuid(),
+        domain: z
+          .string()
+          .min(1)
+          .max(253)
+          .regex(/^[a-z0-9.-]+$/i),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     if (data.from_folder_id === data.to_folder_id) throw new Error("Folders must differ");
@@ -456,7 +587,9 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
         })
         .in("id", ids);
       if (upErr) throw new Error(upErr.message);
-      await Promise.all(ids.map((id) => updateEmailEncrypted({ email_id: id, classification_reason: classReason })));
+      await Promise.all(
+        ids.map((id) => updateEmailEncrypted({ email_id: id, classification_reason: classReason })),
+      );
 
       // Best-effort Gmail label sync
       if (from.gmail_label_id || to.gmail_label_id) {
@@ -467,9 +600,13 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
             try {
               await modifyMessage(m.gmail_account_id, m.gmail_message_id, addLabels, removeLabels);
             } catch (e) {
-              logError("gmail.reassign.label_modify_failed", { account_id: m.gmail_account_id, gmail_message_id: m.gmail_message_id }, e);
+              logError(
+                "gmail.reassign.label_modify_failed",
+                { account_id: m.gmail_account_id, gmail_message_id: m.gmail_message_id },
+                e,
+              );
             }
-          })
+          }),
         );
       }
     }
@@ -516,7 +653,9 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
 export const triggerBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; count?: number }) =>
-    z.object({ account_id: z.string().uuid(), count: z.number().min(1).max(100).optional() }).parse(d)
+    z
+      .object({ account_id: z.string().uuid(), count: z.number().min(1).max(100).optional() })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
@@ -526,11 +665,13 @@ export const triggerBackfill = createServerFn({ method: "POST" })
 export const triggerWeekBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; days?: number; max?: number }) =>
-    z.object({
-      account_id: z.string().uuid(),
-      days: z.number().int().min(1).max(30).optional(),
-      max: z.number().int().min(1).max(2000).optional(),
-    }).parse(d)
+    z
+      .object({
+        account_id: z.string().uuid(),
+        days: z.number().int().min(1).max(30).optional(),
+        max: z.number().int().min(1).max(2000).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
@@ -544,10 +685,12 @@ export const triggerWeekBackfill = createServerFn({ method: "POST" })
 export const startDeepBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; months?: number }) =>
-    z.object({
-      account_id: z.string().uuid(),
-      months: z.number().int().min(1).max(120).optional(),
-    }).parse(d)
+    z
+      .object({
+        account_id: z.string().uuid(),
+        months: z.number().int().min(1).max(120).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
@@ -557,12 +700,14 @@ export const startDeepBackfill = createServerFn({ method: "POST" })
 export const getBackfillStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id?: string }) =>
-    z.object({ account_id: z.string().uuid().optional() }).parse(d)
+    z.object({ account_id: z.string().uuid().optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
     let q = supabaseAdmin
       .from("backfill_jobs")
-      .select("id, gmail_account_id, status, months, total_found, total_enqueued, already_had, started_at, finished_at, last_error")
+      .select(
+        "id, gmail_account_id, status, months, total_found, total_enqueued, already_had, started_at, finished_at, last_error",
+      )
       .eq("user_id", context.userId);
     if (data.account_id) q = q.eq("gmail_account_id", data.account_id);
 
@@ -573,9 +718,7 @@ export const getBackfillStatus = createServerFn({ method: "POST" })
       .limit(1);
     let job = active?.[0] ?? null;
     if (!job) {
-      const { data: recent } = await q
-        .order("started_at", { ascending: false })
-        .limit(1);
+      const { data: recent } = await q.order("started_at", { ascending: false }).limit(1);
       job = recent?.[0] ?? null;
     }
     if (!job) return { job: null };
@@ -597,10 +740,11 @@ export const cancelDeepBackfill = createServerFn({ method: "POST" })
     return cancelBackfillJob(data.job_id, context.userId);
   });
 
-
 export const triggerSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { account_id: string }) =>
+    z.object({ account_id: z.string().uuid() }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const histResult = await syncSinceHistory(data.account_id);
@@ -611,7 +755,11 @@ export const triggerSync = createServerFn({ method: "POST" })
       const r = await backfillRecent(data.account_id, context.userId, 30);
       recent_synced = r?.processed ?? 0;
     } catch (e) {
-      logError("gmail.manual_sync.backfill_failed", { account_id: data.account_id, user_id: context.userId }, e);
+      logError(
+        "gmail.manual_sync.backfill_failed",
+        { account_id: data.account_id, user_id: context.userId },
+        e,
+      );
     }
     const recon = await reconcileLocalInbox(data.account_id, 100);
     return { ...histResult, recent_synced, reconciled: recon };
@@ -619,7 +767,9 @@ export const triggerSync = createServerFn({ method: "POST" })
 
 export const renewGmailWatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { account_id: string }) =>
+    z.object({ account_id: z.string().uuid() }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const { data: accRow } = await supabaseAdmin
@@ -630,10 +780,13 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
     // Force renewal by passing null
     const watch = await ensureWatch(data.account_id, null);
     if (!watch) throw new Error("GMAIL_PUBSUB_TOPIC is not configured");
-    await supabaseAdmin.from("gmail_accounts").update({
-      history_id: watch.historyId,
-      watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
-    }).eq("id", data.account_id);
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({
+        history_id: watch.historyId,
+        watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
+      })
+      .eq("id", data.account_id);
     try {
       await supabaseAdmin.from("pubsub_events").insert({
         event_type: "watch_renew",
@@ -641,15 +794,16 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
         history_id: watch.historyId,
         details: `Watch armed against topic ${process.env.GMAIL_PUBSUB_TOPIC ?? "(unset)"} — expires ${new Date(parseInt(watch.expiration, 10)).toISOString()}`,
       });
-    } catch (e) { logError("gmail.watch_renew.log_failed", { account_id: data.account_id }, e); }
+    } catch (e) {
+      logError("gmail.watch_renew.log_failed", { account_id: data.account_id }, e);
+    }
     return { expiration: watch.expiration, topic: process.env.GMAIL_PUBSUB_TOPIC ?? null };
   });
-
 
 export const markEmailRead = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string; read: boolean }) =>
-    z.object({ id: z.string().uuid(), read: z.boolean() }).parse(d)
+    z.object({ id: z.string().uuid(), read: z.boolean() }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
@@ -658,9 +812,11 @@ export const markEmailRead = createServerFn({ method: "POST" })
         email.gmail_account_id,
         email.gmail_message_id,
         data.read ? [] : ["UNREAD"],
-        data.read ? ["UNREAD"] : []
+        data.read ? ["UNREAD"] : [],
       );
-    } catch (e) { logError("gmail.unknown_op_failed", {}, e); }
+    } catch (e) {
+      logError("gmail.unknown_op_failed", {}, e);
+    }
     await supabaseAdmin.from("emails").update({ is_read: data.read }).eq("id", data.id);
     return { ok: true };
   });
@@ -675,7 +831,15 @@ export const archiveEmail = createServerFn({ method: "POST" })
     try {
       await modifyMessage(email.gmail_account_id, email.gmail_message_id, [], ["INBOX"]);
     } catch (e) {
-      logError("gmail.archive.modify_failed", { email_id: data.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e);
+      logError(
+        "gmail.archive.modify_failed",
+        {
+          email_id: data.id,
+          account_id: email.gmail_account_id,
+          gmail_message_id: email.gmail_message_id,
+        },
+        e,
+      );
       throw new Error((e as Error)?.message || "Failed to archive in Gmail");
     }
     // Pull the current raw_labels so we can strip INBOX in the same UPDATE
@@ -700,7 +864,19 @@ export const trashEmail = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
-    try { await trashMessage(email.gmail_account_id, email.gmail_message_id); } catch (e) { logError("gmail.archive.modify_failed", { email_id: data.id, account_id: email.gmail_account_id, gmail_message_id: email.gmail_message_id }, e); }
+    try {
+      await trashMessage(email.gmail_account_id, email.gmail_message_id);
+    } catch (e) {
+      logError(
+        "gmail.archive.modify_failed",
+        {
+          email_id: data.id,
+          account_id: email.gmail_account_id,
+          gmail_message_id: email.gmail_message_id,
+        },
+        e,
+      );
+    }
     await supabaseAdmin.from("emails").delete().eq("id", data.id);
     return { ok: true };
   });
@@ -722,7 +898,7 @@ export const generateReply = createServerFn({ method: "POST" })
 export const sendReply = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string; body: string }) =>
-    z.object({ id: z.string().uuid(), body: z.string().min(1).max(20000) }).parse(d)
+    z.object({ id: z.string().uuid(), body: z.string().min(1).max(20000) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
@@ -733,7 +909,7 @@ export const sendReply = createServerFn({ method: "POST" })
       subject,
       data.body,
       email.thread_id || undefined,
-      email.gmail_message_id
+      email.gmail_message_id,
     );
     return { ok: true };
   });
@@ -741,15 +917,20 @@ export const sendReply = createServerFn({ method: "POST" })
 export const listFolderHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; limit?: number; offset?: number }) =>
-    z.object({
-      folder_id: z.string().uuid(),
-      limit: z.number().min(1).max(200).optional(),
-      offset: z.number().min(0).max(10000).optional(),
-    }).parse(d)
+    z
+      .object({
+        folder_id: z.string().uuid(),
+        limit: z.number().min(1).max(200).optional(),
+        offset: z.number().min(0).max(10000).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
-      .from("folders").select("id, user_id").eq("id", data.folder_id).single();
+      .from("folders")
+      .select("id, user_id")
+      .eq("id", data.folder_id)
+      .single();
     if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
     const limit = data.limit ?? 25;
     const offset = data.offset ?? 0;
@@ -762,11 +943,23 @@ export const listFolderHistory = createServerFn({ method: "POST" })
       .range(offset, offset + limit); // fetch one extra to detect has_more
     const baseRows = rows ?? [];
     type Row = {
-      id: string; subject: string | null; from_addr: string | null; from_name: string | null;
-      received_at: string | null; classified_by: string | null; ai_confidence: number | null;
-      snippet: string | null; ai_summary: string | null;
+      id: string;
+      subject: string | null;
+      from_addr: string | null;
+      from_name: string | null;
+      received_at: string | null;
+      classified_by: string | null;
+      ai_confidence: number | null;
+      snippet: string | null;
+      ai_summary: string | null;
     };
-    let withSummary: Row[] = (baseRows as unknown[]).map((r) => ({ ...(r as object), subject: null, from_name: null, snippet: null, ai_summary: null })) as Row[];
+    let withSummary: Row[] = (baseRows as unknown[]).map((r) => ({
+      ...(r as object),
+      subject: null,
+      from_name: null,
+      snippet: null,
+      ai_summary: null,
+    })) as Row[];
     if (baseRows.length > 0) {
       const { data: dec } = await supabaseAdmin.rpc("get_emails_list_fields_decrypted", {
         p_ids: baseRows.map((r) => r.id),
@@ -779,20 +972,25 @@ export const listFolderHistory = createServerFn({ method: "POST" })
       withSummary = withSummary.map((r) => ({ ...r, ai_summary: map.get(r.id) ?? null }));
     }
     const has_more = withSummary.length > limit;
-    return { emails: has_more ? withSummary.slice(0, limit) : withSummary, has_more, next_offset: offset + limit };
+    return {
+      emails: has_more ? withSummary.slice(0, limit) : withSummary,
+      has_more,
+      next_offset: offset + limit,
+    };
   });
 
 export const suggestRecategorization = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_id: string; to_folder_id: string }) =>
-    z.object({ email_id: z.string().uuid(), to_folder_id: z.string().uuid() }).parse(d)
+    z.object({ email_id: z.string().uuid(), to_folder_id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { rows } = await getEmailsDecrypted([data.email_id]);
     const email = rows[0];
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
     if (!email.folder_id) throw new Error("Email has no source folder");
-    if (email.folder_id === data.to_folder_id) throw new Error("Source and target folders must differ");
+    if (email.folder_id === data.to_folder_id)
+      throw new Error("Source and target folders must differ");
 
     const { data: folders } = await supabaseAdmin
       .from("folders")
@@ -800,7 +998,12 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
       .in("id", [email.folder_id, data.to_folder_id]);
     const source = folders?.find((f) => f.id === email.folder_id);
     const target = folders?.find((f) => f.id === data.to_folder_id);
-    if (!source || !target || source.user_id !== context.userId || target.user_id !== context.userId) {
+    if (
+      !source ||
+      !target ||
+      source.user_id !== context.userId ||
+      target.user_id !== context.userId
+    ) {
       throw new Error("Not authorized");
     }
 
@@ -813,70 +1016,97 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
           snippet: email.snippet || "",
           body_text: email.body_text || "",
         },
-        source: { name: source.name, ai_rule: source.ai_rule, learned_profile: source.learned_profile },
-        target: { name: target.name, ai_rule: target.ai_rule, learned_profile: target.learned_profile },
+        source: {
+          name: source.name,
+          ai_rule: source.ai_rule,
+          learned_profile: source.learned_profile,
+        },
+        target: {
+          name: target.name,
+          ai_rule: target.ai_rule,
+          learned_profile: target.learned_profile,
+        },
       });
       return {
         source: {
-          id: source.id, name: source.name,
-          current_rule: source.ai_rule, current_profile: source.learned_profile,
+          id: source.id,
+          name: source.name,
+          current_rule: source.ai_rule,
+          current_profile: source.learned_profile,
           ...sug.source,
         },
         target: {
-          id: target.id, name: target.name,
-          current_rule: target.ai_rule, current_profile: target.learned_profile,
+          id: target.id,
+          name: target.name,
+          current_rule: target.ai_rule,
+          current_profile: target.learned_profile,
           ...sug.target,
         },
         error: null as string | null,
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       logError("gmail.suggest_recat.ai_failed", { user_id: context.userId }, e);
       return {
         source: {
-          id: source.id, name: source.name,
-          current_rule: source.ai_rule, current_profile: source.learned_profile,
-          proposed_rule: source.ai_rule ?? "", proposed_profile: source.learned_profile ?? "",
+          id: source.id,
+          name: source.name,
+          current_rule: source.ai_rule,
+          current_profile: source.learned_profile,
+          proposed_rule: source.ai_rule ?? "",
+          proposed_profile: source.learned_profile ?? "",
           why: "AI suggestion unavailable — you can still apply the move.",
         },
         target: {
-          id: target.id, name: target.name,
-          current_rule: target.ai_rule, current_profile: target.learned_profile,
-          proposed_rule: target.ai_rule ?? "", proposed_profile: target.learned_profile ?? "",
+          id: target.id,
+          name: target.name,
+          current_rule: target.ai_rule,
+          current_profile: target.learned_profile,
+          proposed_rule: target.ai_rule ?? "",
+          proposed_profile: target.learned_profile ?? "",
           why: "AI suggestion unavailable — you can still apply the move.",
         },
-        error: e?.message ?? "AI request failed",
+        error: e instanceof Error ? e.message : "AI request failed",
       };
     }
   });
 
 export const applyRecategorization = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    email_id: string; to_folder_id: string;
-    apply_source: boolean; apply_target: boolean;
-    source_rule?: string | null; source_profile?: string | null;
-    target_rule?: string | null; target_profile?: string | null;
-  }) =>
-    z.object({
-      email_id: z.string().uuid(),
-      to_folder_id: z.string().uuid(),
-      apply_source: z.boolean(),
-      apply_target: z.boolean(),
-      source_rule: z.string().max(10000).nullable().optional(),
-      source_profile: z.string().max(10000).nullable().optional(),
-      target_rule: z.string().max(10000).nullable().optional(),
-      target_profile: z.string().max(10000).nullable().optional(),
-    }).parse(d)
+  .inputValidator(
+    (d: {
+      email_id: string;
+      to_folder_id: string;
+      apply_source: boolean;
+      apply_target: boolean;
+      source_rule?: string | null;
+      source_profile?: string | null;
+      target_rule?: string | null;
+      target_profile?: string | null;
+    }) =>
+      z
+        .object({
+          email_id: z.string().uuid(),
+          to_folder_id: z.string().uuid(),
+          apply_source: z.boolean(),
+          apply_target: z.boolean(),
+          source_rule: z.string().max(10000).nullable().optional(),
+          source_profile: z.string().max(10000).nullable().optional(),
+          target_rule: z.string().max(10000).nullable().optional(),
+          target_profile: z.string().max(10000).nullable().optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
       .from("emails")
       .select("id, user_id, folder_id, gmail_message_id, gmail_account_id, from_addr")
-      .eq("id", data.email_id).single();
+      .eq("id", data.email_id)
+      .single();
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
     if (!email.folder_id) throw new Error("Email has no source folder");
     const fromFolderId = email.folder_id;
-    if (fromFolderId === data.to_folder_id) throw new Error("Source and target folders must differ");
+    if (fromFolderId === data.to_folder_id)
+      throw new Error("Source and target folders must differ");
 
     const { data: folders } = await supabaseAdmin
       .from("folders")
@@ -896,7 +1126,8 @@ export const applyRecategorization = createServerFn({ method: "POST" })
       ai_confidence: 1,
       classification_reason: `Re-categorized from "${from.name}" to "${to.name}"`,
     });
-    await supabaseAdmin.from("emails")
+    await supabaseAdmin
+      .from("emails")
       .update({ folder_id: data.to_folder_id, classified_by: "manual_move", ai_confidence: 1 })
       .eq("id", email.id);
 
@@ -907,14 +1138,19 @@ export const applyRecategorization = createServerFn({ method: "POST" })
           email.gmail_account_id,
           email.gmail_message_id,
           to.gmail_label_id ? [to.gmail_label_id] : [],
-          from.gmail_label_id ? [from.gmail_label_id] : []
+          from.gmail_label_id ? [from.gmail_label_id] : [],
         );
-      } catch (e) { logError("gmail.label_sync.failed", {}, e); }
+      } catch (e) {
+        logError("gmail.label_sync.failed", {}, e);
+      }
     }
 
     // Move example from source → target so AI signal reflects the correction
-    await supabaseAdmin.from("folder_examples")
-      .delete().eq("folder_id", fromFolderId).eq("gmail_message_id", email.gmail_message_id);
+    await supabaseAdmin
+      .from("folder_examples")
+      .delete()
+      .eq("folder_id", fromFolderId)
+      .eq("gmail_message_id", email.gmail_message_id);
     await insertFolderExampleEncrypted({
       folder_id: data.to_folder_id,
       user_id: context.userId,
@@ -930,14 +1166,22 @@ export const applyRecategorization = createServerFn({ method: "POST" })
     let target_updated = false;
     const now = new Date().toISOString();
     if (data.apply_source) {
-      const patch: { last_learned_at: string; ai_rule?: string | null; learned_profile?: string | null } = { last_learned_at: now };
+      const patch: {
+        last_learned_at: string;
+        ai_rule?: string | null;
+        learned_profile?: string | null;
+      } = { last_learned_at: now };
       if (data.source_rule !== undefined) patch.ai_rule = data.source_rule;
       if (data.source_profile !== undefined) patch.learned_profile = data.source_profile;
       await supabaseAdmin.from("folders").update(patch).eq("id", fromFolderId);
       source_updated = true;
     }
     if (data.apply_target) {
-      const patch: { last_learned_at: string; ai_rule?: string | null; learned_profile?: string | null } = { last_learned_at: now };
+      const patch: {
+        last_learned_at: string;
+        ai_rule?: string | null;
+        learned_profile?: string | null;
+      } = { last_learned_at: now };
       if (data.target_rule !== undefined) patch.ai_rule = data.target_rule;
       if (data.target_profile !== undefined) patch.learned_profile = data.target_profile;
       await supabaseAdmin.from("folders").update(patch).eq("id", data.to_folder_id);
@@ -949,7 +1193,11 @@ export const applyRecategorization = createServerFn({ method: "POST" })
 
 // ============ Folder summary schedules ============
 
-const ianaTz = z.string().min(1).max(64).regex(/^[A-Za-z0-9_+\-/]+$/);
+const ianaTz = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9_+\-/]+$/);
 
 async function getOwnedFolder(userId: string, folderId: string) {
   const { data, error } = await supabaseAdmin
@@ -975,14 +1223,14 @@ async function getOwnedSchedule(userId: string, id: string) {
 
 export const listFolderSummaries = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) =>
-    z.object({ folder_id: z.string().uuid() }).parse(d)
-  )
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedFolder(context.userId, data.folder_id);
     const { data: rows } = await supabaseAdmin
       .from("folder_summary_schedules")
-      .select("id, name, instructions, hour, minute, timezone, enabled, last_run_at, next_run_at, last_error")
+      .select(
+        "id, name, instructions, hour, minute, timezone, enabled, last_run_at, next_run_at, last_error",
+      )
       .eq("folder_id", data.folder_id)
       .order("created_at", { ascending: true });
     return { schedules: rows ?? [] };
@@ -990,18 +1238,25 @@ export const listFolderSummaries = createServerFn({ method: "POST" })
 
 export const createFolderSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    folder_id: string; name: string; instructions: string;
-    hour: number; minute: number; timezone: string;
-  }) =>
-    z.object({
-      folder_id: z.string().uuid(),
-      name: z.string().min(1).max(100),
-      instructions: z.string().max(50000),
-      hour: z.number().int().min(0).max(23),
-      minute: z.number().int().min(0).max(59),
-      timezone: ianaTz,
-    }).parse(d)
+  .inputValidator(
+    (d: {
+      folder_id: string;
+      name: string;
+      instructions: string;
+      hour: number;
+      minute: number;
+      timezone: string;
+    }) =>
+      z
+        .object({
+          folder_id: z.string().uuid(),
+          name: z.string().min(1).max(100),
+          instructions: z.string().max(50000),
+          hour: z.number().int().min(0).max(23),
+          minute: z.number().int().min(0).max(59),
+          timezone: ianaTz,
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const folder = await getOwnedFolder(context.userId, data.folder_id);
@@ -1027,28 +1282,38 @@ export const createFolderSummary = createServerFn({ method: "POST" })
 
 export const updateFolderSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    id: string;
-    name?: string; instructions?: string;
-    hour?: number; minute?: number; timezone?: string;
-    enabled?: boolean;
-  }) =>
-    z.object({
-      id: z.string().uuid(),
-      name: z.string().min(1).max(100).optional(),
-      instructions: z.string().max(50000).optional(),
-      hour: z.number().int().min(0).max(23).optional(),
-      minute: z.number().int().min(0).max(59).optional(),
-      timezone: ianaTz.optional(),
-      enabled: z.boolean().optional(),
-    }).parse(d)
+  .inputValidator(
+    (d: {
+      id: string;
+      name?: string;
+      instructions?: string;
+      hour?: number;
+      minute?: number;
+      timezone?: string;
+      enabled?: boolean;
+    }) =>
+      z
+        .object({
+          id: z.string().uuid(),
+          name: z.string().min(1).max(100).optional(),
+          instructions: z.string().max(50000).optional(),
+          hour: z.number().int().min(0).max(23).optional(),
+          minute: z.number().int().min(0).max(59).optional(),
+          timezone: ianaTz.optional(),
+          enabled: z.boolean().optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const existing = await getOwnedSchedule(context.userId, data.id);
     const patch: {
-      name?: string; instructions?: string;
-      hour?: number; minute?: number; timezone?: string;
-      enabled?: boolean; next_run_at?: string;
+      name?: string;
+      instructions?: string;
+      hour?: number;
+      minute?: number;
+      timezone?: string;
+      enabled?: boolean;
+      next_run_at?: string;
     } = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.instructions !== undefined) patch.instructions = data.instructions;
@@ -1057,7 +1322,8 @@ export const updateFolderSummary = createServerFn({ method: "POST" })
     if (data.timezone !== undefined) patch.timezone = data.timezone;
     if (data.enabled !== undefined) patch.enabled = data.enabled;
 
-    const timeChanged = data.hour !== undefined || data.minute !== undefined || data.timezone !== undefined;
+    const timeChanged =
+      data.hour !== undefined || data.minute !== undefined || data.timezone !== undefined;
     const reEnabled = data.enabled === true && !existing.enabled;
     if (timeChanged || reEnabled) {
       patch.next_run_at = computeNextRun(
@@ -1090,7 +1356,10 @@ export const runFolderSummaryNow = createServerFn({ method: "POST" })
     await getOwnedSchedule(context.userId, data.id);
     // Enqueue a background job so the UI request never has to wait on the
     // AI gateway (heavy prompts otherwise time out).
-    const { jobId } = await enqueueFolderSummaryJob({ scheduleId: data.id, userId: context.userId });
+    const { jobId } = await enqueueFolderSummaryJob({
+      scheduleId: data.id,
+      userId: context.userId,
+    });
     return { ok: true as const, jobId };
   });
 
@@ -1125,19 +1394,23 @@ function extractDomain(addr: string | null): string | null {
   if (!addr) return null;
   const at = addr.lastIndexOf("@");
   if (at < 0) return null;
-  return addr.slice(at + 1).toLowerCase().replace(/[>\s]+$/g, "");
+  return addr
+    .slice(at + 1)
+    .toLowerCase()
+    .replace(/[>\s]+$/g, "");
 }
 
 import { performMove } from "./move-email.server";
 
-
 export const moveEmailToFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_id: string; to_folder_id: string }) =>
-    z.object({
-      email_id: z.string().uuid(),
-      to_folder_id: z.string().uuid(),
-    }).parse(d),
+    z
+      .object({
+        email_id: z.string().uuid(),
+        to_folder_id: z.string().uuid(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
@@ -1161,12 +1434,15 @@ export const moveEmailToFolder = createServerFn({ method: "POST" })
 
 export const findSimilarEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_id: string; from_folder_id: string | null; mode: "sender" | "domain" }) =>
-    z.object({
-      email_id: z.string().uuid(),
-      from_folder_id: z.string().uuid().nullable(),
-      mode: z.enum(["sender", "domain"]),
-    }).parse(d),
+  .inputValidator(
+    (d: { email_id: string; from_folder_id: string | null; mode: "sender" | "domain" }) =>
+      z
+        .object({
+          email_id: z.string().uuid(),
+          from_folder_id: z.string().uuid().nullable(),
+          mode: z.enum(["sender", "domain"]),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
@@ -1198,11 +1474,19 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
     const { data: rows } = await query;
     return {
       matches: (rows ?? []).map((r) => ({
-        id: r.id, from_addr: r.from_addr, received_at: r.received_at,
-        subject: null, from_name: null, snippet: null,
+        id: r.id,
+        from_addr: r.from_addr,
+        received_at: r.received_at,
+        subject: null,
+        from_name: null,
+        snippet: null,
       })) as Array<{
-        id: string; subject: string | null; from_addr: string | null;
-        from_name: string | null; received_at: string | null; snippet: string | null;
+        id: string;
+        subject: string | null;
+        from_addr: string | null;
+        from_name: string | null;
+        received_at: string | null;
+        snippet: string | null;
       }>,
       domain: extractDomain(email.from_addr),
     };
@@ -1210,22 +1494,25 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
 
 export const bulkMoveEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    email_ids: string[];
-    to_folder_id: string;
-    create_rule?: { field: "domain" | "from"; value: string } | null;
-  }) =>
-    z.object({
-      email_ids: z.array(z.string().uuid()).min(1).max(100),
-      to_folder_id: z.string().uuid(),
-      create_rule: z
+  .inputValidator(
+    (d: {
+      email_ids: string[];
+      to_folder_id: string;
+      create_rule?: { field: "domain" | "from"; value: string } | null;
+    }) =>
+      z
         .object({
-          field: z.enum(["domain", "from"]),
-          value: z.string().min(1).max(253),
+          email_ids: z.array(z.string().uuid()).min(1).max(100),
+          to_folder_id: z.string().uuid(),
+          create_rule: z
+            .object({
+              field: z.enum(["domain", "from"]),
+              value: z.string().min(1).max(253),
+            })
+            .nullable()
+            .optional(),
         })
-        .nullable()
-        .optional(),
-    }).parse(d),
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     // If asked, persist a folder rule on the destination so future mail
@@ -1286,9 +1573,7 @@ export const bulkMoveEmails = createServerFn({ method: "POST" })
 
 export const reanalyzeEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_id: string }) =>
-    z.object({ email_id: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { email_id: string }) => z.object({ email_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
     const { rows } = await getEmailsDecrypted([data.email_id]);
@@ -1314,7 +1599,9 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       raw_labels: (email.raw_labels as string[] | null) ?? null,
     };
 
-    const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, { skipGmailLabelMatch: true });
+    const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, {
+      skipGmailLabelMatch: true,
+    });
 
     // Always make sure we have a summary on the row after Reanalyze, even when
     // the classifier (filter/label/domain rule) didn't run the AI summarizer.
@@ -1354,7 +1641,6 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
         changed: false,
       };
     }
-
 
     await updateEmailEncrypted({
       email_id: email.id,
@@ -1399,7 +1685,9 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
             toLabel ? [toLabel] : [],
             fromLabel ? [fromLabel] : [],
           );
-        } catch (e) { logError("gmail.reanalyze.label_sync_failed", { email_id: email.id }, e); }
+        } catch (e) {
+          logError("gmail.reanalyze.label_sync_failed", { email_id: email.id }, e);
+        }
       }
       return {
         ok: true,
@@ -1424,10 +1712,12 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
 export const moveEmailToInbox = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_id: string; add_override?: "email" | "domain" | null }) =>
-    z.object({
-      email_id: z.string().uuid(),
-      add_override: z.enum(["email", "domain"]).nullable().optional(),
-    }).parse(d),
+    z
+      .object({
+        email_id: z.string().uuid(),
+        add_override: z.enum(["email", "domain"]).nullable().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
@@ -1455,7 +1745,10 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
       new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
     );
 
-    await updateEmailEncrypted({ email_id: email.id, classification_reason: "Moved to Inbox manually" });
+    await updateEmailEncrypted({
+      email_id: email.id,
+      classification_reason: "Moved to Inbox manually",
+    });
     await supabaseAdmin
       .from("emails")
       .update({
@@ -1476,7 +1769,9 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
         ["INBOX"],
         fromLabel ? [fromLabel] : [],
       );
-    } catch (e) { logError("gmail.inbox.label_sync_failed", {}, e); }
+    } catch (e) {
+      logError("gmail.inbox.label_sync_failed", {}, e);
+    }
 
     // Stop training AI on this mistake.
     if (email.folder_id) {
@@ -1490,9 +1785,7 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
     const domain = extractDomain(email.from_addr);
     let override_added: "email" | "domain" | null = null;
     if (data.add_override && email.from_addr) {
-      const value = data.add_override === "email"
-        ? email.from_addr.toLowerCase()
-        : domain;
+      const value = data.add_override === "email" ? email.from_addr.toLowerCase() : domain;
       if (value) {
         const { data: existing } = await supabaseAdmin
           .from("inbox_overrides")
@@ -1523,13 +1816,21 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
 
 export const addInboxOverride = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { value: string; match_type: "email" | "domain"; reprocess_past?: boolean; gmail_account_id?: string }) =>
-    z.object({
-      value: z.string().min(1).max(320),
-      match_type: z.enum(["email", "domain"]),
-      reprocess_past: z.boolean().optional(),
-      gmail_account_id: z.string().uuid().optional(),
-    }).parse(d),
+  .inputValidator(
+    (d: {
+      value: string;
+      match_type: "email" | "domain";
+      reprocess_past?: boolean;
+      gmail_account_id?: string;
+    }) =>
+      z
+        .object({
+          value: z.string().min(1).max(320),
+          match_type: z.enum(["email", "domain"]),
+          reprocess_past: z.boolean().optional(),
+          gmail_account_id: z.string().uuid().optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const value = data.value.trim().toLowerCase().replace(/^@/, "");
@@ -1577,7 +1878,9 @@ export const addInboxOverride = createServerFn({ method: "POST" })
       });
 
       if (matches.length) {
-        const folderIds = Array.from(new Set(matches.map((m) => m.folder_id).filter((x): x is string => !!x)));
+        const folderIds = Array.from(
+          new Set(matches.map((m) => m.folder_id).filter((x): x is string => !!x)),
+        );
         const { data: fs } = await supabaseAdmin
           .from("folders")
           .select("id, gmail_label_id")
@@ -1592,7 +1895,8 @@ export const addInboxOverride = createServerFn({ method: "POST" })
             const m = matches[i++];
             try {
               const oldLabel = m.folder_id ? labelById.get(m.folder_id) : null;
-              const currentLabels = ((m as { raw_labels: string[] | null }).raw_labels ?? []) as string[];
+              const currentLabels = ((m as { raw_labels: string[] | null }).raw_labels ??
+                []) as string[];
               // Reprocess past path: row was filed into a folder (often
               // auto-archived with INBOX stripped). Restore INBOX locally
               // AND in Gmail so the row matches the inbox view filter
@@ -1601,7 +1905,11 @@ export const addInboxOverride = createServerFn({ method: "POST" })
               const nextLabels = Array.from(
                 new Set(currentLabels.filter((l) => !oldLabel || l !== oldLabel).concat(["INBOX"])),
               );
-              await updateEmailEncrypted({ email_id: m.id, classification_reason: reason, ai_summary: "" });
+              await updateEmailEncrypted({
+                email_id: m.id,
+                classification_reason: reason,
+                ai_summary: "",
+              });
               await supabaseAdmin
                 .from("emails")
                 .update({
@@ -1638,10 +1946,12 @@ export const addInboxOverride = createServerFn({ method: "POST" })
 export const stripFolderLabelPast = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { value: string; match_type: "email" | "domain" }) =>
-    z.object({
-      value: z.string().min(1).max(320),
-      match_type: z.enum(["email", "domain"]),
-    }).parse(d),
+    z
+      .object({
+        value: z.string().min(1).max(320),
+        match_type: z.enum(["email", "domain"]),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const value = data.value.trim().toLowerCase().replace(/^@/, "");
@@ -1665,7 +1975,9 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
 
     let stripped_count = 0;
     if (matches.length) {
-      const folderIds = Array.from(new Set(matches.map((m) => m.folder_id).filter((x): x is string => !!x)));
+      const folderIds = Array.from(
+        new Set(matches.map((m) => m.folder_id).filter((x): x is string => !!x)),
+      );
       const { data: fs } = await supabaseAdmin
         .from("folders")
         .select("id, gmail_label_id")
@@ -1679,7 +1991,11 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
         while (i < matches.length) {
           const m = matches[i++];
           try {
-            await updateEmailEncrypted({ email_id: m.id, classification_reason: reason, ai_summary: "" });
+            await updateEmailEncrypted({
+              email_id: m.id,
+              classification_reason: reason,
+              ai_summary: "",
+            });
             await supabaseAdmin
               .from("emails")
               .update({
@@ -1717,10 +2033,12 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
 export const searchGmailAndIngest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { query: string; account_id?: string }) =>
-    z.object({
-      query: z.string().min(1).max(200),
-      account_id: z.string().uuid().optional(),
-    }).parse(d),
+    z
+      .object({
+        query: z.string().min(1).max(200),
+        account_id: z.string().uuid().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     // Resolve the gmail accounts to search across.
@@ -1781,7 +2099,10 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
             pageToken = list.nextPageToken;
             if (!pageToken) break;
           } catch (e) {
-            if (isRateLimit(e)) { rateLimited = true; break; }
+            if (isRateLimit(e)) {
+              rateLimited = true;
+              break;
+            }
             throw e;
           }
         }
@@ -1827,29 +2148,47 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
           filters = (ff ?? []) as Filter[];
         }
         function matchFilters(parsed: {
-          from_addr: string; from_name: string; to_addrs: string;
-          subject: string; body_text: string; has_attachment: boolean;
+          from_addr: string;
+          from_name: string;
+          to_addrs: string;
+          subject: string;
+          body_text: string;
+          has_attachment: boolean;
         }): { folder_id: string; field: string; value: string } | null {
           for (const f of filters) {
             const v = (f.value || "").toLowerCase();
             const fieldVal = (() => {
               switch (f.field) {
-                case "from": return `${parsed.from_addr} ${parsed.from_name}`.toLowerCase();
-                case "to": return (parsed.to_addrs || "").toLowerCase();
-                case "subject": return (parsed.subject || "").toLowerCase();
-                case "body": return (parsed.body_text || "").toLowerCase();
-                case "domain": return (parsed.from_addr.split("@")[1] || "").toLowerCase();
-                case "has_attachment": return parsed.has_attachment ? "true" : "false";
-                default: return "";
+                case "from":
+                  return `${parsed.from_addr} ${parsed.from_name}`.toLowerCase();
+                case "to":
+                  return (parsed.to_addrs || "").toLowerCase();
+                case "subject":
+                  return (parsed.subject || "").toLowerCase();
+                case "body":
+                  return (parsed.body_text || "").toLowerCase();
+                case "domain":
+                  return (parsed.from_addr.split("@")[1] || "").toLowerCase();
+                case "has_attachment":
+                  return parsed.has_attachment ? "true" : "false";
+                default:
+                  return "";
               }
             })();
             const hit = (() => {
               switch (f.op) {
-                case "contains": return fieldVal.includes(v);
-                case "equals": return fieldVal === v;
+                case "contains":
+                  return fieldVal.includes(v);
+                case "equals":
+                  return fieldVal === v;
                 case "regex":
-                  try { return new RegExp(f.value, "i").test(fieldVal); } catch { return false; }
-                default: return false;
+                  try {
+                    return new RegExp(f.value, "i").test(fieldVal);
+                  } catch {
+                    return false;
+                  }
+                default:
+                  return false;
               }
             })();
             if (hit) return { folder_id: f.folder_id, field: f.field, value: v };
@@ -1932,15 +2271,23 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                     classification_reason,
                   });
                 }
-              }
-              else logError("gmail.search_ingest.insert_failed", { account_id: accountId, gmail_message_id: id }, { message: error });
+              } else
+                logError(
+                  "gmail.search_ingest.insert_failed",
+                  { account_id: accountId, gmail_message_id: id },
+                  { message: error },
+                );
             } catch (e) {
               if (isRateLimit(e)) {
                 rateLimited = true;
                 stop = true;
                 break;
               }
-              logError("gmail.search_ingest.one_failed", { account_id: accountId, gmail_message_id: id }, e);
+              logError(
+                "gmail.search_ingest.one_failed",
+                { account_id: accountId, gmail_message_id: id },
+                e,
+              );
             }
           }
         }
@@ -1956,7 +2303,12 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     }
 
     if (reauthFailures > 0 && reauthFailures === accountIds.length) {
-      return { ingested: 0, found: 0, reason: "reauth_required" as const, hit_gmail_message_ids: [] as string[] };
+      return {
+        ingested: 0,
+        found: 0,
+        reason: "reauth_required" as const,
+        hit_gmail_message_ids: [] as string[],
+      };
     }
     return {
       ingested: totalIngested,
@@ -1966,19 +2318,27 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
     };
   });
 
-
-
-
-
 export const listPubsubEvents = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({
-      event_type: z.enum(["push", "push_empty", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error", "webhook_test"]).optional(),
-      only_errors: z.boolean().optional(),
-      limit: z.number().min(1).max(500).optional(),
-      account_id: z.string().uuid().optional(),
-    }).parse(input ?? {})
+    z
+      .object({
+        event_type: z
+          .enum([
+            "push",
+            "push_empty",
+            "poll",
+            "watch_renew",
+            "watch_rearm_auto",
+            "gmail_api_error",
+            "webhook_test",
+          ])
+          .optional(),
+        only_errors: z.boolean().optional(),
+        limit: z.number().min(1).max(500).optional(),
+        account_id: z.string().uuid().optional(),
+      })
+      .parse(input ?? {}),
   )
   .handler(async ({ data, context }) => {
     const limit = data.limit ?? 100;
@@ -2001,9 +2361,18 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       return {
         events: [],
         stats: {
-          push24: 0, poll24: 0, renew24: 0, accounts24: 0, synced24: 0,
-          errors24: 0, gmailErrors24: 0, pushEmpty24: 0, pushUnmatched24: 0,
-          lastReceivedAt: null, lastPollAt: null, lastPushAt: null,
+          push24: 0,
+          poll24: 0,
+          renew24: 0,
+          accounts24: 0,
+          synced24: 0,
+          errors24: 0,
+          gmailErrors24: 0,
+          pushEmpty24: 0,
+          pushUnmatched24: 0,
+          lastReceivedAt: null,
+          lastPollAt: null,
+          lastPushAt: null,
         },
         diagnostics: {
           lastPush: null,
@@ -2018,7 +2387,9 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
 
     let q = supabaseAdmin
       .from("pubsub_events")
-      .select("id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details")
+      .select(
+        "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details",
+      )
       .in("email_address", myEmails)
       .order("received_at", { ascending: false })
       .limit(limit);
@@ -2035,7 +2406,15 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .gte("received_at", since)
       .limit(5000);
 
-    let push24 = 0, poll24 = 0, renew24 = 0, accounts24 = 0, synced24 = 0, errors24 = 0, gmailErrors24 = 0, pushEmpty24 = 0, pushUnmatched24 = 0;
+    let push24 = 0,
+      poll24 = 0,
+      renew24 = 0,
+      accounts24 = 0,
+      synced24 = 0,
+      errors24 = 0,
+      gmailErrors24 = 0,
+      pushEmpty24 = 0,
+      pushUnmatched24 = 0;
     let lastPollAt: string | null = null;
     let lastPushAt: string | null = null;
     for (const r of agg ?? []) {
@@ -2060,7 +2439,8 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
 
     // Most recent REAL push from Google (synthetic webhook_test rows are
     // excluded — they're app-side tests, not proof of GCP delivery).
-    const cols = "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details";
+    const cols =
+      "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details";
     const { data: anyPushRows } = await supabaseAdmin
       .from("pubsub_events")
       .select(cols)
@@ -2068,7 +2448,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .in("event_type", ["push", "push_empty"])
       .order("received_at", { ascending: false })
       .limit(1);
-    const lastPush: any = anyPushRows?.[0] ?? null;
+    const lastPush = anyPushRows?.[0] ?? null;
 
     // Most recent webhook self-test (separate from real pushes).
     const { data: lastTestRows } = await supabaseAdmin
@@ -2118,12 +2498,18 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .limit(1)
       .maybeSingle();
 
-
     return {
       events: rows ?? [],
       stats: {
-        push24, poll24, renew24, accounts24, synced24, errors24, gmailErrors24,
-        pushEmpty24, pushUnmatched24,
+        push24,
+        poll24,
+        renew24,
+        accounts24,
+        synced24,
+        errors24,
+        gmailErrors24,
+        pushEmpty24,
+        pushUnmatched24,
         lastReceivedAt: rows?.[0]?.received_at ?? null,
         lastPollAt,
         lastPushAt,
@@ -2140,9 +2526,6 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       },
     };
   });
-
-
-
 
 /** Re-pull the current Gmail label state for a single message and reconcile our row. */
 export const resyncMessage = createServerFn({ method: "POST" })
@@ -2161,11 +2544,14 @@ export const resyncMessage = createServerFn({ method: "POST" })
     }
     const inInbox = labels.includes("INBOX");
     const unread = labels.includes("UNREAD");
-    await supabaseAdmin.from("emails").update({
-      raw_labels: labels,
-      is_archived: !inInbox,
-      is_read: !unread,
-    }).eq("id", data.id);
+    await supabaseAdmin
+      .from("emails")
+      .update({
+        raw_labels: labels,
+        is_archived: !inInbox,
+        is_read: !unread,
+      })
+      .eq("id", data.id);
     return { in_inbox: inInbox, unread, labels };
   });
 
@@ -2200,7 +2586,11 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
       .order("received_at", { ascending: false, nullsFirst: false })
       .limit(LIMIT);
 
-    const rows = (localRows ?? []) as Array<{ id: string; gmail_message_id: string; received_at: string | null }>;
+    const rows = (localRows ?? []) as Array<{
+      id: string;
+      gmail_message_id: string;
+      received_at: string | null;
+    }>;
 
     // Pull the current Gmail INBOX slice in one call. maxResults caps at 500.
     const gmailInbox = new Set<string>();
@@ -2216,7 +2606,14 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
         { account_id: data.gmail_account_id, user_id: context.userId },
         e,
       );
-      return { checked: 0, reconciled: 0, deleted: 0, restored: 0, ingested: 0, error: (e as Error).message };
+      return {
+        checked: 0,
+        reconciled: 0,
+        deleted: 0,
+        restored: 0,
+        ingested: 0,
+        error: (e as Error).message,
+      };
     }
 
     // ── Outgoing pass ──────────────────────────────────────────────────
@@ -2241,11 +2638,14 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
         }
         const inInbox = labels.includes("INBOX");
         const unread = labels.includes("UNREAD");
-        await supabaseAdmin.from("emails").update({
-          raw_labels: labels,
-          is_archived: !inInbox,
-          is_read: !unread,
-        }).eq("id", r.id);
+        await supabaseAdmin
+          .from("emails")
+          .update({
+            raw_labels: labels,
+            is_archived: !inInbox,
+            is_read: !unread,
+          })
+          .eq("id", r.id);
         if (!inInbox) reconciled++;
       } catch (e) {
         logError(
@@ -2268,7 +2668,12 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
     if (gmailIds.length > 0) {
       // Fetch the local state of every Gmail-inbox message in chunks (the
       // `.in()` list can be up to 500 ids).
-      type LocalState = { id: string; gmail_message_id: string; is_archived: boolean; raw_labels: string[] | null };
+      type LocalState = {
+        id: string;
+        gmail_message_id: string;
+        is_archived: boolean;
+        raw_labels: string[] | null;
+      };
       const localById = new Map<string, LocalState>();
       for (let i = 0; i < gmailIds.length; i += 200) {
         const chunk = gmailIds.slice(i, i + 200);
@@ -2302,11 +2707,14 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
         const row = localById.get(id)!;
         try {
           const nextLabels = Array.from(new Set([...(row.raw_labels ?? []), "INBOX"]));
-          await supabaseAdmin.from("emails").update({
-            is_archived: false,
-            raw_labels: nextLabels,
-            snoozed_until: null,
-          }).eq("id", row.id);
+          await supabaseAdmin
+            .from("emails")
+            .update({
+              is_archived: false,
+              raw_labels: nextLabels,
+              snoozed_until: null,
+            })
+            .eq("id", row.id);
           restored++;
         } catch (e) {
           logError(
@@ -2346,8 +2754,6 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
     };
   });
 
-
-
 /**
  * Surface push→ack and push→visible latency percentiles over the last N
  * hours, scoped to the caller's mailboxes. Backed by a SECURITY DEFINER
@@ -2357,10 +2763,17 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
 export const getSyncLatencyStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
-    z.object({
-      lookback_hours: z.number().int().min(1).max(24 * 7).optional(),
-      account_id: z.string().uuid().optional(),
-    }).parse(d ?? {}),
+    z
+      .object({
+        lookback_hours: z
+          .number()
+          .int()
+          .min(1)
+          .max(24 * 7)
+          .optional(),
+        account_id: z.string().uuid().optional(),
+      })
+      .parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
     type LatencyBucket = {
@@ -2397,11 +2810,13 @@ export const getSyncLatencyStats = createServerFn({ method: "POST" })
         error: error.message,
       } satisfies LatencyStats & { error: string };
     }
-    return stats ?? {
-      push_to_ack: { count: 0, p50: null, p95: null, p99: null },
-      push_to_visible: { count: 0, p50: null, p95: null, p99: null },
-      since: new Date(Date.now() - (data.lookback_hours ?? 24) * 3600_000).toISOString(),
-    };
+    return (
+      stats ?? {
+        push_to_ack: { count: 0, p50: null, p95: null, p99: null },
+        push_to_visible: { count: 0, p50: null, p95: null, p99: null },
+        since: new Date(Date.now() - (data.lookback_hours ?? 24) * 3600_000).toISOString(),
+      }
+    );
   });
 
 /**
@@ -2469,7 +2884,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         mode,
         account_email,
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       return {
         url,
         ok: false,
@@ -2478,27 +2893,30 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
         mode,
         account_email,
-        error: e?.message ?? String(e),
+        error: e instanceof Error ? e.message : String(e),
       };
     }
   });
-
 
 /** List processing jobs (queue + DLQ) for the current user. */
 export const listMessageJobs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({
-      status: z.enum(["pending", "running", "dlq", "all"]).optional(),
-      limit: z.number().min(1).max(500).optional(),
-      account_id: z.string().uuid().optional(),
-    }).parse(input ?? {})
+    z
+      .object({
+        status: z.enum(["pending", "running", "dlq", "all"]).optional(),
+        limit: z.number().min(1).max(500).optional(),
+        account_id: z.string().uuid().optional(),
+      })
+      .parse(input ?? {}),
   )
   .handler(async ({ data, context }) => {
     const limit = data.limit ?? 100;
     let q = supabaseAdmin
       .from("message_jobs")
-      .select("id, gmail_account_id, gmail_message_id, attempt, status, next_run_at, last_error, from_addr, subject, created_at, updated_at")
+      .select(
+        "id, gmail_account_id, gmail_message_id, attempt, status, next_run_at, last_error, from_addr, subject, created_at, updated_at",
+      )
       .eq("user_id", context.userId)
       .order("updated_at", { ascending: false })
       .limit(limit);
@@ -2507,10 +2925,7 @@ export const listMessageJobs = createServerFn({ method: "POST" })
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
 
-    let aggQ = supabaseAdmin
-      .from("message_jobs")
-      .select("status")
-      .eq("user_id", context.userId);
+    let aggQ = supabaseAdmin.from("message_jobs").select("status").eq("user_id", context.userId);
     if (data.account_id) aggQ = aggQ.eq("gmail_account_id", data.account_id);
     const { data: agg } = await aggQ;
     const stats = { pending: 0, running: 0, dlq: 0, total: agg?.length ?? 0 };
@@ -2541,7 +2956,7 @@ export const retryJob = createServerFn({ method: "POST" })
 export const runJobsNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({ limit: z.number().min(1).max(100).optional() }).parse(input ?? {})
+    z.object({ limit: z.number().min(1).max(100).optional() }).parse(input ?? {}),
   )
   .handler(async ({ data }) => {
     return await runMessageJobs(data.limit ?? 25);
@@ -2551,10 +2966,12 @@ export const runJobsNow = createServerFn({ method: "POST" })
 export const enqueueGmailMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { gmail_account_id: string; gmail_message_id: string }) =>
-    z.object({
-      gmail_account_id: z.string().uuid(),
-      gmail_message_id: z.string().min(1).max(64),
-    }).parse(d)
+    z
+      .object({
+        gmail_account_id: z.string().uuid(),
+        gmail_message_id: z.string().min(1).max(64),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: acc } = await supabaseAdmin
@@ -2569,18 +2986,21 @@ export const enqueueGmailMessage = createServerFn({ method: "POST" })
 
 export const addFolderRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    folder_id: string;
-    field: "from" | "domain" | "subject";
-    value: string;
-    op?: "contains" | "equals" | "starts_with";
-  }) =>
-    z.object({
-      folder_id: z.string().uuid(),
-      field: z.enum(["from", "domain", "subject"]),
-      value: z.string().min(1).max(998),
-      op: z.enum(["contains", "equals", "starts_with"]).optional(),
-    }).parse(d),
+  .inputValidator(
+    (d: {
+      folder_id: string;
+      field: "from" | "domain" | "subject";
+      value: string;
+      op?: "contains" | "equals" | "starts_with";
+    }) =>
+      z
+        .object({
+          folder_id: z.string().uuid(),
+          field: z.enum(["from", "domain", "subject"]),
+          value: z.string().min(1).max(998),
+          op: z.enum(["contains", "equals", "starts_with"]).optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const op = data.op ?? (data.field === "subject" ? "starts_with" : "contains");
@@ -2591,8 +3011,8 @@ export const addFolderRule = createServerFn({ method: "POST" })
       data.field === "subject"
         ? data.value.trim()
         : data.field === "domain"
-        ? data.value.trim().toLowerCase().replace(/^@/, "")
-        : data.value.trim().toLowerCase();
+          ? data.value.trim().toLowerCase().replace(/^@/, "")
+          : data.value.trim().toLowerCase();
     if (!value) throw new Error("Empty value");
 
     const { data: folder } = await supabaseAdmin
@@ -2630,18 +3050,21 @@ export const addFolderRule = createServerFn({ method: "POST" })
  */
 export const countMatchingForRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    account_id: string;
-    field: "from" | "domain" | "subject";
-    op: "contains" | "equals" | "starts_with";
-    value: string;
-  }) =>
-    z.object({
-      account_id: z.string().uuid(),
-      field: z.enum(["from", "domain", "subject"]),
-      op: z.enum(["contains", "equals", "starts_with"]),
-      value: z.string().min(1).max(998),
-    }).parse(d),
+  .inputValidator(
+    (d: {
+      account_id: string;
+      field: "from" | "domain" | "subject";
+      op: "contains" | "equals" | "starts_with";
+      value: string;
+    }) =>
+      z
+        .object({
+          account_id: z.string().uuid(),
+          field: z.enum(["from", "domain", "subject"]),
+          op: z.enum(["contains", "equals", "starts_with"]),
+          value: z.string().min(1).max(998),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const raw = data.value.trim();
@@ -2676,22 +3099,25 @@ export const countMatchingForRule = createServerFn({ method: "POST" })
  */
 export const applyFilterRuleToPast = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    account_id: string;
-    to_folder_id: string;
-    field: "from" | "domain" | "subject";
-    op: "contains" | "equals" | "starts_with";
-    value: string;
-    archive?: boolean;
-  }) =>
-    z.object({
-      account_id: z.string().uuid(),
-      to_folder_id: z.string().uuid(),
-      field: z.enum(["from", "domain", "subject"]),
-      op: z.enum(["contains", "equals", "starts_with"]),
-      value: z.string().min(1).max(998),
-      archive: z.boolean().optional().default(false),
-    }).parse(d),
+  .inputValidator(
+    (d: {
+      account_id: string;
+      to_folder_id: string;
+      field: "from" | "domain" | "subject";
+      op: "contains" | "equals" | "starts_with";
+      value: string;
+      archive?: boolean;
+    }) =>
+      z
+        .object({
+          account_id: z.string().uuid(),
+          to_folder_id: z.string().uuid(),
+          field: z.enum(["from", "domain", "subject"]),
+          op: z.enum(["contains", "equals", "starts_with"]),
+          value: z.string().min(1).max(998),
+          archive: z.boolean().optional().default(false),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
@@ -2707,7 +3133,9 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     const esc = v.replace(/[\\%_]/g, (m) => `\\${m}`);
 
     // Build a query with the rule predicate applied (without folder/archive scoping).
-    const applyRulePredicate = <T extends ReturnType<typeof supabaseAdmin.from>>(qb: any) => {
+    const applyRulePredicate = <T extends { ilike(column: string, pattern: string): T }>(
+      qb: T,
+    ): T => {
       if (data.field === "subject") {
         const pat = data.op === "equals" ? esc : data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
         return qb.ilike("subject", pat);
@@ -2738,8 +3166,8 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
       data.field === "domain"
         ? `Domain rule: ${v} → ${folder.name}`
         : data.field === "subject"
-        ? `Subject rule (${data.op}): ${v} → ${folder.name}`
-        : `Sender rule: ${v} → ${folder.name}`;
+          ? `Subject rule (${data.op}): ${v} → ${folder.name}`
+          : `Sender rule: ${v} → ${folder.name}`;
 
     let moved = 0;
     let failed = 0;
@@ -2775,19 +3203,34 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
           .limit(500),
       );
       const { data: archRows } = await archQ;
-      const targetRows = (archRows ?? []) as Array<{ id: string; gmail_message_id: string | null; raw_labels: string[] | null }>;
+      const targetRows = (archRows ?? []) as Array<{
+        id: string;
+        gmail_message_id: string | null;
+        raw_labels: string[] | null;
+      }>;
       const gmailIds = targetRows.map((r) => r.gmail_message_id).filter(Boolean) as string[];
       if (gmailIds.length > 0) {
         try {
           await batchModifyMessages(data.account_id, gmailIds, [], ["INBOX"]);
         } catch (e) {
-          logError("gmail.filter_rule.archive_past_failed", { account_id: data.account_id, folder_id: data.to_folder_id }, e);
+          logError(
+            "gmail.filter_rule.archive_past_failed",
+            { account_id: data.account_id, folder_id: data.to_folder_id },
+            e,
+          );
         }
       }
-      await Promise.all(targetRows.map((row) => supabaseAdmin
-        .from("emails")
-        .update({ is_archived: true, raw_labels: removeLabelsFromCurrent(row.raw_labels, ["INBOX"]) })
-        .eq("id", row.id)));
+      await Promise.all(
+        targetRows.map((row) =>
+          supabaseAdmin
+            .from("emails")
+            .update({
+              is_archived: true,
+              raw_labels: removeLabelsFromCurrent(row.raw_labels, ["INBOX"]),
+            })
+            .eq("id", row.id),
+        ),
+      );
       archived = targetRows.length;
     }
 
@@ -2802,10 +3245,12 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
 export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({
-      folderId: z.string().uuid(),
-      behavior: z.enum(["mark_read", "archive", "star"]),
-    }).parse(input),
+    z
+      .object({
+        folderId: z.string().uuid(),
+        behavior: z.enum(["mark_read", "archive", "star"]),
+      })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const userId = context.userId;
@@ -2844,7 +3289,11 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
         await batchModifyMessages(folder.gmail_account_id, ids, ["STARRED"], []);
       }
     } catch (e) {
-      logError("gmail.retroactive.batch_modify_failed", { account_id: folder.gmail_account_id, folder_id: data.folderId }, e);
+      logError(
+        "gmail.retroactive.batch_modify_failed",
+        { account_id: folder.gmail_account_id, folder_id: data.folderId },
+        e,
+      );
     }
 
     // DB side.
@@ -2853,21 +3302,27 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
     else if (data.behavior === "archive") patch.is_archived = true;
     if (Object.keys(patch).length > 0) {
       if (data.behavior === "archive") {
-        await Promise.all(rows.map((row) => supabaseAdmin
-          .from("emails")
-          .update({ ...patch, raw_labels: removeLabelsFromCurrent(row.raw_labels, ["INBOX"]) })
-          .eq("id", row.id)));
+        await Promise.all(
+          rows.map((row) =>
+            supabaseAdmin
+              .from("emails")
+              .update({ ...patch, raw_labels: removeLabelsFromCurrent(row.raw_labels, ["INBOX"]) })
+              .eq("id", row.id),
+          ),
+        );
       } else {
         await supabaseAdmin
           .from("emails")
           .update(patch)
-          .in("id", rows.map((r) => r.id));
+          .in(
+            "id",
+            rows.map((r) => r.id),
+          );
       }
     }
 
     return { count: rows.length };
   });
-
 
 // ─── Bulk actions on the "No rules" view ────────────────────────────────────
 
@@ -2886,8 +3341,14 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
     let failed = 0;
 
     for (const email of rows) {
-      if (email.user_id !== context.userId) { failed++; continue; }
-      if (!email.id || !email.gmail_account_id) { failed++; continue; }
+      if (email.user_id !== context.userId) {
+        failed++;
+        continue;
+      }
+      if (!email.id || !email.gmail_account_id) {
+        failed++;
+        continue;
+      }
       try {
         const parsed = {
           from_addr: email.from_addr ?? "",
@@ -2901,9 +3362,14 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
           received_at: email.received_at ?? new Date().toISOString(),
           raw_labels: (email.raw_labels as string[] | null) ?? null,
         };
-        const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, { skipGmailLabelMatch: true });
+        const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, {
+          skipGmailLabelMatch: true,
+        });
         if (result.folder_id && result.folder_id !== email.folder_id) {
-          await updateEmailEncrypted({ email_id: email.id, classification_reason: result.classification_reason ?? "" });
+          await updateEmailEncrypted({
+            email_id: email.id,
+            classification_reason: result.classification_reason ?? "",
+          });
           await supabaseAdmin
             .from("emails")
             .update({
@@ -2918,7 +3384,11 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
           unchanged++;
         }
       } catch (e) {
-        logError("gmail.reclassify.iter_failed", { email_id: email.id, user_id: context.userId }, e);
+        logError(
+          "gmail.reclassify.iter_failed",
+          { email_id: email.id, user_id: context.userId },
+          e,
+        );
         failed++;
       }
     }
@@ -2938,33 +3408,46 @@ export const suggestFolderFromSelection = createServerFn({ method: "POST" })
       .limit(50);
     const safe = (rows ?? []).filter((r) => r.user_id === context.userId);
     if (safe.length === 0) throw new Error("No emails found");
-    const suggestion = await suggestFolderFromEmails(safe.map((r) => ({
-      from_addr: r.from_addr, from_name: null, subject: null, snippet: null,
-    })));
+    const suggestion = await suggestFolderFromEmails(
+      safe.map((r) => ({
+        from_addr: r.from_addr,
+        from_name: null,
+        subject: null,
+        snippet: null,
+      })),
+    );
     return suggestion;
   });
 
 export const createFolderAndAssign = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    account_id: string;
-    name: string;
-    color: string;
-    ai_rule: string;
-    filter?: { field: string; op: string; value: string } | null;
-    email_ids: string[];
-  }) => z.object({
-    account_id: z.string().uuid(),
-    name: z.string().min(1).max(80),
-    color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-    ai_rule: z.string().max(500),
-    filter: z.object({
-      field: z.string().min(1).max(40),
-      op: z.string().min(1).max(20),
-      value: z.string().min(1).max(200),
-    }).nullable().optional(),
-    email_ids: z.array(z.string().uuid()).max(100),
-  }).parse(d))
+  .inputValidator(
+    (d: {
+      account_id: string;
+      name: string;
+      color: string;
+      ai_rule: string;
+      filter?: { field: string; op: string; value: string } | null;
+      email_ids: string[];
+    }) =>
+      z
+        .object({
+          account_id: z.string().uuid(),
+          name: z.string().min(1).max(80),
+          color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+          ai_rule: z.string().max(500),
+          filter: z
+            .object({
+              field: z.string().min(1).max(40),
+              op: z.string().min(1).max(20),
+              value: z.string().min(1).max(200),
+            })
+            .nullable()
+            .optional(),
+          email_ids: z.array(z.string().uuid()).max(100),
+        })
+        .parse(d),
+  )
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const { data: folder, error } = await supabaseAdmin
@@ -2990,7 +3473,14 @@ export const createFolderAndAssign = createServerFn({ method: "POST" })
     }
 
     if (data.email_ids.length > 0) {
-      await Promise.all(data.email_ids.map((id) => updateEmailEncrypted({ email_id: id, classification_reason: `Moved into new folder "${data.name}"` })));
+      await Promise.all(
+        data.email_ids.map((id) =>
+          updateEmailEncrypted({
+            email_id: id,
+            classification_reason: `Moved into new folder "${data.name}"`,
+          }),
+        ),
+      );
       await supabaseAdmin
         .from("emails")
         .update({
@@ -3009,14 +3499,18 @@ export const createFolderAndAssign = createServerFn({ method: "POST" })
 export const setFolderAutoRelearn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; auto_relearn: boolean; threshold?: number }) =>
-    z.object({
-      folder_id: z.string().uuid(),
-      auto_relearn: z.boolean(),
-      threshold: z.number().int().min(1).max(1000).optional(),
-    }).parse(d),
+    z
+      .object({
+        folder_id: z.string().uuid(),
+        auto_relearn: z.boolean(),
+        threshold: z.number().int().min(1).max(1000).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const patch: { auto_relearn: boolean; relearn_threshold?: number } = { auto_relearn: data.auto_relearn };
+    const patch: { auto_relearn: boolean; relearn_threshold?: number } = {
+      auto_relearn: data.auto_relearn,
+    };
     if (data.threshold !== undefined) patch.relearn_threshold = data.threshold;
     const { error } = await supabaseAdmin
       .from("folders")
@@ -3034,10 +3528,12 @@ export const setFolderAutoRelearn = createServerFn({ method: "POST" })
 export const scanGmailForFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; months?: 1 | 3 | 6 | 12 }) =>
-    z.object({
-      folder_id: z.string().uuid(),
-      months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]).optional(),
-    }).parse(d),
+    z
+      .object({
+        folder_id: z.string().uuid(),
+        months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const months = data.months ?? 6;
@@ -3069,7 +3565,10 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
     if (queries.size === 0) {
       return {
         ok: false as const,
-        ingested: 0, found: 0, queries_run: 0, skipped_regex: skippedRegex,
+        ingested: 0,
+        found: 0,
+        queries_run: 0,
+        skipped_regex: skippedRegex,
         truncated: false,
         reason: "no_translatable_rules" as const,
       };
@@ -3098,7 +3597,6 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
       allFilters = (allFF ?? []) as Filter[];
     }
 
-
     const HARD_INGEST_CAP = 1000;
     const PAGE = 100;
     const MAX_PAGES = 5;
@@ -3109,8 +3607,7 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
     let queriesRun = 0;
     let reauthFailed = false;
 
-    outer:
-    for (const q of queries) {
+    outer: for (const q of queries) {
       queriesRun++;
       try {
         // Page through results for this query.
@@ -3140,7 +3637,10 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
         let i = 0;
         async function worker() {
           while (i < todo.length) {
-            if (totalIngested >= HARD_INGEST_CAP) { truncated = true; return; }
+            if (totalIngested >= HARD_INGEST_CAP) {
+              truncated = true;
+              return;
+            }
             const id = todo[i++];
             try {
               const raw = await getMessage(accountId, id);
@@ -3179,9 +3679,10 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
                     classification_reason = `Rule group matched for "${allFolders.find((f) => f.id === result.folder_id)?.name ?? folderName}"`;
                   } else if (result.filter) {
                     classified_by = result.filter.field === "domain" ? "domain_rule" : "filter";
-                    classification_reason = result.filter.field === "domain"
-                      ? `Domain rule: ${result.filter.value}`
-                      : `Folder rule: ${result.filter.field} ${result.filter.value}`;
+                    classification_reason =
+                      result.filter.field === "domain"
+                        ? `Domain rule: ${result.filter.value}`
+                        : `Folder rule: ${result.filter.field} ${result.filter.value}`;
                   } else {
                     classified_by = "filter";
                     classification_reason = "Folder rule matched";
@@ -3224,30 +3725,48 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
                     matched_filter_ids,
                   });
                 }
-              }
-              else logError("gmail.scan_folder.insert_failed", { account_id: accountId, gmail_message_id: id }, { message: error });
+              } else
+                logError(
+                  "gmail.scan_folder.insert_failed",
+                  { account_id: accountId, gmail_message_id: id },
+                  { message: error },
+                );
             } catch (e) {
-              logError("gmail.scan_folder.one_failed", { account_id: accountId, gmail_message_id: id }, e);
+              logError(
+                "gmail.scan_folder.one_failed",
+                { account_id: accountId, gmail_message_id: id },
+                e,
+              );
             }
           }
         }
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
-        if (totalIngested >= HARD_INGEST_CAP) { truncated = true; break outer; }
+        if (totalIngested >= HARD_INGEST_CAP) {
+          truncated = true;
+          break outer;
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (/missing OAuth tokens|reauthorize|invalid_grant/i.test(msg)) {
           reauthFailed = true;
           break;
         }
-        logError("gmail.scan_folder.query_failed", { account_id: accountId, folder_id: folder.id, q }, e);
+        logError(
+          "gmail.scan_folder.query_failed",
+          { account_id: accountId, folder_id: folder.id, q },
+          e,
+        );
       }
     }
 
     if (reauthFailed && totalIngested === 0) {
       return {
         ok: false as const,
-        ingested: 0, found: totalFound, queries_run: queriesRun,
-        skipped_regex: skippedRegex, truncated: false,
+        ingested: 0,
+        found: totalFound,
+        queries_run: queriesRun,
+        skipped_regex: skippedRegex,
+        truncated: false,
         reason: "reauth_required" as const,
       };
     }

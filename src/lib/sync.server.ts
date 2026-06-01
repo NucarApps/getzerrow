@@ -13,12 +13,20 @@
 // re-exports below preserve backward compatibility for existing
 // `import { x } from "@/lib/sync.server"` call sites.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMessageMetadata, parseMessage, listMessages, listHistory, ensureWatch, GmailApiError } from "./gmail.server";
+import {
+  getMessageMetadata,
+  parseMessage,
+  listMessages,
+  listHistory,
+  ensureWatch,
+  GmailApiError,
+} from "./gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "./ai.server";
 import { logError } from "./log.server";
 import { computeLabelPatch } from "./sync/label-merge";
 import {
-  MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS,
+  MAX_JOB_ATTEMPTS,
+  RETRYABLE_FREE_ATTEMPTS,
   computeBackoffSeconds as _computeBackoffSeconds,
 } from "./sync/backoff";
 import { withAccountLock as _withAccountLock } from "./sync/account-lock";
@@ -96,7 +104,6 @@ async function getAccount(accountId: string): Promise<GmailAccount> {
 // ReDoS-safe regex helpers moved to ./sync/filter-engine.ts and imported
 // above.
 
-
 // (loadFoldersWithExamples + AccountContext + loadAccountContext +
 // invalidate* moved to ./sync/account-context.ts and re-exported above.)
 
@@ -113,12 +120,19 @@ export async function backfillRecent(accountId: string, userId: string, maxResul
   // failure. Enqueue at priority=0 (live lane) so the dedicated live worker
   // drains within seconds and we don't block the calling request (often the
   // Pub/Sub webhook). Widened window to 30d to cover longer outages.
-  const list = await listMessages(accountId, { maxResults, q: "-in:chats -in:trash -in:spam newer_than:30d" });
+  const list = await listMessages(accountId, {
+    maxResults,
+    q: "-in:chats -in:trash -in:spam newer_than:30d",
+  });
   const ids = (list.messages ?? []).map((m) => m.id);
   try {
     await enqueueMessageJobs(accountId, userId, ids, 0);
   } catch (e) {
-    logError("sync.backfill_recent_enqueue_failed", { account_id: accountId, user_id: userId, candidate_count: ids.length }, e);
+    logError(
+      "sync.backfill_recent_enqueue_failed",
+      { account_id: accountId, user_id: userId, candidate_count: ids.length },
+      e,
+    );
     return { processed: 0, enqueued: 0, error: (e as Error).message };
   }
   return { processed: ids.length, enqueued: ids.length };
@@ -145,7 +159,10 @@ export async function backfillWindow(
       pageToken,
     });
     for (const m of list.messages ?? []) {
-      if (!seen.has(m.id)) { seen.add(m.id); ids.push(m.id); }
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        ids.push(m.id);
+      }
       if (ids.length >= maxMessages) break;
     }
     pageToken = list.nextPageToken;
@@ -182,7 +199,11 @@ export async function backfillWindow(
         processed++;
       } catch (e) {
         failed++;
-        logError("sync.backfill_window_process_failed", { account_id: accountId, user_id: userId, gmail_message_id: todo[i] }, e);
+        logError(
+          "sync.backfill_window_process_failed",
+          { account_id: accountId, user_id: userId, gmail_message_id: todo[i] },
+          e,
+        );
       }
     }
   }
@@ -241,7 +262,11 @@ async function bumpHistoryAndStamp(
     // RPC isn't deployed yet, or some other DB error. Fall back to the
     // JS-only check — strictly worse on overlapping replicas but still
     // better than blind UPDATE.
-    logError("sync.bump_history_rpc_failed", { account_id: accountId, incoming_history_id: incomingHistoryId }, error);
+    logError(
+      "sync.bump_history_rpc_failed",
+      { account_id: accountId, incoming_history_id: incomingHistoryId },
+      error,
+    );
     const { data: current } = await supabaseAdmin
       .from("gmail_accounts")
       .select("history_id")
@@ -251,7 +276,10 @@ async function bumpHistoryAndStamp(
       if (extra.watch_expiration) {
         await supabaseAdmin
           .from("gmail_accounts")
-          .update({ watch_expiration: extra.watch_expiration, last_poll_at: new Date().toISOString() })
+          .update({
+            watch_expiration: extra.watch_expiration,
+            last_poll_at: new Date().toISOString(),
+          })
           .eq("id", accountId);
       }
       return;
@@ -337,7 +365,9 @@ export async function cancelBackfillJob(jobId: string, userId: string) {
 export async function tickBackfillJobs(maxJobs = 2) {
   const { data: jobs } = await supabaseAdmin
     .from("backfill_jobs")
-    .select("id, user_id, gmail_account_id, query, status, next_page_token, total_found, total_enqueued, already_had")
+    .select(
+      "id, user_id, gmail_account_id, query, status, next_page_token, total_found, total_enqueued, already_had",
+    )
     .in("status", ["listing", "processing"])
     .order("updated_at", { ascending: true })
     .limit(maxJobs);
@@ -346,13 +376,18 @@ export async function tickBackfillJobs(maxJobs = 2) {
     try {
       const r = await tickBackfillJob(job);
       results.push({ job_id: job.id, ...r });
-    } catch (e: any) {
-      logError("sync.tick_backfill_job_failed", { job_id: job.id, account_id: job.gmail_account_id, status: job.status }, e);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      logError(
+        "sync.tick_backfill_job_failed",
+        { job_id: job.id, account_id: job.gmail_account_id, status: job.status },
+        e,
+      );
       await supabaseAdmin
         .from("backfill_jobs")
-        .update({ last_error: String(e?.message ?? e).slice(0, 500) })
+        .update({ last_error: message.slice(0, 500) })
         .eq("id", job.id);
-      results.push({ job_id: job.id, phase: "error", error: String(e?.message ?? e) });
+      results.push({ job_id: job.id, phase: "error", error: message });
     }
   }
   return { processed: results.length, results };
@@ -392,7 +427,11 @@ async function tickBackfillJob(job: BackfillJob): Promise<{ phase: string; added
           await enqueueMessageJobs(job.gmail_account_id, job.user_id, todo, 10);
           enqueuedDelta += todo.length;
         } catch (e) {
-          logError("sync.backfill_page_enqueue_failed", { job_id: job.id, account_id: job.gmail_account_id, batch_size: todo.length }, e);
+          logError(
+            "sync.backfill_page_enqueue_failed",
+            { job_id: job.id, account_id: job.gmail_account_id, batch_size: todo.length },
+            e,
+          );
         }
       }
 
@@ -438,8 +477,6 @@ async function tickBackfillJob(job: BackfillJob): Promise<{ phase: string; added
   return { phase: "draining" };
 }
 
-
-
 async function applyLabelChange(
   accountId: string,
   messageId: string,
@@ -449,7 +486,9 @@ async function applyLabelChange(
   labelToFolder?: Map<string, { id: string; gmail_label_id: string | null }>,
 ) {
   if (added.includes("TRASH")) {
-    await supabaseAdmin.from("emails").delete()
+    await supabaseAdmin
+      .from("emails")
+      .delete()
       .eq("gmail_account_id", accountId)
       .eq("gmail_message_id", messageId);
     return;
@@ -483,11 +522,12 @@ async function applyLabelChange(
   }
 
   if (Object.keys(patch).length === 0) return;
-  await supabaseAdmin.from("emails").update(patch as never)
+  await supabaseAdmin
+    .from("emails")
+    .update(patch as never)
     .eq("gmail_account_id", accountId)
     .eq("gmail_message_id", messageId);
 }
-
 
 // ─── Durable per-message processing queue ─────────────────────────────────
 // Backoff constants + computeBackoffSeconds + jitter helper live in
@@ -538,12 +578,10 @@ export async function enqueueMessageJobs(
   }));
   // Supabase caps a single upsert at ~1000 rows; we chunk just to be safe.
   for (let i = 0; i < rows.length; i += 500) {
-    await supabaseAdmin
-      .from("message_jobs")
-      .upsert(rows.slice(i, i + 500), {
-        onConflict: "gmail_account_id,gmail_message_id",
-        ignoreDuplicates: true,
-      });
+    await supabaseAdmin.from("message_jobs").upsert(rows.slice(i, i + 500), {
+      onConflict: "gmail_account_id,gmail_message_id",
+      ignoreDuplicates: true,
+    });
   }
 }
 
@@ -565,24 +603,30 @@ export async function runMessageJobs(
     .eq("status", "running")
     .lt("locked_at", stuckCutoff);
   for (const s of stuck ?? []) {
-    const wasReclaimed = typeof s.last_error === "string" && s.last_error.startsWith("stuck (worker timeout)");
+    const wasReclaimed =
+      typeof s.last_error === "string" && s.last_error.startsWith("stuck (worker timeout)");
     const nextAttempt = wasReclaimed ? (s.attempt ?? 0) + 1 : (s.attempt ?? 0);
     if (nextAttempt >= MAX_JOB_ATTEMPTS) {
-      await supabaseAdmin.from("message_jobs").update({
-        status: "dlq",
-        attempt: nextAttempt,
-        last_error: "stuck (worker timeout — exceeded max attempts)",
-        locked_at: null,
-      }).eq("id", s.id);
+      await supabaseAdmin
+        .from("message_jobs")
+        .update({
+          status: "dlq",
+          attempt: nextAttempt,
+          last_error: "stuck (worker timeout — exceeded max attempts)",
+          locked_at: null,
+        })
+        .eq("id", s.id);
     } else {
-      await supabaseAdmin.from("message_jobs").update({
-        status: "pending",
-        attempt: nextAttempt,
-        last_error: "stuck (worker timeout) — auto-reclaimed",
-        locked_at: null,
-        next_run_at: new Date().toISOString(),
-
-      }).eq("id", s.id);
+      await supabaseAdmin
+        .from("message_jobs")
+        .update({
+          status: "pending",
+          attempt: nextAttempt,
+          last_error: "stuck (worker timeout) — auto-reclaimed",
+          locked_at: null,
+          next_run_at: new Date().toISOString(),
+        })
+        .eq("id", s.id);
     }
   }
 
@@ -592,7 +636,11 @@ export async function runMessageJobs(
     p_priority: opts.priority ?? undefined,
   });
   if (claimErr) {
-    logError("sync.claim_message_jobs_rpc_failed", { limit, priority: opts.priority ?? null }, claimErr);
+    logError(
+      "sync.claim_message_jobs_rpc_failed",
+      { limit, priority: opts.priority ?? null },
+      claimErr,
+    );
     return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0, error: claimErr.message };
   }
   type ClaimedJob = {
@@ -612,19 +660,30 @@ export async function runMessageJobs(
   // ─── Prefetch per-account context once for the whole batch.
   const accountIds = Array.from(new Set(claimed.map((j) => j.gmail_account_id)));
   const userByAccount = new Map<string, string>();
-  for (const j of claimed) if (!userByAccount.has(j.gmail_account_id)) userByAccount.set(j.gmail_account_id, j.user_id);
+  for (const j of claimed)
+    if (!userByAccount.has(j.gmail_account_id)) userByAccount.set(j.gmail_account_id, j.user_id);
   const contextByAccount = new Map<string, AccountContext>();
   await Promise.all(
     accountIds.map(async (aid) => {
       try {
         contextByAccount.set(aid, await loadAccountContext(aid, userByAccount.get(aid)!));
       } catch (e) {
-        logError("sync.load_account_context_failed", { account_id: aid, user_id: userByAccount.get(aid) ?? null }, e);
+        logError(
+          "sync.load_account_context_failed",
+          { account_id: aid, user_id: userByAccount.get(aid) ?? null },
+          e,
+        );
       }
     }),
   );
 
-  const results: Array<{ id: string; ok: boolean; error?: string; dlq?: boolean; retryable?: boolean }> = [];
+  const results: Array<{
+    id: string;
+    ok: boolean;
+    error?: string;
+    dlq?: boolean;
+    retryable?: boolean;
+  }> = [];
 
   // After the first per-message pass, backfill messages still needing AI
   // are queued here for a single batched LLM call per account.
@@ -660,21 +719,30 @@ export async function runMessageJobs(
         });
       }
     } catch (e) {
-      logError("sync.finalize_stuck_email_failed", { job_id: job.id, account_id: job.gmail_account_id, gmail_message_id: job.gmail_message_id }, e);
+      logError(
+        "sync.finalize_stuck_email_failed",
+        {
+          job_id: job.id,
+          account_id: job.gmail_account_id,
+          gmail_message_id: job.gmail_message_id,
+        },
+        e,
+      );
     }
   };
 
-  const handleError = async (job: ClaimedJob, e: any) => {
-    const msg = e?.message ?? String(e);
+  const handleError = async (job: ClaimedJob, e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
     const status: number | undefined = e instanceof GmailApiError ? e.status : undefined;
-    const retryable: boolean = e instanceof GmailApiError
-      ? e.retryable
-      : (typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg));
-    const retryAfterSeconds: number | null = e instanceof GmailApiError ? e.retryAfterSeconds : null;
+    const retryable: boolean =
+      e instanceof GmailApiError
+        ? e.retryable
+        : typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg);
+    const retryAfterSeconds: number | null =
+      e instanceof GmailApiError ? e.retryAfterSeconds : null;
     const isQuotaExceeded: boolean = e instanceof GmailApiError ? e.isQuotaExceeded : false;
 
     await finalizeStuckEmailRow(job, msg);
-
 
     if (status === 404 || (typeof msg === "string" && msg.includes(" 404 "))) {
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
@@ -684,9 +752,8 @@ export async function runMessageJobs(
 
     const terminal = status === 400 || status === 401 || status === 403;
     const currentAttempt = job.attempt ?? 0;
-    const nextAttempt = retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS
-      ? currentAttempt
-      : currentAttempt + 1;
+    const nextAttempt =
+      retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS ? currentAttempt : currentAttempt + 1;
 
     if (terminal || nextAttempt >= MAX_JOB_ATTEMPTS) {
       let from_addr: string | null = null;
@@ -696,15 +763,20 @@ export async function runMessageJobs(
         const p = parseMessage(meta);
         from_addr = p.from_addr ?? null;
         subject = p.subject ?? null;
-      } catch { /* best-effort */ }
-      await supabaseAdmin.from("message_jobs").update({
-        status: "dlq",
-        attempt: nextAttempt,
-        last_error: msg.slice(0, 1000),
-        locked_at: null,
-        from_addr,
-        subject,
-      }).eq("id", job.id);
+      } catch {
+        /* best-effort */
+      }
+      await supabaseAdmin
+        .from("message_jobs")
+        .update({
+          status: "dlq",
+          attempt: nextAttempt,
+          last_error: msg.slice(0, 1000),
+          locked_at: null,
+          from_addr,
+          subject,
+        })
+        .eq("id", job.id);
       results.push({ id: job.id, ok: false, dlq: true, error: msg });
     } else {
       const backoffSeconds = computeBackoffSeconds({
@@ -714,13 +786,16 @@ export async function runMessageJobs(
         currentAttempt,
         nextAttempt,
       });
-      await supabaseAdmin.from("message_jobs").update({
-        status: "pending",
-        attempt: nextAttempt,
-        last_error: msg.slice(0, 1000),
-        locked_at: null,
-        next_run_at: new Date(Date.now() + backoffSeconds * 1000).toISOString(),
-      }).eq("id", job.id);
+      await supabaseAdmin
+        .from("message_jobs")
+        .update({
+          status: "pending",
+          attempt: nextAttempt,
+          last_error: msg.slice(0, 1000),
+          locked_at: null,
+          next_run_at: new Date(Date.now() + backoffSeconds * 1000).toISOString(),
+        })
+        .eq("id", job.id);
       results.push({ id: job.id, ok: false, retryable, error: msg });
     }
 
@@ -731,7 +806,9 @@ export async function runMessageJobs(
           history_id: null,
           error: `Gmail API ${status}: ${msg.slice(0, 300)}`,
         });
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     }
   };
 
@@ -750,9 +827,12 @@ export async function runMessageJobs(
         }),
         new Promise((_, reject) =>
           setTimeout(
-            () => reject(new Error(
-              `job timeout after ${JOB_TIMEOUT_MS}ms (fetch=${timings.fetch.toFixed(0)} ai=${timings.ai.toFixed(0)} db=${timings.db.toFixed(0)})`,
-            )),
+            () =>
+              reject(
+                new Error(
+                  `job timeout after ${JOB_TIMEOUT_MS}ms (fetch=${timings.fetch.toFixed(0)} ai=${timings.ai.toFixed(0)} db=${timings.db.toFixed(0)})`,
+                ),
+              ),
             JOB_TIMEOUT_MS,
           ),
         ),
@@ -777,11 +857,10 @@ export async function runMessageJobs(
 
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
       results.push({ id: job.id, ok: true });
-    } catch (e: any) {
+    } catch (e: unknown) {
       await handleError(job, e);
     }
   };
-
 
   // ─── Pool of N workers draining the claimed queue.
   const queue = [...claimed];
@@ -810,12 +889,17 @@ export async function runMessageJobs(
         for (let i = 0; i < items.length; i += BATCH_SIZE) {
           const chunk = items.slice(i, i + BATCH_SIZE);
           try {
-            const out = await classifyEmailsBatch(chunk.map((c) => c.parsed), ctx.enrichedFolders);
+            const out = await classifyEmailsBatch(
+              chunk.map((c) => c.parsed),
+              ctx.enrichedFolders,
+            );
             await Promise.all(
               chunk.map(async (c, idx) => {
                 const r = out[idx];
                 // Honor each folder's min_ai_confidence — match live behavior.
-                const candidate = r?.folder_id ? ctx.folders.find((f) => f.id === r.folder_id) : null;
+                const candidate = r?.folder_id
+                  ? ctx.folders.find((f) => f.id === r.folder_id)
+                  : null;
                 const threshold = candidate?.min_ai_confidence ?? 0;
                 const passes = r?.folder_id && (r.confidence ?? 0) >= threshold;
                 await updateEmailEncrypted({
@@ -823,21 +907,25 @@ export async function runMessageJobs(
                   folder_id: passes ? r!.folder_id : null,
                   ai_summary: r?.summary || null,
                   ai_confidence: r?.confidence ?? 0,
-                  classified_by: passes ? "ai" : (r?.folder_id ? "ai_low_confidence" : "ai"),
+                  classified_by: passes ? "ai" : r?.folder_id ? "ai_low_confidence" : "ai",
                   classification_reason: passes
-                    ? (r?.reason || null)
-                    : (r?.folder_id
-                        ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
-                        : (r?.reason || null)),
+                    ? r?.reason || null
+                    : r?.folder_id
+                      ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
+                      : r?.reason || null,
                 });
                 if (passes && r?.folder_id) void bumpEmailsSinceLearn(r.folder_id);
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                 results.push({ id: c.job.id, ok: true });
               }),
             );
-          } catch (e: any) {
+          } catch (e: unknown) {
             // Batch failed — fall back to per-message classify so the queue still drains.
-            logError("sync.batch_ai_classify_failed", { account_id: aid, chunk_size: chunk.length }, e);
+            logError(
+              "sync.batch_ai_classify_failed",
+              { account_id: aid, chunk_size: chunk.length },
+              e,
+            );
             await Promise.all(
               chunk.map(async (c) => {
                 try {
@@ -853,11 +941,12 @@ export async function runMessageJobs(
                   if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
-                } catch (innerErr: any) {
+                } catch (innerErr: unknown) {
+                  const innerMsg = innerErr instanceof Error ? innerErr.message : "unknown";
                   await updateEmailEncrypted({
                     email_id: c.emailRowId,
                     classified_by: "unclassified",
-                    classification_reason: `AI classifier failed: ${(innerErr?.message ?? "unknown").slice(0, 200)}`,
+                    classification_reason: `AI classifier failed: ${innerMsg.slice(0, 200)}`,
                   });
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
@@ -872,21 +961,23 @@ export async function runMessageJobs(
 
   return {
     processed: results.length,
-    ok: results.filter(r => r.ok).length,
-    failed: results.filter(r => !r.ok && !r.dlq).length,
-    dlq: results.filter(r => r.dlq).length,
-    retryable: results.filter(r => r.retryable).length,
+    ok: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok && !r.dlq).length,
+    dlq: results.filter((r) => r.dlq).length,
+    retryable: results.filter((r) => r.retryable).length,
   };
 }
 
-
 export async function retryMessageJob(jobId: string) {
-  await supabaseAdmin.from("message_jobs").update({
-    status: "pending",
-    attempt: 0,
-    locked_at: null,
-    next_run_at: new Date().toISOString(),
-  }).eq("id", jobId);
+  await supabaseAdmin
+    .from("message_jobs")
+    .update({
+      status: "pending",
+      attempt: 0,
+      locked_at: null,
+      next_run_at: new Date().toISOString(),
+    })
+    .eq("id", jobId);
 }
 
 export async function syncSinceHistory(
@@ -915,10 +1006,13 @@ async function syncSinceHistoryLocked(
       // poll cron will keep thinking this account is push-silent.
       if (opts.publishedAtMs != null) {
         try {
-          await supabaseAdmin.from("gmail_accounts")
+          await supabaseAdmin
+            .from("gmail_accounts")
             .update({ last_push_at: new Date().toISOString() })
             .eq("id", accountId);
-        } catch { /* best-effort */ }
+        } catch {
+          /* best-effort */
+        }
       }
       return r;
     } catch (e) {
@@ -929,7 +1023,10 @@ async function syncSinceHistoryLocked(
   }
   try {
     const seenAdded = new Set<string>();
-    const { data: folders } = await supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId);
+    const { data: folders } = await supabaseAdmin
+      .from("folders")
+      .select("*")
+      .eq("gmail_account_id", accountId);
     const folderList = (folders ?? []) as Folder[];
     const labelToFolder = new Map<string, Folder>();
     for (const f of folderList) if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f);
@@ -937,7 +1034,12 @@ async function syncSinceHistoryLocked(
     // Batch deletes / label changes so a history page with N events is N
     // events worth of work, not N×roundtrips.
     const toDelete = new Set<string>();
-    type LabelOp = { messageId: string; currentLabels: string[] | undefined; added: string[]; removed: string[] };
+    type LabelOp = {
+      messageId: string;
+      currentLabels: string[] | undefined;
+      added: string[];
+      removed: string[];
+    };
     const labelOps: LabelOp[] = [];
 
     // Walk every history page before advancing the cursor. Gmail caps each
@@ -959,7 +1061,12 @@ async function syncSinceHistoryLocked(
           seenAdded.add(m.id);
         }
         for (const ev of h.labelsAdded ?? []) {
-          labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
+          labelOps.push({
+            messageId: ev.message.id,
+            currentLabels: ev.message.labelIds,
+            added: ev.labelIds,
+            removed: [],
+          });
           const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
           if (matched.length === 0) continue;
           // IMPORTANT: do NOT call getMessageMetadata here. A noisy mailbox
@@ -987,10 +1094,21 @@ async function syncSinceHistoryLocked(
                 snippet: "",
               });
             }
-          } catch (e) { logError("sync.label_added_handler_failed", { account_id: accountId, gmail_message_id: ev.message.id, added_labels: ev.labelIds }, e); }
+          } catch (e) {
+            logError(
+              "sync.label_added_handler_failed",
+              { account_id: accountId, gmail_message_id: ev.message.id, added_labels: ev.labelIds },
+              e,
+            );
+          }
         }
         for (const ev of h.labelsRemoved ?? []) {
-          labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: [], removed: ev.labelIds });
+          labelOps.push({
+            messageId: ev.message.id,
+            currentLabels: ev.message.labelIds,
+            added: [],
+            removed: ev.labelIds,
+          });
         }
         for (const ev of h.messagesDeleted ?? []) {
           toDelete.add(ev.message.id);
@@ -1002,14 +1120,25 @@ async function syncSinceHistoryLocked(
       // of replaying the whole backlog from the original startHistoryId.
       // bump_history_id_if_greater is monotonic, so this is safe.
       if (hist.historyId) {
-        try { await bumpHistoryAndWatch(accountId, hist.historyId); }
-        catch (e) { logError("sync.bump_history_page_failed", { account_id: accountId, page_history_id: hist.historyId }, e); }
+        try {
+          await bumpHistoryAndWatch(accountId, hist.historyId);
+        } catch (e) {
+          logError(
+            "sync.bump_history_page_failed",
+            { account_id: accountId, page_history_id: hist.historyId },
+            e,
+          );
+        }
       }
       pageToken = hist.nextPageToken;
       if (!pageToken) break;
     }
     if (pages >= MAX_HISTORY_PAGES && pageToken) {
-      logError("sync.history_pages_capped", { account_id: accountId, pages, max: MAX_HISTORY_PAGES }, new Error("history pagination cap hit"));
+      logError(
+        "sync.history_pages_capped",
+        { account_id: accountId, pages, max: MAX_HISTORY_PAGES },
+        new Error("history pagination cap hit"),
+      );
     }
 
     // Bulk-enqueue all newly-added messages in one upsert (vs the previous
@@ -1017,14 +1146,16 @@ async function syncSinceHistoryLocked(
     // worker can populate emails.published_at_ms when it drains the job.
     if (seenAdded.size > 0) {
       try {
-        await enqueueMessageJobs(
-          accountId,
-          account.user_id,
-          Array.from(seenAdded),
-          0,
-          { publishedAtMs: opts.publishedAtMs ?? null },
+        await enqueueMessageJobs(accountId, account.user_id, Array.from(seenAdded), 0, {
+          publishedAtMs: opts.publishedAtMs ?? null,
+        });
+      } catch (e) {
+        logError(
+          "sync.bulk_enqueue_failed",
+          { account_id: accountId, user_id: account.user_id, count: seenAdded.size },
+          e,
         );
-      } catch (e) { logError("sync.bulk_enqueue_failed", { account_id: accountId, user_id: account.user_id, count: seenAdded.size }, e); }
+      }
     }
 
     // Apply label ops sequentially per message. We SKIP ops whose message
@@ -1034,16 +1165,43 @@ async function syncSinceHistoryLocked(
     // parseMessage when the queued job runs.
     for (const op of labelOps) {
       if (seenAdded.has(op.messageId)) continue;
-      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed, labelToFolder); }
-      catch (e) { logError("sync.apply_label_change_failed", { account_id: accountId, gmail_message_id: op.messageId, added: op.added, removed: op.removed }, e); }
+      try {
+        await applyLabelChange(
+          accountId,
+          op.messageId,
+          op.currentLabels,
+          op.added,
+          op.removed,
+          labelToFolder,
+        );
+      } catch (e) {
+        logError(
+          "sync.apply_label_change_failed",
+          {
+            account_id: accountId,
+            gmail_message_id: op.messageId,
+            added: op.added,
+            removed: op.removed,
+          },
+          e,
+        );
+      }
     }
 
     if (toDelete.size > 0) {
       try {
-        await supabaseAdmin.from("emails").delete()
+        await supabaseAdmin
+          .from("emails")
+          .delete()
           .eq("gmail_account_id", accountId)
           .in("gmail_message_id", Array.from(toDelete));
-      } catch (e) { logError("sync.messages_deleted_batch_failed", { account_id: accountId, count: toDelete.size }, e); }
+      } catch (e) {
+        logError(
+          "sync.messages_deleted_batch_failed",
+          { account_id: accountId, count: toDelete.size },
+          e,
+        );
+      }
     }
 
     // Only advance the stored history cursor after every page has been
@@ -1063,7 +1221,9 @@ async function syncSinceHistoryLocked(
     if (opts.publishedAtMs != null) stamp.last_push_at = new Date().toISOString();
     try {
       await supabaseAdmin.from("gmail_accounts").update(stamp).eq("id", accountId);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     return { synced: seenAdded.size };
   } catch (e: unknown) {
     const msg = (e as Error)?.message ?? String(e);
@@ -1138,7 +1298,11 @@ async function bootstrapAccount(accountId: string, userId: string) {
       try {
         await enqueueMessageJobs(accountId, userId, todo, 0);
       } catch (e) {
-        logError("sync.bootstrap_enqueue_failed", { account_id: accountId, user_id: userId, count: todo.length }, e);
+        logError(
+          "sync.bootstrap_enqueue_failed",
+          { account_id: accountId, user_id: userId, count: todo.length },
+          e,
+        );
       }
     }
   } else {
@@ -1155,15 +1319,17 @@ async function bootstrapAccount(accountId: string, userId: string) {
   // Stamp last_history_sync_at so the poll cron's silence-detection treats this
   // freshly-bootstrapped account as healthy.
   try {
-    await supabaseAdmin.from("gmail_accounts")
+    await supabaseAdmin
+      .from("gmail_accounts")
       .update({ last_history_sync_at: new Date().toISOString() })
       .eq("id", accountId);
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
   return { bootstrapped: true };
 }
 
 // (reconcileLocalInbox moved to ./sync/reconcile.ts and re-exported above.)
-
 
 // Forward-retry + DLQ-replay logic lives in:
 //   ./sync/forward-retry.ts → retryForwardAttempts

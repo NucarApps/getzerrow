@@ -2,18 +2,18 @@
 // Stays free of React / DOM / Supabase so it can be unit-tested.
 
 export type EnemyKind = "newsletter" | "urgent" | "attachment" | "phishing";
-export type PowerupKind =
-  | "rapid"
-  | "multi"
-  | "shield"
-  | "life"
-  | "pierce"
-  | "bomb"
-  | "slow";
+export type PowerupKind = "rapid" | "multi" | "shield" | "life" | "pierce" | "bomb" | "slow";
 export type BuffKind = "rapid" | "multi" | "pierce" | "slow";
 export type Difficulty = "easy" | "normal" | "hard";
 
-export type Bullet = { id: number; x: number; y: number; vx?: number; pierce?: boolean; hits?: number };
+export type Bullet = {
+  id: number;
+  x: number;
+  y: number;
+  vx?: number;
+  pierce?: boolean;
+  hits?: number;
+};
 export type Enemy = {
   id: number;
   col: number;
@@ -37,10 +37,26 @@ export type Boss = {
 export type Ufo = { id: number; x: number; y: number; vx: number; value: number };
 export type Bunker = { id: number; x: number; y: number; cells: boolean[][] }; // cells[row][col]
 export type Burst = { id: number; x: number; y: number; startedAt: number; big?: boolean };
-export type Particle = { id: number; x: number; y: number; vx: number; vy: number; life: number; ttl: number; color: string };
+export type Particle = {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  ttl: number;
+  color: string;
+};
 export type Powerup = { id: number; x: number; y: number; kind: PowerupKind };
 export type ActiveBuff = { kind: BuffKind; expiresAt: number };
-export type FloatText = { id: number; x: number; y: number; text: string; startedAt: number; color: string };
+export type FloatText = {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  startedAt: number;
+  color: string;
+};
 
 // ---------------- Constants ----------------
 export const FIELD_H = 100;
@@ -125,7 +141,10 @@ export const ENEMY_BASE_POINTS: Record<EnemyKind, number> = {
   phishing: 25,
 };
 
-export const DIFFICULTY: Record<Difficulty, { fireMul: number; speedMul: number; bulletMul: number; label: string }> = {
+export const DIFFICULTY: Record<
+  Difficulty,
+  { fireMul: number; speedMul: number; bulletMul: number; label: string }
+> = {
   easy: { fireMul: 0.65, speedMul: 0.85, bulletMul: 0.85, label: "EASY" },
   normal: { fireMul: 1, speedMul: 1, bulletMul: 1, label: "NORMAL" },
   hard: { fireMul: 1.35, speedMul: 1.15, bulletMul: 1.2, label: "HARD" },
@@ -210,7 +229,7 @@ export function spawnBunkers(): Bunker[] {
       const row: boolean[] = [];
       for (let c = 0; c < BUNKER_COLS; c++) {
         // top-corner notch to look like classic bunker
-        const isCorner = (r === 0 && (c === 0 || c === BUNKER_COLS - 1));
+        const isCorner = r === 0 && (c === 0 || c === BUNKER_COLS - 1);
         const isArch = r === BUNKER_ROWS - 1 && c >= 1 && c <= BUNKER_COLS - 2;
         row.push(!isCorner && !isArch);
       }

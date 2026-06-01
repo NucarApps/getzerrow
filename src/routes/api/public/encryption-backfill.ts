@@ -64,18 +64,46 @@ export const Route = createFileRoute("/api/public/encryption-backfill")({
           }
 
           const url = new URL(request.url);
-          const emailBatch    = clampInt(url.searchParams.get("email_batch"),     1, 5000, 500);
-          const emailBatches  = clampInt(url.searchParams.get("email_batches"),   1, 50,   10);
-          const draftBatch    = clampInt(url.searchParams.get("draft_batch"),     1, 5000, 500);
-          const contactBatch  = clampInt(url.searchParams.get("contact_batch"),   1, 5000, 500);
-          const exampleBatch  = clampInt(url.searchParams.get("example_batch"),   1, 5000, 1000);
+          const emailBatch = clampInt(url.searchParams.get("email_batch"), 1, 5000, 500);
+          const emailBatches = clampInt(url.searchParams.get("email_batches"), 1, 50, 10);
+          const draftBatch = clampInt(url.searchParams.get("draft_batch"), 1, 5000, 500);
+          const contactBatch = clampInt(url.searchParams.get("contact_batch"), 1, 5000, 500);
+          const exampleBatch = clampInt(url.searchParams.get("example_batch"), 1, 5000, 1000);
 
           const client = supabaseAdmin as unknown as BackfillRpc;
 
-          const emails       = await drain(client, "backfill_emails_encryption",          key, emailBatch,   emailBatches, runId);
-          const drafts       = await drain(client, "backfill_reply_drafts_encryption",    key, draftBatch,   5,            runId);
-          const contacts     = await drain(client, "backfill_contacts_encryption",        key, contactBatch, 5,            runId);
-          const examples     = await drain(client, "backfill_folder_examples_encryption", key, exampleBatch, 10,           runId);
+          const emails = await drain(
+            client,
+            "backfill_emails_encryption",
+            key,
+            emailBatch,
+            emailBatches,
+            runId,
+          );
+          const drafts = await drain(
+            client,
+            "backfill_reply_drafts_encryption",
+            key,
+            draftBatch,
+            5,
+            runId,
+          );
+          const contacts = await drain(
+            client,
+            "backfill_contacts_encryption",
+            key,
+            contactBatch,
+            5,
+            runId,
+          );
+          const examples = await drain(
+            client,
+            "backfill_folder_examples_encryption",
+            key,
+            exampleBatch,
+            10,
+            runId,
+          );
 
           try {
             await supabaseAdmin.from("pubsub_events").insert({
@@ -90,7 +118,10 @@ export const Route = createFileRoute("/api/public/encryption-backfill")({
           return Response.json({
             ok: true,
             run_id: runId,
-            emails, drafts, contacts, examples,
+            emails,
+            drafts,
+            contacts,
+            examples,
           });
         });
       },

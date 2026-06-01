@@ -76,11 +76,12 @@ export function TelemetryStandby() {
           <div className="flex items-center gap-2">
             <span
               className="inline-block h-1.5 w-1.5 rounded-full bg-primary"
-              style={{ animation: "pulse 1.4s ease-in-out infinite", boxShadow: "0 0 8px var(--primary)" }}
+              style={{
+                animation: "pulse 1.4s ease-in-out infinite",
+                boxShadow: "0 0 8px var(--primary)",
+              }}
             />
-            <span className="tracking-[0.18em] text-muted-foreground">
-              TELEMETRY · STANDBY
-            </span>
+            <span className="tracking-[0.18em] text-muted-foreground">TELEMETRY · STANDBY</span>
           </div>
           <span className="tabular-nums text-foreground/80">{met}</span>
         </div>
@@ -96,20 +97,26 @@ export function TelemetryStandby() {
               </linearGradient>
             </defs>
             <rect x="18" y="40" width="4" height="40" fill="url(#trail)">
-              <animate attributeName="opacity" values="0.6;1;0.6" dur="1.2s" repeatCount="indefinite" />
+              <animate
+                attributeName="opacity"
+                values="0.6;1;0.6"
+                dur="1.2s"
+                repeatCount="indefinite"
+              />
             </rect>
             {/* rocket body */}
-            <path
-              d="M20 6 L26 22 L26 36 L14 36 L14 22 Z"
-              fill="var(--foreground)"
-              opacity="0.92"
-            />
+            <path d="M20 6 L26 22 L26 36 L14 36 L14 22 Z" fill="var(--foreground)" opacity="0.92" />
             <path d="M14 36 L8 42 L14 40 Z" fill="var(--muted-foreground)" />
             <path d="M26 36 L32 42 L26 40 Z" fill="var(--muted-foreground)" />
             <circle cx="20" cy="20" r="2.4" fill="var(--primary)" />
             {/* flame */}
             <path d="M16 40 L20 50 L24 40 Z" fill="var(--primary)">
-              <animate attributeName="opacity" values="0.7;1;0.7" dur="0.4s" repeatCount="indefinite" />
+              <animate
+                attributeName="opacity"
+                values="0.7;1;0.7"
+                dur="0.4s"
+                repeatCount="indefinite"
+              />
             </path>
           </svg>
         </div>

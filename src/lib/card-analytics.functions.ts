@@ -9,14 +9,16 @@ const LINK_KINDS = ["email", "phone", "website", "linkedin", "twitter", "other"]
 
 /** Public — log an event on a card. No auth required. */
 export const logCardEvent = createServerFn({ method: "POST" })
-  .inputValidator((d: any) =>
-    z.object({
-      handle: z.string().regex(HANDLE_RE),
-      event_type: z.enum(EVENT_TYPES),
-      link_kind: z.enum(LINK_KINDS).optional(),
-      link_url: z.string().max(500).optional(),
-      referrer: z.string().max(500).optional(),
-    }).parse(d)
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        handle: z.string().regex(HANDLE_RE),
+        event_type: z.enum(EVENT_TYPES),
+        link_kind: z.enum(LINK_KINDS).optional(),
+        link_url: z.string().max(500).optional(),
+        referrer: z.string().max(500).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
     const { data: card } = await supabaseAdmin
@@ -59,8 +61,8 @@ export type CardAnalyticsSummary = {
 /** Owner — summary analytics for their own card. */
 export const getMyCardAnalytics = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: any) =>
-    z.object({ days: z.number().int().min(1).max(365).default(30) }).parse(d ?? {})
+  .inputValidator((d: unknown) =>
+    z.object({ days: z.number().int().min(1).max(365).default(30) }).parse(d ?? {}),
   )
   .handler(async ({ context, data }): Promise<CardAnalyticsSummary> => {
     const { userId } = context;
@@ -76,9 +78,21 @@ export const getMyCardAnalytics = createServerFn({ method: "GET" })
 
     const events = rows ?? [];
 
-    const totals: Record<string, number> = { view: 0, link_click: 0, vcard_download: 0, share: 0, lead: 0 };
-    const byDay = new Map<string, { views: number; clicks: number; downloads: number; shares: number }>();
-    const linkCounts = new Map<string, { link_kind: string; link_url: string | null; count: number }>();
+    const totals: Record<string, number> = {
+      view: 0,
+      link_click: 0,
+      vcard_download: 0,
+      share: 0,
+      lead: 0,
+    };
+    const byDay = new Map<
+      string,
+      { views: number; clicks: number; downloads: number; shares: number }
+    >();
+    const linkCounts = new Map<
+      string,
+      { link_kind: string; link_url: string | null; count: number }
+    >();
 
     // Prefill days
     for (let i = data.days - 1; i >= 0; i--) {
@@ -98,7 +112,11 @@ export const getMyCardAnalytics = createServerFn({ method: "GET" })
 
       if (e.event_type === "link_click") {
         const key = `${e.link_kind ?? "other"}::${e.link_url ?? ""}`;
-        const cur = linkCounts.get(key) ?? { link_kind: e.link_kind ?? "other", link_url: e.link_url, count: 0 };
+        const cur = linkCounts.get(key) ?? {
+          link_kind: e.link_kind ?? "other",
+          link_url: e.link_url,
+          count: 0,
+        };
         cur.count++;
         linkCounts.set(key, cur);
       }
@@ -116,7 +134,7 @@ export const getMyCardAnalytics = createServerFn({ method: "GET" })
       totals,
       daily,
       topLinks,
-      recent: events.slice(0, 25) as any,
+      recent: events.slice(0, 25) as CardAnalyticsSummary["recent"],
       rangeDays: data.days,
     };
   });

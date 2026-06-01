@@ -46,10 +46,22 @@ function autoDetectRect(imgW: number, imgH: number, imageData: ImageData): Rect 
     const drop = total * 0.025; // chop 2.5% off each end
     let acc = 0;
     let lo = 0;
-    for (let i = 0; i < len; i++) { acc += energy[i]; if (acc >= drop) { lo = i; break; } }
+    for (let i = 0; i < len; i++) {
+      acc += energy[i];
+      if (acc >= drop) {
+        lo = i;
+        break;
+      }
+    }
     acc = 0;
     let hi = len - 1;
-    for (let i = len - 1; i >= 0; i--) { acc += energy[i]; if (acc >= drop) { hi = i; break; } }
+    for (let i = len - 1; i >= 0; i--) {
+      acc += energy[i];
+      if (acc >= drop) {
+        hi = i;
+        break;
+      }
+    }
     return [lo, hi];
   };
   const [y0, y1] = tighten(rowE, h);
@@ -75,7 +87,12 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
-  const dragRef = useRef<{ handle: Handle; startX: number; startY: number; startRect: Rect } | null>(null);
+  const dragRef = useRef<{
+    handle: Handle;
+    startX: number;
+    startY: number;
+    startRect: Rect;
+  } | null>(null);
 
   // When the image loads, auto-detect on a downscaled canvas.
   function handleImgLoad() {
@@ -140,25 +157,45 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
       const r = { ...d.startRect };
       const minSize = 30;
       const apply = (nx: number, ny: number, nw: number, nh: number) => {
-        let x = Math.max(0, Math.min(nx, imgSize.w - minSize));
-        let y = Math.max(0, Math.min(ny, imgSize.h - minSize));
-        let w = Math.max(minSize, Math.min(nw, imgSize.w - x));
-        let h = Math.max(minSize, Math.min(nh, imgSize.h - y));
+        const x = Math.max(0, Math.min(nx, imgSize.w - minSize));
+        const y = Math.max(0, Math.min(ny, imgSize.h - minSize));
+        const w = Math.max(minSize, Math.min(nw, imgSize.w - x));
+        const h = Math.max(minSize, Math.min(nh, imgSize.h - y));
         setRect({ x, y, w, h });
       };
       switch (d.handle) {
-        case "move": apply(r.x + dx, r.y + dy, r.w, r.h); break;
-        case "tl":   apply(r.x + dx, r.y + dy, r.w - dx, r.h - dy); break;
-        case "tr":   apply(r.x,      r.y + dy, r.w + dx, r.h - dy); break;
-        case "bl":   apply(r.x + dx, r.y,      r.w - dx, r.h + dy); break;
-        case "br":   apply(r.x,      r.y,      r.w + dx, r.h + dy); break;
-        case "t":    apply(r.x,      r.y + dy, r.w,      r.h - dy); break;
-        case "b":    apply(r.x,      r.y,      r.w,      r.h + dy); break;
-        case "l":    apply(r.x + dx, r.y,      r.w - dx, r.h);      break;
-        case "r":    apply(r.x,      r.y,      r.w + dx, r.h);      break;
+        case "move":
+          apply(r.x + dx, r.y + dy, r.w, r.h);
+          break;
+        case "tl":
+          apply(r.x + dx, r.y + dy, r.w - dx, r.h - dy);
+          break;
+        case "tr":
+          apply(r.x, r.y + dy, r.w + dx, r.h - dy);
+          break;
+        case "bl":
+          apply(r.x + dx, r.y, r.w - dx, r.h + dy);
+          break;
+        case "br":
+          apply(r.x, r.y, r.w + dx, r.h + dy);
+          break;
+        case "t":
+          apply(r.x, r.y + dy, r.w, r.h - dy);
+          break;
+        case "b":
+          apply(r.x, r.y, r.w, r.h + dy);
+          break;
+        case "l":
+          apply(r.x + dx, r.y, r.w - dx, r.h);
+          break;
+        case "r":
+          apply(r.x, r.y, r.w + dx, r.h);
+          break;
       }
     }
-    function onUp() { dragRef.current = null; }
+    function onUp() {
+      dragRef.current = null;
+    }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
@@ -167,6 +204,10 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
+    // Re-subscribe only when imgSize changes. ptToImage reads imgSize (a dep)
+    // and refs, so its closure stays correct; listing the per-render function
+    // would needlessly re-add the listeners on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgSize]);
 
   async function confirm() {
@@ -182,7 +223,9 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
     if (!ctx) return;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, outW, outH);
-    const blob: Blob | null = await new Promise((resolve) => c.toBlob(resolve, "image/jpeg", OUTPUT_QUALITY));
+    const blob: Blob | null = await new Promise((resolve) =>
+      c.toBlob(resolve, "image/jpeg", OUTPUT_QUALITY),
+    );
     if (!blob) return;
     const dataUrl = c.toDataURL("image/jpeg", OUTPUT_QUALITY);
     onConfirm({ dataUrl, blob, width: outW, height: outH });
@@ -201,7 +244,10 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
 
   return (
     <div className="space-y-3">
-      <div ref={containerRef} className="relative inline-block w-full bg-muted/30 rounded-md overflow-hidden border border-border">
+      <div
+        ref={containerRef}
+        className="relative inline-block w-full bg-muted/30 rounded-md overflow-hidden border border-border"
+      >
         <img
           ref={imgRef}
           src={src}
@@ -214,29 +260,54 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
           <>
             {/* Dimmed mask outside crop */}
             <div className="pointer-events-none absolute inset-0">
-              <div className="absolute inset-0 bg-background/60" style={{ clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 ${overlay.top}px, ${overlay.left}px ${overlay.top}px, ${overlay.left}px ${overlay.top + overlay.height}px, ${overlay.left + overlay.width}px ${overlay.top + overlay.height}px, ${overlay.left + overlay.width}px ${overlay.top}px, 0 ${overlay.top}px)` }} />
+              <div
+                className="absolute inset-0 bg-background/60"
+                style={{
+                  clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 ${overlay.top}px, ${overlay.left}px ${overlay.top}px, ${overlay.left}px ${overlay.top + overlay.height}px, ${overlay.left + overlay.width}px ${overlay.top + overlay.height}px, ${overlay.left + overlay.width}px ${overlay.top}px, 0 ${overlay.top}px)`,
+                }}
+              />
             </div>
             {/* Crop frame */}
             <div
               className="absolute border-2 border-primary cursor-move touch-none"
-              style={{ left: overlay.left, top: overlay.top, width: overlay.width, height: overlay.height }}
+              style={{
+                left: overlay.left,
+                top: overlay.top,
+                width: overlay.width,
+                height: overlay.height,
+              }}
               onPointerDown={onPointerDown("move")}
             >
               {/* Edge handles */}
-              <div className="absolute left-0 right-0 -top-1 h-2 cursor-ns-resize touch-none" onPointerDown={onPointerDown("t")} />
-              <div className="absolute left-0 right-0 -bottom-1 h-2 cursor-ns-resize touch-none" onPointerDown={onPointerDown("b")} />
-              <div className="absolute top-0 bottom-0 -left-1 w-2 cursor-ew-resize touch-none" onPointerDown={onPointerDown("l")} />
-              <div className="absolute top-0 bottom-0 -right-1 w-2 cursor-ew-resize touch-none" onPointerDown={onPointerDown("r")} />
+              <div
+                className="absolute left-0 right-0 -top-1 h-2 cursor-ns-resize touch-none"
+                onPointerDown={onPointerDown("t")}
+              />
+              <div
+                className="absolute left-0 right-0 -bottom-1 h-2 cursor-ns-resize touch-none"
+                onPointerDown={onPointerDown("b")}
+              />
+              <div
+                className="absolute top-0 bottom-0 -left-1 w-2 cursor-ew-resize touch-none"
+                onPointerDown={onPointerDown("l")}
+              />
+              <div
+                className="absolute top-0 bottom-0 -right-1 w-2 cursor-ew-resize touch-none"
+                onPointerDown={onPointerDown("r")}
+              />
               {/* Corner handles */}
               {(["tl", "tr", "bl", "br"] as const).map((h) => (
                 <div
                   key={h}
                   onPointerDown={onPointerDown(h)}
                   className={`absolute h-4 w-4 rounded-sm bg-primary border-2 border-background touch-none ${
-                    h === "tl" ? "-left-2 -top-2 cursor-nwse-resize"
-                      : h === "tr" ? "-right-2 -top-2 cursor-nesw-resize"
-                      : h === "bl" ? "-left-2 -bottom-2 cursor-nesw-resize"
-                      : "-right-2 -bottom-2 cursor-nwse-resize"
+                    h === "tl"
+                      ? "-left-2 -top-2 cursor-nwse-resize"
+                      : h === "tr"
+                        ? "-right-2 -top-2 cursor-nesw-resize"
+                        : h === "bl"
+                          ? "-left-2 -bottom-2 cursor-nesw-resize"
+                          : "-right-2 -bottom-2 cursor-nwse-resize"
                   }`}
                 />
               ))}
@@ -244,7 +315,9 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
           </>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">Drag the corners or edges to fit the card exactly.</p>
+      <p className="text-xs text-muted-foreground">
+        Drag the corners or edges to fit the card exactly.
+      </p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={confirm} disabled={!rect}>
           <Check className="mr-2 h-4 w-4" /> Use this crop
@@ -252,7 +325,9 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
         <Button variant="outline" onClick={reset} disabled={!rect}>
           <RotateCcw className="mr-2 h-4 w-4" /> Reset
         </Button>
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
       </div>
     </div>
   );

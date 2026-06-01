@@ -3,7 +3,14 @@
 // in isolation — useful for pinning the priority-ordering, exclude-rule,
 // and ReDoS-safety contracts.
 import { describe, it, expect } from "vitest";
-import { applyFilter, matchByFilters, labelOf, collectMatchingLeaves, EXCLUDE_OPS, type EmailForFilter } from "./filter-engine";
+import {
+  applyFilter,
+  matchByFilters,
+  labelOf,
+  collectMatchingLeaves,
+  EXCLUDE_OPS,
+  type EmailForFilter,
+} from "./filter-engine";
 import type { Filter, Folder, RuleNode } from "./types";
 
 function email(over: Partial<EmailForFilter> = {}): EmailForFilter {
@@ -55,18 +62,33 @@ describe("applyFilter — field selectors", () => {
   });
 
   it("'domain' extracts the @-suffix", () => {
-    expect(applyFilter(email({ from_addr: "a@acme.com" }), filter("f", "domain", "equals", "acme.com"))).toBe(true);
-    expect(applyFilter(email({ from_addr: "a@x.com" }), filter("f", "domain", "equals", "acme.com"))).toBe(false);
+    expect(
+      applyFilter(email({ from_addr: "a@acme.com" }), filter("f", "domain", "equals", "acme.com")),
+    ).toBe(true);
+    expect(
+      applyFilter(email({ from_addr: "a@x.com" }), filter("f", "domain", "equals", "acme.com")),
+    ).toBe(false);
   });
 
   it("'is_reply' returns 'true' / 'false' based on in_reply_to", () => {
-    expect(applyFilter(email({ in_reply_to: "<m@x>" }), filter("f", "is_reply", "equals", "true"))).toBe(true);
-    expect(applyFilter(email({ in_reply_to: undefined }), filter("f", "is_reply", "equals", "false"))).toBe(true);
+    expect(
+      applyFilter(email({ in_reply_to: "<m@x>" }), filter("f", "is_reply", "equals", "true")),
+    ).toBe(true);
+    expect(
+      applyFilter(email({ in_reply_to: undefined }), filter("f", "is_reply", "equals", "false")),
+    ).toBe(true);
   });
 
   it("'has_attachment' returns boolean-as-string", () => {
-    expect(applyFilter(email({ has_attachment: true }), filter("f", "has_attachment", "equals", "true"))).toBe(true);
-    expect(applyFilter(email({ has_attachment: false }), filter("f", "has_attachment", "equals", "true"))).toBe(false);
+    expect(
+      applyFilter(email({ has_attachment: true }), filter("f", "has_attachment", "equals", "true")),
+    ).toBe(true);
+    expect(
+      applyFilter(
+        email({ has_attachment: false }),
+        filter("f", "has_attachment", "equals", "true"),
+      ),
+    ).toBe(false);
   });
 
   it("unknown field returns false (defensive)", () => {
@@ -123,7 +145,9 @@ describe("applyFilter — regex safety (ReDoS)", () => {
   });
 
   it("accepts normal regex patterns", () => {
-    expect(applyFilter(email({ subject: "ABC-123" }), filter("f", "subject", "regex", "^[a-z]+-\\d+$"))).toBe(true);
+    expect(
+      applyFilter(email({ subject: "ABC-123" }), filter("f", "subject", "regex", "^[a-z]+-\\d+$")),
+    ).toBe(true);
   });
 });
 
@@ -140,7 +164,11 @@ describe("EXCLUDE_OPS set", () => {
 
 describe("matchByFilters — basic routing", () => {
   it("returns null when no folder matches", () => {
-    const r = matchByFilters(email(), [folder({ id: "f1" })], [filter("f1", "subject", "contains", "absent")]);
+    const r = matchByFilters(
+      email(),
+      [folder({ id: "f1" })],
+      [filter("f1", "subject", "contains", "absent")],
+    );
     expect(r).toBeNull();
   });
 
@@ -182,7 +210,10 @@ describe("matchByFilters — priority and tiebreak", () => {
   it("ties break by folder name ascending (stable order)", () => {
     const r = matchByFilters(
       email({ subject: "X" }),
-      [folder({ id: "z", name: "Zebra", priority: 1 }), folder({ id: "a", name: "Aardvark", priority: 1 })],
+      [
+        folder({ id: "z", name: "Zebra", priority: 1 }),
+        folder({ id: "a", name: "Aardvark", priority: 1 }),
+      ],
       [filter("z", "subject", "contains", "X"), filter("a", "subject", "contains", "X")],
     );
     expect(r?.kind).toBe("match");
@@ -213,10 +244,7 @@ describe("matchByFilters — filter logic (any vs all)", () => {
     const r = matchByFilters(
       email({ subject: "Invoice 42", from_addr: "x@y.com" }),
       [folder({ id: "f1", filter_logic: "any" })],
-      [
-        filter("f1", "subject", "contains", "invoice"),
-        filter("f1", "from", "contains", "billing"),
-      ],
+      [filter("f1", "subject", "contains", "invoice"), filter("f1", "from", "contains", "billing")],
     );
     expect(r?.kind).toBe("match");
   });
@@ -228,9 +256,15 @@ describe("matchByFilters — filter logic (any vs all)", () => {
       filter("f1", "from", "contains", "billing"),
     ];
     // Only one hits — should not match.
-    expect(matchByFilters(email({ subject: "Invoice", from_addr: "x@y.com" }), folders, filters)).toBeNull();
+    expect(
+      matchByFilters(email({ subject: "Invoice", from_addr: "x@y.com" }), folders, filters),
+    ).toBeNull();
     // Both hit — match.
-    const r = matchByFilters(email({ subject: "Invoice", from_addr: "billing@y.com" }), folders, filters);
+    const r = matchByFilters(
+      email({ subject: "Invoice", from_addr: "billing@y.com" }),
+      folders,
+      filters,
+    );
     expect(r?.kind).toBe("match");
   });
 });
@@ -315,13 +349,18 @@ describe("collectMatchingLeaves", () => {
 
   it("walks nested groups", () => {
     const nested: RuleNode = {
-      type: "group", op: "and",
+      type: "group",
+      op: "and",
       children: [
         { type: "cond", field: "subject", op: "contains", value: "credit" },
-        { type: "group", op: "or", children: [
-          { type: "cond", field: "domain", op: "equals", value: "docusign.net" },
-          { type: "cond", field: "from", op: "contains", value: "noreply" },
-        ]},
+        {
+          type: "group",
+          op: "or",
+          children: [
+            { type: "cond", field: "domain", op: "equals", value: "docusign.net" },
+            { type: "cond", field: "from", op: "contains", value: "noreply" },
+          ],
+        },
       ],
     };
     const e = email({ from_addr: "dse@docusign.net", subject: "credit app" });

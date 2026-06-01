@@ -14,7 +14,17 @@ type Props = {
   dailyMode: boolean;
 };
 
-function GameHUDImpl({ level, score, lives, combo, maxCombo, activeBuff, difficultyLabel, muted, dailyMode }: Props) {
+function GameHUDImpl({
+  level,
+  score,
+  lives,
+  combo,
+  maxCombo,
+  activeBuff,
+  difficultyLabel,
+  muted,
+  dailyMode,
+}: Props) {
   const now = performance.now();
   const buffRemaining = activeBuff ? Math.max(0, (activeBuff.expiresAt - now) / 1000) : 0;
   const safeLives = Math.max(0, lives);
@@ -25,7 +35,9 @@ function GameHUDImpl({ level, score, lives, combo, maxCombo, activeBuff, difficu
         className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-sm border border-[rgba(255,138,61,.35)] bg-[rgba(10,14,26,.65)] px-3 py-1 text-[10px] tracking-[0.22em] text-[#ffd089] backdrop-blur"
         style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
       >
-        LEVEL {String(level).padStart(2, "0")} · SCORE {String(score).padStart(5, "0")} · {"♥".repeat(safeLives)}{"♡".repeat(Math.max(0, 3 - safeLives))}
+        LEVEL {String(level).padStart(2, "0")} · SCORE {String(score).padStart(5, "0")} ·{" "}
+        {"♥".repeat(safeLives)}
+        {"♡".repeat(Math.max(0, 3 - safeLives))}
         {combo > 1 && <span className="ml-2 text-[#ffe066]">×{combo}</span>}
       </div>
 
@@ -33,7 +45,11 @@ function GameHUDImpl({ level, score, lives, combo, maxCombo, activeBuff, difficu
         className="pointer-events-none absolute right-3 top-3 z-20 flex flex-col items-end gap-1 text-[9px] tracking-[0.22em] text-muted-foreground/70"
         style={{ fontFamily: "JetBrains Mono, ui-monospace, monospace" }}
       >
-        <span>{difficultyLabel}{dailyMode ? " · DAILY" : ""}{muted ? " · MUTED" : ""}</span>
+        <span>
+          {difficultyLabel}
+          {dailyMode ? " · DAILY" : ""}
+          {muted ? " · MUTED" : ""}
+        </span>
         {maxCombo > 1 && <span>BEST COMBO ×{maxCombo}</span>}
       </div>
 

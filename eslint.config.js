@@ -36,5 +36,22 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  {
+    // Files that intentionally co-export non-components alongside a component:
+    //  - vendored shadcn/ui primitives (cva variant helpers, useFormField)
+    //  - context-provider modules co-exporting their use* hook
+    //  - the card-theme data module (CARD_THEMES / getTheme + ThemePicker)
+    // These are deliberate shared-module patterns; Fast Refresh isn't a concern,
+    // so relax the rule here rather than fork conventions or churn every import.
+    files: [
+      "src/components/ui/**/*.{ts,tsx}",
+      "src/lib/account-selection.tsx",
+      "src/lib/folder-selection.tsx",
+      "src/components/cards/themes.tsx",
+    ],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
   eslintPluginPrettier,
 );

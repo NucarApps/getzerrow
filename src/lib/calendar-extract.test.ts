@@ -45,10 +45,7 @@ describe("extractAttendeeEmails", () => {
   it("skips Google resource calendars (rooms / equipment)", () => {
     const out = extractAttendeeEmails(
       {
-        attendees: [
-          { email: "room@resource.calendar.google.com" },
-          { email: "team@partner.com" },
-        ],
+        attendees: [{ email: "room@resource.calendar.google.com" }, { email: "team@partner.com" }],
       },
       self,
     );
@@ -76,7 +73,9 @@ describe("CalendarApiError.kind", () => {
 
   it("maps 401 / insufficient scope to reconnect", () => {
     expect(new CalendarApiError("unauth", 401).kind).toBe("reconnect");
-    expect(new CalendarApiError("scope", 403, "ACCESS_TOKEN_SCOPE_INSUFFICIENT").kind).toBe("reconnect");
+    expect(new CalendarApiError("scope", 403, "ACCESS_TOKEN_SCOPE_INSUFFICIENT").kind).toBe(
+      "reconnect",
+    );
     expect(new CalendarApiError("perm", 403, "insufficientPermissions").kind).toBe("reconnect");
   });
 
@@ -103,7 +102,12 @@ describe("extractAttendeePeople", () => {
       self,
     );
     expect(out).toEqual([
-      { email: "a@partner.com", name: "Alice Partner", meetingAt: "2026-05-01T10:00:00Z", eventTitle: "Project sync" },
+      {
+        email: "a@partner.com",
+        name: "Alice Partner",
+        meetingAt: "2026-05-01T10:00:00Z",
+        eventTitle: "Project sync",
+      },
     ]);
   });
 
@@ -126,7 +130,11 @@ describe("extractAttendeePeople", () => {
 
   it("falls back to the organizer when there are no attendees", () => {
     const out = extractAttendeePeople(
-      { summary: "1:1", start: { dateTime: "2026-06-01T09:00:00Z" }, organizer: { email: "c@partner.com" } },
+      {
+        summary: "1:1",
+        start: { dateTime: "2026-06-01T09:00:00Z" },
+        organizer: { email: "c@partner.com" },
+      },
       self,
     );
     expect(out).toEqual([

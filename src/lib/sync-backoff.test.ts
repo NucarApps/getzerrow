@@ -26,9 +26,11 @@ describe("computeBackoffSeconds", () => {
       currentAttempt: 0,
       nextAttempt: 0,
     });
-    // Minimum 60s (the floor in secondsUntilMidnightPT), max 6h.
-    expect(s).toBeGreaterThanOrEqual(60);
-    expect(s).toBeLessThanOrEqual(6 * 3600);
+    // Base is min(secondsUntilMidnightPT, 6h) with ±25% jitter applied, so the
+    // floor is 60*0.75 and the ceiling is 6h*1.25 (matches the jitter window
+    // used by the other assertions in this file).
+    expect(s).toBeGreaterThanOrEqual(Math.floor(60 * 0.75));
+    expect(s).toBeLessThanOrEqual(Math.ceil(6 * 3600 * 1.25));
   });
 
   it("uses retryable backoff table for transient 5xx", () => {

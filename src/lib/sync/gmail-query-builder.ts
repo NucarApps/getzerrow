@@ -12,7 +12,14 @@ import type { RuleNode } from "./types";
 export type Cond = { field: string; op: string; value: string };
 
 const SUPPORTED_FIELDS = new Set([
-  "from", "to", "cc", "subject", "body", "domain", "list_id", "has_attachment",
+  "from",
+  "to",
+  "cc",
+  "subject",
+  "body",
+  "domain",
+  "list_id",
+  "has_attachment",
 ]);
 
 function isUsableCond(c: Cond): boolean {
@@ -33,15 +40,24 @@ function condToTerm(c: Cond): string | null {
   const v = c.value.trim();
   if (!v) return null;
   switch (c.field) {
-    case "domain": return `from:${v.replace(/^@/, "")}`;
-    case "from": return `from:${quote(v)}`;
-    case "to": return `to:${quote(v)}`;
-    case "cc": return `cc:${quote(v)}`;
-    case "subject": return `subject:${quote(v)}`;
-    case "body": return quote(v);
-    case "list_id": return `list:${quote(v)}`;
-    case "has_attachment": return v === "true" ? "has:attachment" : null;
-    default: return null;
+    case "domain":
+      return `from:${v.replace(/^@/, "")}`;
+    case "from":
+      return `from:${quote(v)}`;
+    case "to":
+      return `to:${quote(v)}`;
+    case "cc":
+      return `cc:${quote(v)}`;
+    case "subject":
+      return `subject:${quote(v)}`;
+    case "body":
+      return quote(v);
+    case "list_id":
+      return `list:${quote(v)}`;
+    case "has_attachment":
+      return v === "true" ? "has:attachment" : null;
+    default:
+      return null;
   }
 }
 
@@ -99,7 +115,8 @@ export function buildGmailQueries(
   let skippedRegex = 0;
 
   const tree = input.filter_tree;
-  const hasTree = !!tree && (tree.type === "cond" || (tree.type === "group" && tree.children.length > 0));
+  const hasTree =
+    !!tree && (tree.type === "cond" || (tree.type === "group" && tree.children.length > 0));
 
   if (hasTree) {
     // Count skipped regex leaves for reporting parity with the old impl.
@@ -116,7 +133,10 @@ export function buildGmailQueries(
     }
   } else {
     for (const f of input.filters) {
-      if (f.op === "regex") { skippedRegex++; continue; }
+      if (f.op === "regex") {
+        skippedRegex++;
+        continue;
+      }
       if (!isUsableCond(f)) continue;
       const term = condToTerm(f);
       if (!term) continue;

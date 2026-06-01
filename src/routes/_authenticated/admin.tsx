@@ -4,18 +4,26 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
 import { Shield, Mail, Users as UsersIcon, Inbox, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { getAdminMe, listAdminUsers, getAdminActivity, type AdminUser } from "@/lib/admin.functions";
+import {
+  getAdminMe,
+  listAdminUsers,
+  getAdminActivity,
+  type AdminUser,
+} from "@/lib/admin.functions";
 import { toast } from "sonner";
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
 } from "recharts";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
-    meta: [
-      { title: "Admin — Zerrow" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "Admin — Zerrow" }, { name: "robots", content: "noindex" }],
   }),
   beforeLoad: async () => {
     const { data, error } = await supabase.auth.getUser();
@@ -35,7 +43,12 @@ function fmtDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function hoursSince(iso: string | null | undefined): number | null {
@@ -105,10 +118,30 @@ function AdminPage() {
 
         {/* Summary cards */}
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={<UsersIcon className="h-4 w-4" />} label="Users" value={totals.users} loading={usersQ.isLoading} />
-          <StatCard icon={<Mail className="h-4 w-4" />} label="Gmail connected" value={totals.connectedGmail} loading={usersQ.isLoading} />
-          <StatCard icon={<Inbox className="h-4 w-4" />} label="Emails ingested" value={totals.emails} loading={usersQ.isLoading} />
-          <StatCard icon={<UsersIcon className="h-4 w-4" />} label="Contacts" value={totals.contacts} loading={usersQ.isLoading} />
+          <StatCard
+            icon={<UsersIcon className="h-4 w-4" />}
+            label="Users"
+            value={totals.users}
+            loading={usersQ.isLoading}
+          />
+          <StatCard
+            icon={<Mail className="h-4 w-4" />}
+            label="Gmail connected"
+            value={totals.connectedGmail}
+            loading={usersQ.isLoading}
+          />
+          <StatCard
+            icon={<Inbox className="h-4 w-4" />}
+            label="Emails ingested"
+            value={totals.emails}
+            loading={usersQ.isLoading}
+          />
+          <StatCard
+            icon={<UsersIcon className="h-4 w-4" />}
+            label="Contacts"
+            value={totals.contacts}
+            loading={usersQ.isLoading}
+          />
         </div>
 
         {/* Activity charts */}
@@ -129,7 +162,9 @@ function AdminPage() {
 
         {/* Users table */}
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">Users</h2>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Users
+          </h2>
           <div className="overflow-x-auto rounded-md border border-border bg-card/40">
             <table className="w-full min-w-[1000px] text-sm">
               <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
@@ -147,10 +182,18 @@ function AdminPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {usersQ.isLoading && (
-                  <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                  <tr>
+                    <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                      Loading…
+                    </td>
+                  </tr>
                 )}
                 {!usersQ.isLoading && (usersQ.data?.users.length ?? 0) === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">No users yet.</td></tr>
+                  <tr>
+                    <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                      No users yet.
+                    </td>
+                  </tr>
                 )}
                 {(usersQ.data?.users ?? []).map((u) => (
                   <UserRow key={u.user_id} u={u} />
@@ -164,7 +207,17 @@ function AdminPage() {
   );
 }
 
-function StatCard({ icon, label, value, loading }: { icon: React.ReactNode; label: string; value: number; loading: boolean }) {
+function StatCard({
+  icon,
+  label,
+  value,
+  loading,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  loading: boolean;
+}) {
   return (
     <div className="rounded-md border border-border bg-card/40 p-4">
       <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
@@ -177,7 +230,12 @@ function StatCard({ icon, label, value, loading }: { icon: React.ReactNode; labe
   );
 }
 
-function ActivityChart({ title, data, loading, color }: {
+function ActivityChart({
+  title,
+  data,
+  loading,
+  color,
+}: {
   title: string;
   data: Array<{ date: string; count: number }>;
   loading: boolean;
@@ -188,7 +246,9 @@ function ActivityChart({ title, data, loading, color }: {
       <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">{title}</div>
       <div className="h-48">
         {loading ? (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading…</div>
+          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+            Loading…
+          </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
@@ -233,7 +293,9 @@ function UserRow({ u }: { u: AdminUser }) {
       <td className="px-3 py-2 font-medium text-foreground">
         {u.email}
         {accounts.length > 1 && (
-          <span className="ml-1 rounded bg-primary/15 px-1 text-[10px] text-primary">×{accounts.length}</span>
+          <span className="ml-1 rounded bg-primary/15 px-1 text-[10px] text-primary">
+            ×{accounts.length}
+          </span>
         )}
       </td>
       <td className="px-3 py-2 text-muted-foreground">{fmtDate(u.created_at)}</td>
@@ -244,7 +306,10 @@ function UserRow({ u }: { u: AdminUser }) {
         ) : (
           <div className="flex flex-col gap-1">
             {accounts.map((g, i) => (
-              <span key={`${g.email_address ?? "unknown"}-${i}`} className="inline-flex items-center gap-1 text-xs">
+              <span
+                key={`${g.email_address ?? "unknown"}-${i}`}
+                className="inline-flex items-center gap-1 text-xs"
+              >
                 <Mail className="h-3 w-3 text-primary" /> {g.email_address ?? "—"}
               </span>
             ))}
@@ -277,7 +342,9 @@ function UserRow({ u }: { u: AdminUser }) {
       <td className="px-3 py-2 text-right tabular-nums">{u.stats.contacts.toLocaleString()}</td>
       <td className="px-3 py-2 text-right tabular-nums">{u.stats.folders.toLocaleString()}</td>
       <td className="px-3 py-2 text-right tabular-nums">
-        <span title={`pending ${u.stats.jobs_pending} · running ${u.stats.jobs_running} · dlq ${u.stats.jobs_dlq}`}>
+        <span
+          title={`pending ${u.stats.jobs_pending} · running ${u.stats.jobs_running} · dlq ${u.stats.jobs_dlq}`}
+        >
           {jobs.toLocaleString()}
           {u.stats.jobs_dlq > 0 && (
             <span className="ml-1 rounded bg-destructive/20 px-1 text-[10px] text-destructive">

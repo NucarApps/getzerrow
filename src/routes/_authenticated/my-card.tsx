@@ -32,8 +32,16 @@ function MyCardPage() {
   }, []);
 
   const [form, setForm] = useState({
-    handle: "", name: "", title: "", company: "", email: "", phone: "",
-    website: "", linkedin: "", twitter: "", tagline: "",
+    handle: "",
+    name: "",
+    title: "",
+    company: "",
+    email: "",
+    phone: "",
+    website: "",
+    linkedin: "",
+    twitter: "",
+    tagline: "",
     avatar_url: "" as string | "",
     cover_url: "" as string | "",
     theme: "default",
@@ -42,16 +50,26 @@ function MyCardPage() {
 
   useEffect(() => {
     if (q.data?.card) {
-      const c: any = q.data.card;
+      const c = q.data.card;
       setForm({
-        handle: c.handle ?? "", name: c.name ?? "", title: c.title ?? "",
-        company: c.company ?? "", email: c.email ?? "", phone: c.phone ?? "",
-        website: c.website ?? "", linkedin: c.linkedin ?? "",
-        twitter: c.twitter ?? "", tagline: c.tagline ?? "",
-        avatar_url: c.avatar_url ?? "", cover_url: c.cover_url ?? "",
+        handle: c.handle ?? "",
+        name: c.name ?? "",
+        title: c.title ?? "",
+        company: c.company ?? "",
+        email: c.email ?? "",
+        phone: c.phone ?? "",
+        website: c.website ?? "",
+        linkedin: c.linkedin ?? "",
+        twitter: c.twitter ?? "",
+        tagline: c.tagline ?? "",
+        avatar_url: c.avatar_url ?? "",
+        cover_url: c.cover_url ?? "",
         theme: c.theme ?? "default",
       });
     }
+    // Intentionally keyed on the card identity (handle) only: seed the form once
+    // per card, not on every refetch — otherwise live edits would be clobbered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q.data?.card?.handle]);
 
   async function onSave() {
@@ -60,10 +78,14 @@ function MyCardPage() {
       await save({
         data: {
           handle: form.handle.toLowerCase(),
-          name: form.name || null, title: form.title || null,
-          company: form.company || null, email: form.email || null,
-          phone: form.phone || null, website: form.website || null,
-          linkedin: form.linkedin || null, twitter: form.twitter || null,
+          name: form.name || null,
+          title: form.title || null,
+          company: form.company || null,
+          email: form.email || null,
+          phone: form.phone || null,
+          website: form.website || null,
+          linkedin: form.linkedin || null,
+          twitter: form.twitter || null,
           tagline: form.tagline || null,
           avatar_url: form.avatar_url || null,
           cover_url: form.cover_url || null,
@@ -72,27 +94,32 @@ function MyCardPage() {
       });
       toast.success("Card saved");
       qc.invalidateQueries({ queryKey: ["my-card"] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Save failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
     }
   }
 
-  const publicUrl = form.handle && typeof window !== "undefined"
-    ? `${window.location.origin}/c/${form.handle.toLowerCase()}`
-    : "";
+  const publicUrl =
+    form.handle && typeof window !== "undefined"
+      ? `${window.location.origin}/c/${form.handle.toLowerCase()}`
+      : "";
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-        <Link to="/contacts" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <Link
+          to="/contacts"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" /> Back to contacts
         </Link>
 
         <h1 className="mb-2 font-display text-2xl text-foreground">My business card</h1>
         <p className="mb-6 text-sm text-muted-foreground">
-          This is what people see when you share your link or QR. Choose a handle — your card lives at <code className="text-foreground">/c/your-handle</code>.
+          This is what people see when you share your link or QR. Choose a handle — your card lives
+          at <code className="text-foreground">/c/your-handle</code>.
         </p>
 
         {/* Images */}
@@ -132,21 +159,73 @@ function MyCardPage() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Handle (URL)">
-            <Input value={form.handle} onChange={(e) => setForm({ ...form, handle: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })} placeholder="jane-doe" />
+            <Input
+              value={form.handle}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  handle: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                })
+              }
+              placeholder="jane-doe"
+            />
           </Field>
-          <Field label="Name"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="Title"><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
-          <Field label="Company"><Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} /></Field>
-          <Field label="Email"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-          <Field label="Phone"><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
-          <Field label="Website"><Input value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} /></Field>
-          <Field label="LinkedIn"><Input value={form.linkedin} onChange={(e) => setForm({ ...form, linkedin: e.target.value })} /></Field>
-          <Field label="Twitter / X"><Input value={form.twitter} onChange={(e) => setForm({ ...form, twitter: e.target.value })} /></Field>
+          <Field label="Name">
+            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </Field>
+          <Field label="Title">
+            <Input
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
+          </Field>
+          <Field label="Company">
+            <Input
+              value={form.company}
+              onChange={(e) => setForm({ ...form, company: e.target.value })}
+            />
+          </Field>
+          <Field label="Email">
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+          </Field>
+          <Field label="Phone">
+            <Input
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            />
+          </Field>
+          <Field label="Website">
+            <Input
+              value={form.website}
+              onChange={(e) => setForm({ ...form, website: e.target.value })}
+            />
+          </Field>
+          <Field label="LinkedIn">
+            <Input
+              value={form.linkedin}
+              onChange={(e) => setForm({ ...form, linkedin: e.target.value })}
+            />
+          </Field>
+          <Field label="Twitter / X">
+            <Input
+              value={form.twitter}
+              onChange={(e) => setForm({ ...form, twitter: e.target.value })}
+            />
+          </Field>
         </div>
 
         <div className="mt-4">
           <Label className="mb-1 block text-xs text-muted-foreground">Tagline</Label>
-          <Textarea rows={2} value={form.tagline} onChange={(e) => setForm({ ...form, tagline: e.target.value })} placeholder="A short pitch or status…" />
+          <Textarea
+            rows={2}
+            value={form.tagline}
+            onChange={(e) => setForm({ ...form, tagline: e.target.value })}
+            placeholder="A short pitch or status…"
+          />
         </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -175,8 +254,9 @@ function MyCardPage() {
                       await navigator.clipboard.writeText(publicUrl);
                       toast.success("Link copied");
                     }
-                  } catch (e: any) {
-                    if (e?.name !== "AbortError") toast.error("Couldn't share");
+                  } catch (e: unknown) {
+                    if (!(e instanceof Error) || e.name !== "AbortError")
+                      toast.error("Couldn't share");
                   }
                 }}
               >

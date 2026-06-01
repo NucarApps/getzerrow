@@ -18,7 +18,6 @@ function isBlockedDomain(domain: string): boolean {
   return false;
 }
 
-
 function providersFor(domain: string, size: number): string[] {
   const d = encodeURIComponent(domain);
   const s = Math.max(256, Math.min(512, size));

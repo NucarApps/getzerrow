@@ -118,7 +118,8 @@ export async function verifyGoogleJwt(token: string, opts: VerifyOptions): Promi
   );
   if (!valid) return { ok: false, reason: "bad_signature" };
 
-  const issOk = claims.iss === "https://accounts.google.com" || claims.iss === "accounts.google.com";
+  const issOk =
+    claims.iss === "https://accounts.google.com" || claims.iss === "accounts.google.com";
   if (!issOk) return { ok: false, reason: "bad_iss" };
 
   if (!claims.aud || !opts.audiences.includes(claims.aud)) {

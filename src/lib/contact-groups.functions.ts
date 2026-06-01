@@ -10,7 +10,10 @@ export const listContactGroups = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase } = context;
     const [{ data: groups, error: gErr }, { data: members, error: mErr }] = await Promise.all([
-      supabase.from("contact_groups").select("id,name,color,created_at").order("name", { ascending: true }),
+      supabase
+        .from("contact_groups")
+        .select("id,name,color,created_at")
+        .order("name", { ascending: true }),
       supabase.from("contact_group_members").select("group_id,contact_id"),
     ]);
     if (gErr) throw new Error(gErr.message);
@@ -28,7 +31,7 @@ export const listContactGroups = createServerFn({ method: "GET" })
 export const createContactGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { name: string; color?: string }) =>
-    z.object({ name: z.string().min(1).max(60), color: COLOR.optional() }).parse(d)
+    z.object({ name: z.string().min(1).max(60), color: COLOR.optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -44,7 +47,13 @@ export const createContactGroup = createServerFn({ method: "POST" })
 export const updateContactGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string; name?: string; color?: string }) =>
-    z.object({ id: z.string().uuid(), name: z.string().min(1).max(60).optional(), color: COLOR.optional() }).parse(d)
+    z
+      .object({
+        id: z.string().uuid(),
+        name: z.string().min(1).max(60).optional(),
+        color: COLOR.optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
@@ -73,10 +82,12 @@ export const deleteContactGroup = createServerFn({ method: "POST" })
 export const setContactGroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { contactId: string; groupIds: string[] }) =>
-    z.object({
-      contactId: z.string().uuid(),
-      groupIds: z.array(z.string().uuid()).max(50),
-    }).parse(d)
+    z
+      .object({
+        contactId: z.string().uuid(),
+        groupIds: z.array(z.string().uuid()).max(50),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -89,7 +100,9 @@ export const setContactGroups = createServerFn({ method: "POST" })
 
     if (data.groupIds.length > 0) {
       const rows = data.groupIds.map((group_id) => ({
-        group_id, contact_id: data.contactId, user_id: userId,
+        group_id,
+        contact_id: data.contactId,
+        user_id: userId,
       }));
       const { error: insErr } = await supabase.from("contact_group_members").insert(rows);
       if (insErr) throw new Error(insErr.message);
@@ -101,15 +114,19 @@ export const setContactGroups = createServerFn({ method: "POST" })
 export const addContactsToGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { groupId: string; contactIds: string[] }) =>
-    z.object({
-      groupId: z.string().uuid(),
-      contactIds: z.array(z.string().uuid()).min(1).max(1000),
-    }).parse(d)
+    z
+      .object({
+        groupId: z.string().uuid(),
+        contactIds: z.array(z.string().uuid()).min(1).max(1000),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const rows = data.contactIds.map((contact_id) => ({
-      group_id: data.groupId, contact_id, user_id: userId,
+      group_id: data.groupId,
+      contact_id,
+      user_id: userId,
     }));
     const { error } = await supabase
       .from("contact_group_members")

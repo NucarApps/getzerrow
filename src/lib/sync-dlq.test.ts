@@ -12,11 +12,15 @@ describe("isTransientDlqError", () => {
   });
 
   it("matches 429 rate limits", () => {
-    expect(isTransientDlqError("Gmail API 429 on /users/me/messages/abc: quota exceeded")).toBe(true);
+    expect(isTransientDlqError("Gmail API 429 on /users/me/messages/abc: quota exceeded")).toBe(
+      true,
+    );
   });
 
   it("matches timeout messages", () => {
-    expect(isTransientDlqError("Gmail API timeout on /users/me/messages/abc (>20000ms)")).toBe(true);
+    expect(isTransientDlqError("Gmail API timeout on /users/me/messages/abc (>20000ms)")).toBe(
+      true,
+    );
     expect(isTransientDlqError("job timeout after 25000ms (fetch=22000 ai=0 db=200)")).toBe(true);
   });
 
@@ -33,8 +37,12 @@ describe("isTransientDlqError", () => {
 
   it("does NOT match permanent 4xx errors (auth, bad request)", () => {
     expect(isTransientDlqError("Gmail API 400 on /users/me/messages/abc: bad request")).toBe(false);
-    expect(isTransientDlqError("Gmail API 401 on /users/me/messages/abc: invalid credentials")).toBe(false);
-    expect(isTransientDlqError("Gmail API 403 on /users/me/messages/abc: insufficient scope")).toBe(false);
+    expect(
+      isTransientDlqError("Gmail API 401 on /users/me/messages/abc: invalid credentials"),
+    ).toBe(false);
+    expect(isTransientDlqError("Gmail API 403 on /users/me/messages/abc: insufficient scope")).toBe(
+      false,
+    );
     expect(isTransientDlqError("Gmail API 404 on /users/me/messages/abc: not found")).toBe(false);
   });
 
@@ -61,6 +69,10 @@ describe("isTransientDlqError", () => {
     // After our cron re-queues a job, last_error becomes
     // "auto-replayed from DLQ at <ts> (was: Gmail API 500 ...)" — if it fails
     // again with the same error, we want to recognize it as transient again.
-    expect(isTransientDlqError("auto-replayed from DLQ at 2026-05-25T12:00:00Z (was: Gmail API 500: server error)")).toBe(true);
+    expect(
+      isTransientDlqError(
+        "auto-replayed from DLQ at 2026-05-25T12:00:00Z (was: Gmail API 500: server error)",
+      ),
+    ).toBe(true);
   });
 });

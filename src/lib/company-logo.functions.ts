@@ -5,9 +5,13 @@ import { LOGO_PROVIDER_COUNT } from "@/lib/logo-providers";
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
 
-const domainSchema = z.string().trim().toLowerCase().refine((d) => DOMAIN_RE.test(d), {
-  message: "Invalid domain",
-});
+const domainSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine((d) => DOMAIN_RE.test(d), {
+    message: "Invalid domain",
+  });
 
 export type CompanyLogoChoice = {
   domain: string;
@@ -33,28 +37,29 @@ export const setCompanyLogoChoice = createServerFn({ method: "POST" })
     z
       .object({
         domain: domainSchema,
-        provider: z.number().int().min(0).max(LOGO_PROVIDER_COUNT - 1),
+        provider: z
+          .number()
+          .int()
+          .min(0)
+          .max(LOGO_PROVIDER_COUNT - 1),
         sourceDomain: domainSchema.optional(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const source = data.sourceDomain && data.sourceDomain !== data.domain
-      ? data.sourceDomain
-      : null;
-    const { error } = await supabase
-      .from("company_logo_choices")
-      .upsert(
-        {
-          user_id: userId,
-          domain: data.domain,
-          provider: data.provider,
-          source_domain: source,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,domain" },
-      );
+    const source =
+      data.sourceDomain && data.sourceDomain !== data.domain ? data.sourceDomain : null;
+    const { error } = await supabase.from("company_logo_choices").upsert(
+      {
+        user_id: userId,
+        domain: data.domain,
+        provider: data.provider,
+        source_domain: source,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,domain" },
+    );
     if (error) throw new Error(error.message);
     return { ok: true as const };
   });

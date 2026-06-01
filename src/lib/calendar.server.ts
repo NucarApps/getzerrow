@@ -39,7 +39,11 @@ export class CalendarApiError extends Error {
     ) {
       return "api_disabled";
     }
-    if (this.status === 401 || reason.includes("scope") || reason.includes("insufficientpermissions")) {
+    if (
+      this.status === 401 ||
+      reason.includes("scope") ||
+      reason.includes("insufficientpermissions")
+    ) {
       return "reconnect";
     }
     if (this.status === 429 || reason.includes("ratelimit") || reason.includes("quota")) {
@@ -61,7 +65,12 @@ function parseGoogleReason(body: string): string | null {
   }
 }
 
-type CalendarAttendee = { email?: string; self?: boolean; responseStatus?: string; displayName?: string };
+type CalendarAttendee = {
+  email?: string;
+  self?: boolean;
+  responseStatus?: string;
+  displayName?: string;
+};
 
 type CalendarEvent = {
   attendees?: CalendarAttendee[];
@@ -120,7 +129,11 @@ export function extractAttendeePeople(event: CalendarEvent, selfEmail: string): 
   const meetingAt = event.start?.dateTime ?? event.start?.date ?? null;
   const eventTitle = event.summary?.trim() || null;
   const out = new Map<string, CalendarPerson>();
-  const consider = (raw: string | undefined, isSelf: boolean | undefined, displayName: string | undefined) => {
+  const consider = (
+    raw: string | undefined,
+    isSelf: boolean | undefined,
+    displayName: string | undefined,
+  ) => {
     if (!raw || isSelf) return;
     const email = raw.toLowerCase().trim();
     if (email === self) return;
@@ -177,10 +190,7 @@ async function listEventsPage(
     showDeleted: "false",
   });
   if (pageToken) params.set("pageToken", pageToken);
-  return calendarFetch<EventsResponse>(
-    accountId,
-    `/calendars/primary/events?${params.toString()}`,
-  );
+  return calendarFetch<EventsResponse>(accountId, `/calendars/primary/events?${params.toString()}`);
 }
 
 const UPCOMING_MONTHS = 3;
@@ -201,10 +211,7 @@ async function listEventsPageRange(
     showDeleted: "false",
   });
   if (pageToken) params.set("pageToken", pageToken);
-  return calendarFetch<EventsResponse>(
-    accountId,
-    `/calendars/primary/events?${params.toString()}`,
-  );
+  return calendarFetch<EventsResponse>(accountId, `/calendars/primary/events?${params.toString()}`);
 }
 
 /**
@@ -270,8 +277,6 @@ export async function listCalendarPeople(
   return [...byEmail.values()];
 }
 
-
-
 /**
  * Sync attendees from the account's calendar (last 12 months) into
  * `calendar_contacts`. Upserts on (gmail_account_id, email_address) and
@@ -290,9 +295,7 @@ export async function syncCalendarContacts(
     .maybeSingle();
   const selfEmail = account?.email_address ?? "";
 
-  const timeMin = new Date(
-    Date.now() - LOOKBACK_MONTHS * 30 * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  const timeMin = new Date(Date.now() - LOOKBACK_MONTHS * 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const emails = new Map<string, string>(); // email -> last_seen_at iso (now)
   const now = new Date().toISOString();
@@ -336,7 +339,11 @@ export async function syncCalendarContacts(
       .from("calendar_contacts")
       .upsert(rows, { onConflict: "gmail_account_id,email_address" });
     if (error) {
-      logError("calendar.upsert_failed", { account_id: accountId, user_id: userId, count: rows.length }, error);
+      logError(
+        "calendar.upsert_failed",
+        { account_id: accountId, user_id: userId, count: rows.length },
+        error,
+      );
     }
   }
 

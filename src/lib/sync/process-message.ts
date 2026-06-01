@@ -22,12 +22,7 @@
 //   for recordManualMove; it passes the parsed result via opts.prefetched
 //   so we skip the duplicate Gmail roundtrip.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  getMessage,
-  modifyMessage,
-  parseMessage,
-  sendMessage,
-} from "../gmail.server";
+import { getMessage, modifyMessage, parseMessage, sendMessage } from "../gmail.server";
 import type { AccountContext } from "./account-context";
 import { jitter } from "./backoff";
 import { classifyParsedEmail } from "./classify";
@@ -96,13 +91,16 @@ export async function processGmailMessage(
         from_name: parsed.from_name ?? "",
         to_addrs: parsed.to_addrs ?? "",
       });
-      await supabaseAdmin.from("emails").update({
-        from_addr: parsed.from_addr,
-        received_at: parsed.received_at,
-        has_attachment: parsed.has_attachment,
-        raw_labels: parsed.raw_labels,
-        is_read: parsed.is_read,
-      }).eq("id", existing.id);
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          from_addr: parsed.from_addr,
+          received_at: parsed.received_at,
+          has_attachment: parsed.has_attachment,
+          raw_labels: parsed.raw_labels,
+          is_read: parsed.is_read,
+        })
+        .eq("id", existing.id);
       return { repaired: true };
     }
     return { skipped: true };
@@ -145,11 +143,15 @@ export async function processGmailMessage(
   });
 
   if (error || !insertedId) {
-    logError("process_message.insert_failed", {
-      account_id: accountId,
-      gmail_message_id: gmailId,
-      user_id: userId,
-    }, error ? new Error(error) : new Error("no id returned"));
+    logError(
+      "process_message.insert_failed",
+      {
+        account_id: accountId,
+        gmail_message_id: gmailId,
+        user_id: userId,
+      },
+      error ? new Error(error) : new Error("no id returned"),
+    );
     return { error: error ?? "no id returned" };
   }
   const inserted = { id: insertedId };
@@ -181,12 +183,16 @@ export async function processGmailMessage(
     if (folder_id) void bumpEmailsSinceLearn(folder_id);
     if (t) t.db += performance.now() - _tDb;
   } catch (e) {
-    logError("process_message.classify_failed", {
-      account_id: accountId,
-      gmail_message_id: gmailId,
-      email_id: inserted.id,
-      ai_ms: t?.ai,
-    }, e);
+    logError(
+      "process_message.classify_failed",
+      {
+        account_id: accountId,
+        gmail_message_id: gmailId,
+        email_id: inserted.id,
+        ai_ms: t?.ai,
+      },
+      e,
+    );
     await updateEmailEncrypted({
       email_id: inserted.id,
       classified_by: "unclassified",
@@ -200,9 +206,14 @@ export async function processGmailMessage(
   //    to avoid an extra DB round trip.
   if (folder_id) {
     let folder: {
-      id: string; gmail_label_id: string | null; auto_archive: boolean;
-      auto_mark_read: boolean; auto_star: boolean; hide_from_inbox: boolean;
-      forward_to: string | null; snooze_hours: number;
+      id: string;
+      gmail_label_id: string | null;
+      auto_archive: boolean;
+      auto_mark_read: boolean;
+      auto_star: boolean;
+      hide_from_inbox: boolean;
+      forward_to: string | null;
+      snooze_hours: number;
     } | null = null;
     const cached = opts.context?.folders.find((f) => f.id === folder_id);
     if (cached) {
@@ -219,7 +230,9 @@ export async function processGmailMessage(
     } else {
       const { data } = await supabaseAdmin
         .from("folders")
-        .select("id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours")
+        .select(
+          "id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours",
+        )
         .eq("id", folder_id)
         .maybeSingle();
       folder = data ?? null;
@@ -229,13 +242,26 @@ export async function processGmailMessage(
       const effectiveArchive = folder.auto_archive || folder.hide_from_inbox;
       const addLabels: string[] = [];
       const removeLabels: string[] = [];
-      if (folder.gmail_label_id && !parsed.raw_labels?.includes(folder.gmail_label_id)) addLabels.push(folder.gmail_label_id);
+      if (folder.gmail_label_id && !parsed.raw_labels?.includes(folder.gmail_label_id))
+        addLabels.push(folder.gmail_label_id);
       if (folder.auto_mark_read) removeLabels.push("UNREAD");
       if (folder.auto_star && !parsed.raw_labels?.includes("STARRED")) addLabels.push("STARRED");
       if (inInbox && effectiveArchive) removeLabels.push("INBOX");
       if (addLabels.length || removeLabels.length) {
-        try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); }
-        catch (e) { logError("process_message.modify_failed", { account_id: accountId, gmail_message_id: gmailId, added: addLabels, removed: removeLabels }, e); }
+        try {
+          await modifyMessage(accountId, gmailId, addLabels, removeLabels);
+        } catch (e) {
+          logError(
+            "process_message.modify_failed",
+            {
+              account_id: accountId,
+              gmail_message_id: gmailId,
+              added: addLabels,
+              removed: removeLabels,
+            },
+            e,
+          );
+        }
       }
       const patch: {
         is_archived?: boolean;
@@ -277,14 +303,18 @@ export async function processGmailMessage(
           // Schedule a retry instead of silently dropping. Counter +
           // next_retry_at are picked up by retryForwardAttempts.
           const errMsg = (e as Error)?.message?.slice(0, 500) ?? "unknown";
-          logError("process_message.forward_failed", {
-            account_id: accountId,
-            gmail_message_id: gmailId,
-            email_id: inserted.id,
-            folder_id,
-            forward_to: folder.forward_to,
-            attempt: 1,
-          }, e);
+          logError(
+            "process_message.forward_failed",
+            {
+              account_id: accountId,
+              gmail_message_id: gmailId,
+              email_id: inserted.id,
+              folder_id,
+              forward_to: folder.forward_to,
+              attempt: 1,
+            },
+            e,
+          );
           const nextRetry = new Date(Date.now() + jitter(60) * 1000).toISOString();
           patch.forward_attempts = 1;
           patch.forward_last_error = errMsg;
@@ -295,7 +325,10 @@ export async function processGmailMessage(
         await supabaseAdmin.from("emails").update(patch).eq("id", inserted.id);
       }
     }
-  } else if ((classifiedBy === "inbox_override" || classifiedBy === "calendar_contact") && !inInbox) {
+  } else if (
+    (classifiedBy === "inbox_override" || classifiedBy === "calendar_contact") &&
+    !inInbox
+  ) {
     // Always-inbox override matched but Gmail had already archived the
     // message (no INBOX label at sync time, e.g. a Gmail-side filter).
     // Restore INBOX both in Gmail and locally so the row shows up in the
@@ -303,17 +336,24 @@ export async function processGmailMessage(
     try {
       await modifyMessage(accountId, gmailId, ["INBOX"], []);
     } catch (e) {
-      logError("process_message.inbox_override_restore_failed", {
-        account_id: accountId,
-        gmail_message_id: gmailId,
-        email_id: inserted.id,
-      }, e);
+      logError(
+        "process_message.inbox_override_restore_failed",
+        {
+          account_id: accountId,
+          gmail_message_id: gmailId,
+          email_id: inserted.id,
+        },
+        e,
+      );
     }
     const nextLabels = Array.from(new Set([...(parsed.raw_labels ?? []), "INBOX"]));
-    await supabaseAdmin.from("emails").update({
-      is_archived: false,
-      raw_labels: nextLabels,
-    }).eq("id", inserted.id);
+    await supabaseAdmin
+      .from("emails")
+      .update({
+        is_archived: false,
+        raw_labels: nextLabels,
+      })
+      .eq("id", inserted.id);
   }
 
   return { id: inserted.id, email_id: inserted.id, folder_id, parsed };

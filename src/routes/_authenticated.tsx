@@ -1,14 +1,36 @@
-import { createFileRoute, redirect, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  redirect,
+  Outlet,
+  Link,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
 import { getAdminMe } from "@/lib/admin.functions";
-import { Inbox, Settings, LogOut, Plus, Pencil, Menu, BarChart3, Users, IdCard, Shield } from "lucide-react";
+import {
+  Inbox,
+  Settings,
+  LogOut,
+  Plus,
+  Pencil,
+  Menu,
+  BarChart3,
+  Users,
+  IdCard,
+  Shield,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { FolderSelectionProvider, useFolderSelection, type FolderSelection } from "@/lib/folder-selection";
+import {
+  FolderSelectionProvider,
+  useFolderSelection,
+  type FolderSelection,
+} from "@/lib/folder-selection";
 import { AccountSelectionProvider, useAccountSelection } from "@/lib/account-selection";
 import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
@@ -17,7 +39,6 @@ import type { Folder, GLabel } from "@/components/folders/FolderEditor";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
 import { BackfillBanner } from "@/components/inbox/BackfillBanner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
-
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
@@ -34,101 +55,103 @@ function AuthedLayout() {
 
   return (
     <AccountSelectionProvider>
-    <FolderSelectionProvider>
-      <AuthedLayoutInner mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
-    </FolderSelectionProvider>
+      <FolderSelectionProvider>
+        <AuthedLayoutInner mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+      </FolderSelectionProvider>
     </AccountSelectionProvider>
   );
 }
 
-function AuthedLayoutInner({ mobileOpen, setMobileOpen }: { mobileOpen: boolean; setMobileOpen: (v: boolean) => void }) {
+function AuthedLayoutInner({
+  mobileOpen,
+  setMobileOpen,
+}: {
+  mobileOpen: boolean;
+  setMobileOpen: (v: boolean) => void;
+}) {
   const listAccounts = useServerFn(listMyGmailAccounts);
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
   const accounts = accountsQ.data?.accounts ?? [];
 
   return (
-      <div className="relative flex h-[100dvh] overflow-hidden bg-background text-foreground">
-        {/* Mission Control atmospheric backdrop */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 z-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,107,61,0.10), transparent 70%)," +
-              "radial-gradient(ellipse 70% 50% at 80% 40%, rgba(107,209,224,0.05), transparent 70%)," +
-              "linear-gradient(180deg, #0a0e1a, #070912 60%, #0a0e1a)",
-          }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 z-0"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px)," +
-              "linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
-            backgroundSize: "64px 64px",
-            maskImage:
-              "radial-gradient(ellipse 90% 70% at 50% 30%, #000 30%, transparent 80%)",
-            WebkitMaskImage:
-              "radial-gradient(ellipse 90% 70% at 50% 30%, #000 30%, transparent 80%)",
-          }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 z-0 opacity-90"
-          style={{
-            backgroundImage: [
-              "radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.7), transparent 60%)",
-              "radial-gradient(1px 1px at 78% 9%, rgba(255,255,255,0.5), transparent 60%)",
-              "radial-gradient(1.2px 1.2px at 42% 84%, rgba(255,255,255,0.6), transparent 60%)",
-              "radial-gradient(1px 1px at 92% 62%, rgba(255,255,255,0.4), transparent 60%)",
-              "radial-gradient(1px 1px at 26% 71%, rgba(255,255,255,0.45), transparent 60%)",
-              "radial-gradient(1.2px 1.2px at 65% 32%, rgba(255,255,255,0.55), transparent 60%)",
-              "radial-gradient(1px 1px at 6% 52%, rgba(255,255,255,0.35), transparent 60%)",
-              "radial-gradient(1px 1px at 53% 12%, rgba(255,255,255,0.5), transparent 60%)",
-            ].join(","),
-          }}
-        />
+    <div className="relative flex h-[100dvh] overflow-hidden bg-background text-foreground">
+      {/* Mission Control atmospheric backdrop */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,107,61,0.10), transparent 70%)," +
+            "radial-gradient(ellipse 70% 50% at 80% 40%, rgba(107,209,224,0.05), transparent 70%)," +
+            "linear-gradient(180deg, #0a0e1a, #070912 60%, #0a0e1a)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px)," +
+            "linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
+          backgroundSize: "64px 64px",
+          maskImage: "radial-gradient(ellipse 90% 70% at 50% 30%, #000 30%, transparent 80%)",
+          WebkitMaskImage: "radial-gradient(ellipse 90% 70% at 50% 30%, #000 30%, transparent 80%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0 opacity-90"
+        style={{
+          backgroundImage: [
+            "radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.7), transparent 60%)",
+            "radial-gradient(1px 1px at 78% 9%, rgba(255,255,255,0.5), transparent 60%)",
+            "radial-gradient(1.2px 1.2px at 42% 84%, rgba(255,255,255,0.6), transparent 60%)",
+            "radial-gradient(1px 1px at 92% 62%, rgba(255,255,255,0.4), transparent 60%)",
+            "radial-gradient(1px 1px at 26% 71%, rgba(255,255,255,0.45), transparent 60%)",
+            "radial-gradient(1.2px 1.2px at 65% 32%, rgba(255,255,255,0.55), transparent 60%)",
+            "radial-gradient(1px 1px at 6% 52%, rgba(255,255,255,0.35), transparent 60%)",
+            "radial-gradient(1px 1px at 53% 12%, rgba(255,255,255,0.5), transparent 60%)",
+          ].join(","),
+        }}
+      />
 
-        {/* Desktop sidebar */}
-        <aside className="relative z-10 hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar/80 backdrop-blur-sm md:flex md:flex-col">
-          <SidebarInner />
-        </aside>
+      {/* Desktop sidebar */}
+      <aside className="relative z-10 hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar/80 backdrop-blur-sm md:flex md:flex-col">
+        <SidebarInner />
+      </aside>
 
-        {/* Mobile drawer */}
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetContent side="left" className="w-72 border-sidebar-border bg-sidebar p-0">
-            <SidebarInner onNavigate={() => setMobileOpen(false)} />
-          </SheetContent>
-        </Sheet>
+      {/* Mobile drawer */}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="left" className="w-72 border-sidebar-border bg-sidebar p-0">
+          <SidebarInner onNavigate={() => setMobileOpen(false)} />
+        </SheetContent>
+      </Sheet>
 
-        <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Mobile top bar */}
-          <div className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/70 px-3 py-2 backdrop-blur md:hidden">
-            <button
-              onClick={() => setMobileOpen(true)}
-              className="grid h-9 w-9 place-items-center rounded-md hover:bg-accent"
-              aria-label="Open menu"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <img src={zerrowLogo} alt="Zerrow" className="h-12 w-auto" />
-            <div className="ml-auto min-w-0 max-w-[60%]">
-              <AccountSwitcher accounts={accounts} loading={accountsQ.isLoading} compact />
-            </div>
+      <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Mobile top bar */}
+        <div className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/70 px-3 py-2 backdrop-blur md:hidden">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="grid h-9 w-9 place-items-center rounded-md hover:bg-accent"
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <img src={zerrowLogo} alt="Zerrow" className="h-12 w-auto" />
+          <div className="ml-auto min-w-0 max-w-[60%]">
+            <AccountSwitcher accounts={accounts} loading={accountsQ.isLoading} compact />
           </div>
-          <BackfillBanner />
-          <div className="min-h-0 flex-1">
-            <Outlet />
-          </div>
-
-        </main>
-      </div>
+        </div>
+        <BackfillBanner />
+        <div className="min-h-0 flex-1">
+          <Outlet />
+        </div>
+      </main>
+    </div>
   );
 }
 
 function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
-  
   const { selected, setSelected } = useFolderSelection();
   const { activeAccountId, setActiveAccountId } = useAccountSelection();
   const [addOpen, setAddOpen] = useState(false);
@@ -139,7 +162,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   const adminMeFn = useServerFn(getAdminMe);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
-  const accounts = accountsQ.data?.accounts ?? [];
+  const accounts = useMemo(() => accountsQ.data?.accounts ?? [], [accountsQ.data?.accounts]);
 
   // Reconcile activeAccountId with the actual account list — fall back to the
   // first account if the stored selection no longer exists or none was set.
@@ -149,9 +172,10 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     if (!exists) setActiveAccountId(accounts[0].id);
   }, [accounts, activeAccountId, setActiveAccountId]);
 
-  const accountId = activeAccountId && accounts.some((a) => a.id === activeAccountId)
-    ? activeAccountId
-    : accounts[0]?.id ?? null;
+  const accountId =
+    activeAccountId && accounts.some((a) => a.id === activeAccountId)
+      ? activeAccountId
+      : (accounts[0]?.id ?? null);
 
   const adminMeQ = useQuery({
     queryKey: ["admin-me"],
@@ -165,7 +189,11 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     queryKey: ["folders-full", accountId],
     enabled: !!accountId,
     queryFn: async () => {
-      const { data } = await supabase.from("folders").select("*").eq("gmail_account_id", accountId!).order("name", { ascending: true });
+      const { data } = await supabase
+        .from("folders")
+        .select("*")
+        .eq("gmail_account_id", accountId!)
+        .order("name", { ascending: true });
       return (data ?? []) as Folder[];
     },
   });
@@ -174,7 +202,11 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     queryKey: ["gmail-labels", accountId],
     enabled: !!accountId,
     queryFn: async () => {
-      try { return (await listLabelsFn({ data: { account_id: accountId! } })).labels as GLabel[]; } catch { return [] as GLabel[]; }
+      try {
+        return (await listLabelsFn({ data: { account_id: accountId! } })).labels as GLabel[];
+      } catch {
+        return [] as GLabel[];
+      }
     },
   });
 
@@ -187,10 +219,15 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         .select("id,folder_id,is_read,is_archived,raw_labels")
         .eq("gmail_account_id", accountId!)
         .limit(5000);
-      return (data ?? []) as Array<{ id: string; folder_id: string | null; is_read: boolean; is_archived: boolean; raw_labels: string[] | null }>;
+      return (data ?? []) as Array<{
+        id: string;
+        folder_id: string | null;
+        is_read: boolean;
+        is_archived: boolean;
+        raw_labels: string[] | null;
+      }>;
     },
   });
-
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
@@ -235,7 +272,6 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           onNavigate={onNavigate}
         />
       </div>
-
 
       <nav className="flex flex-col gap-0.5">
         <button
@@ -297,9 +333,6 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
             <Shield className="h-4 w-4" /> Admin
           </button>
         )}
-
-
-
       </nav>
 
       <div className="mt-6 flex items-center justify-between px-2">
@@ -348,7 +381,18 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         )}
         {!accountId && !accountsQ.isLoading && (
           <p className="px-3 py-3 text-xs text-muted-foreground">
-            Connect Gmail in <button type="button" className="underline" onClick={() => { navigate({ to: "/settings" }); onNavigate?.(); }}>Settings</button>.
+            Connect Gmail in{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => {
+                navigate({ to: "/settings" });
+                onNavigate?.();
+              }}
+            >
+              Settings
+            </button>
+            .
           </p>
         )}
       </div>
@@ -358,7 +402,10 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           variant="ghost"
           size="sm"
           className="w-full justify-start text-sidebar-foreground"
-          onClick={async () => { await supabase.auth.signOut(); window.location.href = "/login"; }}
+          onClick={async () => {
+            await supabase.auth.signOut();
+            window.location.href = "/login";
+          }}
         >
           <LogOut className="mr-2 h-4 w-4" /> Sign out
         </Button>
@@ -374,7 +421,9 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         folder={editing}
         labels={labelsQ.data ?? []}
         open={!!editing}
-        onOpenChange={(v) => { if (!v) setEditing(null); }}
+        onOpenChange={(v) => {
+          if (!v) setEditing(null);
+        }}
       />
     </div>
   );
@@ -406,13 +455,18 @@ function FolderRow({
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <span className="flex-1 truncate">{label}</span>
         {typeof count === "number" && count > 0 && (
-          <span className="rounded-full bg-primary/20 px-1.5 text-[10px] text-primary">{count}</span>
+          <span className="rounded-full bg-primary/20 px-1.5 text-[10px] text-primary">
+            {count}
+          </span>
         )}
       </button>
       {onEdit && (
         <button
           className="mr-1 grid h-6 w-6 place-items-center rounded text-muted-foreground opacity-100 transition-opacity hover:bg-background/50 hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
           aria-label={`Edit ${label}`}
         >
           <Pencil className="h-3.5 w-3.5" />

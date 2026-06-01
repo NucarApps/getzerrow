@@ -22,8 +22,8 @@ export function LeadForm({ handle, accentClass }: { handle: string; accentClass:
     try {
       await submit({ data: { handle, ...form } });
       setDone(true);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Couldn't send. Try again.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Couldn't send. Try again.");
     } finally {
       setSending(false);
     }
@@ -52,13 +52,37 @@ export function LeadForm({ handle, accentClass }: { handle: string; accentClass:
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-4 space-y-2 rounded-lg border border-border bg-card/60 p-4">
-      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Get in touch</p>
-      <Input placeholder="Your name *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
-      <Input placeholder="Email *" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} required />
+    <form
+      onSubmit={onSubmit}
+      className="mt-4 space-y-2 rounded-lg border border-border bg-card/60 p-4"
+    >
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Get in touch
+      </p>
+      <Input
+        placeholder="Your name *"
+        value={form.name}
+        onChange={(v) => setForm({ ...form, name: v })}
+        required
+      />
+      <Input
+        placeholder="Email *"
+        type="email"
+        value={form.email}
+        onChange={(v) => setForm({ ...form, email: v })}
+        required
+      />
       <div className="grid grid-cols-2 gap-2">
-        <Input placeholder="Company" value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
-        <Input placeholder="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
+        <Input
+          placeholder="Company"
+          value={form.company}
+          onChange={(v) => setForm({ ...form, company: v })}
+        />
+        <Input
+          placeholder="Phone"
+          value={form.phone}
+          onChange={(v) => setForm({ ...form, phone: v })}
+        />
       </div>
       <textarea
         placeholder="Message (optional)"
@@ -92,8 +116,18 @@ export function LeadForm({ handle, accentClass }: { handle: string; accentClass:
 }
 
 function Input({
-  value, onChange, placeholder, type = "text", required,
-}: { value: string; onChange: (v: string) => void; placeholder: string; type?: string; required?: boolean }) {
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  required,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  type?: string;
+  required?: boolean;
+}) {
   return (
     <input
       type={type}

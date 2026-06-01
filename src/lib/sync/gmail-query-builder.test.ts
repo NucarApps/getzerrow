@@ -5,7 +5,9 @@ import type { RuleNode } from "./types";
 describe("expandTreeToBranches", () => {
   it("AND group → one combined branch", () => {
     const tree: RuleNode = {
-      type: "group", op: "and", children: [
+      type: "group",
+      op: "and",
+      children: [
         { type: "cond", field: "domain", op: "contains", value: "docusign" },
         { type: "cond", field: "subject", op: "starts_with", value: "Completed" },
       ],
@@ -15,7 +17,9 @@ describe("expandTreeToBranches", () => {
 
   it("OR group → separate branches", () => {
     const tree: RuleNode = {
-      type: "group", op: "or", children: [
+      type: "group",
+      op: "or",
+      children: [
         { type: "cond", field: "subject", op: "contains", value: "invoice" },
         { type: "cond", field: "subject", op: "contains", value: "receipt" },
       ],
@@ -25,12 +29,18 @@ describe("expandTreeToBranches", () => {
 
   it("AND of (cond, OR group) → fans out into Cartesian product", () => {
     const tree: RuleNode = {
-      type: "group", op: "and", children: [
+      type: "group",
+      op: "and",
+      children: [
         { type: "cond", field: "domain", op: "contains", value: "docusign" },
-        { type: "group", op: "or", children: [
-          { type: "cond", field: "subject", op: "starts_with", value: "Completed" },
-          { type: "cond", field: "subject", op: "starts_with", value: "Signed" },
-        ]},
+        {
+          type: "group",
+          op: "or",
+          children: [
+            { type: "cond", field: "subject", op: "starts_with", value: "Completed" },
+            { type: "cond", field: "subject", op: "starts_with", value: "Signed" },
+          ],
+        },
       ],
     };
     expect(expandTreeToBranches(tree)).toEqual([
@@ -41,7 +51,9 @@ describe("expandTreeToBranches", () => {
 
   it("skips negative and regex leaves silently", () => {
     const tree: RuleNode = {
-      type: "group", op: "and", children: [
+      type: "group",
+      op: "and",
+      children: [
         { type: "cond", field: "domain", op: "contains", value: "docusign" },
         { type: "cond", field: "subject", op: "not_contains", value: "reminder" },
         { type: "cond", field: "body", op: "regex", value: "^x" },
@@ -54,7 +66,9 @@ describe("expandTreeToBranches", () => {
 describe("buildGmailQueries", () => {
   it("AND tree → single combined query with suffix", () => {
     const tree: RuleNode = {
-      type: "group", op: "and", children: [
+      type: "group",
+      op: "and",
+      children: [
         { type: "cond", field: "domain", op: "contains", value: "docusign" },
         { type: "cond", field: "subject", op: "starts_with", value: "Completed" },
       ],
@@ -66,23 +80,22 @@ describe("buildGmailQueries", () => {
 
   it("OR tree → multiple queries", () => {
     const tree: RuleNode = {
-      type: "group", op: "or", children: [
+      type: "group",
+      op: "or",
+      children: [
         { type: "cond", field: "subject", op: "contains", value: "invoice" },
         { type: "cond", field: "subject", op: "contains", value: "receipt" },
       ],
     };
     const r = buildGmailQueries({ filter_tree: tree, filters: [] }, { suffix: " newer_than:6m" });
-    expect(r.queries).toEqual([
-      "subject:invoice newer_than:6m",
-      "subject:receipt newer_than:6m",
-    ]);
+    expect(r.queries).toEqual(["subject:invoice newer_than:6m", "subject:receipt newer_than:6m"]);
   });
 
   it("tree present → flat filters ignored", () => {
     const tree: RuleNode = {
-      type: "group", op: "and", children: [
-        { type: "cond", field: "domain", op: "contains", value: "docusign" },
-      ],
+      type: "group",
+      op: "and",
+      children: [{ type: "cond", field: "domain", op: "contains", value: "docusign" }],
     };
     const r = buildGmailQueries({
       filter_tree: tree,
@@ -105,7 +118,9 @@ describe("buildGmailQueries", () => {
 
   it("counts regex leaves in skippedRegex", () => {
     const tree: RuleNode = {
-      type: "group", op: "or", children: [
+      type: "group",
+      op: "or",
+      children: [
         { type: "cond", field: "subject", op: "regex", value: "^x" },
         { type: "cond", field: "subject", op: "contains", value: "ok" },
       ],
@@ -125,7 +140,9 @@ describe("buildGmailQueries", () => {
 
   it("deduplicates identical queries", () => {
     const tree: RuleNode = {
-      type: "group", op: "or", children: [
+      type: "group",
+      op: "or",
+      children: [
         { type: "cond", field: "subject", op: "contains", value: "dup" },
         { type: "cond", field: "subject", op: "contains", value: "dup" },
       ],
