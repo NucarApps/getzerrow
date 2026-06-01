@@ -505,17 +505,25 @@ function GroupChip({
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <span className="flex-1 truncate">{label}</span>
         {typeof count === "number" && (
-          <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">{count}</span>
+          <span
+            className="min-w-[1.5rem] rounded-md border border-border/60 bg-muted px-1.5 py-0.5 text-center text-[10px] font-medium tabular-nums text-muted-foreground"
+            title="Contacts in this group"
+          >
+            {count}
+          </span>
         )}
       </button>
-      {onEdit && (
+      {/* Always reserve the pencil slot so count badges line up across rows. */}
+      {onEdit ? (
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          className="mr-1 grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-background/50 hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
+          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-background/50 hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
           aria-label={`Edit ${label}`}
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
+      ) : (
+        <span className="mr-1 h-6 w-6 shrink-0" aria-hidden="true" />
       )}
     </div>
   );
