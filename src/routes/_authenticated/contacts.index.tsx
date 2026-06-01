@@ -671,9 +671,10 @@ function AddContactsDialog({
   const createManual = useServerFn(createContactManual);
   const listFolders = useServerFn(listFoldersForPicker);
   const listSenders = useServerFn(listUniqueInboxSenders);
+  const listMeeting = useServerFn(listMeetingPeople);
   const bulkAdd = useServerFn(bulkCreateContactsFromEmails);
 
-  const [tab, setTab] = useState<"manual" | "inbox">("manual");
+  const [tab, setTab] = useState<"manual" | "inbox" | "meetings">("manual");
 
   // Manual form state
   const [m, setM] = useState({ email: "", name: "", title: "", company: "", phone: "", website: "", linkedin: "", twitter: "" });
@@ -686,6 +687,9 @@ function AddContactsDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
 
+  // Meetings tab state
+  const [meetingWhen, setMeetingWhen] = useState<"past" | "upcoming">("past");
+
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search), 250);
     return () => clearTimeout(t);
@@ -695,6 +699,7 @@ function AddContactsDialog({
     if (!open) {
       setM({ email: "", name: "", title: "", company: "", phone: "", website: "", linkedin: "", twitter: "" });
       setFolderIds([]); setSearch(""); setDebounced(""); setSelected(new Set()); setTab("manual");
+      setMeetingWhen("past");
     }
   }, [open]);
 
@@ -709,6 +714,14 @@ function AddContactsDialog({
     queryFn: () => listSenders({ data: { folderIds: folderIds.length ? folderIds : undefined, search: debounced || undefined } }),
     enabled: open && tab === "inbox",
   });
+
+  const meetingsQ = useQuery({
+    queryKey: ["meeting-people", meetingWhen, debounced],
+    queryFn: () => listMeeting({ data: { when: meetingWhen, search: debounced || undefined } }),
+    enabled: open && tab === "meetings",
+  });
+
+
 
   async function submitManual() {
     if (!/.+@.+\..+/.test(m.email)) { toast.error("Enter a valid email"); return; }
