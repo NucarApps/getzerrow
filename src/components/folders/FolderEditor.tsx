@@ -331,10 +331,36 @@ export function FolderEditor({
             </Select>
           </div>
 
+          <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3" /> Describe the purpose
+            </Label>
+            <Textarea
+              className="mt-1.5"
+              rows={2}
+              placeholder='e.g. "An invitation folder for Google Meet, Zoom, and similar meeting invitations"'
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+            />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Say what kind of email belongs here, then let AI write the rule below.
+              </p>
+              <Button size="sm" variant="outline" onClick={generateRule} disabled={generatingRule || !purpose.trim()}>
+                {generatingRule ? (
+                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Generating…</>
+                ) : (
+                  <><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Generate rule</>
+                )}
+              </Button>
+            </div>
+          </div>
+
           <div className="mt-4">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">AI rule (natural language)</Label>
             <Textarea className="mt-1.5" rows={2} placeholder='e.g. "Newsletters, marketing emails"' value={local.ai_rule ?? ""} onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })} />
           </div>
+
 
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
