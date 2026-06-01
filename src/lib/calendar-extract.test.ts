@@ -2,7 +2,7 @@
 // distinct attendee/organizer/creator addresses out of a single calendar
 // event, excluding the account owner and Google resource calendars.
 import { describe, it, expect } from "vitest";
-import { extractAttendeeEmails, CalendarApiError } from "./calendar.server";
+import { extractAttendeeEmails, extractAttendeePeople, CalendarApiError } from "./calendar.server";
 
 const self = "me@example.com";
 
