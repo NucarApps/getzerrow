@@ -24,6 +24,11 @@ export type AccountContext = {
   overrides: Array<{ id: string; match_type: string; value: string }>;
   overrideExceptions: OverrideException[];
   enrichedFolders: ClassifyFolder[];
+  /** True when the account has the calendar cold-email guard turned on. */
+  calendarGuardEnabled: boolean;
+  /** Lowercased email addresses of people met in Google Calendar. Empty
+   * unless the guard is enabled. */
+  calendarContacts: Set<string>;
 };
 
 const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
