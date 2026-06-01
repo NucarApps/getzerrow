@@ -164,6 +164,10 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         setPhones([]);
       }
     }
+    // Seed local form state when the contact's identity/version changes, keyed
+    // on the specific fields below — not on the whole q.data.contact/phones
+    // objects, whose refs change on every refetch and would clobber live edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     q.data?.contact?.id,
     q.data?.contact?.enriched_at,

@@ -30,12 +30,10 @@ jobs:
         run: bunx tsc --noEmit
       - name: Unit tests
         run: bun run test
-      # Lint is informational for now: the repo carries a large amount of
-      # pre-existing Prettier/formatting drift unrelated to security. Surface it
-      # without blocking PRs; tighten to a hard gate once formatting is cleaned up.
-      - name: Lint (non-blocking)
-        run: bun run lint
-        continue-on-error: true
+      # Enforced: the codebase is ESLint-clean (0 errors, 0 warnings). Keep it
+      # that way — lint failures block the PR.
+      - name: Lint
+        run: bun run lint --max-warnings=0
 
   audit:
     name: Dependency audit

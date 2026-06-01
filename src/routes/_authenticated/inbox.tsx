@@ -703,7 +703,7 @@ function InboxPage() {
     },
   });
 
-  const rawEmails = emailsQ.data ?? [];
+  const rawEmails = useMemo(() => emailsQ.data ?? [], [emailsQ.data]);
   const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
   const baseRows = useMemo(() => {
     if (!isSearching) return rawEmails.slice(0, PAGE_SIZE);

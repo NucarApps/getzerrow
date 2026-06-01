@@ -30,6 +30,9 @@ function GameOverlayImpl({
   shareScore,
   shareDisabled,
 }: Props) {
+  // `phase` is an intentional refresh trigger: re-read unlocked achievements
+  // from storage on each phase change (e.g. game-over) so newly-earned ones show.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const unlocked = useMemo<Set<AchievementKey>>(() => loadAchievements(), [phase]);
   const [tab, setTab] = useState<"global" | "daily" | "achievements">("global");
 

@@ -67,6 +67,9 @@ function MyCardPage() {
         theme: c.theme ?? "default",
       });
     }
+    // Intentionally keyed on the card identity (handle) only: seed the form once
+    // per card, not on every refetch — otherwise live edits would be clobbered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q.data?.card?.handle]);
 
   async function onSave() {

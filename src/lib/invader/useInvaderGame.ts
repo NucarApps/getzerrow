@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BASE_COOLDOWN,
   BOSS_LEVEL_INTERVAL,
@@ -325,15 +325,20 @@ export function useInvaderGame(): UseInvaderGameResult {
     [ensureAudio],
   );
 
-  const sfx = {
-    pew: () => playTone({ type: "sine", fStart: 880, fEnd: 220, dur: 0.07, gain: 0.035 }),
-    boom: () => playTone({ type: "triangle", fStart: 180, fEnd: 60, dur: 0.25, gain: 0.07 }),
-    bigBoom: () => playTone({ type: "sawtooth", fStart: 220, fEnd: 40, dur: 0.45, gain: 0.09 }),
-    pickup: () => playTone({ type: "square", fStart: 660, fEnd: 990, dur: 0.1, gain: 0.05 }),
-    ufo: () => playTone({ type: "sawtooth", fStart: 440, fEnd: 660, dur: 0.2, gain: 0.04 }),
-    achievement: () =>
-      playTone({ type: "triangle", fStart: 523, fEnd: 1046, dur: 0.3, gain: 0.06 }),
-  };
+  // Memoized so the object identity is stable — otherwise every consumer
+  // useCallback/effect (incl. the RAF game loop) would re-create each render.
+  const sfx = useMemo(
+    () => ({
+      pew: () => playTone({ type: "sine", fStart: 880, fEnd: 220, dur: 0.07, gain: 0.035 }),
+      boom: () => playTone({ type: "triangle", fStart: 180, fEnd: 60, dur: 0.25, gain: 0.07 }),
+      bigBoom: () => playTone({ type: "sawtooth", fStart: 220, fEnd: 40, dur: 0.45, gain: 0.09 }),
+      pickup: () => playTone({ type: "square", fStart: 660, fEnd: 990, dur: 0.1, gain: 0.05 }),
+      ufo: () => playTone({ type: "sawtooth", fStart: 440, fEnd: 660, dur: 0.2, gain: 0.04 }),
+      achievement: () =>
+        playTone({ type: "triangle", fStart: 523, fEnd: 1046, dur: 0.3, gain: 0.06 }),
+    }),
+    [playTone],
+  );
 
   // ---------- Achievements ----------
   const unlock = useCallback(
@@ -1103,7 +1108,7 @@ export function useInvaderGame(): UseInvaderGameResult {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [applyPowerup, handleEnemyKill, sfx, unlock]);
+  }, [applyPowerup, handleEnemyKill, sfx, unlock, notify]);
 
   // ---------- Game-over: finalize run for submission ----------
   useEffect(() => {

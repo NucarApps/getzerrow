@@ -162,7 +162,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   const adminMeFn = useServerFn(getAdminMe);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
-  const accounts = accountsQ.data?.accounts ?? [];
+  const accounts = useMemo(() => accountsQ.data?.accounts ?? [], [accountsQ.data?.accounts]);
 
   // Reconcile activeAccountId with the actual account list — fall back to the
   // first account if the stored selection no longer exists or none was set.

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listMyGmailAccounts } from "@/lib/gmail.functions";
@@ -25,7 +25,7 @@ export function AccountPicker({ value, onChange, label = "Account" }: Props) {
     queryKey: ["gmail-accounts"],
     queryFn: () => listAccounts(),
   });
-  const accounts = (q.data?.accounts ?? []) as Account[];
+  const accounts = useMemo(() => (q.data?.accounts ?? []) as Account[], [q.data?.accounts]);
 
   // Auto-select the first account if none is selected, or if the current
   // selection is no longer valid (e.g. account was just disconnected).

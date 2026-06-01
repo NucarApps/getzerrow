@@ -204,6 +204,10 @@ export function CardCropper({ src, onConfirm, onCancel }: Props) {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
+    // Re-subscribe only when imgSize changes. ptToImage reads imgSize (a dep)
+    // and refs, so its closure stays correct; listing the per-render function
+    // would needlessly re-add the listeners on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgSize]);
 
   async function confirm() {
