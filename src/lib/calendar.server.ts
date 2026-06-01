@@ -61,10 +61,14 @@ function parseGoogleReason(body: string): string | null {
   }
 }
 
+type CalendarAttendee = { email?: string; self?: boolean; responseStatus?: string; displayName?: string };
+
 type CalendarEvent = {
-  attendees?: Array<{ email?: string; self?: boolean; responseStatus?: string }>;
-  organizer?: { email?: string; self?: boolean };
-  creator?: { email?: string; self?: boolean };
+  attendees?: CalendarAttendee[];
+  organizer?: { email?: string; self?: boolean; displayName?: string };
+  creator?: { email?: string; self?: boolean; displayName?: string };
+  summary?: string;
+  start?: { dateTime?: string; date?: string };
 };
 
 type EventsResponse = {
