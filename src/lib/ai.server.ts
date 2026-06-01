@@ -569,3 +569,36 @@ Write a daily digest in Markdown. Start with a single line: "# <short subject>" 
     _fallback: true,
   };
 }
+
+// Turn a plain-language description of a folder's purpose into a concise,
+// classifier-friendly AI rule. Used by the folder editor's "generate from
+// purpose" helper. Returns a short rule string.
+export async function generateAiRuleFromPurpose(opts: {
+  purpose: string;
+  folderName?: string;
+}): Promise<string> {
+  const purpose = opts.purpose.trim();
+  if (!purpose) throw new Error("Describe the folder's purpose first.");
+
+  const prompt = `You write concise classification rules that an email assistant uses to decide whether an incoming email belongs in a specific folder.
+
+${opts.folderName ? `Folder name: "${opts.folderName}"\n` : ""}The user describes the folder's purpose like this:
+"${purpose}"
+
+Write a single, clear rule (1-2 sentences, plain text, no markdown, no quotes, no preamble) describing the kinds of emails that belong in this folder. Be specific about senders, topics, and signals (e.g. mention concrete services or keywords the user named). Do not add anything beyond the rule itself.`;
+
+  const { text } = await generateText({
+    model: getModel("google/gemini-2.5-flash"),
+    prompt,
+  });
+
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:\w+)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .replace(/^["']|["']$/g, "")
+    .trim();
+
+  if (!cleaned) throw new Error("AI returned an empty rule. Try rephrasing the purpose.");
+  return cleaned.slice(0, 600);
+}
