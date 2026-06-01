@@ -128,14 +128,55 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 // back to `process.env`, which is empty unless we bridge the bindings here.
 // This copies any string-valued bindings into `process.env` once, on the
 // first request, without logging or hardcoding secret values.
+//
+// It also aliases the public `VITE_`-prefixed Supabase variants onto the
+// non-prefixed names the server-side Supabase integration reads. In the
+// published Worker the build can inline `VITE_*` values but the server clients
+// (auth middleware, SSR browser client) look up `SUPABASE_URL` /
+// `SUPABASE_PUBLISHABLE_KEY` from `process.env`; without this alias those are
+// empty and SSR throws "Missing Supabase environment variable(s)".
+const PUBLIC_ENV_ALIASES: Record<string, readonly string[]> = {
+  SUPABASE_URL: ["VITE_SUPABASE_URL"],
+  SUPABASE_PUBLISHABLE_KEY: ["VITE_SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_ANON_KEY"],
+  SUPABASE_PROJECT_ID: ["VITE_SUPABASE_PROJECT_ID"],
+};
+
 function bridgeEnvToProcess(env: unknown): void {
-  if (!env || typeof env !== "object") return;
   const target = (globalThis as { process?: { env?: Record<string, string> } }).process?.env;
   if (!target) return;
-  for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
-    if (typeof value === "string" && target[key] === undefined) {
-      target[key] = value;
+
+  if (env && typeof env === "object") {
+    for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
+      if (typeof value === "string" && target[key] === undefined) {
+        target[key] = value;
+      }
     }
+  }
+
+  // Backfill non-prefixed names from their public VITE_ equivalents (from either
+  // the Worker bindings just copied above, or values inlined at build time).
+  for (const [canonical, aliases] of Object.entries(PUBLIC_ENV_ALIASES)) {
+    if (target[canonical] !== undefined) continue;
+    for (const alias of aliases) {
+      const candidate = target[alias] ?? readBuildTimeEnv(alias);
+      if (typeof candidate === "string" && candidate.length > 0) {
+        target[canonical] = candidate;
+        break;
+      }
+    }
+  }
+}
+
+// Reads a `VITE_`-prefixed value that Vite may have inlined into the bundle at
+// build time. Wrapped in try/catch because `import.meta.env` access can be
+// statically replaced or absent depending on the build target.
+function readBuildTimeEnv(key: string): string | undefined {
+  try {
+    const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env;
+    const value = metaEnv?.[key];
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return undefined;
   }
 }
 
