@@ -1,48 +1,60 @@
+## Goal
 
-## What's actually wrong
+Two changes on the Contacts page:
 
-Two separate problems, plus one manual step outside the app.
+1. **Clarify and align the Groups rail** — the mysterious gray blocks are contact-count badges; make them readable and line them up.
+2. **Add a "From meetings" source when adding contacts** — let you pick people from your past or upcoming Google Calendar meetings who aren't already in Contacts, and add them in one click.
 
-### 1. The "keeps telling me to reconnect" loop — root cause
-I traced the real Google response for the affected inbox (`chris@nucar.com`). The account already has calendar access granted correctly (the OAuth token's scope list includes `calendar.readonly`), but the **Google Calendar API is not enabled in your Google Cloud project** (`160989993810`). Every calendar request returns:
+---
 
-```text
-403 — "Google Calendar API has not been used in project 160989993810
-before or it is disabled. Enable it by visiting console... then retry."
-```
+## Part 1 — Fix the Groups rail (the gray blocks)
 
-The app's sync code currently treats **every** 401/403 as "no calendar access → reconnect Google," so it sends you in a loop that reconnecting can never fix.
+**What they are:** Each group row shows a small pill with the number of contacts in that group (e.g. how many are in "Business"). Today the pill is gray and pill-shaped, so it reads like a toggle switch.
 
-**Manual step (only you can do this — one time):** Enable the Google Calendar API for your OAuth project at:
-`https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=160989993810`
-Then wait a few minutes for it to propagate. After that, "Sync now" will work.
+**Why they look misaligned:** Custom groups (Business, Factory, …) render an edit-pencil button that reserves space even while hidden, so their count pills shift left. "All contacts" and "Ungrouped" have no pencil, so their pills sit at the far right.
 
-### 2. Can't tell which inbox each card belongs to
-The "Calendar cold-email guard" card never shows the account email, so with multiple connected inboxes every card looks identical.
+**Fix (UI only, in `GroupChip`):**
+- Give the count badge a clearer, non-toggle look (tabular number, min-width, subtle border) so it reads as a count, not a switch.
+- Always reserve the edit-pencil slot width (render an invisible placeholder when there's no `onEdit`), so every count badge lines up in the same column across all rows.
+- Tooltip on the badge: "Contacts in this group".
 
-## The plan
+No data or behavior changes here — purely presentation in `src/routes/_authenticated/contacts.index.tsx`.
 
-**A. Label each card with its inbox (UI only)**
-- In `CalendarGuardCard`, show the account email in the header (e.g. as a subtitle under the title), so each connected inbox's card is clearly identifiable.
+---
 
-**B. Stop the misleading reconnect loop + show the real reason**
-- In `calendar.server.ts`, parse Google's error `reason` from the 403 body and carry it on `CalendarApiError` (e.g. `accessNotConfigured`/`SERVICE_DISABLED` vs `ACCESS_TOKEN_SCOPE_INSUFFICIENT`/401 vs quota/`rateLimitExceeded`).
-- In `calendar.functions.ts` (`syncCalendarNow` and `setCalendarGuard`), return distinct outcomes instead of collapsing everything to `no_calendar_access`:
-  - genuine auth/scope failure → `reason: "reconnect"`
-  - Calendar API disabled → `reason: "api_disabled"` (with Google's message)
-  - rate-limited / transient → `reason: "rate_limited"`
-- Persist the last sync error on the account so the card can display it, and clear it on a successful sync. (Small migration: add a `calendar_sync_error text` column to `gmail_accounts`, with the usual grants/RLS already covering the table.) `getCalendarGuardStatus` returns this so the UI can render it.
+## Part 2 — Add contacts from calendar meetings
 
-**C. Card messaging based on the real state**
-- Access granted but API disabled → show an informational note ("Google Calendar API isn't enabled for this connection yet — this is a one-time setup in Google Cloud") rather than a "Reconnect Google" button.
-- Genuine auth/scope problem → keep the existing "Reconnect Google" prompt.
-- Rate-limited/transient → "Try again in a few minutes."
-- Show the stored last-error text and last-synced time so the state is never ambiguous.
+Add a third tab, **From meetings**, to the existing "Add contacts" dialog (alongside Manual and From inbox).
+
+**Behavior:**
+- A Past / Upcoming toggle (default Past) plus a search box.
+- Lists people who appear as attendees/organizers on your meetings but are **not already in Contacts** and aren't your own address.
+- Each row shows name (when Google provides it), email, the meeting date, and a sample event title. Multi-select with "select all visible", then "Add N contacts".
+- Adding reuses the existing bulk-add path so new people land in Contacts immediately.
+- If no connected account has calendar access, the tab shows a short prompt pointing to Settings to enable the Calendar guard / grant access.
+
+**Defaults:** Past = last 12 months (matches the existing guard window); Upcoming = next 3 months. Results aggregate across all your calendar-enabled accounts, deduped by email.
+
+---
 
 ## Technical notes
-- No changes to the OAuth scopes, encryption RPCs, classifier, or sync pipeline — the scope grant is already correct.
-- The only schema change is one nullable text column on `gmail_accounts`; `calendar_contacts` and the cron tick are unchanged.
-- Tests: extend the existing calendar tests to cover the new error-reason mapping (api_disabled vs reconnect vs rate_limited).
 
-## After you enable the Calendar API
-Once the API is enabled in project `160989993810`, toggling the guard on (or clicking "Sync now") will populate your met-contacts and pin those senders to the inbox as designed — no reconnect required.
+**`src/lib/calendar.server.ts`** — add a name-aware, date-aware reader:
+- Extend the event parser to also capture each attendee's `displayName` and the event's start time + summary (keep the existing `extractAttendeeEmails` pure helper intact for the guard).
+- Add `listCalendarPeople(accountId, { when: "past" | "upcoming" })` that pages Google Calendar (`timeMin`/`timeMax` set by direction, `singleEvents=true`, capped pages like the existing sync) and returns `{ email, name, meetingAt, eventTitle }[]`, owner + resource calendars excluded. Reuse `calendarFetch` and the existing `CalendarApiError` handling so auth/api-disabled/rate-limit states surface correctly.
+
+**`src/lib/calendar.functions.ts`** — new server fn `listMeetingPeople`:
+- `createServerFn({ method: "POST" })` + `requireSupabaseAuth`, input `{ when: "past" | "upcoming", search?: string }` (Zod-validated).
+- Resolve the user's `gmail_accounts` with `calendar_access = true` (via `supabaseAdmin`, scoped to `userId`).
+- For each, call `listCalendarPeople`; merge results, lowercase/dedupe by email, keep the most relevant meeting date and a sample title.
+- Exclude addresses already in `contacts` for this user; apply the optional search filter; sort (past: most recent first; upcoming: soonest first); cap the list.
+- Return `{ people, calendarAccess: boolean }` so the UI can show the no-access prompt. Per-account Google errors are caught and skipped (logged) so one bad account doesn't break the list.
+
+**`src/routes/_authenticated/contacts.index.tsx`** — extend `AddContactsDialog`:
+- Add the "From meetings" tab with the Past/Upcoming toggle, search, multi-select list (mirrors the existing "From inbox" tab structure and selection state).
+- `useQuery` on `listMeetingPeople` keyed by `{ when, search }`, enabled only when the tab is open.
+- Reuse the existing `bulkCreateContactsFromEmails` call and `onAdded` invalidation.
+
+**Reused / unchanged:** `bulkCreateContactsFromEmails`, `listContacts`, the calendar OAuth/token helpers, and the guard's `syncCalendarContacts` are untouched. No DB migration needed — meeting people are fetched on demand from Google, not persisted.
+
+**Tests:** extend `src/lib/calendar-extract.test.ts` to cover the new name/date extraction (displayName captured, owner/resource excluded, start time + summary surfaced).

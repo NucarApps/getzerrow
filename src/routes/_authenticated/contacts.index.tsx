@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check, Building2 } from "lucide-react";
+import { Users, ScanLine, Search, IdCard, Plus, Pencil, Trash2, UserPlus, Inbox, Check, Building2, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -25,6 +25,7 @@ import { extractDomain, isPersonalDomain, prettyCompanyName, contactLogoDomain, 
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import { listCompanyAliases } from "@/lib/company-aliases.functions";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
+import { listMeetingPeople } from "@/lib/calendar.functions";
 
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -505,17 +506,25 @@ function GroupChip({
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <span className="flex-1 truncate">{label}</span>
         {typeof count === "number" && (
-          <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">{count}</span>
+          <span
+            className="min-w-[1.5rem] rounded-md border border-border/60 bg-muted px-1.5 py-0.5 text-center text-[10px] font-medium tabular-nums text-muted-foreground"
+            title="Contacts in this group"
+          >
+            {count}
+          </span>
         )}
       </button>
-      {onEdit && (
+      {/* Always reserve the pencil slot so count badges line up across rows. */}
+      {onEdit ? (
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          className="mr-1 grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-background/50 hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
+          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-background/50 hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
           aria-label={`Edit ${label}`}
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
+      ) : (
+        <span className="mr-1 h-6 w-6 shrink-0" aria-hidden="true" />
       )}
     </div>
   );
@@ -662,9 +671,10 @@ function AddContactsDialog({
   const createManual = useServerFn(createContactManual);
   const listFolders = useServerFn(listFoldersForPicker);
   const listSenders = useServerFn(listUniqueInboxSenders);
+  const listMeeting = useServerFn(listMeetingPeople);
   const bulkAdd = useServerFn(bulkCreateContactsFromEmails);
 
-  const [tab, setTab] = useState<"manual" | "inbox">("manual");
+  const [tab, setTab] = useState<"manual" | "inbox" | "meetings">("manual");
 
   // Manual form state
   const [m, setM] = useState({ email: "", name: "", title: "", company: "", phone: "", website: "", linkedin: "", twitter: "" });
@@ -677,6 +687,9 @@ function AddContactsDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
 
+  // Meetings tab state
+  const [meetingWhen, setMeetingWhen] = useState<"past" | "upcoming">("past");
+
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search), 250);
     return () => clearTimeout(t);
@@ -686,6 +699,7 @@ function AddContactsDialog({
     if (!open) {
       setM({ email: "", name: "", title: "", company: "", phone: "", website: "", linkedin: "", twitter: "" });
       setFolderIds([]); setSearch(""); setDebounced(""); setSelected(new Set()); setTab("manual");
+      setMeetingWhen("past");
     }
   }, [open]);
 
@@ -700,6 +714,14 @@ function AddContactsDialog({
     queryFn: () => listSenders({ data: { folderIds: folderIds.length ? folderIds : undefined, search: debounced || undefined } }),
     enabled: open && tab === "inbox",
   });
+
+  const meetingsQ = useQuery({
+    queryKey: ["meeting-people", meetingWhen, debounced],
+    queryFn: () => listMeeting({ data: { when: meetingWhen, search: debounced || undefined } }),
+    enabled: open && tab === "meetings",
+  });
+
+
 
   async function submitManual() {
     if (!/.+@.+\..+/.test(m.email)) { toast.error("Enter a valid email"); return; }
@@ -731,19 +753,25 @@ function AddContactsDialog({
   }
 
   const senders = sendersQ.data?.senders ?? [];
-  const allVisibleSelected = senders.length > 0 && senders.every((s) => selected.has(s.email));
+  const meetingPeople = meetingsQ.data?.people ?? [];
+  const meetingAccess = meetingsQ.data?.calendarAccess ?? true;
+
+  // The list the picker currently shows (inbox senders or meeting people).
+  const pickerItems = tab === "meetings" ? meetingPeople : senders;
+  const allVisibleSelected =
+    pickerItems.length > 0 && pickerItems.every((s) => selected.has(s.email));
 
   function selectAllVisible() {
     if (allVisibleSelected) {
       setSelected((prev) => {
         const next = new Set(prev);
-        for (const s of senders) next.delete(s.email);
+        for (const s of pickerItems) next.delete(s.email);
         return next;
       });
     } else {
       setSelected((prev) => {
         const next = new Set(prev);
-        for (const s of senders) next.add(s.email);
+        for (const s of pickerItems) next.add(s.email);
         return next;
       });
     }
@@ -751,7 +779,7 @@ function AddContactsDialog({
 
   async function submitBulk() {
     if (selected.size === 0) return;
-    const items = senders
+    const items = pickerItems
       .filter((s) => selected.has(s.email))
       .map((s) => ({ email: s.email, name: s.name }));
     if (items.length === 0) return;
@@ -766,18 +794,24 @@ function AddContactsDialog({
     } finally { setAdding(false); }
   }
 
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Add contacts</DialogTitle>
-          <DialogDescription>Enter someone manually or pick from senders in your inbox.</DialogDescription>
+          <DialogDescription>Enter someone manually, or pick from your inbox senders or calendar meetings.</DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs
+          value={tab}
+          onValueChange={(v) => { setSelected(new Set()); setSearch(""); setDebounced(""); setTab(v as typeof tab); }}
+          className="flex-1 flex flex-col min-h-0"
+        >
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="manual"><UserPlus className="mr-2 h-4 w-4" /> Manual</TabsTrigger>
             <TabsTrigger value="inbox"><Inbox className="mr-2 h-4 w-4" /> From inbox</TabsTrigger>
+            <TabsTrigger value="meetings"><CalendarClock className="mr-2 h-4 w-4" /> From meetings</TabsTrigger>
           </TabsList>
 
           <TabsContent value="manual" className="space-y-3 pt-3 overflow-y-auto">
@@ -862,6 +896,84 @@ function AddContactsDialog({
                             <div>{s.count} {s.count === 1 ? "msg" : "msgs"}</div>
                             {s.lastReceivedAt && <div>{new Date(s.lastReceivedAt).toLocaleDateString()}</div>}
                           </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={adding}>Cancel</Button>
+              <Button onClick={submitBulk} disabled={adding || selected.size === 0}>
+                {adding ? "Adding…" : `Add ${selected.size || ""} ${selected.size === 1 ? "contact" : "contacts"}`}
+              </Button>
+            </DialogFooter>
+          </TabsContent>
+
+          <TabsContent value="meetings" className="flex flex-col min-h-0 pt-3 gap-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(["past", "upcoming"] as const).map((w) => (
+                <button
+                  key={w}
+                  onClick={() => { setMeetingWhen(w); setSelected(new Set()); }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${meetingWhen === w ? "border-foreground/40 bg-accent text-accent-foreground" : "border-border bg-card/60 text-muted-foreground hover:text-foreground"}`}
+                >
+                  {w === "past" ? "Past meetings" : "Upcoming meetings"}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Search people by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <button onClick={selectAllVisible} disabled={meetingPeople.length === 0} className="underline-offset-2 hover:underline disabled:opacity-50">
+                {allVisibleSelected ? "Unselect all" : "Select all visible"}
+              </button>
+              <span>{selected.size} selected</span>
+            </div>
+
+            <div className="flex-1 min-h-[200px] max-h-[40vh] overflow-y-auto rounded-md border border-border bg-card/40">
+              {!meetingAccess ? (
+                <div className="p-4 text-sm text-muted-foreground">
+                  Connect a Google account and enable calendar access in{" "}
+                  <Link to="/settings" className="text-foreground underline underline-offset-2">Settings</Link>{" "}
+                  to pull people from your meetings.
+                </div>
+              ) : meetingsQ.isLoading ? (
+                <div className="p-4 text-sm text-muted-foreground">Loading people from your calendar…</div>
+              ) : meetingPeople.length === 0 ? (
+                <div className="p-4 text-sm text-muted-foreground">
+                  No new people found in your {meetingWhen} meetings.
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {meetingPeople.map((p) => {
+                    const checked = selected.has(p.email);
+                    return (
+                      <li key={p.email}>
+                        <button
+                          onClick={() => toggleSender(p.email)}
+                          className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/40"
+                        >
+                          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}>
+                            {checked && <Check className="h-3.5 w-3.5" />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-foreground">{p.name || p.email}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {p.eventTitle ? `${p.email} · ${p.eventTitle}` : p.email}
+                            </div>
+                          </div>
+                          {p.meetingAt && (
+                            <div className="text-right text-[11px] text-muted-foreground shrink-0">
+                              {new Date(p.meetingAt).toLocaleDateString()}
+                            </div>
+                          )}
                         </button>
                       </li>
                     );

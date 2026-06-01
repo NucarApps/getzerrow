@@ -61,10 +61,14 @@ function parseGoogleReason(body: string): string | null {
   }
 }
 
+type CalendarAttendee = { email?: string; self?: boolean; responseStatus?: string; displayName?: string };
+
 type CalendarEvent = {
-  attendees?: Array<{ email?: string; self?: boolean; responseStatus?: string }>;
-  organizer?: { email?: string; self?: boolean };
-  creator?: { email?: string; self?: boolean };
+  attendees?: CalendarAttendee[];
+  organizer?: { email?: string; self?: boolean; displayName?: string };
+  creator?: { email?: string; self?: boolean; displayName?: string };
+  summary?: string;
+  start?: { dateTime?: string; date?: string };
 };
 
 type EventsResponse = {
@@ -95,6 +99,45 @@ export function extractAttendeeEmails(event: CalendarEvent, selfEmail: string): 
   consider(event.organizer?.email, event.organizer?.self);
   consider(event.creator?.email, event.creator?.self);
   return [...out];
+}
+
+/** A person seen on a calendar event, with the best name + meeting metadata we have. */
+export type CalendarPerson = {
+  email: string;
+  name: string | null;
+  meetingAt: string | null;
+  eventTitle: string | null;
+};
+
+/**
+ * Pure parser: extract distinct attendees/organizers from one event, keeping
+ * each person's display name (when present), the event start time, and the
+ * event title. Excludes the account owner and resource/room calendars.
+ * Lowercased emails. Kept pure so it stays unit-testable.
+ */
+export function extractAttendeePeople(event: CalendarEvent, selfEmail: string): CalendarPerson[] {
+  const self = selfEmail.toLowerCase();
+  const meetingAt = event.start?.dateTime ?? event.start?.date ?? null;
+  const eventTitle = event.summary?.trim() || null;
+  const out = new Map<string, CalendarPerson>();
+  const consider = (raw: string | undefined, isSelf: boolean | undefined, displayName: string | undefined) => {
+    if (!raw || isSelf) return;
+    const email = raw.toLowerCase().trim();
+    if (email === self) return;
+    if (email.endsWith(".calendar.google.com") || email.includes("resource.calendar")) return;
+    if (!EMAIL_RE.test(email)) return;
+    const name = displayName?.trim() || null;
+    const existing = out.get(email);
+    if (!existing) {
+      out.set(email, { email, name, meetingAt, eventTitle });
+    } else if (name && !existing.name) {
+      existing.name = name;
+    }
+  };
+  for (const a of event.attendees ?? []) consider(a.email, a.self, a.displayName);
+  consider(event.organizer?.email, event.organizer?.self, event.organizer?.displayName);
+  consider(event.creator?.email, event.creator?.self, event.creator?.displayName);
+  return [...out.values()];
 }
 
 async function calendarFetch<T>(accountId: string, path: string): Promise<T> {
@@ -139,6 +182,95 @@ async function listEventsPage(
     `/calendars/primary/events?${params.toString()}`,
   );
 }
+
+const UPCOMING_MONTHS = 3;
+
+/** One page of primary-calendar events within a time window. */
+async function listEventsPageRange(
+  accountId: string,
+  timeMin: string,
+  timeMax: string,
+  pageToken?: string,
+): Promise<EventsResponse> {
+  const params = new URLSearchParams({
+    timeMin,
+    timeMax,
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: String(PAGE_SIZE),
+    showDeleted: "false",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+  return calendarFetch<EventsResponse>(
+    accountId,
+    `/calendars/primary/events?${params.toString()}`,
+  );
+}
+
+/**
+ * Fetch people from the account's primary calendar in either the recent past
+ * (last 12 months) or the near future (next 3 months). Returns one entry per
+ * distinct attendee email with their best name and the most relevant meeting
+ * date + title. Owner + resource calendars excluded. Throws CalendarApiError
+ * on auth / API-disabled / rate-limit failures so the caller can react.
+ */
+export async function listCalendarPeople(
+  accountId: string,
+  opts: { when: "past" | "upcoming" },
+): Promise<CalendarPerson[]> {
+  const { data: account } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("email_address")
+    .eq("id", accountId)
+    .maybeSingle();
+  const selfEmail = account?.email_address ?? "";
+
+  const now = Date.now();
+  let timeMin: string;
+  let timeMax: string;
+  if (opts.when === "upcoming") {
+    timeMin = new Date(now).toISOString();
+    timeMax = new Date(now + UPCOMING_MONTHS * 30 * 24 * 60 * 60 * 1000).toISOString();
+  } else {
+    timeMin = new Date(now - LOOKBACK_MONTHS * 30 * 24 * 60 * 60 * 1000).toISOString();
+    timeMax = new Date(now).toISOString();
+  }
+
+  const byEmail = new Map<string, CalendarPerson>();
+  let pageToken: string | undefined;
+  let pages = 0;
+
+  do {
+    const page = await listEventsPageRange(accountId, timeMin, timeMax, pageToken);
+    for (const ev of page.items ?? []) {
+      for (const person of extractAttendeePeople(ev, selfEmail)) {
+        const existing = byEmail.get(person.email);
+        if (!existing) {
+          byEmail.set(person.email, person);
+          continue;
+        }
+        // Keep a name if we didn't have one yet.
+        if (person.name && !existing.name) existing.name = person.name;
+        // Past: keep the most recent meeting. Upcoming: keep the soonest.
+        const better =
+          opts.when === "upcoming"
+            ? (person.meetingAt ?? "") < (existing.meetingAt ?? "\uffff")
+            : (person.meetingAt ?? "") > (existing.meetingAt ?? "");
+        if (better && person.meetingAt) {
+          existing.meetingAt = person.meetingAt;
+          existing.eventTitle = person.eventTitle;
+        }
+      }
+    }
+    pageToken = page.nextPageToken;
+    pages++;
+    if (pages >= MAX_PAGES_PER_RUN) break;
+  } while (pageToken);
+
+  return [...byEmail.values()];
+}
+
+
 
 /**
  * Sync attendees from the account's calendar (last 12 months) into
