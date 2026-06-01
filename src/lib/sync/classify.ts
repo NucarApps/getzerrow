@@ -182,9 +182,13 @@ export async function classifyParsedEmail(
   }
 
   if (!folder_id && !aiSkipped && !opts.skipAi && folderList.length > 0) {
-    // Exclude folders flagged skip_ai from the AI candidate set.
+    // Exclude folders flagged skip_ai from the AI candidate set. For a guarded
+    // calendar contact, also drop is_cold_email folders so the AI can never
+    // file a known contact as cold — it picks a real alternative or nothing.
     const skipAiIds = new Set(folderList.filter((f) => f.skip_ai).map((f) => f.id));
-    const aiFolders = context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
+    const aiFolders = context.enrichedFolders.filter(
+      (f) => !skipAiIds.has(f.id) && !(isGuardedContact && coldEmailFolderIds.has(f.id)),
+    );
     if (aiFolders.length > 0) {
       try {
         const r = await classifyEmail(parsed, aiFolders);
