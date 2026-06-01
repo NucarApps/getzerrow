@@ -20,6 +20,7 @@ import {
   applyFolderBehaviorRetroactive,
   setFolderAutoRelearn,
   scanGmailForFolder,
+  generateFolderAiRule,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,11 +96,14 @@ export function FolderEditor({
   const applyFn = useServerFn(applyRecategorization);
   const applyBehaviorFn = useServerFn(applyFolderBehaviorRetroactive);
   const setAutoRelearnFn = useServerFn(setFolderAutoRelearn);
+  const generateRuleFn = useServerFn(generateFolderAiRule);
   const [local, setLocal] = useState(folder);
   const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);
   const [syncingLabel, setSyncingLabel] = useState(false);
+  const [purpose, setPurpose] = useState("");
+  const [generatingRule, setGeneratingRule] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
@@ -275,6 +279,21 @@ export function FolderEditor({
     finally { setSyncingLabel(false); }
   }
 
+  async function generateRule() {
+    if (!purpose.trim()) { toast.error("Describe what this folder is for first."); return; }
+    setGeneratingRule(true);
+    try {
+      const r = await generateRuleFn({ data: { purpose: purpose.trim(), folder_name: local.name } });
+      setLocal((prev) => ({ ...prev, ai_rule: r.rule }));
+      toast.success("AI rule generated. Review it, then save.");
+    } catch (e: any) {
+      const status = e?.status ?? e?.cause?.status;
+      if (status === 429) toast.error("Rate limit reached. Try again in a moment.");
+      else if (status === 402) toast.error("Out of AI credits. Add credits to keep generating.");
+      else toast.error(e?.message ?? "Failed to generate rule");
+    } finally { setGeneratingRule(false); }
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -312,10 +331,36 @@ export function FolderEditor({
             </Select>
           </div>
 
+          <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3" /> Describe the purpose
+            </Label>
+            <Textarea
+              className="mt-1.5"
+              rows={2}
+              placeholder='e.g. "An invitation folder for Google Meet, Zoom, and similar meeting invitations"'
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+            />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Say what kind of email belongs here, then let AI write the rule below.
+              </p>
+              <Button size="sm" variant="outline" onClick={generateRule} disabled={generatingRule || !purpose.trim()}>
+                {generatingRule ? (
+                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Generating…</>
+                ) : (
+                  <><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Generate rule</>
+                )}
+              </Button>
+            </div>
+          </div>
+
           <div className="mt-4">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">AI rule (natural language)</Label>
             <Textarea className="mt-1.5" rows={2} placeholder='e.g. "Newsletters, marketing emails"' value={local.ai_rule ?? ""} onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })} />
           </div>
+
 
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

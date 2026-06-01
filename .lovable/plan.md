@@ -1,37 +1,37 @@
 ## Goal
 
-In the Contacts page **Groups** rail, make every contact-count badge (76, 54, 7, 11, 2, 5, …) align to the exact same vertical line, regardless of whether the row is a system row ("All contacts", "Ungrouped") or a user group with an edit pencil, and regardless of how many digits the count has.
+In the folder editor, let the user describe a folder's purpose in plain language (e.g. "This is an invitation folder for Google Meet, Zoom, and similar invitations") and have AI generate a concise AI rule, which fills the existing **AI rule** textarea.
 
-## Why it's misaligned today
+## UX
 
-`GroupChip` (in `src/routes/_authenticated/contacts.index.tsx`, ~lines 495–531) lays each row out as:
+In `src/components/folders/FolderEditor.tsx`, just above the existing AI rule textarea (lines 315–318):
+
+- Add a small "Generate from purpose" section: a one-line input/textarea where the user types the folder's purpose, plus a **Generate** button with a sparkle icon.
+- On click, call a new server function with the purpose text (and the folder name for extra context). While running, show a spinner / "Generating…" state.
+- On success, populate `local.ai_rule` with the returned rule (the user still reviews and saves via the existing Save flow). Show a success toast.
+- Surface AI gateway errors as toasts, including the 429 (rate limit) and 402 (out of credits) cases.
+- Keep the existing manual textarea fully editable — generation just pre-fills it.
+
+## Server side
+
+- Add `generateAiRuleFromPurpose` helper in `src/lib/ai.server.ts` (server-only), using the existing Lovable AI Gateway provider + `generateText` pattern already in that file (default model `google/gemini-2.5-flash`). Prompt: turn a short description of a folder's purpose into a concise, classifier-friendly AI rule (1–2 sentences describing the kind of email that belongs), returning plain text. Trim/cap output length.
+- Add a `generateFolderAiRule` server function in `src/lib/gmail.functions.ts` (mirroring the existing `createServerFn` + `requireSupabaseAuth` pattern used by the other folder functions), validating input (`purpose`, optional `folder_name`) with zod, and calling the helper.
+
+## Technical notes
 
 ```text
-[ button: dot · label(flex-1) · countBadge ]  [ pencil OR placeholder ]
+FolderEditor.tsx
+  └─ new "Describe purpose" input + Generate button (above AI rule textarea)
+        → useServerFn(generateFolderAiRule)({ data: { purpose, folder_name } })
+              → ai.server.ts: generateAiRuleFromPurpose() via Lovable AI Gateway
+        → setLocal({ ...local, ai_rule: result })
 ```
 
-The count badge is the last child *inside* the flexible button, so its position depends on the button's width and the badge's own width. Combined with the badge using `min-w` + centered text, the badges don't end up on a single shared column across all rows.
-
-## Fix
-
-Refactor `GroupChip`'s internal layout to a fixed 4-zone row so the count always occupies its own right-aligned column:
-
-```text
-[dot] [label · flex-1, truncates] [count · fixed-width, right-aligned] [action · fixed 24px]
-```
-
-Concretely:
-- Make the row a single flex container (keep the active/hover background and rounded styling).
-- Keep the clickable area covering dot + label + count (so clicking the count still selects the group), but stop letting the badge float at the end of a `flex-1` button — instead give the count a fixed-width, right-aligned container (e.g. a consistent `w-9` / `min-w` box with `text-right` and `tabular-nums`) that is the same on every row.
-- Always render the action zone as a fixed 24px slot: the pencil button for user groups, an empty placeholder of identical width for system rows (this part already exists and stays).
-- Hide the badge box only when `count` is undefined, but still reserve its column width so rows without a count keep the same layout.
-
-Net result: dot column, then a flexible truncating label, then a fixed count column whose right edge is identical on every row, then the fixed action column. All badges share one vertical line.
-
-No data, server-function, or query changes — this is purely the presentation of the existing `GroupChip` component. `GroupPill` (the mobile horizontal-scroll variant) is left unchanged unless the same issue is visible there.
+- No DB schema changes; the generated text only fills the existing `ai_rule` field and is persisted through the current Save button.
+- Never call AI from the client — generation goes through the server function only.
 
 ## Verification
 
-- Visually confirm in the preview that 76 / 54 / 7 / 11 / 2 / 5 badges line up on the same right edge.
-- Hover a user group to confirm the pencil appears without shifting the badge.
-- Check a row with a 3-digit count (or simulate one) still aligns and doesn't clip the label.
+- Type a purpose, click Generate, confirm the AI rule textarea fills with a sensible rule.
+- Confirm the textarea remains manually editable and Save persists it.
+- Confirm rate-limit / no-credit errors show a toast instead of failing silently.
