@@ -223,6 +223,21 @@ export async function classifyParsedEmail(
     }
   }
 
+  // Calendar guard, final pass: a known contact should never be filed as cold
+  // email. If any rule (filter, label, or AI) routed them into a cold-email
+  // folder, clear it and keep the message in the inbox instead.
+  if (isGuardedContact && isColdEmailFolder(folder_id)) {
+    return {
+      folder_id: null,
+      classified_by: "calendar_contact",
+      ai_confidence: 0,
+      ai_summary: summary,
+      classification_reason: "Met in Google Calendar — kept out of Cold Email",
+      matched_filter_ids: [],
+      matched_folder_ids: [],
+    };
+  }
+
   return {
     folder_id,
     classified_by,
