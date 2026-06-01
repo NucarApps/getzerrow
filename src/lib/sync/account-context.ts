@@ -83,7 +83,7 @@ export async function loadAccountContext(accountId: string, userId: string): Pro
   const cached = accountContextCache.get(accountId);
   if (cached && cached.expires > Date.now()) return cached.ctx;
 
-  const [{ data: folders }, { data: overrides }, { data: exceptions }] = await Promise.all([
+  const [{ data: folders }, { data: overrides }, { data: exceptions }, { data: account }] = await Promise.all([
     supabaseAdmin
       .from("folders")
       .select("*")
@@ -97,6 +97,7 @@ export async function loadAccountContext(accountId: string, userId: string): Pro
       .eq("user_id", userId)
       .or(`gmail_account_id.eq.${accountId},gmail_account_id.is.null`),
     supabaseAdmin.from("inbox_override_exceptions").select("override_id, field, op, value").eq("user_id", userId),
+    supabaseAdmin.from("gmail_accounts").select("calendar_guard_enabled").eq("id", accountId).maybeSingle(),
   ]);
 
   const folderList = (folders ?? []) as Folder[];
