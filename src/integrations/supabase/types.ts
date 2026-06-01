@@ -65,6 +65,33 @@ export type Database = {
         }
         Relationships: []
       }
+      calendar_contacts: {
+        Row: {
+          created_at: string
+          email_address: string
+          gmail_account_id: string
+          id: string
+          last_seen_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email_address: string
+          gmail_account_id: string
+          id?: string
+          last_seen_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email_address?: string
+          gmail_account_id?: string
+          id?: string
+          last_seen_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       card_events: {
         Row: {
           card_id: string
@@ -881,6 +908,9 @@ export type Database = {
       gmail_accounts: {
         Row: {
           access_token_enc: string | null
+          calendar_access: boolean
+          calendar_guard_enabled: boolean
+          calendar_synced_at: string | null
           consecutive_silent_ticks: number
           created_at: string
           email_address: string
@@ -900,6 +930,9 @@ export type Database = {
         }
         Insert: {
           access_token_enc?: string | null
+          calendar_access?: boolean
+          calendar_guard_enabled?: boolean
+          calendar_synced_at?: string | null
           consecutive_silent_ticks?: number
           created_at?: string
           email_address: string
@@ -919,6 +952,9 @@ export type Database = {
         }
         Update: {
           access_token_enc?: string | null
+          calendar_access?: boolean
+          calendar_guard_enabled?: boolean
+          calendar_synced_at?: string | null
           consecutive_silent_ticks?: number
           created_at?: string
           email_address?: string
