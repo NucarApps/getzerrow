@@ -8,6 +8,7 @@ import {
   getRedirectUri,
   verifyState,
   clearNeedsReconnect,
+  scopeGrantsCalendar,
 } from "@/lib/google-oauth.server";
 import { ensureWatch } from "@/lib/gmail.server";
 import { logError, newRunId } from "@/lib/log.server";
