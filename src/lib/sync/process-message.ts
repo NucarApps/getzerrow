@@ -295,7 +295,7 @@ export async function processGmailMessage(
         await supabaseAdmin.from("emails").update(patch).eq("id", inserted.id);
       }
     }
-  } else if (classifiedBy === "inbox_override" && !inInbox) {
+  } else if ((classifiedBy === "inbox_override" || classifiedBy === "calendar_contact") && !inInbox) {
     // Always-inbox override matched but Gmail had already archived the
     // message (no INBOX label at sync time, e.g. a Gmail-side filter).
     // Restore INBOX both in Gmail and locally so the row shows up in the
