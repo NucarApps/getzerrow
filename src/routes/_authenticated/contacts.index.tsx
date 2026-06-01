@@ -753,19 +753,25 @@ function AddContactsDialog({
   }
 
   const senders = sendersQ.data?.senders ?? [];
-  const allVisibleSelected = senders.length > 0 && senders.every((s) => selected.has(s.email));
+  const meetingPeople = meetingsQ.data?.people ?? [];
+  const meetingAccess = meetingsQ.data?.calendarAccess ?? true;
+
+  // The list the picker currently shows (inbox senders or meeting people).
+  const pickerItems = tab === "meetings" ? meetingPeople : senders;
+  const allVisibleSelected =
+    pickerItems.length > 0 && pickerItems.every((s) => selected.has(s.email));
 
   function selectAllVisible() {
     if (allVisibleSelected) {
       setSelected((prev) => {
         const next = new Set(prev);
-        for (const s of senders) next.delete(s.email);
+        for (const s of pickerItems) next.delete(s.email);
         return next;
       });
     } else {
       setSelected((prev) => {
         const next = new Set(prev);
-        for (const s of senders) next.add(s.email);
+        for (const s of pickerItems) next.add(s.email);
         return next;
       });
     }
@@ -773,7 +779,7 @@ function AddContactsDialog({
 
   async function submitBulk() {
     if (selected.size === 0) return;
-    const items = senders
+    const items = pickerItems
       .filter((s) => selected.has(s.email))
       .map((s) => ({ email: s.email, name: s.name }));
     if (items.length === 0) return;
@@ -787,6 +793,7 @@ function AddContactsDialog({
       toast.error(e?.message ?? "Couldn't add contacts");
     } finally { setAdding(false); }
   }
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
