@@ -800,13 +800,18 @@ function AddContactsDialog({
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Add contacts</DialogTitle>
-          <DialogDescription>Enter someone manually or pick from senders in your inbox.</DialogDescription>
+          <DialogDescription>Enter someone manually, or pick from your inbox senders or calendar meetings.</DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs
+          value={tab}
+          onValueChange={(v) => { setSelected(new Set()); setSearch(""); setDebounced(""); setTab(v as typeof tab); }}
+          className="flex-1 flex flex-col min-h-0"
+        >
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="manual"><UserPlus className="mr-2 h-4 w-4" /> Manual</TabsTrigger>
             <TabsTrigger value="inbox"><Inbox className="mr-2 h-4 w-4" /> From inbox</TabsTrigger>
+            <TabsTrigger value="meetings"><CalendarClock className="mr-2 h-4 w-4" /> From meetings</TabsTrigger>
           </TabsList>
 
           <TabsContent value="manual" className="space-y-3 pt-3 overflow-y-auto">
