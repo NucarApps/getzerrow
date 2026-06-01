@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { syncCalendarContacts, CalendarApiError } from "./calendar.server";
+import { syncCalendarContacts, CalendarApiError, type CalendarErrorKind } from "./calendar.server";
 import { invalidateAccountContext } from "./sync/account-context";
 import { logError } from "./log.server";
 
