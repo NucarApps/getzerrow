@@ -67,3 +67,27 @@ describe("extractAttendeeEmails", () => {
     expect(extractAttendeeEmails({}, self)).toEqual([]);
   });
 });
+
+describe("CalendarApiError.kind", () => {
+  it("maps a disabled-API 403 to api_disabled", () => {
+    expect(new CalendarApiError("disabled", 403, "accessNotConfigured").kind).toBe("api_disabled");
+    expect(new CalendarApiError("disabled", 403, "SERVICE_DISABLED").kind).toBe("api_disabled");
+  });
+
+  it("maps 401 / insufficient scope to reconnect", () => {
+    expect(new CalendarApiError("unauth", 401).kind).toBe("reconnect");
+    expect(new CalendarApiError("scope", 403, "ACCESS_TOKEN_SCOPE_INSUFFICIENT").kind).toBe("reconnect");
+    expect(new CalendarApiError("perm", 403, "insufficientPermissions").kind).toBe("reconnect");
+  });
+
+  it("maps quota / rate-limit errors to rate_limited", () => {
+    expect(new CalendarApiError("rate", 429).kind).toBe("rate_limited");
+    expect(new CalendarApiError("rate", 403, "rateLimitExceeded").kind).toBe("rate_limited");
+    expect(new CalendarApiError("quota", 403, "quotaExceeded").kind).toBe("rate_limited");
+  });
+
+  it("falls back to unknown for unrecognized failures", () => {
+    expect(new CalendarApiError("oops", 500).kind).toBe("unknown");
+    expect(new CalendarApiError("net", 0).kind).toBe("unknown");
+  });
+});
