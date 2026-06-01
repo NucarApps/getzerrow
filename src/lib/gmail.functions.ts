@@ -211,6 +211,21 @@ export const listGmailLabels = createServerFn({ method: "POST" })
     return { labels };
   });
 
+export const generateFolderAiRule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { purpose: string; folder_name?: string }) =>
+    z.object({
+      purpose: z.string().min(1).max(1000),
+      folder_name: z.string().min(1).max(100).optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data }) => {
+    const rule = await generateAiRuleFromPurpose({ purpose: data.purpose, folderName: data.folder_name });
+    return { rule };
+  });
+
+
+
 export const createGmailLabel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; name: string; parent_label_id?: string }) =>
