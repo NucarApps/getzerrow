@@ -14,12 +14,50 @@ const MAX_PAGES_PER_RUN = 12;
 const PAGE_SIZE = 250;
 const LOOKBACK_MONTHS = 12;
 
+/** Coarse classification of why a Calendar API call failed, used by the UI to
+ * show an accurate prompt instead of always asking the user to reconnect. */
+export type CalendarErrorKind = "reconnect" | "api_disabled" | "rate_limited" | "unknown";
+
 export class CalendarApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Google's machine-readable error reason (e.g. "accessNotConfigured"). */
+  googleReason: string | null;
+  constructor(message: string, status: number, googleReason: string | null = null) {
     super(message);
     this.name = "CalendarApiError";
     this.status = status;
+    this.googleReason = googleReason;
+  }
+
+  /** Map status + Google reason to a coarse, user-facing kind. */
+  get kind(): CalendarErrorKind {
+    const reason = (this.googleReason ?? "").toLowerCase();
+    if (
+      reason.includes("accessnotconfigured") ||
+      reason.includes("service_disabled") ||
+      reason === "servicedisabled"
+    ) {
+      return "api_disabled";
+    }
+    if (this.status === 401 || reason.includes("scope") || reason.includes("insufficientpermissions")) {
+      return "reconnect";
+    }
+    if (this.status === 429 || reason.includes("ratelimit") || reason.includes("quota")) {
+      return "rate_limited";
+    }
+    return "unknown";
+  }
+}
+
+/** Pull Google's first error `reason` (and surface `status`) out of an error body. */
+function parseGoogleReason(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: { status?: string; errors?: Array<{ reason?: string }> };
+    };
+    return parsed.error?.errors?.[0]?.reason ?? parsed.error?.status ?? null;
+  } catch {
+    return null;
   }
 }
 
