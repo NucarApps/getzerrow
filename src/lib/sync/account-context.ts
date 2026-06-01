@@ -115,12 +115,26 @@ export async function loadAccountContext(accountId: string, userId: string): Pro
   }
   const enrichedFolders = await loadFoldersWithExamples(folderList);
 
+  const calendarGuardEnabled = !!account?.calendar_guard_enabled;
+  const calendarContacts = new Set<string>();
+  if (calendarGuardEnabled) {
+    const { data: contacts } = await supabaseAdmin
+      .from("calendar_contacts")
+      .select("email_address")
+      .eq("gmail_account_id", accountId);
+    for (const c of contacts ?? []) {
+      if (c.email_address) calendarContacts.add(c.email_address.toLowerCase());
+    }
+  }
+
   const ctx: AccountContext = {
     folders: folderList,
     filters: filterList,
     overrides: overrides ?? [],
     overrideExceptions: (exceptions ?? []) as OverrideException[],
     enrichedFolders,
+    calendarGuardEnabled,
+    calendarContacts,
   };
   accountContextCache.set(accountId, { ctx, expires: Date.now() + ACCOUNT_CONTEXT_TTL_MS });
   return ctx;
