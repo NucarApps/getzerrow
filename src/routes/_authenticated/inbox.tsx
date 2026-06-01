@@ -177,6 +177,10 @@ function EmailBodyFrame({ html }: { html: string }) {
 
   useLayoutEffect(() => {
     function onMessage(e: MessageEvent) {
+      // Only accept height reports from our own sandboxed iframe. Its origin is
+      // opaque ("null") for a srcdoc sandbox, so we pin to the contentWindow and
+      // the per-render frameId nonce rather than checking e.origin.
+      if (e.source !== iframeRef.current?.contentWindow) return;
       const d = e.data as { __zerrowFrame?: string; height?: number } | null;
       if (!d || d.__zerrowFrame !== frameId || typeof d.height !== "number") return;
       const f = iframeRef.current;
@@ -190,7 +194,12 @@ function EmailBodyFrame({ html }: { html: string }) {
 
   function pingForHeight() {
     const f = iframeRef.current;
-    try { f?.contentWindow?.postMessage({ __zerrowPing: frameId }, "*"); } catch {}
+    // The email iframe is sandboxed without allow-same-origin, so its origin is
+    // opaque ("null") and "*" is the only targetOrigin that can reach it. The
+    // payload is a non-sensitive per-render nonce (no user data) sent only to our
+    // own iframe's contentWindow, so wildcard disclosure is moot.
+    // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration
+    try { f?.contentWindow?.postMessage({ __zerrowPing: frameId }, "*"); } catch { /* best-effort: iframe may not be ready yet */ }
   }
 
   return (
