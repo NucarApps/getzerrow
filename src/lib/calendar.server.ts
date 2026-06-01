@@ -168,20 +168,30 @@ export async function syncCalendarContacts(
   let pages = 0;
   let truncated = false;
 
-  do {
-    const page = await listEventsPage(accountId, timeMin, pageToken);
-    for (const ev of page.items ?? []) {
-      for (const email of extractAttendeeEmails(ev, selfEmail)) {
-        emails.set(email, now);
+  try {
+    do {
+      const page = await listEventsPage(accountId, timeMin, pageToken);
+      for (const ev of page.items ?? []) {
+        for (const email of extractAttendeeEmails(ev, selfEmail)) {
+          emails.set(email, now);
+        }
       }
-    }
-    pageToken = page.nextPageToken;
-    pages++;
-    if (pages >= MAX_PAGES_PER_RUN && pageToken) {
-      truncated = true;
-      break;
-    }
-  } while (pageToken);
+      pageToken = page.nextPageToken;
+      pages++;
+      if (pages >= MAX_PAGES_PER_RUN && pageToken) {
+        truncated = true;
+        break;
+      }
+    } while (pageToken);
+  } catch (e) {
+    // Persist a human-readable reason so the UI can show what actually went
+    // wrong (e.g. Calendar API disabled) instead of always prompting reconnect.
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({ calendar_sync_error: describeCalendarError(e) })
+      .eq("id", accountId);
+    throw e;
+  }
 
   if (emails.size > 0) {
     const rows = [...emails.keys()].map((email_address) => ({
@@ -198,10 +208,28 @@ export async function syncCalendarContacts(
     }
   }
 
+  // Success: stamp the sync time and clear any stored error.
   await supabaseAdmin
     .from("gmail_accounts")
-    .update({ calendar_synced_at: now })
+    .update({ calendar_synced_at: now, calendar_sync_error: null })
     .eq("id", accountId);
 
   return { contacts: emails.size, pages, truncated };
+}
+
+/** Short, user-facing explanation of a calendar sync failure. */
+export function describeCalendarError(e: unknown): string {
+  if (e instanceof CalendarApiError) {
+    switch (e.kind) {
+      case "api_disabled":
+        return "The Google Calendar API isn't enabled for this connection yet. This is a one-time setup in Google Cloud — once enabled, syncing will work.";
+      case "reconnect":
+        return "Calendar access is missing or expired. Reconnect Google to grant calendar access.";
+      case "rate_limited":
+        return "Google is rate-limiting calendar requests right now. Try again in a few minutes.";
+      default:
+        return "Couldn't reach Google Calendar. Please try again shortly.";
+    }
+  }
+  return "Couldn't sync your calendar. Please try again.";
 }
