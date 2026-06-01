@@ -709,6 +709,7 @@ export function FolderEditor({
                 onCheckedChange={(v) => toggleBehavior("is_cold_email", v, null)}
               />
             </label>
+          </div>
 
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border p-3 text-sm">
