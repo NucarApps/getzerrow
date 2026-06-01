@@ -23,7 +23,7 @@ import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "./sum
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { signState, buildAuthorizeUrl, getRedirectUri } from "./google-oauth.server";
 import { getRequestHost } from "@tanstack/react-start/server";
-import { logError } from "./log.server";
+import { logError, logAudit } from "./log.server";
 import { removeLabelsFromCurrent } from "./sync/label-merge";
 import { buildGmailQueries } from "./sync/gmail-query-builder";
 import { matchByFilters } from "./sync/filter-engine";
@@ -151,6 +151,8 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
     );
     if (error || !accountId) throw new Error(`Failed to save account: ${error?.message}`);
     const account = { id: accountId };
+    // Audit: a Gmail mailbox was granted restricted-scope access for this user.
+    logAudit("gmail.connected", { user_id: context.userId, account_id: account.id });
 
     try {
       const watch = await ensureWatch(account.id, null);
@@ -196,7 +198,48 @@ export const disconnectGmailAccount = createServerFn({ method: "POST" })
     } catch (e) {
       logError("gmail.disconnect.revoke_failed", { account_id: data.account_id, user_id: context.userId }, e);
     }
+
+    // Purge this mailbox's synced content so disconnecting actually removes the
+    // restricted Gmail/Calendar data we hold (data minimisation / Limited Use),
+    // rather than leaving it orphaned under a now-dangling gmail_account_id.
+    // Done server-side in one transactional RPC (see migration
+    // delete_gmail_account_content) so a large mailbox can't time out mid-purge.
+    // User-level config (folders, filters, contacts) is shared across mailboxes
+    // and is intentionally left intact.
+    const userId = context.userId;
+    const accountId = data.account_id;
+    let purgedEmails = 0;
+    let purgeOk = false;
+    try {
+      type PurgeRpc = {
+        rpc: (
+          fn: "delete_gmail_account_content",
+          args: { p_account_id: string; p_user_id: string },
+        ) => Promise<{ data: number | null; error: { message: string } | null }>;
+      };
+      const { data: deleted, error } = await (supabaseAdmin as unknown as PurgeRpc).rpc(
+        "delete_gmail_account_content",
+        { p_account_id: accountId, p_user_id: userId },
+      );
+      if (error) {
+        logError("gmail.disconnect.purge_failed", { account_id: accountId, user_id: userId }, error);
+      } else {
+        purgedEmails = deleted ?? 0;
+        purgeOk = true;
+      }
+    } catch (e) {
+      logError("gmail.disconnect.purge_failed", { account_id: accountId, user_id: userId }, e);
+    }
+
     await supabaseAdmin.from("gmail_accounts").delete().eq("id", data.account_id);
+    // Audit: restricted-scope access revoked and this mailbox's synced data purged.
+    // purge_ok=false flags residual data left behind (e.g. RPC error) for follow-up.
+    logAudit("gmail.disconnected", {
+      user_id: userId,
+      account_id: accountId,
+      emails_purged: purgedEmails,
+      purge_ok: purgeOk,
+    });
     return { ok: true };
   });
 

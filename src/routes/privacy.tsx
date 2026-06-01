@@ -71,7 +71,7 @@ function PrivacyPage() {
             We share data only with the infrastructure providers required to run Zerrow: hosting on Cloudflare, database and authentication on Supabase (via Lovable Cloud), and AI classification via the Lovable AI Gateway. Each provider is bound by their own data processing terms. We do not sell your data and we do not use it for advertising.
           </Section>
           <Section title="Retention &amp; deletion">
-            You can disconnect Gmail at any time from Settings. Disconnecting revokes your Google OAuth tokens at Google, stops further syncing, and removes the encrypted token record from our database. You can also delete your entire Zerrow account from Settings — this revokes Google access on every connected mailbox and immediately removes your synced messages, queued jobs, folders, filters, contacts, search index, push-notification logs, and sign-in record from our systems.
+            You can disconnect Gmail at any time from Settings. Disconnecting revokes your Google OAuth tokens at Google, stops further syncing, and removes that mailbox's synced messages, search index, reply drafts, calendar contacts, queued jobs, and the encrypted token record from our database. You can also delete your entire Zerrow account from Settings — this revokes Google access on every connected mailbox and immediately removes your synced messages, queued jobs, folders, filters, contacts, search index, push-notification logs, and sign-in record from our systems.
           </Section>
 
           <Section title="Your rights">

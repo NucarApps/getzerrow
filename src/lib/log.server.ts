@@ -75,6 +75,19 @@ export function logInfo(scope: string, fields: LogFields = {}): void {
   emit("info", scope, fields);
 }
 
+/**
+ * Audit trail for security-relevant lifecycle events that grant, revoke, or
+ * delete access to restricted Google user data (OAuth connect/disconnect,
+ * account deletion). Emitted as `scope:"audit.<action>"` with `audit:true` so
+ * the trail is easy to isolate in a log aggregator.
+ *
+ * Metadata ONLY — pass ids and counts, never email content, tokens, or other
+ * restricted data, so the audit log itself can never become a leak vector.
+ */
+export function logAudit(action: string, fields: LogFields = {}): void {
+  emit("info", `audit.${action}`, { audit: true, ...fields });
+}
+
 export function newRunId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   return c?.randomUUID?.() ?? Math.random().toString(36).slice(2, 14);
