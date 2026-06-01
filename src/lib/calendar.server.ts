@@ -183,6 +183,95 @@ async function listEventsPage(
   );
 }
 
+const UPCOMING_MONTHS = 3;
+
+/** One page of primary-calendar events within a time window. */
+async function listEventsPageRange(
+  accountId: string,
+  timeMin: string,
+  timeMax: string,
+  pageToken?: string,
+): Promise<EventsResponse> {
+  const params = new URLSearchParams({
+    timeMin,
+    timeMax,
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: String(PAGE_SIZE),
+    showDeleted: "false",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+  return calendarFetch<EventsResponse>(
+    accountId,
+    `/calendars/primary/events?${params.toString()}`,
+  );
+}
+
+/**
+ * Fetch people from the account's primary calendar in either the recent past
+ * (last 12 months) or the near future (next 3 months). Returns one entry per
+ * distinct attendee email with their best name and the most relevant meeting
+ * date + title. Owner + resource calendars excluded. Throws CalendarApiError
+ * on auth / API-disabled / rate-limit failures so the caller can react.
+ */
+export async function listCalendarPeople(
+  accountId: string,
+  opts: { when: "past" | "upcoming" },
+): Promise<CalendarPerson[]> {
+  const { data: account } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("email_address")
+    .eq("id", accountId)
+    .maybeSingle();
+  const selfEmail = account?.email_address ?? "";
+
+  const now = Date.now();
+  let timeMin: string;
+  let timeMax: string;
+  if (opts.when === "upcoming") {
+    timeMin = new Date(now).toISOString();
+    timeMax = new Date(now + UPCOMING_MONTHS * 30 * 24 * 60 * 60 * 1000).toISOString();
+  } else {
+    timeMin = new Date(now - LOOKBACK_MONTHS * 30 * 24 * 60 * 60 * 1000).toISOString();
+    timeMax = new Date(now).toISOString();
+  }
+
+  const byEmail = new Map<string, CalendarPerson>();
+  let pageToken: string | undefined;
+  let pages = 0;
+
+  do {
+    const page = await listEventsPageRange(accountId, timeMin, timeMax, pageToken);
+    for (const ev of page.items ?? []) {
+      for (const person of extractAttendeePeople(ev, selfEmail)) {
+        const existing = byEmail.get(person.email);
+        if (!existing) {
+          byEmail.set(person.email, person);
+          continue;
+        }
+        // Keep a name if we didn't have one yet.
+        if (person.name && !existing.name) existing.name = person.name;
+        // Past: keep the most recent meeting. Upcoming: keep the soonest.
+        const better =
+          opts.when === "upcoming"
+            ? (person.meetingAt ?? "") < (existing.meetingAt ?? "\uffff")
+            : (person.meetingAt ?? "") > (existing.meetingAt ?? "");
+        if (better && person.meetingAt) {
+          existing.meetingAt = person.meetingAt;
+          existing.eventTitle = person.eventTitle;
+        }
+      }
+    }
+    pageToken = page.nextPageToken;
+    pages++;
+    if (pages >= MAX_PAGES_PER_RUN) break;
+  } while (pageToken);
+
+  return [...byEmail.values()];
+}
+
+
+
 /**
  * Sync attendees from the account's calendar (last 12 months) into
  * `calendar_contacts`. Upserts on (gmail_account_id, email_address) and
