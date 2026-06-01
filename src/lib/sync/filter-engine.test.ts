@@ -46,6 +46,7 @@ function folder(over: Partial<Folder> = {}): Folder {
     min_ai_confidence: over.min_ai_confidence ?? 0,
     snooze_hours: over.snooze_hours ?? 0,
     overrides_inbox_override: over.overrides_inbox_override ?? false,
+    is_cold_email: over.is_cold_email ?? false,
   };
 }
 
