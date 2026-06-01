@@ -14,12 +14,50 @@ const MAX_PAGES_PER_RUN = 12;
 const PAGE_SIZE = 250;
 const LOOKBACK_MONTHS = 12;
 
+/** Coarse classification of why a Calendar API call failed, used by the UI to
+ * show an accurate prompt instead of always asking the user to reconnect. */
+export type CalendarErrorKind = "reconnect" | "api_disabled" | "rate_limited" | "unknown";
+
 export class CalendarApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Google's machine-readable error reason (e.g. "accessNotConfigured"). */
+  googleReason: string | null;
+  constructor(message: string, status: number, googleReason: string | null = null) {
     super(message);
     this.name = "CalendarApiError";
     this.status = status;
+    this.googleReason = googleReason;
+  }
+
+  /** Map status + Google reason to a coarse, user-facing kind. */
+  get kind(): CalendarErrorKind {
+    const reason = (this.googleReason ?? "").toLowerCase();
+    if (
+      reason.includes("accessnotconfigured") ||
+      reason.includes("service_disabled") ||
+      reason === "servicedisabled"
+    ) {
+      return "api_disabled";
+    }
+    if (this.status === 401 || reason.includes("scope") || reason.includes("insufficientpermissions")) {
+      return "reconnect";
+    }
+    if (this.status === 429 || reason.includes("ratelimit") || reason.includes("quota")) {
+      return "rate_limited";
+    }
+    return "unknown";
+  }
+}
+
+/** Pull Google's first error `reason` (and surface `status`) out of an error body. */
+function parseGoogleReason(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: { status?: string; errors?: Array<{ reason?: string }> };
+    };
+    return parsed.error?.errors?.[0]?.reason ?? parsed.error?.status ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -73,7 +111,11 @@ async function calendarFetch<T>(accountId: string, path: string): Promise<T> {
   }
   const text = await res.text();
   if (!res.ok) {
-    throw new CalendarApiError(`Calendar API ${res.status} on ${path}: ${text.slice(0, 300)}`, res.status);
+    throw new CalendarApiError(
+      `Calendar API ${res.status} on ${path}: ${text.slice(0, 300)}`,
+      res.status,
+      parseGoogleReason(text),
+    );
   }
   return (text ? JSON.parse(text) : {}) as T;
 }
@@ -126,20 +168,30 @@ export async function syncCalendarContacts(
   let pages = 0;
   let truncated = false;
 
-  do {
-    const page = await listEventsPage(accountId, timeMin, pageToken);
-    for (const ev of page.items ?? []) {
-      for (const email of extractAttendeeEmails(ev, selfEmail)) {
-        emails.set(email, now);
+  try {
+    do {
+      const page = await listEventsPage(accountId, timeMin, pageToken);
+      for (const ev of page.items ?? []) {
+        for (const email of extractAttendeeEmails(ev, selfEmail)) {
+          emails.set(email, now);
+        }
       }
-    }
-    pageToken = page.nextPageToken;
-    pages++;
-    if (pages >= MAX_PAGES_PER_RUN && pageToken) {
-      truncated = true;
-      break;
-    }
-  } while (pageToken);
+      pageToken = page.nextPageToken;
+      pages++;
+      if (pages >= MAX_PAGES_PER_RUN && pageToken) {
+        truncated = true;
+        break;
+      }
+    } while (pageToken);
+  } catch (e) {
+    // Persist a human-readable reason so the UI can show what actually went
+    // wrong (e.g. Calendar API disabled) instead of always prompting reconnect.
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({ calendar_sync_error: describeCalendarError(e) })
+      .eq("id", accountId);
+    throw e;
+  }
 
   if (emails.size > 0) {
     const rows = [...emails.keys()].map((email_address) => ({
@@ -156,10 +208,28 @@ export async function syncCalendarContacts(
     }
   }
 
+  // Success: stamp the sync time and clear any stored error.
   await supabaseAdmin
     .from("gmail_accounts")
-    .update({ calendar_synced_at: now })
+    .update({ calendar_synced_at: now, calendar_sync_error: null })
     .eq("id", accountId);
 
   return { contacts: emails.size, pages, truncated };
+}
+
+/** Short, user-facing explanation of a calendar sync failure. */
+export function describeCalendarError(e: unknown): string {
+  if (e instanceof CalendarApiError) {
+    switch (e.kind) {
+      case "api_disabled":
+        return "The Google Calendar API isn't enabled for this connection yet. This is a one-time setup in Google Cloud — once enabled, syncing will work.";
+      case "reconnect":
+        return "Calendar access is missing or expired. Reconnect Google to grant calendar access.";
+      case "rate_limited":
+        return "Google is rate-limiting calendar requests right now. Try again in a few minutes.";
+      default:
+        return "Couldn't reach Google Calendar. Please try again shortly.";
+    }
+  }
+  return "Couldn't sync your calendar. Please try again.";
 }

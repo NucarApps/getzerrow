@@ -1,75 +1,48 @@
-# Calendar cold-email guard
 
-## Goal
-If you've had a meeting with someone in Google Calendar (any attendee, last 12 months), their email is never treated as cold — it's forced into your inbox and skips auto-filing folders, AI routing, hide/archive/forward. Controlled by an account-wide toggle in Settings.
+## What's actually wrong
 
-## How it behaves
-- A new per-Gmail-account toggle: **Keep people I've met in Calendar in my inbox**.
-- When on, Zerrow keeps a list of email addresses that have appeared as attendees on your calendar events in the last 12 months.
-- Incoming mail from any of those addresses is pinned to the inbox (treated exactly like an existing "always-inbox" override): no folder, no auto-archive, no AI classification.
-- Reading the calendar needs a new Google permission, so you reconnect Google once. Until then the toggle shows a "Reconnect to enable" state.
+Two separate problems, plus one manual step outside the app.
 
-## What the user does
-1. In Settings, flip the calendar guard toggle on the relevant Gmail account.
-2. If calendar access isn't granted yet, click **Reconnect Google** (one-time consent).
-3. Zerrow runs an initial calendar sync (12 months) and then refreshes daily.
+### 1. The "keeps telling me to reconnect" loop — root cause
+I traced the real Google response for the affected inbox (`chris@nucar.com`). The account already has calendar access granted correctly (the OAuth token's scope list includes `calendar.readonly`), but the **Google Calendar API is not enabled in your Google Cloud project** (`160989993810`). Every calendar request returns:
 
 ```text
-Google Calendar (12mo of events)
-        │  attendees' emails
-        ▼
- calendar_contacts (per account)
-        │
-incoming email ── from_addr in calendar_contacts? ──► force INBOX, no folder, skip AI
-        else ──► normal filter/AI routing
+403 — "Google Calendar API has not been used in project 160989993810
+before or it is disabled. Enable it by visiting console... then retry."
 ```
 
----
+The app's sync code currently treats **every** 401/403 as "no calendar access → reconnect Google," so it sends you in a loop that reconnecting can never fix.
 
-## Technical details
+**Manual step (only you can do this — one time):** Enable the Google Calendar API for your OAuth project at:
+`https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=160989993810`
+Then wait a few minutes for it to propagate. After that, "Sync now" will work.
 
-### 1. OAuth scope + reconnect detection
-- `src/lib/google-oauth.server.ts`: add `https://www.googleapis.com/auth/calendar.readonly` to `GMAIL_SCOPES`. (`prompt: "consent"` already forces re-consent, so reconnect grants it.)
-- In the OAuth callback (`src/routes/api/public/google-oauth-callback.ts`), the token exchange already returns a `scope` string. Persist whether calendar was granted onto the account (`calendar_access = scope.includes("calendar.readonly")`).
-- Existing connected accounts simply have `calendar_access = false` until they reconnect — handled gracefully (guard stays inert, UI prompts reconnect).
+### 2. Can't tell which inbox each card belongs to
+The "Calendar cold-email guard" card never shows the account email, so with multiple connected inboxes every card looks identical.
 
-### 2. Schema (migration)
-- New column on `gmail_accounts`: `calendar_guard_enabled boolean not null default false`, `calendar_access boolean not null default false`, `calendar_synced_at timestamptz null`.
-- New table `public.calendar_contacts`:
-  - `id uuid pk`, `user_id uuid`, `gmail_account_id uuid`, `email_address text` (lowercased), `last_seen_at timestamptz`, `created_at`.
-  - Unique on `(gmail_account_id, email_address)`.
-  - RLS: user can select their own rows (`auth.uid() = user_id`); writes happen server-side via the admin client. GRANTs: `SELECT` to `authenticated`, `ALL` to `service_role`.
-  - Email addresses stored in plaintext, consistent with the existing `contacts.email` column.
-- Add `calendar_contacts` to the deletion list in `deleteAccount` (`src/lib/account.functions.ts`) so CASA data-deletion stays complete.
+## The plan
 
-### 3. Calendar sync (server-only)
-- New `src/lib/calendar.server.ts`:
-  - `listCalendarEvents(accountId, { timeMin, pageToken })` — calls Google Calendar API `/calendar/v3/calendars/primary/events` reusing `getAccessToken(accountId)` (same per-user OAuth pipeline as Gmail). Pagination + 20s timeout, mirroring `gmail.server.ts` error handling.
-  - `syncCalendarContacts(accountId, userId)` — fetches events from now−12 months forward, collects every attendee email (excluding the account's own address), upserts into `calendar_contacts` with `last_seen_at`. Per-call page cap so one run can't hammer the API; resumes on the next tick if needed.
-- New `src/lib/calendar.functions.ts` (`createServerFn`, auth-protected):
-  - `setCalendarGuard({ accountId, enabled })` — verifies ownership, updates `calendar_guard_enabled`, busts account context, triggers an initial `syncCalendarContacts` when turning on (if `calendar_access`).
-  - `getCalendarGuardStatus({ accountId })` — returns `{ enabled, calendarAccess, syncedAt, contactCount }` for the UI.
+**A. Label each card with its inbox (UI only)**
+- In `CalendarGuardCard`, show the account email in the header (e.g. as a subtitle under the title), so each connected inbox's card is clearly identifiable.
 
-### 4. Periodic refresh (cron)
-- New `src/routes/api/public/hooks/sync-calendar-contacts.ts` guarded by `isAuthorizedCronRequest` (CRON_SECRET), iterating accounts with `calendar_guard_enabled = true AND calendar_access = true`, calling `syncCalendarContacts`. Daily schedule via `pg_cron` (added with the insert tool, not migration). Skips/space-bounds like the other tick endpoints.
+**B. Stop the misleading reconnect loop + show the real reason**
+- In `calendar.server.ts`, parse Google's error `reason` from the 403 body and carry it on `CalendarApiError` (e.g. `accessNotConfigured`/`SERVICE_DISABLED` vs `ACCESS_TOKEN_SCOPE_INSUFFICIENT`/401 vs quota/`rateLimitExceeded`).
+- In `calendar.functions.ts` (`syncCalendarNow` and `setCalendarGuard`), return distinct outcomes instead of collapsing everything to `no_calendar_access`:
+  - genuine auth/scope failure → `reason: "reconnect"`
+  - Calendar API disabled → `reason: "api_disabled"` (with Google's message)
+  - rate-limited / transient → `reason: "rate_limited"`
+- Persist the last sync error on the account so the card can display it, and clear it on a successful sync. (Small migration: add a `calendar_sync_error text` column to `gmail_accounts`, with the usual grants/RLS already covering the table.) `getCalendarGuardStatus` returns this so the UI can render it.
 
-### 5. Classification hook (the guard itself)
-- `src/lib/sync/account-context.ts`: extend `AccountContext` with `calendarGuardEnabled: boolean` and `calendarContacts: Set<string>` (lowercased emails). Load the flag from the account row and, when enabled, the `calendar_contacts` emails for that account. Cached with the existing 5s TTL; invalidated on toggle change.
-- `src/lib/sync/classify.ts`: before the inbox-override logic, if `context.calendarGuardEnabled && context.calendarContacts.has(fromAddr)`, short-circuit exactly like the existing `overrideWins` allowlist path — `folder_id = null`, `classified_by = "calendar_contact"`, `classification_reason = "Met in Google Calendar"`, skip AI. `process-message` already restores INBOX when `classified_by` indicates an inbox pin and Gmail had archived it — extend that branch to also cover `"calendar_contact"`.
-- **Filter engine stays pure** — no Supabase imports added there; the guard lives in the classifier, not `filter-engine.ts`.
+**C. Card messaging based on the real state**
+- Access granted but API disabled → show an informational note ("Google Calendar API isn't enabled for this connection yet — this is a one-time setup in Google Cloud") rather than a "Reconnect Google" button.
+- Genuine auth/scope problem → keep the existing "Reconnect Google" prompt.
+- Rate-limited/transient → "Try again in a few minutes."
+- Show the stored last-error text and last-synced time so the state is never ambiguous.
 
-### 6. UI (Settings)
-- New `src/components/settings/CalendarGuardCard.tsx` rendered per selected account in `settings.tsx`:
-  - shadcn `Switch` for the toggle, `getCalendarGuardStatus` via React Query.
-  - When `calendarAccess` is false: show "Reconnect Google to enable" using the existing `startConnectGmail` reauthorize flow (with `login_hint` = account email).
-  - Show last synced time and the number of "people met" plus a **Sync now** button (calls a small server fn wrapper around `syncCalendarContacts`).
-  - Sentence-case copy, friendly tone.
+## Technical notes
+- No changes to the OAuth scopes, encryption RPCs, classifier, or sync pipeline — the scope grant is already correct.
+- The only schema change is one nullable text column on `gmail_accounts`; `calendar_contacts` and the cron tick are unchanged.
+- Tests: extend the existing calendar tests to cover the new error-reason mapping (api_disabled vs reconnect vs rate_limited).
 
-### 7. Tests
-- Unit test for an `extractAttendeeEmails(event, selfEmail)` helper in `calendar.server.ts` (pure parsing of the events payload).
-- Extend `sync-classify`-style coverage: an email from a calendar contact is pinned to inbox (`classified_by === "calendar_contact"`) and skips folder/AI; with the guard off it routes normally.
-
-## Notes / scope
-- Adding `calendar.readonly` is a sensitive scope and is part of what Google verifies for your CASA/OAuth review — worth listing it in the verification scope justification.
-- This is a server-side-only Calendar read; the client never sees the token (consistent with the Gmail pipeline).
-- No changes to job-claim RPCs, encryption, or the Pub/Sub webhook.
+## After you enable the Calendar API
+Once the API is enabled in project `160989993810`, toggling the guard on (or clicking "Sync now") will populate your met-contacts and pin those senders to the inbox as designed — no reconnect required.

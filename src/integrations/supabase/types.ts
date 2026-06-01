@@ -910,6 +910,7 @@ export type Database = {
           access_token_enc: string | null
           calendar_access: boolean
           calendar_guard_enabled: boolean
+          calendar_sync_error: string | null
           calendar_synced_at: string | null
           consecutive_silent_ticks: number
           created_at: string
@@ -932,6 +933,7 @@ export type Database = {
           access_token_enc?: string | null
           calendar_access?: boolean
           calendar_guard_enabled?: boolean
+          calendar_sync_error?: string | null
           calendar_synced_at?: string | null
           consecutive_silent_ticks?: number
           created_at?: string
@@ -954,6 +956,7 @@ export type Database = {
           access_token_enc?: string | null
           calendar_access?: boolean
           calendar_guard_enabled?: boolean
+          calendar_sync_error?: string | null
           calendar_synced_at?: string | null
           consecutive_silent_ticks?: number
           created_at?: string
