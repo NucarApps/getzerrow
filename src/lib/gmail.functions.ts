@@ -18,7 +18,7 @@ import {
   getThread,
   parseMessage,
 } from "./gmail.server";
-import { suggestReply, suggestRuleUpdates, suggestFolderFromEmails } from "./ai.server";
+import { suggestReply, suggestRuleUpdates, suggestFolderFromEmails, generateAiRuleFromPurpose } from "./ai.server";
 import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "./summaries.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { signState, buildAuthorizeUrl, getRedirectUri } from "./google-oauth.server";
