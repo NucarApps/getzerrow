@@ -91,6 +91,7 @@ export type Folder = {
   min_ai_confidence?: number;
   snooze_hours?: number;
   overrides_inbox_override?: boolean;
+  is_cold_email?: boolean;
   auto_relearn?: boolean;
   relearn_threshold?: number;
   emails_since_learn?: number;
@@ -218,7 +219,8 @@ export function FolderEditor({
       | "auto_star"
       | "hide_from_inbox"
       | "skip_ai"
-      | "overrides_inbox_override",
+      | "overrides_inbox_override"
+      | "is_cold_email",
     value: boolean,
     retro: "mark_read" | "archive" | "star" | null,
   ) {
@@ -691,7 +693,22 @@ export function FolderEditor({
                 onCheckedChange={(v) => toggleBehavior("overrides_inbox_override", v, null)}
               />
             </label>
-          </div>
+            <label
+              className="col-span-2 flex items-start justify-between gap-3 rounded-md border border-border p-3 text-sm"
+              title="When the calendar guard is on, people you've met in Google Calendar are never filed into this folder"
+            >
+              <div className="min-w-0">
+                Cold email folder
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  With the calendar guard on, people you've met in Google Calendar are kept in the
+                  inbox instead of landing here.
+                </p>
+              </div>
+              <Switch
+                checked={local.is_cold_email ?? false}
+                onCheckedChange={(v) => toggleBehavior("is_cold_email", v, null)}
+              />
+            </label>
 
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border p-3 text-sm">
