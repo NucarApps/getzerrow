@@ -111,7 +111,11 @@ async function calendarFetch<T>(accountId: string, path: string): Promise<T> {
   }
   const text = await res.text();
   if (!res.ok) {
-    throw new CalendarApiError(`Calendar API ${res.status} on ${path}: ${text.slice(0, 300)}`, res.status);
+    throw new CalendarApiError(
+      `Calendar API ${res.status} on ${path}: ${text.slice(0, 300)}`,
+      res.status,
+      parseGoogleReason(text),
+    );
   }
   return (text ? JSON.parse(text) : {}) as T;
 }
