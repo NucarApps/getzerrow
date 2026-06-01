@@ -77,9 +77,7 @@ export const addCompanyAlias = createServerFn({ method: "POST" })
 
 export const removeCompanyAlias = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z.object({ aliasDomain: domainSchema }).parse(input),
-  )
+  .inputValidator((input: unknown) => z.object({ aliasDomain: domainSchema }).parse(input))
   .handler(async ({ data, context }): Promise<CompanyAlias[]> => {
     const { supabase, userId } = context;
     const { error } = await supabase
@@ -99,9 +97,7 @@ export const removeCompanyAlias = createServerFn({ method: "POST" })
 
 export const clearCompanyAliases = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z.object({ primaryDomain: domainSchema }).parse(input),
-  )
+  .inputValidator((input: unknown) => z.object({ primaryDomain: domainSchema }).parse(input))
   .handler(async ({ data, context }): Promise<CompanyAlias[]> => {
     const { supabase, userId } = context;
     const { error } = await supabase
@@ -218,4 +214,3 @@ export const promoteAliasToPrimary = createServerFn({ method: "POST" })
     if (listErr) throw new Error(listErr.message);
     return (rows ?? []) as CompanyAlias[];
   });
-

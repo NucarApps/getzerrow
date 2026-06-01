@@ -67,7 +67,6 @@ import {
   saveSettings,
 } from "./storage";
 
-
 export type Phase = "ready" | "playing" | "paused" | "over";
 
 export type GameState = {
@@ -159,7 +158,16 @@ function newId(ref: { current: number }): number {
   return ref.current;
 }
 
-function emitParticles(arr: Particle[], idRef: { current: number }, x: number, y: number, color: string, count: number, speed: number, ttl: number) {
+function emitParticles(
+  arr: Particle[],
+  idRef: { current: number },
+  x: number,
+  y: number,
+  color: string,
+  count: number,
+  speed: number,
+  ttl: number,
+) {
   for (let i = 0; i < count; i++) {
     if (arr.length >= MAX_PARTICLES) arr.shift();
     const a = Math.random() * Math.PI * 2;
@@ -240,7 +248,11 @@ export function useInvaderGame(): UseInvaderGameResult {
   const shieldUntilRef = useRef(0);
   const shakeUntilRef = useRef(0);
   const hitStopUntilRef = useRef(0);
-  const keysRef = useRef<{ left: boolean; right: boolean; fire: boolean }>({ left: false, right: false, fire: false });
+  const keysRef = useRef<{ left: boolean; right: boolean; fire: boolean }>({
+    left: false,
+    right: false,
+    fire: false,
+  });
 
   const bulletsRef = useRef<Bullet[]>([]);
   const enemyBulletsRef = useRef<Bullet[]>([]);
@@ -267,7 +279,8 @@ export function useInvaderGame(): UseInvaderGameResult {
 
   const activeBuffRef = useRef<ActiveBuff | null>(null);
   const startedAtRef = useRef(0);
-  const finishedRunRef = useRef<UseInvaderGameResult["consumeFinishedRun"] extends () => infer R ? R : never>(null);
+  const finishedRunRef =
+    useRef<UseInvaderGameResult["consumeFinishedRun"] extends () => infer R ? R : never>(null);
   const newAchRunRef = useRef<AchievementKey[]>([]);
 
   // ---------- Audio ----------
@@ -277,7 +290,7 @@ export function useInvaderGame(): UseInvaderGameResult {
     if (!audioCtxRef.current) {
       const Ctor =
         (window.AudioContext as typeof AudioContext | undefined) ||
-        ((window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return null;
       audioCtxRef.current = new Ctor();
     }
@@ -318,29 +331,33 @@ export function useInvaderGame(): UseInvaderGameResult {
     bigBoom: () => playTone({ type: "sawtooth", fStart: 220, fEnd: 40, dur: 0.45, gain: 0.09 }),
     pickup: () => playTone({ type: "square", fStart: 660, fEnd: 990, dur: 0.1, gain: 0.05 }),
     ufo: () => playTone({ type: "sawtooth", fStart: 440, fEnd: 660, dur: 0.2, gain: 0.04 }),
-    achievement: () => playTone({ type: "triangle", fStart: 523, fEnd: 1046, dur: 0.3, gain: 0.06 }),
+    achievement: () =>
+      playTone({ type: "triangle", fStart: 523, fEnd: 1046, dur: 0.3, gain: 0.06 }),
   };
 
   // ---------- Achievements ----------
-  const unlock = useCallback((key: AchievementKey) => {
-    if (achievementsRef.current.has(key)) return;
-    achievementsRef.current.add(key);
-    saveAchievements(achievementsRef.current);
-    newAchRunRef.current.push(key);
-    setNewAchievements([...newAchRunRef.current]);
-    sfx.achievement();
-    const def = ACHIEVEMENTS.find((a) => a.key === key);
-    if (def) {
-      floatsRef.current.push({
-        id: newId(idRef),
-        x: 50,
-        y: 30,
-        text: `★ ${def.name.toUpperCase()}`,
-        startedAt: performance.now(),
-        color: "#ffe066",
-      });
-    }
-  }, [sfx]);
+  const unlock = useCallback(
+    (key: AchievementKey) => {
+      if (achievementsRef.current.has(key)) return;
+      achievementsRef.current.add(key);
+      saveAchievements(achievementsRef.current);
+      newAchRunRef.current.push(key);
+      setNewAchievements([...newAchRunRef.current]);
+      sfx.achievement();
+      const def = ACHIEVEMENTS.find((a) => a.key === key);
+      if (def) {
+        floatsRef.current.push({
+          id: newId(idRef),
+          x: 50,
+          y: 30,
+          text: `★ ${def.name.toUpperCase()}`,
+          startedAt: performance.now(),
+          color: "#ffe066",
+        });
+      }
+    },
+    [sfx],
+  );
 
   // ---------- Gameplay actions ----------
   const initRng = useCallback(() => {
@@ -565,7 +582,16 @@ export function useInvaderGame(): UseInvaderGameResult {
           const ex = fx + e.col * COL_GAP;
           const ey = fy + e.row * ROW_GAP;
           burstsRef.current.push({ id: newId(idRef), x: ex, y: ey, startedAt: now });
-          emitParticles(particlesRef.current, idRef, ex, ey, ENEMY_COLORS[e.kind].accent, 8, 18, 600);
+          emitParticles(
+            particlesRef.current,
+            idRef,
+            ex,
+            ey,
+            ENEMY_COLORS[e.kind].accent,
+            8,
+            18,
+            600,
+          );
         }
         const boss = bossRef.current;
         if (boss) {
@@ -615,7 +641,16 @@ export function useInvaderGame(): UseInvaderGameResult {
       if (killsRef.current === 1) unlock("first_blood");
 
       burstsRef.current.push({ id: newId(idRef), x: ex, y: ey, startedAt: now });
-      emitParticles(particlesRef.current, idRef, ex, ey, ENEMY_COLORS[enemy.kind].accent, 5, 20, 500);
+      emitParticles(
+        particlesRef.current,
+        idRef,
+        ex,
+        ey,
+        ENEMY_COLORS[enemy.kind].accent,
+        5,
+        20,
+        500,
+      );
       floatsRef.current.push({
         id: newId(idRef),
         x: ex,
@@ -724,14 +759,25 @@ export function useInvaderGame(): UseInvaderGameResult {
       if (bossRef.current) {
         const boss = bossRef.current;
         boss.x += boss.vx * dts * slowMul * diff.speedMul;
-        if (boss.x < 10) { boss.x = 10; boss.vx = Math.abs(boss.vx); }
-        if (boss.x > 90) { boss.x = 90; boss.vx = -Math.abs(boss.vx); }
+        if (boss.x < 10) {
+          boss.x = 10;
+          boss.vx = Math.abs(boss.vx);
+        }
+        if (boss.x > 90) {
+          boss.x = 90;
+          boss.vx = -Math.abs(boss.vx);
+        }
         boss.fireCooldown -= dt;
         if (boss.fireCooldown <= 0) {
           boss.fireCooldown = 800 + Math.random() * 600;
           // 3-shot spread
           for (let i = -1; i <= 1; i++) {
-            enemyBulletsRef.current.push({ id: newId(idRef), x: boss.x + i * 1.5, y: boss.y + 3, vx: i * 6 });
+            enemyBulletsRef.current.push({
+              id: newId(idRef),
+              x: boss.x + i * 1.5,
+              y: boss.y + 3,
+              vx: i * 6,
+            });
           }
         }
         // bullets vs boss
@@ -751,7 +797,13 @@ export function useInvaderGame(): UseInvaderGameResult {
           shakeUntilRef.current = now + 350;
           hitStopUntilRef.current = now + HIT_STOP_MS;
           emitParticles(particlesRef.current, idRef, boss.x, boss.y, "#ff5a8a", 30, 28, 900);
-          burstsRef.current.push({ id: newId(idRef), x: boss.x, y: boss.y, startedAt: now, big: true });
+          burstsRef.current.push({
+            id: newId(idRef),
+            x: boss.x,
+            y: boss.y,
+            startedAt: now,
+            big: true,
+          });
           setScore((s) => s + 500 * lvl);
           floatsRef.current.push({
             id: newId(idRef),
@@ -781,7 +833,11 @@ export function useInvaderGame(): UseInvaderGameResult {
 
       // ---- Regular formation march & wave clear ----
       if (!bossRef.current) {
-        const bounds = formationBounds(enemiesRef.current, formationXRef.current, formationYRef.current);
+        const bounds = formationBounds(
+          enemiesRef.current,
+          formationXRef.current,
+          formationYRef.current,
+        );
         if (!bounds.anyAlive) {
           if (!tookHitThisWaveRef.current && lvl >= 1) unlock("pacifist_wave");
           const nextLvl = lvl + 1;
@@ -805,7 +861,8 @@ export function useInvaderGame(): UseInvaderGameResult {
           tookHitThisWaveRef.current = false;
         } else {
           const dir = marchDirRef.current;
-          let nextX = formationXRef.current + dir * marchSpeedRef.current * dts * slowMul * diff.speedMul;
+          let nextX =
+            formationXRef.current + dir * marchSpeedRef.current * dts * slowMul * diff.speedMul;
           const nextBounds = formationBounds(enemiesRef.current, nextX, formationYRef.current);
           if (nextBounds.minX - ENEMY_HALF_W < 2 || nextBounds.maxX + ENEMY_HALF_W > 98) {
             marchDirRef.current = dir === 1 ? -1 : 1;
@@ -828,13 +885,14 @@ export function useInvaderGame(): UseInvaderGameResult {
       // ---- Enemy firing ----
       const liveEnemies = enemiesRef.current.filter((e) => e.alive);
       if (liveEnemies.length > 0) {
-        const fireChance =
-          Math.min(2.5, 0.35 + lvl * 0.18) * dts * diff.fireMul * slowMul;
+        const fireChance = Math.min(2.5, 0.35 + lvl * 0.18) * dts * diff.fireMul * slowMul;
         // urgent enemies double their chance
         const urgentBoost = liveEnemies.some((e) => e.kind === "urgent") ? 1.4 : 1;
         if (Math.random() < fireChance * urgentBoost) {
           const shooter = liveEnemies[Math.floor(Math.random() * liveEnemies.length)];
-          const ex = formationXRef.current + shooter.col * COL_GAP +
+          const ex =
+            formationXRef.current +
+            shooter.col * COL_GAP +
             (shooter.kind === "phishing" ? Math.sin(shooter.zig) * 2 : 0);
           const ey = formationYRef.current + shooter.row * ROW_GAP;
           enemyBulletsRef.current.push({ id: newId(idRef), x: ex, y: ey + 2 });
@@ -872,7 +930,8 @@ export function useInvaderGame(): UseInvaderGameResult {
         u.x += u.vx * dts;
         if (u.x < -8 || u.x > 108) {
           ufoRef.current = null;
-          nextUfoAtRef.current = now + UFO_MIN_INTERVAL_MS + Math.random() * (UFO_MAX_INTERVAL_MS - UFO_MIN_INTERVAL_MS);
+          nextUfoAtRef.current =
+            now + UFO_MIN_INTERVAL_MS + Math.random() * (UFO_MAX_INTERVAL_MS - UFO_MIN_INTERVAL_MS);
         }
       }
       // bullets vs UFO
@@ -890,7 +949,12 @@ export function useInvaderGame(): UseInvaderGameResult {
             burstsRef.current.push({ id: newId(idRef), x: u.x, y: u.y, startedAt: now, big: true });
             emitParticles(particlesRef.current, idRef, u.x, u.y, "#ffe066", 16, 22, 700);
             floatsRef.current.push({
-              id: newId(idRef), x: u.x, y: u.y, text: `VIP +${u.value}`, startedAt: now, color: "#ffe066",
+              id: newId(idRef),
+              x: u.x,
+              y: u.y,
+              text: `VIP +${u.value}`,
+              startedAt: now,
+              color: "#ffe066",
             });
             countersRef.current.ufoKills += 1;
             saveCounters(countersRef.current);
@@ -902,7 +966,8 @@ export function useInvaderGame(): UseInvaderGameResult {
         bulletsRef.current = remaining;
         if (killed) {
           ufoRef.current = null;
-          nextUfoAtRef.current = now + UFO_MIN_INTERVAL_MS + Math.random() * (UFO_MAX_INTERVAL_MS - UFO_MIN_INTERVAL_MS);
+          nextUfoAtRef.current =
+            now + UFO_MIN_INTERVAL_MS + Math.random() * (UFO_MAX_INTERVAL_MS - UFO_MIN_INTERVAL_MS);
         }
       }
 
@@ -993,7 +1058,11 @@ export function useInvaderGame(): UseInvaderGameResult {
 
       // Formation bottoming out = game over
       if (!bossRef.current) {
-        const b2 = formationBounds(enemiesRef.current, formationXRef.current, formationYRef.current);
+        const b2 = formationBounds(
+          enemiesRef.current,
+          formationXRef.current,
+          formationYRef.current,
+        );
         if (b2.anyAlive && b2.maxY >= PLAYER_Y - 4) setPhase("over");
       }
 
@@ -1093,24 +1162,27 @@ export function useInvaderGame(): UseInvaderGameResult {
     newAchievements,
   };
 
-  const getLive = useCallback<() => LiveGame>(() => ({
-    bullets: bulletsRef.current,
-    enemyBullets: enemyBulletsRef.current,
-    enemies: enemiesRef.current,
-    boss: bossRef.current,
-    ufo: ufoRef.current,
-    bunkers: bunkersRef.current,
-    bursts: burstsRef.current,
-    particles: particlesRef.current,
-    powerups: powerupsRef.current,
-    floats: floatsRef.current,
-    formationX: formationXRef.current,
-    formationY: formationYRef.current,
-    playerX: playerXRef.current,
-    shieldUntil: shieldUntilRef.current,
-    shakeUntil: shakeUntilRef.current,
-    invulnUntil: invulnUntilRef.current,
-  }), []);
+  const getLive = useCallback<() => LiveGame>(
+    () => ({
+      bullets: bulletsRef.current,
+      enemyBullets: enemyBulletsRef.current,
+      enemies: enemiesRef.current,
+      boss: bossRef.current,
+      ufo: ufoRef.current,
+      bunkers: bunkersRef.current,
+      bursts: burstsRef.current,
+      particles: particlesRef.current,
+      powerups: powerupsRef.current,
+      floats: floatsRef.current,
+      formationX: formationXRef.current,
+      formationY: formationYRef.current,
+      playerX: playerXRef.current,
+      shieldUntil: shieldUntilRef.current,
+      shakeUntil: shakeUntilRef.current,
+      invulnUntil: invulnUntilRef.current,
+    }),
+    [],
+  );
 
   return {
     state,

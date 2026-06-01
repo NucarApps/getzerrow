@@ -34,9 +34,7 @@ export const getEmailBody = createServerFn({ method: "POST" })
 
 export const getEmailListFields = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data) =>
-    z.object({ ids: z.array(z.string().uuid()).max(5000) }).parse(data),
-  )
+  .inputValidator((data) => z.object({ ids: z.array(z.string().uuid()).max(5000) }).parse(data))
   .handler(async ({ data, context }) => {
     const { userId } = context;
     if (data.ids.length === 0) return { fields: [], error: null };

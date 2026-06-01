@@ -13,13 +13,10 @@ export const searchLogoBrands = createServerFn({ method: "POST" })
     const secret = process.env.LOGO_DEV_SECRET;
     if (!secret) return { results: [] };
     try {
-      const res = await fetch(
-        `https://api.logo.dev/search?q=${encodeURIComponent(data.query)}`,
-        {
-          headers: { Authorization: `Bearer ${secret}` },
-          signal: AbortSignal.timeout(4000),
-        },
-      );
+      const res = await fetch(`https://api.logo.dev/search?q=${encodeURIComponent(data.query)}`, {
+        headers: { Authorization: `Bearer ${secret}` },
+        signal: AbortSignal.timeout(4000),
+      });
       if (!res.ok) return { results: [] };
       const json: unknown = await res.json();
       const arr = Array.isArray(json) ? json : [];

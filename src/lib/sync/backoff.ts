@@ -41,7 +41,9 @@ export function secondsUntilMidnightPT(now = new Date()): number {
   try {
     const fmt = new Intl.DateTimeFormat("en-US", {
       timeZone: "America/Los_Angeles",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
       hour12: false,
     });
     const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));

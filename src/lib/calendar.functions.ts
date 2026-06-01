@@ -13,7 +13,10 @@ import { invalidateAccountContext } from "./sync/account-context";
 import { logError } from "./log.server";
 
 /** Confirm the calling user owns the given Gmail account. */
-async function assertOwnsAccount(accountId: string, userId: string): Promise<{ calendarAccess: boolean }> {
+async function assertOwnsAccount(
+  accountId: string,
+  userId: string,
+): Promise<{ calendarAccess: boolean }> {
   const { data } = await supabaseAdmin
     .from("gmail_accounts")
     .select("user_id, calendar_access")
@@ -74,7 +77,11 @@ export const setCalendarGuard = createServerFn({ method: "POST" })
         invalidateAccountContext(data.accountId);
       } catch (e) {
         syncReason = e instanceof CalendarApiError ? e.kind : "unknown";
-        logError("calendar.initial_sync_failed", { account_id: data.accountId, user_id: context.userId }, e);
+        logError(
+          "calendar.initial_sync_failed",
+          { account_id: data.accountId, user_id: context.userId },
+          e,
+        );
       }
     }
     return { enabled: data.enabled, calendarAccess, synced, syncReason };
@@ -97,7 +104,11 @@ export const syncCalendarNow = createServerFn({ method: "POST" })
       if (e instanceof CalendarApiError) {
         return { ok: false as const, reason: e.kind };
       }
-      logError("calendar.sync_now_failed", { account_id: data.accountId, user_id: context.userId }, e);
+      logError(
+        "calendar.sync_now_failed",
+        { account_id: data.accountId, user_id: context.userId },
+        e,
+      );
       return { ok: false as const, reason: "unknown" as CalendarErrorKind };
     }
   });
@@ -146,9 +157,7 @@ export const listMeetingPeople = createServerFn({ method: "POST" })
       .from("contacts")
       .select("email")
       .eq("user_id", userId);
-    const existingSet = new Set(
-      (existing ?? []).map((c) => (c.email || "").toLowerCase()),
-    );
+    const existingSet = new Set((existing ?? []).map((c) => (c.email || "").toLowerCase()));
 
     const merged = new Map<string, CalendarPerson>();
     for (const acc of accounts) {
@@ -202,4 +211,3 @@ export const listMeetingPeople = createServerFn({ method: "POST" })
       calendarAccess: true,
     };
   });
-

@@ -1,21 +1,52 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Send, Save, Trash2, Mail, Globe, Linkedin, Twitter, Building2, Plus, X, Share2, MessageSquare, MapPin, ImageIcon } from "lucide-react";
+import {
+  Sparkles,
+  Send,
+  Save,
+  Trash2,
+  Mail,
+  Globe,
+  Linkedin,
+  Twitter,
+  Building2,
+  Plus,
+  X,
+  Share2,
+  MessageSquare,
+  MapPin,
+  ImageIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { getContact, enrichContact, updateContact, deleteContact, shareContactByEmail, getContactCardSignedUrl } from "@/lib/contacts.functions";
+import {
+  getContact,
+  enrichContact,
+  updateContact,
+  deleteContact,
+  shareContactByEmail,
+  getContactCardSignedUrl,
+} from "@/lib/contacts.functions";
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { toast } from "sonner";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
@@ -58,7 +89,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
 
   async function toggleGroup(gid: string) {
     const next = new Set(myGroupIds);
-    if (next.has(gid)) next.delete(gid); else next.add(gid);
+    if (next.has(gid)) next.delete(gid);
+    else next.add(gid);
     try {
       await setGroups({ data: { contactId: id, groupIds: [...next] } });
       qc.invalidateQueries({ queryKey: ["contact-groups"] });
@@ -68,9 +100,19 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   }
 
   const [form, setForm] = useState({
-    name: "", title: "", company: "",
-    website: "", linkedin: "", twitter: "", notes: "",
-    address_line1: "", address_line2: "", city: "", region: "", postal_code: "", country: "",
+    name: "",
+    title: "",
+    company: "",
+    website: "",
+    linkedin: "",
+    twitter: "",
+    notes: "",
+    address_line1: "",
+    address_line2: "",
+    city: "",
+    region: "",
+    postal_code: "",
+    country: "",
   });
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [enriching, setEnriching] = useState(false);
@@ -82,8 +124,12 @@ export function ContactDetailView({ id, onDeleted }: Props) {
     if (q.data?.contact) {
       const c = q.data.contact;
       setForm({
-        name: c.name ?? "", title: c.title ?? "", company: c.company ?? "",
-        website: c.website ?? "", linkedin: c.linkedin ?? "", twitter: c.twitter ?? "",
+        name: c.name ?? "",
+        title: c.title ?? "",
+        company: c.company ?? "",
+        website: c.website ?? "",
+        linkedin: c.linkedin ?? "",
+        twitter: c.twitter ?? "",
         notes: c.notes ?? "",
         address_line1: (c as any).address_line1 ?? "",
         address_line2: (c as any).address_line2 ?? "",
@@ -92,9 +138,19 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         postal_code: (c as any).postal_code ?? "",
         country: (c as any).country ?? "",
       });
-      const serverPhones = (q.data.phones ?? []) as Array<{ label: string; number: string; is_primary: boolean }>;
+      const serverPhones = (q.data.phones ?? []) as Array<{
+        label: string;
+        number: string;
+        is_primary: boolean;
+      }>;
       if (serverPhones.length > 0) {
-        setPhones(serverPhones.map((p) => ({ label: p.label, number: p.number, is_primary: !!p.is_primary })));
+        setPhones(
+          serverPhones.map((p) => ({
+            label: p.label,
+            number: p.number,
+            is_primary: !!p.is_primary,
+          })),
+        );
       } else if (c.phone) {
         // Legacy: contact has the old single phone field but no rows in contact_phones yet.
         setPhones([{ label: "mobile", number: c.phone, is_primary: true }]);
@@ -102,7 +158,14 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         setPhones([]);
       }
     }
-  }, [q.data?.contact?.id, q.data?.contact?.enriched_at, q.data?.contact?.updated_at, q.data?.contact?.name, q.data?.contact?.company, q.data?.contact?.title]);
+  }, [
+    q.data?.contact?.id,
+    q.data?.contact?.enriched_at,
+    q.data?.contact?.updated_at,
+    q.data?.contact?.name,
+    q.data?.contact?.company,
+    q.data?.contact?.title,
+  ]);
 
   useEffect(() => {
     const c = q.data?.contact;
@@ -221,7 +284,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           <p className="text-sm text-muted-foreground">{c.title || c.company || c.email}</p>
           <p className="text-xs text-muted-foreground mt-1">
             Source: {c.source}
-            {c.enriched_at ? ` · Enriched ${new Date(c.enriched_at).toLocaleDateString()}` : " · Not yet enriched"}
+            {c.enriched_at
+              ? ` · Enriched ${new Date(c.enriched_at).toLocaleDateString()}`
+              : " · Not yet enriched"}
           </p>
         </div>
       </header>
@@ -231,35 +296,45 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           <Sparkles className="h-3.5 w-3.5" /> Relationship summary
         </div>
         {(c as any).relationship_summary ? (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{(c as any).relationship_summary}</p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+            {(c as any).relationship_summary}
+          </p>
         ) : enriching ? (
-          <p className="text-sm italic text-muted-foreground">Reading past emails and writing a briefing…</p>
+          <p className="text-sm italic text-muted-foreground">
+            Reading past emails and writing a briefing…
+          </p>
         ) : c.enriched_at ? (
-          <p className="text-sm text-muted-foreground">Not enough signal in past emails yet. Click Re-enrich to try again.</p>
+          <p className="text-sm text-muted-foreground">
+            Not enough signal in past emails yet. Click Re-enrich to try again.
+          </p>
         ) : (
           <p className="text-sm text-muted-foreground">No summary yet — click Re-enrich below.</p>
         )}
       </div>
 
       <div className="mb-6">
-        <Label className="mb-2 block text-xs uppercase tracking-widest text-muted-foreground">Groups</Label>
+        <Label className="mb-2 block text-xs uppercase tracking-widest text-muted-foreground">
+          Groups
+        </Label>
         <div className="flex flex-wrap items-center gap-1.5">
-          {(gq.data?.groups ?? []).filter((g) => myGroupIds.has(g.id)).map((g) => (
-            <span
-              key={g.id}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 py-0.5 pl-2 pr-1 text-xs"
-            >
-              <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
-              {g.name}
-              <button
-                onClick={() => toggleGroup(g.id)}
-                className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={`Remove from ${g.name}`}
+          {(gq.data?.groups ?? [])
+            .filter((g) => myGroupIds.has(g.id))
+            .map((g) => (
+              <span
+                key={g.id}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 py-0.5 pl-2 pr-1 text-xs"
               >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
+                <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                {g.name}
+                <button
+                  onClick={() => toggleGroup(g.id)}
+                  className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label={`Remove from ${g.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs">
@@ -285,17 +360,33 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       </div>
 
       <div className="mb-6 flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={() => runEnrich(true)} disabled={enriching} className="flex-1 sm:flex-none">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => runEnrich(true)}
+          disabled={enriching}
+          className="flex-1 sm:flex-none"
+        >
           <Sparkles className={`mr-2 h-4 w-4 ${enriching ? "animate-pulse" : ""}`} />
           {enriching ? "Reading…" : "Re-enrich"}
         </Button>
         <Button size="sm" onClick={send} disabled={sending} className="flex-1 sm:flex-none">
           <Send className="mr-2 h-4 w-4" /> {sending ? "Sending…" : "Send my card"}
         </Button>
-        <Button size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={() => setShareOpen(true)}>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="flex-1 sm:flex-none"
+          onClick={() => setShareOpen(true)}
+        >
           <Share2 className="mr-2 h-4 w-4" /> Share contact
         </Button>
-        <Button size="sm" variant="ghost" className="text-destructive w-full sm:w-auto sm:ml-auto" onClick={remove}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-destructive w-full sm:w-auto sm:ml-auto"
+          onClick={remove}
+        >
           <Trash2 className="mr-2 h-4 w-4" /> Delete
         </Button>
       </div>
@@ -308,19 +399,31 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
         </Field>
         <Field label="Company" icon={<Building2 className="h-3.5 w-3.5" />}>
-          <Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
+          <Input
+            value={form.company}
+            onChange={(e) => setForm({ ...form, company: e.target.value })}
+          />
         </Field>
         <Field label="Email" icon={<Mail className="h-3.5 w-3.5" />}>
           <Input value={c.email} disabled />
         </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
-          <Input value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
+          <Input
+            value={form.website}
+            onChange={(e) => setForm({ ...form, website: e.target.value })}
+          />
         </Field>
         <Field label="LinkedIn" icon={<Linkedin className="h-3.5 w-3.5" />}>
-          <Input value={form.linkedin} onChange={(e) => setForm({ ...form, linkedin: e.target.value })} />
+          <Input
+            value={form.linkedin}
+            onChange={(e) => setForm({ ...form, linkedin: e.target.value })}
+          />
         </Field>
         <Field label="Twitter / X" icon={<Twitter className="h-3.5 w-3.5" />}>
-          <Input value={form.twitter} onChange={(e) => setForm({ ...form, twitter: e.target.value })} />
+          <Input
+            value={form.twitter}
+            onChange={(e) => setForm({ ...form, twitter: e.target.value })}
+          />
         </Field>
       </div>
 
@@ -335,11 +438,19 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label className="text-xs text-muted-foreground">Address line 1</Label>
-            <Input value={form.address_line1} onChange={(e) => setForm({ ...form, address_line1: e.target.value })} placeholder="Street address" />
+            <Input
+              value={form.address_line1}
+              onChange={(e) => setForm({ ...form, address_line1: e.target.value })}
+              placeholder="Street address"
+            />
           </div>
           <div className="sm:col-span-2">
             <Label className="text-xs text-muted-foreground">Address line 2</Label>
-            <Input value={form.address_line2} onChange={(e) => setForm({ ...form, address_line2: e.target.value })} placeholder="Apt, suite, floor (optional)" />
+            <Input
+              value={form.address_line2}
+              onChange={(e) => setForm({ ...form, address_line2: e.target.value })}
+              placeholder="Apt, suite, floor (optional)"
+            />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">City</Label>
@@ -347,15 +458,24 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">State / region</Label>
-            <Input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
+            <Input
+              value={form.region}
+              onChange={(e) => setForm({ ...form, region: e.target.value })}
+            />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Postal code</Label>
-            <Input value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} />
+            <Input
+              value={form.postal_code}
+              onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
+            />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Country</Label>
-            <Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+            <Input
+              value={form.country}
+              onChange={(e) => setForm({ ...form, country: e.target.value })}
+            />
           </div>
         </div>
       </div>
@@ -386,7 +506,12 @@ export function ContactDetailView({ id, onDeleted }: Props) {
               )}
             </button>
             <div className="mt-2 flex justify-end">
-              <Button size="sm" variant="ghost" className="text-destructive" onClick={removeCardImage}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive"
+                onClick={removeCardImage}
+              >
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Remove image
               </Button>
             </div>
@@ -395,7 +520,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
             <DialogContent className="max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Business card</DialogTitle>
-                <DialogDescription className="sr-only">Full-size view of the scanned business card.</DialogDescription>
+                <DialogDescription className="sr-only">
+                  Full-size view of the scanned business card.
+                </DialogDescription>
               </DialogHeader>
               {cardImgSrc ? (
                 <img
@@ -409,7 +536,6 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         </div>
       ) : null}
 
-
       <div className="mt-6">
         <Label className="text-xs text-muted-foreground">Notes</Label>
         <Textarea
@@ -420,14 +546,17 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         />
       </div>
 
-
       <div className="mt-6 flex justify-end">
-        <Button onClick={save}><Save className="mr-2 h-4 w-4" /> Save</Button>
+        <Button onClick={save}>
+          <Save className="mr-2 h-4 w-4" /> Save
+        </Button>
       </div>
 
       {q.data.recentEmails.length > 0 && (
         <section className="mt-10">
-          <h2 className="mb-3 text-xs uppercase tracking-widest text-muted-foreground">Recent emails</h2>
+          <h2 className="mb-3 text-xs uppercase tracking-widest text-muted-foreground">
+            Recent emails
+          </h2>
           <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
             {q.data.recentEmails.map((e) => (
               <li key={e.id} className="px-4 py-2 text-sm">
@@ -440,23 +569,28 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         </section>
       )}
 
-      <ShareContactDialog
-        open={shareOpen}
-        onOpenChange={setShareOpen}
-        contactId={id}
-        contact={c}
-      />
+      <ShareContactDialog open={shareOpen} onOpenChange={setShareOpen} contactId={id} contact={c} />
     </div>
   );
 }
 
 function ShareContactDialog({
-  open, onOpenChange, contactId, contact,
+  open,
+  onOpenChange,
+  contactId,
+  contact,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   contactId: string;
-  contact: { name: string | null; email: string; title: string | null; company: string | null; phone: string | null; website: string | null };
+  contact: {
+    name: string | null;
+    email: string;
+    title: string | null;
+    company: string | null;
+    phone: string | null;
+    website: string | null;
+  };
 }) {
   const share = useServerFn(shareContactByEmail);
   const [toEmail, setToEmail] = useState("");
@@ -471,7 +605,9 @@ function ShareContactDialog({
     contact.phone ? `Phone: ${contact.phone}` : "",
     contact.website ? contact.website : "",
     "— Shared from Zerrow",
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   async function sendEmail() {
     setSending(true);
@@ -479,7 +615,8 @@ function ShareContactDialog({
       await share({ data: { contactId, toEmail, note: note.trim() || undefined } });
       toast.success(`Sent ${displayName}'s info to ${toEmail}`);
       onOpenChange(false);
-      setToEmail(""); setNote("");
+      setToEmail("");
+      setNote("");
     } catch (e: any) {
       toast.error(e?.message ?? "Couldn't send email");
     } finally {
@@ -498,27 +635,49 @@ function ShareContactDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Share {displayName}</DialogTitle>
-          <DialogDescription>Send their contact details to someone via email or text.</DialogDescription>
+          <DialogDescription>
+            Send their contact details to someone via email or text.
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="email" className="mt-2">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="email"><Mail className="mr-2 h-4 w-4" /> Email</TabsTrigger>
-            <TabsTrigger value="sms"><MessageSquare className="mr-2 h-4 w-4" /> Text</TabsTrigger>
+            <TabsTrigger value="email">
+              <Mail className="mr-2 h-4 w-4" /> Email
+            </TabsTrigger>
+            <TabsTrigger value="sms">
+              <MessageSquare className="mr-2 h-4 w-4" /> Text
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="email" className="space-y-3 pt-3">
             <div>
               <Label className="mb-1 block text-xs text-muted-foreground">Recipient email</Label>
-              <Input type="email" placeholder="friend@example.com" value={toEmail} onChange={(e) => setToEmail(e.target.value)} />
+              <Input
+                type="email"
+                placeholder="friend@example.com"
+                value={toEmail}
+                onChange={(e) => setToEmail(e.target.value)}
+              />
             </div>
             <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">Personal note (optional)</Label>
-              <Textarea rows={3} placeholder="Thought you two should connect…" value={note} onChange={(e) => setNote(e.target.value)} />
+              <Label className="mb-1 block text-xs text-muted-foreground">
+                Personal note (optional)
+              </Label>
+              <Textarea
+                rows={3}
+                placeholder="Thought you two should connect…"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
             </div>
-            <p className="text-xs text-muted-foreground">A .vcf attachment will be included so they can save the contact in one tap.</p>
+            <p className="text-xs text-muted-foreground">
+              A .vcf attachment will be included so they can save the contact in one tap.
+            </p>
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>Cancel</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
+                Cancel
+              </Button>
               <Button onClick={sendEmail} disabled={sending || !/.+@.+\..+/.test(toEmail)}>
                 <Send className="mr-2 h-4 w-4" /> {sending ? "Sending…" : "Send email"}
               </Button>
@@ -527,16 +686,29 @@ function ShareContactDialog({
 
           <TabsContent value="sms" className="space-y-3 pt-3">
             <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">Send to phone number</Label>
-              <Input type="tel" placeholder="+1 555 123 4567" value={toPhone} onChange={(e) => setToPhone(e.target.value)} />
+              <Label className="mb-1 block text-xs text-muted-foreground">
+                Send to phone number
+              </Label>
+              <Input
+                type="tel"
+                placeholder="+1 555 123 4567"
+                value={toPhone}
+                onChange={(e) => setToPhone(e.target.value)}
+              />
             </div>
             <div>
               <Label className="mb-1 block text-xs text-muted-foreground">Message preview</Label>
-              <pre className="whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">{smsBody}</pre>
+              <pre className="whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">
+                {smsBody}
+              </pre>
             </div>
-            <p className="text-xs text-muted-foreground">Opens your phone's Messages app with the number and text prefilled.</p>
+            <p className="text-xs text-muted-foreground">
+              Opens your phone's Messages app with the number and text prefilled.
+            </p>
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
               <Button onClick={openMessages}>
                 <MessageSquare className="mr-2 h-4 w-4" /> Open Messages
               </Button>
@@ -548,10 +720,21 @@ function ShareContactDialog({
   );
 }
 
-function Field({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
+function Field({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <Label className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">{icon}{label}</Label>
+      <Label className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+        {icon}
+        {label}
+      </Label>
       {children}
     </div>
   );

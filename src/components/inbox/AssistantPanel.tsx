@@ -19,10 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  proposeAssistantChanges,
-  applyAssistantChanges,
-} from "@/lib/ai-assistant.functions";
+import { proposeAssistantChanges, applyAssistantChanges } from "@/lib/ai-assistant.functions";
 
 type Action =
   | { type: "move_email"; email_id: string; to_folder_id: string; why: string }
@@ -121,8 +118,14 @@ export function AssistantPanel({
   const history = useMemo(
     () =>
       turns
-        .filter((t) => t.kind === "user" || (t.kind === "assistant" && (t.content || t.clarifyingQuestion)))
-        .map<{ role: "user" | "assistant"; content: string }>((t) =>
+        .filter(
+          (t) =>
+            t.kind === "user" || (t.kind === "assistant" && (t.content || t.clarifyingQuestion)),
+        )
+        .map<{
+          role: "user" | "assistant";
+          content: string;
+        }>((t) =>
           t.kind === "user"
             ? { role: "user", content: t.content }
             : { role: "assistant", content: t.content || t.clarifyingQuestion },
@@ -229,13 +232,15 @@ export function AssistantPanel({
             Inbox assistant
           </SheetTitle>
           <SheetDescription className="text-xs">
-            Describe how mail should be sorted. I'll suggest changes — nothing is saved until you approve.
+            Describe how mail should be sorted. I'll suggest changes — nothing is saved until you
+            approve.
           </SheetDescription>
           {selectedEmails.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
               {selectedEmails.length === 1 ? (
                 <Badge variant="secondary" className="font-normal">
-                  Selected: {selectedEmails[0].from_name || selectedEmails[0].from_addr || "1 email"}
+                  Selected:{" "}
+                  {selectedEmails[0].from_name || selectedEmails[0].from_addr || "1 email"}
                 </Badge>
               ) : (
                 <Badge variant="secondary" className="font-normal">
@@ -300,7 +305,9 @@ export function AssistantPanel({
                                     ti === i && t.kind === "assistant"
                                       ? {
                                           ...t,
-                                          selected: t.selected.map((s, si) => (si === ai ? v === true : s)),
+                                          selected: t.selected.map((s, si) =>
+                                            si === ai ? v === true : s,
+                                          ),
                                         }
                                       : t,
                                   ),
@@ -390,7 +397,11 @@ export function AssistantPanel({
               className="min-h-[44px] max-h-32 resize-none text-sm"
               rows={2}
             />
-            <Button size="icon" onClick={() => void send()} disabled={!input.trim() || !accountId || busy}>
+            <Button
+              size="icon"
+              onClick={() => void send()}
+              disabled={!input.trim() || !accountId || busy}
+            >
               <Send className="h-4 w-4" />
             </Button>
           </div>

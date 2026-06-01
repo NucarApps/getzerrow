@@ -1,7 +1,13 @@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Phone, Plus, Star, Trash2 } from "lucide-react";
 
 export type PhoneEntry = {
@@ -25,10 +31,7 @@ export function PhonesEditor({ value, onChange }: Props) {
 
   function add() {
     const isFirst = value.length === 0;
-    onChange([
-      ...value,
-      { label: "mobile", number: "", is_primary: isFirst },
-    ]);
+    onChange([...value, { label: "mobile", number: "", is_primary: isFirst }]);
   }
 
   function remove(idx: number) {

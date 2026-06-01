@@ -54,7 +54,11 @@ function parseQuotaReason(body: string): boolean {
   return /quotaExceeded|userRateLimitExceeded/.test(body);
 }
 
-async function gmailFetch<T = any>(accountId: string, path: string, init?: RequestInit): Promise<T> {
+async function gmailFetch<T = any>(
+  accountId: string,
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
   const token = await getAccessToken(accountId);
   let res: Response;
   try {
@@ -69,9 +73,10 @@ async function gmailFetch<T = any>(accountId: string, path: string, init?: Reque
     });
   } catch (e: any) {
     // Network error or AbortSignal timeout — treat as retryable.
-    const msg = e?.name === "TimeoutError" || e?.name === "AbortError"
-      ? `Gmail API timeout on ${path} (>${REQUEST_TIMEOUT_MS}ms)`
-      : `Gmail API network error on ${path}: ${e?.message ?? String(e)}`;
+    const msg =
+      e?.name === "TimeoutError" || e?.name === "AbortError"
+        ? `Gmail API timeout on ${path} (>${REQUEST_TIMEOUT_MS}ms)`
+        : `Gmail API network error on ${path}: ${e?.message ?? String(e)}`;
     throw new GmailApiError(msg, 0, true);
   }
   const text = await res.text();
@@ -88,11 +93,10 @@ async function gmailFetch<T = any>(accountId: string, path: string, init?: Reque
   return text ? JSON.parse(text) : ({} as T);
 }
 
-
 export async function listLabels(accountId: string) {
   return gmailFetch<{ labels: Array<{ id: string; name: string; type: string }> }>(
     accountId,
-    "/users/me/labels"
+    "/users/me/labels",
   );
 }
 
@@ -105,7 +109,7 @@ export async function createLabel(accountId: string, name: string) {
 
 export async function listMessages(
   accountId: string,
-  opts: { maxResults?: number; q?: string; pageToken?: string; labelIds?: string[] } = {}
+  opts: { maxResults?: number; q?: string; pageToken?: string; labelIds?: string[] } = {},
 ) {
   const params = new URLSearchParams();
   if (opts.maxResults) params.set("maxResults", String(opts.maxResults));
@@ -114,7 +118,7 @@ export async function listMessages(
   if (opts.labelIds) for (const id of opts.labelIds) params.append("labelIds", id);
   return gmailFetch<{ messages?: Array<{ id: string; threadId: string }>; nextPageToken?: string }>(
     accountId,
-    `/users/me/messages?${params.toString()}`
+    `/users/me/messages?${params.toString()}`,
   );
 }
 
@@ -125,7 +129,7 @@ export async function getMessage(accountId: string, id: string) {
 export async function getThread(accountId: string, threadId: string) {
   return gmailFetch<{ id: string; messages?: any[] }>(
     accountId,
-    `/users/me/threads/${threadId}?format=full`
+    `/users/me/threads/${threadId}?format=full`,
   );
 }
 
@@ -133,14 +137,17 @@ export async function getThread(accountId: string, threadId: string) {
 export async function getMessageMetadata(accountId: string, id: string) {
   return gmailFetch<any>(
     accountId,
-    `/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`
+    `/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
   );
 }
 
 /** Lightweight fetch: just labelIds. Returns null if message no longer exists (404). */
 export async function getMessageLabels(accountId: string, id: string): Promise<string[] | null> {
   try {
-    const r = await gmailFetch<{ labelIds?: string[] }>(accountId, `/users/me/messages/${id}?format=minimal`);
+    const r = await gmailFetch<{ labelIds?: string[] }>(
+      accountId,
+      `/users/me/messages/${id}?format=minimal`,
+    );
     return r.labelIds ?? [];
   } catch (e: any) {
     if (typeof e?.message === "string" && e.message.includes("404")) return null;
@@ -148,7 +155,12 @@ export async function getMessageLabels(accountId: string, id: string): Promise<s
   }
 }
 
-export async function modifyMessage(accountId: string, id: string, addLabelIds: string[] = [], removeLabelIds: string[] = []) {
+export async function modifyMessage(
+  accountId: string,
+  id: string,
+  addLabelIds: string[] = [],
+  removeLabelIds: string[] = [],
+) {
   return gmailFetch(accountId, `/users/me/messages/${id}/modify`, {
     method: "POST",
     body: JSON.stringify({ addLabelIds, removeLabelIds }),
@@ -179,7 +191,14 @@ export async function trashMessage(accountId: string, id: string) {
   return gmailFetch(accountId, `/users/me/messages/${id}/trash`, { method: "POST" });
 }
 
-export async function sendMessage(accountId: string, to: string, subject: string, body: string, threadId?: string, inReplyTo?: string) {
+export async function sendMessage(
+  accountId: string,
+  to: string,
+  subject: string,
+  body: string,
+  threadId?: string,
+  inReplyTo?: string,
+) {
   const headers = [
     `To: ${to}`,
     `Subject: ${subject}`,
@@ -188,8 +207,14 @@ export async function sendMessage(accountId: string, to: string, subject: string
     'Content-Type: text/plain; charset="UTF-8"',
     "",
     body,
-  ].filter(Boolean).join("\r\n");
-  const raw = Buffer.from(headers).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  ]
+    .filter(Boolean)
+    .join("\r\n");
+  const raw = Buffer.from(headers)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
   return gmailFetch(accountId, "/users/me/messages/send", {
     method: "POST",
     body: JSON.stringify({ raw, threadId }),
@@ -200,24 +225,24 @@ export async function sendMessage(accountId: string, to: string, subject: string
 export async function insertMessage(
   accountId: string,
   rawRfc822: string,
-  labelIds: string[] = ["INBOX", "UNREAD"]
+  labelIds: string[] = ["INBOX", "UNREAD"],
 ) {
-  const raw = Buffer.from(rawRfc822).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const raw = Buffer.from(rawRfc822)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
   return gmailFetch<{ id: string; threadId: string }>(
     accountId,
     "/users/me/messages?internalDateSource=dateHeader",
     {
       method: "POST",
       body: JSON.stringify({ raw, labelIds }),
-    }
+    },
   );
 }
 
-export async function listHistory(
-  accountId: string,
-  startHistoryId: string,
-  pageToken?: string,
-) {
+export async function listHistory(accountId: string, startHistoryId: string, pageToken?: string) {
   const params = new URLSearchParams({ startHistoryId });
   params.append("historyTypes", "messageAdded");
   params.append("historyTypes", "messageDeleted");
@@ -229,8 +254,14 @@ export async function listHistory(
       messages?: Array<{ id: string; threadId: string }>;
       messagesAdded?: Array<{ message: { id: string; threadId: string; labelIds?: string[] } }>;
       messagesDeleted?: Array<{ message: { id: string; threadId: string; labelIds?: string[] } }>;
-      labelsAdded?: Array<{ message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }>;
-      labelsRemoved?: Array<{ message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }>;
+      labelsAdded?: Array<{
+        message: { id: string; threadId: string; labelIds?: string[] };
+        labelIds: string[];
+      }>;
+      labelsRemoved?: Array<{
+        message: { id: string; threadId: string; labelIds?: string[] };
+        labelIds: string[];
+      }>;
     }>;
     historyId?: string;
     nextPageToken?: string;
@@ -275,7 +306,8 @@ function extractPart(payload: any, mimeType: string): string {
 export function parseMessage(msg: any) {
   const payload = msg.payload || {};
   const headers: GmailHeader[] = payload.headers || [];
-  const h = (n: string) => headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value || "";
+  const h = (n: string) =>
+    headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value || "";
   const from = h("from");
   const angle = from.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
   const fromName = (angle?.[1] || "").trim();
@@ -313,7 +345,10 @@ export function parseMessage(msg: any) {
 /** Ensure Gmail push watch is active for this account. Re-watches if expired
  * or near expiry. Threshold tightened to <3 days so a missed cron run can't
  * lapse the underlying 7-day Gmail watch. */
-export async function ensureWatch(accountId: string, watchExpiration: string | null): Promise<{ historyId: string; expiration: string } | null> {
+export async function ensureWatch(
+  accountId: string,
+  watchExpiration: string | null,
+): Promise<{ historyId: string; expiration: string } | null> {
   const topic = process.env.GMAIL_PUBSUB_TOPIC;
   if (!topic) return null;
   if (watchExpiration) {
@@ -333,7 +368,10 @@ export async function ensureWatch(accountId: string, watchExpiration: string | n
  * Threshold is intentionally tighter (<72h) than `ensureWatch` so this only
  * fires when truly needed.
  */
-export async function topUpWatch(accountId: string, watchExpiration: string | null): Promise<{ historyId: string; expiration: string } | null> {
+export async function topUpWatch(
+  accountId: string,
+  watchExpiration: string | null,
+): Promise<{ historyId: string; expiration: string } | null> {
   if (!watchExpiration) return null;
   const expMs = new Date(watchExpiration).getTime();
   if (expMs - Date.now() > 3 * 24 * 60 * 60 * 1000) return null;

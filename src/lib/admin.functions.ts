@@ -55,7 +55,12 @@ export const listAdminUsers = createServerFn({ method: "GET" })
     assertAdmin(context.claims);
 
     // Fetch all auth users (paginated).
-    const authUsers: Array<{ id: string; email: string | null; created_at: string; last_sign_in_at: string | null }> = [];
+    const authUsers: Array<{
+      id: string;
+      email: string | null;
+      created_at: string;
+      last_sign_in_at: string | null;
+    }> = [];
     let page = 1;
     const perPage = 200;
     while (true) {

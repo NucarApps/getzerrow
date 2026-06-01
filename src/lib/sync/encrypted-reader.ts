@@ -51,10 +51,10 @@ export async function getEmailsDecrypted(
   ids: string[],
 ): Promise<{ rows: DecryptedEmail[]; error: string | null }> {
   if (ids.length === 0) return { rows: [], error: null };
-  const { data, error } = await supabaseAdmin.rpc("get_emails_decrypted", ({
+  const { data, error } = await supabaseAdmin.rpc("get_emails_decrypted", {
     p_ids: ids,
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { rows: [], error: error.message };
   return { rows: (data as DecryptedEmail[] | null) ?? [], error: null };
 }
@@ -90,10 +90,10 @@ export type DecryptedContact = {
 export async function getContactDecrypted(
   contactId: string,
 ): Promise<{ row: DecryptedContact | null; error: string | null }> {
-  const { data, error } = await supabaseAdmin.rpc("get_contact_decrypted", ({
+  const { data, error } = await supabaseAdmin.rpc("get_contact_decrypted", {
     p_contact_id: contactId,
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { row: null, error: error.message };
   const rows = (data as DecryptedContact[] | null) ?? [];
   return { row: rows[0] ?? null, error: null };
@@ -102,10 +102,10 @@ export async function getContactDecrypted(
 export async function getReplyDraftDecrypted(
   emailId: string,
 ): Promise<{ draft_text: string | null; error: string | null }> {
-  const { data, error } = await supabaseAdmin.rpc("get_reply_draft_decrypted", ({
+  const { data, error } = await supabaseAdmin.rpc("get_reply_draft_decrypted", {
     p_email_id: emailId,
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { draft_text: null, error: error.message };
   const rows = (data as Array<{ draft_text: string | null }> | null) ?? [];
   return { draft_text: rows[0]?.draft_text ?? null, error: null };
@@ -128,10 +128,10 @@ export async function getEmailListFieldsDecrypted(
   ids: string[],
 ): Promise<{ rows: EmailListFields[]; error: string | null }> {
   if (ids.length === 0) return { rows: [], error: null };
-  const { data, error } = await supabaseAdmin.rpc("get_emails_list_fields_decrypted", ({
+  const { data, error } = await supabaseAdmin.rpc("get_emails_list_fields_decrypted", {
     p_ids: ids,
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { rows: [], error: error.message };
   return { rows: (data as EmailListFields[] | null) ?? [], error: null };
 }
@@ -146,10 +146,10 @@ export async function getContactListFieldsDecrypted(
   ids: string[],
 ): Promise<{ rows: ContactListFields[]; error: string | null }> {
   if (ids.length === 0) return { rows: [], error: null };
-  const { data, error } = await supabaseAdmin.rpc("get_contacts_list_fields_decrypted", ({
+  const { data, error } = await supabaseAdmin.rpc("get_contacts_list_fields_decrypted", {
     p_ids: ids,
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { rows: [], error: error.message };
   return { rows: (data as ContactListFields[] | null) ?? [], error: null };
 }
@@ -171,10 +171,10 @@ export type ForwardRetryClaim = {
 export async function claimForwardRetriesDecrypted(
   limit: number,
 ): Promise<{ rows: ForwardRetryClaim[]; error: string | null }> {
-  const { data, error } = await supabaseAdmin.rpc("claim_forward_retries_v2", ({
+  const { data, error } = await supabaseAdmin.rpc("claim_forward_retries_v2", {
     p_limit: limit,
     p_key: getKey(),
-  }) as never);
+  } as never);
   if (error) return { rows: [], error: error.message };
   return { rows: (data as ForwardRetryClaim[] | null) ?? [], error: null };
 }

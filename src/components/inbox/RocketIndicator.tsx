@@ -54,7 +54,8 @@ export function RocketIndicator({ pull, phase }: Props) {
           transform,
           opacity,
           animation,
-          transition: launching || returning ? "none" : "transform 80ms linear, opacity 120ms linear",
+          transition:
+            launching || returning ? "none" : "transform 80ms linear, opacity 120ms linear",
           willChange: "transform, opacity",
         }}
       >

@@ -23,7 +23,11 @@ export function FolderSelectionProvider({ children }: { children: ReactNode }) {
   });
   const setSelected = (v: FolderSelection) => {
     setSelectedState(v);
-    try { window.localStorage.setItem(STORAGE_KEY, v); } catch { /* ignore */ }
+    try {
+      window.localStorage.setItem(STORAGE_KEY, v);
+    } catch {
+      /* ignore */
+    }
   };
   return (
     <FolderSelectionContext.Provider value={{ selected, setSelected }}>

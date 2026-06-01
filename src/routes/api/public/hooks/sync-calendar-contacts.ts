@@ -23,7 +23,8 @@ export const Route = createFileRoute("/api/public/hooks/sync-calendar-contacts")
           if (error) {
             logError("calendar_sync.query_failed", { run_id: runId }, error);
             return new Response(JSON.stringify({ error: error.message }), {
-              status: 500, headers: { "Content-Type": "application/json" },
+              status: 500,
+              headers: { "Content-Type": "application/json" },
             });
           }
 
@@ -34,7 +35,11 @@ export const Route = createFileRoute("/api/public/hooks/sync-calendar-contacts")
               await syncCalendarContacts(acc.id, acc.user_id);
               succeeded++;
             } catch (e) {
-              logError("calendar_sync.iter_failed", { run_id: runId, account_id: acc.id, user_id: acc.user_id }, e);
+              logError(
+                "calendar_sync.iter_failed",
+                { run_id: runId, account_id: acc.id, user_id: acc.user_id },
+                e,
+              );
               failed++;
             }
           }

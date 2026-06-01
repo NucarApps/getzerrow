@@ -23,8 +23,8 @@ const MAX_REGEX_INPUT_LEN = 10_000;
 // Nested quantifiers / overlapping alternation are the classic ReDoS shapes.
 const UNSAFE_REGEX_SHAPES = [
   /(\([^)]*[+*][^)]*\))[+*]/, // (a+)+ / (a*)*
-  /(\[[^\]]+\][+*]){2,}/,      // [a-z]+[a-z]+ chains
-  /(\.\*){2,}/,                // .*.*
+  /(\[[^\]]+\][+*]){2,}/, // [a-z]+[a-z]+ chains
+  /(\.\*){2,}/, // .*.*
 ];
 
 function isUnsafeRegex(pattern: string): boolean {
@@ -35,7 +35,11 @@ function isUnsafeRegex(pattern: string): boolean {
 function safeRegexTest(pattern: string, input: string): boolean {
   if (isUnsafeRegex(pattern)) return false;
   const bounded = input.length > MAX_REGEX_INPUT_LEN ? input.slice(0, MAX_REGEX_INPUT_LEN) : input;
-  try { return new RegExp(pattern, "i").test(bounded); } catch { return false; }
+  try {
+    return new RegExp(pattern, "i").test(bounded);
+  } catch {
+    return false;
+  }
 }
 
 // ─── Filter evaluation ───────────────────────────────────────────────────
@@ -59,28 +63,45 @@ export function applyFilter(email: EmailForFilter, f: Filter): boolean {
   const v = f.value.toLowerCase();
   const fieldVal = (() => {
     switch (f.field) {
-      case "from": return `${email.from_addr} ${email.from_name}`.toLowerCase();
-      case "to": return (email.to_addrs || "").toLowerCase();
-      case "cc": return (email.cc || "").toLowerCase();
-      case "list_id": return (email.list_id || "").toLowerCase();
-      case "is_reply": return (email.in_reply_to ? "true" : "false");
-      case "subject": return (email.subject || "").toLowerCase();
-      case "body": return (email.body_text || "").toLowerCase();
-      case "domain": return (email.from_addr.split("@")[1] || "").toLowerCase();
-      case "has_attachment": return email.has_attachment ? "true" : "false";
-      default: return "";
+      case "from":
+        return `${email.from_addr} ${email.from_name}`.toLowerCase();
+      case "to":
+        return (email.to_addrs || "").toLowerCase();
+      case "cc":
+        return (email.cc || "").toLowerCase();
+      case "list_id":
+        return (email.list_id || "").toLowerCase();
+      case "is_reply":
+        return email.in_reply_to ? "true" : "false";
+      case "subject":
+        return (email.subject || "").toLowerCase();
+      case "body":
+        return (email.body_text || "").toLowerCase();
+      case "domain":
+        return (email.from_addr.split("@")[1] || "").toLowerCase();
+      case "has_attachment":
+        return email.has_attachment ? "true" : "false";
+      default:
+        return "";
     }
   })();
   switch (f.op) {
-    case "contains": return fieldVal.includes(v);
-    case "equals": return fieldVal === v;
-    case "starts_with": return fieldVal.startsWith(v);
-    case "ends_with": return fieldVal.endsWith(v);
-    case "not_contains": return !fieldVal.includes(v);
-    case "not_equals": return fieldVal !== v;
+    case "contains":
+      return fieldVal.includes(v);
+    case "equals":
+      return fieldVal === v;
+    case "starts_with":
+      return fieldVal.startsWith(v);
+    case "ends_with":
+      return fieldVal.endsWith(v);
+    case "not_contains":
+      return !fieldVal.includes(v);
+    case "not_equals":
+      return fieldVal !== v;
     case "regex":
       return safeRegexTest(f.value, fieldVal);
-    default: return false;
+    default:
+      return false;
   }
 }
 
@@ -88,7 +109,13 @@ export const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
 
 function evalNode(email: EmailForFilter, node: RuleNode): boolean {
   if (node.type === "cond") {
-    return applyFilter(email, { id: "", folder_id: "", field: node.field, op: node.op, value: node.value });
+    return applyFilter(email, {
+      id: "",
+      folder_id: "",
+      field: node.field,
+      op: node.op,
+      value: node.value,
+    });
   }
   if (node.op === "and") return node.children.every((c) => evalNode(email, c));
   return node.children.some((c) => evalNode(email, c));
@@ -107,7 +134,13 @@ export function collectMatchingLeaves(
   node: RuleNode,
 ): Array<{ field: string; op: string; value: string }> {
   if (node.type === "cond") {
-    return applyFilter(email, { id: "", folder_id: "", field: node.field, op: node.op, value: node.value })
+    return applyFilter(email, {
+      id: "",
+      folder_id: "",
+      field: node.field,
+      op: node.op,
+      value: node.value,
+    })
       ? [{ field: node.field, op: node.op, value: node.value }]
       : [];
   }
@@ -117,7 +150,14 @@ export function collectMatchingLeaves(
 // ─── Folder matching ────────────────────────────────────────────────────
 
 export type FolderMatch =
-  | { kind: "match"; folder_id: string; filter: Filter | null; matched_filters: Filter[]; all_matched_folder_ids: string[]; tree_used: boolean }
+  | {
+      kind: "match";
+      folder_id: string;
+      filter: Filter | null;
+      matched_filters: Filter[];
+      all_matched_folder_ids: string[];
+      tree_used: boolean;
+    }
   | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
 
 /** Walks the configured folders + filters and returns the best match
@@ -133,7 +173,12 @@ export function matchByFilters(
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
     byFolder.get(f.folder_id)!.push(f);
   }
-  const matched: Array<{ folder: Folder; filter: Filter | null; allMatches: Filter[]; treeUsed: boolean }> = [];
+  const matched: Array<{
+    folder: Folder;
+    filter: Filter | null;
+    allMatches: Filter[];
+    treeUsed: boolean;
+  }> = [];
   const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
   for (const folder of folders) {
     const fs = byFolder.get(folder.id) || [];
@@ -142,7 +187,8 @@ export function matchByFilters(
 
     // Tree takes precedence when present and non-empty.
     const tree = folder.filter_tree;
-    const hasTree = !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
+    const hasTree =
+      !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
 
     let passes = false;
     let includeHits: Filter[] = [];
@@ -177,8 +223,8 @@ export function matchByFilters(
   }
   if (matched.length > 0) {
     // Sort: highest priority first, then folder name asc for stable tiebreak.
-    matched.sort((a, b) =>
-      b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name)
+    matched.sort(
+      (a, b) => b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name),
     );
     return {
       kind: "match",
@@ -190,8 +236,8 @@ export function matchByFilters(
     };
   }
   if (excludedFolders.length > 0) {
-    excludedFolders.sort((a, b) =>
-      b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name)
+    excludedFolders.sort(
+      (a, b) => b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name),
     );
     return {
       kind: "excluded",

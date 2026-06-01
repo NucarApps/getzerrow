@@ -2,7 +2,13 @@ import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { Upload, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -23,7 +29,14 @@ type Props = {
 };
 
 export function ImageCropUpload({
-  userId, kind, value, onChange, aspect, shape = "rect", className, outputSize = 1200,
+  userId,
+  kind,
+  value,
+  onChange,
+  aspect,
+  shape = "rect",
+  className,
+  outputSize = 1200,
 }: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -75,22 +88,26 @@ export function ImageCropUpload({
       <label className="block cursor-pointer">
         <input type="file" accept="image/*" className="hidden" onChange={onPick} />
         {value ? (
-          <div className={cn(
-            "group relative overflow-hidden border border-border bg-card",
-            shape === "circle" ? "rounded-full" : "rounded-lg",
-            kind === "avatar" ? "h-24 w-24" : "h-32 w-full"
-          )}>
+          <div
+            className={cn(
+              "group relative overflow-hidden border border-border bg-card",
+              shape === "circle" ? "rounded-full" : "rounded-lg",
+              kind === "avatar" ? "h-24 w-24" : "h-32 w-full",
+            )}
+          >
             <img src={value} alt="" className="h-full w-full object-cover" />
             <div className="absolute inset-0 hidden items-center justify-center bg-black/50 text-xs text-white group-hover:flex">
               <Upload className="mr-1 h-3.5 w-3.5" /> Replace
             </div>
           </div>
         ) : (
-          <div className={cn(
-            "flex items-center justify-center border-2 border-dashed border-border bg-card/40 text-xs text-muted-foreground hover:bg-card/70",
-            shape === "circle" ? "rounded-full" : "rounded-lg",
-            kind === "avatar" ? "h-24 w-24" : "h-32 w-full"
-          )}>
+          <div
+            className={cn(
+              "flex items-center justify-center border-2 border-dashed border-border bg-card/40 text-xs text-muted-foreground hover:bg-card/70",
+              shape === "circle" ? "rounded-full" : "rounded-lg",
+              kind === "avatar" ? "h-24 w-24" : "h-32 w-full",
+            )}
+          >
             <div className="flex flex-col items-center gap-1">
               <Upload className="h-4 w-4" />
               <span>{kind === "avatar" ? "Photo" : "Cover image"}</span>
@@ -101,7 +118,10 @@ export function ImageCropUpload({
       {value && (
         <button
           type="button"
-          onClick={(e) => { e.preventDefault(); onChange(null); }}
+          onClick={(e) => {
+            e.preventDefault();
+            onChange(null);
+          }}
           className="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-background border border-border text-muted-foreground hover:text-destructive"
           aria-label="Remove image"
         >
@@ -111,7 +131,9 @@ export function ImageCropUpload({
 
       <Dialog open={!!src} onOpenChange={(o) => !o && setSrc(null)}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Crop {kind === "avatar" ? "photo" : "cover"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Crop {kind === "avatar" ? "photo" : "cover"}</DialogTitle>
+          </DialogHeader>
           <div className="relative h-72 w-full overflow-hidden rounded-md bg-black">
             {src && (
               <Cropper
@@ -129,12 +151,26 @@ export function ImageCropUpload({
           </div>
           <div className="px-1">
             <div className="mb-1 text-xs text-muted-foreground">Zoom</div>
-            <Slider min={1} max={4} step={0.05} value={[zoom]} onValueChange={(v) => setZoom(v[0])} />
+            <Slider
+              min={1}
+              max={4}
+              step={0.05}
+              value={[zoom]}
+              onValueChange={(v) => setZoom(v[0])}
+            />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setSrc(null)} disabled={uploading}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setSrc(null)} disabled={uploading}>
+              Cancel
+            </Button>
             <Button onClick={onConfirm} disabled={uploading}>
-              {uploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading…</> : "Save"}
+              {uploading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading…
+                </>
+              ) : (
+                "Save"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -154,7 +190,7 @@ async function cropToBlob(src: string, area: Area, maxSize: number): Promise<Blo
   const ctx = canvas.getContext("2d")!;
   ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, w, h);
   return new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas empty"))), "image/jpeg", 0.9)
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas empty"))), "image/jpeg", 0.9),
   );
 }
 

@@ -5,7 +5,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Trash2, ShieldOff, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -47,7 +51,13 @@ const OP_OPTS: Array<{ value: string; label: string }> = [
   { value: "regex", label: "matches regex" },
 ];
 
-export function InboxOverrides({ accountId, accountEmail }: { accountId: string | null; accountEmail: string | null }) {
+export function InboxOverrides({
+  accountId,
+  accountEmail,
+}: {
+  accountId: string | null;
+  accountEmail: string | null;
+}) {
   const qc = useQueryClient();
   const [matchType, setMatchType] = useState<"email" | "domain">("email");
   const [value, setValue] = useState("");
@@ -85,7 +95,10 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
   async function add() {
     const v = value.trim().toLowerCase();
     if (!v) return;
-    if (!accountId) { toast.error("Pick a Gmail account first"); return; }
+    if (!accountId) {
+      toast.error("Pick a Gmail account first");
+      return;
+    }
     if (matchType === "email" && !v.includes("@")) {
       toast.error("Enter a full email address");
       return;
@@ -96,12 +109,19 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
     }
     setBusy(true);
     const { data: u } = await supabase.auth.getUser();
-    if (!u.user) { setBusy(false); toast.error("Not signed in"); return; }
+    if (!u.user) {
+      setBusy(false);
+      toast.error("Not signed in");
+      return;
+    }
     const { error } = await supabase
       .from("inbox_overrides")
       .insert({ user_id: u.user.id, gmail_account_id: accountId, match_type: matchType, value: v });
     setBusy(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     setValue("");
     toast.success(`Added ${v} to your inbox list`);
     qc.invalidateQueries({ queryKey: ["inbox-overrides", accountId] });
@@ -109,7 +129,10 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
 
   async function remove(id: string) {
     const { error } = await supabase.from("inbox_overrides").delete().eq("id", id);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     qc.invalidateQueries({ queryKey: ["inbox-overrides", accountId] });
     qc.invalidateQueries({ queryKey: ["inbox-override-exceptions"] });
   }
@@ -134,14 +157,24 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
         </div>
         <p className="text-sm text-muted-foreground">
           Senders on this list skip folder rules and AI sorting for
-          {accountEmail ? <> <span className="font-medium text-foreground">{accountEmail}</span></> : " this inbox"}.
-          Add exceptions to let specific emails (e.g. subject starts with "RE: Daily Reports") be sorted normally.
+          {accountEmail ? (
+            <>
+              {" "}
+              <span className="font-medium text-foreground">{accountEmail}</span>
+            </>
+          ) : (
+            " this inbox"
+          )}
+          . Add exceptions to let specific emails (e.g. subject starts with "RE: Daily Reports") be
+          sorted normally.
         </p>
       </div>
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <Select value={matchType} onValueChange={(v) => setMatchType(v as "email" | "domain")}>
-          <SelectTrigger className="sm:w-36"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="sm:w-36">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="email">Email address</SelectItem>
             <SelectItem value="domain">Domain</SelectItem>
@@ -152,18 +185,37 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
           placeholder={matchType === "email" ? "ceo@chevrolet.com" : "chevrolet.com"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") add();
+          }}
         />
-        <Button onClick={add} disabled={busy}>{busy ? "Adding…" : "Add"}</Button>
+        <Button onClick={add} disabled={busy}>
+          {busy ? "Adding…" : "Add"}
+        </Button>
       </div>
 
       {rows.length > 0 && (
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | "email" | "domain")}>
             <TabsList className="bg-card border border-border rounded-md p-0.5 h-auto gap-0.5">
-              <TabsTrigger value="all" className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none">All ({rows.length})</TabsTrigger>
-              <TabsTrigger value="email" className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none">Emails ({emailCount})</TabsTrigger>
-              <TabsTrigger value="domain" className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none">Domains ({domainCount})</TabsTrigger>
+              <TabsTrigger
+                value="all"
+                className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+              >
+                All ({rows.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="email"
+                className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+              >
+                Emails ({emailCount})
+              </TabsTrigger>
+              <TabsTrigger
+                value="domain"
+                className="px-3 py-1.5 text-xs text-foreground/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+              >
+                Domains ({domainCount})
+              </TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="relative sm:w-64">
@@ -207,7 +259,11 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
                   onClick={() => setExpanded((s) => ({ ...s, [r.id]: !isOpen }))}
                   aria-label={isOpen ? "Collapse exceptions" : "Expand exceptions"}
                 >
-                  {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  {isOpen ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
                 </button>
                 <span className="shrink-0 rounded-sm bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-destructive">
                   {r.match_type}
@@ -218,7 +274,12 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
                     {rowEx.length} exception{rowEx.length === 1 ? "" : "s"}
                   </span>
                 )}
-                <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => remove(r.id)}>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 shrink-0"
+                  onClick={() => remove(r.id)}
+                >
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </div>
@@ -226,7 +287,9 @@ export function InboxOverrides({ accountId, accountEmail }: { accountId: string 
                 <ExceptionEditor
                   override={r}
                   exceptions={rowEx}
-                  onChanged={() => qc.invalidateQueries({ queryKey: ["inbox-override-exceptions"] })}
+                  onChanged={() =>
+                    qc.invalidateQueries({ queryKey: ["inbox-override-exceptions"] })
+                  }
                 />
               )}
             </div>
@@ -256,21 +319,33 @@ function ExceptionEditor({
     if (!v) return;
     setBusy(true);
     const { data: u } = await supabase.auth.getUser();
-    if (!u.user) { setBusy(false); toast.error("Not signed in"); return; }
+    if (!u.user) {
+      setBusy(false);
+      toast.error("Not signed in");
+      return;
+    }
     const { error } = await supabase.from("inbox_override_exceptions").insert({
       override_id: override.id,
       user_id: u.user.id,
-      field, op, value: v,
+      field,
+      op,
+      value: v,
     });
     setBusy(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     setValue("");
     onChanged();
   }
 
   async function remove(id: string) {
     const { error } = await supabase.from("inbox_override_exceptions").delete().eq("id", id);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     onChanged();
   }
 
@@ -298,7 +373,12 @@ function ExceptionEditor({
               {OP_OPTS.find((o) => o.value === e.op)?.label ?? e.op}
             </span>
             <span className="min-w-0 flex-1 truncate break-all font-mono">{e.value}</span>
-            <Button size="icon" variant="ghost" className="h-5 w-5 shrink-0" onClick={() => remove(e.id)}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5 shrink-0"
+              onClick={() => remove(e.id)}
+            >
               <Trash2 className="h-3 w-3" />
             </Button>
           </div>
@@ -306,23 +386,37 @@ function ExceptionEditor({
       </div>
       <div className="mt-2 flex flex-col gap-1.5 sm:flex-row sm:items-center">
         <Select value={field} onValueChange={setField}>
-          <SelectTrigger className="h-8 text-xs sm:w-32"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 text-xs sm:w-32">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
-            {FIELD_OPTS.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
+            {FIELD_OPTS.map((f) => (
+              <SelectItem key={f.value} value={f.value}>
+                {f.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={op} onValueChange={setOp}>
-          <SelectTrigger className="h-8 text-xs sm:w-36"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 text-xs sm:w-36">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
-            {OP_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            {OP_OPTS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Input
           className="h-8 min-w-0 flex-1 text-xs"
-          placeholder={op === "regex" ? "^RE: Daily Reports" : 'RE: Daily Reports'}
+          placeholder={op === "regex" ? "^RE: Daily Reports" : "RE: Daily Reports"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") add();
+          }}
         />
         <Button size="sm" onClick={add} disabled={busy} className="shrink-0">
           <Plus className="mr-1 h-3 w-3" /> Add

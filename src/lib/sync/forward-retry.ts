@@ -45,11 +45,14 @@ export async function retryForwardAttempts(maxRows = 50) {
     }
     if (!forwardTo) {
       // Folder was deleted or forward_to cleared — abandon the retry.
-      await supabaseAdmin.from("emails").update({
-        forward_next_retry_at: null,
-        forward_locked_at: null,
-        forward_last_error: "forward_to no longer set",
-      }).eq("id", row.id);
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          forward_next_retry_at: null,
+          forward_locked_at: null,
+          forward_last_error: "forward_to no longer set",
+        })
+        .eq("id", row.id);
       gaveUp++;
       continue;
     }
@@ -61,34 +64,45 @@ export async function retryForwardAttempts(maxRows = 50) {
         `Fwd: ${row.subject || "(no subject)"}`,
         `---------- Forwarded message ----------\nFrom: ${row.from_name || ""} <${row.from_addr}>\nDate: ${row.received_at}\nSubject: ${row.subject}\n\n${row.body_text || row.snippet || ""}`,
       );
-      await supabaseAdmin.from("emails").update({
-        forwarded_to: forwardTo,
-        forwarded_at: new Date().toISOString(),
-        forward_attempts: 0,
-        forward_last_error: null,
-        forward_next_retry_at: null,
-        forward_locked_at: null,
-      }).eq("id", row.id);
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          forwarded_to: forwardTo,
+          forwarded_at: new Date().toISOString(),
+          forward_attempts: 0,
+          forward_last_error: null,
+          forward_next_retry_at: null,
+          forward_locked_at: null,
+        })
+        .eq("id", row.id);
       ok++;
     } catch (e) {
       const errMsg = (e as Error)?.message?.slice(0, 500) ?? "unknown";
       const nextAttempt = (row.forward_attempts ?? 0) + 1;
       if (nextAttempt >= FORWARD_MAX_ATTEMPTS) {
-        await supabaseAdmin.from("emails").update({
-          forward_attempts: nextAttempt,
-          forward_last_error: errMsg,
-          forward_next_retry_at: null, // give up — operator can re-trigger
-          forward_locked_at: null,
-        }).eq("id", row.id);
+        await supabaseAdmin
+          .from("emails")
+          .update({
+            forward_attempts: nextAttempt,
+            forward_last_error: errMsg,
+            forward_next_retry_at: null, // give up — operator can re-trigger
+            forward_locked_at: null,
+          })
+          .eq("id", row.id);
         gaveUp++;
       } else {
-        const backoff = jitter(FORWARD_BACKOFF_SECONDS[Math.min(nextAttempt - 1, FORWARD_BACKOFF_SECONDS.length - 1)]);
-        await supabaseAdmin.from("emails").update({
-          forward_attempts: nextAttempt,
-          forward_last_error: errMsg,
-          forward_next_retry_at: new Date(Date.now() + backoff * 1000).toISOString(),
-          forward_locked_at: null,
-        }).eq("id", row.id);
+        const backoff = jitter(
+          FORWARD_BACKOFF_SECONDS[Math.min(nextAttempt - 1, FORWARD_BACKOFF_SECONDS.length - 1)],
+        );
+        await supabaseAdmin
+          .from("emails")
+          .update({
+            forward_attempts: nextAttempt,
+            forward_last_error: errMsg,
+            forward_next_retry_at: new Date(Date.now() + backoff * 1000).toISOString(),
+            forward_locked_at: null,
+          })
+          .eq("id", row.id);
         failed++;
       }
     }

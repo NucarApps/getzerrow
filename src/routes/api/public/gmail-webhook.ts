@@ -84,7 +84,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details: `OIDC verify failed: ${result.reason}`,
                 });
               } catch (logErr) {
-                logError("webhook.pubsub_log_failed", { run_id: runId, kind: "push_unauthorized_oidc" }, logErr);
+                logError(
+                  "webhook.pubsub_log_failed",
+                  { run_id: runId, kind: "push_unauthorized_oidc" },
+                  logErr,
+                );
               }
               return new Response("Unauthorized", { status: 401 });
             }
@@ -111,7 +115,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details,
                 });
               } catch (logErr) {
-                logError("webhook.pubsub_log_failed", { run_id: runId, kind: "push_unauthorized_legacy" }, logErr);
+                logError(
+                  "webhook.pubsub_log_failed",
+                  { run_id: runId, kind: "push_unauthorized_legacy" },
+                  logErr,
+                );
               }
               return new Response("Unauthorized", { status: 401 });
             }
@@ -124,7 +132,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 details: "Authenticated via legacy ?token= — migrate subscription to OIDC",
               });
             } catch (logErr) {
-              logError("webhook.pubsub_log_failed", { run_id: runId, kind: "push_legacy_auth" }, logErr);
+              logError(
+                "webhook.pubsub_log_failed",
+                { run_id: runId, kind: "push_legacy_auth" },
+                logErr,
+              );
             }
           }
         }
@@ -165,7 +177,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details: `Duplicate Pub/Sub delivery within 60s (original ${dup.id})`,
                 });
               } catch (logErr) {
-                logError("webhook.pubsub_log_failed", { run_id: runId, kind: "push_duplicate", message_id: messageId }, logErr);
+                logError(
+                  "webhook.pubsub_log_failed",
+                  { run_id: runId, kind: "push_duplicate", message_id: messageId },
+                  logErr,
+                );
               }
               return new Response("ok (duplicate)", { status: 200 });
             }
@@ -184,7 +200,10 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               details = `Failed to decode message.data: ${(decodeErr as Error).message}`;
               payload = { raw: dataB64 };
             }
-            const decoded = (payload ?? {}) as { emailAddress?: string; historyId?: number | string };
+            const decoded = (payload ?? {}) as {
+              emailAddress?: string;
+              historyId?: number | string;
+            };
             emailAddress = decoded.emailAddress ?? null;
             historyId = decoded.historyId != null ? String(decoded.historyId) : null;
 
@@ -226,10 +245,13 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   try {
                     const w = await topUpWatch(acc.id, acc.watch_expiration);
                     if (w) {
-                      await supabaseAdmin.from("gmail_accounts").update({
-                        history_id: w.historyId,
-                        watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
-                      }).eq("id", acc.id);
+                      await supabaseAdmin
+                        .from("gmail_accounts")
+                        .update({
+                          history_id: w.historyId,
+                          watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
+                        })
+                        .eq("id", acc.id);
                       await supabaseAdmin.from("pubsub_events").insert({
                         event_type: "watch_renew",
                         email_address: acc.email_address,
@@ -239,22 +261,30 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                     }
                   } catch (topUpErr) {
                     // Non-fatal — renewal cron will retry.
-                    logError("webhook.topup_failed", {
+                    logError(
+                      "webhook.topup_failed",
+                      {
+                        run_id: runId,
+                        account_id: acc.id,
+                        email_address: acc.email_address,
+                        message_id: messageId,
+                      },
+                      topUpErr,
+                    );
+                  }
+                } catch (e) {
+                  logError(
+                    "webhook.sync_failed",
+                    {
                       run_id: runId,
                       account_id: acc.id,
                       email_address: acc.email_address,
+                      history_id: historyId,
                       message_id: messageId,
-                    }, topUpErr);
-                  }
-                } catch (e) {
-                  logError("webhook.sync_failed", {
-                    run_id: runId,
-                    account_id: acc.id,
-                    email_address: acc.email_address,
-                    history_id: historyId,
-                    message_id: messageId,
-                    duration_ms: Date.now() - tStart,
-                  }, e);
+                      duration_ms: Date.now() - tStart,
+                    },
+                    e,
+                  );
                   errorMsg = (e as Error)?.message ?? String(e);
                 }
               }
@@ -272,34 +302,38 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 try {
                   await drainWithBudget(INLINE_DRAIN_BUDGET_MS);
                 } catch (e) {
-                  logError("webhook.inline_drain_failed", {
-                    run_id: runId,
-                    email_address: emailAddress,
-                    message_id: messageId,
-                    enqueued: enqueuedCount,
-                  }, e);
+                  logError(
+                    "webhook.inline_drain_failed",
+                    {
+                      run_id: runId,
+                      email_address: emailAddress,
+                      message_id: messageId,
+                      enqueued: enqueuedCount,
+                    },
+                    e,
+                  );
                 }
               }
             }
           }
         } catch (e: unknown) {
           const err = e as Error;
-          logError("webhook.handler_error", {
-            run_id: runId,
-            message_id: messageId,
-            email_address: emailAddress,
-            duration_ms: Date.now() - tStart,
-          }, err);
+          logError(
+            "webhook.handler_error",
+            {
+              run_id: runId,
+              message_id: messageId,
+              email_address: emailAddress,
+              duration_ms: Date.now() - tStart,
+            },
+            err,
+          );
           errorMsg = err?.message ?? String(e);
         } finally {
           try {
             // Single row per request. Synthetic tests are tagged so they
             // can be filtered out of real push stats.
-            const event_type = isTest
-              ? "webhook_test"
-              : hadData
-              ? "push"
-              : "push_empty";
+            const event_type = isTest ? "webhook_test" : hadData ? "push" : "push_empty";
             // End-to-end latency: time from Pub/Sub publishTime to the
             // moment we recorded this row. Lets ops query p50/p95 push→ack
             // latency in one SQL.
@@ -323,7 +357,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 : details,
             });
           } catch (logErr) {
-            logError("webhook.pubsub_log_failed", { run_id: runId, kind: "summary", message_id: messageId }, logErr);
+            logError(
+              "webhook.pubsub_log_failed",
+              { run_id: runId, kind: "summary", message_id: messageId },
+              logErr,
+            );
           }
         }
         return new Response("ok", { status: 200 });

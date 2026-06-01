@@ -3,9 +3,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  listMyGmailAccounts, startConnectGmail, disconnectGmailAccount,
-  triggerBackfill, triggerWeekBackfill, triggerSync, renewGmailWatch,
-  startDeepBackfill, cancelDeepBackfill, getBackfillStatus,
+  listMyGmailAccounts,
+  startConnectGmail,
+  disconnectGmailAccount,
+  triggerBackfill,
+  triggerWeekBackfill,
+  triggerSync,
+  renewGmailWatch,
+  startDeepBackfill,
+  cancelDeepBackfill,
+  getBackfillStatus,
 } from "@/lib/gmail.functions";
 import { deleteAccount } from "@/lib/account.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,8 +21,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,11 +68,16 @@ function SettingsPage() {
   const { activeAccountId, setActiveAccountId } = useAccountSelection();
   const [scopedEmail, setScopedEmail] = useState<string | null>(null);
 
-
   async function run(key: string, fn: () => Promise<any>, msg: string) {
     setBusy(key);
-    try { await fn(); if (msg) toast.success(msg); qc.invalidateQueries({ queryKey: ["gmail-accounts"] }); qc.invalidateQueries({ queryKey: ["emails"] }); }
-    catch (e: any) { toast.error(e.message); }
+    try {
+      await fn();
+      if (msg) toast.success(msg);
+      qc.invalidateQueries({ queryKey: ["gmail-accounts"] });
+      qc.invalidateQueries({ queryKey: ["emails"] });
+    } catch (e: any) {
+      toast.error(e.message);
+    }
     setBusy(null);
   }
 
@@ -67,7 +86,10 @@ function SettingsPage() {
     try {
       const { url } = await connect({ data: loginHint ? { login_hint: loginHint } : {} });
       window.location.href = url;
-    } catch (e: any) { toast.error(e.message); setBusy(null); }
+    } catch (e: any) {
+      toast.error(e.message);
+      setBusy(null);
+    }
   }
 
   const accounts = accountsQ.data?.accounts ?? [];
@@ -79,9 +101,24 @@ function SettingsPage() {
 
         <Tabs defaultValue="accounts" className="space-y-6">
           <TabsList className="bg-transparent p-0 h-auto gap-6 border-b border-border rounded-none w-full justify-start">
-            <TabsTrigger value="accounts" className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none">Accounts</TabsTrigger>
-            <TabsTrigger value="filters" className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none">Inbox filters</TabsTrigger>
-            <TabsTrigger value="activity" className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none">Activity</TabsTrigger>
+            <TabsTrigger
+              value="accounts"
+              className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none"
+            >
+              Accounts
+            </TabsTrigger>
+            <TabsTrigger
+              value="filters"
+              className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none"
+            >
+              Inbox filters
+            </TabsTrigger>
+            <TabsTrigger
+              value="activity"
+              className="bg-transparent rounded-none px-0 pb-3 pt-0 border-b-2 border-transparent text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-primary data-[state=active]:shadow-none"
+            >
+              Activity
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="accounts" className="space-y-6">
@@ -93,21 +130,34 @@ function SettingsPage() {
                     Connect multiple Gmail inboxes and switch between them from the inbox header.
                   </p>
                 </div>
-                <Button onClick={() => startConnect()} disabled={busy !== null} className="self-start md:self-auto">
-                  <Plus className="mr-1.5 h-4 w-4" />{busy === "connect" ? "Redirecting…" : accounts.length === 0 ? "Connect Gmail" : "Add another Gmail"}
+                <Button
+                  onClick={() => startConnect()}
+                  disabled={busy !== null}
+                  className="self-start md:self-auto"
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  {busy === "connect"
+                    ? "Redirecting…"
+                    : accounts.length === 0
+                      ? "Connect Gmail"
+                      : "Add another Gmail"}
                 </Button>
               </div>
 
               <div className="mt-6 space-y-3">
                 {accounts.length === 0 && (
                   <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                    No Gmail connected yet. Sign out and sign back in with Google, or click "Connect Gmail".
+                    No Gmail connected yet. Sign out and sign back in with Google, or click "Connect
+                    Gmail".
                   </p>
                 )}
                 {accounts.map((a) => {
                   const exp = a.watch_expiration ? new Date(a.watch_expiration) : null;
                   const watchActive = exp && exp > new Date();
-                  const bf = backfillQ.data && backfillQ.data.gmail_account_id === a.id ? backfillQ.data : null;
+                  const bf =
+                    backfillQ.data && backfillQ.data.gmail_account_id === a.id
+                      ? backfillQ.data
+                      : null;
                   const bfActive = bf && (bf.status === "listing" || bf.status === "processing");
                   return (
                     <div key={a.id} className="rounded-md border border-border p-4">
@@ -123,53 +173,153 @@ function SettingsPage() {
                           </div>
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {watchActive ? (
-                              <><CheckCircle2 className="h-3 w-3 text-primary" />Real-time push active · renews {exp!.toLocaleDateString()}</>
+                              <>
+                                <CheckCircle2 className="h-3 w-3 text-primary" />
+                                Real-time push active · renews {exp!.toLocaleDateString()}
+                              </>
                             ) : (
-                              <><AlertCircle className="h-3 w-3" />No active push watch</>
+                              <>
+                                <AlertCircle className="h-3 w-3" />
+                                No active push watch
+                              </>
                             )}
-                            {a.last_poll_at && <span>· last synced {new Date(a.last_poll_at).toLocaleString()}</span>}
+                            {a.last_poll_at && (
+                              <span>· last synced {new Date(a.last_poll_at).toLocaleString()}</span>
+                            )}
                           </div>
                         </div>
-                        <Button size="icon" variant="ghost" onClick={() => run(`del-${a.id}`, () => disconnect({ data: { account_id: a.id } }), "Disconnected")} disabled={busy !== null}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() =>
+                            run(
+                              `del-${a.id}`,
+                              () => disconnect({ data: { account_id: a.id } }),
+                              "Disconnected",
+                            )
+                          }
+                          disabled={busy !== null}
+                        >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {a.needs_reauth && (
-                          <Button size="sm" variant="default" onClick={() => startConnect(a.email_address)} disabled={busy !== null}>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => startConnect(a.email_address)}
+                            disabled={busy !== null}
+                          >
                             {busy === `reconnect-${a.email_address}` ? "Redirecting…" : "Reconnect"}
                           </Button>
                         )}
-                        <Button size="sm" onClick={() => run(`bf-${a.id}`, () => backfill({ data: { account_id: a.id, count: 30 } }), "Backfilled latest 30")} disabled={busy !== null}>
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            run(
+                              `bf-${a.id}`,
+                              () => backfill({ data: { account_id: a.id, count: 30 } }),
+                              "Backfilled latest 30",
+                            )
+                          }
+                          disabled={busy !== null}
+                        >
                           {busy === `bf-${a.id}` ? "Backfilling…" : "Backfill recent 30"}
                         </Button>
-                        <Button size="sm" variant="secondary" onClick={() => run(`week-${a.id}`, async () => {
-                          const r: any = await weekBackfill({ data: { account_id: a.id, days: 7, max: 1000 } });
-                          toast.success(`Pulled ${r?.processed ?? 0} new messages from the last 7 days (${r?.alreadyHad ?? 0} already in sync)`);
-                        }, "")} disabled={busy !== null}>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() =>
+                            run(
+                              `week-${a.id}`,
+                              async () => {
+                                const r: any = await weekBackfill({
+                                  data: { account_id: a.id, days: 7, max: 1000 },
+                                });
+                                toast.success(
+                                  `Pulled ${r?.processed ?? 0} new messages from the last 7 days (${r?.alreadyHad ?? 0} already in sync)`,
+                                );
+                              },
+                              "",
+                            )
+                          }
+                          disabled={busy !== null}
+                        >
                           {busy === `week-${a.id}` ? "Catching up…" : "Catch up last 7 days"}
                         </Button>
                         {!bfActive ? (
-                          <Button size="sm" variant="default" onClick={() => run(`deep-${a.id}`, async () => {
-                            const r: any = await startDeep({ data: { account_id: a.id, months: 6 } });
-                            qc.invalidateQueries({ queryKey: ["backfill-status"] });
-                            toast.success(r?.reused ? "Import already running — banner will update with progress" : "Started importing your last 6 months of email");
-                          }, "")} disabled={busy !== null}>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() =>
+                              run(
+                                `deep-${a.id}`,
+                                async () => {
+                                  const r: any = await startDeep({
+                                    data: { account_id: a.id, months: 6 },
+                                  });
+                                  qc.invalidateQueries({ queryKey: ["backfill-status"] });
+                                  toast.success(
+                                    r?.reused
+                                      ? "Import already running — banner will update with progress"
+                                      : "Started importing your last 6 months of email",
+                                  );
+                                },
+                                "",
+                              )
+                            }
+                            disabled={busy !== null}
+                          >
                             {busy === `deep-${a.id}` ? "Starting…" : "Pull last 6 months"}
                           </Button>
                         ) : (
-                          <Button size="sm" variant="destructive" onClick={() => run(`cancel-${a.id}`, async () => {
-                            await cancelDeep({ data: { job_id: bf!.id } });
-                            qc.invalidateQueries({ queryKey: ["backfill-status"] });
-                            toast.success("Import canceled — already-pulled emails are kept");
-                          }, "")} disabled={busy !== null}>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() =>
+                              run(
+                                `cancel-${a.id}`,
+                                async () => {
+                                  await cancelDeep({ data: { job_id: bf!.id } });
+                                  qc.invalidateQueries({ queryKey: ["backfill-status"] });
+                                  toast.success("Import canceled — already-pulled emails are kept");
+                                },
+                                "",
+                              )
+                            }
+                            disabled={busy !== null}
+                          >
                             {busy === `cancel-${a.id}` ? "Canceling…" : "Cancel import"}
                           </Button>
                         )}
-                        <Button size="sm" variant="outline" onClick={() => run(`sync-${a.id}`, () => sync({ data: { account_id: a.id } }), "Synced")} disabled={busy !== null}>
-                          <RefreshCw className="mr-1.5 h-3 w-3" />{busy === `sync-${a.id}` ? "Syncing…" : "Sync now"}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            run(
+                              `sync-${a.id}`,
+                              () => sync({ data: { account_id: a.id } }),
+                              "Synced",
+                            )
+                          }
+                          disabled={busy !== null}
+                        >
+                          <RefreshCw className="mr-1.5 h-3 w-3" />
+                          {busy === `sync-${a.id}` ? "Syncing…" : "Sync now"}
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => run(`watch-${a.id}`, () => renew({ data: { account_id: a.id } }), "Watch renewed")} disabled={busy !== null}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            run(
+                              `watch-${a.id}`,
+                              () => renew({ data: { account_id: a.id } }),
+                              "Watch renewed",
+                            )
+                          }
+                          disabled={busy !== null}
+                        >
                           {busy === `watch-${a.id}` ? "Renewing…" : "Renew push watch"}
                         </Button>
                       </div>
@@ -183,7 +333,6 @@ function SettingsPage() {
                     </div>
                   );
                 })}
-
               </div>
             </Card>
 
@@ -194,11 +343,13 @@ function SettingsPage() {
             <DangerZone />
           </TabsContent>
 
-
           <TabsContent value="filters" className="space-y-4">
             <AccountPicker
               value={activeAccountId}
-              onChange={(id, email) => { setActiveAccountId(id); setScopedEmail(email); }}
+              onChange={(id, email) => {
+                setActiveAccountId(id);
+                setScopedEmail(email);
+              }}
               label="Inbox"
             />
             <InboxOverrides accountId={activeAccountId} accountEmail={scopedEmail} />
@@ -207,14 +358,18 @@ function SettingsPage() {
           <TabsContent value="activity" className="space-y-6">
             <AccountPicker
               value={activeAccountId}
-              onChange={(id, email) => { setActiveAccountId(id); setScopedEmail(email); }}
+              onChange={(id, email) => {
+                setActiveAccountId(id);
+                setScopedEmail(email);
+              }}
               label="Inbox"
             />
             <Card className="overflow-hidden p-0">
               <div className="border-b bg-muted/20 p-4 md:p-6">
                 <h2 className="font-display text-2xl">Account health</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Live status for {scopedEmail ?? "the selected mailbox"} — auto-refreshes every 15 seconds.
+                  Live status for {scopedEmail ?? "the selected mailbox"} — auto-refreshes every 15
+                  seconds.
                 </p>
               </div>
               <div className="p-4 md:p-6">
@@ -240,7 +395,11 @@ function DangerZone() {
     setBusy(true);
     try {
       await remove();
-      try { await supabase.auth.signOut(); } catch { /* noop */ }
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        /* noop */
+      }
       toast.success("Account deleted");
       window.location.href = "/";
     } catch (e: unknown) {
@@ -254,21 +413,34 @@ function DangerZone() {
     <Card className="border-destructive/40 p-4 md:p-6">
       <h2 className="font-display text-xl text-destructive">Delete account</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Permanently delete your Zerrow account, revoke Google access, and remove all synced messages, folders, contacts, and settings. This cannot be undone.
+        Permanently delete your Zerrow account, revoke Google access, and remove all synced
+        messages, folders, contacts, and settings. This cannot be undone.
       </p>
-      <AlertDialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setConfirm(""); }}>
+      <AlertDialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) setConfirm("");
+        }}
+      >
         <AlertDialogTrigger asChild>
-          <Button variant="destructive" className="mt-4">Delete my account</Button>
+          <Button variant="destructive" className="mt-4">
+            Delete my account
+          </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete your Zerrow account?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will revoke Google access on all connected mailboxes, delete every email, folder, filter, contact, and queued job we hold for you, and remove your sign-in. It cannot be undone.
+              This will revoke Google access on all connected mailboxes, delete every email, folder,
+              filter, contact, and queued job we hold for you, and remove your sign-in. It cannot be
+              undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="confirm-delete">Type <span className="font-mono">DELETE</span> to confirm</Label>
+            <Label htmlFor="confirm-delete">
+              Type <span className="font-mono">DELETE</span> to confirm
+            </Label>
             <Input
               id="confirm-delete"
               value={confirm}
@@ -281,7 +453,10 @@ function DangerZone() {
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={busy || confirm !== "DELETE"}
-              onClick={(e) => { e.preventDefault(); onDelete(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                onDelete();
+              }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {busy ? "Deleting…" : "Delete forever"}

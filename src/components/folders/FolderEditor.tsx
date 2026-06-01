@@ -27,12 +27,43 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Trash2, X, Sparkles, Link2, ArrowRight, History, Loader2, MoveRight, Clock, Play, Pencil, ChevronDown, Bot, Hand, Filter as FilterIcon, Tag, Inbox, MoreVertical } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Plus,
+  Trash2,
+  X,
+  Sparkles,
+  Link2,
+  ArrowRight,
+  History,
+  Loader2,
+  MoveRight,
+  Clock,
+  Play,
+  Pencil,
+  ChevronDown,
+  Bot,
+  Hand,
+  Filter as FilterIcon,
+  Tag,
+  Inbox,
+  MoreVertical,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 export type RuleNode =
@@ -119,7 +150,10 @@ export function FolderEditor({
   const exampleCountQ = useQuery({
     queryKey: ["folder-example-count", folder.id],
     queryFn: async () => {
-      const { count } = await supabase.from("folder_examples").select("id", { count: "exact", head: true }).eq("folder_id", folder.id);
+      const { count } = await supabase
+        .from("folder_examples")
+        .select("id", { count: "exact", head: true })
+        .eq("folder_id", folder.id);
       return count ?? 0;
     },
   });
@@ -146,21 +180,31 @@ export function FolderEditor({
   });
 
   async function save() {
-    const { error } = await supabase.from("folders").update({
-      name: local.name, color: local.color, ai_rule: local.ai_rule,
-      gmail_label_id: local.gmail_label_id,
-      auto_archive: local.auto_archive, auto_mark_read: local.auto_mark_read, priority: local.priority,
-      filter_logic: local.filter_logic ?? "any",
-      auto_star: local.auto_star ?? false,
-      hide_from_inbox: local.hide_from_inbox ?? false,
-      skip_ai: local.skip_ai ?? false,
-      filter_tree: local.filter_tree ?? null,
-      forward_to: local.forward_to?.trim() || null,
-      min_ai_confidence: Math.min(1, Math.max(0, local.min_ai_confidence ?? 0)),
-      snooze_hours: Math.max(0, local.snooze_hours ?? 0),
-      overrides_inbox_override: local.overrides_inbox_override ?? false,
-    }).eq("id", folder.id);
-    if (error) { toast.error(error.message); return; }
+    const { error } = await supabase
+      .from("folders")
+      .update({
+        name: local.name,
+        color: local.color,
+        ai_rule: local.ai_rule,
+        gmail_label_id: local.gmail_label_id,
+        auto_archive: local.auto_archive,
+        auto_mark_read: local.auto_mark_read,
+        priority: local.priority,
+        filter_logic: local.filter_logic ?? "any",
+        auto_star: local.auto_star ?? false,
+        hide_from_inbox: local.hide_from_inbox ?? false,
+        skip_ai: local.skip_ai ?? false,
+        filter_tree: local.filter_tree ?? null,
+        forward_to: local.forward_to?.trim() || null,
+        min_ai_confidence: Math.min(1, Math.max(0, local.min_ai_confidence ?? 0)),
+        snooze_hours: Math.max(0, local.snooze_hours ?? 0),
+        overrides_inbox_override: local.overrides_inbox_override ?? false,
+      })
+      .eq("id", folder.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     toast.success("Saved");
     qc.invalidateQueries({ queryKey: ["folders"] });
     qc.invalidateQueries({ queryKey: ["folders-full"] });
@@ -168,7 +212,13 @@ export function FolderEditor({
 
   // Auto-save a single toggle column immediately, then optionally retroactively apply it.
   async function toggleBehavior(
-    column: "auto_mark_read" | "auto_archive" | "auto_star" | "hide_from_inbox" | "skip_ai" | "overrides_inbox_override",
+    column:
+      | "auto_mark_read"
+      | "auto_archive"
+      | "auto_star"
+      | "hide_from_inbox"
+      | "skip_ai"
+      | "overrides_inbox_override",
     value: boolean,
     retro: "mark_read" | "archive" | "star" | null,
   ) {
@@ -187,7 +237,8 @@ export function FolderEditor({
       try {
         const res = await applyBehaviorFn({ data: { folderId: folder.id, behavior: retro } });
         if (res.count > 0) {
-          const noun = retro === "mark_read" ? "marked read" : retro === "archive" ? "archived" : "starred";
+          const noun =
+            retro === "mark_read" ? "marked read" : retro === "archive" ? "archived" : "starred";
           toast.success(`${res.count} existing email${res.count === 1 ? "" : "s"} ${noun}`);
         }
       } catch (e) {
@@ -205,7 +256,9 @@ export function FolderEditor({
   }
   async function addFilter() {
     if (!newF.value.trim()) return;
-    await supabase.from("folder_filters").insert({ ...newF, folder_id: folder.id, value: newF.value.trim() });
+    await supabase
+      .from("folder_filters")
+      .insert({ ...newF, folder_id: folder.id, value: newF.value.trim() });
     setNewF({ field: "from", op: "contains", value: "" });
     qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
   }
@@ -237,8 +290,12 @@ export function FolderEditor({
     );
     setPickerOpen(null);
     try {
-      const r = await reassignFn({ data: { from_folder_id: folder.id, to_folder_id: toFolderId, domain } });
-      toast.success(`Moved ${r.moved} email${r.moved === 1 ? "" : "s"} to ${toName} · routing future ${domain}`);
+      const r = await reassignFn({
+        data: { from_folder_id: folder.id, to_folder_id: toFolderId, domain },
+      });
+      toast.success(
+        `Moved ${r.moved} email${r.moved === 1 ? "" : "s"} to ${toName} · routing future ${domain}`,
+      );
       qc.invalidateQueries({ queryKey: ["emails"] });
       qc.invalidateQueries({ queryKey: ["folder-filters", toFolderId] });
       qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
@@ -249,7 +306,10 @@ export function FolderEditor({
     }
   }
   async function learn() {
-    if (!folder.gmail_label_id) { toast.error("Link a Gmail label first, then save."); return; }
+    if (!folder.gmail_label_id) {
+      toast.error("Link a Gmail label first, then save.");
+      return;
+    }
     setLearning(true);
     try {
       const r = await learnFn({ data: { folder_id: folder.id } });
@@ -263,27 +323,44 @@ export function FolderEditor({
       qc.invalidateQueries({ queryKey: ["folder-example-count", folder.id] });
       qc.invalidateQueries({ queryKey: ["folder-domains", folder.id] });
       qc.invalidateQueries({ queryKey: ["emails"] });
-    } catch (e: any) { toast.error(e.message ?? "Failed to learn"); }
-    finally { setLearning(false); }
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to learn");
+    } finally {
+      setLearning(false);
+    }
   }
 
   async function syncLabel() {
-    if (!folder.gmail_label_id) { toast.error("Link a Gmail label first, then save."); return; }
+    if (!folder.gmail_label_id) {
+      toast.error("Link a Gmail label first, then save.");
+      return;
+    }
     setSyncingLabel(true);
     try {
       const r = await applyLabelFn({ data: { folder_id: folder.id } });
       if (r.total === 0) toast.success("All emails in this folder already carry the Gmail label.");
-      else toast.success(`Synced ${r.synced} of ${r.total} email${r.total === 1 ? "" : "s"} to Gmail${r.failed ? ` · ${r.failed} failed` : ""}.`);
+      else
+        toast.success(
+          `Synced ${r.synced} of ${r.total} email${r.total === 1 ? "" : "s"} to Gmail${r.failed ? ` · ${r.failed} failed` : ""}.`,
+        );
       qc.invalidateQueries({ queryKey: ["emails"] });
-    } catch (e: any) { toast.error(e.message ?? "Failed to sync labels"); }
-    finally { setSyncingLabel(false); }
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to sync labels");
+    } finally {
+      setSyncingLabel(false);
+    }
   }
 
   async function generateRule() {
-    if (!purpose.trim()) { toast.error("Describe what this folder is for first."); return; }
+    if (!purpose.trim()) {
+      toast.error("Describe what this folder is for first.");
+      return;
+    }
     setGeneratingRule(true);
     try {
-      const r = await generateRuleFn({ data: { purpose: purpose.trim(), folder_name: local.name } });
+      const r = await generateRuleFn({
+        data: { purpose: purpose.trim(), folder_name: local.name },
+      });
       setLocal((prev) => ({ ...prev, ai_rule: r.rule }));
       toast.success("AI rule generated. Review it, then save.");
     } catch (e: any) {
@@ -291,18 +368,37 @@ export function FolderEditor({
       if (status === 429) toast.error("Rate limit reached. Try again in a moment.");
       else if (status === 402) toast.error("Out of AI credits. Add credits to keep generating.");
       else toast.error(e?.message ?? "Failed to generate rule");
-    } finally { setGeneratingRule(false); }
+    } finally {
+      setGeneratingRule(false);
+    }
   }
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-        <input type="color" value={local.color} onChange={(e) => setLocal({ ...local, color: e.target.value })} className="h-9 w-12 shrink-0 cursor-pointer rounded border border-border bg-transparent" />
-        <Input className="min-w-0 flex-1" value={local.name} onChange={(e) => setLocal({ ...local, name: e.target.value })} />
-        <Input type="number" className="w-20 shrink-0" value={local.priority} onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })} title="Priority (higher wins)" />
+        <input
+          type="color"
+          value={local.color}
+          onChange={(e) => setLocal({ ...local, color: e.target.value })}
+          className="h-9 w-12 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+        />
+        <Input
+          className="min-w-0 flex-1"
+          value={local.name}
+          onChange={(e) => setLocal({ ...local, name: e.target.value })}
+        />
+        <Input
+          type="number"
+          className="w-20 shrink-0"
+          value={local.priority}
+          onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })}
+          title="Priority (higher wins)"
+        />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="shrink-0" aria-label="More actions"><MoreVertical className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="icon" className="shrink-0" aria-label="More actions">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={remove} className="text-destructive focus:text-destructive">
@@ -322,11 +418,23 @@ export function FolderEditor({
 
         <TabsContent value="settings" className="mt-4">
           <div className="grid grid-cols-[auto_1fr] items-center gap-2">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground"><Link2 className="mr-1 inline h-3 w-3" />Gmail label</Label>
-            <Select value={local.gmail_label_id ?? ""} onValueChange={(v) => setLocal({ ...local, gmail_label_id: v || null })}>
-              <SelectTrigger><SelectValue placeholder="Not linked" /></SelectTrigger>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+              <Link2 className="mr-1 inline h-3 w-3" />
+              Gmail label
+            </Label>
+            <Select
+              value={local.gmail_label_id ?? ""}
+              onValueChange={(v) => setLocal({ ...local, gmail_label_id: v || null })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Not linked" />
+              </SelectTrigger>
               <SelectContent>
-                {labels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>))}
+                {labels.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -346,21 +454,37 @@ export function FolderEditor({
               <p className="text-xs text-muted-foreground">
                 Say what kind of email belongs here, then let AI write the rule below.
               </p>
-              <Button size="sm" variant="outline" onClick={generateRule} disabled={generatingRule || !purpose.trim()}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={generateRule}
+                disabled={generatingRule || !purpose.trim()}
+              >
                 {generatingRule ? (
-                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Generating…</>
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Generating…
+                  </>
                 ) : (
-                  <><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Generate rule</>
+                  <>
+                    <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Generate rule
+                  </>
                 )}
               </Button>
             </div>
           </div>
 
           <div className="mt-4">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">AI rule (natural language)</Label>
-            <Textarea className="mt-1.5" rows={2} placeholder='e.g. "Newsletters, marketing emails"' value={local.ai_rule ?? ""} onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })} />
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+              AI rule (natural language)
+            </Label>
+            <Textarea
+              className="mt-1.5"
+              rows={2}
+              placeholder='e.g. "Newsletters, marketing emails"'
+              value={local.ai_rule ?? ""}
+              onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })}
+            />
           </div>
-
 
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -368,20 +492,43 @@ export function FolderEditor({
                 <Sparkles className="h-3 w-3" /> Learned profile
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="ghost" onClick={syncLabel} disabled={syncingLabel || !folder.gmail_label_id} title="Apply this folder's Gmail label to all emails Zerrow has routed here">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={syncLabel}
+                  disabled={syncingLabel || !folder.gmail_label_id}
+                  title="Apply this folder's Gmail label to all emails Zerrow has routed here"
+                >
                   {syncingLabel ? "Syncing…" : "Sync to Gmail"}
                 </Button>
-                <Button size="sm" variant="outline" onClick={learn} disabled={learning || !folder.gmail_label_id}>
-                  {learning ? "Learning…" : folder.last_learned_at ? "Re-learn" : "Learn from existing emails"}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={learn}
+                  disabled={learning || !folder.gmail_label_id}
+                >
+                  {learning
+                    ? "Learning…"
+                    : folder.last_learned_at
+                      ? "Re-learn"
+                      : "Learn from existing emails"}
                 </Button>
               </div>
             </div>
             <p className="mt-2 text-sm text-foreground/80">
-              {folder.learned_profile || <span className="text-muted-foreground italic">Not learned yet. {linkedLabel ? `Linked to "${linkedLabel.name}".` : "Link a Gmail label and save first."}</span>}
+              {folder.learned_profile || (
+                <span className="text-muted-foreground italic">
+                  Not learned yet.{" "}
+                  {linkedLabel
+                    ? `Linked to "${linkedLabel.name}".`
+                    : "Link a Gmail label and save first."}
+                </span>
+              )}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
               {exampleCount} example{exampleCount === 1 ? "" : "s"}
-              {folder.last_learned_at && ` · learned ${new Date(folder.last_learned_at).toLocaleString()}`}
+              {folder.last_learned_at &&
+                ` · learned ${new Date(folder.last_learned_at).toLocaleString()}`}
               {" · "}auto-updates as you move emails in Gmail
             </p>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
@@ -411,7 +558,9 @@ export function FolderEditor({
             </div>
             {(domainsQ.data?.length ?? 0) > 0 && (
               <div className="mt-3 border-t border-border/60 pt-3">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Suggested domains</div>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Suggested domains
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {domainsQ.data!.map((s) => (
                     <div
@@ -427,7 +576,10 @@ export function FolderEditor({
                         <span className="font-mono">{s.domain}</span>
                         <span className="text-muted-foreground">· {s.count}</span>
                       </button>
-                      <Popover open={pickerOpen === s.domain} onOpenChange={(o) => setPickerOpen(o ? s.domain : null)}>
+                      <Popover
+                        open={pickerOpen === s.domain}
+                        onOpenChange={(o) => setPickerOpen(o ? s.domain : null)}
+                      >
                         <PopoverTrigger asChild>
                           <button
                             className="inline-flex items-center justify-center border-l border-border px-1.5 hover:bg-primary/5"
@@ -441,7 +593,9 @@ export function FolderEditor({
                             Move {s.domain} to…
                           </div>
                           {(otherFoldersQ.data ?? []).length === 0 ? (
-                            <div className="px-2 py-2 text-xs text-muted-foreground italic">No other folders</div>
+                            <div className="px-2 py-2 text-xs text-muted-foreground italic">
+                              No other folders
+                            </div>
                           ) : (
                             <div className="max-h-64 overflow-y-auto">
                               {(otherFoldersQ.data ?? []).map((f) => (
@@ -450,7 +604,10 @@ export function FolderEditor({
                                   onClick={() => reassignDomain(s.domain, f.id, f.name)}
                                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent text-left"
                                 >
-                                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                                  <span
+                                    className="h-2.5 w-2.5 rounded-full"
+                                    style={{ background: f.color }}
+                                  />
                                   <span className="truncate">{f.name}</span>
                                 </button>
                               ))}
@@ -470,40 +627,76 @@ export function FolderEditor({
           <div className="mt-4 grid grid-cols-2 gap-3">
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto-archive
-              <Switch checked={local.auto_archive} onCheckedChange={(v) => toggleBehavior("auto_archive", v, "archive")} />
+              <Switch
+                checked={local.auto_archive}
+                onCheckedChange={(v) => toggleBehavior("auto_archive", v, "archive")}
+              />
             </label>
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto mark-read
-              <Switch checked={local.auto_mark_read} onCheckedChange={(v) => toggleBehavior("auto_mark_read", v, "mark_read")} />
+              <Switch
+                checked={local.auto_mark_read}
+                onCheckedChange={(v) => toggleBehavior("auto_mark_read", v, "mark_read")}
+              />
             </label>
-            <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Star matching emails (also stars them in Gmail)">
+            <label
+              className="flex items-center justify-between rounded-md border border-border p-3 text-sm"
+              title="Star matching emails (also stars them in Gmail)"
+            >
               Auto-star
-              <Switch checked={local.auto_star ?? false} onCheckedChange={(v) => toggleBehavior("auto_star", v, "star")} />
+              <Switch
+                checked={local.auto_star ?? false}
+                onCheckedChange={(v) => toggleBehavior("auto_star", v, "star")}
+              />
             </label>
-            <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Hide from main Inbox view (still visible inside this folder)">
+            <label
+              className="flex items-center justify-between rounded-md border border-border p-3 text-sm"
+              title="Hide from main Inbox view (still visible inside this folder)"
+            >
               Hide from Inbox
-              <Switch checked={local.hide_from_inbox ?? false} onCheckedChange={(v) => toggleBehavior("hide_from_inbox", v, "archive")} />
+              <Switch
+                checked={local.hide_from_inbox ?? false}
+                onCheckedChange={(v) => toggleBehavior("hide_from_inbox", v, "archive")}
+              />
             </label>
-            <label className="col-span-2 flex items-center justify-between rounded-md border border-border p-3 text-sm" title="Only use the rules below — never let AI assign emails to this folder">
+            <label
+              className="col-span-2 flex items-center justify-between rounded-md border border-border p-3 text-sm"
+              title="Only use the rules below — never let AI assign emails to this folder"
+            >
               <div>
                 Rules only
-                <span className="ml-2 text-xs text-muted-foreground">(skip AI fallback for this folder)</span>
+                <span className="ml-2 text-xs text-muted-foreground">
+                  (skip AI fallback for this folder)
+                </span>
               </div>
-              <Switch checked={local.skip_ai ?? false} onCheckedChange={(v) => toggleBehavior("skip_ai", v, null)} />
+              <Switch
+                checked={local.skip_ai ?? false}
+                onCheckedChange={(v) => toggleBehavior("skip_ai", v, null)}
+              />
             </label>
-            <label className="col-span-2 flex items-start justify-between gap-3 rounded-md border border-border p-3 text-sm" title="When this folder's filters match, route the email here even if the sender is on your Always-send-to-inbox list">
+            <label
+              className="col-span-2 flex items-start justify-between gap-3 rounded-md border border-border p-3 text-sm"
+              title="When this folder's filters match, route the email here even if the sender is on your Always-send-to-inbox list"
+            >
               <div className="min-w-0">
                 Beat "Always send to inbox" rules
-                <p className="mt-0.5 text-xs text-muted-foreground">When this folder's filters match, route here even if the sender is on your inbox list.</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  When this folder's filters match, route here even if the sender is on your inbox
+                  list.
+                </p>
               </div>
-              <Switch checked={local.overrides_inbox_override ?? false} onCheckedChange={(v) => toggleBehavior("overrides_inbox_override", v, null)} />
+              <Switch
+                checked={local.overrides_inbox_override ?? false}
+                onCheckedChange={(v) => toggleBehavior("overrides_inbox_override", v, null)}
+              />
             </label>
           </div>
 
-
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border p-3 text-sm">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Auto-forward to</Label>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Auto-forward to
+              </Label>
               <Input
                 className="mt-1.5 h-8"
                 type="email"
@@ -511,22 +704,32 @@ export function FolderEditor({
                 value={local.forward_to ?? ""}
                 onChange={(e) => setLocal({ ...local, forward_to: e.target.value })}
               />
-              <p className="mt-1 text-xs text-muted-foreground">Forwards each matching email once, on arrival.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Forwards each matching email once, on arrival.
+              </p>
             </div>
             <div className="rounded-md border border-border p-3 text-sm">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Snooze on arrival (hours)</Label>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Snooze on arrival (hours)
+              </Label>
               <Input
                 className="mt-1.5 h-8"
                 type="number"
                 min={0}
                 max={720}
                 value={local.snooze_hours ?? 0}
-                onChange={(e) => setLocal({ ...local, snooze_hours: parseInt(e.target.value) || 0 })}
+                onChange={(e) =>
+                  setLocal({ ...local, snooze_hours: parseInt(e.target.value) || 0 })
+                }
               />
-              <p className="mt-1 text-xs text-muted-foreground">Hides matched emails until the snooze expires.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Hides matched emails until the snooze expires.
+              </p>
             </div>
             <div className="rounded-md border border-border p-3 text-sm">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Min AI confidence (%)</Label>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Min AI confidence (%)
+              </Label>
               <Input
                 className="mt-1.5 h-8"
                 type="number"
@@ -534,22 +737,28 @@ export function FolderEditor({
                 max={100}
                 step={5}
                 value={Math.round((local.min_ai_confidence ?? 0) * 100)}
-                onChange={(e) => setLocal({ ...local, min_ai_confidence: (parseInt(e.target.value) || 0) / 100 })}
+                onChange={(e) =>
+                  setLocal({ ...local, min_ai_confidence: (parseInt(e.target.value) || 0) / 100 })
+                }
               />
-              <p className="mt-1 text-xs text-muted-foreground">Reject AI assignment below this confidence.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Reject AI assignment below this confidence.
+              </p>
             </div>
           </div>
 
           <div className="mt-4">
             <div className="flex items-center justify-between">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Filters</Label>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Filters
+              </Label>
               <div className="flex items-center gap-2">
                 {!local.filter_tree && (
                   <div className="inline-flex rounded-md border border-border text-xs overflow-hidden">
                     <button
                       type="button"
                       onClick={() => setLocal({ ...local, filter_logic: "any" })}
-                      className={`px-2.5 py-1 ${ (local.filter_logic ?? "any") === "any" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50" }`}
+                      className={`px-2.5 py-1 ${(local.filter_logic ?? "any") === "any" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
                       title="Match if ANY include rule passes (OR)"
                     >
                       Match any
@@ -557,7 +766,7 @@ export function FolderEditor({
                     <button
                       type="button"
                       onClick={() => setLocal({ ...local, filter_logic: "all" })}
-                      className={`px-2.5 py-1 border-l border-border ${ local.filter_logic === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50" }`}
+                      className={`px-2.5 py-1 border-l border-border ${local.filter_logic === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
                       title="Match only if ALL include rules pass (AND)"
                     >
                       Match all
@@ -570,12 +779,21 @@ export function FolderEditor({
                   className="h-7 text-xs"
                   onClick={() => {
                     if (local.filter_tree) {
-                      if (!confirm("Switch back to the simple rule list? Your rule group will be discarded.")) return;
+                      if (
+                        !confirm(
+                          "Switch back to the simple rule list? Your rule group will be discarded.",
+                        )
+                      )
+                        return;
                       setLocal({ ...local, filter_tree: null });
                     } else {
                       setLocal({
                         ...local,
-                        filter_tree: { type: "group", op: (local.filter_logic === "all" ? "and" : "or"), children: [] },
+                        filter_tree: {
+                          type: "group",
+                          op: local.filter_logic === "all" ? "and" : "or",
+                          children: [],
+                        },
                       });
                     }
                   }}
@@ -593,7 +811,8 @@ export function FolderEditor({
                   isRoot
                 />
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Rule groups override the simple list above. Exclude rules (below) still always block.
+                  Rule groups override the simple list above. Exclude rules (below) still always
+                  block.
                 </p>
               </div>
             ) : null}
@@ -614,15 +833,26 @@ export function FolderEditor({
                       </span>
                     )}
                     <span className="text-muted-foreground">{f.field}</span>
-                    <span className={isExclude ? "text-destructive" : "text-muted-foreground"}>{f.op}</span>
+                    <span className={isExclude ? "text-destructive" : "text-muted-foreground"}>
+                      {f.op}
+                    </span>
                     <span className="flex-1 min-w-0 break-all font-mono text-xs">{f.value}</span>
-                    <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => removeFilter(f.id)}><X className="h-3 w-3" /></Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 shrink-0"
+                      onClick={() => removeFilter(f.id)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
                   </div>
                 );
               })}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Select value={newF.field} onValueChange={(v) => setNewF({ ...newF, field: v })}>
-                  <SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-32">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="from">from</SelectItem>
                     <SelectItem value="to">to</SelectItem>
@@ -636,7 +866,9 @@ export function FolderEditor({
                   </SelectContent>
                 </Select>
                 <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
-                  <SelectTrigger className="w-full sm:w-36"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-36">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="contains">contains</SelectItem>
                     <SelectItem value="equals">equals</SelectItem>
@@ -647,22 +879,39 @@ export function FolderEditor({
                     <SelectItem value="regex">regex</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input className="flex-1 min-w-0" placeholder="value" value={newF.value} onChange={(e) => setNewF({ ...newF, value: e.target.value })} />
-                <Button size="sm" className="w-full sm:w-auto" onClick={addFilter}>Add</Button>
+                <Input
+                  className="flex-1 min-w-0"
+                  placeholder="value"
+                  value={newF.value}
+                  onChange={(e) => setNewF({ ...newF, value: e.target.value })}
+                />
+                <Button size="sm" className="w-full sm:w-auto" onClick={addFilter}>
+                  Add
+                </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Exclude rules keep matching emails in your inbox even if a domain or other rule would route them here.
+                Exclude rules keep matching emails in your inbox even if a domain or other rule
+                would route them here.
               </p>
             </div>
           </div>
 
-          <ScanGmailSection folder={local} hasIncludeRules={(filters.some((f) => f.op !== "not_contains" && f.op !== "not_equals")) || !!local.filter_tree} />
-
+          <ScanGmailSection
+            folder={local}
+            hasIncludeRules={
+              filters.some((f) => f.op !== "not_contains" && f.op !== "not_equals") ||
+              !!local.filter_tree
+            }
+          />
 
           {dirty && (
             <div className="mt-4 flex justify-end gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setLocal(folder)}>Cancel</Button>
-              <Button size="sm" onClick={save}>Save changes</Button>
+              <Button size="sm" variant="ghost" onClick={() => setLocal(folder)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={save}>
+                Save changes
+              </Button>
             </div>
           )}
         </TabsContent>
@@ -728,7 +977,9 @@ function relativeTime(iso: string | null) {
   return new Date(iso).toLocaleDateString();
 }
 
-type SuggestionResult = Awaited<ReturnType<ReturnType<typeof useServerFn<typeof suggestRecategorization>>>>;
+type SuggestionResult = Awaited<
+  ReturnType<ReturnType<typeof useServerFn<typeof suggestRecategorization>>>
+>;
 
 function HistoryPanel({
   folder,
@@ -758,7 +1009,9 @@ function HistoryPanel({
   const historyQ = useQuery({
     queryKey: ["folder-history", folder.id, pageCount],
     queryFn: async () => {
-      const r = await historyFn({ data: { folder_id: folder.id, limit: PAGE * pageCount, offset: 0 } });
+      const r = await historyFn({
+        data: { folder_id: folder.id, limit: PAGE * pageCount, offset: 0 },
+      });
       return r as { emails: HistoryEmail[]; has_more: boolean; next_offset: number };
     },
   });
@@ -823,12 +1076,20 @@ function HistoryPanel({
   }
 
   if (historyQ.isLoading) {
-    return <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading history…</div>;
+    return (
+      <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading history…
+      </div>
+    );
   }
   const emails = historyQ.data?.emails ?? [];
   const hasMore = historyQ.data?.has_more ?? false;
   if (emails.length === 0) {
-    return <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No emails have been processed into this folder yet.</div>;
+    return (
+      <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+        No emails have been processed into this folder yet.
+      </div>
+    );
   }
 
   return (
@@ -845,7 +1106,10 @@ function HistoryPanel({
               type="button"
               onClick={() => {
                 setExpanded(isOpen ? null : e.id);
-                if (isOpen && isActive) { setActiveEmail(null); setSuggestion(null); }
+                if (isOpen && isActive) {
+                  setActiveEmail(null);
+                  setSuggestion(null);
+                }
               }}
               className="flex w-full items-center gap-3 p-3 text-left hover:bg-muted/30 transition-colors"
             >
@@ -856,11 +1120,16 @@ function HistoryPanel({
                   {e.received_at && <span> · {relativeTime(e.received_at)}</span>}
                 </div>
               </div>
-              <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClass[meta.tone]}`}>
+              <span
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClass[meta.tone]}`}
+              >
                 <ReasonIcon className="h-3 w-3" />
-                {meta.label}{e.classified_by === "ai" && conf != null ? ` ${conf}%` : ""}
+                {meta.label}
+                {e.classified_by === "ai" && conf != null ? ` ${conf}%` : ""}
               </span>
-              <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+              />
             </button>
 
             {isOpen && (
@@ -875,16 +1144,23 @@ function HistoryPanel({
 
                 {!isActive && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Popover open={pickerFor === e.id} onOpenChange={(o) => setPickerFor(o ? e.id : null)}>
+                    <Popover
+                      open={pickerFor === e.id}
+                      onOpenChange={(o) => setPickerFor(o ? e.id : null)}
+                    >
                       <PopoverTrigger asChild>
                         <Button size="sm" variant="outline">
                           <MoveRight className="mr-1.5 h-3.5 w-3.5" /> Move to…
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-60 p-1" align="start">
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">Should go to…</div>
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          Should go to…
+                        </div>
                         {otherFolders.length === 0 ? (
-                          <div className="px-2 py-2 text-xs text-muted-foreground italic">No other folders</div>
+                          <div className="px-2 py-2 text-xs text-muted-foreground italic">
+                            No other folders
+                          </div>
                         ) : (
                           <div className="max-h-64 overflow-y-auto">
                             {otherFolders.map((f) => (
@@ -893,7 +1169,10 @@ function HistoryPanel({
                                 onClick={() => startSuggestion(e.id, f.id)}
                                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent text-left"
                               >
-                                <span className="h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full"
+                                  style={{ background: f.color }}
+                                />
                                 <span className="truncate">{f.name}</span>
                               </button>
                             ))}
@@ -901,7 +1180,9 @@ function HistoryPanel({
                         )}
                       </PopoverContent>
                     </Popover>
-                    <span className="text-xs text-muted-foreground">Wrong folder? Pick where it belongs.</span>
+                    <span className="text-xs text-muted-foreground">
+                      Wrong folder? Pick where it belongs.
+                    </span>
                   </div>
                 )}
 
@@ -915,9 +1196,14 @@ function HistoryPanel({
                     {suggestion && (
                       <div className="space-y-3">
                         <div className="text-xs text-muted-foreground">
-                          Move 1 email · <span className="font-medium text-foreground">{suggestion.source.name}</span>
+                          Move 1 email ·{" "}
+                          <span className="font-medium text-foreground">
+                            {suggestion.source.name}
+                          </span>
                           {" → "}
-                          <span className="font-medium text-foreground">{suggestion.target.name}</span>
+                          <span className="font-medium text-foreground">
+                            {suggestion.target.name}
+                          </span>
                         </div>
                         <div className="grid gap-3 md:grid-cols-2">
                           <RulePatchCard
@@ -938,7 +1224,17 @@ function HistoryPanel({
                           />
                         </div>
                         <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => { setActiveEmail(null); setSuggestion(null); }} disabled={applying}>Cancel</Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setActiveEmail(null);
+                              setSuggestion(null);
+                            }}
+                            disabled={applying}
+                          >
+                            Cancel
+                          </Button>
                           <Button size="sm" onClick={apply} disabled={applying}>
                             {applying ? "Applying…" : "Apply"}
                           </Button>
@@ -961,7 +1257,13 @@ function HistoryPanel({
             onClick={() => setPageCount((c) => c + 1)}
             disabled={historyQ.isFetching}
           >
-            {historyQ.isFetching ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Loading…</> : "Load more"}
+            {historyQ.isFetching ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Loading…
+              </>
+            ) : (
+              "Load more"
+            )}
           </Button>
         </div>
       )}
@@ -969,7 +1271,15 @@ function HistoryPanel({
   );
 }
 
-function ReasonBlock({ email, folderName, filters }: { email: HistoryEmail; folderName: string; filters: Filter[] }) {
+function ReasonBlock({
+  email,
+  folderName,
+  filters,
+}: {
+  email: HistoryEmail;
+  folderName: string;
+  filters: Filter[];
+}) {
   const by = email.classified_by ?? "none";
   const meta = getReasonMeta(by);
   const Icon = meta.Icon;
@@ -980,21 +1290,41 @@ function ReasonBlock({ email, folderName, filters }: { email: HistoryEmail; fold
   if (by === "ai") {
     const conf = email.ai_confidence != null ? Math.round(email.ai_confidence * 100) : null;
     title = `Classified by AI${conf != null ? ` · ${conf}% confidence` : ""}`;
-    body = email.ai_summary
-      ? <blockquote className="border-l-2 border-indigo-500/40 pl-3 italic text-foreground/80">"{email.ai_summary}"</blockquote>
-      : <span className="text-muted-foreground italic">No reason recorded.</span>;
+    body = email.ai_summary ? (
+      <blockquote className="border-l-2 border-indigo-500/40 pl-3 italic text-foreground/80">
+        "{email.ai_summary}"
+      </blockquote>
+    ) : (
+      <span className="text-muted-foreground italic">No reason recorded.</span>
+    );
   } else if (by === "manual_move") {
     title = "Moved here manually";
-    body = <span className="text-muted-foreground">You (or a connected Gmail action) moved this email into <span className="font-medium text-foreground">{folderName}</span>.</span>;
+    body = (
+      <span className="text-muted-foreground">
+        You (or a connected Gmail action) moved this email into{" "}
+        <span className="font-medium text-foreground">{folderName}</span>.
+      </span>
+    );
   } else if (by === "filter" || by === "domain_rule") {
     const matched = matchFilter(email, filters);
     title = by === "domain_rule" ? "Matched a domain rule" : "Matched a folder rule";
-    body = matched
-      ? <span>Matched <code className="rounded bg-muted px-1 py-0.5 text-xs">{matched.field} {matched.op} "{matched.value}"</code></span>
-      : <span className="text-muted-foreground">Matched one of this folder's rules.</span>;
+    body = matched ? (
+      <span>
+        Matched{" "}
+        <code className="rounded bg-muted px-1 py-0.5 text-xs">
+          {matched.field} {matched.op} "{matched.value}"
+        </code>
+      </span>
+    ) : (
+      <span className="text-muted-foreground">Matched one of this folder's rules.</span>
+    );
   } else if (by === "gmail_label") {
     title = "Imported from Gmail label";
-    body = <span className="text-muted-foreground">This email already had the matching Gmail label when it was synced.</span>;
+    body = (
+      <span className="text-muted-foreground">
+        This email already had the matching Gmail label when it was synced.
+      </span>
+    );
   } else {
     title = "Imported with this folder";
     body = <span className="text-muted-foreground">No classifier ran on this email yet.</span>;
@@ -1017,25 +1347,38 @@ function matchFilter(email: HistoryEmail, filters: Filter[]): Filter | null {
     if (!value) continue;
     const target = (() => {
       switch (f.field) {
-        case "from": return (email.from_addr || "") + " " + (email.from_name || "");
-        case "subject": return email.subject || "";
+        case "from":
+          return (email.from_addr || "") + " " + (email.from_name || "");
+        case "subject":
+          return email.subject || "";
         case "snippet":
-        case "body": return email.snippet || "";
-        default: return "";
+        case "body":
+          return email.snippet || "";
+        default:
+          return "";
       }
     })().toLowerCase();
     const op = f.op || "contains";
-    const hit = op === "equals" ? target === value
-      : op === "starts_with" ? target.startsWith(value)
-      : op === "ends_with" ? target.endsWith(value)
-      : target.includes(value);
+    const hit =
+      op === "equals"
+        ? target === value
+        : op === "starts_with"
+          ? target.startsWith(value)
+          : op === "ends_with"
+            ? target.endsWith(value)
+            : target.includes(value);
     if (hit) return f;
   }
   return null;
 }
 
 function RulePatchCard({
-  title, current, proposed, why, checked, onChange,
+  title,
+  current,
+  proposed,
+  why,
+  checked,
+  onChange,
 }: {
   title: string;
   current: string | null;
@@ -1048,7 +1391,9 @@ function RulePatchCard({
   return (
     <div className="rounded-md border border-border bg-background p-3">
       <div className="flex items-start justify-between gap-2">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</div>
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {title}
+        </div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Checkbox checked={checked} onCheckedChange={(v) => onChange(!!v)} disabled={!changed} />
           Update rule
@@ -1057,7 +1402,9 @@ function RulePatchCard({
       <div className="mt-2 space-y-2 text-sm">
         <div>
           <div className="text-xs text-muted-foreground">Current</div>
-          <div className="text-foreground/80">{current || <span className="italic text-muted-foreground">(empty)</span>}</div>
+          <div className="text-foreground/80">
+            {current || <span className="italic text-muted-foreground">(empty)</span>}
+          </div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">Proposed</div>
@@ -1087,10 +1434,16 @@ type Schedule = {
 };
 
 const browserTz = (() => {
-  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 })();
 
-function pad2(n: number) { return n < 10 ? `0${n}` : String(n); }
+function pad2(n: number) {
+  return n < 10 ? `0${n}` : String(n);
+}
 
 function SummariesPanel({ folderId }: { folderId: string }) {
   const qc = useQueryClient();
@@ -1115,7 +1468,9 @@ function SummariesPanel({ folderId }: { folderId: string }) {
     try {
       await updateFn({ data: { id: s.id, enabled } });
       qc.invalidateQueries({ queryKey: ["folder-summaries", folderId] });
-    } catch (e: any) { toast.error(e?.message ?? "Failed"); }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    }
   }
   async function remove(s: Schedule) {
     if (!confirm(`Delete summary "${s.name}"?`)) return;
@@ -1137,7 +1492,9 @@ function SummariesPanel({ folderId }: { folderId: string }) {
         if (job.status === "done") {
           const n = job.emails_count ?? 0;
           toast.success(
-            n === 0 ? "Ran — no emails in window" : `Inserted digest of ${n} email${n === 1 ? "" : "s"}`,
+            n === 0
+              ? "Ran — no emails in window"
+              : `Inserted digest of ${n} email${n === 1 ? "" : "s"}`,
             { id: toastId },
           );
           finished = true;
@@ -1160,7 +1517,6 @@ function SummariesPanel({ folderId }: { folderId: string }) {
     }
   }
 
-
   return (
     <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
       <div className="flex items-center justify-between">
@@ -1175,14 +1531,17 @@ function SummariesPanel({ folderId }: { folderId: string }) {
       </div>
 
       <p className="mt-2 text-xs text-muted-foreground">
-        Zerrow reads emails received in this folder over the last 24 hours and inserts an AI-written digest into your inbox at the time you choose.
+        Zerrow reads emails received in this folder over the last 24 hours and inserts an AI-written
+        digest into your inbox at the time you choose.
       </p>
 
       {q.isLoading ? (
-        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</div>
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+        </div>
       ) : (
         <div className="mt-3 space-y-2">
-          {schedules.map((s) => (
+          {schedules.map((s) =>
             editing?.id === s.id ? (
               <ScheduleForm
                 key={s.id}
@@ -1203,10 +1562,14 @@ function SummariesPanel({ folderId }: { folderId: string }) {
                       Every day at {pad2(s.hour)}:{pad2(s.minute)} ({s.timezone})
                     </div>
                     {s.instructions && (
-                      <div className="mt-1 text-xs text-foreground/70 line-clamp-2">{s.instructions}</div>
+                      <div className="mt-1 text-xs text-foreground/70 line-clamp-2">
+                        {s.instructions}
+                      </div>
                     )}
                     <div className="mt-1.5 text-xs text-muted-foreground">
-                      {s.last_run_at ? `Last run: ${new Date(s.last_run_at).toLocaleString()}` : "Not run yet"}
+                      {s.last_run_at
+                        ? `Last run: ${new Date(s.last_run_at).toLocaleString()}`
+                        : "Not run yet"}
                       {" · "}Next: {new Date(s.next_run_at).toLocaleString()}
                     </div>
                     {s.last_error && (
@@ -1217,20 +1580,46 @@ function SummariesPanel({ folderId }: { folderId: string }) {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Switch checked={s.enabled} onCheckedChange={(v) => toggleEnabled(s, v)} />
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => runNow(s)} disabled={runningId === s.id} title="Run now">
-                      {runningId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => runNow(s)}
+                      disabled={runningId === s.id}
+                      title="Run now"
+                    >
+                      {runningId === s.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5" />
+                      )}
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditing(s); setShowForm(false); }} title="Edit">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => {
+                        setEditing(s);
+                        setShowForm(false);
+                      }}
+                      title="Edit"
+                    >
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => remove(s)} title="Delete">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => remove(s)}
+                      title="Delete"
+                    >
                       <Trash2 className="h-3.5 w-3.5 text-destructive" />
                     </Button>
                   </div>
                 </div>
               </div>
-            )
-          ))}
+            ),
+          )}
           {schedules.length === 0 && !showForm && (
             <div className="text-xs text-muted-foreground italic">No schedules yet.</div>
           )}
@@ -1256,7 +1645,13 @@ function ScheduleForm({
   onCancel,
 }: {
   initial?: Schedule;
-  onSave: (vals: { name: string; instructions: string; hour: number; minute: number; timezone: string }) => Promise<void>;
+  onSave: (vals: {
+    name: string;
+    instructions: string;
+    hour: number;
+    minute: number;
+    timezone: string;
+  }) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "Daily digest");
@@ -1271,46 +1666,92 @@ function ScheduleForm({
   const overLimit = instructionsLen > MAX_INSTRUCTIONS;
 
   async function submit() {
-    if (!name.trim()) { toast.error("Name required"); return; }
-    if (overLimit) { toast.error(`Instructions are too long (${instructionsLen.toLocaleString()} / ${MAX_INSTRUCTIONS.toLocaleString()})`); return; }
+    if (!name.trim()) {
+      toast.error("Name required");
+      return;
+    }
+    if (overLimit) {
+      toast.error(
+        `Instructions are too long (${instructionsLen.toLocaleString()} / ${MAX_INSTRUCTIONS.toLocaleString()})`,
+      );
+      return;
+    }
     setSaving(true);
     try {
-      await onSave({ name: name.trim(), instructions: instructions.trim(), hour, minute, timezone: tz.trim() || "UTC" });
+      await onSave({
+        name: name.trim(),
+        instructions: instructions.trim(),
+        hour,
+        minute,
+        timezone: tz.trim() || "UTC",
+      });
     } catch (e: any) {
       toast.error(e?.message ?? "Failed");
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="rounded-md border border-border bg-background p-3 space-y-2.5">
       <div>
         <Label className="text-xs uppercase tracking-wider text-muted-foreground">Name</Label>
-        <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="Morning newsletter digest" />
+        <Input
+          className="mt-1"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Morning newsletter digest"
+        />
       </div>
       <div className="grid grid-cols-[1fr_1fr_1.5fr] gap-2">
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">Hour</Label>
           <Select value={String(hour)} onValueChange={(v) => setHour(parseInt(v, 10))}>
-            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-            <SelectContent>{Array.from({ length: 24 }).map((_, i) => (<SelectItem key={i} value={String(i)}>{pad2(i)}</SelectItem>))}</SelectContent>
+            <SelectTrigger className="mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 24 }).map((_, i) => (
+                <SelectItem key={i} value={String(i)}>
+                  {pad2(i)}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">Minute</Label>
           <Select value={String(minute)} onValueChange={(v) => setMinute(parseInt(v, 10))}>
-            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-            <SelectContent>{[0, 15, 30, 45].map((i) => (<SelectItem key={i} value={String(i)}>{pad2(i)}</SelectItem>))}</SelectContent>
+            <SelectTrigger className="mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[0, 15, 30, 45].map((i) => (
+                <SelectItem key={i} value={String(i)}>
+                  {pad2(i)}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">Timezone</Label>
-          <Input className="mt-1" value={tz} onChange={(e) => setTz(e.target.value)} placeholder="America/New_York" />
+          <Input
+            className="mt-1"
+            value={tz}
+            onChange={(e) => setTz(e.target.value)}
+            placeholder="America/New_York"
+          />
         </div>
       </div>
       <div>
         <div className="flex items-center justify-between">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Instructions</Label>
-          <span className={`text-[10px] tabular-nums ${overLimit ? "text-destructive" : "text-muted-foreground"}`}>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Instructions
+          </Label>
+          <span
+            className={`text-[10px] tabular-nums ${overLimit ? "text-destructive" : "text-muted-foreground"}`}
+          >
             {instructionsLen.toLocaleString()} / {MAX_INSTRUCTIONS.toLocaleString()}
           </span>
         </div>
@@ -1323,8 +1764,12 @@ function ScheduleForm({
         />
       </div>
       <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
-        <Button size="sm" onClick={submit} disabled={saving || overLimit}>{saving ? "Saving…" : initial ? "Save" : "Create"}</Button>
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={submit} disabled={saving || overLimit}>
+          {saving ? "Saving…" : initial ? "Save" : "Create"}
+        </Button>
       </div>
     </div>
   );
@@ -1366,15 +1811,27 @@ function RuleGroupEditor({
     return (
       <div className="flex flex-col gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-sm sm:flex-row sm:items-center">
         <Select value={node.field} onValueChange={(v) => onChange({ ...node, field: v })}>
-          <SelectTrigger className="h-7 w-full text-xs sm:w-32"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-7 w-full text-xs sm:w-32">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
-            {FIELD_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            {FIELD_OPTS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={node.op} onValueChange={(v) => onChange({ ...node, op: v })}>
-          <SelectTrigger className="h-7 w-full text-xs sm:w-36"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-7 w-full text-xs sm:w-36">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
-            {OP_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            {OP_OPTS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <div className="flex items-center gap-2">
@@ -1385,7 +1842,9 @@ function RuleGroupEditor({
             onChange={(e) => onChange({ ...node, value: e.target.value })}
           />
           {onRemove && (
-            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={onRemove}><X className="h-3 w-3" /></Button>
+            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={onRemove}>
+              <X className="h-3 w-3" />
+            </Button>
           )}
         </div>
       </div>
@@ -1402,11 +1861,24 @@ function RuleGroupEditor({
     next.splice(i, 1);
     onChange({ ...node, children: next });
   };
-  const addCond = () => onChange({ ...node, children: [...node.children, { type: "cond", field: "from", op: "contains", value: "" }] });
-  const addGroup = () => onChange({ ...node, children: [...node.children, { type: "group", op: node.op === "and" ? "or" : "and", children: [] }] });
+  const addCond = () =>
+    onChange({
+      ...node,
+      children: [...node.children, { type: "cond", field: "from", op: "contains", value: "" }],
+    });
+  const addGroup = () =>
+    onChange({
+      ...node,
+      children: [
+        ...node.children,
+        { type: "group", op: node.op === "and" ? "or" : "and", children: [] },
+      ],
+    });
 
   return (
-    <div className={`rounded-md border ${isRoot ? "border-border" : "border-border/70 bg-muted/20"} p-2`}>
+    <div
+      className={`rounded-md border ${isRoot ? "border-border" : "border-border/70 bg-muted/20"} p-2`}
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="inline-flex rounded-md border border-border text-xs overflow-hidden">
           <button
@@ -1432,7 +1904,9 @@ function RuleGroupEditor({
             <Plus className="mr-1 h-3 w-3" /> Group
           </Button>
           {!isRoot && onRemove && (
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onRemove}><X className="h-3 w-3" /></Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onRemove}>
+              <X className="h-3 w-3" />
+            </Button>
           )}
         </div>
       </div>
@@ -1443,14 +1917,25 @@ function RuleGroupEditor({
           </div>
         )}
         {node.children.map((c, i) => (
-          <RuleGroupEditor key={i} node={c} onChange={(n) => updateChild(i, n)} onRemove={() => removeChild(i)} />
+          <RuleGroupEditor
+            key={i}
+            node={c}
+            onChange={(n) => updateChild(i, n)}
+            onRemove={() => removeChild(i)}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function ScanGmailSection({ folder, hasIncludeRules }: { folder: Folder; hasIncludeRules: boolean }) {
+function ScanGmailSection({
+  folder,
+  hasIncludeRules,
+}: {
+  folder: Folder;
+  hasIncludeRules: boolean;
+}) {
   const qc = useQueryClient();
   const scanFn = useServerFn(scanGmailForFolder);
   const [months, setMonths] = useState<"1" | "3" | "6" | "12">("6");
@@ -1465,18 +1950,23 @@ function ScanGmailSection({ folder, hasIncludeRules }: { folder: Folder; hasIncl
     setBusy(true);
     setLastResult(null);
     try {
-      const res = await scanFn({ data: { folder_id: folder.id, months: Number(months) as 1 | 3 | 6 | 12 } });
+      const res = await scanFn({
+        data: { folder_id: folder.id, months: Number(months) as 1 | 3 | 6 | 12 },
+      });
       if (!res.ok && res.reason === "no_translatable_rules") {
-        toast.error("None of this folder's rules can be scanned in Gmail (regex rules are skipped).");
+        toast.error(
+          "None of this folder's rules can be scanned in Gmail (regex rules are skipped).",
+        );
         return;
       }
       if (!res.ok && res.reason === "reauth_required") {
         toast.error("Gmail needs to be reconnected for this account.");
         return;
       }
-      const msg = res.ingested === 0
-        ? `Scanned ${res.found} message${res.found === 1 ? "" : "s"} · no new matches`
-        : `Scanned ${res.found} · added ${res.ingested} new`;
+      const msg =
+        res.ingested === 0
+          ? `Scanned ${res.found} message${res.found === 1 ? "" : "s"} · no new matches`
+          : `Scanned ${res.found} · added ${res.ingested} new`;
       const suffix = res.truncated ? " (capped — run again to continue)" : "";
       setLastResult(msg + suffix);
       toast.success(msg + suffix);
@@ -1495,14 +1985,18 @@ function ScanGmailSection({ folder, hasIncludeRules }: { folder: Folder; hasIncl
     <div className="mt-6 rounded-md border border-border p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Scan Gmail for matches</Label>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Scan Gmail for matches
+          </Label>
           <p className="mt-1 text-xs text-muted-foreground">
             Search Gmail for messages matching this folder's rules and pull in anything missing.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Select value={months} onValueChange={(v) => setMonths(v as "1" | "3" | "6" | "12")}>
-            <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 w-28 text-xs">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="1">Last month</SelectItem>
               <SelectItem value="3">Last 3 months</SelectItem>
@@ -1516,11 +2010,11 @@ function ScanGmailSection({ folder, hasIncludeRules }: { folder: Folder; hasIncl
         </div>
       </div>
       {!hasIncludeRules && (
-        <p className="mt-2 text-xs text-muted-foreground">Add a domain, sender, or subject rule to enable scanning.</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Add a domain, sender, or subject rule to enable scanning.
+        </p>
       )}
-      {lastResult && (
-        <p className="mt-2 text-xs text-foreground">{lastResult}</p>
-      )}
+      {lastResult && <p className="mt-2 text-xs text-foreground">{lastResult}</p>}
     </div>
   );
 }

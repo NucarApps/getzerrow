@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { findSimilarEmails, bulkMoveEmails } from "@/lib/gmail.functions";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
@@ -11,8 +18,12 @@ import { Loader2, AtSign, Globe } from "lucide-react";
 
 type Folder = { id: string; name: string; color: string };
 type Match = {
-  id: string; subject: string | null; from_addr: string | null;
-  from_name: string | null; received_at: string | null; snippet: string | null;
+  id: string;
+  subject: string | null;
+  from_addr: string | null;
+  from_name: string | null;
+  received_at: string | null;
+  snippet: string | null;
 };
 
 export function MoveSimilarDialog({
@@ -68,7 +79,9 @@ export function MoveSimilarDialog({
       })
       .catch((e: any) => !cancelled && toast.error(e.message))
       .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [open, emailId, fromFolderId, mode, findFn]);
 
   const allSelected = matches.length > 0 && selected.size === matches.length;
@@ -92,8 +105,8 @@ export function MoveSimilarDialog({
         mode === "domain" && domain
           ? { field: "domain" as const, value: domain }
           : mode === "sender" && fromAddr
-          ? { field: "from" as const, value: fromAddr }
-          : null;
+            ? { field: "from" as const, value: fromAddr }
+            : null;
       const r = await moveFn({
         data: { email_ids: Array.from(selected), to_folder_id: toFolder.id, create_rule },
       });
@@ -119,8 +132,8 @@ export function MoveSimilarDialog({
         <DialogHeader>
           <DialogTitle>Move similar emails to {toFolder.name}?</DialogTitle>
           <DialogDescription>
-            Other emails in <span className="font-medium text-foreground">{fromFolderName}</span> that match.
-            Uncheck any you want to keep.
+            Other emails in <span className="font-medium text-foreground">{fromFolderName}</span>{" "}
+            that match. Uncheck any you want to keep.
           </DialogDescription>
         </DialogHeader>
 
@@ -155,7 +168,9 @@ export function MoveSimilarDialog({
             <>
               <label className="flex items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
                 <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
-                <span>{selected.size} of {matches.length} selected</span>
+                <span>
+                  {selected.size} of {matches.length} selected
+                </span>
               </label>
               <ul className="divide-y divide-border">
                 {matches.map((m) => (
@@ -181,7 +196,9 @@ export function MoveSimilarDialog({
                           {m.subject || "(no subject)"}
                         </div>
                         {m.snippet && (
-                          <div className="line-clamp-1 text-xs text-muted-foreground">{m.snippet}</div>
+                          <div className="line-clamp-1 text-xs text-muted-foreground">
+                            {m.snippet}
+                          </div>
                         )}
                       </div>
                     </label>
@@ -193,19 +210,14 @@ export function MoveSimilarDialog({
         </div>
 
         {matches.length >= 50 && (
-          <p className="text-xs text-muted-foreground">
-            Showing the 50 most recent matches.
-          </p>
+          <p className="text-xs text-muted-foreground">Showing the 50 most recent matches.</p>
         )}
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={moving}>
             Not now
           </Button>
-          <Button
-            onClick={confirmMove}
-            disabled={moving || selected.size === 0}
-          >
+          <Button onClick={confirmMove} disabled={moving || selected.size === 0}>
             {moving ? "Moving…" : `Move ${selected.size} to ${toFolder.name}`}
           </Button>
         </DialogFooter>

@@ -50,7 +50,9 @@ function ctx(over: Partial<AccountContext> = {}): AccountContext {
   };
 }
 
-function email(over: Partial<Parameters<typeof classifyParsedEmail>[0]> = {}): Parameters<typeof classifyParsedEmail>[0] {
+function email(
+  over: Partial<Parameters<typeof classifyParsedEmail>[0]> = {},
+): Parameters<typeof classifyParsedEmail>[0] {
   return {
     from_addr: over.from_addr ?? "sender@example.com",
     from_name: over.from_name ?? "",
@@ -76,7 +78,9 @@ describe("classifyParsedEmail — gmail label match", () => {
     const c = ctx({ folders: [f] });
     const r = await classifyParsedEmail(
       email({ raw_labels: ["INBOX", "Label_42"] }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.folder_id).toBe("f1");
     expect(r.classified_by).toBe("gmail_label");
@@ -90,7 +94,9 @@ describe("classifyParsedEmail — gmail label match", () => {
     const c = ctx({ folders: [f1, f2], filters });
     const r = await classifyParsedEmail(
       email({ raw_labels: ["INBOX", "Label_42"] }),
-      "user-1", "acc-1", { ...opts, context: c, skipGmailLabelMatch: true },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c, skipGmailLabelMatch: true },
     );
     // With label match suppressed and the filter on f-rule matching the from, we land in f-rule.
     expect(r.folder_id).toBe("f-rule");
@@ -103,10 +109,10 @@ describe("classifyParsedEmail — inbox overrides (allowlist)", () => {
     const c = ctx({
       overrides: [{ id: "o1", match_type: "email", value: "vip@good.com" }],
     });
-    const r = await classifyParsedEmail(
-      email({ from_addr: "vip@good.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
-    );
+    const r = await classifyParsedEmail(email({ from_addr: "vip@good.com" }), "user-1", "acc-1", {
+      ...opts,
+      context: c,
+    });
     expect(r.folder_id).toBeNull();
     expect(r.classified_by).toBe("inbox_override");
     expect(r.classification_reason).toContain("vip@good.com");
@@ -118,7 +124,9 @@ describe("classifyParsedEmail — inbox overrides (allowlist)", () => {
     });
     const r = await classifyParsedEmail(
       email({ from_addr: "ceo@vip.example" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.folder_id).toBeNull();
     expect(r.classified_by).toBe("inbox_override");
@@ -134,7 +142,9 @@ describe("classifyParsedEmail — inbox overrides (allowlist)", () => {
     });
     const r = await classifyParsedEmail(
       email({ from_addr: "newsletter@vip.example" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.folder_id).toBeNull();
     expect(r.classified_by).toBe("inbox_override");
@@ -153,7 +163,9 @@ describe("classifyParsedEmail — inbox overrides (allowlist)", () => {
     });
     const r = await classifyParsedEmail(
       email({ from_addr: "bot@vip.example", subject: "Daily Report — 5/24" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.classified_by).not.toBe("inbox_override");
     expect(r.folder_id).toBe("f1");
@@ -169,7 +181,9 @@ describe("classifyParsedEmail — inbox overrides (allowlist)", () => {
     });
     const r = await classifyParsedEmail(
       email({ from_addr: "ceo@blocked.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.folder_id).toBe("f-beat");
     expect(r.classification_reason).toContain("beat inbox override");
@@ -183,7 +197,9 @@ describe("classifyParsedEmail — filters", () => {
     const c = ctx({ folders: [f], filters });
     const r = await classifyParsedEmail(
       email({ subject: "Weekly updates from Acme" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.folder_id).toBe("f1");
     expect(r.classified_by).toBe("filter");
@@ -196,7 +212,9 @@ describe("classifyParsedEmail — filters", () => {
     const c = ctx({ folders: [f], filters });
     const r = await classifyParsedEmail(
       email({ from_addr: "support@acme.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.classified_by).toBe("domain_rule");
   });
@@ -211,13 +229,17 @@ describe("classifyParsedEmail — filters", () => {
     // Only matches one of the two — should NOT classify.
     const r1 = await classifyParsedEmail(
       email({ subject: "Invoice attached", from_addr: "alice@x.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r1.folder_id).toBeNull();
     // Matches both → classifies.
     const r2 = await classifyParsedEmail(
       email({ subject: "Invoice attached", from_addr: "billing@acme.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r2.folder_id).toBe("f-all");
   });
@@ -231,7 +253,9 @@ describe("classifyParsedEmail — filters", () => {
     const c = ctx({ folders: [f], filters });
     const r = await classifyParsedEmail(
       email({ subject: "Promo code inside", from_addr: "internal-comms@x.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     // Subject matches, but exclude on `from` fires → excluded.
     expect(r.classified_by).toBe("excluded");
@@ -246,10 +270,10 @@ describe("classifyParsedEmail — filters", () => {
       filter("high", "subject", "contains", "shared"),
     ];
     const c = ctx({ folders: [high, low], filters });
-    const r = await classifyParsedEmail(
-      email({ subject: "shared keyword" }),
-      "user-1", "acc-1", { ...opts, context: c },
-    );
+    const r = await classifyParsedEmail(email({ subject: "shared keyword" }), "user-1", "acc-1", {
+      ...opts,
+      context: c,
+    });
     expect(r.folder_id).toBe("high");
   });
 
@@ -269,14 +293,18 @@ describe("classifyParsedEmail — filters", () => {
     const c = ctx({ folders: [f] });
     const match = await classifyParsedEmail(
       email({ from_addr: "billing@acme.com", subject: "Invoice 42" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(match.folder_id).toBe("f-tree");
     expect(match.classified_by).toBe("filter");
 
     const noMatch = await classifyParsedEmail(
       email({ from_addr: "billing@acme.com", subject: "Newsletter" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(noMatch.folder_id).toBeNull();
   });
@@ -294,7 +322,9 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
     });
     const r = await classifyParsedEmail(
       email({ from_addr: "met@partner.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.folder_id).toBeNull();
     expect(r.classified_by).toBe("calendar_contact");
@@ -308,7 +338,9 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
     });
     const r = await classifyParsedEmail(
       email({ from_addr: "Met@Partner.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.classified_by).toBe("calendar_contact");
   });
@@ -320,7 +352,9 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
     });
     const r = await classifyParsedEmail(
       email({ from_addr: "met@partner.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.classified_by).not.toBe("calendar_contact");
   });
@@ -332,7 +366,9 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
     });
     const r = await classifyParsedEmail(
       email({ from_addr: "stranger@cold.com" }),
-      "user-1", "acc-1", { ...opts, context: c },
+      "user-1",
+      "acc-1",
+      { ...opts, context: c },
     );
     expect(r.classified_by).not.toBe("calendar_contact");
   });
@@ -342,7 +378,9 @@ describe("classifyParsedEmail — skipAi behavior", () => {
   it("returns null folder with classified_by='none' when no match and skipAi=true", async () => {
     const r = await classifyParsedEmail(
       email({ from_addr: "nobody@nowhere.test" }),
-      "user-1", "acc-1", { context: ctx(), skipAi: true },
+      "user-1",
+      "acc-1",
+      { context: ctx(), skipAi: true },
     );
     expect(r.folder_id).toBeNull();
     expect(r.classified_by).toBe("none");

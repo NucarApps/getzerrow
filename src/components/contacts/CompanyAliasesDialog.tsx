@@ -3,21 +3,29 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { X, Plus, Trash2, Check, Star } from "lucide-react";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
-  addCompanyAlias, removeCompanyAlias, clearCompanyAliases, promoteAliasToPrimary,
+  addCompanyAlias,
+  removeCompanyAlias,
+  clearCompanyAliases,
+  promoteAliasToPrimary,
 } from "@/lib/company-aliases.functions";
 import {
-  listCompanyLogoChoices, setCompanyLogoChoice, clearCompanyLogoChoice,
+  listCompanyLogoChoices,
+  setCompanyLogoChoice,
+  clearCompanyLogoChoice,
 } from "@/lib/company-logo.functions";
-import {
-  listCompanyGroupAssignments, setCompanyGroups,
-} from "@/lib/company-groups.functions";
+import { listCompanyGroupAssignments, setCompanyGroups } from "@/lib/company-groups.functions";
 import { listContactGroups } from "@/lib/contact-groups.functions";
 import { searchLogoBrands, type LogoBrand } from "@/lib/logo-search.functions";
 import { LOGO_PROVIDER_LABELS } from "@/lib/logo-providers";
@@ -34,7 +42,12 @@ type Props = {
 };
 
 export function CompanyAliasesDialog({
-  open, onOpenChange, primaryDomain, companyName, aliases, contactIds,
+  open,
+  onOpenChange,
+  primaryDomain,
+  companyName,
+  aliases,
+  contactIds,
 }: Props) {
   const qc = useQueryClient();
   const addFn = useServerFn(addCompanyAlias);
@@ -91,7 +104,11 @@ export function CompanyAliasesDialog({
 
   useEffect(() => {
     if (open) setBrandQuery(companyName ?? "");
-    else { setNewDomain(""); setBrandQuery(""); setDebouncedQuery(""); }
+    else {
+      setNewDomain("");
+      setBrandQuery("");
+      setDebouncedQuery("");
+    }
   }, [open, companyName]);
 
   useEffect(() => {
@@ -113,7 +130,11 @@ export function CompanyAliasesDialog({
   }
 
   async function add() {
-    const d = newDomain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    const d = newDomain
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/\/.*$/, "");
     if (!d) return;
     setBusy(true);
     try {
@@ -142,8 +163,16 @@ export function CompanyAliasesDialog({
   }
 
   async function clearAll() {
-    if (aliases.length === 0) { onOpenChange(false); return; }
-    if (!confirm(`Remove all ${aliases.length} merged ${aliases.length === 1 ? "domain" : "domains"}?`)) return;
+    if (aliases.length === 0) {
+      onOpenChange(false);
+      return;
+    }
+    if (
+      !confirm(
+        `Remove all ${aliases.length} merged ${aliases.length === 1 ? "domain" : "domains"}?`,
+      )
+    )
+      return;
     setBusy(true);
     try {
       await clearFn({ data: { primaryDomain: primaryDomain! } });
@@ -246,7 +275,13 @@ export function CompanyAliasesDialog({
       <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <CompanyLogo domain={primaryDomain} name={companyName} size={28} provider={currentProvider} sourceDomain={currentSource} />
+            <CompanyLogo
+              domain={primaryDomain}
+              name={companyName}
+              size={28}
+              provider={currentProvider}
+              sourceDomain={currentSource}
+            />
             <span className="truncate">{companyName}</span>
           </DialogTitle>
           <DialogDescription>
@@ -256,7 +291,9 @@ export function CompanyAliasesDialog({
 
         <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
           <div>
-            <Label className="text-xs uppercase tracking-widest text-muted-foreground">Primary domain</Label>
+            <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+              Primary domain
+            </Label>
             <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
               {primaryDomain}
             </div>
@@ -290,7 +327,9 @@ export function CompanyAliasesDialog({
                             title={`${b.name} (${b.domain})`}
                             aria-pressed={selected}
                             className={`relative grid aspect-square place-items-center overflow-hidden rounded-md border bg-white p-1.5 transition disabled:opacity-50 ${
-                              selected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/60"
+                              selected
+                                ? "border-primary ring-2 ring-primary/40"
+                                : "border-border hover:border-primary/60"
                             }`}
                           >
                             <img
@@ -320,7 +359,11 @@ export function CompanyAliasesDialog({
                   <div key={d}>
                     <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
                       <span className="truncate">{d}</span>
-                      {d === primaryDomain && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">primary</span>}
+                      {d === primaryDomain && (
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
+                          primary
+                        </span>
+                      )}
                     </div>
                     <div className="grid grid-cols-4 gap-2">
                       {d === primaryDomain && (
@@ -350,10 +393,10 @@ export function CompanyAliasesDialog({
               })}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Tiles that can't load are hidden. Auto picks the first one that works on the primary domain.
+              Tiles that can't load are hidden. Auto picks the first one that works on the primary
+              domain.
             </p>
           </div>
-
 
           <div>
             <div className="flex items-center justify-between gap-2">
@@ -385,10 +428,7 @@ export function CompanyAliasesDialog({
                           : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: g.color }}
-                      />
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
                       <span className="truncate max-w-[10rem]">{g.name}</span>
                       {active && <Check className="h-3 w-3" />}
                     </button>
@@ -413,8 +453,6 @@ export function CompanyAliasesDialog({
             )}
           </div>
 
-
-
           <div>
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">
               Other domains for this company
@@ -424,7 +462,10 @@ export function CompanyAliasesDialog({
                 <p className="text-xs text-muted-foreground">No merged domains yet.</p>
               ) : (
                 aliases.map((a) => (
-                  <div key={a} className="flex items-center gap-2 rounded-md border border-border bg-card/40 px-2.5 py-1.5 text-sm">
+                  <div
+                    key={a}
+                    className="flex items-center gap-2 rounded-md border border-border bg-card/40 px-2.5 py-1.5 text-sm"
+                  >
                     <span className="flex-1 truncate">{a}</span>
                     <button
                       onClick={() => promote(a)}
@@ -452,7 +493,12 @@ export function CompanyAliasesDialog({
               <Input
                 value={newDomain}
                 onChange={(e) => setNewDomain(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void add(); } }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void add();
+                  }
+                }}
                 placeholder="acme.io"
                 disabled={busy}
               />
@@ -468,11 +514,18 @@ export function CompanyAliasesDialog({
 
         <DialogFooter className="gap-2 sm:gap-0">
           {aliases.length > 0 && (
-            <Button variant="ghost" className="mr-auto text-destructive" onClick={clearAll} disabled={busy}>
+            <Button
+              variant="ghost"
+              className="mr-auto text-destructive"
+              onClick={clearAll}
+              disabled={busy}
+            >
               <Trash2 className="mr-1.5 h-4 w-4" /> Delete merge
             </Button>
           )}
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Close</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Close
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -494,9 +547,8 @@ function LogoTile({ label, domain, provider, selected, disabled, onSelect }: Til
   // Specific-provider tiles hide themselves when the proxy 404s.
   if (provider !== null && failed) return null;
 
-  const src = provider === null
-    ? logoCandidates(domain, 256)[0]
-    : logoCandidates(domain, 256, provider)[0];
+  const src =
+    provider === null ? logoCandidates(domain, 256)[0] : logoCandidates(domain, 256, provider)[0];
 
   return (
     <button

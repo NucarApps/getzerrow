@@ -46,10 +46,7 @@ export function invalidateAccountContext(accountId: string): void {
  * inbox_override_exceptions) where you don't know which account caches
  * need to be busted. */
 export async function invalidateAccountContextForUser(userId: string): Promise<void> {
-  const { data } = await supabaseAdmin
-    .from("gmail_accounts")
-    .select("id")
-    .eq("user_id", userId);
+  const { data } = await supabaseAdmin.from("gmail_accounts").select("id").eq("user_id", userId);
   for (const acc of data ?? []) accountContextCache.delete(acc.id);
 }
 
@@ -61,7 +58,10 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   const { data: examples } = await supabaseAdmin
     .from("folder_examples")
     .select("folder_id, from_addr")
-    .in("folder_id", folders.map((f) => f.id))
+    .in(
+      "folder_id",
+      folders.map((f) => f.id),
+    )
     .order("created_at", { ascending: false })
     .limit(200);
   const byFolder = new Map<string, Array<{ from_addr: string | null; subject: string | null }>>();
@@ -79,26 +79,37 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   }));
 }
 
-export async function loadAccountContext(accountId: string, userId: string): Promise<AccountContext> {
+export async function loadAccountContext(
+  accountId: string,
+  userId: string,
+): Promise<AccountContext> {
   const cached = accountContextCache.get(accountId);
   if (cached && cached.expires > Date.now()) return cached.ctx;
 
-  const [{ data: folders }, { data: overrides }, { data: exceptions }, { data: account }] = await Promise.all([
-    supabaseAdmin
-      .from("folders")
-      .select("*")
-      .eq("gmail_account_id", accountId)
-      .order("priority", { ascending: false }),
-    // Overrides scoped to this account (or unscoped legacy rows where
-    // gmail_account_id IS NULL — those apply to every account).
-    supabaseAdmin
-      .from("inbox_overrides")
-      .select("id, match_type, value")
-      .eq("user_id", userId)
-      .or(`gmail_account_id.eq.${accountId},gmail_account_id.is.null`),
-    supabaseAdmin.from("inbox_override_exceptions").select("override_id, field, op, value").eq("user_id", userId),
-    supabaseAdmin.from("gmail_accounts").select("calendar_guard_enabled").eq("id", accountId).maybeSingle(),
-  ]);
+  const [{ data: folders }, { data: overrides }, { data: exceptions }, { data: account }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("folders")
+        .select("*")
+        .eq("gmail_account_id", accountId)
+        .order("priority", { ascending: false }),
+      // Overrides scoped to this account (or unscoped legacy rows where
+      // gmail_account_id IS NULL — those apply to every account).
+      supabaseAdmin
+        .from("inbox_overrides")
+        .select("id, match_type, value")
+        .eq("user_id", userId)
+        .or(`gmail_account_id.eq.${accountId},gmail_account_id.is.null`),
+      supabaseAdmin
+        .from("inbox_override_exceptions")
+        .select("override_id, field, op, value")
+        .eq("user_id", userId),
+      supabaseAdmin
+        .from("gmail_accounts")
+        .select("calendar_guard_enabled")
+        .eq("id", accountId)
+        .maybeSingle(),
+    ]);
 
   const folderList = (folders ?? []) as Folder[];
   const folderIds = folderList.map((f) => f.id);

@@ -15,16 +15,15 @@ export const Route = createFileRoute("/api/public/hooks/run-folder-summary-jobs"
           try {
             // Process up to 3 jobs per tick — each can take ~60–90s of AI time.
             const result = await processFolderSummaryJobs(3);
-            return new Response(
-              JSON.stringify({ ...result, run_id: runId }),
-              { headers: { "Content-Type": "application/json" } },
-            );
+            return new Response(JSON.stringify({ ...result, run_id: runId }), {
+              headers: { "Content-Type": "application/json" },
+            });
           } catch (e) {
             logError("folder_summary_jobs.tick_failed", { run_id: runId }, e);
-            return new Response(
-              JSON.stringify({ error: (e as Error)?.message ?? "Failed" }),
-              { status: 500, headers: { "Content-Type": "application/json" } },
-            );
+            return new Response(JSON.stringify({ error: (e as Error)?.message ?? "Failed" }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            });
           }
         });
       },

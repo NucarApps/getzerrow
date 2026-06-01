@@ -105,7 +105,9 @@ export async function classifyParsedEmail(
   if (overrideHit) {
     const exForThisOverride = overrideExceptions.filter((e) => e.override_id === overrideHit.id);
     for (const ex of exForThisOverride) {
-      if (applyFilter(parsed, { id: "", folder_id: "", field: ex.field, op: ex.op, value: ex.value })) {
+      if (
+        applyFilter(parsed, { id: "", folder_id: "", field: ex.field, op: ex.op, value: ex.value })
+      ) {
         overrideExceptionHit = ex;
         break;
       }
@@ -120,10 +122,10 @@ export async function classifyParsedEmail(
   const folderMatch = labeledFolder ? null : matchByFilters(parsed, folderList, filterList);
   const beatingFolderId =
     overrideHit && folderMatch?.kind === "match"
-      ? folderMatch.all_matched_folder_ids.find((fid) => {
+      ? (folderMatch.all_matched_folder_ids.find((fid) => {
           const f = folderList.find((x) => x.id === fid);
           return f?.overrides_inbox_override === true;
-        }) ?? null
+        }) ?? null)
       : null;
 
   const overrideWins = !!overrideHit && !overrideExceptionHit && !beatingFolderId;
@@ -165,8 +167,7 @@ export async function classifyParsedEmail(
         }
         if (beatingFolderId && overrideHit) {
           classification_reason =
-            (classification_reason ?? "") +
-            ` (beat inbox override "${overrideHit.value}")`;
+            (classification_reason ?? "") + ` (beat inbox override "${overrideHit.value}")`;
         } else if (overrideExceptionHit && overrideHit) {
           classification_reason =
             (classification_reason ?? "") +
@@ -210,7 +211,11 @@ export async function classifyParsedEmail(
           classification_reason = r.reason || null;
         }
       } catch (e) {
-        logError("classify.ai_failed", { user_id: userId, account_id: accountId, folder_count: aiFolders.length }, e);
+        logError(
+          "classify.ai_failed",
+          { user_id: userId, account_id: accountId, folder_count: aiFolders.length },
+          e,
+        );
         classified_by = "ai_error";
         classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
       }

@@ -26,8 +26,16 @@ export const deleteAccount = createServerFn({ method: "POST" })
       .map((a) => a.email_address)
       .filter((e): e is string => typeof e === "string" && e.length > 0);
     for (const acc of accounts ?? []) {
-      try { await stopWatch(acc.id); } catch (e) { logError("account.delete.stop_watch_failed", { user_id: userId, account_id: acc.id }, e); }
-      try { await revokeGoogleOAuthForAccount(acc.id); } catch (e) { logError("account.delete.revoke_failed", { user_id: userId, account_id: acc.id }, e); }
+      try {
+        await stopWatch(acc.id);
+      } catch (e) {
+        logError("account.delete.stop_watch_failed", { user_id: userId, account_id: acc.id }, e);
+      }
+      try {
+        await revokeGoogleOAuthForAccount(acc.id);
+      } catch (e) {
+        logError("account.delete.revoke_failed", { user_id: userId, account_id: acc.id }, e);
+      }
     }
 
     // 2. Tables NOT keyed by user_id need their own predicate, or the delete
@@ -47,14 +55,24 @@ export const deleteAccount = createServerFn({ method: "POST" })
         .from("folder_filters")
         .delete()
         .in("folder_id", folderIds);
-      if (ffErr) { deleteErrors++; logError("account.delete.table_failed", { user_id: userId, table: "folder_filters" }, ffErr); }
+      if (ffErr) {
+        deleteErrors++;
+        logError(
+          "account.delete.table_failed",
+          { user_id: userId, table: "folder_filters" },
+          ffErr,
+        );
+      }
     }
     {
       const { error: ceErr } = await supabaseAdmin
         .from("card_events")
         .delete()
         .eq("owner_user_id", userId);
-      if (ceErr) { deleteErrors++; logError("account.delete.table_failed", { user_id: userId, table: "card_events" }, ceErr); }
+      if (ceErr) {
+        deleteErrors++;
+        logError("account.delete.table_failed", { user_id: userId, table: "card_events" }, ceErr);
+      }
     }
 
     // 2b. Delete all per-user rows. Order matters only where one table
@@ -88,9 +106,15 @@ export const deleteAccount = createServerFn({ method: "POST" })
     ] as const;
 
     for (const table of tables) {
-      const { error } = await (supabaseAdmin.from(table) as unknown as {
-        delete: () => { eq: (col: string, val: string) => Promise<{ error: { message: string } | null }> };
-      }).delete().eq("user_id", userId);
+      const { error } = await (
+        supabaseAdmin.from(table) as unknown as {
+          delete: () => {
+            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>;
+          };
+        }
+      )
+        .delete()
+        .eq("user_id", userId);
       if (error) {
         deleteErrors++;
         logError("account.delete.table_failed", { user_id: userId, table }, error);
@@ -106,10 +130,13 @@ export const deleteAccount = createServerFn({ method: "POST" })
         .in("email_address", emailAddresses);
       if (pubsubErr) {
         deleteErrors++;
-        logError("account.delete.table_failed", { user_id: userId, table: "pubsub_events" }, pubsubErr);
+        logError(
+          "account.delete.table_failed",
+          { user_id: userId, table: "pubsub_events" },
+          pubsubErr,
+        );
       }
     }
-
 
     // 3. Delete the auth user. After this the JWT is dead.
     const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(userId);

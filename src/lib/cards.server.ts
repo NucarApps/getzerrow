@@ -70,13 +70,19 @@ export async function sendCardEmail(args: {
   const vcfFilename = `${(args.card.name || args.card.handle).replace(/[^\w-]+/g, "_")}.vcf`;
 
   const subject = `${args.card.name || args.card.email || "My card"} — contact card`;
-  const greeting = args.card.name ? `Hi,\n\nHere's my contact info.` : "Hi, here's my contact info.";
+  const greeting = args.card.name
+    ? `Hi,\n\nHere's my contact info.`
+    : "Hi, here's my contact info.";
   const sigLines = [
     args.card.name,
-    args.card.title && args.card.company ? `${args.card.title}, ${args.card.company}` : (args.card.title || args.card.company),
+    args.card.title && args.card.company
+      ? `${args.card.title}, ${args.card.company}`
+      : args.card.title || args.card.company,
     args.card.phone,
     args.card.email,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const textBody = `${greeting}
 
@@ -139,7 +145,11 @@ View / save my card: ${args.publicUrl}
     "",
   ].join("\r\n");
 
-  const raw = Buffer.from(rfc822).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const raw = Buffer.from(rfc822)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
@@ -154,7 +164,11 @@ View / save my card: ${args.publicUrl}
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export type ContactShareData = {
@@ -175,9 +189,12 @@ export type ContactShareData = {
 };
 
 function formatAddressLines(c: {
-  address_line1?: string | null; address_line2?: string | null;
-  city?: string | null; region?: string | null;
-  postal_code?: string | null; country?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
 }): string[] {
   const lines: string[] = [];
   if (c.address_line1) lines.push(c.address_line1);
@@ -199,12 +216,22 @@ export async function sendContactShareEmail(args: {
   const token = await getAccessToken(args.accountId);
   const c = args.contact;
   const cardData: CardData = {
-    name: c.name, title: c.title, company: c.company, email: c.email,
-    phone: c.phone, website: c.website, linkedin: c.linkedin, twitter: c.twitter,
-    tagline: null, handle: (c.name || c.email || "contact").toLowerCase().replace(/[^\w-]+/g, "-"),
-    address_line1: c.address_line1 ?? null, address_line2: c.address_line2 ?? null,
-    city: c.city ?? null, region: c.region ?? null,
-    postal_code: c.postal_code ?? null, country: c.country ?? null,
+    name: c.name,
+    title: c.title,
+    company: c.company,
+    email: c.email,
+    phone: c.phone,
+    website: c.website,
+    linkedin: c.linkedin,
+    twitter: c.twitter,
+    tagline: null,
+    handle: (c.name || c.email || "contact").toLowerCase().replace(/[^\w-]+/g, "-"),
+    address_line1: c.address_line1 ?? null,
+    address_line2: c.address_line2 ?? null,
+    city: c.city ?? null,
+    region: c.region ?? null,
+    postal_code: c.postal_code ?? null,
+    country: c.country ?? null,
   };
   const vcf = buildVCard(cardData);
   const vcfFilename = `${(c.name || c.email || "contact").replace(/[^\w-]+/g, "_")}.vcf`;
@@ -215,10 +242,15 @@ export async function sendContactShareEmail(args: {
 
   const addressLines = formatAddressLines(c);
   const sigLines = [
-    c.name, c.title && c.company ? `${c.title}, ${c.company}` : (c.title || c.company),
-    c.phone, c.email, c.website,
+    c.name,
+    c.title && c.company ? `${c.title}, ${c.company}` : c.title || c.company,
+    c.phone,
+    c.email,
+    c.website,
     ...addressLines,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const textBody = `${noteBlock}I'm sharing ${displayName}'s contact info with you.
 
@@ -228,9 +260,10 @@ ${sigLines}
 
 — Shared from Zerrow`;
 
-  const addressRow = addressLines.length > 0
-    ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px;vertical-align:top">Address</td><td style="padding:2px 8px;white-space:pre-line">${escapeHtml(addressLines.join("\n"))}</td></tr>`
-    : "";
+  const addressRow =
+    addressLines.length > 0
+      ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px;vertical-align:top">Address</td><td style="padding:2px 8px;white-space:pre-line">${escapeHtml(addressLines.join("\n"))}</td></tr>`
+      : "";
 
   const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#111;line-height:1.5">
     ${args.note?.trim() ? `<p style="white-space:pre-wrap">${escapeHtml(args.note.trim())}</p>` : ""}
@@ -289,7 +322,11 @@ ${sigLines}
     "",
   ].join("\r\n");
 
-  const raw = Buffer.from(rfc822).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const raw = Buffer.from(rfc822)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",

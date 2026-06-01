@@ -94,8 +94,7 @@ export function PullToRefresh({ onRefresh, children, className, onClick }: Props
     };
   }, [phase, pull, onRefresh]);
 
-  const indicatorHeight =
-    phase === "launching" ? 96 : pull;
+  const indicatorHeight = phase === "launching" ? 96 : pull;
 
   return (
     <div
@@ -117,10 +116,7 @@ export function PullToRefresh({ onRefresh, children, className, onClick }: Props
           pointerEvents: "none",
         }}
       >
-        <RocketIndicator
-          pull={Math.min(1, pull / THRESHOLD)}
-          phase={phase}
-        />
+        <RocketIndicator pull={Math.min(1, pull / THRESHOLD)} phase={phase} />
       </div>
       {children}
     </div>

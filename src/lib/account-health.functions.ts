@@ -30,9 +30,10 @@ export const getAccountHealth = createServerFn({ method: "GET" })
 
     const { data: accounts } = await supabaseAdmin
       .from("gmail_accounts")
-      .select("id, email_address, last_poll_at, watch_expiration, needs_reconnect, last_oauth_error")
+      .select(
+        "id, email_address, last_poll_at, watch_expiration, needs_reconnect, last_oauth_error",
+      )
       .eq("user_id", userId);
-
 
     const result: AccountHealth[] = [];
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -139,13 +140,16 @@ export const retryDlqJobs = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { count, error } = await supabaseAdmin
       .from("message_jobs")
-      .update({
-        status: "pending",
-        attempt: 0,
-        next_run_at: new Date().toISOString(),
-        locked_at: null,
-        last_error: null,
-      }, { count: "exact" })
+      .update(
+        {
+          status: "pending",
+          attempt: 0,
+          next_run_at: new Date().toISOString(),
+          locked_at: null,
+          last_error: null,
+        },
+        { count: "exact" },
+      )
       .eq("user_id", context.userId)
       .eq("gmail_account_id", data.account_id)
       .eq("status", "dlq");

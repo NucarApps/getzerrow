@@ -39,8 +39,10 @@ export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): b
       // Legacy fallback: support older query keys where [1] WAS the scope
       // (e.g. ["emails", "all"]). Only honor recognised scope strings.
       if (
-        accountTag === "all" || accountTag === "all_mail" ||
-        accountTag === "inbox" || accountTag === "archived" ||
+        accountTag === "all" ||
+        accountTag === "all_mail" ||
+        accountTag === "inbox" ||
+        accountTag === "archived" ||
         accountTag === "no_rules"
       ) {
         return matchesScope(row, accountTag);
@@ -71,7 +73,9 @@ export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): b
 function matchesScope(row: EmailRow, scope: string): boolean {
   if (scope === "all_mail") return true;
   if (scope === "all" || scope === "inbox") {
-    return row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
+    return (
+      row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX")
+    );
   }
   if (scope === "archived") return row.is_archived === true;
   if (scope === "no_rules") {
@@ -82,7 +86,6 @@ function matchesScope(row: EmailRow, scope: string): boolean {
   // Any other string is treated as a folder UUID.
   return row.folder_id === scope;
 }
-
 
 /**
  * Single source of truth for inbox realtime + catch-up.
@@ -151,7 +154,9 @@ export function useEmailRealtime() {
         if (present && !belongs) {
           patchOneQuery(key as unknown[], (curr) => curr.filter((r) => r.id !== row.id));
         } else if (present && belongs) {
-          patchOneQuery(key as unknown[], (curr) => curr.map((r) => (r.id === row.id ? { ...r, ...row } : r)));
+          patchOneQuery(key as unknown[], (curr) =>
+            curr.map((r) => (r.id === row.id ? { ...r, ...row } : r)),
+          );
         } else if (!present && belongs) {
           needsRefetch = true;
         }
@@ -229,11 +234,7 @@ export function useEmailRealtime() {
             // Catch up on anything missed while disconnected.
             qc.invalidateQueries({ queryKey: ["emails"] });
             qc.invalidateQueries({ queryKey: ["folders"] });
-          } else if (
-            status === "CHANNEL_ERROR" ||
-            status === "TIMED_OUT" ||
-            status === "CLOSED"
-          ) {
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
             scheduleReconnect();
           }
         });

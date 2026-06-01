@@ -22,7 +22,10 @@ export const Route = createFileRoute("/c/$handle")({
     const card = loaderData?.card;
     if (!card) return { meta: [{ title: "Card not found" }] };
     const title = `${card.name || card.handle} — Contact card`;
-    const desc = card.tagline || `${card.name || ""}${card.title ? " · " + card.title : ""}${card.company ? " · " + card.company : ""}`.trim() || "View and save my contact info.";
+    const desc =
+      card.tagline ||
+      `${card.name || ""}${card.title ? " · " + card.title : ""}${card.company ? " · " + card.company : ""}`.trim() ||
+      "View and save my contact info.";
     const url = `${SITE_URL}/c/${params.handle}`;
     const ogImage = `${SITE_URL}/api/public/og/card/${params.handle}`;
     return {
@@ -57,7 +60,6 @@ export const Route = createFileRoute("/c/$handle")({
   component: PublicCard,
 });
 
-
 function PublicCard() {
   const { card } = Route.useLoaderData();
   const logEvent = useServerFn(logCardEvent);
@@ -79,7 +81,14 @@ function PublicCard() {
   const publicUrl = typeof window !== "undefined" ? window.location.href : "";
 
   function track(kind: "email" | "phone" | "website" | "linkedin" | "twitter", url: string) {
-    logEvent({ data: { handle: card!.handle, event_type: "link_click", link_kind: kind, link_url: url.slice(0, 500) } }).catch(() => {});
+    logEvent({
+      data: {
+        handle: card!.handle,
+        event_type: "link_click",
+        link_kind: kind,
+        link_url: url.slice(0, 500),
+      },
+    }).catch(() => {});
   }
 
   async function download() {
@@ -117,27 +126,95 @@ function PublicCard() {
                 className="h-24 w-24 rounded-full border-4 border-card object-cover"
               />
             ) : (
-              <div className={cn("grid h-24 w-24 place-items-center rounded-full border-4 border-card text-3xl font-semibold bg-gradient-to-br", theme.gradient)}>
+              <div
+                className={cn(
+                  "grid h-24 w-24 place-items-center rounded-full border-4 border-card text-3xl font-semibold bg-gradient-to-br",
+                  theme.gradient,
+                )}
+              >
                 {(card.name || card.handle).slice(0, 1).toUpperCase()}
               </div>
             )}
-            <h1 className="mt-4 font-display text-2xl text-foreground">{card.name || card.handle}</h1>
+            <h1 className="mt-4 font-display text-2xl text-foreground">
+              {card.name || card.handle}
+            </h1>
             {card.title && <p className="text-sm text-muted-foreground">{card.title}</p>}
-            {card.tagline && <p className="mt-3 text-sm italic text-foreground/80">"{card.tagline}"</p>}
+            {card.tagline && (
+              <p className="mt-3 text-sm italic text-foreground/80">"{card.tagline}"</p>
+            )}
 
             <ul className="mt-6 space-y-2 text-sm">
               {card.company && <Row icon={<Building2 className="h-4 w-4" />}>{card.company}</Row>}
-              {card.email && <Row icon={<Mail className="h-4 w-4" />}><a href={`mailto:${card.email}`} onClick={() => track("email", `mailto:${card.email}`)} className="hover:underline">{card.email}</a></Row>}
-              {card.phone && <Row icon={<Phone className="h-4 w-4" />}><a href={`tel:${card.phone}`} onClick={() => track("phone", `tel:${card.phone}`)} className="hover:underline">{card.phone}</a></Row>}
-              {card.website && <Row icon={<Globe className="h-4 w-4" />}><a href={card.website} target="_blank" rel="noreferrer" onClick={() => track("website", card.website!)} className="hover:underline">{card.website}</a></Row>}
-              {card.linkedin && <Row icon={<Linkedin className="h-4 w-4" />}><a href={card.linkedin} target="_blank" rel="noreferrer" onClick={() => track("linkedin", card.linkedin!)} className="hover:underline">LinkedIn</a></Row>}
-              {card.twitter && <Row icon={<Twitter className="h-4 w-4" />}><a href={card.twitter} target="_blank" rel="noreferrer" onClick={() => track("twitter", card.twitter!)} className="hover:underline">Twitter / X</a></Row>}
+              {card.email && (
+                <Row icon={<Mail className="h-4 w-4" />}>
+                  <a
+                    href={`mailto:${card.email}`}
+                    onClick={() => track("email", `mailto:${card.email}`)}
+                    className="hover:underline"
+                  >
+                    {card.email}
+                  </a>
+                </Row>
+              )}
+              {card.phone && (
+                <Row icon={<Phone className="h-4 w-4" />}>
+                  <a
+                    href={`tel:${card.phone}`}
+                    onClick={() => track("phone", `tel:${card.phone}`)}
+                    className="hover:underline"
+                  >
+                    {card.phone}
+                  </a>
+                </Row>
+              )}
+              {card.website && (
+                <Row icon={<Globe className="h-4 w-4" />}>
+                  <a
+                    href={card.website}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => track("website", card.website!)}
+                    className="hover:underline"
+                  >
+                    {card.website}
+                  </a>
+                </Row>
+              )}
+              {card.linkedin && (
+                <Row icon={<Linkedin className="h-4 w-4" />}>
+                  <a
+                    href={card.linkedin}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => track("linkedin", card.linkedin!)}
+                    className="hover:underline"
+                  >
+                    LinkedIn
+                  </a>
+                </Row>
+              )}
+              {card.twitter && (
+                <Row icon={<Twitter className="h-4 w-4" />}>
+                  <a
+                    href={card.twitter}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => track("twitter", card.twitter!)}
+                    className="hover:underline"
+                  >
+                    Twitter / X
+                  </a>
+                </Row>
+              )}
             </ul>
 
             <div className="mt-6 grid gap-2 sm:grid-cols-2">
               <button
                 onClick={download}
-                className={cn("flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium hover:opacity-90", theme.accent)}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium hover:opacity-90",
+                  theme.accent,
+                )}
               >
                 <Download className="h-4 w-4" /> Save (.vcf)
               </button>
@@ -145,16 +222,23 @@ function PublicCard() {
                 onClick={async () => {
                   const shareData = {
                     title: `${card!.name || card!.handle} — Contact card`,
-                    text: card!.tagline || `${card!.name || ""}${card!.title ? " · " + card!.title : ""}`.trim() || "My contact card",
+                    text:
+                      card!.tagline ||
+                      `${card!.name || ""}${card!.title ? " · " + card!.title : ""}`.trim() ||
+                      "My contact card",
                     url: publicUrl,
                   };
                   try {
                     if (typeof navigator !== "undefined" && navigator.share) {
                       await navigator.share(shareData);
-                      logEvent({ data: { handle: card!.handle, event_type: "share" } }).catch(() => {});
+                      logEvent({ data: { handle: card!.handle, event_type: "share" } }).catch(
+                        () => {},
+                      );
                     } else {
                       await navigator.clipboard.writeText(publicUrl);
-                      logEvent({ data: { handle: card!.handle, event_type: "share" } }).catch(() => {});
+                      logEvent({ data: { handle: card!.handle, event_type: "share" } }).catch(
+                        () => {},
+                      );
                       toast.success("Link copied");
                     }
                   } catch (e: any) {
@@ -169,20 +253,21 @@ function PublicCard() {
 
             <LeadForm handle={card.handle} accentClass={theme.accent} />
 
-
-
-
-
             <div className="mt-6 flex flex-col items-center gap-2">
               <div className="rounded-md bg-white p-2">
                 <QRCodeSVG value={publicUrl} size={120} />
               </div>
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Scan to share</p>
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Scan to share
+              </p>
             </div>
           </div>
         </div>
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Powered by <a href="/" className="underline hover:text-foreground">Zerrow</a>
+          Powered by{" "}
+          <a href="/" className="underline hover:text-foreground">
+            Zerrow
+          </a>
         </p>
       </div>
     </div>

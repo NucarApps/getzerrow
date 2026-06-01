@@ -16,9 +16,7 @@ function constantTimeEq(a: string, b: string): boolean {
 
 export function isAuthorizedCron(request: Request): boolean {
   const auth = request.headers.get("authorization");
-  const bearer = auth?.toLowerCase().startsWith("bearer ")
-    ? auth.slice(7).trim()
-    : null;
+  const bearer = auth?.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null;
   const cronHeader = request.headers.get("x-cron-secret");
   const provided = bearer ?? cronHeader;
   if (!provided) return false;
@@ -54,9 +52,7 @@ async function matchesDatabaseCronSecret(provided: string): Promise<boolean> {
 
 export async function isAuthorizedCronRequest(request: Request): Promise<boolean> {
   const auth = request.headers.get("authorization");
-  const bearer = auth?.toLowerCase().startsWith("bearer ")
-    ? auth.slice(7).trim()
-    : null;
+  const bearer = auth?.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null;
   const cronHeader = request.headers.get("x-cron-secret");
   const provided = bearer ?? cronHeader;
   if (!provided) return false;

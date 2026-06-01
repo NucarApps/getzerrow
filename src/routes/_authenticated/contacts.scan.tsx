@@ -18,12 +18,20 @@ export const Route = createFileRoute("/_authenticated/contacts/scan")({
 });
 
 type Draft = {
-  name: string | null; title: string | null; company: string | null;
-  email: string | null; phone: string | null; website: string | null;
-  linkedin: string | null; twitter: string | null;
-  address_line1: string | null; address_line2: string | null;
-  city: string | null; region: string | null;
-  postal_code: string | null; country: string | null;
+  name: string | null;
+  title: string | null;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  linkedin: string | null;
+  twitter: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  region: string | null;
+  postal_code: string | null;
+  country: string | null;
 };
 
 function ScanPage() {
@@ -96,19 +104,36 @@ function ScanPage() {
     const scanP = (async () => {
       try {
         const r = await scan({ data: { imageDataUrl: out.dataUrl } });
-        const d = r.draft as Partial<Draft> & { phones?: Array<{ label: string; number: string }> | null };
+        const d = r.draft as Partial<Draft> & {
+          phones?: Array<{ label: string; number: string }> | null;
+        };
         setDraft({
-          name: d.name ?? null, title: d.title ?? null, company: d.company ?? null,
-          email: d.email ?? null, phone: d.phone ?? null, website: d.website ?? null,
-          linkedin: d.linkedin ?? null, twitter: d.twitter ?? null,
-          address_line1: d.address_line1 ?? null, address_line2: d.address_line2 ?? null,
-          city: d.city ?? null, region: d.region ?? null,
-          postal_code: d.postal_code ?? null, country: d.country ?? null,
+          name: d.name ?? null,
+          title: d.title ?? null,
+          company: d.company ?? null,
+          email: d.email ?? null,
+          phone: d.phone ?? null,
+          website: d.website ?? null,
+          linkedin: d.linkedin ?? null,
+          twitter: d.twitter ?? null,
+          address_line1: d.address_line1 ?? null,
+          address_line2: d.address_line2 ?? null,
+          city: d.city ?? null,
+          region: d.region ?? null,
+          postal_code: d.postal_code ?? null,
+          country: d.country ?? null,
         });
         const aiPhones = (d.phones ?? []).filter((p) => p?.number?.trim());
-        const initial: PhoneEntry[] = aiPhones.length > 0
-          ? aiPhones.map((p, i) => ({ label: (p.label || "mobile").toLowerCase(), number: p.number, is_primary: i === 0 }))
-          : (d.phone ? [{ label: "mobile", number: d.phone, is_primary: true }] : []);
+        const initial: PhoneEntry[] =
+          aiPhones.length > 0
+            ? aiPhones.map((p, i) => ({
+                label: (p.label || "mobile").toLowerCase(),
+                number: p.number,
+                is_primary: i === 0,
+              }))
+            : d.phone
+              ? [{ label: "mobile", number: d.phone, is_primary: true }]
+              : [];
         setPhones(initial);
       } catch (e: any) {
         toast.error(e?.message ?? "Couldn't read the card");
@@ -133,19 +158,32 @@ function ScanPage() {
       const r = await create({
         data: {
           email: draft.email,
-          name: draft.name, title: draft.title, company: draft.company,
-          phone: draft.phone, website: draft.website,
-          linkedin: draft.linkedin, twitter: draft.twitter,
-          address_line1: draft.address_line1, address_line2: draft.address_line2,
-          city: draft.city, region: draft.region,
-          postal_code: draft.postal_code, country: draft.country,
+          name: draft.name,
+          title: draft.title,
+          company: draft.company,
+          phone: draft.phone,
+          website: draft.website,
+          linkedin: draft.linkedin,
+          twitter: draft.twitter,
+          address_line1: draft.address_line1,
+          address_line2: draft.address_line2,
+          city: draft.city,
+          region: draft.region,
+          postal_code: draft.postal_code,
+          country: draft.country,
           card_image_url: cardImageUrl,
           phones: cleanPhones,
         },
       });
       if (sendBack) {
         try {
-          await send({ data: { toEmail: draft.email, contactId: r.contact.id, publicBaseUrl: window.location.origin } });
+          await send({
+            data: {
+              toEmail: draft.email,
+              contactId: r.contact.id,
+              publicBaseUrl: window.location.origin,
+            },
+          });
           toast.success(`Saved & sent your card to ${draft.email}`);
         } catch (e: any) {
           toast.warning(`Saved, but couldn't send your card: ${e?.message ?? "unknown"}`);
@@ -164,26 +202,35 @@ function ScanPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
-        <Link to="/contacts" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <Link
+          to="/contacts"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
 
         <h1 className="mb-2 font-display text-2xl text-foreground">Scan a card</h1>
         <p className="mb-6 text-sm text-muted-foreground">
-          Take a photo of a paper business card. We'll auto-crop and extract the details — you confirm before saving.
+          Take a photo of a paper business card. We'll auto-crop and extract the details — you
+          confirm before saving.
         </p>
 
         {!raw && !cropped && (
           <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-card/40 px-6 py-16 text-center transition hover:border-primary/50">
             <Camera className="h-10 w-10 text-muted-foreground" />
-            <span className="text-sm font-medium text-foreground">Tap to take a photo or choose an image</span>
+            <span className="text-sm font-medium text-foreground">
+              Tap to take a photo or choose an image
+            </span>
             <span className="text-xs text-muted-foreground">JPG or PNG, up to 8MB</span>
             <input
               type="file"
               accept="image/*"
               capture="environment"
               className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onFile(f);
+              }}
             />
           </label>
         )}
@@ -197,7 +244,11 @@ function ScanPage() {
 
         {cropped && (
           <div className="mb-6">
-            <img src={cropped} alt="Cropped card" className="max-h-64 w-full rounded-md border border-border object-contain bg-card/40" />
+            <img
+              src={cropped}
+              alt="Cropped card"
+              className="max-h-64 w-full rounded-md border border-border object-contain bg-card/40"
+            />
             <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
               {uploadingCard && <span>Saving image…</span>}
               {!uploadingCard && cardImageUrl && <span>Image saved</span>}
@@ -208,21 +259,47 @@ function ScanPage() {
           </div>
         )}
 
-        {scanning && (
-          <p className="text-sm text-muted-foreground">Reading card…</p>
-        )}
+        {scanning && <p className="text-sm text-muted-foreground">Reading card…</p>}
 
         {draft && !scanning && (
           <div className="space-y-4">
             <h2 className="text-sm font-medium text-foreground">Confirm details</h2>
             <Grid>
-              <DraftField label="Name" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} />
-              <DraftField label="Title" value={draft.title} onChange={(v) => setDraft({ ...draft, title: v })} />
-              <DraftField label="Company" value={draft.company} onChange={(v) => setDraft({ ...draft, company: v })} />
-              <DraftField label="Email *" value={draft.email} onChange={(v) => setDraft({ ...draft, email: v })} />
-              <DraftField label="Website" value={draft.website} onChange={(v) => setDraft({ ...draft, website: v })} />
-              <DraftField label="LinkedIn" value={draft.linkedin} onChange={(v) => setDraft({ ...draft, linkedin: v })} />
-              <DraftField label="Twitter / X" value={draft.twitter} onChange={(v) => setDraft({ ...draft, twitter: v })} />
+              <DraftField
+                label="Name"
+                value={draft.name}
+                onChange={(v) => setDraft({ ...draft, name: v })}
+              />
+              <DraftField
+                label="Title"
+                value={draft.title}
+                onChange={(v) => setDraft({ ...draft, title: v })}
+              />
+              <DraftField
+                label="Company"
+                value={draft.company}
+                onChange={(v) => setDraft({ ...draft, company: v })}
+              />
+              <DraftField
+                label="Email *"
+                value={draft.email}
+                onChange={(v) => setDraft({ ...draft, email: v })}
+              />
+              <DraftField
+                label="Website"
+                value={draft.website}
+                onChange={(v) => setDraft({ ...draft, website: v })}
+              />
+              <DraftField
+                label="LinkedIn"
+                value={draft.linkedin}
+                onChange={(v) => setDraft({ ...draft, linkedin: v })}
+              />
+              <DraftField
+                label="Twitter / X"
+                value={draft.twitter}
+                onChange={(v) => setDraft({ ...draft, twitter: v })}
+              />
             </Grid>
 
             <PhonesEditor value={phones} onChange={setPhones} />
@@ -233,15 +310,39 @@ function ScanPage() {
               </Label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <DraftField label="Address line 1" value={draft.address_line1} onChange={(v) => setDraft({ ...draft, address_line1: v })} />
+                  <DraftField
+                    label="Address line 1"
+                    value={draft.address_line1}
+                    onChange={(v) => setDraft({ ...draft, address_line1: v })}
+                  />
                 </div>
                 <div className="sm:col-span-2">
-                  <DraftField label="Address line 2" value={draft.address_line2} onChange={(v) => setDraft({ ...draft, address_line2: v })} />
+                  <DraftField
+                    label="Address line 2"
+                    value={draft.address_line2}
+                    onChange={(v) => setDraft({ ...draft, address_line2: v })}
+                  />
                 </div>
-                <DraftField label="City" value={draft.city} onChange={(v) => setDraft({ ...draft, city: v })} />
-                <DraftField label="State / region" value={draft.region} onChange={(v) => setDraft({ ...draft, region: v })} />
-                <DraftField label="Postal code" value={draft.postal_code} onChange={(v) => setDraft({ ...draft, postal_code: v })} />
-                <DraftField label="Country" value={draft.country} onChange={(v) => setDraft({ ...draft, country: v })} />
+                <DraftField
+                  label="City"
+                  value={draft.city}
+                  onChange={(v) => setDraft({ ...draft, city: v })}
+                />
+                <DraftField
+                  label="State / region"
+                  value={draft.region}
+                  onChange={(v) => setDraft({ ...draft, region: v })}
+                />
+                <DraftField
+                  label="Postal code"
+                  value={draft.postal_code}
+                  onChange={(v) => setDraft({ ...draft, postal_code: v })}
+                />
+                <DraftField
+                  label="Country"
+                  value={draft.country}
+                  onChange={(v) => setDraft({ ...draft, country: v })}
+                />
               </div>
             </div>
 
@@ -264,7 +365,15 @@ function Grid({ children }: { children: React.ReactNode }) {
   return <div className="grid gap-3 sm:grid-cols-2">{children}</div>;
 }
 
-function DraftField({ label, value, onChange }: { label: string; value: string | null; onChange: (v: string) => void }) {
+function DraftField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  onChange: (v: string) => void;
+}) {
   return (
     <div>
       <Label className="mb-1 block text-xs text-muted-foreground">{label}</Label>

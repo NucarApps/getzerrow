@@ -3,7 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listMyGmailAccounts } from "@/lib/gmail.functions";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Mail } from "lucide-react";
 
@@ -53,7 +57,9 @@ export function AccountPicker({ value, onChange, label = "Account" }: Props) {
         </SelectTrigger>
         <SelectContent>
           {accounts.map((a) => (
-            <SelectItem key={a.id} value={a.id}>{a.email_address}</SelectItem>
+            <SelectItem key={a.id} value={a.id}>
+              {a.email_address}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>

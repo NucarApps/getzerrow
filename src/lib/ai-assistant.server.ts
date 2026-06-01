@@ -82,9 +82,7 @@ function buildPrompt(args: {
   const folderBlock = args.folders
     .map((f) => {
       const filters = f.filters.length
-        ? f.filters
-            .map((r) => `      - filter ${r.id}: ${r.field} ${r.op} "${r.value}"`)
-            .join("\n")
+        ? f.filters.map((r) => `      - filter ${r.id}: ${r.field} ${r.op} "${r.value}"`).join("\n")
         : "      (no filters)";
       return `  - folder ${f.id}: "${f.name}"
       rule: ${f.ai_rule || "(none)"}
@@ -140,19 +138,36 @@ const TOOL_PARAMETERS_SCHEMA = {
   type: "object",
   properties: {
     reply: { type: "string", description: "Short friendly summary of what you will change." },
-    clarifying_question: { type: "string", description: "A single short question if you cannot proceed; otherwise empty." },
+    clarifying_question: {
+      type: "string",
+      description: "A single short question if you cannot proceed; otherwise empty.",
+    },
     actions: {
       type: "array",
       items: {
         type: "object",
         properties: {
-          type: { type: "string", enum: ["move_email", "add_filter", "remove_filter", "update_folder_rule"] },
+          type: {
+            type: "string",
+            enum: ["move_email", "add_filter", "remove_filter", "update_folder_rule"],
+          },
           email_id: { type: "string", description: "Required when type is move_email." },
           to_folder_id: { type: "string", description: "Required when type is move_email." },
-          folder_id: { type: "string", description: "Required when type is add_filter or update_folder_rule." },
+          folder_id: {
+            type: "string",
+            description: "Required when type is add_filter or update_folder_rule.",
+          },
           filter_id: { type: "string", description: "Required when type is remove_filter." },
-          field: { type: "string", enum: ["from", "domain", "subject"], description: "Required when type is add_filter." },
-          op: { type: "string", enum: ["contains", "equals", "starts_with"], description: "Required when type is add_filter." },
+          field: {
+            type: "string",
+            enum: ["from", "domain", "subject"],
+            description: "Required when type is add_filter.",
+          },
+          op: {
+            type: "string",
+            enum: ["contains", "equals", "starts_with"],
+            description: "Required when type is add_filter.",
+          },
           value: { type: "string", description: "Required when type is add_filter." },
           ai_rule: { type: "string", description: "Required when type is update_folder_rule." },
           why: { type: "string", description: "Optional short reason." },
@@ -186,7 +201,8 @@ async function callModel(prompt: string): Promise<AssistantProposal> {
           type: "function",
           function: {
             name: "propose_changes",
-            description: "Return your reply, optional clarifying question, and the list of proposed actions.",
+            description:
+              "Return your reply, optional clarifying question, and the list of proposed actions.",
             parameters: TOOL_PARAMETERS_SCHEMA,
           },
         },
@@ -213,7 +229,11 @@ async function callModel(prompt: string): Promise<AssistantProposal> {
       throw new Error("Tool call arguments were not valid JSON");
     }
     // Validate loosely first, then drop any action that fails the strict schema.
-    const rawObj = (raw ?? {}) as { reply?: unknown; clarifying_question?: unknown; actions?: unknown };
+    const rawObj = (raw ?? {}) as {
+      reply?: unknown;
+      clarifying_question?: unknown;
+      actions?: unknown;
+    };
     const rawActions = Array.isArray(rawObj.actions) ? rawObj.actions : [];
     const validActions: AssistantAction[] = [];
     for (const a of rawActions) {
@@ -222,7 +242,8 @@ async function callModel(prompt: string): Promise<AssistantProposal> {
     }
     const final = proposalSchema.safeParse({
       reply: typeof rawObj.reply === "string" ? rawObj.reply : "",
-      clarifying_question: typeof rawObj.clarifying_question === "string" ? rawObj.clarifying_question : "",
+      clarifying_question:
+        typeof rawObj.clarifying_question === "string" ? rawObj.clarifying_question : "",
       actions: validActions,
     });
     if (!final.success) throw new Error("Proposal failed final validation");
@@ -257,7 +278,11 @@ export async function proposeAssistantChanges(args: {
     if (/schema|no object|did not call|parse/i.test(msg)) {
       try {
         return await callModel(
-          buildPrompt({ ...args, extraReminder: "Respond ONLY by calling the propose_changes tool with valid JSON arguments. Do not write any prose outside the tool call." }),
+          buildPrompt({
+            ...args,
+            extraReminder:
+              "Respond ONLY by calling the propose_changes tool with valid JSON arguments. Do not write any prose outside the tool call.",
+          }),
         );
       } catch (err2: unknown) {
         const msg2 = err2 instanceof Error ? err2.message : String(err2);
@@ -272,7 +297,8 @@ export async function proposeAssistantChanges(args: {
     }
     let question = "Sorry, I couldn't reach the AI right now. Please try again in a moment.";
     if (/402|payment|credits?/i.test(msg)) {
-      question = "AI credits are exhausted for this workspace. Add credits in Settings → Workspace → Usage and try again.";
+      question =
+        "AI credits are exhausted for this workspace. Add credits in Settings → Workspace → Usage and try again.";
     } else if (/429|rate/i.test(msg)) {
       question = "Too many requests right now — please try again in a moment.";
     }

@@ -39,74 +39,99 @@ export const Route = createFileRoute("/api/public/gmail-retention")({
       POST: async ({ request }) => {
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         return withCronRun("gmail-retention", async ({ runId }) => {
-        const url = new URL(request.url);
-        const pubsubKeepDays       = clampInt(url.searchParams.get("pubsub_keep_days"),        1, 3650, 30);
-        const pubsubKeepErrorsDays = clampInt(url.searchParams.get("pubsub_keep_errors_days"), 1, 3650, 60);
-        const pubsubLimit          = clampInt(url.searchParams.get("pubsub_limit"),            1, 50_000, 5000);
-        const dlqKeepDays          = clampInt(url.searchParams.get("dlq_keep_days"),           1, 3650, 30);
-        const dlqLimit             = clampInt(url.searchParams.get("dlq_limit"),               1, 10_000, 1000);
+          const url = new URL(request.url);
+          const pubsubKeepDays = clampInt(url.searchParams.get("pubsub_keep_days"), 1, 3650, 30);
+          const pubsubKeepErrorsDays = clampInt(
+            url.searchParams.get("pubsub_keep_errors_days"),
+            1,
+            3650,
+            60,
+          );
+          const pubsubLimit = clampInt(url.searchParams.get("pubsub_limit"), 1, 50_000, 5000);
+          const dlqKeepDays = clampInt(url.searchParams.get("dlq_keep_days"), 1, 3650, 30);
+          const dlqLimit = clampInt(url.searchParams.get("dlq_limit"), 1, 10_000, 1000);
 
-        let pubsub: CleanupPubsubResult | null = null;
-        let dlq: CleanupDlqResult | null = null;
-        let pubsubError: string | null = null;
-        let dlqError: string | null = null;
+          let pubsub: CleanupPubsubResult | null = null;
+          let dlq: CleanupDlqResult | null = null;
+          let pubsubError: string | null = null;
+          let dlqError: string | null = null;
 
-        const tPubsub = Date.now();
-        try {
-          const r = await (supabaseAdmin as unknown as CleanupRpc).rpc("cleanup_old_pubsub_events", {
-            p_keep_days: pubsubKeepDays,
-            p_keep_errors_days: pubsubKeepErrorsDays,
-            p_batch_limit: pubsubLimit,
-          });
-          if (r.error) {
-            pubsubError = r.error.message;
-            logError("retention.pubsub_cleanup_rpc_error", {
-              run_id: runId,
-              duration_ms: Date.now() - tPubsub,
-            }, r.error);
+          const tPubsub = Date.now();
+          try {
+            const r = await (supabaseAdmin as unknown as CleanupRpc).rpc(
+              "cleanup_old_pubsub_events",
+              {
+                p_keep_days: pubsubKeepDays,
+                p_keep_errors_days: pubsubKeepErrorsDays,
+                p_batch_limit: pubsubLimit,
+              },
+            );
+            if (r.error) {
+              pubsubError = r.error.message;
+              logError(
+                "retention.pubsub_cleanup_rpc_error",
+                {
+                  run_id: runId,
+                  duration_ms: Date.now() - tPubsub,
+                },
+                r.error,
+              );
+            } else pubsub = r.data?.[0] ?? null;
+          } catch (e) {
+            pubsubError = (e as Error)?.message ?? String(e);
+            logError(
+              "retention.pubsub_cleanup_threw",
+              {
+                run_id: runId,
+                duration_ms: Date.now() - tPubsub,
+              },
+              e,
+            );
           }
-          else pubsub = r.data?.[0] ?? null;
-        } catch (e) {
-          pubsubError = (e as Error)?.message ?? String(e);
-          logError("retention.pubsub_cleanup_threw", {
-            run_id: runId,
-            duration_ms: Date.now() - tPubsub,
-          }, e);
-        }
 
-        const tDlq = Date.now();
-        try {
-          const r = await (supabaseAdmin as unknown as DlqCleanupRpc).rpc("cleanup_old_dlq_jobs", {
-            p_keep_days: dlqKeepDays,
-            p_batch_limit: dlqLimit,
-          });
-          if (r.error) {
-            dlqError = r.error.message;
-            logError("retention.dlq_cleanup_rpc_error", {
-              run_id: runId,
-              duration_ms: Date.now() - tDlq,
-            }, r.error);
+          const tDlq = Date.now();
+          try {
+            const r = await (supabaseAdmin as unknown as DlqCleanupRpc).rpc(
+              "cleanup_old_dlq_jobs",
+              {
+                p_keep_days: dlqKeepDays,
+                p_batch_limit: dlqLimit,
+              },
+            );
+            if (r.error) {
+              dlqError = r.error.message;
+              logError(
+                "retention.dlq_cleanup_rpc_error",
+                {
+                  run_id: runId,
+                  duration_ms: Date.now() - tDlq,
+                },
+                r.error,
+              );
+            } else dlq = r.data?.[0] ?? null;
+          } catch (e) {
+            dlqError = (e as Error)?.message ?? String(e);
+            logError(
+              "retention.dlq_cleanup_threw",
+              {
+                run_id: runId,
+                duration_ms: Date.now() - tDlq,
+              },
+              e,
+            );
           }
-          else dlq = r.data?.[0] ?? null;
-        } catch (e) {
-          dlqError = (e as Error)?.message ?? String(e);
-          logError("retention.dlq_cleanup_threw", {
-            run_id: runId,
-            duration_ms: Date.now() - tDlq,
-          }, e);
-        }
 
-        try {
-          await supabaseAdmin.from("pubsub_events").insert({
-            event_type: "retention",
-            details: `pubsub: deleted=${pubsub?.deleted ?? "?"} of ${pubsub?.total_before ?? "?"} (kept ${pubsub?.kept_errors ?? "?"} error rows); dlq: deleted=${dlq?.deleted ?? "?"} of ${dlq?.total_before ?? "?"}`,
-            error: pubsubError ?? dlqError,
-          });
-        } catch (e) {
-          logError("retention.audit_log_failed", { run_id: runId }, e);
-        }
+          try {
+            await supabaseAdmin.from("pubsub_events").insert({
+              event_type: "retention",
+              details: `pubsub: deleted=${pubsub?.deleted ?? "?"} of ${pubsub?.total_before ?? "?"} (kept ${pubsub?.kept_errors ?? "?"} error rows); dlq: deleted=${dlq?.deleted ?? "?"} of ${dlq?.total_before ?? "?"}`,
+              error: pubsubError ?? dlqError,
+            });
+          } catch (e) {
+            logError("retention.audit_log_failed", { run_id: runId }, e);
+          }
 
-        return Response.json({ ok: true, pubsub, dlq, pubsubError, dlqError, run_id: runId });
+          return Response.json({ ok: true, pubsub, dlq, pubsubError, dlqError, run_id: runId });
         });
       },
       GET: async () => new Response("Use POST", { status: 405 }),

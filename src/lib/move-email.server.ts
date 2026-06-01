@@ -30,9 +30,11 @@ export async function performMove(
   if (!to || to.user_id !== userId) return { ok: false, error: "Target folder not found" };
   const from = email.folder_id ? folders?.find((f) => f.id === email.folder_id) : null;
 
-  const reason = reasonOverride ?? (from
-    ? `Re-categorized from "${from.name}" to "${to.name}"`
-    : `Moved to "${to.name}" manually`);
+  const reason =
+    reasonOverride ??
+    (from
+      ? `Re-categorized from "${from.name}" to "${to.name}"`
+      : `Moved to "${to.name}" manually`);
 
   const { data: cur } = await supabaseAdmin
     .from("emails")
@@ -42,10 +44,12 @@ export async function performMove(
   const curLabels = (cur?.raw_labels ?? []) as string[];
   const fromLabelId = from?.gmail_label_id ?? null;
   const toLabelId = to.gmail_label_id ?? null;
-  const nextLabels = Array.from(new Set([
-    ...curLabels.filter((l) => l !== "INBOX" && (!fromLabelId || l !== fromLabelId)),
-    ...(toLabelId ? [toLabelId] : []),
-  ]));
+  const nextLabels = Array.from(
+    new Set([
+      ...curLabels.filter((l) => l !== "INBOX" && (!fromLabelId || l !== fromLabelId)),
+      ...(toLabelId ? [toLabelId] : []),
+    ]),
+  );
 
   // Route classification_reason through the encrypted writer (column is dropped
   // from plaintext). Other (non-sensitive) fields stay on direct update.
@@ -69,12 +73,7 @@ export async function performMove(
   const addLabels = toLabelId ? [toLabelId] : [];
   const removeLabels = ["INBOX", ...(fromLabelId ? [fromLabelId] : [])];
   try {
-    await modifyMessage(
-      email.gmail_account_id,
-      email.gmail_message_id,
-      addLabels,
-      removeLabels,
-    );
+    await modifyMessage(email.gmail_account_id, email.gmail_message_id, addLabels, removeLabels);
   } catch (e) {
     logError("gmail.label_sync.failed", {}, e);
   }

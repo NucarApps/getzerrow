@@ -179,7 +179,9 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
     }
 
     const filterIds = data.actions
-      .filter((a): a is Extract<AssistantAction, { type: "remove_filter" }> => a.type === "remove_filter")
+      .filter(
+        (a): a is Extract<AssistantAction, { type: "remove_filter" }> => a.type === "remove_filter",
+      )
       .map((a) => a.filter_id);
     const ownedFilterIds = new Set<string>();
     if (filterIds.length > 0) {
@@ -187,7 +189,10 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
         .from("folder_filters")
         .select("id, folder_id, folders!inner(user_id)")
         .in("id", filterIds);
-      for (const r of (rows ?? []) as Array<{ id: string; folders: { user_id: string } | { user_id: string }[] }>) {
+      for (const r of (rows ?? []) as Array<{
+        id: string;
+        folders: { user_id: string } | { user_id: string }[];
+      }>) {
         const folder = Array.isArray(r.folders) ? r.folders[0] : r.folders;
         if (folder?.user_id === userId) ownedFilterIds.add(r.id);
       }
@@ -206,10 +211,6 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
         if (r.user_id === userId) ownedEmailIds.add(r.id);
       }
     }
-
-
-
-
 
     for (const action of data.actions) {
       try {

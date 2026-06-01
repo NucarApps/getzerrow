@@ -1,10 +1,24 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Activity, AlertTriangle, CheckCircle2, Clock, Inbox, Loader2, RotateCcw, Stethoscope, RefreshCw } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Inbox,
+  Loader2,
+  RotateCcw,
+  Stethoscope,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { getAccountHealth, retryDlqJobs, runAccountDiagnostic } from "@/lib/account-health.functions";
+import {
+  getAccountHealth,
+  retryDlqJobs,
+  runAccountDiagnostic,
+} from "@/lib/account-health.functions";
 import { startConnectGmail } from "@/lib/gmail.functions";
 import { DlqDrawer } from "./DlqDrawer";
 
@@ -54,7 +68,9 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
   if (accounts.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-        {allAccounts.length === 0 ? "No Gmail accounts connected yet." : "Pick an inbox above to see its status."}
+        {allAccounts.length === 0
+          ? "No Gmail accounts connected yet."
+          : "Pick an inbox above to see its status."}
       </div>
     );
   }
@@ -81,7 +97,9 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
       } else if (r.accessToken === "error" || r.watch === "error") {
         toast.error(r.error ?? "Diagnostic failed");
       } else {
-        toast.success(`OAuth ok · watch ${r.watch}${r.watchExpiresAt ? " · " + fmtRelative(r.watchExpiresAt) : ""}`);
+        toast.success(
+          `OAuth ok · watch ${r.watch}${r.watchExpiresAt ? " · " + fmtRelative(r.watchExpiresAt) : ""}`,
+        );
       }
       qc.invalidateQueries({ queryKey: ["account-health"] });
     } catch (e) {
@@ -102,8 +120,6 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
     }
   }
 
-
-
   return (
     <>
       <div className="space-y-3">
@@ -114,7 +130,10 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
           const dlqColor = a.dlq === 0 ? "text-muted-foreground" : "text-destructive";
 
           return (
-            <div key={a.accountId} className={`rounded-md border p-4 ${a.needsReconnect ? "border-destructive/40 bg-destructive/5" : "border-border"}`}>
+            <div
+              key={a.accountId}
+              className={`rounded-md border p-4 ${a.needsReconnect ? "border-destructive/40 bg-destructive/5" : "border-border"}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{a.email}</div>
@@ -125,8 +144,14 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
                     <span className="inline-flex items-center gap-1">
                       <Activity className="h-3 w-3" /> push {fmtRelative(a.lastPushAt)}
                     </span>
-                    <span className={`inline-flex items-center gap-1 ${watchActive ? "" : "text-destructive"}`}>
-                      {watchActive ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                    <span
+                      className={`inline-flex items-center gap-1 ${watchActive ? "" : "text-destructive"}`}
+                    >
+                      {watchActive ? (
+                        <CheckCircle2 className="h-3 w-3" />
+                      ) : (
+                        <AlertTriangle className="h-3 w-3" />
+                      )}
                       watch {watchActive ? (watchSoon ? "expiring " : "renews ") : "expired "}
                       {a.watchExpiresAt ? fmtRelative(a.watchExpiresAt) : "—"}
                     </span>
@@ -151,7 +176,8 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
 
               {a.lastError && (
                 <div className="mt-3 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                  <span className="font-medium">Recent error:</span> <span className="break-words">{a.lastError}</span>
+                  <span className="font-medium">Recent error:</span>{" "}
+                  <span className="break-words">{a.lastError}</span>
                 </div>
               )}
 
@@ -162,7 +188,8 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
                     <div className="min-w-0 flex-1">
                       <div className="font-medium">Gmail disconnected — reconnect required</div>
                       <div className="mt-0.5 text-destructive/80 break-words">
-                        {a.lastOauthError ?? "OAuth refresh token is invalid or missing. Sync is paused for this account."}
+                        {a.lastOauthError ??
+                          "OAuth refresh token is invalid or missing. Sync is paused for this account."}
                       </div>
                     </div>
                   </div>

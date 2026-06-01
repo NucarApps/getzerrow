@@ -45,14 +45,19 @@ export async function replayTransientDlq(maxRows = 200) {
   let replayed = 0;
   let skipped = 0;
   for (const row of rows ?? []) {
-    if (!isTransientDlqError(row.last_error)) { skipped++; continue; }
+    if (!isTransientDlqError(row.last_error)) {
+      skipped++;
+      continue;
+    }
     const { data: updated } = await supabaseAdmin
       .from("message_jobs")
       .update({
         status: "pending",
         attempt: 0,
         locked_at: null,
-        next_run_at: new Date(Date.now() + Math.floor(Math.random() * 10 * 60 * 1000)).toISOString(),
+        next_run_at: new Date(
+          Date.now() + Math.floor(Math.random() * 10 * 60 * 1000),
+        ).toISOString(),
         last_error: `auto-replayed from DLQ at ${new Date().toISOString()} (was: ${row.last_error?.slice(0, 200) ?? ""})`,
       })
       .eq("id", row.id)

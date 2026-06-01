@@ -30,9 +30,11 @@ const DEFAULT_STATS: InvaderStats = {
 };
 
 async function fetchStats(supabase: SupabaseClient): Promise<InvaderStats> {
-  const { data, error } = await (supabase as unknown as {
-    rpc: (fn: string) => Promise<{ data: unknown; error: { message: string } | null }>;
-  }).rpc("get_invader_stats");
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (fn: string) => Promise<{ data: unknown; error: { message: string } | null }>;
+    }
+  ).rpc("get_invader_stats");
   if (error) throw new Error(error.message);
   return { ...DEFAULT_STATS, ...((data ?? {}) as Partial<InvaderStats>) };
 }
@@ -48,8 +50,19 @@ const submitSchema = z.object({
   level: z.number().int().min(0).max(10_000).optional().default(0),
   kills: z.number().int().min(0).max(1_000_000).optional().default(0),
   maxCombo: z.number().int().min(0).max(10_000).optional().default(0),
-  durationMs: z.number().int().min(0).max(60 * 60 * 1000).optional().default(0),
-  dailySeed: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().default(null),
+  durationMs: z
+    .number()
+    .int()
+    .min(0)
+    .max(60 * 60 * 1000)
+    .optional()
+    .default(0),
+  dailySeed: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional()
+    .default(null),
   achievements: z.array(z.string().min(1).max(64)).max(32).optional().default([]),
 });
 
@@ -66,9 +79,7 @@ export const submitInvaderScore = createServerFn({ method: "POST" })
       .maybeSingle();
 
     const rawName =
-      (card?.name && card.name.trim()) ||
-      (card?.handle && card.handle.trim()) ||
-      "Player";
+      (card?.name && card.name.trim()) || (card?.handle && card.handle.trim()) || "Player";
     const displayName = rawName.slice(0, 24);
 
     const insertRow = {

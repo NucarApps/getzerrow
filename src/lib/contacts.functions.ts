@@ -7,7 +7,11 @@ import { createLovableAiGatewayProvider } from "./ai-gateway";
 import { sendContactShareEmail } from "./cards.server";
 import { listMessages, getMessage, parseMessage } from "./gmail.server";
 import { setContactEncryptedFields } from "./sync/encrypted-writer";
-import { getContactDecrypted, getContactListFieldsDecrypted, getEmailsDecrypted } from "./sync/encrypted-reader";
+import {
+  getContactDecrypted,
+  getContactListFieldsDecrypted,
+  getEmailsDecrypted,
+} from "./sync/encrypted-reader";
 
 /** Fetch recent Gmail messages matching a query, for a user's connected accounts.
  * Returns parsed messages mapped into the same shape as our local emails_decrypted rows.
@@ -61,12 +65,29 @@ const EXTRACT_SCHEMA = z.object({
   country: z.string().nullable(),
 });
 
-const ADDRESS_FIELDS = ["address_line1", "address_line2", "city", "region", "postal_code", "country"] as const;
+const ADDRESS_FIELDS = [
+  "address_line1",
+  "address_line2",
+  "city",
+  "region",
+  "postal_code",
+  "country",
+] as const;
 
 const BANNED_DOMAINS = new Set([
-  "noreply", "no-reply", "donotreply", "do-not-reply",
-  "notifications", "notification", "support", "info", "hello", "help",
-  "mailer-daemon", "bounces", "postmaster",
+  "noreply",
+  "no-reply",
+  "donotreply",
+  "do-not-reply",
+  "notifications",
+  "notification",
+  "support",
+  "info",
+  "hello",
+  "help",
+  "mailer-daemon",
+  "bounces",
+  "postmaster",
 ]);
 
 function isLikelyHuman(addr: string | null): boolean {
@@ -111,7 +132,7 @@ export function normalizeName(input: string | null | undefined): string | null {
         tok
           .split("-")
           .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : p))
-          .join("-")
+          .join("-"),
       )
       .join(" ");
   }
@@ -122,11 +143,14 @@ export function normalizeName(input: string | null | undefined): string | null {
 /** Sort key: first token of normalized name, falling back to email local-part. */
 function firstNameKey(name: string | null | undefined, email: string): string {
   const n = normalizeName(name ?? null);
-  const tok = n ? n.split(" ")[0] : (email.split("@")[0] || "");
+  const tok = n ? n.split(" ")[0] : email.split("@")[0] || "";
   return tok.toLowerCase();
 }
 /** Pick the more complete name. Never replace a multi-token name with a prefix of itself. */
-function pickBetterName(existing: string | null | undefined, candidate: string | null | undefined): string | null {
+function pickBetterName(
+  existing: string | null | undefined,
+  candidate: string | null | undefined,
+): string | null {
   const e = normalizeName(existing ?? null);
   const c = normalizeName(candidate ?? null);
   if (!c) return e ?? null;
@@ -136,13 +160,14 @@ function pickBetterName(existing: string | null | undefined, candidate: string |
   const eLower = e.toLowerCase();
   const cLower = c.toLowerCase();
   // Candidate is a prefix/subset of existing (e.g. "John" vs "John Federici") — keep existing.
-  if (cTokens.length < eTokens.length && (eLower.startsWith(cLower + " ") || eLower === cLower)) return e;
+  if (cTokens.length < eTokens.length && (eLower.startsWith(cLower + " ") || eLower === cLower))
+    return e;
   // Existing is a prefix of candidate — candidate is more complete.
-  if (eTokens.length < cTokens.length && (cLower.startsWith(eLower + " ") || cLower === eLower)) return c;
+  if (eTokens.length < cTokens.length && (cLower.startsWith(eLower + " ") || cLower === eLower))
+    return c;
   // Otherwise prefer the one with more tokens; tie → candidate.
   return cTokens.length >= eTokens.length ? c : e;
 }
-
 
 /** List contacts for the current user. */
 export const listContacts = createServerFn({ method: "GET" })
@@ -167,7 +192,11 @@ export const listContacts = createServerFn({ method: "GET" })
     const decMap = new Map(decRows.map((r) => [r.id, r] as const));
     const contacts = rows.map((r) => {
       const d = decMap.get(r.id);
-      return { ...r, phone: d?.phone ?? null, relationship_summary: d?.relationship_summary ?? null };
+      return {
+        ...r,
+        phone: d?.phone ?? null,
+        relationship_summary: d?.relationship_summary ?? null,
+      };
     });
     return { contacts };
   });
@@ -201,12 +230,11 @@ export const getContact = createServerFn({ method: "POST" })
     return { contact, recentEmails: emails ?? [], phones: phones ?? [] };
   });
 
-
 /** AI-enrich a contact from their recent email bodies (signatures). */
 export const enrichContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string; force?: boolean }) =>
-    z.object({ id: z.string().uuid(), force: z.boolean().optional() }).parse(d)
+    z.object({ id: z.string().uuid(), force: z.boolean().optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
@@ -242,7 +270,10 @@ export const enrichContact = createServerFn({ method: "POST" })
       .limit(40);
     const { rows: decrypted } = await getEmailsDecrypted((idRows ?? []).map((r) => r.id));
     const localEmails = decrypted.map((r) => ({
-      subject: r.subject, body_text: r.body_text, snippet: r.snippet, from_name: r.from_name,
+      subject: r.subject,
+      body_text: r.body_text,
+      snippet: r.snippet,
+      from_name: r.from_name,
     }));
 
     // Lazy-load the user's Gmail accounts — used as a fallback below when
@@ -259,8 +290,12 @@ export const enrichContact = createServerFn({ method: "POST" })
       return gmailAccountIds;
     };
 
-    let emails: Array<{ subject: string | null; body_text: string | null; snippet: string | null; from_name: string | null }> =
-      (localEmails ?? []) as any;
+    let emails: Array<{
+      subject: string | null;
+      body_text: string | null;
+      snippet: string | null;
+      from_name: string | null;
+    }> = (localEmails ?? []) as any;
 
     if (emails.length === 0) {
       const accountIds = await getGmailAccountIds();
@@ -275,10 +310,9 @@ export const enrichContact = createServerFn({ method: "POST" })
       }
     }
 
-
     // Best candidate from the most recent non-empty from_name (handles "Last, First").
     const fromNameCandidate = normalizeName(
-      (emails ?? []).map((e) => e.from_name).find((n) => n && n.trim().length > 0) ?? null
+      (emails ?? []).map((e) => e.from_name).find((n) => n && n.trim().length > 0) ?? null,
     );
 
     // Strip quoted-reply blocks and take the tail (where signatures live).
@@ -294,15 +328,20 @@ export const enrichContact = createServerFn({ method: "POST" })
         const m = s.match(re);
         if (m && m.index !== undefined) s = s.slice(0, m.index);
       }
-      s = s.split("\n").filter((l) => !/^\s*>/.test(l)).join("\n");
+      s = s
+        .split("\n")
+        .filter((l) => !/^\s*>/.test(l))
+        .join("\n");
       return s.slice(-1500);
     };
 
-    const MOBILE_RE = /sent from my (iphone|ipad|android|mobile|blackberry|samsung|phone)|get outlook for (ios|android)/i;
+    const MOBILE_RE =
+      /sent from my (iphone|ipad|android|mobile|blackberry|samsung|phone)|get outlook for (ios|android)/i;
     const PHONE_RE = /(\+?\d[\d\s().-]{7,}\d)/;
     const URL_RE = /https?:\/\/[^\s)>\]]+/i;
     const LINKEDIN_RE = /linkedin\.com\/in\//i;
-    const SIGNOFF_RE = /\b(best|regards|thanks|cheers|sincerely|kind regards|warmly|cordially|talk soon)[,!.\s]/i;
+    const SIGNOFF_RE =
+      /\b(best|regards|thanks|cheers|sincerely|kind regards|warmly|cordially|talk soon)[,!.\s]/i;
     const SIG_SEP_RE = /(^|\n)\s*(--|—|–)\s*\n/;
 
     const scoreEmail = (tail: string): number => {
@@ -344,16 +383,33 @@ export const enrichContact = createServerFn({ method: "POST" })
 
     if (!sample.trim()) {
       const betterName = pickBetterName(contact.name, fromNameCandidate);
-      const earlyPatch: { enriched_at: string; name?: string } = { enriched_at: new Date().toISOString() };
+      const earlyPatch: { enriched_at: string; name?: string } = {
+        enriched_at: new Date().toISOString(),
+      };
       if (betterName && betterName !== contact.name) earlyPatch.name = betterName;
       const { data: updated } = await supabase
-        .from("contacts").update(earlyPatch).eq("id", contact.id).select("*").single();
+        .from("contacts")
+        .update(earlyPatch)
+        .eq("id", contact.id)
+        .select("*")
+        .single();
       return { contact: updated ?? contact, skipped: false as const };
     }
 
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
-      name: null, title: null, company: null, phone: null, website: null, linkedin: null, twitter: null,
-      address_line1: null, address_line2: null, city: null, region: null, postal_code: null, country: null,
+      name: null,
+      title: null,
+      company: null,
+      phone: null,
+      website: null,
+      linkedin: null,
+      twitter: null,
+      address_line1: null,
+      address_line2: null,
+      city: null,
+      region: null,
+      postal_code: null,
+      country: null,
     };
     try {
       const { output } = await generateText({
@@ -404,7 +460,16 @@ ${sample}`,
       postal_code?: string | null;
       country?: string | null;
     } = { enriched_at: new Date().toISOString() };
-    for (const k of ["name", "title", "company", "phone", "website", "linkedin", "twitter", ...ADDRESS_FIELDS] as const) {
+    for (const k of [
+      "name",
+      "title",
+      "company",
+      "phone",
+      "website",
+      "linkedin",
+      "twitter",
+      ...ADDRESS_FIELDS,
+    ] as const) {
       const v = extracted[k];
       if (k === "name") {
         let best = pickBetterName(contact.name, fromNameCandidate);
@@ -428,11 +493,21 @@ ${sample}`,
         .order("received_at", { ascending: false })
         .limit(30);
       const { rows: decryptedConvo } = await getEmailsDecrypted((idRows ?? []).map((r) => r.id));
-      let convo: Array<{ subject: string | null; body_text: string | null; snippet: string | null; from_addr: string | null; to_addrs: string | null; received_at: string | null }> =
-        decryptedConvo.map((r) => ({
-          subject: r.subject, body_text: r.body_text, snippet: r.snippet,
-          from_addr: r.from_addr, to_addrs: r.to_addrs, received_at: r.received_at,
-        }));
+      let convo: Array<{
+        subject: string | null;
+        body_text: string | null;
+        snippet: string | null;
+        from_addr: string | null;
+        to_addrs: string | null;
+        received_at: string | null;
+      }> = decryptedConvo.map((r) => ({
+        subject: r.subject,
+        body_text: r.body_text,
+        snippet: r.snippet,
+        from_addr: r.from_addr,
+        to_addrs: r.to_addrs,
+        received_at: r.received_at,
+      }));
 
       if (convo.length === 0) {
         const accountIds = await getGmailAccountIds();
@@ -458,7 +533,6 @@ ${sample}`,
         })
         .join("\n\n");
 
-
       if (convoSample.trim()) {
         const mergedName = patch.name ?? contact.name ?? null;
         const mergedTitle = patch.title ?? contact.title ?? null;
@@ -468,7 +542,9 @@ ${sample}`,
           mergedTitle ? `Title: ${mergedTitle}` : null,
           mergedCompany ? `Company: ${mergedCompany}` : null,
           `Email: ${addr}`,
-        ].filter(Boolean).join("\n");
+        ]
+          .filter(Boolean)
+          .join("\n");
 
         const { text: summary } = await generateText({
           model: getModel("google/gemini-2.5-flash"),
@@ -537,25 +613,32 @@ const phoneEntrySchema = z.object({
 export const updateContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      id: z.string().uuid(),
-      name: z.string().max(200).nullable().optional(),
-      title: z.string().max(200).nullable().optional(),
-      company: z.string().max(200).nullable().optional(),
-      phone: z.string().max(60).nullable().optional(),
-      website: z.string().max(500).nullable().optional(),
-      linkedin: z.string().max(500).nullable().optional(),
-      twitter: z.string().max(500).nullable().optional(),
-      notes: z.string().max(5000).nullable().optional(),
-      address_line1: z.string().trim().max(200).nullable().optional(),
-      address_line2: z.string().trim().max(200).nullable().optional(),
-      city: z.string().trim().max(120).nullable().optional(),
-      region: z.string().trim().max(120).nullable().optional(),
-      postal_code: z.string().trim().max(40).nullable().optional(),
-      country: z.string().trim().max(60).nullable().optional(),
-      card_image_url: z.string().max(500).regex(/^[A-Za-z0-9_\-/.]+$/).nullable().optional(),
-      phones: z.array(phoneEntrySchema).max(20).optional(),
-    }).parse(d)
+    z
+      .object({
+        id: z.string().uuid(),
+        name: z.string().max(200).nullable().optional(),
+        title: z.string().max(200).nullable().optional(),
+        company: z.string().max(200).nullable().optional(),
+        phone: z.string().max(60).nullable().optional(),
+        website: z.string().max(500).nullable().optional(),
+        linkedin: z.string().max(500).nullable().optional(),
+        twitter: z.string().max(500).nullable().optional(),
+        notes: z.string().max(5000).nullable().optional(),
+        address_line1: z.string().trim().max(200).nullable().optional(),
+        address_line2: z.string().trim().max(200).nullable().optional(),
+        city: z.string().trim().max(120).nullable().optional(),
+        region: z.string().trim().max(120).nullable().optional(),
+        postal_code: z.string().trim().max(40).nullable().optional(),
+        country: z.string().trim().max(60).nullable().optional(),
+        card_image_url: z
+          .string()
+          .max(500)
+          .regex(/^[A-Za-z0-9_\-/.]+$/)
+          .nullable()
+          .optional(),
+        phones: z.array(phoneEntrySchema).max(20).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -642,9 +725,15 @@ export const deleteContact = createServerFn({ method: "POST" })
 export const scanCard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { imageDataUrl: string }) =>
-    z.object({
-      imageDataUrl: z.string().min(64).max(15_000_000).regex(/^data:image\//, "Must be a data URL"),
-    }).parse(d)
+    z
+      .object({
+        imageDataUrl: z
+          .string()
+          .min(64)
+          .max(15_000_000)
+          .regex(/^data:image\//, "Must be a data URL"),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
     const SCAN_SCHEMA = z.object({
@@ -656,10 +745,15 @@ export const scanCard = createServerFn({ method: "POST" })
       website: z.string().nullable(),
       linkedin: z.string().nullable(),
       twitter: z.string().nullable(),
-      phones: z.array(z.object({
-        label: z.string(),
-        number: z.string(),
-      })).nullable().optional(),
+      phones: z
+        .array(
+          z.object({
+            label: z.string(),
+            number: z.string(),
+          }),
+        )
+        .nullable()
+        .optional(),
       address_line1: z.string().nullable().optional(),
       address_line2: z.string().nullable().optional(),
       city: z.string().nullable().optional(),
@@ -670,7 +764,7 @@ export const scanCard = createServerFn({ method: "POST" })
     type ScanOut = z.infer<typeof SCAN_SCHEMA>;
 
     const baseInstruction =
-      "Extract contact information from this business card photo. Return each field exactly as printed or null if not visible. Do NOT invent values. If multiple phone numbers are present, list each one in `phones` with a label like \"mobile\", \"work\", \"home\", or \"other\" (lowercase). Still set `phone` to the most prominent / primary number. If a postal address is shown, split it into address_line1, address_line2, city, region (state/province), postal_code, and country.";
+      'Extract contact information from this business card photo. Return each field exactly as printed or null if not visible. Do NOT invent values. If multiple phone numbers are present, list each one in `phones` with a label like "mobile", "work", "home", or "other" (lowercase). Still set `phone` to the most prominent / primary number. If a postal address is shown, split it into address_line1, address_line2, city, region (state/province), postal_code, and country.';
     const jsonShape =
       '{"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>,"phones":<[{"label":<string>,"number":<string>}]|null>,"address_line1":<string|null>,"address_line2":<string|null>,"city":<string|null>,"region":<string|null>,"postal_code":<string|null>,"country":<string|null>}';
 
@@ -726,7 +820,10 @@ export const scanCard = createServerFn({ method: "POST" })
             },
           ],
         });
-        const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
+        const cleaned = text
+          .trim()
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/```\s*$/i, "");
         const start = cleaned.indexOf("{");
         const end = cleaned.lastIndexOf("}");
         if (start < 0 || end <= start) {
@@ -762,24 +859,31 @@ export const scanCard = createServerFn({ method: "POST" })
 export const createContactFromScan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      email: z.string().email(),
-      name: z.string().max(200).nullable().optional(),
-      title: z.string().max(200).nullable().optional(),
-      company: z.string().max(200).nullable().optional(),
-      phone: z.string().max(60).nullable().optional(),
-      website: z.string().max(500).nullable().optional(),
-      linkedin: z.string().max(500).nullable().optional(),
-      twitter: z.string().max(500).nullable().optional(),
-      address_line1: z.string().trim().max(200).nullable().optional(),
-      address_line2: z.string().trim().max(200).nullable().optional(),
-      city: z.string().trim().max(120).nullable().optional(),
-      region: z.string().trim().max(120).nullable().optional(),
-      postal_code: z.string().trim().max(40).nullable().optional(),
-      country: z.string().trim().max(60).nullable().optional(),
-      card_image_url: z.string().max(500).regex(/^[A-Za-z0-9_\-/.]+$/).nullable().optional(),
-      phones: z.array(phoneEntrySchema).max(20).optional(),
-    }).parse(d)
+    z
+      .object({
+        email: z.string().email(),
+        name: z.string().max(200).nullable().optional(),
+        title: z.string().max(200).nullable().optional(),
+        company: z.string().max(200).nullable().optional(),
+        phone: z.string().max(60).nullable().optional(),
+        website: z.string().max(500).nullable().optional(),
+        linkedin: z.string().max(500).nullable().optional(),
+        twitter: z.string().max(500).nullable().optional(),
+        address_line1: z.string().trim().max(200).nullable().optional(),
+        address_line2: z.string().trim().max(200).nullable().optional(),
+        city: z.string().trim().max(120).nullable().optional(),
+        region: z.string().trim().max(120).nullable().optional(),
+        postal_code: z.string().trim().max(40).nullable().optional(),
+        country: z.string().trim().max(60).nullable().optional(),
+        card_image_url: z
+          .string()
+          .max(500)
+          .regex(/^[A-Za-z0-9_\-/.]+$/)
+          .nullable()
+          .optional(),
+        phones: z.array(phoneEntrySchema).max(20).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
@@ -795,8 +899,14 @@ export const createContactFromScan = createServerFn({ method: "POST" })
     const { data: row, error } = await supabaseAdmin
       .from("contacts")
       .upsert(
-        { user_id: userId, ...plaintextPayload, email, source: "scan", enriched_at: new Date().toISOString() },
-        { onConflict: "user_id,email" }
+        {
+          user_id: userId,
+          ...plaintextPayload,
+          email,
+          source: "scan",
+          enriched_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,email" },
       )
       .select("*")
       .single();
@@ -831,9 +941,7 @@ export const createContactFromScan = createServerFn({ method: "POST" })
 /** Add a contact from a specific email and extract details from its signature. */
 export const addContactFromEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { emailId: string }) =>
-    z.object({ emailId: z.string().uuid() }).parse(d)
-  )
+  .inputValidator((d: { emailId: string }) => z.object({ emailId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
@@ -855,7 +963,7 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
           name: normalizeName(email.from_name) ?? null,
           source: "email" as const,
         },
-        { onConflict: "user_id,email" }
+        { onConflict: "user_id,email" },
       )
       .select("*")
       .single();
@@ -864,8 +972,19 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
     // Extract from this specific email's body
     const body = (email.body_text || email.snippet || "").slice(0, 6000);
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
-      name: null, title: null, company: null, phone: null, website: null, linkedin: null, twitter: null,
-      address_line1: null, address_line2: null, city: null, region: null, postal_code: null, country: null,
+      name: null,
+      title: null,
+      company: null,
+      phone: null,
+      website: null,
+      linkedin: null,
+      twitter: null,
+      address_line1: null,
+      address_line2: null,
+      city: null,
+      region: null,
+      postal_code: null,
+      country: null,
     };
     if (body.trim()) {
       try {
@@ -903,15 +1022,33 @@ ${body}`,
     // After Phase 3, phone/address_line1/address_line2 live only in encrypted
     // columns. Split extracted fields into plaintext patch + encrypted-only.
     const ENCRYPTED_ONLY = ["phone", "address_line1", "address_line2"] as const;
-    type EncKey = typeof ENCRYPTED_ONLY[number];
+    type EncKey = (typeof ENCRYPTED_ONLY)[number];
     const patch: {
       enriched_at: string;
-      name?: string | null; title?: string | null; company?: string | null;
-      website?: string | null; linkedin?: string | null; twitter?: string | null;
-      city?: string | null; region?: string | null; postal_code?: string | null; country?: string | null;
+      name?: string | null;
+      title?: string | null;
+      company?: string | null;
+      website?: string | null;
+      linkedin?: string | null;
+      twitter?: string | null;
+      city?: string | null;
+      region?: string | null;
+      postal_code?: string | null;
+      country?: string | null;
     } = { enriched_at: new Date().toISOString() };
     const encPatch: Partial<Record<EncKey, string | null>> = {};
-    const plaintextFields = ["name", "title", "company", "website", "linkedin", "twitter", "city", "region", "postal_code", "country"] as const;
+    const plaintextFields = [
+      "name",
+      "title",
+      "company",
+      "website",
+      "linkedin",
+      "twitter",
+      "city",
+      "region",
+      "postal_code",
+      "country",
+    ] as const;
     for (const k of plaintextFields) {
       const v = extracted[k];
       if (k === "name") {
@@ -926,10 +1063,7 @@ ${body}`,
       if (v) encPatch[k] = v;
     }
 
-    const { error: updErr } = await supabase
-      .from("contacts")
-      .update(patch)
-      .eq("id", base.id);
+    const { error: updErr } = await supabase.from("contacts").update(patch).eq("id", base.id);
     if (updErr) throw new Error(updErr.message);
     await setContactEncryptedFields({
       contact_id: base.id,
@@ -945,11 +1079,13 @@ ${body}`,
 export const shareContactByEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: any) =>
-    z.object({
-      contactId: z.string().uuid(),
-      toEmail: z.string().email(),
-      note: z.string().max(2000).optional(),
-    }).parse(d)
+    z
+      .object({
+        contactId: z.string().uuid(),
+        toEmail: z.string().email(),
+        note: z.string().max(2000).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
@@ -974,10 +1110,20 @@ export const shareContactByEmail = createServerFn({ method: "POST" })
       fromEmail: account.email_address,
       toEmail: data.toEmail,
       contact: {
-        name: contact.name, title: contact.title, company: contact.company, email: contact.email,
-        phone: contact.phone, website: contact.website, linkedin: contact.linkedin, twitter: contact.twitter,
-        address_line1: contact.address_line1, address_line2: contact.address_line2,
-        city: contact.city, region: contact.region, postal_code: contact.postal_code, country: contact.country,
+        name: contact.name,
+        title: contact.title,
+        company: contact.company,
+        email: contact.email,
+        phone: contact.phone,
+        website: contact.website,
+        linkedin: contact.linkedin,
+        twitter: contact.twitter,
+        address_line1: contact.address_line1,
+        address_line2: contact.address_line2,
+        city: contact.city,
+        region: contact.region,
+        postal_code: contact.postal_code,
+        country: contact.country,
       },
       note: data.note ?? null,
     });
@@ -985,22 +1131,23 @@ export const shareContactByEmail = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-
 /** Manually create a contact. */
 export const createContactManual = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: any) =>
-    z.object({
-      email: z.string().trim().toLowerCase().email().max(255),
-      name: z.string().trim().max(200).optional().nullable(),
-      title: z.string().trim().max(200).optional().nullable(),
-      company: z.string().trim().max(200).optional().nullable(),
-      phone: z.string().trim().max(60).optional().nullable(),
-      website: z.string().trim().max(500).optional().nullable(),
-      linkedin: z.string().trim().max(500).optional().nullable(),
-      twitter: z.string().trim().max(500).optional().nullable(),
-      notes: z.string().trim().max(5000).optional().nullable(),
-    }).parse(d)
+    z
+      .object({
+        email: z.string().trim().toLowerCase().email().max(255),
+        name: z.string().trim().max(200).optional().nullable(),
+        title: z.string().trim().max(200).optional().nullable(),
+        company: z.string().trim().max(200).optional().nullable(),
+        phone: z.string().trim().max(60).optional().nullable(),
+        website: z.string().trim().max(500).optional().nullable(),
+        linkedin: z.string().trim().max(500).optional().nullable(),
+        twitter: z.string().trim().max(500).optional().nullable(),
+        notes: z.string().trim().max(5000).optional().nullable(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
@@ -1050,11 +1197,13 @@ export const listFoldersForPicker = createServerFn({ method: "GET" })
 export const listUniqueInboxSenders = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: any) =>
-    z.object({
-      folderIds: z.array(z.string().uuid()).max(50).optional(),
-      search: z.string().trim().max(200).optional(),
-      limit: z.number().int().min(1).max(500).optional(),
-    }).parse(d ?? {})
+    z
+      .object({
+        folderIds: z.array(z.string().uuid()).max(50).optional(),
+        search: z.string().trim().max(200).optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+      })
+      .parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -1103,7 +1252,7 @@ export const listUniqueInboxSenders = createServerFn({ method: "POST" })
     const search = (data.search || "").toLowerCase().trim();
     if (search) {
       list = list.filter(
-        (x) => x.email.includes(search) || (x.name ?? "").toLowerCase().includes(search)
+        (x) => x.email.includes(search) || (x.name ?? "").toLowerCase().includes(search),
       );
     }
     list.sort((a, b) => b.count - a.count);
@@ -1115,14 +1264,19 @@ export const listUniqueInboxSenders = createServerFn({ method: "POST" })
 export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: any) =>
-    z.object({
-      items: z.array(
-        z.object({
-          email: z.string().trim().toLowerCase().email().max(255),
-          name: z.string().trim().max(200).optional().nullable(),
-        })
-      ).min(1).max(200),
-    }).parse(d)
+    z
+      .object({
+        items: z
+          .array(
+            z.object({
+              email: z.string().trim().toLowerCase().email().max(255),
+              name: z.string().trim().max(200).optional().nullable(),
+            }),
+          )
+          .min(1)
+          .max(200),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
@@ -1143,9 +1297,7 @@ export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
  *  The path is owner-scoped (`<user_id>/...`) and verified against the contact's user_id. */
 export const getContactCardSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ contactId: z.string().uuid() }).parse(d)
-  )
+  .inputValidator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: row, error } = await supabase

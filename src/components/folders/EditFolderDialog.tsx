@@ -15,14 +15,12 @@ export function EditFolderDialog({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
-        <SheetHeader><SheetTitle>Edit folder</SheetTitle></SheetHeader>
+        <SheetHeader>
+          <SheetTitle>Edit folder</SheetTitle>
+        </SheetHeader>
         {folder && (
           <div className="mt-4">
-            <FolderEditor
-              folder={folder}
-              labels={labels}
-              onDeleted={() => onOpenChange(false)}
-            />
+            <FolderEditor folder={folder} labels={labels} onDeleted={() => onOpenChange(false)} />
           </div>
         )}
       </SheetContent>

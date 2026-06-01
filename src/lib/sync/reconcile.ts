@@ -24,7 +24,6 @@ import { getMessage, getMessageLabels, parseMessage } from "../gmail.server";
 import { logError } from "../log.server";
 import { updateEmailEncrypted } from "./encrypted-writer";
 
-
 export async function reconcileLocalInbox(accountId: string, limit = 100) {
   const { data: acc } = await supabaseAdmin
     .from("gmail_accounts")
@@ -41,7 +40,9 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     // Reads encrypted-column presence (body_text_enc / body_html_enc) to
     // detect rows that need a re-parse. Avoids decrypting bodies just to
     // check existence, and works after the plaintext columns are dropped.
-    .select("id, gmail_message_id, raw_labels, from_addr, body_text_enc, body_html_enc, received_at, folder_id")
+    .select(
+      "id, gmail_message_id, raw_labels, from_addr, body_text_enc, body_html_enc, received_at, folder_id",
+    )
     .eq("gmail_account_id", accountId)
     .eq("is_archived", false)
     .order("received_at", { ascending: false, nullsFirst: true })
@@ -53,14 +54,17 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
     // Anchor the tail walk so it never overlaps the head. When cursor
     // is null (first run, or after wrap-around), use the OLDEST
     // received_at from the head — guarantees zero duplicates.
-    const headOldest = (headData ?? [])
-      .map((r) => r.received_at)
-      .filter((x): x is string => !!x)
-      .sort()[0] ?? null;
+    const headOldest =
+      (headData ?? [])
+        .map((r) => r.received_at)
+        .filter((x): x is string => !!x)
+        .sort()[0] ?? null;
     const tailAnchor = cursor ?? headOldest;
     let q = supabaseAdmin
       .from("emails")
-      .select("id, gmail_message_id, raw_labels, from_addr, body_text_enc, body_html_enc, received_at, folder_id")
+      .select(
+        "id, gmail_message_id, raw_labels, from_addr, body_text_enc, body_html_enc, received_at, folder_id",
+      )
       .eq("gmail_account_id", accountId)
       .eq("is_archived", false);
     if (tailAnchor) q = q.lt("received_at", tailAnchor);
@@ -93,7 +97,13 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
         .from("gmail_accounts")
         .update({ reconcile_cursor: newCursor })
         .eq("id", accountId);
-    } catch (e) { logError("reconcile.cursor_update_failed", { account_id: accountId, new_cursor: newCursor }, e); }
+    } catch (e) {
+      logError(
+        "reconcile.cursor_update_failed",
+        { account_id: accountId, new_cursor: newCursor },
+        e,
+      );
+    }
   }
 
   let archived = 0;
@@ -105,9 +115,7 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
   for (const row of rows) {
     try {
       const needsRepair =
-        !row.from_addr ||
-        (!row.body_text_enc && !row.body_html_enc) ||
-        !row.received_at;
+        !row.from_addr || (!row.body_text_enc && !row.body_html_enc) || !row.received_at;
 
       if (needsRepair) {
         try {
@@ -128,14 +136,17 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
             body_text: parsed.body_text,
             body_html: parsed.body_html,
           });
-          await supabaseAdmin.from("emails").update({
-            from_addr: parsed.from_addr,
-            received_at: parsed.received_at,
-            has_attachment: parsed.has_attachment,
-            raw_labels: parsed.raw_labels,
-            is_read: parsed.is_read,
-            is_archived: !parsed.raw_labels?.includes("INBOX"),
-          }).eq("id", row.id);
+          await supabaseAdmin
+            .from("emails")
+            .update({
+              from_addr: parsed.from_addr,
+              received_at: parsed.received_at,
+              has_attachment: parsed.has_attachment,
+              raw_labels: parsed.raw_labels,
+              is_read: parsed.is_read,
+              is_archived: !parsed.raw_labels?.includes("INBOX"),
+            })
+            .eq("id", row.id);
           if (!parsed.raw_labels?.includes("INBOX")) archived++;
           repaired++;
           continue;
@@ -174,7 +185,16 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       if (!patch.is_archived) updated++;
     } catch (e) {
       failed++;
-      logError("reconcile.row_failed", { account_id: accountId, gmail_message_id: row.gmail_message_id, email_id: row.id, pass: "head_tail" }, e);
+      logError(
+        "reconcile.row_failed",
+        {
+          account_id: accountId,
+          gmail_message_id: row.gmail_message_id,
+          email_id: row.id,
+          pass: "head_tail",
+        },
+        e,
+      );
     }
   }
 
@@ -217,7 +237,16 @@ export async function reconcileLocalInbox(accountId: string, limit = 100) {
       await supabaseAdmin.from("emails").update(patch).eq("id", row.id);
     } catch (e) {
       failed++;
-      logError("reconcile.row_failed", { account_id: accountId, gmail_message_id: row.gmail_message_id, email_id: row.id, pass: "archived" }, e);
+      logError(
+        "reconcile.row_failed",
+        {
+          account_id: accountId,
+          gmail_message_id: row.gmail_message_id,
+          email_id: row.id,
+          pass: "archived",
+        },
+        e,
+      );
     }
   }
 

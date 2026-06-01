@@ -79,8 +79,22 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
           </radialGradient>
         </defs>
 
-        <line x1="0" y1={PLAYER_Y + 4} x2="100" y2={PLAYER_Y + 4} stroke="#ff8a3d" strokeOpacity="0.35" strokeWidth="0.3" />
-        <rect x="0" y={PLAYER_Y + 4} width="100" height={100 - (PLAYER_Y + 4)} fill="url(#horizonGlow)" />
+        <line
+          x1="0"
+          y1={PLAYER_Y + 4}
+          x2="100"
+          y2={PLAYER_Y + 4}
+          stroke="#ff8a3d"
+          strokeOpacity="0.35"
+          strokeWidth="0.3"
+        />
+        <rect
+          x="0"
+          y={PLAYER_Y + 4}
+          width="100"
+          height={100 - (PLAYER_Y + 4)}
+          fill="url(#horizonGlow)"
+        />
 
         {/* Bunkers */}
         {live.bunkers.map((b) => {
@@ -111,7 +125,14 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
 
         {/* Player bullets */}
         {live.bullets.map((b) => (
-          <rect key={b.id} x={b.x - 0.25} y={b.y - 1.6} width="0.5" height="2.4" fill={b.pierce ? "#ffe066" : "#fff5e0"} />
+          <rect
+            key={b.id}
+            x={b.x - 0.25}
+            y={b.y - 1.6}
+            width="0.5"
+            height="2.4"
+            fill={b.pierce ? "#ffe066" : "#fff5e0"}
+          />
         ))}
 
         {/* Enemy bullets */}
@@ -130,17 +151,50 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
           const bodyFill = flashing ? "#fff5e0" : colors.body;
           return (
             <g key={e.id} transform={`translate(${ex} ${ey})`}>
-              <rect x={-ENEMY_HALF_W} y={-ENEMY_HALF_H} width={ENEMY_HALF_W * 2} height={ENEMY_HALF_H * 2} rx="0.35" fill={bodyFill} stroke={colors.accent} strokeWidth="0.18" />
+              <rect
+                x={-ENEMY_HALF_W}
+                y={-ENEMY_HALF_H}
+                width={ENEMY_HALF_W * 2}
+                height={ENEMY_HALF_H * 2}
+                rx="0.35"
+                fill={bodyFill}
+                stroke={colors.accent}
+                strokeWidth="0.18"
+              />
               <path
                 d={`M ${-ENEMY_HALF_W} ${-ENEMY_HALF_H} L 0 ${-ENEMY_HALF_H + 1.7} L ${ENEMY_HALF_W} ${-ENEMY_HALF_H}`}
                 fill="none"
                 stroke={colors.accent}
                 strokeWidth="0.18"
               />
-              <line x1={-ENEMY_HALF_W + 0.6} y1={ENEMY_HALF_H - 1.1} x2={ENEMY_HALF_W - 0.6} y2={ENEMY_HALF_H - 1.1} stroke={colors.accent} strokeOpacity="0.55" strokeWidth="0.14" />
-              <rect x={ENEMY_HALF_W - 1.2} y={-ENEMY_HALF_H + 0.3} width="0.85" height="0.85" fill={colors.stamp} />
+              <line
+                x1={-ENEMY_HALF_W + 0.6}
+                y1={ENEMY_HALF_H - 1.1}
+                x2={ENEMY_HALF_W - 0.6}
+                y2={ENEMY_HALF_H - 1.1}
+                stroke={colors.accent}
+                strokeOpacity="0.55"
+                strokeWidth="0.14"
+              />
+              <rect
+                x={ENEMY_HALF_W - 1.2}
+                y={-ENEMY_HALF_H + 0.3}
+                width="0.85"
+                height="0.85"
+                fill={colors.stamp}
+              />
               {e.kind === "urgent" && (
-                <text x="0" y={ENEMY_HALF_H - 1.3} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="1.3" fontWeight="700" fill={colors.stamp}>!</text>
+                <text
+                  x="0"
+                  y={ENEMY_HALF_H - 1.3}
+                  textAnchor="middle"
+                  fontFamily="JetBrains Mono, monospace"
+                  fontSize="1.3"
+                  fontWeight="700"
+                  fill={colors.stamp}
+                >
+                  !
+                </text>
               )}
             </g>
           );
@@ -150,12 +204,45 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
         {live.boss && (
           <g transform={`translate(${live.boss.x} ${live.boss.y})`}>
             <circle r="6.5" fill="url(#bossGlow)" />
-            <rect x="-5" y="-3.5" width="10" height="7" rx="0.6" fill="#3a0d12" stroke="#ff5a8a" strokeWidth="0.3" />
+            <rect
+              x="-5"
+              y="-3.5"
+              width="10"
+              height="7"
+              rx="0.6"
+              fill="#3a0d12"
+              stroke="#ff5a8a"
+              strokeWidth="0.3"
+            />
             <path d="M -5 -3.5 L 0 0.5 L 5 -3.5" fill="none" stroke="#ff5a8a" strokeWidth="0.3" />
             <rect x="-5" y="2" width="10" height="0.8" fill="#ffd400" />
-            <text x="0" y="0.4" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="1.6" fontWeight="700" fill="#ffd400">SPAM</text>
-            <rect x="-6" y="-5.5" width="12" height="0.6" fill="#3a0d12" stroke="#ff5a8a" strokeWidth="0.1" />
-            <rect x="-6" y="-5.5" width={12 * Math.max(0, live.boss.hp / live.boss.maxHp)} height="0.6" fill="#ff5a8a" />
+            <text
+              x="0"
+              y="0.4"
+              textAnchor="middle"
+              fontFamily="JetBrains Mono, monospace"
+              fontSize="1.6"
+              fontWeight="700"
+              fill="#ffd400"
+            >
+              SPAM
+            </text>
+            <rect
+              x="-6"
+              y="-5.5"
+              width="12"
+              height="0.6"
+              fill="#3a0d12"
+              stroke="#ff5a8a"
+              strokeWidth="0.1"
+            />
+            <rect
+              x="-6"
+              y="-5.5"
+              width={12 * Math.max(0, live.boss.hp / live.boss.maxHp)}
+              height="0.6"
+              fill="#ff5a8a"
+            />
           </g>
         )}
 
@@ -164,7 +251,17 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
           <g transform={`translate(${live.ufo.x} ${live.ufo.y})`}>
             <ellipse cx="0" cy="0" rx="3.2" ry="1" fill="#ffe066" />
             <ellipse cx="0" cy="-0.4" rx="1.6" ry="0.6" fill="#fff5e0" />
-            <text x="0" y="0.5" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="0.9" fontWeight="700" fill="#3a0d12">VIP</text>
+            <text
+              x="0"
+              y="0.5"
+              textAnchor="middle"
+              fontFamily="JetBrains Mono, monospace"
+              fontSize="0.9"
+              fontWeight="700"
+              fill="#3a0d12"
+            >
+              VIP
+            </text>
           </g>
         )}
 
@@ -173,8 +270,27 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
           const color = POWERUP_COLORS[p.kind];
           return (
             <g key={p.id} transform={`translate(${p.x} ${p.y})`}>
-              <rect x="-1.6" y="-1.2" width="3.2" height="2.4" rx="1.1" fill="#0a0e1a" stroke={color} strokeWidth="0.22" />
-              <text x="0" y="0.55" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontWeight="700" fontSize="1.8" fill={color}>{POWERUP_LABEL[p.kind]}</text>
+              <rect
+                x="-1.6"
+                y="-1.2"
+                width="3.2"
+                height="2.4"
+                rx="1.1"
+                fill="#0a0e1a"
+                stroke={color}
+                strokeWidth="0.22"
+              />
+              <text
+                x="0"
+                y="0.55"
+                textAnchor="middle"
+                fontFamily="JetBrains Mono, monospace"
+                fontWeight="700"
+                fontSize="1.8"
+                fill={color}
+              >
+                {POWERUP_LABEL[p.kind]}
+              </text>
             </g>
           );
         })}
@@ -182,7 +298,17 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
         {/* Particles */}
         {live.particles.map((p) => {
           const a = 1 - p.life / p.ttl;
-          return <rect key={p.id} x={p.x - 0.2} y={p.y - 0.2} width="0.4" height="0.4" fill={p.color} opacity={a} />;
+          return (
+            <rect
+              key={p.id}
+              x={p.x - 0.2}
+              y={p.y - 0.2}
+              width="0.4"
+              height="0.4"
+              fill={p.color}
+              opacity={a}
+            />
+          );
         })}
 
         {/* Bursts */}
@@ -195,7 +321,16 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
               {Array.from({ length: RINGS }).map((_, i) => {
                 const a = (i / RINGS) * Math.PI * 2;
                 const r = (3 + age * 4) * scale;
-                return <circle key={i} cx={Math.cos(a) * r} cy={Math.sin(a) * r} r={0.55 * scale} fill="#ff8a3d" opacity={1 - age} />;
+                return (
+                  <circle
+                    key={i}
+                    cx={Math.cos(a) * r}
+                    cy={Math.sin(a) * r}
+                    r={0.55 * scale}
+                    fill="#ff8a3d"
+                    opacity={1 - age}
+                  />
+                );
               })}
               <circle r={1 * scale} fill="#fff5e0" opacity={1 - age} />
             </g>
@@ -224,8 +359,13 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
 
         {/* Player rocket */}
         {(phase !== "over" || lives > 0) && (
-          <g transform={`translate(${live.playerX} ${PLAYER_Y})`} className={now < invulnUntil ? "invuln" : undefined}>
-            {isMovingHint && <polygon points="-0.8,3 0.8,3 0,5.5" fill="#ff8a3d" className="thruster" />}
+          <g
+            transform={`translate(${live.playerX} ${PLAYER_Y})`}
+            className={now < invulnUntil ? "invuln" : undefined}
+          >
+            {isMovingHint && (
+              <polygon points="-0.8,3 0.8,3 0,5.5" fill="#ff8a3d" className="thruster" />
+            )}
             {(() => {
               const SHIP_SRC_RATIO = 187 / 265;
               const shipH = 9;
@@ -244,7 +384,13 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
               );
             })()}
             {live.shieldUntil > now && (
-              <circle r="6" fill="none" stroke="#7cc4ff" strokeWidth="0.4" opacity={0.55 + 0.45 * Math.sin(now / 80)} />
+              <circle
+                r="6"
+                fill="none"
+                stroke="#7cc4ff"
+                strokeWidth="0.4"
+                opacity={0.55 + 0.45 * Math.sin(now / 80)}
+              />
             )}
           </g>
         )}

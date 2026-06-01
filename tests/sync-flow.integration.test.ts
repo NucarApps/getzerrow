@@ -43,7 +43,14 @@ async function expectJsonShape(res: Response, requiredKeys: string[]) {
 d("gmail-poll returns the documented summary shape", () => {
   it("authenticated POST returns {ok, succeeded, failed, rearmed, synced, jobs}", async () => {
     const res = await authedPost("/api/public/gmail-poll");
-    const json = await expectJsonShape(res, ["ok", "succeeded", "failed", "rearmed", "synced", "jobs"]);
+    const json = await expectJsonShape(res, [
+      "ok",
+      "succeeded",
+      "failed",
+      "rearmed",
+      "synced",
+      "jobs",
+    ]);
     expect(json.ok).toBe(true);
     expect(typeof json.succeeded).toBe("number");
     expect(typeof json.failed).toBe("number");
@@ -90,7 +97,10 @@ d("gmail-reconcile returns per-account result list", () => {
     for (const r of json.results as Array<Record<string, unknown>>) {
       expect(r).toHaveProperty("account_id");
       const hasResultOrError = "result" in r || "error" in r;
-      expect(hasResultOrError, `result row missing both .result and .error: ${JSON.stringify(r)}`).toBe(true);
+      expect(
+        hasResultOrError,
+        `result row missing both .result and .error: ${JSON.stringify(r)}`,
+      ).toBe(true);
     }
   });
 });

@@ -17,14 +17,18 @@ export type ClassifyFolder = {
   examples?: Array<{ from_addr: string | null; subject: string | null }>;
 };
 
-export async function classifyEmail(email: {
-  from_addr: string;
-  from_name: string;
-  subject: string;
-  snippet: string;
-  body_text: string;
-}, folders: ClassifyFolder[]) {
-  if (folders.length === 0) return { folder_id: null as string | null, confidence: 0, summary: "", reason: "" };
+export async function classifyEmail(
+  email: {
+    from_addr: string;
+    from_name: string;
+    subject: string;
+    snippet: string;
+    body_text: string;
+  },
+  folders: ClassifyFolder[],
+) {
+  if (folders.length === 0)
+    return { folder_id: null as string | null, confidence: 0, summary: "", reason: "" };
 
   function buildFolderList(includeExamples: boolean) {
     return folders
@@ -33,7 +37,10 @@ export async function classifyEmail(email: {
         if (f.ai_rule) parts.push(`Rule: ${f.ai_rule}`);
         if (f.learned_profile) parts.push(`Learned profile: ${f.learned_profile}`);
         if (includeExamples && f.examples && f.examples.length) {
-          const ex = f.examples.slice(0, 5).map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`).join("\n");
+          const ex = f.examples
+            .slice(0, 5)
+            .map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`)
+            .join("\n");
           parts.push(`Recent examples:\n${ex}`);
         }
         return parts.join("\n   ");
@@ -47,10 +54,18 @@ export async function classifyEmail(email: {
   // model fail, bursting JOB_TIMEOUT_MS and leaving emails stuck at
   // classified_by='pending'. Truncate instead of reject.
   const schema = z.object({
-    folder_name: z.string().describe("Exact name of the chosen folder, or 'NONE' if no folder fits"),
+    folder_name: z
+      .string()
+      .describe("Exact name of the chosen folder, or 'NONE' if no folder fits"),
     confidence: z.number().min(0).max(1),
-    summary: z.string().transform((s) => s.slice(0, 140)).describe("One-line summary of the email (<=140 chars)"),
-    reason: z.string().transform((s) => s.slice(0, 200)).describe("Short explanation of WHY this folder was chosen (<=200 chars)"),
+    summary: z
+      .string()
+      .transform((s) => s.slice(0, 140))
+      .describe("One-line summary of the email (<=140 chars)"),
+    reason: z
+      .string()
+      .transform((s) => s.slice(0, 200))
+      .describe("Short explanation of WHY this folder was chosen (<=200 chars)"),
   });
 
   function buildPrompt(opts: { trim: boolean }) {
@@ -105,7 +120,10 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
 Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
 {"folder_name":"<one of: ${folderNames.map((n) => `"${n}"`).join(", ")} or \\"NONE\\">","confidence":<0..1>,"summary":"<<=140 chars>","reason":"<<=200 chars>"}`,
       });
-      const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
+      const cleaned = text
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```\s*$/i, "");
       const start = cleaned.indexOf("{");
       const end = cleaned.lastIndexOf("}");
       if (start < 0 || end <= start) {
@@ -122,7 +140,7 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
     }
   }
 
-  let output =
+  const output =
     (await tryStructured("google/gemini-2.5-flash", false)) ||
     (await tryTextJson("google/gemini-2.5-flash", false)) ||
     (await tryStructured("google/gemini-2.5-flash-lite", false)) ||
@@ -130,7 +148,10 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
     (await tryTextJson("openai/gpt-5-mini", true)) ||
     (await tryTextJson("openai/gpt-5-nano", true));
 
-  if (!output) throw new Error(`AI classifier returned no parseable response (last error: ${lastError || "unknown"})`);
+  if (!output)
+    throw new Error(
+      `AI classifier returned no parseable response (last error: ${lastError || "unknown"})`,
+    );
 
   const match = folders.find((f) => f.name.toLowerCase() === output!.folder_name.toLowerCase());
   return {
@@ -155,7 +176,9 @@ export async function classifyEmailsBatch(
     body_text: string;
   }>,
   folders: ClassifyFolder[],
-): Promise<Array<{ folder_id: string | null; confidence: number; summary: string; reason: string }>> {
+): Promise<
+  Array<{ folder_id: string | null; confidence: number; summary: string; reason: string }>
+> {
   if (emails.length === 0) return [];
   if (folders.length === 0) {
     return emails.map(() => ({ folder_id: null, confidence: 0, summary: "", reason: "" }));
@@ -167,7 +190,10 @@ export async function classifyEmailsBatch(
       if (f.ai_rule) parts.push(`Rule: ${f.ai_rule}`);
       if (f.learned_profile) parts.push(`Learned profile: ${f.learned_profile}`);
       if (f.examples?.length) {
-        const ex = f.examples.slice(0, 3).map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`).join("\n");
+        const ex = f.examples
+          .slice(0, 3)
+          .map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`)
+          .join("\n");
         parts.push(`Recent examples:\n${ex}`);
       }
       return parts.join("\n   ");
@@ -175,11 +201,13 @@ export async function classifyEmailsBatch(
     .join("\n\n");
 
   const emailBlocks = emails
-    .map((e, i) => `--- EMAIL ${i + 1} ---
+    .map(
+      (e, i) => `--- EMAIL ${i + 1} ---
 From: ${e.from_name} <${e.from_addr}>
 Subject: ${e.subject}
 Body:
-${(e.body_text || e.snippet || "").slice(0, 1500)}`)
+${(e.body_text || e.snippet || "").slice(0, 1500)}`,
+    )
     .join("\n\n");
 
   const itemSchema = z.object({
@@ -242,7 +270,13 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
 
   return emails.map((_, i) => {
     const r = byIndex.get(i + 1);
-    if (!r) return { folder_id: null, confidence: 0, summary: "", reason: "No batch result for this email" };
+    if (!r)
+      return {
+        folder_id: null,
+        confidence: 0,
+        summary: "",
+        reason: "No batch result for this email",
+      };
     const match = folders.find((f) => f.name.toLowerCase() === r.folder_name.toLowerCase());
     return {
       folder_id: match?.id ?? null,
@@ -269,18 +303,25 @@ Subject: ${email.subject}
 
 ${(email.body_text || email.snippet || "").slice(0, 4000)}`,
   });
-  return text.trim().replace(/^["']|["']$/g, "").slice(0, 140);
+  return text
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .slice(0, 140);
 }
 
 export async function buildFolderProfile(
   folderName: string,
   rule: string | null,
-  examples: Array<{ from_addr: string | null; subject: string | null; snippet: string | null }>
+  examples: Array<{ from_addr: string | null; subject: string | null; snippet: string | null }>,
 ): Promise<string> {
   if (examples.length === 0) return "";
-  const list = examples.slice(0, 50).map((e, i) =>
-    `${i + 1}. From: ${e.from_addr ?? ""} | Subject: ${e.subject ?? ""} | Snippet: ${(e.snippet ?? "").slice(0, 160)}`
-  ).join("\n");
+  const list = examples
+    .slice(0, 50)
+    .map(
+      (e, i) =>
+        `${i + 1}. From: ${e.from_addr ?? ""} | Subject: ${e.subject ?? ""} | Snippet: ${(e.snippet ?? "").slice(0, 160)}`,
+    )
+    .join("\n");
   const { text } = await generateText({
     model: getModel(),
     prompt: `Describe the kind of email that belongs in the folder "${folderName}" in 1-3 sentences.
@@ -304,18 +345,32 @@ export type SuggestedFolderShape = {
   why: string;
 };
 
-export async function suggestFolderFromEmails(emails: Array<{
-  from_addr: string | null;
-  from_name: string | null;
-  subject: string | null;
-  snippet: string | null;
-}>): Promise<SuggestedFolderShape> {
+export async function suggestFolderFromEmails(
+  emails: Array<{
+    from_addr: string | null;
+    from_name: string | null;
+    subject: string | null;
+    snippet: string | null;
+  }>,
+): Promise<SuggestedFolderShape> {
   const list = emails
     .slice(0, 30)
-    .map((e, i) => `${i + 1}. From: ${e.from_name ?? ""} <${e.from_addr ?? ""}>\n   Subject: ${e.subject ?? ""}\n   Snippet: ${(e.snippet ?? "").slice(0, 200)}`)
+    .map(
+      (e, i) =>
+        `${i + 1}. From: ${e.from_name ?? ""} <${e.from_addr ?? ""}>\n   Subject: ${e.subject ?? ""}\n   Snippet: ${(e.snippet ?? "").slice(0, 200)}`,
+    )
     .join("\n\n");
 
-  const palette = ["#f59e0b", "#10b981", "#3b82f6", "#ec4899", "#8b5cf6", "#ef4444", "#14b8a6", "#eab308"];
+  const palette = [
+    "#f59e0b",
+    "#10b981",
+    "#3b82f6",
+    "#ec4899",
+    "#8b5cf6",
+    "#ef4444",
+    "#14b8a6",
+    "#eab308",
+  ];
 
   try {
     const { output } = await generateText({
@@ -323,9 +378,14 @@ export async function suggestFolderFromEmails(emails: Array<{
       output: Output.object({
         schema: z.object({
           name: z.string().min(1).max(40).describe("Short, human folder name in Title Case"),
-          color: z.string().regex(/^#[0-9a-fA-F]{6}$/).describe("Hex color from the palette"),
+          color: z
+            .string()
+            .regex(/^#[0-9a-fA-F]{6}$/)
+            .describe("Hex color from the palette"),
           ai_rule: z.string().min(1).max(300).describe("1-2 sentence natural-language rule"),
-          filter_field: z.enum(["from", "domain", "subject", "list_id", ""]).describe("Optional concrete filter — empty if no single signal fits"),
+          filter_field: z
+            .enum(["from", "domain", "subject", "list_id", ""])
+            .describe("Optional concrete filter — empty if no single signal fits"),
           filter_op: z.enum(["contains", "equals", "starts_with", "ends_with", ""]),
           filter_value: z.string().max(200),
           why: z.string().max(200),
@@ -380,7 +440,13 @@ export type RuleSuggestion = {
 };
 
 export async function suggestRuleUpdates(args: {
-  email: { from_addr: string; from_name: string; subject: string; snippet: string; body_text: string };
+  email: {
+    from_addr: string;
+    from_name: string;
+    subject: string;
+    snippet: string;
+    body_text: string;
+  };
   source: { name: string; ai_rule: string | null; learned_profile: string | null };
   target: { name: string; ai_rule: string | null; learned_profile: string | null };
 }): Promise<RuleSuggestion> {
@@ -491,9 +557,16 @@ ${list}`;
         model: getModel(PRIMARY_MODEL),
         output: Output.object({
           schema: z.object({
-            subject: z.string().min(1).max(200).describe("Concise subject line for the digest email"),
+            subject: z
+              .string()
+              .min(1)
+              .max(200)
+              .describe("Concise subject line for the digest email"),
             body_text: z.string().min(1).describe("Plain-text digest body"),
-            body_html: z.string().min(1).describe("HTML digest body (semantic, inline-styled, no <html>/<body> tags)"),
+            body_html: z
+              .string()
+              .min(1)
+              .describe("HTML digest body (semantic, inline-styled, no <html>/<body> tags)"),
           }),
         }),
         prompt: `${basePrompt}
@@ -510,7 +583,10 @@ Be concise. Skip empty/duplicate content. If there are no emails, say so briefly
     );
     return output;
   } catch (err: any) {
-    console.warn("summarizeFolderEmails: structured output failed, falling back to plain text:", err?.message ?? err);
+    console.warn(
+      "summarizeFolderEmails: structured output failed, falling back to plain text:",
+      err?.message ?? err,
+    );
   }
 
   // Fallback: plain Markdown, then convert to text/html.
@@ -525,14 +601,20 @@ Write a daily digest in Markdown. Start with a single line: "# <short subject>" 
     "summarizeFolderEmails(fallback)",
   );
 
-
   const lines = text.split("\n");
   let subject = `${args.folderName} daily digest`;
   let bodyMd = text;
   const firstHeading = lines.findIndex((l) => l.trim().startsWith("#"));
   if (firstHeading >= 0) {
-    subject = lines[firstHeading].replace(/^#+\s*/, "").trim().slice(0, 200) || subject;
-    bodyMd = lines.slice(firstHeading + 1).join("\n").trim();
+    subject =
+      lines[firstHeading]
+        .replace(/^#+\s*/, "")
+        .trim()
+        .slice(0, 200) || subject;
+    bodyMd = lines
+      .slice(firstHeading + 1)
+      .join("\n")
+      .trim();
   }
 
   const escapeHtml = (s: string) =>
