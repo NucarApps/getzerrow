@@ -1,52 +1,71 @@
-# Fix: Calendar guard should only block the Cold Email folder
+# Fix the publish error: missing Supabase environment variables
 
-## Problem
+## What's happening
 
-Emails from senders you've met in Google Calendar (e.g. `james.decrispino@cadillac.com`) stopped filing into **Factory** and now sit in the inbox as "unclassified".
-
-Root cause: the classifier runs the calendar guard **first** and stops there for any known contact — pinning them to the inbox and skipping all your folder rules. Before this sender was added to your calendar contacts (6/1), his mail correctly matched the `cadillac.com` → Factory domain rule.
-
-Your intent: the guard should only prevent a known contact from being filed as **cold email**. Every other rule (Factory domain rule, other filters, AI folders) should work normally.
-
-## Approach
-
-Identify which folder is the "Cold Email" folder explicitly (a folder flag), then change the guard from "pin everything to inbox" to "only block the Cold Email folder".
+When you publish, the build is throwing:
 
 ```text
-Before:  known contact ──► INBOX (skips all rules)
-
-After:   known contact ──► run all rules normally
-                           │
-                           ├─ matches Factory domain rule ──► Factory ✓
-                           ├─ AI/filter would pick Cold Email ──► blocked, kept in inbox
-                           └─ nothing matches ──► inbox
+Missing Supabase environment variable(s): SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY.
 ```
 
-## Changes
+This comes from the auto-generated backend connection file, which expects the
+backend URL and public key to be injected at build time. The error only fires
+when **both** the build-time values **and** the server-side fallback values are
+missing at once.
 
-### 1. Database
-Add an `is_cold_email` flag to folders (default off) and turn it on automatically for any existing folder named "Cold Email", so the fix works immediately for your current setup.
+## What I verified
 
-### 2. Classifier (`src/lib/sync/classify.ts`)
-- Remove the early guard short-circuit.
-- Compute `isGuardedContact = guard enabled AND sender is a known calendar contact`.
-- When the AI candidate set is built, drop `is_cold_email` folders for guarded contacts so the AI can't file them there.
-- After a folder is resolved (filter / label / AI), if the chosen folder is `is_cold_email` and the sender is a guarded contact, clear the assignment and keep the email in the inbox (`classified_by = "calendar_contact"`, reason "Met in Google Calendar — kept out of Cold Email").
-- All other paths (Factory domain rule, gmail-label match, inbox overrides, other AI folders) are untouched.
+- Your project's local environment file already has all four required values
+  set correctly (browser + server variants).
+- The hosted backend (Lovable Cloud) is healthy and responding normally.
+- Your recent changes (the calendar-guard classifier work, folder editor, types)
+  do **not** touch backend connection or environment wiring.
 
-### 3. Folder editor (`src/components/folders/FolderEditor.tsx`)
-Add a small toggle "Cold email folder — keep calendar contacts out" so you can designate which folder the guard protects against (pre-set for the existing Cold Email folder).
+Conclusion: this is **not a code bug**. The published build was produced without
+the managed backend values being injected — a stale/broken build-environment
+state, not something in your source. Since it "worked before and just broke,"
+the previous publish picked up the values and this one didn't.
 
-### 4. Settings copy (`src/components/settings/CalendarGuardCard.tsx`)
-Tweak the description to reflect the narrower behavior: known contacts are never filed as cold email, but other folder rules still apply.
+## Plan (recovery, no code changes)
 
-### 5. Reclassify stuck emails
-Re-run classification on the recent emails currently pinned as `calendar_contact` so they flow into their correct folders (e.g. the cadillac.com messages move into Factory).
+```text
+1. Refresh the backend connection so the managed environment values
+   are regenerated for the build.
+2. Confirm the live preview still loads (it pulls the same values).
+3. Republish from the now-healthy preview.
+4. If it still fails, fall back to restoring the last known-good
+   published version, then republish.
+```
 
-### 6. Tests (`src/lib/sync-classify.test.ts`)
-- Update the existing guard tests (which assert the guard beats folder filters) to the new behavior.
-- Add: a guarded contact whose domain matches Factory files into Factory; a guarded contact that would land in Cold Email is kept in the inbox instead.
+### Step 1 — Refresh the managed backend connection
+Open Lovable Cloud and reconnect/refresh the backend integration. This
+regenerates the managed environment values that the publish build reads.
+
+### Step 2 — Confirm the preview is healthy
+Reload the preview and confirm it loads without the "Missing Supabase
+environment variable(s)" message. The preview uses the same managed values, so a
+healthy preview is the signal the publish build will also succeed.
+
+### Step 3 — Republish
+Once the preview is clean, publish again. The build should now inject the values
+and complete.
+
+### Step 4 — Fallback if it persists
+If publishing still fails after refreshing:
+- Restore the last known-good published version from History, then republish, and
+- I can add a small safety guard so a missing value at build time degrades more
+  gracefully instead of hard-crashing the whole publish (optional hardening).
 
 ## Technical notes
-- `account-context.ts` already loads folders with `select("*")`, so the new column flows through automatically; the `Folder` type in `src/lib/sync/types.ts` gains `is_cold_email: boolean`.
-- The account-context cache (TTL) means the new flag takes effect on the next cache refresh; reclassification in step 5 uses fresh context.
+
+- The connection file reads `import.meta.env.VITE_SUPABASE_URL` /
+  `VITE_SUPABASE_PUBLISHABLE_KEY` (inlined at build) with a
+  `process.env.SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` SSR fallback.
+- All four are present in the project env file today, so the failure was in the
+  publish build's access to the managed values, not the source.
+- No source edits are part of this plan unless Step 4's optional hardening is
+  requested.
+
+<presentation-actions>
+<presentation-open-publish>Publish your app</presentation-open-publish>
+</presentation-actions>
