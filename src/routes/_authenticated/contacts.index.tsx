@@ -502,17 +502,20 @@ function GroupChip({
     <div
       className={`group flex items-center rounded-md text-sm ${active ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-accent/40"}`}
     >
-      <button onClick={onClick} className="flex flex-1 items-center gap-2 truncate px-3 py-1.5 text-left">
+      <button onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3 text-left">
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
-        <span className="flex-1 truncate">{label}</span>
-        {typeof count === "number" && (
-          <span
-            className="min-w-[1.5rem] rounded-md border border-border/60 bg-muted px-1.5 py-0.5 text-center text-[10px] font-medium tabular-nums text-muted-foreground"
-            title="Contacts in this group"
-          >
-            {count}
-          </span>
-        )}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {/* Fixed-width, right-aligned count column so every badge shares one line. */}
+        <span className="flex w-10 shrink-0 justify-end">
+          {typeof count === "number" && (
+            <span
+              className="inline-flex min-w-[1.5rem] justify-center rounded-md border border-border/60 bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground"
+              title="Contacts in this group"
+            >
+              {count}
+            </span>
+          )}
+        </span>
       </button>
       {/* Always reserve the pencil slot so count badges line up across rows. */}
       {onEdit ? (
