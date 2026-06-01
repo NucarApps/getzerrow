@@ -1,64 +1,47 @@
-# CASA Tier 2 Remediation Plan
+## Problem
 
-Goal: close the gaps a CASA Tier 2 lab will flag so the Google OAuth restricted-scope review passes. Three workstreams.
+Emails that are currently in your **Gmail inbox** — because you un-snoozed them or manually moved them out of a label/folder back into the inbox — are not appearing in your Zerrow inbox.
 
-## 1. HTTP security headers (the main gap)
+## Root cause
 
-`src/server.ts` currently returns responses with no security headers. The scan/lab expects a standard hardened set. We will add a single helper that decorates every outgoing response (success and error paths) with:
+Zerrow's "Inbox" view only shows local rows where `raw_labels` contains `INBOX` **and** `is_archived = false`. Two things keep these emails stuck:
 
-- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
-- `X-Content-Type-Options: nosniff`
-- `X-Frame-Options: DENY`
-- `Referrer-Policy: strict-origin-when-cross-origin`
-- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
-- `Content-Security-Policy` — a policy tuned for this app so nothing breaks:
-  - `default-src 'self'`
-  - `script-src 'self' 'unsafe-inline'` (TanStack SSR injects inline hydration scripts; `'unsafe-eval'` only if a runtime error shows it's needed)
-  - `style-src 'self' 'unsafe-inline'` + `https://fonts.googleapis.com`
-  - `font-src 'self' https://fonts.gstatic.com`
-  - `img-src 'self' data: https:` (logos/avatars are fetched from arbitrary company domains)
-  - `connect-src 'self'` + the Supabase URL + `https://oauth.lovable.app` + Lovable AI/realtime (wss) origins
-  - `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self' https://accounts.google.com`
+1. **The on-demand reconcile only works one way.** `reconcileInboxFromGmail` looks at rows that are *already* in Zerrow's inbox and removes the ones Gmail has since archived. It never does the reverse — it never pulls messages that ARE in Gmail's inbox but are marked archived (or missing the `INBOX` label) locally. So a snoozed-then-returned email, or one you dragged back into the inbox in Gmail, stays flagged as archived in Zerrow forever.
 
-Implementation detail: wrap the existing `fetch` flow in `server.ts` so the header set is applied to both `normalizeCatastrophicSsrResponse(...)` output and `brandedErrorResponse()`. Headers are merged onto a cloned response so existing `content-type`/redirect headers are preserved.
+2. **The cron safety-net only scans the 200 newest archived rows.** Older drifted messages (a snooze that fired weeks later, an old thread you re-filed) fall outside that window and never get repaired.
 
-Verification: load the app in preview, confirm no CSP violations in the console (inbox, settings, login, OAuth round-trip, contact card `/c/$handle`, logo fetching). Adjust `connect-src`/`img-src` if any legitimate request is blocked, then re-test.
+The history-sync path *should* catch the `labelsAdded: INBOX` event live, but if the push/poll was down past Gmail's ~1-week history TTL, or the event paged past the cap, the event is lost and nothing brings the message back.
 
-## 2. Complete the account-deletion cascade
+## Fix
 
-`deleteAccount` in `src/lib/account.functions.ts` deletes most per-user tables, but two tables that hold user-derived data are missed, so PII survives a "delete my account" request — a Tier 2 failure.
+Make the inbox reconcile **bidirectional** by adding an "incoming" pass to `reconcileInboxFromGmail` (`src/lib/gmail.functions.ts`):
 
-- `email_search_index` — has a `user_id` column and stores a tsvector built from the user's email text. No foreign key to `emails`, so it is NOT cleaned up when emails are deleted. Add it to the deletion list (delete by `user_id`).
-- `pubsub_events` — has no `user_id`, but stores the user's Gmail `email_address` in raw push-notification logs. Before deleting `gmail_accounts`, collect the connected `email_address` values, then delete `pubsub_events` rows matching those addresses.
+```text
+existing pass (outgoing):  local-inbox rows no longer in Gmail INBOX  → archive/delete locally
+new pass (incoming):       Gmail INBOX messages not visible in Zerrow → restore locally
+```
 
-Changes (all inside the existing `deleteAccount` handler, admin client):
-1. Select `id` AND `email_address` from `gmail_accounts` up front (already selects `id`).
-2. Add `email_search_index` to the `tables` array (delete by `user_id`).
-3. After the loop, delete `pubsub_events` where `email_address` is in the collected list (skip if no addresses). Log failures via `logError`, consistent with existing behavior.
+The new pass will:
+1. Pull the current Gmail `INBOX` message-id slice (reusing the `listMessages({ labelIds: ["INBOX"] })` call already made in the function — no extra Gmail quota).
+2. Look up which of those ids exist locally for the account.
+3. For ids that exist locally but are `is_archived = true` or missing `INBOX` in `raw_labels`: fetch their current labels, then update the row to `is_archived = false` and merge `INBOX` into `raw_labels` (and clear stale snooze state). This makes them reappear instantly via the existing realtime subscription.
+4. For ids that exist in Gmail's inbox but have **no** local row at all: enqueue them through the normal `message_jobs` ingestion pipeline (the same mechanism `searchGmailAndIngest` uses) so they get parsed, classified, and inserted.
+5. Keep the existing per-call repair cap (e.g. 25) so a large divergence can't hammer the Gmail API; the return value will report `restored` / `ingested` counts alongside the current `reconciled` / `deleted`.
 
-Verification: type-check passes; manually trace that every public table with user data is now covered (cross-checked against the live table list).
-
-## 3. Privacy policy — verify Limited Use disclosure
-
-Good news: `src/routes/privacy.tsx` already contains a dedicated "Limited Use of Google user data" section with the required verbatim clause linking the Google API Services User Data Policy, plus encryption, retention, and deletion sections. This gap is effectively already closed.
-
-Minor polish only (optional, low risk):
-- In "Retention & deletion", add one line that deletion also clears the search index and push-notification logs, so the policy matches the cascade fix in step 2.
-
-No structural rewrite needed.
-
-## Out of scope / already passing
-
-These were confirmed already in place and need no work: column-level pgcrypto AEAD encryption of tokens/bodies/PII, RLS scoped to `auth.uid()`, `requireSupabaseAuth` on server functions, Zod input validation, and `CRON_SECRET`/`GMAIL_WEBHOOK_TOKEN` protection on `/api/public/*` mutating endpoints.
+The inbox page already calls this function on mount and every 45s and invalidates the email query when it reports changes, so once the counts include the new `restored`/`ingested` numbers, the recovered emails will surface automatically with no UI change required.
 
 ## Files touched
 
-- `src/server.ts` — add security-header helper, apply to all responses.
-- `src/lib/account.functions.ts` — add `email_search_index` + `pubsub_events` to deletion.
-- `src/routes/privacy.tsx` — one-line retention wording update (optional).
+- `src/lib/gmail.functions.ts` — extend `reconcileInboxFromGmail` with the incoming pass.
+- `src/routes/_authenticated/inbox.tsx` — minor: include the new `restored`/`ingested` counts in the condition that triggers a query refetch.
 
-## Final verification
+## Verification
 
-- Build/type-check clean (0 errors).
-- Preview smoke test with console open: no CSP breakage across inbox, settings, login, OAuth, contact card, logo fetch.
-- Confirm header set present on a response (network panel).
+- Reproduce with a known message: confirm a message present in Gmail's inbox but archived locally flips to visible after a reconcile tick.
+- Confirm the per-call cap and rate-limit handling still hold.
+- Run existing sync tests; type-check clean.
+
+## Notes / limits
+
+- Like the current logic, the incoming pass is bounded to Gmail's most recent 500 inbox messages per call; very old returned-to-inbox mail beyond that window is recovered incrementally by the cron reconcile (which I can also widen if you want a one-time full sweep).
+- No schema changes. No change to encryption, RLS, or the webhook/cron auth.
