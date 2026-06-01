@@ -781,6 +781,7 @@ export type Database = {
           gmail_label_id: string | null
           hide_from_inbox: boolean
           id: string
+          is_cold_email: boolean
           last_learned_at: string | null
           learned_profile: string | null
           min_ai_confidence: number
@@ -810,6 +811,7 @@ export type Database = {
           gmail_label_id?: string | null
           hide_from_inbox?: boolean
           id?: string
+          is_cold_email?: boolean
           last_learned_at?: string | null
           learned_profile?: string | null
           min_ai_confidence?: number
@@ -839,6 +841,7 @@ export type Database = {
           gmail_label_id?: string | null
           hide_from_inbox?: boolean
           id?: string
+          is_cold_email?: boolean
           last_learned_at?: string | null
           learned_profile?: string | null
           min_ai_confidence?: number
