@@ -3,13 +3,21 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
+  CALENDAR_SCOPE,
   "openid",
 ];
+
+/** True when Google's granted-scope string includes Calendar read access. */
+export function scopeGrantsCalendar(scope: string | null | undefined): boolean {
+  return (scope ?? "").split(/\s+/).includes(CALENDAR_SCOPE);
+}
 
 function requireEnv(name: string): string {
   const v = process.env[name];

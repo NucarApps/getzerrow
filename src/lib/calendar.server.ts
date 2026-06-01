@@ -1,0 +1,165 @@
+// Google Calendar API helpers — direct calls to Google with per-user OAuth
+// tokens. Server-only. Feeds the calendar cold-email guard: any attendee
+// seen on the user's events in the last 12 months is stored in
+// `calendar_contacts` and pinned to the inbox by the classifier.
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getAccessToken } from "./google-oauth.server";
+import { logError } from "./log.server";
+
+const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
+const REQUEST_TIMEOUT_MS = 20_000;
+// Bound a single sync run so one account can't hammer the Calendar API or
+// stall the cron tick. A run that hits the cap simply resumes next tick.
+const MAX_PAGES_PER_RUN = 12;
+const PAGE_SIZE = 250;
+const LOOKBACK_MONTHS = 12;
+
+export class CalendarApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "CalendarApiError";
+    this.status = status;
+  }
+}
+
+type CalendarEvent = {
+  attendees?: Array<{ email?: string; self?: boolean; responseStatus?: string }>;
+  organizer?: { email?: string; self?: boolean };
+  creator?: { email?: string; self?: boolean };
+};
+
+type EventsResponse = {
+  items?: CalendarEvent[];
+  nextPageToken?: string;
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Pure parser: extract every distinct attendee/organizer email address from a
+ * single calendar event, excluding the account owner's own address and any
+ * resource/room addresses. Lowercased. Kept pure so it stays unit-testable.
+ */
+export function extractAttendeeEmails(event: CalendarEvent, selfEmail: string): string[] {
+  const self = selfEmail.toLowerCase();
+  const out = new Set<string>();
+  const consider = (raw: string | undefined, isSelf: boolean | undefined) => {
+    if (!raw || isSelf) return;
+    const email = raw.toLowerCase().trim();
+    if (email === self) return;
+    // Skip Google resource calendars (meeting rooms, equipment).
+    if (email.endsWith(".calendar.google.com") || email.includes("resource.calendar")) return;
+    if (!EMAIL_RE.test(email)) return;
+    out.add(email);
+  };
+  for (const a of event.attendees ?? []) consider(a.email, a.self);
+  consider(event.organizer?.email, event.organizer?.self);
+  consider(event.creator?.email, event.creator?.self);
+  return [...out];
+}
+
+async function calendarFetch<T>(accountId: string, path: string): Promise<T> {
+  const token = await getAccessToken(accountId);
+  let res: Response;
+  try {
+    res = await fetch(`${CALENDAR_BASE}${path}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new CalendarApiError(`Calendar API network error on ${path}: ${msg}`, 0);
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    throw new CalendarApiError(`Calendar API ${res.status} on ${path}: ${text.slice(0, 300)}`, res.status);
+  }
+  return (text ? JSON.parse(text) : {}) as T;
+}
+
+/** One page of primary-calendar events with attendees, newest first. */
+async function listEventsPage(
+  accountId: string,
+  timeMin: string,
+  pageToken?: string,
+): Promise<EventsResponse> {
+  const params = new URLSearchParams({
+    timeMin,
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: String(PAGE_SIZE),
+    showDeleted: "false",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+  return calendarFetch<EventsResponse>(
+    accountId,
+    `/calendars/primary/events?${params.toString()}`,
+  );
+}
+
+/**
+ * Sync attendees from the account's calendar (last 12 months) into
+ * `calendar_contacts`. Upserts on (gmail_account_id, email_address) and
+ * refreshes last_seen_at. Returns the number of distinct contacts written.
+ * Throws CalendarApiError (e.g. 403 when calendar scope is missing) so the
+ * caller can surface a reconnect prompt.
+ */
+export async function syncCalendarContacts(
+  accountId: string,
+  userId: string,
+): Promise<{ contacts: number; pages: number; truncated: boolean }> {
+  const { data: account } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("email_address")
+    .eq("id", accountId)
+    .maybeSingle();
+  const selfEmail = account?.email_address ?? "";
+
+  const timeMin = new Date(
+    Date.now() - LOOKBACK_MONTHS * 30 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const emails = new Map<string, string>(); // email -> last_seen_at iso (now)
+  const now = new Date().toISOString();
+  let pageToken: string | undefined;
+  let pages = 0;
+  let truncated = false;
+
+  do {
+    const page = await listEventsPage(accountId, timeMin, pageToken);
+    for (const ev of page.items ?? []) {
+      for (const email of extractAttendeeEmails(ev, selfEmail)) {
+        emails.set(email, now);
+      }
+    }
+    pageToken = page.nextPageToken;
+    pages++;
+    if (pages >= MAX_PAGES_PER_RUN && pageToken) {
+      truncated = true;
+      break;
+    }
+  } while (pageToken);
+
+  if (emails.size > 0) {
+    const rows = [...emails.keys()].map((email_address) => ({
+      user_id: userId,
+      gmail_account_id: accountId,
+      email_address,
+      last_seen_at: now,
+    }));
+    const { error } = await supabaseAdmin
+      .from("calendar_contacts")
+      .upsert(rows, { onConflict: "gmail_account_id,email_address" });
+    if (error) {
+      logError("calendar.upsert_failed", { account_id: accountId, user_id: userId, count: rows.length }, error);
+    }
+  }
+
+  await supabaseAdmin
+    .from("gmail_accounts")
+    .update({ calendar_synced_at: now })
+    .eq("id", accountId);
+
+  return { contacts: emails.size, pages, truncated };
+}

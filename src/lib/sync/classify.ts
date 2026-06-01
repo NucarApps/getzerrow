@@ -75,6 +75,24 @@ export async function classifyParsedEmail(
 
   const fromAddr = (parsed.from_addr || "").toLowerCase();
   const fromDomain = fromAddr.split("@")[1] || "";
+
+  // Calendar cold-email guard: if the account has it enabled and the sender
+  // is someone the user has met in Google Calendar, pin the message to the
+  // inbox with no folder — same allowlist semantics as an inbox override.
+  // This beats folder filters and AI so a known contact is never treated as
+  // cold. Runs first so it short-circuits the rest of the decision tree.
+  if (context.calendarGuardEnabled && fromAddr && context.calendarContacts.has(fromAddr)) {
+    return {
+      folder_id: null,
+      classified_by: "calendar_contact",
+      ai_confidence: 0,
+      ai_summary: "",
+      classification_reason: "Met in Google Calendar — kept in inbox",
+      matched_filter_ids: [],
+      matched_folder_ids: [],
+    };
+  }
+
   const overrideHit = overrides.find((o) => {
     const val = (o.value || "").toLowerCase();
     return o.match_type === "email" ? val === fromAddr : val === fromDomain;

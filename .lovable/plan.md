@@ -1,47 +1,75 @@
-## Problem
+# Calendar cold-email guard
 
-Emails that are currently in your **Gmail inbox** — because you un-snoozed them or manually moved them out of a label/folder back into the inbox — are not appearing in your Zerrow inbox.
+## Goal
+If you've had a meeting with someone in Google Calendar (any attendee, last 12 months), their email is never treated as cold — it's forced into your inbox and skips auto-filing folders, AI routing, hide/archive/forward. Controlled by an account-wide toggle in Settings.
 
-## Root cause
+## How it behaves
+- A new per-Gmail-account toggle: **Keep people I've met in Calendar in my inbox**.
+- When on, Zerrow keeps a list of email addresses that have appeared as attendees on your calendar events in the last 12 months.
+- Incoming mail from any of those addresses is pinned to the inbox (treated exactly like an existing "always-inbox" override): no folder, no auto-archive, no AI classification.
+- Reading the calendar needs a new Google permission, so you reconnect Google once. Until then the toggle shows a "Reconnect to enable" state.
 
-Zerrow's "Inbox" view only shows local rows where `raw_labels` contains `INBOX` **and** `is_archived = false`. Two things keep these emails stuck:
-
-1. **The on-demand reconcile only works one way.** `reconcileInboxFromGmail` looks at rows that are *already* in Zerrow's inbox and removes the ones Gmail has since archived. It never does the reverse — it never pulls messages that ARE in Gmail's inbox but are marked archived (or missing the `INBOX` label) locally. So a snoozed-then-returned email, or one you dragged back into the inbox in Gmail, stays flagged as archived in Zerrow forever.
-
-2. **The cron safety-net only scans the 200 newest archived rows.** Older drifted messages (a snooze that fired weeks later, an old thread you re-filed) fall outside that window and never get repaired.
-
-The history-sync path *should* catch the `labelsAdded: INBOX` event live, but if the push/poll was down past Gmail's ~1-week history TTL, or the event paged past the cap, the event is lost and nothing brings the message back.
-
-## Fix
-
-Make the inbox reconcile **bidirectional** by adding an "incoming" pass to `reconcileInboxFromGmail` (`src/lib/gmail.functions.ts`):
+## What the user does
+1. In Settings, flip the calendar guard toggle on the relevant Gmail account.
+2. If calendar access isn't granted yet, click **Reconnect Google** (one-time consent).
+3. Zerrow runs an initial calendar sync (12 months) and then refreshes daily.
 
 ```text
-existing pass (outgoing):  local-inbox rows no longer in Gmail INBOX  → archive/delete locally
-new pass (incoming):       Gmail INBOX messages not visible in Zerrow → restore locally
+Google Calendar (12mo of events)
+        │  attendees' emails
+        ▼
+ calendar_contacts (per account)
+        │
+incoming email ── from_addr in calendar_contacts? ──► force INBOX, no folder, skip AI
+        else ──► normal filter/AI routing
 ```
 
-The new pass will:
-1. Pull the current Gmail `INBOX` message-id slice (reusing the `listMessages({ labelIds: ["INBOX"] })` call already made in the function — no extra Gmail quota).
-2. Look up which of those ids exist locally for the account.
-3. For ids that exist locally but are `is_archived = true` or missing `INBOX` in `raw_labels`: fetch their current labels, then update the row to `is_archived = false` and merge `INBOX` into `raw_labels` (and clear stale snooze state). This makes them reappear instantly via the existing realtime subscription.
-4. For ids that exist in Gmail's inbox but have **no** local row at all: enqueue them through the normal `message_jobs` ingestion pipeline (the same mechanism `searchGmailAndIngest` uses) so they get parsed, classified, and inserted.
-5. Keep the existing per-call repair cap (e.g. 25) so a large divergence can't hammer the Gmail API; the return value will report `restored` / `ingested` counts alongside the current `reconciled` / `deleted`.
+---
 
-The inbox page already calls this function on mount and every 45s and invalidates the email query when it reports changes, so once the counts include the new `restored`/`ingested` numbers, the recovered emails will surface automatically with no UI change required.
+## Technical details
 
-## Files touched
+### 1. OAuth scope + reconnect detection
+- `src/lib/google-oauth.server.ts`: add `https://www.googleapis.com/auth/calendar.readonly` to `GMAIL_SCOPES`. (`prompt: "consent"` already forces re-consent, so reconnect grants it.)
+- In the OAuth callback (`src/routes/api/public/google-oauth-callback.ts`), the token exchange already returns a `scope` string. Persist whether calendar was granted onto the account (`calendar_access = scope.includes("calendar.readonly")`).
+- Existing connected accounts simply have `calendar_access = false` until they reconnect — handled gracefully (guard stays inert, UI prompts reconnect).
 
-- `src/lib/gmail.functions.ts` — extend `reconcileInboxFromGmail` with the incoming pass.
-- `src/routes/_authenticated/inbox.tsx` — minor: include the new `restored`/`ingested` counts in the condition that triggers a query refetch.
+### 2. Schema (migration)
+- New column on `gmail_accounts`: `calendar_guard_enabled boolean not null default false`, `calendar_access boolean not null default false`, `calendar_synced_at timestamptz null`.
+- New table `public.calendar_contacts`:
+  - `id uuid pk`, `user_id uuid`, `gmail_account_id uuid`, `email_address text` (lowercased), `last_seen_at timestamptz`, `created_at`.
+  - Unique on `(gmail_account_id, email_address)`.
+  - RLS: user can select their own rows (`auth.uid() = user_id`); writes happen server-side via the admin client. GRANTs: `SELECT` to `authenticated`, `ALL` to `service_role`.
+  - Email addresses stored in plaintext, consistent with the existing `contacts.email` column.
+- Add `calendar_contacts` to the deletion list in `deleteAccount` (`src/lib/account.functions.ts`) so CASA data-deletion stays complete.
 
-## Verification
+### 3. Calendar sync (server-only)
+- New `src/lib/calendar.server.ts`:
+  - `listCalendarEvents(accountId, { timeMin, pageToken })` — calls Google Calendar API `/calendar/v3/calendars/primary/events` reusing `getAccessToken(accountId)` (same per-user OAuth pipeline as Gmail). Pagination + 20s timeout, mirroring `gmail.server.ts` error handling.
+  - `syncCalendarContacts(accountId, userId)` — fetches events from now−12 months forward, collects every attendee email (excluding the account's own address), upserts into `calendar_contacts` with `last_seen_at`. Per-call page cap so one run can't hammer the API; resumes on the next tick if needed.
+- New `src/lib/calendar.functions.ts` (`createServerFn`, auth-protected):
+  - `setCalendarGuard({ accountId, enabled })` — verifies ownership, updates `calendar_guard_enabled`, busts account context, triggers an initial `syncCalendarContacts` when turning on (if `calendar_access`).
+  - `getCalendarGuardStatus({ accountId })` — returns `{ enabled, calendarAccess, syncedAt, contactCount }` for the UI.
 
-- Reproduce with a known message: confirm a message present in Gmail's inbox but archived locally flips to visible after a reconcile tick.
-- Confirm the per-call cap and rate-limit handling still hold.
-- Run existing sync tests; type-check clean.
+### 4. Periodic refresh (cron)
+- New `src/routes/api/public/hooks/sync-calendar-contacts.ts` guarded by `isAuthorizedCronRequest` (CRON_SECRET), iterating accounts with `calendar_guard_enabled = true AND calendar_access = true`, calling `syncCalendarContacts`. Daily schedule via `pg_cron` (added with the insert tool, not migration). Skips/space-bounds like the other tick endpoints.
 
-## Notes / limits
+### 5. Classification hook (the guard itself)
+- `src/lib/sync/account-context.ts`: extend `AccountContext` with `calendarGuardEnabled: boolean` and `calendarContacts: Set<string>` (lowercased emails). Load the flag from the account row and, when enabled, the `calendar_contacts` emails for that account. Cached with the existing 5s TTL; invalidated on toggle change.
+- `src/lib/sync/classify.ts`: before the inbox-override logic, if `context.calendarGuardEnabled && context.calendarContacts.has(fromAddr)`, short-circuit exactly like the existing `overrideWins` allowlist path — `folder_id = null`, `classified_by = "calendar_contact"`, `classification_reason = "Met in Google Calendar"`, skip AI. `process-message` already restores INBOX when `classified_by` indicates an inbox pin and Gmail had archived it — extend that branch to also cover `"calendar_contact"`.
+- **Filter engine stays pure** — no Supabase imports added there; the guard lives in the classifier, not `filter-engine.ts`.
 
-- Like the current logic, the incoming pass is bounded to Gmail's most recent 500 inbox messages per call; very old returned-to-inbox mail beyond that window is recovered incrementally by the cron reconcile (which I can also widen if you want a one-time full sweep).
-- No schema changes. No change to encryption, RLS, or the webhook/cron auth.
+### 6. UI (Settings)
+- New `src/components/settings/CalendarGuardCard.tsx` rendered per selected account in `settings.tsx`:
+  - shadcn `Switch` for the toggle, `getCalendarGuardStatus` via React Query.
+  - When `calendarAccess` is false: show "Reconnect Google to enable" using the existing `startConnectGmail` reauthorize flow (with `login_hint` = account email).
+  - Show last synced time and the number of "people met" plus a **Sync now** button (calls a small server fn wrapper around `syncCalendarContacts`).
+  - Sentence-case copy, friendly tone.
+
+### 7. Tests
+- Unit test for an `extractAttendeeEmails(event, selfEmail)` helper in `calendar.server.ts` (pure parsing of the events payload).
+- Extend `sync-classify`-style coverage: an email from a calendar contact is pinned to inbox (`classified_by === "calendar_contact"`) and skips folder/AI; with the guard off it routes normally.
+
+## Notes / scope
+- Adding `calendar.readonly` is a sensitive scope and is part of what Google verifies for your CASA/OAuth review — worth listing it in the verification scope justification.
+- This is a server-side-only Calendar read; the client never sees the token (consistent with the Gmail pipeline).
+- No changes to job-claim RPCs, encryption, or the Pub/Sub webhook.

@@ -8,6 +8,7 @@ import {
   getRedirectUri,
   verifyState,
   clearNeedsReconnect,
+  scopeGrantsCalendar,
 } from "@/lib/google-oauth.server";
 import { ensureWatch } from "@/lib/gmail.server";
 import { logError, newRunId } from "@/lib/log.server";
@@ -85,6 +86,20 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
 
           // Successful (re)auth: clear any prior reconnect flag/error.
           await clearNeedsReconnect(account.id);
+
+          // Record whether the user granted Calendar read access so the
+          // calendar cold-email guard can run (and the UI can prompt a
+          // reconnect when it's missing).
+          try {
+            await supabaseAdmin
+              .from("gmail_accounts")
+              .update({ calendar_access: scopeGrantsCalendar(tokens.scope) })
+              .eq("id", account.id);
+          } catch (e) {
+            logError("oauth.calendar_access_update_failed", { run_id: runId, account_id: account.id, user_id: userId }, e);
+          }
+
+
 
 
           // Start Gmail push watch if topic is configured
