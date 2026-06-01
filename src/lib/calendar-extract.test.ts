@@ -91,3 +91,46 @@ describe("CalendarApiError.kind", () => {
     expect(new CalendarApiError("net", 0).kind).toBe("unknown");
   });
 });
+
+describe("extractAttendeePeople", () => {
+  it("captures display name, event start time and title", () => {
+    const out = extractAttendeePeople(
+      {
+        summary: "Project sync",
+        start: { dateTime: "2026-05-01T10:00:00Z" },
+        attendees: [{ email: "a@partner.com", displayName: "Alice Partner" }],
+      },
+      self,
+    );
+    expect(out).toEqual([
+      { email: "a@partner.com", name: "Alice Partner", meetingAt: "2026-05-01T10:00:00Z", eventTitle: "Project sync" },
+    ]);
+  });
+
+  it("excludes the owner and resource calendars, lowercases emails", () => {
+    const out = extractAttendeePeople(
+      {
+        start: { date: "2026-05-02" },
+        attendees: [
+          { email: self, self: true },
+          { email: "Room-A@resource.calendar.google.com" },
+          { email: "B@Partner.com", displayName: "Bob" },
+        ],
+      },
+      self,
+    );
+    expect(out).toEqual([
+      { email: "b@partner.com", name: "Bob", meetingAt: "2026-05-02", eventTitle: null },
+    ]);
+  });
+
+  it("falls back to the organizer when there are no attendees", () => {
+    const out = extractAttendeePeople(
+      { summary: "1:1", start: { dateTime: "2026-06-01T09:00:00Z" }, organizer: { email: "c@partner.com" } },
+      self,
+    );
+    expect(out).toEqual([
+      { email: "c@partner.com", name: null, meetingAt: "2026-06-01T09:00:00Z", eventTitle: "1:1" },
+    ]);
+  });
+});
