@@ -66,35 +66,26 @@ function hoursSince(iso: string | null | undefined): number | null {
 }
 
 function AdminPage() {
-  const navigate = useNavigate();
   const meFn = useServerFn(getAdminMe);
   const usersFn = useServerFn(listAdminUsers);
   const activityFn = useServerFn(getAdminActivity);
 
+  // The route's beforeLoad already gated this page to admins, so the user
+  // here is guaranteed to be an admin.
   const meQ = useQuery({
     queryKey: ["admin-me"],
     queryFn: () => meFn(),
     retry: false,
   });
 
-  const isAdmin = !!meQ.data?.email;
-  const accessDenied = meQ.isError;
-
-  if (accessDenied) {
-    toast.error("Admin access required");
-    navigate({ to: "/inbox" });
-  }
-
   const usersQ = useQuery({
     queryKey: ["admin-users"],
     queryFn: () => usersFn(),
-    enabled: isAdmin,
   });
 
   const activityQ = useQuery({
     queryKey: ["admin-activity", 30],
     queryFn: () => activityFn({ data: { days: 30 } }),
-    enabled: isAdmin,
   });
 
   const totals = useMemo(() => {
