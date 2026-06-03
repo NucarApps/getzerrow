@@ -28,6 +28,13 @@ export const Route = createFileRoute("/_authenticated/admin")({
   beforeLoad: async () => {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) throw redirect({ to: "/login" });
+    // Gate the page itself to admins only — non-admins never render the shell.
+    try {
+      await getAdminMe();
+    } catch (e) {
+      if (isRedirect(e)) throw e;
+      throw redirect({ to: "/inbox" });
+    }
   },
   component: AdminPage,
 });
