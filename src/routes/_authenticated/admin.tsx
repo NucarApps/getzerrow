@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, isRedirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
@@ -10,7 +10,7 @@ import {
   getAdminActivity,
   type AdminUser,
 } from "@/lib/admin.functions";
-import { toast } from "sonner";
+
 import {
   LineChart,
   Line,
@@ -28,6 +28,13 @@ export const Route = createFileRoute("/_authenticated/admin")({
   beforeLoad: async () => {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) throw redirect({ to: "/login" });
+    // Gate the page itself to admins only — non-admins never render the shell.
+    try {
+      await getAdminMe();
+    } catch (e) {
+      if (isRedirect(e)) throw e;
+      throw redirect({ to: "/inbox" });
+    }
   },
   component: AdminPage,
 });
@@ -59,35 +66,26 @@ function hoursSince(iso: string | null | undefined): number | null {
 }
 
 function AdminPage() {
-  const navigate = useNavigate();
   const meFn = useServerFn(getAdminMe);
   const usersFn = useServerFn(listAdminUsers);
   const activityFn = useServerFn(getAdminActivity);
 
+  // The route's beforeLoad already gated this page to admins, so the user
+  // here is guaranteed to be an admin.
   const meQ = useQuery({
     queryKey: ["admin-me"],
     queryFn: () => meFn(),
     retry: false,
   });
 
-  const isAdmin = !!meQ.data?.email;
-  const accessDenied = meQ.isError;
-
-  if (accessDenied) {
-    toast.error("Admin access required");
-    navigate({ to: "/inbox" });
-  }
-
   const usersQ = useQuery({
     queryKey: ["admin-users"],
     queryFn: () => usersFn(),
-    enabled: isAdmin,
   });
 
   const activityQ = useQuery({
     queryKey: ["admin-activity", 30],
     queryFn: () => activityFn({ data: { days: 30 } }),
-    enabled: isAdmin,
   });
 
   const totals = useMemo(() => {

@@ -1,29 +1,29 @@
-Do I know what the issue is? Yes.
+## Goal
 
-The backend itself is healthy. You do not need to go find or manually enter these variables in a dashboard you can’t access. Lovable Cloud manages them. The problem is that parts of the published app are still reading the backend config from `process.env` / `import.meta.env` at a point where the deployed runtime has not populated them reliably.
+Make the `/admin` page viewable only by you (`chris@nucar.com`). Your admin data is already secure — the gap is that any signed-in user briefly sees the empty admin shell before being redirected. This plan closes that gap by checking admin status before the page renders.
 
-Exactly what is happening:
-- The error is thrown by the generated backend client/auth files when both required public backend values resolve as empty.
-- The existing runtime bridge helps normal page SSR, but it may not cover every bundled client/server-function chunk consistently.
-- The safest fix is to make the public backend URL and publishable key available at build time under both names the generated files read.
+## Current state
 
-Plan:
-1. Update the Vite config fallback so it defines all public variants, not only `process.env.*`:
-   - `process.env.SUPABASE_URL`
-   - `process.env.SUPABASE_PUBLISHABLE_KEY`
-   - `import.meta.env.VITE_SUPABASE_URL`
-   - `import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY`
-2. Keep the runtime bridge in `src/server.ts`, but make it a secondary fallback rather than the only protection.
-3. Do not edit generated Lovable Cloud integration files.
-4. Verify the exact published/admin path and protected function path no longer produce the missing-variable error.
-5. Republish after the fix, because this is affecting the published deployment bundle.
+- **Data is already protected.** Every admin server function (`getAdminMe`, `listAdminUsers`, `getAdminActivity`) runs `assertAdmin`, which throws `403 Forbidden` for anyone whose token email isn't `chris@nucar.com`. No other user can load the users list, stats, or activity.
+- **The page chrome is not gated.** The route's `beforeLoad` only checks "is this user logged in." So a signed-in non-admin who visits `/admin` renders the page skeleton, the `getAdminMe` request then fails, a toast fires, and they get redirected to `/inbox`. That brief flash is the only real issue.
 
-For your question: you generally cannot and should not “find” private managed backend variables yourself. The publishable values are safe public connection config and can be embedded as fallbacks; Lovable Cloud keeps the actual backend/runtime configuration managed for you.
+## What changes
 
-<presentation-actions>
-  <presentation-open-history>View History</presentation-open-history>
-</presentation-actions>
+Add an admin check to the route's `beforeLoad` in `src/routes/_authenticated/admin.tsx` so non-admins are redirected away **before** the component ever renders — no flash, no empty shell.
 
-<presentation-actions>
-<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
-</presentation-actions>
+1. In `beforeLoad`, after confirming the user is signed in, call the existing `getAdminMe` server function (which returns the email for admins and `403` for everyone else).
+2. If `getAdminMe` throws (non-admin), `throw redirect({ to: "/inbox" })` directly from `beforeLoad`.
+3. Remove the now-redundant component-level `accessDenied` redirect (the `meQ.isError` → `navigate("/inbox")` block) and its toast, since the gate now happens earlier. Keep the `getAdminMe` query if convenient for showing "Signed in as …", or reuse the `beforeLoad` result via route context.
+
+The admin email stays hardcoded as `chris@nucar.com` in `src/lib/admin.functions.ts` (no change there).
+
+## Technical details
+
+- `beforeLoad` in this `_authenticated` subtree runs client-side (`ssr: false` layout), after the Supabase session is available, so the bearer token is attached to the `getAdminMe` call by the existing `attachSupabaseAuth` middleware.
+- Wrap the `getAdminMe` call in try/catch; on any error, `throw redirect({ to: "/inbox" })`. Re-throw if it's already a redirect (use `isRedirect`) so the unauthenticated `/login` redirect still works.
+- No database, RLS, or server-function changes are needed — the server-side `assertAdmin` remains the authoritative security boundary; this change is the UX/visibility layer on top of it.
+
+## Out of scope
+
+- No new admin-role table (you chose to keep the hardcoded email).
+- No changes to what the admin page displays.
