@@ -21,7 +21,7 @@ jobs:
     name: Typecheck & test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -39,7 +39,7 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -56,7 +56,7 @@ jobs:
       # Pinned for reproducible, tamper-resistant scans (avoid moving :latest).
       image: semgrep/semgrep:1.164.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Semgrep scan
         run: >
           semgrep scan
