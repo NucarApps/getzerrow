@@ -763,7 +763,21 @@ export const triggerSync = createServerFn({ method: "POST" })
         e,
       );
     }
-    const recon = await reconcileLocalInbox(data.account_id, 100);
+    // Keep the manual refresh fast and reliable. The full reconcile makes up
+    // to ~100 sequential Gmail API calls, which can run long enough that the
+    // browser drops the request (Safari surfaces this as "Load failed"). The
+    // background cron reconcile is the designated backstop, so here we only do
+    // a small best-effort pass and never let it fail the whole sync.
+    let recon: Awaited<ReturnType<typeof reconcileLocalInbox>> | undefined;
+    try {
+      recon = await reconcileLocalInbox(data.account_id, 20);
+    } catch (e) {
+      logError(
+        "gmail.manual_sync.reconcile_failed",
+        { account_id: data.account_id, user_id: context.userId },
+        e,
+      );
+    }
     return { ...histResult, recent_synced, reconciled: recon };
   });
 
