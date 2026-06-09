@@ -902,11 +902,59 @@ function InboxPage() {
     : selectedListItem;
 
   const syncMut = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!accountId) throw new Error("Connect Gmail in Settings first");
-      return sync({ data: { account_id: accountId } });
+      // The DB is the source of truth and is kept current by the webhook +
+      // background crons, so always refresh from it first — this is fast and
+      // reliable and means the list updates even if the Gmail round-trip below
+      // flakes out.
+      await Promise.all([
+        qc.refetchQueries({ queryKey: ["emails"] }),
+        qc.invalidateQueries({ queryKey: ["folders"] }),
+        qc.invalidateQueries({ queryKey: ["gmail-accounts"] }),
+      ]);
+      // Best-effort Gmail sync. Race against a timeout and retry once so a slow
+      // or dropped request (Safari surfaces this as "Load failed") doesn't turn
+      // into a scary error toast — the DB refresh above already happened.
+      const TIMEOUT_MS = 20_000;
+      const runOnce = () =>
+        new Promise<Awaited<ReturnType<typeof sync>> | null>((resolve) => {
+          let settled = false;
+          const timer = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              resolve(null);
+            }
+          }, TIMEOUT_MS);
+          sync({ data: { account_id: accountId } })
+            .then((r) => {
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(r);
+              }
+            })
+            .catch(() => {
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(null);
+              }
+            });
+        });
+      let res = await runOnce();
+      if (res === null) res = await runOnce();
+      return res;
     },
     onSuccess: async (res) => {
+      // res === null means the Gmail sync didn't complete (timeout/network),
+      // but the DB refresh in mutationFn already updated the list. Stay quiet.
+      if (!res) {
+        const fresh =
+          qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([, d]) => d ?? []) ?? [];
+        if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
+        return;
+      }
       const r = res?.reconciled;
       const synced = res && "synced" in res ? res.synced : undefined;
       const error = res && "error" in res ? res.error : undefined;
@@ -918,15 +966,13 @@ function InboxPage() {
       const msg = parts.length ? `Synced · ${parts.join(", ")}` : "Synced";
       if (error) toast.error(`Sync error: ${error}`);
       else toast.success(msg);
-      await Promise.all([
-        qc.refetchQueries({ queryKey: ["emails"] }),
-        qc.invalidateQueries({ queryKey: ["gmail-accounts"] }),
-      ]);
+      await qc.refetchQueries({ queryKey: ["emails"] });
       const fresh =
         qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([, d]) => d ?? []) ?? [];
       if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Couldn't refresh. Please try again."),
   });
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
