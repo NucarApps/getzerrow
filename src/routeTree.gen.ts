@@ -31,6 +31,7 @@ import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmai
 import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
 import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public/gmail-dlq-replay'
 import { Route as ApiPublicGmailRetentionRouteImport } from './routes/api/public/gmail-retention'
+import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
@@ -153,6 +154,12 @@ const ApiPublicGmailRetentionRoute =
     path: '/api/public/gmail-retention',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHealthRoute =
+  ApiPublicHealthRouteImport.update({
+    id: '/api/public/health',
+    path: '/api/public/health',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedContactsScanRoute =
   AuthenticatedContactsScanRouteImport.update({
     id: '/contacts/scan',
@@ -198,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
@@ -226,6 +234,7 @@ export interface FileRoutesByTo {
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
@@ -256,6 +265,7 @@ export interface FileRoutesById {
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-retention'
+    | '/api/public/health'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
@@ -314,6 +325,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-retention'
+    | '/api/public/health'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
@@ -343,6 +355,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-retention'
+    | '/api/public/health'
     | '/api/public/gmail-poll'
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
@@ -366,6 +379,7 @@ export interface RootRouteChildren {
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailDlqReplayRoute: typeof ApiPublicGmailDlqReplayRoute
   ApiPublicGmailRetentionRoute: typeof ApiPublicGmailRetentionRoute
+  ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
   ApiPublicGmailProcessJobsRoute: typeof ApiPublicGmailProcessJobsRoute
   ApiPublicGmailReconcileRoute: typeof ApiPublicGmailReconcileRoute
@@ -534,6 +548,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGmailRetentionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/health': {
+      id: '/api/public/health'
+      path: '/api/public/health'
+      fullPath: '/api/public/health'
+      preLoaderRoute: typeof ApiPublicHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/contacts/scan': {
       id: '/_authenticated/contacts/scan'
       path: '/contacts/scan'
@@ -608,6 +629,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailDlqReplayRoute: ApiPublicGmailDlqReplayRoute,
   ApiPublicGmailRetentionRoute: ApiPublicGmailRetentionRoute,
+  ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
   ApiPublicGmailProcessJobsRoute: ApiPublicGmailProcessJobsRoute,
   ApiPublicGmailReconcileRoute: ApiPublicGmailReconcileRoute,
