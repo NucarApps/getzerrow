@@ -1637,6 +1637,61 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       }
     }
 
+    // An always-inbox override now wins for this email, but it is sitting in a
+    // folder. Restore it to the inbox (same steps as the manual "Move to Inbox"
+    // action and the bulk reclassify path) so it shows up in the inbox view,
+    // which filters on the INBOX label + is_archived = false.
+    if (result.folder_id === null && result.classified_by === "inbox_override" && email.folder_id) {
+      const { data: f } = await supabaseAdmin
+        .from("folders")
+        .select("gmail_label_id")
+        .eq("id", email.folder_id)
+        .maybeSingle();
+      const fromLabel = f?.gmail_label_id ?? null;
+
+      const currentLabels = ((email.raw_labels as string[] | null) ?? []) as string[];
+      const nextLabels = Array.from(
+        new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
+      );
+
+      await updateEmailEncrypted({
+        email_id: email.id,
+        classification_reason: result.classification_reason ?? "",
+        ai_summary: summary || "",
+      });
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          folder_id: null,
+          is_archived: false,
+          classified_by: "inbox_override",
+          ai_confidence: 1,
+          matched_filter_ids: [],
+          raw_labels: nextLabels,
+        })
+        .eq("id", email.id);
+
+      try {
+        await modifyMessage(
+          emailAccountId,
+          emailMessageId,
+          ["INBOX"],
+          fromLabel ? [fromLabel] : [],
+        );
+      } catch (e) {
+        logError("gmail.reanalyze.inbox_restore_label_failed", { email_id: emailId }, e);
+      }
+
+      return {
+        ok: true,
+        folder_id: null,
+        folder_name: null,
+        classified_by: "inbox_override",
+        classification_reason: result.classification_reason,
+        changed: true,
+      };
+    }
+
     // If the classifier didn't pick a folder and the email already has one,
     // keep the current assignment regardless of WHY the classifier abstained
     // (AI no-match, excluded by rule, global override, etc.). Reanalyze should

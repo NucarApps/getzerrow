@@ -1,43 +1,50 @@
-# Fix: Reclassify doesn't move "always-inbox" emails out of folders
+# Fix: re-processed emails from always-inbox senders stay stuck in Factory
 
-## The problem
+## What's happening
 
-Shawn Hanlon added an **always-send-to-inbox** domain override. When you reclassify emails that are currently sitting in the **Factory** folder, the classifier correctly decides they belong in the inbox — but they stay in Factory instead of moving.
+The email from `jfranco@nucar.com` should land in the inbox because this account has an always-inbox **domain** override for `nucar.com`. I confirmed in the database:
+
+- Account `45e39731…` has an active `inbox_overrides` row: domain = `nucar.com`.
+- The `jfranco@nucar.com` emails are sitting in the **Factory** folder, `classified_by = ai`, `is_archived = true`.
+- No folder filter matches `nucar.com`, no override exception exists, and no folder has `overrides_inbox_override` enabled — so the override genuinely should win.
 
 ## Root cause
 
-The reclassify action (`reclassifyEmails` in `src/lib/gmail.functions.ts`) only updates an email when the classifier returns a *folder*. When an always-inbox override wins, the classifier intentionally returns **no folder** (inbox = "no folder") with `classified_by = "inbox_override"`.
+The refresh/re-process icon on a single open email calls **`reanalyzeEmail`** (in `src/lib/gmail.functions.ts`), which is a *different* function from the bulk `reclassifyEmails` we fixed previously.
 
-The current guard is:
+Inside `reanalyzeEmail`, when the classifier returns `folder_id = null` (which is exactly what an always-inbox override returns), the code hits this guard:
 
 ```text
-if (result.folder_id && result.folder_id !== email.folder_id) { ...move... }
-else { count as "unchanged" }
+if (result.folder_id === null && email.folder_id) {
+  // "Classifier found no better folder — kept current assignment"
+  return { ..., classified_by: "kept", changed: false }
+}
 ```
 
-Because the inbox result has `folder_id = null`, the `result.folder_id &&` check is false, so the email is counted as "unchanged" and never leaves Factory. This is why reclassifying does nothing for overridden senders.
+So it treats the inbox-override win as "no better folder found" and leaves the email in Factory. The bulk reclassify path was already fixed for this; the single-email path was missed.
 
-## The fix (one function)
+## The fix
 
-In `reclassifyEmails`, add a branch that handles the "should go to inbox" outcome — i.e. the classifier returned `folder_id = null` with `classified_by = "inbox_override"` while the email is currently in a folder.
+In `reanalyzeEmail`, before the "keep current assignment" guard, add a branch that handles the inbox-override case — mirroring the logic already used in `reclassifyEmails` and `moveEmailToInbox`:
 
-For that case, perform the same full inbox restore that the existing "Move to Inbox" action (`moveEmailToInbox`) already does, so the message actually shows up in the inbox view (which filters on the `INBOX` label + `is_archived = false`):
+When `result.classified_by === "inbox_override"` AND `result.folder_id === null` AND the email currently has a `folder_id`:
 
-1. Look up the current folder's Gmail label.
-2. Recompute `raw_labels`: drop the old folder label, add `INBOX`.
-3. Update the email row: `folder_id = null`, `is_archived = false`, `classified_by = "inbox_override"`, `ai_confidence = 1`, `matched_filter_ids = []`, new `raw_labels`, and the classification reason.
-4. Call `modifyMessage` to add `INBOX` and remove the old folder label in Gmail.
-5. Count it as `routed`.
+1. Look up the current folder's `gmail_label_id`.
+2. Recompute `raw_labels`: drop the old folder label, add `INBOX` (via a `Set` dedupe).
+3. Update the email row: `folder_id = null`, `is_archived = false`, `classified_by = "inbox_override"`, `ai_confidence = 1`, `matched_filter_ids = []`, new `raw_labels`, and the override classification reason (plus the summary).
+4. Best-effort `modifyMessage` to add `INBOX` and remove the old folder label in Gmail (wrapped in try/catch with `logError`).
+5. Return `{ ok: true, folder_id: null, classified_by: "inbox_override", changed: true }`.
 
-The existing folder-to-folder path stays exactly as-is. Emails that resolve to "no match"/"excluded" (also `folder_id = null`, but **not** `inbox_override`) are deliberately left untouched, so reclassify never yanks emails into the inbox unless an explicit always-inbox rule says so.
+All other behavior stays the same:
+- Genuine "no better folder" abstentions (AI no-match, excluded-by-rule, etc.) still keep the current assignment.
+- Folder-to-folder reanalysis is unchanged.
 
 ## Verification
 
-- In Factory, select emails from the overridden domain and run Reclassify → they move to the inbox and disappear from Factory.
-- Confirm in Gmail the message regains the `INBOX` label and loses the Factory label.
-- Reclassifying emails that genuinely belong in a folder still routes folder-to-folder as before, and truly unmatched emails stay where they are.
+- Open the `jfranco@nucar.com` email and hit re-process → it should leave Factory, return to the inbox, and the badge should read inbox-override instead of `AI · 95%`.
+- In Gmail the message should regain the `INBOX` label and lose the Factory label.
+- Re-processing an email that legitimately matches no folder and isn't an override still stays put.
 
-## Technical notes
+## Scope
 
-- Only `src/lib/gmail.functions.ts` (`reclassifyEmails`) changes. The classification logic in `src/lib/sync/classify.ts` is already correct and is not touched.
-- The inbox-restore steps mirror `moveEmailToInbox` (same file) to stay consistent with how manual "Move to Inbox" already behaves.
+Single file: `src/lib/gmail.functions.ts` (`reanalyzeEmail` only). No database or UI changes.
