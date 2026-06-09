@@ -1,50 +1,73 @@
-# Fix: re-processed emails from always-inbox senders stay stuck in Factory
+# Stop always-inbox overrides from resurrecting old mail
 
-## What's happening
+## Goal
 
-The email from `jfranco@nucar.com` should land in the inbox because this account has an always-inbox **domain** override for `nucar.com`. I confirmed in the database:
+An "always send to inbox" override (e.g. the domain rule for `nucar.com`) should only affect **newly-arriving** mail. It must never reach into Gmail and re-add the `INBOX` label to messages you already archived. Per your choice, no cleanup of already-resurfaced emails — just stop it going forward.
 
-- Account `45e39731…` has an active `inbox_overrides` row: domain = `nucar.com`.
-- The `jfranco@nucar.com` emails are sitting in the **Factory** folder, `classified_by = ai`, `is_archived = true`.
-- No folder filter matches `nucar.com`, no override exception exists, and no folder has `overrides_inbox_override` enabled — so the override genuinely should win.
+## Root cause (confirmed)
 
-## Root cause
+`src/lib/sync/process-message.ts` (the `else if` branch around lines 328–357) restores a message to the inbox whenever it matches an `inbox_override` / `calendar_contact` classification and is not currently in the Gmail inbox — with **no check on how old the message is**. For historical mail (backfilled, reconciled, or re-synced) this:
 
-The refresh/re-process icon on a single open email calls **`reanalyzeEmail`** (in `src/lib/gmail.functions.ts`), which is a *different* function from the bulk `reclassifyEmails` we fixed previously.
+1. Calls `modifyMessage(..., ["INBOX"], [])` — writes the `INBOX` label back into real Gmail.
+2. Sets `is_archived: false` and adds `INBOX` to `raw_labels` locally.
 
-Inside `reanalyzeEmail`, when the classifier returns `folder_id = null` (which is exactly what an always-inbox override returns), the code hits this guard:
-
-```text
-if (result.folder_id === null && email.folder_id) {
-  // "Classifier found no better folder — kept current assignment"
-  return { ..., classified_by: "kept", changed: false }
-}
-```
-
-So it treats the inbox-override win as "no better folder found" and leaves the email in Factory. The bulk reclassify path was already fixed for this; the single-email path was missed.
+Once the label is back in Gmail, `reconcileInboxFromGmail`'s incoming pass treats it as legitimately in the inbox and keeps resurfacing it, creating the oscillation you saw.
 
 ## The fix
 
-In `reanalyzeEmail`, before the "keep current assignment" guard, add a branch that handles the inbox-override case — mirroring the logic already used in `reclassifyEmails` and `moveEmailToInbox`:
+### 1. Add a recency guard to the automatic restore (primary change)
 
-When `result.classified_by === "inbox_override"` AND `result.folder_id === null` AND the email currently has a `folder_id`:
+In `src/lib/sync/process-message.ts`, gate the inbox-override restore branch on the message being a genuine recent arrival. Only restore when `received_at` is within a short window (proposed: **3 days**). Old mail is left exactly as Gmail has it (archived), and **no Gmail label write happens**.
 
-1. Look up the current folder's `gmail_label_id`.
-2. Recompute `raw_labels`: drop the old folder label, add `INBOX` (via a `Set` dedupe).
-3. Update the email row: `folder_id = null`, `is_archived = false`, `classified_by = "inbox_override"`, `ai_confidence = 1`, `matched_filter_ids = []`, new `raw_labels`, and the override classification reason (plus the summary).
-4. Best-effort `modifyMessage` to add `INBOX` and remove the old folder label in Gmail (wrapped in try/catch with `logError`).
-5. Return `{ ok: true, folder_id: null, classified_by: "inbox_override", changed: true }`.
+```text
+const RESTORE_INBOX_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
-All other behavior stays the same:
-- Genuine "no better folder" abstentions (AI no-match, excluded-by-rule, etc.) still keep the current assignment.
-- Folder-to-folder reanalysis is unchanged.
+} else if (
+    (classifiedBy === "inbox_override" || classifiedBy === "calendar_contact") &&
+    !inInbox
+) {
+    const receivedMs = Date.parse(parsed.received_at ?? "");
+    const isRecentArrival =
+        Number.isFinite(receivedMs) &&
+        Date.now() - receivedMs < RESTORE_INBOX_WINDOW_MS;
+
+    if (isRecentArrival) {
+        // existing restore logic: modifyMessage add INBOX + set is_archived=false
+    }
+    // else: leave the row archived (upsert already set is_archived = !inInbox = true).
+    // Respect Gmail's current state for historical mail — never re-add INBOX.
+}
+```
+
+Why recency rather than a "backfill" flag: historical mail reaches this branch through several paths (deep backfill, `reconcileInboxFromGmail` re-ingestion at live priority, history catch-up). A `received_at` recency check covers all of them, while still restoring legitimately-new mail that a Gmail filter pre-archived.
+
+### 2. Keep user-initiated restores intact
+
+The explicit, user-triggered paths in `src/lib/gmail.functions.ts` are left as-is, because they only act on emails the user is actively reclassifying and only touch messages currently filed in a folder (`folder_id` set), never archived historical mail:
+
+- `reanalyzeEmail` (single "Reanalyze")
+- `reclassifyEmails` (bulk reclassify)
+- `addInboxOverride` with `reprocess_past` (only runs when you explicitly add an override and ask to reprocess past mail)
+- `moveEmailToInbox` (manual "Move to Inbox")
+
+No change there — those remain deliberate, user-driven actions.
+
+## What this fixes
+
+- New mail from always-inbox senders/domains still lands in the inbox, even if a Gmail filter tried to archive it.
+- Historical mail you already archived is never pulled back, and the `INBOX` label is never re-stamped onto old messages in Gmail — which breaks the resurrection loop at its source.
+
+## What this does NOT do (per your choice)
+
+- It does not re-archive or strip `INBOX` from the ~20k override emails or the 127 already resurfaced today. They stay as they are; if any remain in your inbox you can archive them manually. (We can run a targeted cleanup later if you change your mind.)
 
 ## Verification
 
-- Open the `jfranco@nucar.com` email and hit re-process → it should leave Factory, return to the inbox, and the badge should read inbox-override instead of `AI · 95%`.
-- In Gmail the message should regain the `INBOX` label and lose the Factory label.
-- Re-processing an email that legitimately matches no folder and isn't an override still stays put.
+- Re-check the account after deploy: confirm no new pre-2026 emails get `is_archived = false` / `INBOX` re-added on subsequent sync/reconcile ticks.
+- Confirm a freshly-arriving test email from an always-inbox domain still appears in the inbox.
 
-## Scope
+## Technical notes
 
-Single file: `src/lib/gmail.functions.ts` (`reanalyzeEmail` only). No database or UI changes.
+- Single-file behavioral change: `src/lib/sync/process-message.ts`.
+- `received_at` is already parsed and stored before this branch, so the guard adds no extra fetch.
+- The window constant (3 days) is conservative — large enough to absorb push/poll delays and short outages, far smaller than the months/years-old mail being resurrected.

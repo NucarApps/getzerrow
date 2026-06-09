@@ -331,29 +331,40 @@ export async function processGmailMessage(
   ) {
     // Always-inbox override matched but Gmail had already archived the
     // message (no INBOX label at sync time, e.g. a Gmail-side filter).
-    // Restore INBOX both in Gmail and locally so the row shows up in the
-    // Zerrow inbox view.
-    try {
-      await modifyMessage(accountId, gmailId, ["INBOX"], []);
-    } catch (e) {
-      logError(
-        "process_message.inbox_override_restore_failed",
-        {
-          account_id: accountId,
-          gmail_message_id: gmailId,
-          email_id: inserted.id,
-        },
-        e,
-      );
+    //
+    // RECENCY GUARD: only restore genuinely-recent arrivals. Without this,
+    // any historical mail re-touched by backfill / reconcile re-ingestion /
+    // history catch-up would get INBOX re-stamped in Gmail and resurrected
+    // into the inbox — resurfacing email the user archived long ago, and
+    // feeding an oscillation loop with reconcileInboxFromGmail. Old mail is
+    // left exactly as Gmail has it (is_archived already = !inInbox = true);
+    // we never write the INBOX label back for it.
+    const receivedMs = Date.parse(parsed.received_at ?? "");
+    const isRecentArrival =
+      Number.isFinite(receivedMs) && Date.now() - receivedMs < RESTORE_INBOX_WINDOW_MS;
+    if (isRecentArrival) {
+      try {
+        await modifyMessage(accountId, gmailId, ["INBOX"], []);
+      } catch (e) {
+        logError(
+          "process_message.inbox_override_restore_failed",
+          {
+            account_id: accountId,
+            gmail_message_id: gmailId,
+            email_id: inserted.id,
+          },
+          e,
+        );
+      }
+      const nextLabels = Array.from(new Set([...(parsed.raw_labels ?? []), "INBOX"]));
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          is_archived: false,
+          raw_labels: nextLabels,
+        })
+        .eq("id", inserted.id);
     }
-    const nextLabels = Array.from(new Set([...(parsed.raw_labels ?? []), "INBOX"]));
-    await supabaseAdmin
-      .from("emails")
-      .update({
-        is_archived: false,
-        raw_labels: nextLabels,
-      })
-      .eq("id", inserted.id);
   }
 
   return { id: inserted.id, email_id: inserted.id, folder_id, parsed };
