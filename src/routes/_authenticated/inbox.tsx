@@ -555,6 +555,36 @@ function InboxPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  // Eliminate the "old emails, then flicker as new ones catch up" UX
+  // on app load: trigger a backend sync when the inbox first mounts
+  // and when the tab returns to visible after being hidden. The
+  // realtime hook only INVALIDATES the cache on visibilitychange,
+  // which re-renders the same stale data — so the new emails only
+  // arrive once push or poll cron eventually catches up. Explicitly
+  // triggering sync here pulls fresh data into the local DB
+  // immediately, and the realtime INSERT events stream the new rows
+  // in as one batch with the syncMut.isPending spinner running.
+  //
+  // Throttled to once per 30s so rapid tab-switching doesn't fire
+  // sync repeatedly.
+  const lastBgSyncRef = useRef(0);
+  useEffect(() => {
+    if (!accountId) return;
+    const maybeSync = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastBgSyncRef.current < 30_000) return;
+      lastBgSyncRef.current = now;
+      // Fire-and-forget; syncMut surfaces errors via toast on its own.
+      // mutateAsync would block the effect; we don't want that.
+      syncMut.mutate();
+    };
+    maybeSync(); // on mount
+    document.addEventListener("visibilitychange", maybeSync);
+    return () => document.removeEventListener("visibilitychange", maybeSync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
+
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
   return (
