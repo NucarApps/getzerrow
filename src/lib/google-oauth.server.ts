@@ -145,46 +145,44 @@ type OAuthRpc = {
       ) => Promise<{ data: unknown; error: { message: string } | null }>);
 };
 
-// PostgREST returns this error code when a function isn't in its schema
-// cache — i.e. the migration that creates the RPC hasn't been applied yet.
-// We use that signal to fall back to the pre-encryption code path so the
-// app doesn't break the moment new code ships ahead of new migrations.
-function isMissingFunctionError(err: { message?: string } | null | undefined): boolean {
-  if (!err?.message) return false;
-  const m = err.message;
-  return (
-    m.includes("Could not find the function") ||
-    m.includes("schema cache") ||
-    m.includes("does not exist")
-  );
-}
-
 /** Returns a fresh access token for the given gmail account, refreshing if
  * needed. Tokens are stored encrypted at rest via the
- * get_gmail_oauth_tokens / set_gmail_oauth_tokens RPCs (pgsodium AEAD).
- *
- * Falls back to direct-column SELECT/UPDATE when those RPCs aren't yet
- * deployed — preserves uptime during the deploy window between code
- * landing and migrations running.
- */
+ * get_gmail_oauth_tokens / set_gmail_oauth_tokens RPCs (pgsodium AEAD). */
 export async function getAccessToken(accountId: string): Promise<string> {
-  const tokens = await fetchTokensWithFallback(accountId);
-  if (!tokens) throw new Error("Gmail account not found");
-  if (!tokens.access_token || !tokens.refresh_token) {
+  const { data: rows, error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
+    "get_gmail_oauth_tokens",
+    { p_account_id: accountId },
+  );
+  if (error) throw new Error(`OAuth token fetch failed: ${error.message}`);
+  if (!rows || rows.length === 0) throw new Error("Gmail account not found");
+  const acc = rows[0];
+  if (!acc.access_token || !acc.refresh_token) {
     throw new Error("Gmail account is missing OAuth tokens — user needs to reauthorize");
   }
 
-  const expMs = new Date(tokens.token_expires_at).getTime();
-  if (expMs - Date.now() > 2 * 60 * 1000) return tokens.access_token;
+  const expMs = new Date(acc.token_expires_at).getTime();
+  if (expMs - Date.now() > 2 * 60 * 1000) return acc.access_token;
 
   // If another caller is already refreshing this account, piggy-back.
   const existing = inFlightRefresh.get(accountId);
   if (existing) return existing;
 
   const refreshPromise = (async () => {
-    const refreshed = await refreshAccessToken(tokens.refresh_token!);
+    const refreshed = await refreshAccessToken(acc.refresh_token!);
     const newExp = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
-    await persistRefreshedTokenWithFallback(accountId, refreshed.access_token, newExp);
+    // Empty p_refresh_token preserves the existing encrypted refresh
+    // token — Google only returns a new refresh_token during full
+    // consent, not on plain refresh calls.
+    const { error: setErr } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
+      "set_gmail_oauth_tokens",
+      {
+        p_account_id: accountId,
+        p_access_token: refreshed.access_token,
+        p_refresh_token: "",
+        p_token_expires_at: newExp,
+      },
+    );
+    if (setErr) throw new Error(`OAuth token update failed: ${setErr.message}`);
     return refreshed.access_token;
   })();
 
@@ -194,59 +192,6 @@ export async function getAccessToken(accountId: string): Promise<string> {
   } finally {
     inFlightRefresh.delete(accountId);
   }
-}
-
-async function fetchTokensWithFallback(accountId: string): Promise<GetTokensRow | null> {
-  const { data: rows, error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
-    "get_gmail_oauth_tokens",
-    { p_account_id: accountId },
-  );
-  if (!error) {
-    return rows && rows.length > 0 ? rows[0] : null;
-  }
-  if (!isMissingFunctionError(error)) {
-    throw new Error(`OAuth token fetch failed: ${error.message}`);
-  }
-  // RPC isn't deployed yet — fall back to the pre-encryption direct
-  // SELECT. Same column names; same shape. Once the migration lands
-  // the RPC succeeds and this branch stops running.
-  console.warn("get_gmail_oauth_tokens RPC missing — falling back to direct SELECT");
-  const { data, error: selErr } = await supabaseAdmin
-    .from("gmail_accounts")
-    .select("access_token, refresh_token, token_expires_at")
-    .eq("id", accountId)
-    .maybeSingle();
-  if (selErr) throw new Error(`OAuth token fetch (fallback) failed: ${selErr.message}`);
-  return data ?? null;
-}
-
-async function persistRefreshedTokenWithFallback(
-  accountId: string,
-  accessToken: string,
-  expiresAt: string,
-): Promise<void> {
-  // Empty p_refresh_token preserves the existing encrypted refresh
-  // token — Google only returns a new refresh_token during full
-  // consent, not on plain refresh calls.
-  const { error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
-    "set_gmail_oauth_tokens",
-    {
-      p_account_id: accountId,
-      p_access_token: accessToken,
-      p_refresh_token: "",
-      p_token_expires_at: expiresAt,
-    },
-  );
-  if (!error) return;
-  if (!isMissingFunctionError(error)) {
-    throw new Error(`OAuth token update failed: ${error.message}`);
-  }
-  console.warn("set_gmail_oauth_tokens RPC missing — falling back to direct UPDATE");
-  const { error: updErr } = await supabaseAdmin
-    .from("gmail_accounts")
-    .update({ access_token: accessToken, token_expires_at: expiresAt })
-    .eq("id", accountId);
-  if (updErr) throw new Error(`OAuth token update (fallback) failed: ${updErr.message}`);
 }
 
 export function getRedirectUri(origin: string): string {
