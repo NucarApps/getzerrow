@@ -32,6 +32,11 @@ import { logError } from "../log.server";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
 
+// Only auto-restore always-inbox-override emails that Gmail archived if they
+// are genuinely recent arrivals. Historical mail re-touched by backfill /
+// reconcile / history catch-up must never have INBOX re-stamped in Gmail.
+const RESTORE_INBOX_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
 export async function processGmailMessage(
   accountId: string,
   gmailId: string,
