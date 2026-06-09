@@ -168,7 +168,7 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
     // Goes through upsert_gmail_oauth_account so the tokens are encrypted
-    // with pgsodium AEAD before they touch the table.
+    // (pgp_sym via EMAIL_ENC_KEY) before they touch the table.
     type UpsertRpc = {
       rpc: (
         fn: "upsert_gmail_oauth_account",
@@ -178,6 +178,7 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
           p_access_token: string;
           p_refresh_token: string;
           p_token_expires_at: string;
+          p_key: string;
         },
       ) => Promise<{ data: string | null; error: { message: string } | null }>;
     };
@@ -189,6 +190,7 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
         p_access_token: data.access_token,
         p_refresh_token: data.refresh_token,
         p_token_expires_at: expiresAt,
+        p_key: process.env.EMAIL_ENC_KEY!,
       },
     );
     if (error || !accountId) throw new Error(`Failed to save account: ${error?.message}`);
