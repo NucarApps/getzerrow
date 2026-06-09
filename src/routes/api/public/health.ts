@@ -44,6 +44,7 @@ const EXPECTED_FUNCTIONS = [
   "get_sync_latency_stats",
   // Audit
   "list_decryption_audit",
+  "audit_encryption_leaks",
 ];
 
 const EXPECTED_COLUMNS: Array<{ table: string; column: string }> = [
@@ -139,7 +140,35 @@ export const Route = createFileRoute("/api/public/health")({
           // information_schema not exposed → skip.
         }
 
-        const ok = missing.length === 0;
+        // ─── Encryption-leak audit ────────────────────────────────────────
+        // Plaintext columns body_text/body_html/access_token/refresh_token
+        // should always be '' at rest — trigger + RPC enforce that. If any
+        // row holds non-empty plaintext, something bypassed encryption.
+        type LeakRow = {
+          emails_body_text_leaks: number;
+          emails_body_html_leaks: number;
+          oauth_access_token_leaks: number;
+          oauth_refresh_token_leaks: number;
+        };
+        let leaks: LeakRow | null = null;
+        try {
+          const { data: leakRows } = await (supabaseAdmin as unknown as ProbeRpc).rpc(
+            "audit_encryption_leaks",
+            {},
+          );
+          const row = Array.isArray(leakRows) ? leakRows[0] : leakRows;
+          if (row && typeof row === "object") leaks = row as LeakRow;
+        } catch {
+          // RPC not deployed yet — treated as a missing function above.
+        }
+        const totalLeaks = leaks
+          ? Number(leaks.emails_body_text_leaks ?? 0)
+            + Number(leaks.emails_body_html_leaks ?? 0)
+            + Number(leaks.oauth_access_token_leaks ?? 0)
+            + Number(leaks.oauth_refresh_token_leaks ?? 0)
+          : 0;
+
+        const ok = missing.length === 0 && totalLeaks === 0;
         return Response.json(
           {
             ok,
@@ -149,6 +178,7 @@ export const Route = createFileRoute("/api/public/health")({
               columns: EXPECTED_COLUMNS.length,
             },
             missing,
+            encryption_leaks: leaks,
           },
           { status: ok ? 200 : 503 },
         );
