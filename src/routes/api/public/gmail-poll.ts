@@ -7,13 +7,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { ensureWatch } from "@/lib/gmail.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
-
-// Per-account silence threshold. If the cron has been running but a given
-// account hasn't had a single history event (push *or* poll-driven) in 2h,
-// the watch is suspect — far tighter than the previous global 6h check.
-const PER_ACCOUNT_SILENCE_MS = 2 * 60 * 60 * 1000;
-// Cap how often we re-arm any one account so a broken topic doesn't loop.
-const REARM_COOLDOWN_MS = 30 * 60 * 1000;
+import {
+  POLL_PER_ACCOUNT_SILENCE_MS as PER_ACCOUNT_SILENCE_MS,
+  REARM_COOLDOWN_MS,
+} from "@/lib/sync/config";
 
 export const Route = createFileRoute("/api/public/gmail-poll")({
   server: {

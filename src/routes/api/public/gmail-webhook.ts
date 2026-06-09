@@ -10,12 +10,13 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { verifyGoogleJwt } from "@/lib/google-jwt.server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth.server";
+import { WEBHOOK_INLINE_DRAIN_BUDGET_MS as INLINE_DRAIN_BUDGET_MS } from "@/lib/sync/config";
 
 // Pub/Sub considers a push delivered if we ack within ~10s. We spend up to
-// INLINE_DRAIN_BUDGET_MS draining the priority=0 queue inline so brand-new
-// mail is visible before the response is returned, then ack. Anything left
-// in the queue gets picked up by the dedicated 5s gmail-process-jobs cron.
-const INLINE_DRAIN_BUDGET_MS = 4_000;
+// INLINE_DRAIN_BUDGET_MS (from sync/config) draining the priority=0 queue
+// inline so brand-new mail is visible before the response is returned,
+// then ack. Anything left in the queue gets picked up by the dedicated
+// 5s gmail-process-jobs cron.
 
 async function drainWithBudget(budgetMs: number): Promise<{ rounds: number; processed: number }> {
   const deadline = Date.now() + budgetMs;

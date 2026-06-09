@@ -3,11 +3,12 @@
 // etc. through node.
 //
 // SLO contract (also documented on the tile itself):
-//   p50 < 1s  → green
-//   p50 < 3s  → amber
-//   p50 ≥ 3s  → red
-// Changing thresholds = breaking the operator dashboard, so the test suite
-// pins these.
+//   p50 < LATENCY_GOOD_MS  → green
+//   p50 < LATENCY_WARN_MS  → amber
+//   p50 ≥ LATENCY_WARN_MS  → red
+// Thresholds live in src/lib/sync/config.ts; changing them = breaking
+// the operator dashboard, so the test suite pins these.
+import { LATENCY_GOOD_MS, LATENCY_WARN_MS, STALENESS_LIVE_HOURS, STALENESS_AMBER_HOURS } from "@/lib/sync/config";
 
 /** Compact human readout for a latency value (ms). Empty / non-finite
  * values render as an em-dash so the eye skips them. */
@@ -24,8 +25,8 @@ export type LatencyTone = "good" | "warn" | "bad" | "muted";
 /** Maps a latency value to one of the four UI tones. */
 export function latencyTone(ms: number | null | undefined): LatencyTone {
   if (ms == null || !Number.isFinite(ms)) return "muted";
-  if (ms < 1000) return "good";
-  if (ms < 3000) return "warn";
+  if (ms < LATENCY_GOOD_MS) return "good";
+  if (ms < LATENCY_WARN_MS) return "warn";
   return "bad";
 }
 
@@ -57,7 +58,7 @@ export function computeStaleness(
   const ageMs = now.getTime() - new Date(lastPushAt).getTime();
   if (ageMs < 0) return { kind: "live", ageMinutes: 0 };
   const ageHours = ageMs / 3_600_000;
-  if (ageHours >= 6) return { kind: "stale_red", ageHours };
-  if (ageHours >= 1) return { kind: "stale_amber", ageHours };
+  if (ageHours >= STALENESS_AMBER_HOURS) return { kind: "stale_red", ageHours };
+  if (ageHours >= STALENESS_LIVE_HOURS) return { kind: "stale_amber", ageHours };
   return { kind: "live", ageMinutes: Math.floor(ageMs / 60_000) };
 }

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useState, useMemo, useId, useRef } from "re
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { applyFilter, EXCLUDE_OPS, type EmailForFilter } from "@/lib/sync/filter-engine";
 import {
   triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
   moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
@@ -1715,35 +1716,29 @@ function opLabel(op: string) {
   return m[op] ?? op;
 }
 
-// Mirror of applyFilter in src/lib/sync.server.ts — keep in sync.
+// Adapter: the Email row has nullable string fields; the shared
+// filter engine wants non-null strings. Normalize null/undefined → "".
+function emailToFilterShape(email: { from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text: string | null; has_attachment: boolean }): EmailForFilter {
+  return {
+    from_addr: email.from_addr ?? "",
+    from_name: email.from_name ?? "",
+    to_addrs: email.to_addrs ?? "",
+    subject: email.subject ?? "",
+    body_text: email.body_text ?? "",
+    has_attachment: email.has_attachment,
+  };
+}
+
 function applyFilterClient(
   email: { from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text: string | null; has_attachment: boolean },
   f: { field: string; op: string; value: string },
 ): boolean {
-  const v = (f.value || "").toLowerCase();
-  const fieldVal = (() => {
-    switch (f.field) {
-      case "from": return `${email.from_addr ?? ""} ${email.from_name ?? ""}`.toLowerCase();
-      case "to": return (email.to_addrs ?? "").toLowerCase();
-      case "subject": return (email.subject ?? "").toLowerCase();
-      case "body": return (email.body_text ?? "").toLowerCase();
-      case "domain": return ((email.from_addr ?? "").split("@")[1] ?? "").toLowerCase();
-      case "has_attachment": return email.has_attachment ? "true" : "false";
-      default: return "";
-    }
-  })();
-  switch (f.op) {
-    case "contains": return fieldVal.includes(v);
-    case "equals": return fieldVal === v;
-    case "not_contains": return !fieldVal.includes(v);
-    case "not_equals": return fieldVal !== v;
-    case "regex":
-      try { return new RegExp(f.value, "i").test(fieldVal); } catch { return false; }
-    default: return false;
-  }
+  // Reuses the canonical applyFilter from sync/filter-engine — no more
+  // drift between client + server filter behavior. Adds operator
+  // coverage too (starts_with, ends_with) that the old client mirror
+  // was missing.
+  return applyFilter(emailToFilterShape(email), { id: "", folder_id: "", ...f });
 }
-
-const EXCLUDE_OPS_CLIENT = new Set(["not_contains", "not_equals"]);
 
 function TriggeredBy({
   classifiedBy, reason, folder, filters, email,
@@ -1767,7 +1762,7 @@ function TriggeredBy({
       return { matched: [], rulesChanged: true };
     }
     // Legacy email: recompute the matching includes client-side.
-    const includes = filters.filter((f) => !EXCLUDE_OPS_CLIENT.has(f.op));
+    const includes = filters.filter((f) => !EXCLUDE_OPS.has(f.op));
     return { matched: includes.filter((f) => applyFilterClient(email, f)), rulesChanged: false };
   }, [by, email, filters]);
 
