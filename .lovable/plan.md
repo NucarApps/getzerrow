@@ -1,29 +1,54 @@
-## Goal
+## Production outage hotfix plan
 
-Make the `/admin` page viewable only by you (`chris@nucar.com`). Your admin data is already secure — the gap is that any signed-in user briefly sees the empty admin shell before being redirected. This plan closes that gap by checking admin status before the page renders.
+### Goal
+Restore sync, re-arm, and reclassify on `claude/email-sync-improvements-xVpbj` without applying the 11 stale migrations to the shared production database.
 
-## Current state
+### Key decision
+Do **not** apply the listed migrations to the shared production backend. The live database already contains the needed schema/RPC concepts, but under the current `EMAIL_ENC_KEY` / pgp_sym `_enc` design. The branch expects older pgsodium-style names/signatures, which is why it sees “Could not find the function”.
 
-- **Data is already protected.** Every admin server function (`getAdminMe`, `listAdminUsers`, `getAdminActivity`) runs `assertAdmin`, which throws `403 Forbidden` for anyone whose token email isn't `chris@nucar.com`. No other user can load the users list, stats, or activity.
-- **The page chrome is not gated.** The route's `beforeLoad` only checks "is this user logged in." So a signed-in non-admin who visits `/admin` renders the page skeleton, the `getAdminMe` request then fails, a toast fires, and they get redirected to `/inbox`. That brief flash is the only real issue.
+### What I will change
+1. **Find branch calls to stale RPC signatures**
+   - Search server code for:
+     - `get_gmail_oauth_tokens` without `p_key`
+     - `set_gmail_oauth_tokens` without `p_key`
+     - `upsert_gmail_oauth_account` without `p_key`
+     - `claim_forward_retries` instead of the live `claim_forward_retries_v2`
+     - direct references to `*_encrypted` columns or pgsodium assumptions
 
-## What changes
+2. **Align OAuth token access to production**
+   - Ensure all token reads/writes call the existing live RPCs with `EMAIL_ENC_KEY`:
+     - `get_gmail_oauth_tokens(p_account_id, p_key)`
+     - `set_gmail_oauth_tokens(p_account_id, p_access_token, p_refresh_token, p_token_expires_at, p_key)`
+     - `upsert_gmail_oauth_account(p_user_id, p_email_address, p_access_token, p_refresh_token, p_token_expires_at, p_key)`
+   - Keep `EMAIL_ENC_KEY` read only on the server.
 
-Add an admin check to the route's `beforeLoad` in `src/routes/_authenticated/admin.tsx` so non-admins are redirected away **before** the component ever renders — no flash, no empty shell.
+3. **Align forward retry claim path**
+   - Replace stale `claim_forward_retries(p_limit)` usage with live `claim_forward_retries_v2(p_limit, p_key)`.
+   - Make sure downstream code uses the decrypted fields returned by that RPC.
 
-1. In `beforeLoad`, after confirming the user is signed in, call the existing `getAdminMe` server function (which returns the email for admins and `403` for everyone else).
-2. If `getAdminMe` throws (non-admin), `throw redirect({ to: "/inbox" })` directly from `beforeLoad`.
-3. Remove the now-redundant component-level `accessDenied` redirect (the `meQ.isError` → `navigate("/inbox")` block) and its toast, since the gate now happens earlier. Keep the `getAdminMe` query if convenient for showing "Signed in as …", or reuse the `beforeLoad` result via route context.
+4. **Align encrypted email body reads/writes**
+   - Remove any code expecting `body_text_encrypted` / `body_html_encrypted` or the pgsodium view shape.
+   - Use existing live helper RPCs/functions that decrypt through `EMAIL_ENC_KEY`, such as the current `get_emails_decrypted`, `get_emails_list_fields_decrypted`, `insert_email_encrypted`, and `update_email_encrypted` paths.
 
-The admin email stays hardcoded as `chris@nucar.com` in `src/lib/admin.functions.ts` (no change there).
+5. **Preserve already-valid schema/RPC usage**
+   - Keep calls to live-compatible objects already present:
+     - `claim_message_jobs(...): published_at_ms`
+     - `bump_history_id_if_greater`
+     - `get_sync_latency_stats`
+     - `cleanup_old_pubsub_events`
+     - `cleanup_old_dlq_jobs`
+     - `list_decryption_audit`
 
-## Technical details
+6. **Validate the outage path**
+   - Run targeted searches/tests or invoke relevant code paths where possible.
+   - Confirm no remaining references to the stale pgsodium migration names/signatures.
+   - Confirm the code uses the live production RPC signatures.
 
-- `beforeLoad` in this `_authenticated` subtree runs client-side (`ssr: false` layout), after the Supabase session is available, so the bearer token is attached to the `getAdminMe` call by the existing `attachSupabaseAuth` middleware.
-- Wrap the `getAdminMe` call in try/catch; on any error, `throw redirect({ to: "/inbox" })`. Re-throw if it's already a redirect (use `isRedirect`) so the unauthenticated `/login` redirect still works.
-- No database, RLS, or server-function changes are needed — the server-side `assertAdmin` remains the authoritative security boundary; this change is the UX/visibility layer on top of it.
+### What I will not do
+- I will not apply the 11 migrations to the shared production database.
+- I will not introduce pgsodium keys or `_encrypted` columns.
+- I will not change the production encryption standard away from `EMAIL_ENC_KEY` / pgp_sym `_enc`.
+- I will not touch plaintext OAuth token storage.
 
-## Out of scope
-
-- No new admin-role table (you chose to keep the hardcoded email).
-- No changes to what the admin page displays.
+### Expected result
+The branch will stop calling missing/stale RPC signatures and will operate against the current production backend schema, restoring sync/re-arm/reclassify without risking the live database.
