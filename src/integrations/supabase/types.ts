@@ -1364,6 +1364,10 @@ export type Database = {
         }[]
       }
       cron_secret_matches: { Args: { provided: string }; Returns: boolean }
+      delete_gmail_account_content: {
+        Args: { p_account_id: string; p_user_id: string }
+        Returns: number
+      }
       get_contact_decrypted: {
         Args: { p_contact_id: string; p_key: string }
         Returns: {
