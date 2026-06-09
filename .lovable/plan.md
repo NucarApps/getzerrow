@@ -1,24 +1,43 @@
-# Fix: mobile toasts never auto-dismiss
+# Fix: Reclassify doesn't move "always-inbox" emails out of folders
 
-## Problem
-On mobile, toast notifications at the bottom of the screen stay on screen forever instead of disappearing after a few seconds.
+## The problem
 
-## Cause
-The shared `Toaster` (`src/components/ui/sonner.tsx`) is configured without an explicit auto-dismiss duration and without a manual close affordance. Sonner pauses its dismiss timer on hover/touch and when the page loses focus, then resumes on the matching `pointerleave`/focus event. On mobile browsers those resume events frequently never fire, so paused toasts linger indefinitely.
+Shawn Hanlon added an **always-send-to-inbox** domain override. When you reclassify emails that are currently sitting in the **Factory** folder, the classifier correctly decides they belong in the inbox — but they stay in Factory instead of moving.
 
-## Fix
-Update only the `Toaster` configuration in `src/components/ui/sonner.tsx`:
+## Root cause
 
-1. Set an explicit `duration` (4000ms) so every toast has a definite lifetime.
-2. Add `closeButton` so users always have a guaranteed way to dismiss a toast manually if a timer ever stalls — important on touch devices.
-3. Keep all existing styling/classNames intact.
+The reclassify action (`reclassifyEmails` in `src/lib/gmail.functions.ts`) only updates an email when the classifier returns a *folder*. When an always-inbox override wins, the classifier intentionally returns **no folder** (inbox = "no folder") with `classified_by = "inbox_override"`.
 
-This is a single, presentation-only change in one file. No changes to any `toast.*` call sites are needed. Long-lived toasts that are intentional (e.g. `toast.loading(...)` that gets resolved later in `FolderEditor.tsx`) keep working because they pass their own id and are updated/closed explicitly.
+The current guard is:
+
+```text
+if (result.folder_id && result.folder_id !== email.folder_id) { ...move... }
+else { count as "unchanged" }
+```
+
+Because the inbox result has `folder_id = null`, the `result.folder_id &&` check is false, so the email is counted as "unchanged" and never leaves Factory. This is why reclassifying does nothing for overridden senders.
+
+## The fix (one function)
+
+In `reclassifyEmails`, add a branch that handles the "should go to inbox" outcome — i.e. the classifier returned `folder_id = null` with `classified_by = "inbox_override"` while the email is currently in a folder.
+
+For that case, perform the same full inbox restore that the existing "Move to Inbox" action (`moveEmailToInbox`) already does, so the message actually shows up in the inbox view (which filters on the `INBOX` label + `is_archived = false`):
+
+1. Look up the current folder's Gmail label.
+2. Recompute `raw_labels`: drop the old folder label, add `INBOX`.
+3. Update the email row: `folder_id = null`, `is_archived = false`, `classified_by = "inbox_override"`, `ai_confidence = 1`, `matched_filter_ids = []`, new `raw_labels`, and the classification reason.
+4. Call `modifyMessage` to add `INBOX` and remove the old folder label in Gmail.
+5. Count it as `routed`.
+
+The existing folder-to-folder path stays exactly as-is. Emails that resolve to "no match"/"excluded" (also `folder_id = null`, but **not** `inbox_override`) are deliberately left untouched, so reclassify never yanks emails into the inbox unless an explicit always-inbox rule says so.
 
 ## Verification
-- On the live site / preview at mobile width, trigger a toast (e.g. refresh inbox, save a folder) and confirm it auto-dismisses after ~4s.
-- Confirm a close (×) control is available to dismiss manually.
-- Confirm loading toasts (digest generation) still resolve to success/error rather than getting force-closed early.
 
-## Technical detail
-In `src/components/ui/sonner.tsx`, add `duration={4000}` and `closeButton` props to the `<Sonner />` element (alongside the existing `toastOptions`).
+- In Factory, select emails from the overridden domain and run Reclassify → they move to the inbox and disappear from Factory.
+- Confirm in Gmail the message regains the `INBOX` label and loses the Factory label.
+- Reclassifying emails that genuinely belong in a folder still routes folder-to-folder as before, and truly unmatched emails stay where they are.
+
+## Technical notes
+
+- Only `src/lib/gmail.functions.ts` (`reclassifyEmails`) changes. The classification logic in `src/lib/sync/classify.ts` is already correct and is not touched.
+- The inbox-restore steps mirror `moveEmailToInbox` (same file) to stay consistent with how manual "Move to Inbox" already behaves.
