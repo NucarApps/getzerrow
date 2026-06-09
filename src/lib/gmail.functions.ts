@@ -3396,6 +3396,61 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
             })
             .eq("id", email.id);
           routed++;
+        } else if (
+          !result.folder_id &&
+          result.classified_by === "inbox_override" &&
+          email.folder_id
+        ) {
+          // An always-inbox override now wins for this email, but it is sitting
+          // in a folder. Restore it to the inbox (same steps as the manual
+          // "Move to Inbox" action) so it shows up in the inbox view, which
+          // filters on the INBOX label + is_archived = false.
+          let fromLabel: string | null = null;
+          const { data: f } = await supabaseAdmin
+            .from("folders")
+            .select("gmail_label_id")
+            .eq("id", email.folder_id)
+            .maybeSingle();
+          fromLabel = f?.gmail_label_id ?? null;
+
+          const currentLabels = ((email.raw_labels as string[] | null) ?? []) as string[];
+          const nextLabels = Array.from(
+            new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
+          );
+
+          await updateEmailEncrypted({
+            email_id: email.id,
+            classification_reason: result.classification_reason ?? "",
+          });
+          await supabaseAdmin
+            .from("emails")
+            .update({
+              folder_id: null,
+              is_archived: false,
+              classified_by: "inbox_override",
+              ai_confidence: 1,
+              matched_filter_ids: [],
+              raw_labels: nextLabels,
+            })
+            .eq("id", email.id);
+
+          if (email.gmail_message_id) {
+            try {
+              await modifyMessage(
+                email.gmail_account_id,
+                email.gmail_message_id,
+                ["INBOX"],
+                fromLabel ? [fromLabel] : [],
+              );
+            } catch (e) {
+              logError(
+                "gmail.reclassify.inbox_restore_label_failed",
+                { email_id: email.id, user_id: context.userId },
+                e,
+              );
+            }
+          }
+          routed++;
         } else {
           unchanged++;
         }
