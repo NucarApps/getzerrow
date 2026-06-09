@@ -272,7 +272,7 @@ function ActivityChart({
                   borderRadius: 6,
                   fontSize: 12,
                 }}
-                labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                labelFormatter={(v: any) => new Date(v).toLocaleDateString()}
               />
               <Line type="monotone" dataKey="count" stroke={color} strokeWidth={2} dot={false} />
             </LineChart>
