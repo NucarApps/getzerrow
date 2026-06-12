@@ -2,28 +2,62 @@
 // All client-safe; no server imports.
 
 export const PERSONAL_DOMAINS = new Set([
-  "gmail.com", "googlemail.com",
-  "outlook.com", "hotmail.com", "live.com", "msn.com",
-  "yahoo.com", "yahoo.co.uk", "ymail.com",
-  "icloud.com", "me.com", "mac.com",
-  "proton.me", "protonmail.com", "pm.me",
-  "aol.com", "gmx.com", "gmx.de", "mail.com",
-  "zoho.com", "fastmail.com", "tutanota.com",
-  "qq.com", "163.com", "126.com",
+  "gmail.com",
+  "googlemail.com",
+  "outlook.com",
+  "hotmail.com",
+  "live.com",
+  "msn.com",
+  "yahoo.com",
+  "yahoo.co.uk",
+  "ymail.com",
+  "icloud.com",
+  "me.com",
+  "mac.com",
+  "proton.me",
+  "protonmail.com",
+  "pm.me",
+  "aol.com",
+  "gmx.com",
+  "gmx.de",
+  "mail.com",
+  "zoho.com",
+  "fastmail.com",
+  "tutanota.com",
+  "qq.com",
+  "163.com",
+  "126.com",
 ]);
 
 const TWO_PART_TLDS = new Set([
-  "co.uk", "ac.uk", "org.uk", "gov.uk",
-  "com.au", "net.au", "org.au",
-  "co.nz", "co.jp", "co.kr", "co.in", "co.za",
-  "com.br", "com.mx", "com.ar", "com.sg", "com.hk", "com.tr",
+  "co.uk",
+  "ac.uk",
+  "org.uk",
+  "gov.uk",
+  "com.au",
+  "net.au",
+  "org.au",
+  "co.nz",
+  "co.jp",
+  "co.kr",
+  "co.in",
+  "co.za",
+  "com.br",
+  "com.mx",
+  "com.ar",
+  "com.sg",
+  "com.hk",
+  "com.tr",
 ]);
 
 export function extractDomain(email: string | null | undefined): string | null {
   if (!email) return null;
   const at = email.lastIndexOf("@");
   if (at < 0) return null;
-  const d = email.slice(at + 1).trim().toLowerCase();
+  const d = email
+    .slice(at + 1)
+    .trim()
+    .toLowerCase();
   if (!d || !d.includes(".")) return null;
   return d;
 }
@@ -75,14 +109,27 @@ export function contactLogoDomain(
 }
 
 /** Ordered list of logo URLs to try for a domain. Only our same-origin proxy;
- *  if it 404s, the UI falls through to a first-letter monogram. */
-export function logoCandidates(domain: string, size = 64): string[] {
+ *  if it 404s, the UI falls through to a first-letter monogram.
+ *  When `provider` is a number, asks the proxy for that specific source only. */
+export function logoCandidates(domain: string, size = 64, provider?: number | null): string[] {
   const d = encodeURIComponent(domain);
   const s = Math.max(size, 64);
-  return [`/api/public/logo?domain=${d}&size=${s}`];
+  const base = `/api/public/logo?domain=${d}&size=${s}`;
+  return [typeof provider === "number" ? `${base}&provider=${provider}` : base];
 }
 
 /** First-choice logo URL (kept for back-compat). */
 export function logoUrl(domain: string, size = 64): string {
   return logoCandidates(domain, size)[0];
+}
+
+/** Resolve a domain through a user-defined alias map (alias -> primary). */
+export function resolveCompanyDomain(
+  domain: string | null | undefined,
+  aliasMap: Map<string, string> | null | undefined,
+): string | null {
+  if (!domain) return null;
+  const d = domain.toLowerCase();
+  if (!aliasMap || aliasMap.size === 0) return d;
+  return aliasMap.get(d) ?? d;
 }

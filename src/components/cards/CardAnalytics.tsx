@@ -30,7 +30,9 @@ export function CardAnalytics() {
               key={r.value}
               onClick={() => setDays(r.value)}
               className={`rounded px-2 py-1 transition ${
-                days === r.value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
+                days === r.value
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {r.label}
@@ -46,9 +48,21 @@ export function CardAnalytics() {
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat icon={<Eye className="h-4 w-4" />} label="Views" value={data.totals.view ?? 0} />
-            <Stat icon={<MousePointerClick className="h-4 w-4" />} label="Link clicks" value={data.totals.link_click ?? 0} />
-            <Stat icon={<Download className="h-4 w-4" />} label="vCard saves" value={data.totals.vcard_download ?? 0} />
-            <Stat icon={<Share2 className="h-4 w-4" />} label="Shares" value={data.totals.share ?? 0} />
+            <Stat
+              icon={<MousePointerClick className="h-4 w-4" />}
+              label="Link clicks"
+              value={data.totals.link_click ?? 0}
+            />
+            <Stat
+              icon={<Download className="h-4 w-4" />}
+              label="vCard saves"
+              value={data.totals.vcard_download ?? 0}
+            />
+            <Stat
+              icon={<Share2 className="h-4 w-4" />}
+              label="Shares"
+              value={data.totals.share ?? 0}
+            />
           </div>
 
           <Sparkline daily={data.daily} />
@@ -58,7 +72,10 @@ export function CardAnalytics() {
               <h3 className="mb-2 text-xs font-medium text-muted-foreground">Top links</h3>
               <ul className="space-y-1.5">
                 {data.topLinks.map((l, i) => (
-                  <li key={i} className="flex items-center justify-between gap-3 rounded-md bg-background/40 px-3 py-1.5 text-xs">
+                  <li
+                    key={i}
+                    className="flex items-center justify-between gap-3 rounded-md bg-background/40 px-3 py-1.5 text-xs"
+                  >
                     <span className="min-w-0 truncate">
                       <span className="mr-2 inline-block rounded bg-accent px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-foreground">
                         {l.link_kind}
@@ -77,13 +94,21 @@ export function CardAnalytics() {
               <h3 className="mb-2 text-xs font-medium text-muted-foreground">Recent activity</h3>
               <ul className="max-h-60 space-y-1 overflow-y-auto">
                 {data.recent.map((e) => (
-                  <li key={e.id} className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                  <li
+                    key={e.id}
+                    className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
+                  >
                     <span className="truncate">
                       <span className="text-foreground">{labelFor(e.event_type)}</span>
                       {e.link_url && <span className="ml-2 truncate">→ {e.link_url}</span>}
                     </span>
                     <time className="shrink-0 font-mono">
-                      {new Date(e.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      {new Date(e.created_at).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </time>
                   </li>
                 ))}
@@ -150,5 +175,13 @@ function Sparkline({ daily }: { daily: CardAnalyticsSummary["daily"] }) {
 }
 
 function labelFor(t: string) {
-  return t === "view" ? "Viewed" : t === "link_click" ? "Clicked link" : t === "vcard_download" ? "Saved vCard" : t === "share" ? "Shared" : t;
+  return t === "view"
+    ? "Viewed"
+    : t === "link_click"
+      ? "Clicked link"
+      : t === "vcard_download"
+        ? "Saved vCard"
+        : t === "share"
+          ? "Shared"
+          : t;
 }

@@ -6,6 +6,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       className="toaster group"
+      duration={4000}
+      closeButton
       toastOptions={{
         classNames: {
           toast:

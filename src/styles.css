@@ -1,7 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Sora:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
 
 @custom-variant dark (&:is(.dark *));
 
@@ -85,4 +85,23 @@
   ::selection {
     background: color-mix(in oklab, var(--color-primary) 35%, transparent);
   }
+}
+
+@keyframes rocket-blastoff {
+  0% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+  40% { transform: translateY(-40px) scale(1.02) rotate(-2deg); opacity: 1; }
+  100% { transform: translateY(-280px) scale(0.55) rotate(-4deg); opacity: 0; }
+}
+@keyframes rocket-return {
+  0% { transform: translateY(40px) scale(0.7); opacity: 0; }
+  60% { transform: translateY(-4px) scale(1.05); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes rocket-bob {
+  0%, 100% { transform: translateY(-2px) scale(1); }
+  50% { transform: translateY(2px) scale(1); }
+}
+@keyframes flame-flicker {
+  from { opacity: 0.7; transform: translateX(-50%) scaleY(0.9); }
+  to { opacity: 1; transform: translateX(-50%) scaleY(1.1); }
 }

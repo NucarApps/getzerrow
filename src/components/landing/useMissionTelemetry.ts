@@ -136,7 +136,10 @@ export function useMissionTelemetry() {
       if (tG) tG.textContent = `${g.toFixed(1)} g`;
       if (tHdg) tHdg.textContent = `${hdg.toFixed(1)}°`;
       if (alt > apogeeKm) apogeeKm = alt;
-      const downrange = Math.max(0, Math.round((vel * Math.max(0, launchT - LIFT_DURATION)) / 1000));
+      const downrange = Math.max(
+        0,
+        Math.round((vel * Math.max(0, launchT - LIFT_DURATION)) / 1000),
+      );
       if (tDownrange) tDownrange.textContent = `${downrange.toLocaleString("en-US")} km`;
       if (tApogee) tApogee.textContent = `${apogeeKm.toFixed(1)} km`;
       const sinceLift = Math.max(0, launchT - LIFT_DURATION);
@@ -163,9 +166,7 @@ export function useMissionTelemetry() {
     const teleInterval = window.setInterval(updateTelemetry, 600);
 
     // FAQ exclusivity
-    const faqItems = Array.from(
-      document.querySelectorAll<HTMLDetailsElement>(".faq-item"),
-    );
+    const faqItems = Array.from(document.querySelectorAll<HTMLDetailsElement>(".faq-item"));
     const onToggle = (d: HTMLDetailsElement) => () => {
       if (!d.open) return;
       faqItems.forEach((other) => {

@@ -1,0 +1,69 @@
+name: CI
+
+# Security + quality gates for every change. Maps to CASA / OWASP ASVS controls:
+#   - V1/V14 secure SDLC + dependency management (bun audit, Dependabot)
+#   - SAST (Semgrep: secrets, OWASP Top Ten, JS/TS)
+#   - automated test + typecheck on every PR
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bunx tsc --noEmit
+      - name: Unit tests
+        run: bun run test
+      # Enforced: the codebase is ESLint-clean (0 errors, 0 warnings). Keep it
+      # that way — lint failures block the PR.
+      - name: Lint
+        run: bun run lint --max-warnings=0
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      # Gate on production dependencies. Dev-only advisories (e.g. build/lint
+      # tooling) are tracked via Dependabot but don't block deploys.
+      - name: Audit production dependencies
+        run: bun audit --prod
+
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    container:
+      # Pinned for reproducible, tamper-resistant scans (avoid moving :latest).
+      image: semgrep/semgrep:1.164.0
+    steps:
+      - uses: actions/checkout@v6
+      - name: Semgrep scan
+        run: >
+          semgrep scan
+          --config p/secrets
+          --config p/owasp-top-ten
+          --config p/javascript
+          --config p/typescript
+          --metrics=off
+          --error
+          src

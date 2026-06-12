@@ -12,7 +12,7 @@ let serverEntryPromise: Promise<ServerEntry> | undefined;
 async function getServerEntry(): Promise<ServerEntry> {
   if (!serverEntryPromise) {
     serverEntryPromise = import("@tanstack/react-start/server-entry").then(
-      (m) => ((m as { default?: ServerEntry }).default ?? (m as unknown as ServerEntry)),
+      (m) => (m as { default?: ServerEntry }).default ?? (m as unknown as ServerEntry),
     );
   }
   return serverEntryPromise;
@@ -22,6 +22,60 @@ function brandedErrorResponse(): Response {
   return new Response(renderErrorPage(), {
     status: 500,
     headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
+
+function supabaseOrigins(): string {
+  const url = process.env.SUPABASE_URL ?? "";
+  try {
+    const { origin, host } = new URL(url);
+    // Realtime uses a wss:// connection to the same host.
+    return `${origin} wss://${host}`;
+  } catch {
+    return "";
+  }
+}
+
+// A hardened header set expected by OAuth restricted-scope (CASA) reviews.
+// CSP is tuned for this app: SSR injects inline hydration scripts, fonts come
+// from Google Fonts, logos/avatars are fetched from arbitrary company domains,
+// and the browser talks to Supabase (REST + realtime wss) and the Lovable
+// OAuth broker.
+function securityHeaders(): Record<string, string> {
+  const supabase = supabaseOrigins();
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https:",
+    `connect-src 'self' ${supabase} https://oauth.lovable.app`.replace(/\s+/g, " ").trim(),
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self' https://accounts.google.com",
+  ].join("; ");
+
+  return {
+    "content-security-policy": csp,
+    "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  };
+}
+
+// Merge the security headers onto an existing response, preserving its body,
+// status, and existing headers (content-type, redirect Location, etc.).
+function withSecurityHeaders(response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(securityHeaders())) {
+    headers.set(key, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
   });
 }
 
@@ -66,15 +120,76 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
+// On Cloudflare Workers, environment bindings (vars + secrets) are injected
+// per-request as the `env` argument to `fetch`, NOT automatically onto
+// `process.env`. The generated Supabase integration reads its config from
+// `process.env.*` during SSR (with `import.meta.env.VITE_*` as the build-time
+// path). When the published build can't inline the VITE_ values, SSR falls
+// back to `process.env`, which is empty unless we bridge the bindings here.
+// This copies any string-valued bindings into `process.env` once, on the
+// first request, without logging or hardcoding secret values.
+//
+// It also aliases the public `VITE_`-prefixed Supabase variants onto the
+// non-prefixed names the server-side Supabase integration reads. In the
+// published Worker the build can inline `VITE_*` values but the server clients
+// (auth middleware, SSR browser client) look up `SUPABASE_URL` /
+// `SUPABASE_PUBLISHABLE_KEY` from `process.env`; without this alias those are
+// empty and SSR throws "Missing Supabase environment variable(s)".
+const PUBLIC_ENV_ALIASES: Record<string, readonly string[]> = {
+  SUPABASE_URL: ["VITE_SUPABASE_URL"],
+  SUPABASE_PUBLISHABLE_KEY: ["VITE_SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_ANON_KEY"],
+  SUPABASE_PROJECT_ID: ["VITE_SUPABASE_PROJECT_ID"],
+};
+
+function bridgeEnvToProcess(env: unknown): void {
+  const target = (globalThis as { process?: { env?: Record<string, string> } }).process?.env;
+  if (!target) return;
+
+  if (env && typeof env === "object") {
+    for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
+      if (typeof value === "string" && target[key] === undefined) {
+        target[key] = value;
+      }
+    }
+  }
+
+  // Backfill non-prefixed names from their public VITE_ equivalents (from either
+  // the Worker bindings just copied above, or values inlined at build time).
+  for (const [canonical, aliases] of Object.entries(PUBLIC_ENV_ALIASES)) {
+    if (target[canonical] !== undefined) continue;
+    for (const alias of aliases) {
+      const candidate = target[alias] ?? readBuildTimeEnv(alias);
+      if (typeof candidate === "string" && candidate.length > 0) {
+        target[canonical] = candidate;
+        break;
+      }
+    }
+  }
+}
+
+// Reads a `VITE_`-prefixed value that Vite may have inlined into the bundle at
+// build time. Wrapped in try/catch because `import.meta.env` access can be
+// statically replaced or absent depending on the build target.
+function readBuildTimeEnv(key: string): string | undefined {
+  try {
+    const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env;
+    const value = metaEnv?.[key];
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      bridgeEnvToProcess(env);
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      return withSecurityHeaders(await normalizeCatastrophicSsrResponse(response));
     } catch (error) {
       console.error(error);
-      return brandedErrorResponse();
+      return withSecurityHeaders(brandedErrorResponse());
     }
   },
 };

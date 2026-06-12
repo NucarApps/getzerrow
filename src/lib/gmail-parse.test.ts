@@ -5,8 +5,11 @@ import { describe, it, expect } from "vitest";
 import { parseMessage, GmailApiError } from "./gmail.server";
 
 function b64url(s: string): string {
-  return Buffer.from(s, "utf-8").toString("base64")
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return Buffer.from(s, "utf-8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function msg(opts: {
@@ -43,7 +46,9 @@ function msg(opts: {
 
 describe("parseMessage", () => {
   it("extracts name + email from a `Name <addr>` From header", () => {
-    const p = parseMessage(msg({ headers: { From: '"Alice Sender" <alice@example.com>', Subject: "Hi" } }));
+    const p = parseMessage(
+      msg({ headers: { From: '"Alice Sender" <alice@example.com>', Subject: "Hi" } }),
+    );
     expect(p.from_name).toBe("Alice Sender");
     expect(p.from_addr).toBe("alice@example.com");
   });
@@ -55,16 +60,18 @@ describe("parseMessage", () => {
   });
 
   it("populates standard headers (to/cc/list-id/in-reply-to/subject)", () => {
-    const p = parseMessage(msg({
-      headers: {
-        From: "a@x.com",
-        To: "b@x.com, c@x.com",
-        Cc: "d@x.com",
-        Subject: "RFP response",
-        "List-Id": "<list.x.com>",
-        "In-Reply-To": "<orig-msg@x.com>",
-      },
-    }));
+    const p = parseMessage(
+      msg({
+        headers: {
+          From: "a@x.com",
+          To: "b@x.com, c@x.com",
+          Cc: "d@x.com",
+          Subject: "RFP response",
+          "List-Id": "<list.x.com>",
+          "In-Reply-To": "<orig-msg@x.com>",
+        },
+      }),
+    );
     expect(p.to_addrs).toBe("b@x.com, c@x.com");
     expect(p.cc).toBe("d@x.com");
     expect(p.subject).toBe("RFP response");
@@ -83,29 +90,35 @@ describe("parseMessage", () => {
   });
 
   it("is case-insensitive on header names", () => {
-    const p = parseMessage(msg({
-      headers: { from: "lower@x.com", SUBJECT: "Yelling" },
-    }));
+    const p = parseMessage(
+      msg({
+        headers: { from: "lower@x.com", SUBJECT: "Yelling" },
+      }),
+    );
     expect(p.from_addr).toBe("lower@x.com");
     expect(p.subject).toBe("Yelling");
   });
 
   it("decodes base64url text/plain and text/html bodies", () => {
-    const p = parseMessage(msg({
-      headers: { From: "a@x.com" },
-      textBody: "Plain text body with — em dash",
-      htmlBody: "<p>HTML body</p>",
-    }));
+    const p = parseMessage(
+      msg({
+        headers: { From: "a@x.com" },
+        textBody: "Plain text body with — em dash",
+        htmlBody: "<p>HTML body</p>",
+      }),
+    );
     expect(p.body_text).toBe("Plain text body with — em dash");
     expect(p.body_html).toBe("<p>HTML body</p>");
   });
 
   it("detects attachments by walking parts", () => {
-    const p = parseMessage(msg({
-      headers: { From: "a@x.com" },
-      textBody: "body",
-      attachments: ["report.pdf"],
-    }));
+    const p = parseMessage(
+      msg({
+        headers: { From: "a@x.com" },
+        textBody: "body",
+        attachments: ["report.pdf"],
+      }),
+    );
     expect(p.has_attachment).toBe(true);
   });
 
@@ -115,7 +128,9 @@ describe("parseMessage", () => {
   });
 
   it("sets is_read based on UNREAD label", () => {
-    const unread = parseMessage(msg({ headers: { From: "a@x.com" }, labelIds: ["INBOX", "UNREAD"] }));
+    const unread = parseMessage(
+      msg({ headers: { From: "a@x.com" }, labelIds: ["INBOX", "UNREAD"] }),
+    );
     const read = parseMessage(msg({ headers: { From: "a@x.com" }, labelIds: ["INBOX"] }));
     expect(unread.is_read).toBe(false);
     expect(read.is_read).toBe(true);
@@ -142,13 +157,15 @@ describe("parseMessage", () => {
       labelIds: ["INBOX"],
       payload: {
         headers: [{ name: "From", value: "a@x.com" }],
-        parts: [{
-          mimeType: "multipart/alternative",
-          parts: [
-            { mimeType: "text/plain", body: { data: b64url("plain inside") } },
-            { mimeType: "text/html", body: { data: b64url("<b>html inside</b>") } },
-          ],
-        }],
+        parts: [
+          {
+            mimeType: "multipart/alternative",
+            parts: [
+              { mimeType: "text/plain", body: { data: b64url("plain inside") } },
+              { mimeType: "text/html", body: { data: b64url("<b>html inside</b>") } },
+            ],
+          },
+        ],
       },
     };
     const p = parseMessage(nested);
@@ -166,7 +183,10 @@ describe("parseMessage", () => {
 
 describe("GmailApiError", () => {
   it("carries status + retryable + Retry-After + quota flags", () => {
-    const e = new GmailApiError("rate limited", 429, true, { retryAfterSeconds: 30, isQuotaExceeded: true });
+    const e = new GmailApiError("rate limited", 429, true, {
+      retryAfterSeconds: 30,
+      isQuotaExceeded: true,
+    });
     expect(e.status).toBe(429);
     expect(e.retryable).toBe(true);
     expect(e.retryAfterSeconds).toBe(30);

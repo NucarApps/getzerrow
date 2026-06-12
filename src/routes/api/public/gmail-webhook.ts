@@ -8,15 +8,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
+import { topUpWatch } from "@/lib/gmail.server";
 import { verifyGoogleJwt } from "@/lib/google-jwt.server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth.server";
-import { WEBHOOK_INLINE_DRAIN_BUDGET_MS as INLINE_DRAIN_BUDGET_MS } from "@/lib/sync/config";
+import { logError, newRunId } from "@/lib/log.server";
 
 // Pub/Sub considers a push delivered if we ack within ~10s. We spend up to
-// INLINE_DRAIN_BUDGET_MS (from sync/config) draining the priority=0 queue
-// inline so brand-new mail is visible before the response is returned,
-// then ack. Anything left in the queue gets picked up by the dedicated
-// 5s gmail-process-jobs cron.
+// INLINE_DRAIN_BUDGET_MS draining the priority=0 queue inline so brand-new
+// mail is visible before the response is returned, then ack. Anything left
+// in the queue gets picked up by the dedicated 5s gmail-process-jobs cron.
+const INLINE_DRAIN_BUDGET_MS = 4_000;
 
 async function drainWithBudget(budgetMs: number): Promise<{ rounds: number; processed: number }> {
   const deadline = Date.now() + budgetMs;
@@ -45,6 +46,8 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const runId = newRunId();
+        const tStart = Date.now();
         // Synthetic test requests must still be authenticated with the
         // CRON_SECRET — otherwise anyone could trigger Gmail syncs for any
         // known email address by setting the x-zerrow-test header.
@@ -81,7 +84,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details: `OIDC verify failed: ${result.reason}`,
                 });
               } catch (logErr) {
-                console.error("pubsub_events unauthorized log failed", logErr);
+                logError(
+                  "webhook.pubsub_log_failed",
+                  { run_id: runId, kind: "push_unauthorized_oidc" },
+                  logErr,
+                );
               }
               return new Response("Unauthorized", { status: 401 });
             }
@@ -108,7 +115,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details,
                 });
               } catch (logErr) {
-                console.error("pubsub_events unauthorized log failed", logErr);
+                logError(
+                  "webhook.pubsub_log_failed",
+                  { run_id: runId, kind: "push_unauthorized_legacy" },
+                  logErr,
+                );
               }
               return new Response("Unauthorized", { status: 401 });
             }
@@ -121,7 +132,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 details: "Authenticated via legacy ?token= — migrate subscription to OIDC",
               });
             } catch (logErr) {
-              console.error("pubsub_events legacy log failed", logErr);
+              logError(
+                "webhook.pubsub_log_failed",
+                { run_id: runId, kind: "push_legacy_auth" },
+                logErr,
+              );
             }
           }
         }
@@ -162,7 +177,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   details: `Duplicate Pub/Sub delivery within 60s (original ${dup.id})`,
                 });
               } catch (logErr) {
-                console.error("pubsub_events duplicate log failed", logErr);
+                logError(
+                  "webhook.pubsub_log_failed",
+                  { run_id: runId, kind: "push_duplicate", message_id: messageId },
+                  logErr,
+                );
               }
               return new Response("ok (duplicate)", { status: 200 });
             }
@@ -181,23 +200,36 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               details = `Failed to decode message.data: ${(decodeErr as Error).message}`;
               payload = { raw: dataB64 };
             }
-            const decoded = (payload ?? {}) as { emailAddress?: string; historyId?: number | string };
+            const decoded = (payload ?? {}) as {
+              emailAddress?: string;
+              historyId?: number | string;
+            };
             emailAddress = decoded.emailAddress ?? null;
             historyId = decoded.historyId != null ? String(decoded.historyId) : null;
 
             if (!emailAddress) {
               details = details ?? "Decoded payload had no emailAddress field";
             } else {
+              // Case-insensitive match: Gmail Pub/Sub lowercases the address,
+              // but the stored row may have mixed-case characters from the
+              // user's Google profile. `.ilike(value)` without wildcards is
+              // an exact case-insensitive equality.
               const { data: accounts } = await supabaseAdmin
                 .from("gmail_accounts")
-                .select("id, email_address")
-                .eq("email_address", emailAddress);
-              accountsMatched = accounts?.length ?? 0;
-              if (accountsMatched === 0) {
+                .select("id, email_address, watch_expiration, needs_reconnect")
+                .ilike("email_address", emailAddress);
+              // Skip dead-OAuth accounts entirely — every Gmail call would
+              // throw with the same NeedsReconnectError and there's nothing
+              // we can do until the user reconnects in the UI.
+              const liveAccounts = (accounts ?? []).filter((a) => !a.needs_reconnect);
+              accountsMatched = liveAccounts.length;
+              if ((accounts?.length ?? 0) > 0 && liveAccounts.length === 0) {
+                details = `Account(s) for "${emailAddress}" need reconnect — skipped.`;
+              } else if (accountsMatched === 0) {
                 details = `No gmail_accounts row matches "${emailAddress}" — watch was probably created against a different connected account.`;
               }
               const publishedAtMs = publishTime ? new Date(publishTime).getTime() : null;
-              for (const acc of accounts ?? []) {
+              for (const acc of liveAccounts) {
                 try {
                   // syncSinceHistory now holds a per-account lock internally,
                   // so overlapping pushes coalesce into one history-diff pass.
@@ -205,8 +237,54 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   if (r && typeof (r as { synced?: number }).synced === "number") {
                     enqueuedCount += (r as { synced: number }).synced;
                   }
+                  // Opportunistic watch top-up: if this account's watch will
+                  // expire within 72h, re-arm it inline. Belt-and-suspenders
+                  // alongside the renewal cron — if cron is broken (which IS
+                  // how watches lapse in practice), a healthy push channel
+                  // keeps itself alive.
+                  try {
+                    const w = await topUpWatch(acc.id, acc.watch_expiration);
+                    if (w) {
+                      await supabaseAdmin
+                        .from("gmail_accounts")
+                        .update({
+                          history_id: w.historyId,
+                          watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
+                        })
+                        .eq("id", acc.id);
+                      await supabaseAdmin.from("pubsub_events").insert({
+                        event_type: "watch_renew",
+                        email_address: acc.email_address,
+                        history_id: w.historyId,
+                        details: "Opportunistic top-up from push webhook",
+                      });
+                    }
+                  } catch (topUpErr) {
+                    // Non-fatal — renewal cron will retry.
+                    logError(
+                      "webhook.topup_failed",
+                      {
+                        run_id: runId,
+                        account_id: acc.id,
+                        email_address: acc.email_address,
+                        message_id: messageId,
+                      },
+                      topUpErr,
+                    );
+                  }
                 } catch (e) {
-                  console.error("sync failed for", acc.id, e);
+                  logError(
+                    "webhook.sync_failed",
+                    {
+                      run_id: runId,
+                      account_id: acc.id,
+                      email_address: acc.email_address,
+                      history_id: historyId,
+                      message_id: messageId,
+                      duration_ms: Date.now() - tStart,
+                    },
+                    e,
+                  );
                   errorMsg = (e as Error)?.message ?? String(e);
                 }
               }
@@ -224,24 +302,38 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 try {
                   await drainWithBudget(INLINE_DRAIN_BUDGET_MS);
                 } catch (e) {
-                  console.error("inline drain failed", e);
+                  logError(
+                    "webhook.inline_drain_failed",
+                    {
+                      run_id: runId,
+                      email_address: emailAddress,
+                      message_id: messageId,
+                      enqueued: enqueuedCount,
+                    },
+                    e,
+                  );
                 }
               }
             }
           }
         } catch (e: unknown) {
           const err = e as Error;
-          console.error("webhook error", err);
+          logError(
+            "webhook.handler_error",
+            {
+              run_id: runId,
+              message_id: messageId,
+              email_address: emailAddress,
+              duration_ms: Date.now() - tStart,
+            },
+            err,
+          );
           errorMsg = err?.message ?? String(e);
         } finally {
           try {
             // Single row per request. Synthetic tests are tagged so they
             // can be filtered out of real push stats.
-            const event_type = isTest
-              ? "webhook_test"
-              : hadData
-              ? "push"
-              : "push_empty";
+            const event_type = isTest ? "webhook_test" : hadData ? "push" : "push_empty";
             // End-to-end latency: time from Pub/Sub publishTime to the
             // moment we recorded this row. Lets ops query p50/p95 push→ack
             // latency in one SQL.
@@ -265,7 +357,11 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                 : details,
             });
           } catch (logErr) {
-            console.error("pubsub_events log failed", logErr);
+            logError(
+              "webhook.pubsub_log_failed",
+              { run_id: runId, kind: "summary", message_id: messageId },
+              logErr,
+            );
           }
         }
         return new Response("ok", { status: 200 });

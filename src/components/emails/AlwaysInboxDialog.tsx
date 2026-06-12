@@ -2,7 +2,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { moveEmailToInbox } from "@/lib/gmail.functions";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -37,8 +42,8 @@ export function AlwaysInboxDialog({
           : `Future mail from ${domain} will go to inbox`,
       );
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setBusy(null);
     }
@@ -50,7 +55,8 @@ export function AlwaysInboxDialog({
         <DialogHeader>
           <DialogTitle>Always send to inbox?</DialogTitle>
           <DialogDescription>
-            This message is back in your inbox. Want future mail from this sender to skip folder rules and AI too?
+            This message is back in your inbox. Want future mail from this sender to skip folder
+            rules and AI too?
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

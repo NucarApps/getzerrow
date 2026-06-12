@@ -3,13 +3,21 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
+  CALENDAR_SCOPE,
   "openid",
 ];
+
+/** True when Google's granted-scope string includes Calendar read access. */
+export function scopeGrantsCalendar(scope: string | null | undefined): boolean {
+  return (scope ?? "").split(/\s+/).includes(CALENDAR_SCOPE);
+}
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -18,7 +26,11 @@ function requireEnv(name: string): string {
 }
 
 function b64url(input: Buffer | string): string {
-  return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function b64urlDecode(s: string): Buffer {
@@ -29,7 +41,9 @@ function b64urlDecode(s: string): Buffer {
 /** Sign { user_id, exp } with HMAC using the service role key as secret. Stateless OAuth state. */
 export function signState(userId: string, ttlSeconds = 600): string {
   const secret = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const payload = b64url(JSON.stringify({ u: userId, e: Math.floor(Date.now() / 1000) + ttlSeconds }));
+  const payload = b64url(
+    JSON.stringify({ u: userId, e: Math.floor(Date.now() / 1000) + ttlSeconds }),
+  );
   const sig = b64url(createHmac("sha256", secret).update(payload).digest());
   return `${payload}.${sig}`;
 }
@@ -55,7 +69,7 @@ export function buildAuthorizeUrl(redirectUri: string, state: string, loginHint?
     response_type: "code",
     scope: GMAIL_SCOPES.join(" "),
     access_type: "offline",
-    prompt: "consent", // force refresh_token
+    prompt: "select_account consent", // force account picker + refresh_token
     include_granted_scopes: "true",
     state,
   });
@@ -104,7 +118,12 @@ export async function refreshAccessToken(refreshToken: string) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Token refresh failed ${res.status}: ${text.slice(0, 500)}`);
-  return JSON.parse(text) as { access_token: string; expires_in: number; scope: string; token_type: string };
+  return JSON.parse(text) as {
+    access_token: string;
+    expires_in: number;
+    scope: string;
+    token_type: string;
+  };
 }
 
 export async function fetchUserEmail(accessToken: string): Promise<string> {
@@ -129,50 +148,110 @@ type GetTokensRow = {
   token_expires_at: string;
 };
 type OAuthRpc = {
-  rpc:
-    | ((
-        fn: "get_gmail_oauth_tokens",
-        args: { p_account_id: string },
-      ) => Promise<{ data: GetTokensRow[] | null; error: { message: string } | null }>)
-    | ((
-        fn: "set_gmail_oauth_tokens",
-        args: {
-          p_account_id: string;
-          p_access_token: string;
-          p_refresh_token: string;
-          p_token_expires_at: string;
-        },
-      ) => Promise<{ data: unknown; error: { message: string } | null }>);
+  rpc: (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: GetTokensRow[] | null; error: { message: string } | null }>;
 };
 
+function requireEncKey(): string {
+  const k = process.env.EMAIL_ENC_KEY;
+  if (!k) throw new Error("EMAIL_ENC_KEY is not configured");
+  return k;
+}
+
+/**
+ * Mark the account as needing a reconnect so callers stop retrying a broken
+ * OAuth pair and the UI can surface a clear "Reconnect Gmail" banner.
+ * Distinguished from transient failures (5xx, network) — only `invalid_grant`
+ * / `invalid_client` / missing-token errors should flip this flag.
+ */
+async function markNeedsReconnect(accountId: string, reason: string): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({ needs_reconnect: true, last_oauth_error: reason.slice(0, 500) })
+      .eq("id", accountId);
+  } catch (e) {
+    console.error("markNeedsReconnect failed", {
+      account_id: accountId,
+      err: (e as Error)?.message,
+    });
+  }
+}
+
+/** True when Google rejected a refresh because the grant itself is dead. */
+function isPermanentOauthFailure(err: unknown): boolean {
+  const msg = (err as Error)?.message ?? String(err);
+  return /invalid_grant|invalid_client|unauthorized_client|invalid_token/i.test(msg);
+}
+
+export class NeedsReconnectError extends Error {
+  accountId: string;
+  constructor(accountId: string, reason: string) {
+    super(`Account ${accountId} needs reconnect: ${reason}`);
+    this.name = "NeedsReconnectError";
+    this.accountId = accountId;
+  }
+}
+
 /** Returns a fresh access token for the given gmail account, refreshing if
- * needed. Tokens are stored encrypted at rest via the
- * get_gmail_oauth_tokens / set_gmail_oauth_tokens RPCs (pgsodium AEAD). */
+ * needed. Tokens are stored encrypted at rest via pgcrypto pgp_sym_*; the
+ * key is held server-side (EMAIL_ENC_KEY) and passed per-call. Existing
+ * unmigrated rows still resolve via COALESCE on plaintext columns.
+ *
+ * Throws `NeedsReconnectError` (and flips `gmail_accounts.needs_reconnect`)
+ * when the OAuth grant is permanently dead. Callers that loop over multiple
+ * accounts should catch this and skip the account rather than burning the
+ * whole batch.
+ */
 export async function getAccessToken(accountId: string): Promise<string> {
+  const key = requireEncKey();
+
+  // Short-circuit: if a previous call already flagged this account, don't
+  // burn another Gmail/refresh roundtrip until the user reconnects.
+  const { data: status } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("needs_reconnect, last_oauth_error")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (status?.needs_reconnect) {
+    throw new NeedsReconnectError(accountId, status.last_oauth_error ?? "needs_reconnect=true");
+  }
+
   const { data: rows, error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
     "get_gmail_oauth_tokens",
-    { p_account_id: accountId },
+    { p_account_id: accountId, p_key: key },
   );
   if (error) throw new Error(`OAuth token fetch failed: ${error.message}`);
   if (!rows || rows.length === 0) throw new Error("Gmail account not found");
   const acc = rows[0];
   if (!acc.access_token || !acc.refresh_token) {
-    throw new Error("Gmail account is missing OAuth tokens — user needs to reauthorize");
+    const reason = "Refresh token missing — reconnect required to keep mail flowing.";
+    await markNeedsReconnect(accountId, reason);
+    throw new NeedsReconnectError(accountId, reason);
   }
 
   const expMs = new Date(acc.token_expires_at).getTime();
   if (expMs - Date.now() > 2 * 60 * 1000) return acc.access_token;
 
-  // If another caller is already refreshing this account, piggy-back.
   const existing = inFlightRefresh.get(accountId);
   if (existing) return existing;
 
   const refreshPromise = (async () => {
-    const refreshed = await refreshAccessToken(acc.refresh_token!);
+    let refreshed: Awaited<ReturnType<typeof refreshAccessToken>>;
+    try {
+      refreshed = await refreshAccessToken(acc.refresh_token!);
+    } catch (e) {
+      if (isPermanentOauthFailure(e)) {
+        const reason = `Google rejected the refresh token: ${(e as Error).message.slice(0, 300)}`;
+        await markNeedsReconnect(accountId, reason);
+        throw new NeedsReconnectError(accountId, reason);
+      }
+      throw e;
+    }
     const newExp = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
-    // Empty p_refresh_token preserves the existing encrypted refresh
-    // token — Google only returns a new refresh_token during full
-    // consent, not on plain refresh calls.
+    // Empty p_refresh_token preserves the existing encrypted refresh token.
     const { error: setErr } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
       "set_gmail_oauth_tokens",
       {
@@ -180,6 +259,7 @@ export async function getAccessToken(accountId: string): Promise<string> {
         p_access_token: refreshed.access_token,
         p_refresh_token: "",
         p_token_expires_at: newExp,
+        p_key: key,
       },
     );
     if (setErr) throw new Error(`OAuth token update failed: ${setErr.message}`);
@@ -194,6 +274,51 @@ export async function getAccessToken(accountId: string): Promise<string> {
   }
 }
 
+/** Clear the needs_reconnect flag — called after a successful re-OAuth. */
+export async function clearNeedsReconnect(accountId: string): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("gmail_accounts")
+      .update({ needs_reconnect: false, last_oauth_error: null, consecutive_silent_ticks: 0 })
+      .eq("id", accountId);
+  } catch (e) {
+    console.error("clearNeedsReconnect failed", {
+      account_id: accountId,
+      err: (e as Error)?.message,
+    });
+  }
+}
+
 export function getRedirectUri(origin: string): string {
   return `${origin}/api/public/google-oauth-callback`;
+}
+
+/**
+ * Best-effort: revoke the Google OAuth grant for an account so that the
+ * refresh token is invalidated at Google. Caller should swallow errors —
+ * this runs before we delete our encrypted copy and we still want the local
+ * delete to succeed even if Google is unreachable.
+ */
+export async function revokeGoogleOAuthForAccount(accountId: string): Promise<void> {
+  const key = requireEncKey();
+  const { data: rows, error } = await (supabaseAdmin as unknown as OAuthRpc).rpc(
+    "get_gmail_oauth_tokens",
+    { p_account_id: accountId, p_key: key },
+  );
+  if (error || !rows || rows.length === 0) return;
+  const acc = rows[0];
+  const token = acc.refresh_token || acc.access_token;
+  if (!token) return;
+  const res = await fetch(
+    `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    },
+  );
+  // Google returns 200 on success; 400 with "invalid_token" if already
+  // revoked or expired. Either is acceptable for our purposes.
+  if (!res.ok && res.status !== 400) {
+    throw new Error(`Google revoke returned ${res.status}`);
+  }
 }

@@ -9,30 +9,82 @@ export type EmailRow = {
   received_at: string | null;
   is_archived: boolean | null;
   folder_id: string | null;
+  gmail_account_id?: string | null;
+  raw_labels?: string[] | null;
   [key: string]: unknown;
 };
 
 /**
  * Heuristic: do we believe `row` belongs in the list identified by
- * `queryKey`? We inspect the key shape — without server-side knowledge of
- * the query's filters we conservatively reject any list whose key hints
- * at a scope (folder id, "archived", etc.) that doesn't match the row.
- * The top-level ["emails"] list is treated as the all-inbox view and
- * accepts everything.
+ * `queryKey`? Inbox queries use the shape:
+ *
+ *   ["emails", accountId, scope, paginationOrSearchKey]
+ *
+ * where `scope` is one of: "all" (INBOX label), "all_mail" (no filter),
+ * "no_rules" (folder_id null + no user Label_*), a folder UUID, or
+ * undefined/null. Top-level invalidations may pass just ["emails"].
  *
  * Exported for unit tests. Keep in sync with the inbox.tsx query keys.
  */
 export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): boolean {
   if (queryKey.length <= 1) return true;
-  const tag = queryKey[1];
-  if (typeof tag === "string") {
-    if (tag === "all") return true;
-    if (tag === "archived") return row.is_archived === true;
-    if (tag === "inbox") return row.is_archived !== true && row.folder_id == null;
-    // Any other string segment is treated as a folder id.
-    return row.folder_id === tag;
+
+  // [1] = accountId (or legacy scope tag). If it's a string and the row
+  // exposes gmail_account_id, require an exact match — otherwise the row
+  // belongs to a different account's list. If the row payload doesn't
+  // carry gmail_account_id (defensive), fall through and let scope decide.
+  const accountTag = queryKey[1];
+  if (typeof accountTag === "string" && row.gmail_account_id != null) {
+    if (row.gmail_account_id !== accountTag) {
+      // Legacy fallback: support older query keys where [1] WAS the scope
+      // (e.g. ["emails", "all"]). Only honor recognised scope strings.
+      if (
+        accountTag === "all" ||
+        accountTag === "all_mail" ||
+        accountTag === "inbox" ||
+        accountTag === "archived" ||
+        accountTag === "no_rules"
+      ) {
+        return matchesScope(row, accountTag);
+      }
+      return false;
+    }
+  } else if (typeof accountTag !== "string" && accountTag != null) {
+    // Non-string, non-null tag (numbers, objects) — refuse to guess.
+    return false;
   }
-  return false;
+
+  // [2] = scope.
+  if (queryKey.length <= 2) return true;
+  const scope = queryKey[2];
+  if (scope == null) return true;
+  if (typeof scope !== "string") return false;
+
+  // Search results are recomputed by the query itself; don't try to splice
+  // realtime inserts/updates into them.
+  if (queryKey.length > 3) {
+    const pageKey = queryKey[3];
+    if (typeof pageKey === "string" && pageKey.startsWith("search:")) return false;
+  }
+
+  return matchesScope(row, scope);
+}
+
+function matchesScope(row: EmailRow, scope: string): boolean {
+  if (scope === "all_mail") return true;
+  if (scope === "all" || scope === "inbox") {
+    return (
+      row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX")
+    );
+  }
+  if (scope === "archived") return row.is_archived === true;
+  if (scope === "no_rules") {
+    if (row.folder_id !== null) return false;
+    const labels = Array.isArray(row.raw_labels) ? row.raw_labels : [];
+    return !labels.some((l) => typeof l === "string" && l.startsWith("Label_"));
+  }
+  // Any other string is treated as a folder UUID.
+  return row.folder_id === scope;
 }
 
 /**
@@ -51,6 +103,8 @@ export function useEmailRealtime() {
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
 
     type CachedList = EmailRow[] | { rows: EmailRow[] };
     function patchOneQuery(
@@ -98,19 +152,16 @@ export function useEmailRealtime() {
         const present = rows.some((r) => r.id === row.id);
         const belongs = rowBelongsInList(row, key as unknown[]);
         if (present && !belongs) {
-          // Row was here but no longer belongs — drop it. The destination
-          // list will pick it up via its own INSERT event (if it's cached).
           patchOneQuery(key as unknown[], (curr) => curr.filter((r) => r.id !== row.id));
         } else if (present && belongs) {
-          patchOneQuery(key as unknown[], (curr) => curr.map((r) => (r.id === row.id ? { ...r, ...row } : r)));
+          patchOneQuery(key as unknown[], (curr) =>
+            curr.map((r) => (r.id === row.id ? { ...r, ...row } : r)),
+          );
         } else if (!present && belongs) {
-          // Row newly belongs in this list — refetch so we get correct order.
           needsRefetch = true;
         }
       }
       if (needsRefetch) {
-        // Run AFTER the synchronous setQueryData calls above so React Query
-        // isn't re-entered mid-mutation.
         Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
       }
     }
@@ -130,12 +181,23 @@ export function useEmailRealtime() {
       qc.invalidateQueries({ queryKey: ["folders-full"] });
     };
 
+    function scheduleReconnect() {
+      if (cancelled || reconnectTimer) return;
+      const delays = [1000, 2000, 5000];
+      const delay = delays[Math.min(reconnectAttempt, delays.length - 1)];
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        teardown();
+        connect();
+      }, delay);
+    }
+
     async function connect() {
       const { data } = await supabase.auth.getSession();
       const session = data.session;
       if (!session || cancelled) return;
 
-      // Make sure the realtime socket carries the user's JWT so RLS allows row payloads.
       try {
         supabase.realtime.setAuth(session.access_token);
       } catch {
@@ -143,8 +205,9 @@ export function useEmailRealtime() {
       }
 
       const userFilter = `user_id=eq.${session.user.id}`;
+      const channelId = `inbox-rt-${session.user.id}-${Math.random().toString(36).slice(2, 10)}`;
       channel = supabase
-        .channel(`inbox-rt-${session.user.id}`)
+        .channel(channelId)
         .on(
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "emails", filter: userFilter },
@@ -165,7 +228,16 @@ export function useEmailRealtime() {
           { event: "*", schema: "public", table: "folders", filter: userFilter },
           invalidateFolders,
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            reconnectAttempt = 0;
+            // Catch up on anything missed while disconnected.
+            qc.invalidateQueries({ queryKey: ["emails"] });
+            qc.invalidateQueries({ queryKey: ["folders"] });
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            scheduleReconnect();
+          }
+        });
     }
 
     function teardown() {
@@ -177,17 +249,23 @@ export function useEmailRealtime() {
 
     connect();
 
-    // Reconnect when the session changes (login, token refresh, sign-out).
-    const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
+    // Reconnect / re-auth realtime on session changes. TOKEN_REFRESHED fires
+    // every ~hour; without re-applying the new JWT, RLS-filtered postgres_changes
+    // events silently stop flowing.
+    const { data: authSub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" && session) {
+        try {
+          supabase.realtime.setAuth(session.access_token);
+        } catch {
+          // ignore
+        }
+        return;
+      }
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
       teardown();
       connect();
     });
 
-    // Catch-up on tab visibility: realtime websockets can quietly drop after a
-    // long sleep. visibilitychange fires for both tab-focus and tab-hide; only
-    // refetch on the "visible" transition. (Old version ALSO listened for
-    // `focus`, which double-fired on tab switch.)
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         qc.invalidateQueries({ queryKey: ["emails"] });
@@ -198,6 +276,10 @@ export function useEmailRealtime() {
 
     return () => {
       cancelled = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       teardown();
       authSub.subscription.unsubscribe();
       document.removeEventListener("visibilitychange", onVisible);

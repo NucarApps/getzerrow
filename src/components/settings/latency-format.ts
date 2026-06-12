@@ -31,9 +31,9 @@ export function latencyTone(ms: number | null | undefined): LatencyTone {
 }
 
 export const LATENCY_TONE_CLASS: Record<LatencyTone, string> = {
-  good:  "text-emerald-600",
-  warn:  "text-amber-600",
-  bad:   "text-destructive",
+  good: "text-emerald-600",
+  warn: "text-amber-600",
+  bad: "text-destructive",
   muted: "text-muted-foreground",
 };
 

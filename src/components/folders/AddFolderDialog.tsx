@@ -5,13 +5,34 @@ import { useServerFn } from "@tanstack/react-start";
 import { createGmailLabel, learnFolderFromLabel } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import type { GLabel } from "./FolderEditor";
 
 const NEW_LABEL = "__new__";
-const palette = ["#f59e0b", "#10b981", "#3b82f6", "#ec4899", "#8b5cf6", "#ef4444", "#14b8a6", "#eab308"];
+const palette = [
+  "#f59e0b",
+  "#10b981",
+  "#3b82f6",
+  "#ec4899",
+  "#8b5cf6",
+  "#ef4444",
+  "#14b8a6",
+  "#eab308",
+];
 const pickColor = () => palette[Math.floor(Math.random() * palette.length)];
 
 export function AddFolderDialog({
@@ -54,7 +75,9 @@ export function AddFolderDialog({
             data: {
               account_id: accountId,
               name: name.trim(),
-              ...(parentLabelId && parentLabelId !== NONE ? { parent_label_id: parentLabelId } : {}),
+              ...(parentLabelId && parentLabelId !== NONE
+                ? { parent_label_id: parentLabelId }
+                : {}),
             },
           });
           labelId = r.id;
@@ -75,7 +98,10 @@ export function AddFolderDialog({
         })
         .select("id")
         .single();
-      if (error) { toast.error(error.message); return; }
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
       setName("");
       setLabelChoice(NEW_LABEL);
       setParentLabelId("");
@@ -87,9 +113,13 @@ export function AddFolderDialog({
         try {
           const r = await learnFn({ data: { folder_id: inserted.id } });
           const pulled = (r?.claimed ?? 0) + (r?.ingested ?? 0);
-          toast.success(`Folder created. Linked ${pulled} email${pulled === 1 ? "" : "s"} from Gmail.`);
-        } catch (e: any) {
-          toast.warning(`Folder created. Couldn't pull from Gmail: ${e?.message ?? "error"}`);
+          toast.success(
+            `Folder created. Linked ${pulled} email${pulled === 1 ? "" : "s"} from Gmail.`,
+          );
+        } catch (e: unknown) {
+          toast.warning(
+            `Folder created. Couldn't pull from Gmail: ${e instanceof Error ? e.message : "error"}`,
+          );
         }
         qc.invalidateQueries({ queryKey: ["emails"] });
         qc.invalidateQueries({ queryKey: ["emails-summary"] });
@@ -104,33 +134,56 @@ export function AddFolderDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>New folder</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>New folder</DialogTitle>
+        </DialogHeader>
         <div className="space-y-3">
-          <Input autoFocus placeholder="Folder name (e.g. Newsletters)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
+          <Input
+            autoFocus
+            placeholder="Folder name (e.g. Newsletters)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
           <Select value={labelChoice} onValueChange={setLabelChoice}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value={NEW_LABEL}>Create new Gmail label</SelectItem>
               {labels.map((l) => (
-                <SelectItem key={l.id} value={l.id}>Link to: {l.name}</SelectItem>
+                <SelectItem key={l.id} value={l.id}>
+                  Link to: {l.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {labelChoice === NEW_LABEL && (
-            <Select value={parentLabelId || NONE} onValueChange={(v) => setParentLabelId(v === NONE ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="Parent label (optional)" /></SelectTrigger>
+            <Select
+              value={parentLabelId || NONE}
+              onValueChange={(v) => setParentLabelId(v === NONE ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Parent label (optional)" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>None (top level)</SelectItem>
                 {zerrowLabels.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>Under: {labelPath(l.name)}</SelectItem>
+                  <SelectItem key={l.id} value={l.id}>
+                    Under: {labelPath(l.name)}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={busy || !name.trim() || !accountId}>Add folder</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={busy || !name.trim() || !accountId}>
+            Add folder
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

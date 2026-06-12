@@ -4,18 +4,22 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // Theme id -> [stop1, stop2, stop3] hex
 const THEME_GRADIENTS: Record<string, [string, string, string]> = {
   default: ["#6366f1", "#4f46e5", "#1e1b4b"],
-  sunset:  ["#f97316", "#ec4899", "#9333ea"],
-  ocean:   ["#06b6d4", "#2563eb", "#3730a3"],
-  forest:  ["#10b981", "#16a34a", "#0f766e"],
-  noir:    ["#3f3f46", "#18181b", "#000000"],
-  rose:    ["#fb7185", "#ec4899", "#c026d3"],
-  amber:   ["#fbbf24", "#f97316", "#ef4444"],
-  mono:    ["#e5e5e5", "#a3a3a3", "#525252"],
+  sunset: ["#f97316", "#ec4899", "#9333ea"],
+  ocean: ["#06b6d4", "#2563eb", "#3730a3"],
+  forest: ["#10b981", "#16a34a", "#0f766e"],
+  noir: ["#3f3f46", "#18181b", "#000000"],
+  rose: ["#fb7185", "#ec4899", "#c026d3"],
+  amber: ["#fbbf24", "#f97316", "#ef4444"],
+  mono: ["#e5e5e5", "#a3a3a3", "#525252"],
 };
 
 function esc(s: string | null | undefined) {
   if (!s) return "";
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function truncate(s: string, max: number) {
@@ -40,14 +44,15 @@ export const Route = createFileRoute("/api/public/og/card/$handle")({
 
         if (!card) return new Response("Not found", { status: 404 });
 
-        const W = 1200, H = 630;
-        const [c1, c2, c3] = THEME_GRADIENTS[(card as any).theme ?? "default"] ?? THEME_GRADIENTS.default;
+        const W = 1200,
+          H = 630;
+        const [c1, c2, c3] = THEME_GRADIENTS[card.theme ?? "default"] ?? THEME_GRADIENTS.default;
         const name = truncate(card.name ?? card.handle, 40);
         const title = truncate([card.title, card.company].filter(Boolean).join(" · "), 60);
         const tagline = card.tagline ? truncate(card.tagline, 90) : "";
         const initial = (card.name ?? card.handle).slice(0, 1).toUpperCase();
-        const cover = (card as any).cover_url as string | null;
-        const avatar = (card as any).avatar_url as string | null;
+        const cover = card.cover_url;
+        const avatar = card.avatar_url;
 
         const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
@@ -75,11 +80,13 @@ export const Route = createFileRoute("/api/public/og/card/$handle")({
   <rect width="${W}" height="${H}" fill="url(#scrim)"/>
 
   <!-- Avatar -->
-  ${avatar
-    ? `<circle cx="140" cy="350" r="98" fill="#ffffff"/>
+  ${
+    avatar
+      ? `<circle cx="140" cy="350" r="98" fill="#ffffff"/>
        <image href="${esc(avatar)}" x="48" y="258" width="184" height="184" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>`
-    : `<circle cx="140" cy="350" r="92" fill="#ffffff" fill-opacity="0.18" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2"/>
-       <text x="140" y="378" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="84" font-weight="700" fill="#ffffff">${esc(initial)}</text>`}
+      : `<circle cx="140" cy="350" r="92" fill="#ffffff" fill-opacity="0.18" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2"/>
+       <text x="140" y="378" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="84" font-weight="700" fill="#ffffff">${esc(initial)}</text>`
+  }
 
   <!-- Text -->
   <text x="270" y="335" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#ffffff" filter="url(#softShadow)">${esc(name)}</text>

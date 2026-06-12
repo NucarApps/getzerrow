@@ -8,26 +8,45 @@ type Props = {
   size?: number;
   className?: string;
   onColor?: (color: string | null) => void;
+  /** Force a specific logo provider index from the proxy. */
+  provider?: number | null;
+  /** Fetch the logo image from a different domain than `domain` (e.g. an alias). */
+  sourceDomain?: string | null;
 };
 
 /** Company logo with multi-provider fallback, then monogram. */
-export function CompanyLogo({ domain, name, size = 32, className = "", onColor }: Props) {
+export function CompanyLogo({
+  domain,
+  name,
+  size = 32,
+  className = "",
+  onColor,
+  provider,
+  sourceDomain,
+}: Props) {
+  const fetchDomain = sourceDomain ?? domain;
   const candidates = useMemo(
-    () => (domain ? logoCandidates(domain, Math.max(256, size * 6)) : []),
-    [domain, size],
+    () => (fetchDomain ? logoCandidates(fetchDomain, Math.max(256, size * 6), provider) : []),
+    [fetchDomain, size, provider],
   );
   const [idx, setIdx] = useState(0);
   const initial = ((name || domain || "?").trim().charAt(0) || "?").toUpperCase();
   const px = `${size}px`;
 
   // Reset retry index when domain changes.
-  useEffect(() => { setIdx(0); }, [domain]);
+  useEffect(() => {
+    setIdx(0);
+  }, [fetchDomain, provider]);
 
   useEffect(() => {
     if (!onColor || !domain) return;
     let cancelled = false;
-    getLogoDominantColor(domain).then((c) => { if (!cancelled) onColor(c); });
-    return () => { cancelled = true; };
+    getLogoDominantColor(domain).then((c) => {
+      if (!cancelled) onColor(c);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [domain, onColor]);
 
   const exhausted = idx >= candidates.length;
@@ -54,7 +73,7 @@ export function CompanyLogo({ domain, name, size = 32, className = "", onColor }
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setIdx((i) => i + 1)}
-      className={`shrink-0 rounded-md bg-card object-contain ${className}`}
+      className={`shrink-0 rounded-md bg-white object-contain p-0.5 ring-1 ring-border/40 ${className}`}
       style={{ width: px, height: px }}
     />
   );

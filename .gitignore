@@ -16,9 +16,14 @@ dist-ssr
 .nitro
 *.local
 
+# Env / secrets (never commit real values — see .env.example / .dev.vars.example)
+.env.*
+!.env.example
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
+!.dev.vars.example
 
 # Editor directories and files
 .vscode/*

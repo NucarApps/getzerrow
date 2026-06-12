@@ -3,43 +3,98 @@ import { useEffect, useLayoutEffect, useState, useMemo, useId, useRef } from "re
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { applyFilter, EXCLUDE_OPS, type EmailForFilter } from "@/lib/sync/filter-engine";
 import {
-  triggerSync, markEmailRead, archiveEmail, trashEmail, generateReply, sendReply,
-  moveEmailToFolder, reanalyzeEmail, moveEmailToInbox, addInboxOverride, stripFolderLabelPast,
-  loadOlderFromGmail, searchGmailAndIngest, resyncMessage, addFolderRule,
-  reclassifyEmails, suggestFolderFromSelection, createFolderAndAssign,
+  triggerSync,
+  markEmailRead,
+  archiveEmail,
+  trashEmail,
+  generateReply,
+  sendReply,
+  moveEmailToFolder,
+  reanalyzeEmail,
+  moveEmailToInbox,
+  loadOlderFromGmail,
+  searchGmailAndIngest,
+  resyncMessage,
+  reclassifyEmails,
+  suggestFolderFromSelection,
+  createFolderAndAssign,
+  reconcileInboxFromGmail,
 } from "@/lib/gmail.functions";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-  DropdownMenuLabel, DropdownMenuSeparator,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
-  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
-  ContextMenuSub, ContextMenuSubTrigger, ContextMenuSubContent, ContextMenuSeparator, ContextMenuLabel,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
+  ContextMenuSeparator,
+  ContextMenuLabel,
 } from "@/components/ui/context-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Sparkles, Archive, Trash2, RefreshCw, Mail, MailOpen, Send, Inbox, ChevronLeft, FolderInput, ChevronDown, Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Search, X, RotateCw, AtSign, Globe, Reply, UserPlus } from "lucide-react";
+import {
+  Sparkles,
+  Archive,
+  Trash2,
+  RefreshCw,
+  Mail,
+  MailOpen,
+  Send,
+  Inbox,
+  ChevronLeft,
+  FolderInput,
+  ChevronDown,
+  Bot,
+  Filter as FilterIcon,
+  Tag,
+  Hand,
+  HelpCircle,
+  Search,
+  X,
+  RotateCw,
+  Reply,
+  UserPlus,
+} from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
+import { getEmailBody, getEmailListFields } from "@/lib/email-body.functions";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { useFolderSelection } from "@/lib/folder-selection";
+import { useAccountSelection } from "@/lib/account-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
+import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
+import { collectMatchingLeaves } from "@/lib/sync/filter-engine";
+import type { RuleNode } from "@/lib/sync/types";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
+import { AssistantPanel } from "@/components/inbox/AssistantPanel";
+import { PullToRefresh } from "@/components/inbox/PullToRefresh";
 import { useIsMobile } from "@/hooks/use-mobile";
 import DOMPurify from "dompurify";
-
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   component: InboxPage,
@@ -49,19 +104,27 @@ export const Route = createFileRoute("/_authenticated/inbox")({
 });
 
 const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
 };
 function decodeEntities(s: string | null | undefined): string {
   if (!s) return "";
   return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (m, ent: string) => {
     if (ent[0] === "#") {
-      const code = ent[1] === "x" || ent[1] === "X"
-        ? parseInt(ent.slice(2), 16)
-        : parseInt(ent.slice(1), 10);
+      const code =
+        ent[1] === "x" || ent[1] === "X" ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
       return Number.isFinite(code) ? String.fromCodePoint(code) : m;
     }
     return NAMED_ENTITIES[ent.toLowerCase()] ?? m;
   });
+}
+
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 type Email = {
@@ -70,8 +133,8 @@ type Email = {
   from_name: string | null;
   subject: string | null;
   snippet: string | null;
-  body_text: string | null;
-  body_html: string | null;
+  body_text?: string | null;
+  body_html?: string | null;
   received_at: string | null;
   is_read: boolean;
   is_archived: boolean;
@@ -86,21 +149,30 @@ type Email = {
   to_addrs: string | null;
   has_attachment: boolean;
   processed_at: string | null;
+  raw_labels?: string[] | null;
+  snoozed_until?: string | null;
+  gmail_message_id?: string | null;
 };
 
 type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
 
 const PAGE_SIZE = 50;
 
+const withInbox = (labels: string[] | null | undefined): string[] =>
+  Array.from(new Set([...(labels ?? []), "INBOX"]));
+const withoutInbox = (labels: string[] | null | undefined): string[] =>
+  (labels ?? []).filter((l) => l !== "INBOX");
+
 const MIN_PX = 400;
 
 function hasVisibleHtml(html: string | null | undefined): boolean {
-  return (html ?? "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;|\s/g, "")
-    .length > 0;
+  return (
+    (html ?? "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;|\s/g, "").length > 0
+  );
 }
 
 function EmailBodyFrame({ html }: { html: string }) {
@@ -162,6 +234,10 @@ function EmailBodyFrame({ html }: { html: string }) {
 
   useLayoutEffect(() => {
     function onMessage(e: MessageEvent) {
+      // Only accept height reports from our own sandboxed iframe. Its origin is
+      // opaque ("null") for a srcdoc sandbox, so we pin to the contentWindow and
+      // the per-render frameId nonce rather than checking e.origin.
+      if (e.source !== iframeRef.current?.contentWindow) return;
       const d = e.data as { __zerrowFrame?: string; height?: number } | null;
       if (!d || d.__zerrowFrame !== frameId || typeof d.height !== "number") return;
       const f = iframeRef.current;
@@ -175,7 +251,16 @@ function EmailBodyFrame({ html }: { html: string }) {
 
   function pingForHeight() {
     const f = iframeRef.current;
-    try { f?.contentWindow?.postMessage({ __zerrowPing: frameId }, "*"); } catch {}
+    // The email iframe is sandboxed without allow-same-origin, so its origin is
+    // opaque ("null") and "*" is the only targetOrigin that can reach it. The
+    // payload is a non-sensitive per-render nonce (no user data) sent only to our
+    // own iframe's contentWindow, so wildcard disclosure is moot.
+    try {
+      // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration
+      f?.contentWindow?.postMessage({ __zerrowPing: frameId }, "*");
+    } catch {
+      /* best-effort: iframe may not be ready yet */
+    }
   }
 
   return (
@@ -197,7 +282,17 @@ function EmailBodyInline({ html }: { html: string }) {
       DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true },
         ADD_ATTR: ["target"],
-        FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "input", "meta", "link"],
+        FORBID_TAGS: [
+          "script",
+          "style",
+          "iframe",
+          "object",
+          "embed",
+          "form",
+          "input",
+          "meta",
+          "link",
+        ],
         FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
       }),
     [html],
@@ -206,7 +301,7 @@ function EmailBodyInline({ html }: { html: string }) {
     <div
       className="email-body-inline rounded-lg bg-white p-4 text-[14px] leading-relaxed text-[#111]"
       style={{ colorScheme: "light", wordWrap: "break-word", overflowWrap: "break-word" }}
-      // eslint-disable-next-line react/no-danger
+      // `clean` is DOMPurify-sanitized HTML (see useMemo above).
       dangerouslySetInnerHTML={{ __html: clean }}
     />
   );
@@ -228,7 +323,10 @@ function SwipeRow({ onArchive, children }: { onArchive: () => void; children: Re
     const dyRaw = t.clientY - s.y;
     if (!s.locked) {
       if (Math.abs(dxRaw) < 8 && Math.abs(dyRaw) < 8) return;
-      if (Math.abs(dyRaw) > Math.abs(dxRaw)) { s.active = false; return; }
+      if (Math.abs(dyRaw) > Math.abs(dxRaw)) {
+        s.active = false;
+        return;
+      }
       s.locked = true;
     }
     setDx(Math.min(0, dxRaw));
@@ -236,7 +334,10 @@ function SwipeRow({ onArchive, children }: { onArchive: () => void; children: Re
   function onTouchEnd(e: React.TouchEvent) {
     const s = startRef.current;
     startRef.current = null;
-    if (!s || !s.locked) { setDx(0); return; }
+    if (!s || !s.locked) {
+      setDx(0);
+      return;
+    }
     const width = (e.currentTarget as HTMLElement).offsetWidth || 1;
     if (-dx > width * 0.25) {
       setDx(0);
@@ -268,42 +369,92 @@ function SwipeRow({ onArchive, children }: { onArchive: () => void; children: Re
   );
 }
 
+function parseSearchQuery(input: string): { from: string | null; to: string | null; rest: string } {
+  let from: string | null = null;
+  let to: string | null = null;
+  // Match from:value or to:value where value is either "quoted string" or non-whitespace.
+  const re = /\b(from|to):\s*(?:"([^"]+)"|(\S+))/gi;
+  const rest = input
+    .replace(re, (_m, key: string, quoted?: string, bare?: string) => {
+      const value = (quoted ?? bare ?? "").trim();
+      if (!value) return "";
+      if (key.toLowerCase() === "from") from = value;
+      else to = value;
+      return "";
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+  return { from, to, rest };
+}
+
+// Bounded Levenshtein — returns true if edit distance between a and b is ≤ max.
+function withinEditDistance(a: string, b: string, max: number): boolean {
+  if (Math.abs(a.length - b.length) > max) return false;
+  const m = a.length,
+    n = b.length;
+  if (m === 0) return n <= max;
+  if (n === 0) return m <= max;
+  let prev = new Array(n + 1);
+  let curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    for (let j = 1; j <= n; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      if (curr[j] < rowMin) rowMin = curr[j];
+    }
+    if (rowMin > max) return false;
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n] <= max;
+}
+
+function tokenFuzzyMatches(token: string, words: string[]): boolean {
+  if (token.length < 3) {
+    // Too short for fuzzy — require exact substring somewhere.
+    return words.some((w) => w.includes(token));
+  }
+  const maxDist = token.length >= 5 ? 2 : 1;
+  for (const w of words) {
+    if (w.includes(token) || w.startsWith(token)) return true;
+    if (Math.abs(w.length - token.length) <= maxDist && withinEditDistance(w, token, maxDist))
+      return true;
+  }
+  return false;
+}
 
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
+  const fetchEmailBody = useServerFn(getEmailBody);
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
-  const addOverrideFn = useServerFn(addInboxOverride);
-  const stripLabelFn = useServerFn(stripFolderLabelPast);
-  const addFolderRuleFn = useServerFn(addFolderRule);
+
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [folderRulePrompt, setFolderRulePrompt] = useState<null | {
-    emailId: string;
-    fromFolderId: string | null;
+  const [filterPrompt, setFilterPrompt] = useState<null | {
     fromAddr: string | null;
-    domain: string | null;
-    toFolder: Folder;
-    mode: "sender" | "domain";
+    subject: string | null;
+    currentFolderId: string | null;
   }>(null);
 
-  const accountQ = useQuery({
-    queryKey: ["gmail_account"],
-    queryFn: async () => {
-      const { data } = await supabase.from("gmail_accounts").select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
-      return data as { id: string } | null;
-    },
-  });
-  const accountId = accountQ.data?.id ?? null;
+  const { activeAccountId } = useAccountSelection();
+  const accountId = activeAccountId;
 
   const foldersQ = useQuery({
-    queryKey: ["folders"],
+    queryKey: ["folders", accountId],
+    enabled: !!accountId,
     queryFn: async () => {
-      const { data } = await supabase.from("folders").select("id,name,color,gmail_label_id").order("priority", { ascending: false });
+      const { data } = await supabase
+        .from("folders")
+        .select("id,name,color,gmail_label_id")
+        .eq("gmail_account_id", accountId!)
+        .order("priority", { ascending: false });
       return (data ?? []) as Folder[];
     },
   });
@@ -315,12 +466,16 @@ function InboxPage() {
   const [page, setPage] = useState(1);
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const isNoRules = selectedFolder === "no_rules";
   useEffect(() => {
     setPage(1);
     setCursors([null]);
     setSelectedId(null);
     setSelectedIds(new Set());
+    setQuery("");
+    setLastGmailResult(null);
+    setGmailHitIds({ query: "", ids: new Set() });
   }, [selectedFolder]);
   const cursor = cursors[page - 1] ?? null;
 
@@ -328,9 +483,14 @@ function InboxPage() {
   const suggestFolderFn = useServerFn(suggestFolderFromSelection);
   const createFolderAndAssignFn = useServerFn(createFolderAndAssign);
   const [suggestion, setSuggestion] = useState<null | {
-    name: string; color: string; ai_rule: string;
-    filter_field: string | null; filter_op: string | null; filter_value: string;
-    why: string; email_ids: string[];
+    name: string;
+    color: string;
+    ai_rule: string;
+    filter_field: string | null;
+    filter_op: string | null;
+    filter_value: string;
+    why: string;
+    email_ids: string[];
   }>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [reclassifyBusy, setReclassifyBusy] = useState(false);
@@ -341,28 +501,77 @@ function InboxPage() {
   // (often multi-MB) — those are fetched on-demand via selectedFullQ when
   // the user actually opens an email. Keeps both the initial fetch AND
   // every realtime UPDATE payload small. raw_labels is included because
-  // the "no_rules" filter reads it. snoozed_until is a DB-side predicate
-  // only, so we don't select it; forward_* columns are operator-facing,
-  // not rendered in the inbox.
-  const LIST_COLUMNS = "id,from_addr,from_name,subject,snippet,received_at,is_read,is_archived,folder_id,ai_summary,ai_confidence,thread_id,classified_by,classification_reason,matched_filter_ids,matched_folder_ids,to_addrs,has_attachment,processed_at,raw_labels";
+  // the "no_rules" filter reads it. snoozed_until is included so local
+  // search results can apply the same visibility filter as normal lists.
+  // forward_* columns are operator-facing, not rendered in the inbox.
+  const LIST_COLUMNS =
+    "id,from_addr,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id";
+
+  // Parse the search query once so both the data fetcher and the local filter
+  // agree on what's an operator query vs free-text.
+  const parsedQuery = useMemo(() => parseSearchQuery(query.trim()), [query]);
+  const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
   const emailsQ = useQuery<Email[]>({
-    queryKey: ["emails", selectedFolder, isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`],
+    queryKey: [
+      "emails",
+      accountId,
+      selectedFolder,
+      isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
+    ],
+    enabled: !!accountId,
     queryFn: async () => {
-      if (isSearching) {
-        // Global search over the most recent messages, including archived/stripped.
-        const { data } = await supabase
-          .from("emails")
-          .select(LIST_COLUMNS)
-          .order("received_at", { ascending: false })
-          .limit(2000);
-        return (data ?? []) as Email[];
-      }
       const isNoRules = selectedFolder === "no_rules";
       const isAllMail = selectedFolder === "all_mail";
+      if (isSearching) {
+        // Operator-aware search: when the user typed `from:` / `to:`, filter
+        // server-side so we don't get capped by the 2000-newest window.
+        if (hasOperator) {
+          const esc = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
+          let q = supabase
+            .from("emails")
+            .select(LIST_COLUMNS)
+            .eq("gmail_account_id", accountId!)
+            .order("received_at", { ascending: false, nullsFirst: false })
+            .limit(500);
+          // While searching, span all mail (Gmail itself does). Only scope
+          // when the user picked a specific folder.
+          if (!isAllMail && selectedFolder !== "all") {
+            if (isNoRules) q = q.is("folder_id", null);
+            else q = q.eq("folder_id", selectedFolder);
+          }
+          if (parsedQuery.from) {
+            const v = esc(parsedQuery.from);
+            // from_name / to_addrs / subject / snippet are encrypted; filter
+            // those client-side after hydration. from_addr is still plaintext.
+            q = q.ilike("from_addr", `%${v}%`);
+          }
+          const { data } = await q;
+          return (data ?? []) as unknown as Email[];
+        }
+        // Free-text search: load the most recent corpus and score locally.
+        const q = supabase
+          .from("emails")
+          .select(LIST_COLUMNS)
+          .eq("gmail_account_id", accountId!)
+          .order("received_at", { ascending: false })
+          .limit(5000);
+        // Don't restrict to INBOX while searching — Gmail's search spans all
+        // mail, and most older hits will be archived.
+        const { data } = await q;
+        let rows = (data ?? []) as unknown as Email[];
+        if (!isAllMail && selectedFolder !== "all") {
+          rows = rows.filter((e) => {
+            if (isNoRules) return e.folder_id === null;
+            return e.folder_id === selectedFolder;
+          });
+        }
+        return rows;
+      }
       let q = supabase
         .from("emails")
         .select(LIST_COLUMNS)
+        .eq("gmail_account_id", accountId!)
         .order("received_at", { ascending: false, nullsFirst: false })
         .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
       if (cursor) q = q.lt("received_at", cursor);
@@ -371,42 +580,98 @@ function InboxPage() {
       } else {
         const nowIso = new Date().toISOString();
         q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
-        if (selectedFolder === "all") q = q.eq("is_archived", false);
+        if (selectedFolder === "all")
+          q = q.contains("raw_labels", ["INBOX"]).eq("is_archived", false);
         else if (isNoRules) q = q.is("folder_id", null);
         else q = q.eq("folder_id", selectedFolder);
       }
       const { data } = await q;
-      let rows = (data ?? []) as Email[];
+      let rows = (data ?? []) as unknown as Email[];
       if (isNoRules) {
-        rows = rows.filter((e) => !(e as any).raw_labels?.some((l: string) => l.startsWith("Label_")));
+        rows = rows.filter((e) => !e.raw_labels?.some((l: string) => l.startsWith("Label_")));
       }
       return rows;
     },
     refetchOnWindowFocus: true,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
+
+  // Background self-heal: ask Gmail which currently-inbox messages have
+  // been archived externally, and reconcile our rows. Realtime UPDATE
+  // events on `emails` then drop the archived rows out of this view
+  // without the user touching anything.
+  const reconcileInboxFn = useServerFn(reconcileInboxFromGmail);
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await reconcileInboxFn({ data: { gmail_account_id: accountId } });
+        const changed =
+          r &&
+          ((r as { reconciled?: number }).reconciled ||
+            (r as { deleted?: number }).deleted ||
+            (r as { restored?: number }).restored ||
+            (r as { ingested?: number }).ingested);
+        if (!cancelled && changed) {
+          qc.invalidateQueries({ queryKey: ["emails"] });
+        }
+      } catch {
+        // best-effort; the cron reconcile path is the backstop.
+      }
+    };
+    // Initial run after a short delay so the page loads first.
+    const initial = setTimeout(tick, 3_000);
+    const handle = setInterval(tick, 45_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(initial);
+      clearInterval(handle);
+    };
+  }, [accountId, reconcileInboxFn, qc]);
 
   // When searching, also ask Gmail for matching messages and ingest any we
   // don't have locally — then refetch so they appear in the results.
   const searchGmailFn = useServerFn(searchGmailAndIngest);
   const [gmailSearching, setGmailSearching] = useState(false);
-  const [lastGmailResult, setLastGmailResult] = useState<
-    | { query: string; ingested: number; found: number; reason?: string }
-    | null
-  >(null);
+  const [lastGmailResult, setLastGmailResult] = useState<{
+    query: string;
+    ingested: number;
+    found: number;
+    reason?: string;
+  } | null>(null);
+  const [gmailHitIds, setGmailHitIds] = useState<{ query: string; ids: Set<string> }>({
+    query: "",
+    ids: new Set(),
+  });
   useEffect(() => {
     const qstr = query.trim();
-    if (qstr.length < 3) { setLastGmailResult(null); return; }
+    if (qstr.length < 3) {
+      setLastGmailResult(null);
+      setGmailHitIds({ query: "", ids: new Set() });
+      return;
+    }
     const handle = setTimeout(async () => {
       setGmailSearching(true);
       try {
-        const r: any = await searchGmailFn({ data: { query: qstr } });
-        setLastGmailResult({ query: qstr, ingested: r?.ingested ?? 0, found: r?.found ?? 0, reason: r?.reason });
-        if (r?.ingested > 0) {
+        const r: {
+          ingested?: number;
+          found?: number;
+          reason?: string;
+          hit_gmail_message_ids?: string[];
+        } = await searchGmailFn({ data: { query: qstr } });
+        setLastGmailResult({
+          query: qstr,
+          ingested: r?.ingested ?? 0,
+          found: r?.found ?? 0,
+          reason: r?.reason,
+        });
+        setGmailHitIds({ query: qstr.toLowerCase(), ids: new Set(r?.hit_gmail_message_ids ?? []) });
+        if ((r?.ingested ?? 0) > 0) {
           await qc.refetchQueries({ queryKey: ["emails"] });
           toast.success(`Pulled ${r.ingested} email${r.ingested === 1 ? "" : "s"} from Gmail.`);
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("gmail search failed", e);
       } finally {
         setGmailSearching(false);
@@ -415,47 +680,156 @@ function InboxPage() {
     return () => clearTimeout(handle);
   }, [query, searchGmailFn, qc]);
 
-  const rawEmails = emailsQ.data ?? [];
+  // Supplemental fetch: pull rows for Gmail-hit ids in case they fall outside
+  // the 5000-newest local corpus (older mail, archived threads, etc.).
+  const gmailHitIdList = useMemo(
+    () =>
+      isSearching && gmailHitIds.query === query.trim().toLowerCase()
+        ? Array.from(gmailHitIds.ids)
+        : [],
+    [isSearching, gmailHitIds, query],
+  );
+  const gmailHitRowsQ = useQuery<Email[]>({
+    queryKey: ["emails-gmail-hits", accountId, query.trim().toLowerCase(), gmailHitIdList.length],
+    enabled: !!accountId && gmailHitIdList.length > 0,
+    queryFn: async () => {
+      const ids = gmailHitIdList.slice(0, 500);
+      const { data } = await supabase
+        .from("emails")
+        .select(LIST_COLUMNS)
+        .eq("gmail_account_id", accountId!)
+        .in("gmail_message_id", ids);
+      return (data ?? []) as unknown as Email[];
+    },
+  });
+
+  const rawEmails = useMemo(() => emailsQ.data ?? [], [emailsQ.data]);
   const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
-  const pageRows = isSearching ? rawEmails : rawEmails.slice(0, PAGE_SIZE);
+  const baseRows = useMemo(() => {
+    if (!isSearching) return rawEmails.slice(0, PAGE_SIZE);
+    const extra = gmailHitRowsQ.data ?? [];
+    if (extra.length === 0) return rawEmails;
+    const seen = new Set(rawEmails.map((r) => r.id));
+    const merged = [...rawEmails];
+    for (const r of extra) if (!seen.has(r.id)) merged.push(r);
+    return merged;
+  }, [isSearching, rawEmails, gmailHitRowsQ.data]);
+
+  // ai_summary / classification_reason live in encrypted columns only after
+  // Phase 3. Batch-decrypt the visible page via the SECURITY DEFINER RPC and
+  // merge into list rows for rendering.
+  const visibleIds = useMemo(() => baseRows.map((r) => r.id), [baseRows]);
+  const visibleIdsKey = useMemo(() => visibleIds.join(","), [visibleIds]);
+  const fetchListFields = useServerFn(getEmailListFields);
+  const listFieldsQ = useQuery({
+    queryKey: ["emails-list-fields", visibleIdsKey],
+    enabled: visibleIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const r = await fetchListFields({ data: { ids: visibleIds } });
+      const map = new Map<
+        string,
+        {
+          ai_summary: string | null;
+          classification_reason: string | null;
+          subject: string | null;
+          snippet: string | null;
+          from_name: string | null;
+          to_addrs: string | null;
+          cc: string | null;
+        }
+      >();
+      for (const f of r.fields ?? []) {
+        map.set(f.id, {
+          ai_summary: f.ai_summary ?? null,
+          classification_reason: f.classification_reason ?? null,
+          subject: f.subject ?? null,
+          snippet: f.snippet ?? null,
+          from_name: f.from_name ?? null,
+          to_addrs: f.to_addrs ?? null,
+          cc: f.cc ?? null,
+        });
+      }
+      return map;
+    },
+  });
+  const pageRows = useMemo(() => {
+    const map = listFieldsQ.data;
+    if (!map || map.size === 0) return baseRows;
+    return baseRows.map((r) => {
+      const extra = map.get(r.id);
+      return extra
+        ? {
+            ...r,
+            ai_summary: extra.ai_summary,
+            classification_reason: extra.classification_reason,
+            subject: extra.subject,
+            snippet: extra.snippet,
+            from_name: extra.from_name,
+            to_addrs: extra.to_addrs,
+            cc: extra.cc,
+          }
+        : r;
+    });
+  }, [baseRows, listFieldsQ.data]);
 
   const filtered = useMemo(() => {
     if (isSearching) {
-      // Trust the server-side search corpus (last 2000 messages) plus any
-      // freshly-ingested Gmail hits. Avoid a local substring filter so
-      // body-text matches from Gmail don't get hidden.
-      const qstr = query.trim().toLowerCase();
+      const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
+      const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
+      const rest = parsedQuery.rest.toLowerCase();
+      const qLower = query.trim().toLowerCase();
+      const gmailHits = gmailHitIds.query === qLower ? gmailHitIds.ids : null;
+
       const scored = pageRows.map((e) => {
-        const hay =
-          (e.from_name ? decodeEntities(e.from_name).toLowerCase() : "") +
-          " " +
-          (e.from_addr ? e.from_addr.toLowerCase() : "") +
-          " " +
-          (e.subject ? decodeEntities(e.subject).toLowerCase() : "") +
-          " " +
-          (e.snippet ? decodeEntities(e.snippet).toLowerCase() : "");
-        return { e, hit: hay.includes(qstr) };
+        const fromAddr = (e.from_addr ?? "").toLowerCase();
+        const fromName = e.from_name ? decodeEntities(e.from_name).toLowerCase() : "";
+        const toAddrs = (e.to_addrs ?? "").toLowerCase();
+        const subject = e.subject ? decodeEntities(e.subject).toLowerCase() : "";
+        const snippet = e.snippet ? decodeEntities(e.snippet).toLowerCase() : "";
+
+        let hit = true;
+        if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle)))
+          hit = false;
+        if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
+        if (rest) {
+          // Exclude to_addrs from the haystack — it almost always contains
+          // the current user's own name/email, which would make every
+          // received email match a search for the user's own name.
+          const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
+          const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
+          // Every token must fuzzy-match some word in the visible metadata
+          // (substring, prefix, or small edit distance). Lets "rob" match
+          // "Robb" / "Robert" without surfacing unrelated rows.
+          const tokens = rest.split(/\s+/).filter(Boolean);
+          const allTokensMatch = tokens.every((t) => tokenFuzzyMatches(t, words));
+          if (!allTokensMatch) hit = false;
+        }
+        return { e, hit };
       });
-      // Show metadata matches first, then everything else (covers body-only Gmail hits).
-      return [...scored.filter((s) => s.hit), ...scored.filter((s) => !s.hit)].map((s) => s.e);
+      // Only show actual matches — no more "long tail of unrelated mail".
+      return scored.filter((s) => s.hit).map((s) => s.e);
     }
     return pageRows;
-  }, [pageRows, isSearching, query]);
-
+  }, [pageRows, isSearching, parsedQuery, query, gmailHitIds]);
 
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
 
   const pullOlderMut = useMutation({
     mutationFn: async () => {
-      if (!currentFolderObj?.gmail_label_id) throw new Error("This view isn't linked to a Gmail label.");
+      if (!currentFolderObj?.gmail_label_id)
+        throw new Error("This view isn't linked to a Gmail label.");
       const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
-      return loadOlderFn({ data: { folder_id: currentFolderObj.id, before_received_at: lastReceived } });
+      return loadOlderFn({
+        data: { folder_id: currentFolderObj.id, before_received_at: lastReceived },
+      });
     },
-    onSuccess: async (r: any) => {
+    onSuccess: async (r) => {
       await qc.refetchQueries({ queryKey: ["emails", selectedFolder] });
       const pulled = (r?.ingested ?? 0) + (r?.claimed ?? 0);
-      if (pulled > 0) toast.success(`Pulled ${pulled} older email${pulled === 1 ? "" : "s"} from Gmail.`);
+      if (pulled > 0)
+        toast.success(`Pulled ${pulled} older email${pulled === 1 ? "" : "s"} from Gmail.`);
       else toast.message("No older emails found in Gmail.");
       // Advance to next page using last row of CURRENT page as cursor.
       const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
@@ -466,7 +840,7 @@ function InboxPage() {
       });
       setPage((p) => p + 1);
     },
-    onError: (e: any) => toast.error(e?.message ?? "Failed to pull from Gmail"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to pull from Gmail"),
   });
 
   function goNext() {
@@ -500,11 +874,19 @@ function InboxPage() {
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       if (!selectedId) return null;
-      // emails_decrypted is a security_invoker view that auto-decrypts
-      // body_text + body_html via pgsodium AEAD. The user's RLS still
-      // applies — they can only fetch their own email bodies.
-      const { data } = await supabase.from("emails_decrypted").select("*").eq("id", selectedId).maybeSingle();
-      return (data ?? null) as Email | null;
+      // Body / AI summary / classification reason are encrypted at rest;
+      // fetch via server fn that calls the SECURITY DEFINER decrypt RPC
+      // with the server-held EMAIL_ENC_KEY. The list row already carries
+      // subject/snippet/from_name (still plaintext) — we merge below.
+      const res = await fetchEmailBody({ data: { email_id: selectedId } });
+      if (!res.body) return null;
+      return {
+        id: res.body.id,
+        body_text: res.body.body_text,
+        body_html: res.body.body_html,
+        ai_summary: res.body.ai_summary,
+        classification_reason: res.body.classification_reason,
+      } as unknown as Email;
     },
   });
   // Detail pane shows header + body. The on-demand full row carries
@@ -514,78 +896,119 @@ function InboxPage() {
   // then the list row — list-row keys override, so label flips picked
   // up by realtime aren't masked by the stale full-row snapshot.
   const selected: Email | null = selectedFullQ.data
-    ? (selectedListItem ? { ...selectedFullQ.data, ...selectedListItem } : selectedFullQ.data)
+    ? selectedListItem
+      ? { ...selectedFullQ.data, ...selectedListItem }
+      : selectedFullQ.data
     : selectedListItem;
 
   const syncMut = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!accountId) throw new Error("Connect Gmail in Settings first");
-      return sync({ data: { account_id: accountId } });
+      // The DB is the source of truth and is kept current by the webhook +
+      // background crons, so always refresh from it first — this is fast and
+      // reliable and means the list updates even if the Gmail round-trip below
+      // flakes out.
+      await Promise.all([
+        qc.refetchQueries({ queryKey: ["emails"] }),
+        qc.invalidateQueries({ queryKey: ["folders"] }),
+        qc.invalidateQueries({ queryKey: ["gmail-accounts"] }),
+      ]);
+      // Best-effort Gmail sync. Race against a timeout and retry once so a slow
+      // or dropped request (Safari surfaces this as "Load failed") doesn't turn
+      // into a scary error toast — the DB refresh above already happened.
+      const TIMEOUT_MS = 20_000;
+      const runOnce = () =>
+        new Promise<Awaited<ReturnType<typeof sync>> | null>((resolve) => {
+          let settled = false;
+          const timer = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              resolve(null);
+            }
+          }, TIMEOUT_MS);
+          sync({ data: { account_id: accountId } })
+            .then((r) => {
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(r);
+              }
+            })
+            .catch(() => {
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(null);
+              }
+            });
+        });
+      let res = await runOnce();
+      if (res === null) res = await runOnce();
+      return res;
     },
-    onSuccess: async (res: any) => {
+    onSuccess: async (res) => {
+      // res === null means the Gmail sync didn't complete (timeout/network),
+      // but the DB refresh in mutationFn already updated the list. Stay quiet.
+      if (!res) {
+        const fresh =
+          qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([, d]) => d ?? []) ?? [];
+        if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
+        return;
+      }
       const r = res?.reconciled;
+      const synced = res && "synced" in res ? res.synced : undefined;
+      const error = res && "error" in res ? res.error : undefined;
       const parts: string[] = [];
-      if (typeof res?.synced === "number" && res.synced > 0) parts.push(`${res.synced} new`);
+      if (typeof synced === "number" && synced > 0) parts.push(`${synced} new`);
       if (r?.archived) parts.push(`${r.archived} archived`);
       if (r?.deleted) parts.push(`${r.deleted} removed`);
       if (r?.failed) parts.push(`${r.failed} failed`);
       const msg = parts.length ? `Synced · ${parts.join(", ")}` : "Synced";
-      if (res?.error) toast.error(`Sync error: ${res.error}`);
+      if (error) toast.error(`Sync error: ${error}`);
       else toast.success(msg);
-      await Promise.all([
-        qc.refetchQueries({ queryKey: ["emails"] }),
-        qc.invalidateQueries({ queryKey: ["gmail-accounts"] }),
-      ]);
-      const fresh = qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([,d]) => d ?? []) ?? [];
+      await qc.refetchQueries({ queryKey: ["emails"] });
+      const fresh =
+        qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([, d]) => d ?? []) ?? [];
       if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Couldn't refresh. Please try again."),
   });
-
-  // Eliminate the "old emails, then flicker as new ones catch up" UX
-  // on app load: trigger a backend sync when the inbox first mounts
-  // and when the tab returns to visible after being hidden. The
-  // realtime hook only INVALIDATES the cache on visibilitychange,
-  // which re-renders the same stale data — so the new emails only
-  // arrive once push or poll cron eventually catches up. Explicitly
-  // triggering sync here pulls fresh data into the local DB
-  // immediately, and the realtime INSERT events stream the new rows
-  // in as one batch with the syncMut.isPending spinner running.
-  //
-  // Throttled to once per 30s so rapid tab-switching doesn't fire
-  // sync repeatedly.
-  const lastBgSyncRef = useRef(0);
-  useEffect(() => {
-    if (!accountId) return;
-    const maybeSync = () => {
-      if (document.visibilityState !== "visible") return;
-      const now = Date.now();
-      if (now - lastBgSyncRef.current < 30_000) return;
-      lastBgSyncRef.current = now;
-      // Fire-and-forget; syncMut surfaces errors via toast on its own.
-      // mutateAsync would block the effect; we don't want that.
-      syncMut.mutate();
-    };
-    maybeSync(); // on mount
-    document.addEventListener("visibilitychange", maybeSync);
-    return () => document.removeEventListener("visibilitychange", maybeSync);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId]);
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
       {/* List */}
-      <div className={`h-full min-h-0 flex-col overflow-hidden border-r border-border ${selected && selectedListItem ? "hidden md:flex" : "flex"}`}>
+      <div
+        className={`h-full min-h-0 flex-col overflow-hidden border-r border-border ${selected && selectedListItem ? "hidden md:flex" : "flex"}`}
+      >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
             <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
           </div>
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => syncMut.mutate()} disabled={syncMut.isPending} title="Refresh">
-            <RefreshCw className={`h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={() => setAssistantOpen(true)}
+              title="Ask AI assistant"
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={() => syncMut.mutate()}
+              disabled={syncMut.isPending}
+              title="Refresh"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
         <div className="shrink-0 border-b border-border px-3 py-2">
           <div className="relative">
@@ -610,6 +1033,14 @@ function InboxPage() {
           {isSearching && (
             <div className="mt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               {gmailSearching ? "Checking Gmail…" : "Searching all folders, including archived"}
+            </div>
+          )}
+          {isSearching && lastGmailResult?.reason === "reauth_required" && (
+            <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              Gmail needs to be reconnected before search can pull older mail.{" "}
+              <Link to="/settings" className="font-medium underline">
+                Reconnect in Settings
+              </Link>
             </div>
           )}
         </div>
@@ -649,18 +1080,22 @@ function InboxPage() {
                       const ids = Array.from(selectedIds);
                       setReclassifyBusy(true);
                       try {
-                        const r: any = await reclassifyFn({ data: { email_ids: ids } });
-                        toast.success(`Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`);
+                        const r = await reclassifyFn({ data: { email_ids: ids } });
+                        toast.success(
+                          `Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`,
+                        );
                         setSelectedIds(new Set());
                         qc.invalidateQueries({ queryKey: ["emails"] });
-                      } catch (err: any) {
-                        toast.error(err?.message ?? "Re-classify failed");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Re-classify failed");
                       } finally {
                         setReclassifyBusy(false);
                       }
                     }}
                   >
-                    <RotateCw className={`mr-1.5 h-3.5 w-3.5 ${reclassifyBusy ? "animate-spin" : ""}`} />
+                    <RotateCw
+                      className={`mr-1.5 h-3.5 w-3.5 ${reclassifyBusy ? "animate-spin" : ""}`}
+                    />
                     Re-classify
                   </Button>
                   <Button
@@ -671,22 +1106,29 @@ function InboxPage() {
                       const ids = Array.from(selectedIds);
                       setSuggestBusy(true);
                       try {
-                        const s: any = await suggestFolderFn({ data: { email_ids: ids } });
+                        const s = await suggestFolderFn({ data: { email_ids: ids } });
                         setSuggestion({
-                          name: s.name, color: s.color, ai_rule: s.ai_rule,
+                          name: s.name,
+                          color: s.color,
+                          ai_rule: s.ai_rule,
                           filter_field: s.filter_field || null,
                           filter_op: s.filter_op || null,
                           filter_value: s.filter_value || "",
-                          why: s.why, email_ids: ids,
+                          why: s.why,
+                          email_ids: ids,
                         });
-                      } catch (err: any) {
-                        toast.error(err?.message ?? "Couldn't suggest a folder");
+                      } catch (err) {
+                        toast.error(
+                          err instanceof Error ? err.message : "Couldn't suggest a folder",
+                        );
                       } finally {
                         setSuggestBusy(false);
                       }
                     }}
                   >
-                    <Sparkles className={`mr-1.5 h-3.5 w-3.5 ${suggestBusy ? "animate-pulse" : ""}`} />
+                    <Sparkles
+                      className={`mr-1.5 h-3.5 w-3.5 ${suggestBusy ? "animate-pulse" : ""}`}
+                    />
                     Suggest folder
                   </Button>
                 </div>
@@ -694,9 +1136,17 @@ function InboxPage() {
             )}
           </div>
         )}
-        <div
+        <PullToRefresh
           className="min-h-0 flex-1 overflow-y-auto"
-          onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedId(null);
+          }}
+          onRefresh={async () => {
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ["emails"] }),
+              qc.invalidateQueries({ queryKey: ["folders"] }),
+            ]);
+          }}
         >
           {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
           {!emailsQ.isLoading && filtered.length === 0 && (
@@ -708,11 +1158,39 @@ function InboxPage() {
                 ) : lastGmailResult?.reason === "no_account" ? (
                   <>
                     <p className="text-sm">No matches found.</p>
-                    <p className="text-xs">Connect a Gmail account in Settings to search your full mailbox.</p>
+                    <p className="text-xs">
+                      Connect a Gmail account in Settings to search your full mailbox.
+                    </p>
+                  </>
+                ) : lastGmailResult?.reason === "reauth_required" ? (
+                  <>
+                    <p className="text-sm">Gmail needs to be reconnected.</p>
+                    <p className="text-xs">
+                      Open Settings → Gmail to reauthorize, then search again.
+                    </p>
+                  </>
+                ) : lastGmailResult?.reason === "rate_limited" ? (
+                  <>
+                    <p className="text-sm">Gmail is rate-limiting search right now.</p>
+                    <p className="text-xs">
+                      {lastGmailResult.found
+                        ? `Found ${lastGmailResult.found} match${lastGmailResult.found === 1 ? "" : "es"} in Gmail — wait ~1 minute and search again to pull them in.`
+                        : "Wait about a minute and try the search again."}
+                    </p>
+                  </>
+                ) : (lastGmailResult?.found ?? 0) > 0 ? (
+                  <>
+                    <p className="text-sm">
+                      Pulling {lastGmailResult!.found} match
+                      {lastGmailResult!.found === 1 ? "" : "es"} from Gmail…
+                    </p>
+                    <p className="text-xs">Results will appear in a moment.</p>
                   </>
                 ) : (
                   <>
-                    <p className="text-sm">No matches in your inbox or Gmail for "{query.trim()}".</p>
+                    <p className="text-sm">
+                      No matches in your inbox or Gmail for "{query.trim()}".
+                    </p>
                     <p className="text-xs">Try a different search term.</p>
                   </>
                 )
@@ -726,11 +1204,15 @@ function InboxPage() {
           )}
 
           {filtered.map((e) => {
-            const domain = e.from_addr?.includes("@") ? e.from_addr.split("@")[1]?.toLowerCase() ?? null : null;
+            const domain = e.from_addr?.includes("@")
+              ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
+              : null;
             const folderList = foldersQ.data ?? [];
             const currentFolderId = e.folder_id;
-            const showFolderPill = (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
-            const rowFolder = showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
+            const showFolderPill =
+              (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
+            const rowFolder =
+              showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
             const isChecked = selectedIds.has(e.id);
             const toggleCheck = () => {
               setSelectedIds((prev) => {
@@ -741,361 +1223,266 @@ function InboxPage() {
               });
             };
 
-            const RowTag: any = isNoRules ? "div" : "button";
+            const RowTag = isNoRules ? "div" : "button";
             const rowInner = (
-            <ContextMenu>
-              <ContextMenuTrigger asChild>
-                <RowTag
-                  role={isNoRules ? "button" : undefined}
-                  tabIndex={isNoRules ? 0 : undefined}
-                  onClick={(ev: any) => {
-                    if (isNoRules) {
-                      toggleCheck();
-                      return;
-                    }
-                    setSelectedId(e.id);
-                  }}
-                  className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
-                >
-                  {isNoRules && (
-                    <div
-                      className="absolute left-3 top-1/2 -translate-y-1/2"
-                      onClick={(ev) => ev.stopPropagation()}
-                    >
-                      <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
-                    </div>
-                  )}
-                  {!e.is_read && !isNoRules && (
-                    <span className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
-                  )}
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className={`truncate text-sm text-foreground ${e.is_read ? "font-medium" : "font-semibold"}`}>{decodeEntities(e.from_name) || e.from_addr || "Unknown"}</span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {e.received_at ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false }) : ""}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className={`min-w-0 flex-1 truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}>{decodeEntities(e.subject) || "(no subject)"}</div>
-                    {rowFolder && (
-                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: rowFolder.color }} aria-hidden />
-                        <span className="max-w-[80px] truncate">{rowFolder.name}</span>
+              <ContextMenu>
+                <ContextMenuTrigger asChild>
+                  <RowTag
+                    role={isNoRules ? "button" : undefined}
+                    tabIndex={isNoRules ? 0 : undefined}
+                    onClick={() => {
+                      if (isNoRules) {
+                        toggleCheck();
+                        return;
+                      }
+                      setSelectedId(e.id);
+                    }}
+                    className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
+                  >
+                    {isNoRules && (
+                      <div
+                        className="absolute left-3 top-1/2 -translate-y-1/2"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
+                      </div>
+                    )}
+                    {!e.is_read && !isNoRules && (
+                      <span
+                        className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary"
+                        aria-hidden
+                      />
+                    )}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span
+                        className={`truncate text-sm text-foreground ${e.is_read ? "font-medium" : "font-semibold"}`}
+                      >
+                        {decodeEntities(e.from_name) || e.from_addr || "Unknown"}
                       </span>
-                    )}
-                  </div>
-                  {e.ai_summary ? (
-                    <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
-                      <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
-                      <span className="line-clamp-1">{decodeEntities(e.ai_summary)}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {e.received_at
+                          ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false })
+                          : ""}
+                      </span>
                     </div>
-                  ) : (
-                    <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{decodeEntities(e.snippet)}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className={`min-w-0 flex-1 truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}
+                      >
+                        {decodeEntities(e.subject) || "(no subject)"}
+                      </div>
+                      {rowFolder && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <span
+                            className="h-1.5 w-1.5 rounded-full"
+                            style={{ background: rowFolder.color }}
+                            aria-hidden
+                          />
+                          <span className="max-w-[80px] truncate">{rowFolder.name}</span>
+                        </span>
+                      )}
+                    </div>
+                    {e.ai_summary ? (
+                      <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
+                        <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
+                        <span className="line-clamp-1">{decodeEntities(e.ai_summary)}</span>
+                      </div>
+                    ) : (
+                      <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                        {decodeEntities(e.snippet)}
+                      </div>
+                    )}
+                  </RowTag>
+                </ContextMenuTrigger>
+                <ContextMenuContent className="w-64">
+                  {(e.is_archived || e.folder_id || !(e.raw_labels ?? []).includes("INBOX")) && (
+                    <>
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                            prev?.map((x) =>
+                              x.id === e.id
+                                ? {
+                                    ...x,
+                                    folder_id: null,
+                                    is_archived: false,
+                                    raw_labels: withInbox(x.raw_labels),
+                                    classified_by: "manual_inbox",
+                                  }
+                                : x,
+                            ),
+                          );
+                          try {
+                            await moveInboxFn({ data: { email_id: e.id } });
+                            toast.success("Moved to inbox");
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                          } catch (err) {
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            toast.error(errMsg(err));
+                          }
+                        }}
+                      >
+                        <Inbox className="mr-2 h-4 w-4" />
+                        Move to Inbox
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                    </>
                   )}
-                </RowTag>
-              </ContextMenuTrigger>
-              <ContextMenuContent className="w-64">
-                {(e.is_archived || e.folder_id) && (
-                  <>
-                    <ContextMenuItem
-                      onSelect={async () => {
-                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, classified_by: "manual_inbox" } : x)));
-                        try {
-                          await moveInboxFn({ data: { email_id: e.id } });
-                          toast.success("Moved to inbox");
-                          qc.invalidateQueries({ queryKey: ["emails"] });
-                        } catch (err: any) {
-                          qc.invalidateQueries({ queryKey: ["emails"] });
-                          toast.error(err.message);
+
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger>
+                      <FolderInput className="mr-2 h-4 w-4" />
+                      Move to folder
+                    </ContextMenuSubTrigger>
+                    <ContextMenuSubContent className="max-h-72 overflow-y-auto">
+                      {currentFolderId && (
+                        <>
+                          <ContextMenuItem
+                            onSelect={async () => {
+                              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                                prev?.map((x) =>
+                                  x.id === e.id
+                                    ? {
+                                        ...x,
+                                        folder_id: null,
+                                        is_archived: false,
+                                        raw_labels: withInbox(x.raw_labels),
+                                        classified_by: "manual_inbox",
+                                      }
+                                    : x,
+                                ),
+                              );
+                              try {
+                                await moveInboxFn({ data: { email_id: e.id } });
+                                toast.success("Moved to inbox");
+                                qc.invalidateQueries({ queryKey: ["emails"] });
+                              } catch (err) {
+                                qc.invalidateQueries({ queryKey: ["emails"] });
+                                toast.error(errMsg(err));
+                              }
+                            }}
+                          >
+                            <Inbox className="mr-2 h-4 w-4" />
+                            Inbox (no folder)
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                        </>
+                      )}
+                      {folderList.length === 0 && (
+                        <ContextMenuItem disabled>No folders yet</ContextMenuItem>
+                      )}
+                      {folderList
+                        .filter((f) => f.id !== currentFolderId)
+                        .map((f) => (
+                          <ContextMenuItem
+                            key={f.id}
+                            onSelect={async () => {
+                              // Optimistically remove from any view that wouldn't show an archived row in this folder.
+                              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                                prev?.flatMap((x) => {
+                                  if (x.id !== e.id) return [x];
+                                  // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
+                                  return [
+                                    {
+                                      ...x,
+                                      folder_id: f.id,
+                                      is_archived: true,
+                                      raw_labels: withoutInbox(x.raw_labels),
+                                      classified_by: "manual_move",
+                                    },
+                                  ];
+                                }),
+                              );
+                              qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
+                                prev?.filter((x) => x.id !== e.id),
+                              );
+                              try {
+                                await moveFolderFn({
+                                  data: { email_id: e.id, to_folder_id: f.id },
+                                });
+                                toast.success(`Moved to ${f.name}`);
+                                // Defer refetch so the server-side Gmail label sync settles
+                                // before a stale reconcile flips is_archived back to false.
+                                setTimeout(
+                                  () => qc.invalidateQueries({ queryKey: ["emails"] }),
+                                  1500,
+                                );
+                              } catch (err) {
+                                qc.invalidateQueries({ queryKey: ["emails"] });
+                                toast.error(errMsg(err));
+                              }
+                            }}
+                          >
+                            <span
+                              className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                              style={{ background: f.color }}
+                            />
+                            <span className="truncate">{f.name}</span>
+                          </ContextMenuItem>
+                        ))}
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
+
+                  {(e.from_addr || domain || e.subject) && (
+                    <>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onSelect={() =>
+                          setFilterPrompt({
+                            fromAddr: e.from_addr,
+                            subject: e.subject,
+                            currentFolderId: e.folder_id ?? null,
+                          })
                         }
-                      }}
-                    >
-                      <Inbox className="mr-2 h-4 w-4" />
-                      Move to Inbox
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                  </>
-                )}
-
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>
-                    <FolderInput className="mr-2 h-4 w-4" />
-                    Move to folder
-                  </ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="max-h-72 overflow-y-auto">
-                    {currentFolderId && (
-                      <>
-                        <ContextMenuItem
-                          onSelect={async () => {
-                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, folder_id: null, is_archived: false, classified_by: "manual_inbox" } : x)));
-                            try {
-                              await moveInboxFn({ data: { email_id: e.id } });
-                              toast.success("Moved to inbox");
-                              qc.invalidateQueries({ queryKey: ["emails"] });
-                            } catch (err: any) {
-                              qc.invalidateQueries({ queryKey: ["emails"] });
-                              toast.error(err.message);
-                            }
-                          }}
-                        >
-                          <Inbox className="mr-2 h-4 w-4" />
-                          Inbox (no folder)
-                        </ContextMenuItem>
-                        <ContextMenuSeparator />
-                      </>
-                    )}
-                    {folderList.length === 0 && (
-                      <ContextMenuItem disabled>No folders yet</ContextMenuItem>
-                    )}
-                    {folderList.filter((f) => f.id !== currentFolderId).map((f) => (
-                      <ContextMenuItem
-                        key={f.id}
-                        onSelect={async () => {
-                          // Optimistically remove from any view that wouldn't show an archived row in this folder.
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                            prev?.flatMap((x) => {
-                              if (x.id !== e.id) return [x];
-                              // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
-                              return [{ ...x, folder_id: f.id, is_archived: true, classified_by: "manual_move" }];
-                            }),
-                          );
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
-                            prev?.filter((x) => x.id !== e.id),
-                          );
-                          try {
-                            await moveFolderFn({ data: { email_id: e.id, to_folder_id: f.id } });
-                            toast.success(`Moved to ${f.name}`);
-                            // Defer refetch so the server-side Gmail label sync settles
-                            // before a stale reconcile flips is_archived back to false.
-                            setTimeout(() => qc.invalidateQueries({ queryKey: ["emails"] }), 1500);
-                          } catch (err: any) {
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            toast.error(err.message);
-                          }
-                        }}
                       >
-                        <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
-                        <span className="truncate">{f.name}</span>
+                        <FilterIcon className="mr-2 h-4 w-4" />
+                        Filter messages like this…
                       </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
+                    </>
+                  )}
 
-                <ContextMenuSeparator />
-                <ContextMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Always send to inbox
-                </ContextMenuLabel>
-                {e.from_addr ? (
-                  <ContextMenuSub>
-                    <ContextMenuSubTrigger>
-                      <AtSign className="mr-2 h-4 w-4" />
-                      <span className="truncate">Just {e.from_addr}</span>
-                    </ContextMenuSubTrigger>
-                    <ContextMenuSubContent>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          try {
-                            const r = await addOverrideFn({ data: { value: e.from_addr!, match_type: "email" } });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                            toast.success(r.already ? `${e.from_addr} already on the list` : `Future mail from ${e.from_addr} will go to inbox`);
-                          } catch (err: any) { toast.error(err.message); }
-                        }}
-                      >
-                        Future emails only
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          const sender = (e.from_addr || "").toLowerCase();
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                            prev?.filter((x) => (x.from_addr || "").toLowerCase() !== sender),
-                          );
-                          try {
-                            await addOverrideFn({ data: { value: e.from_addr!, match_type: "email" } });
-                            const r = await stripLabelFn({ data: { value: e.from_addr!, match_type: "email" } });
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                            toast.success(`Added to inbox list · cleaned ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
-                          } catch (err: any) {
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            toast.error(err.message);
-                          }
-                        }}
-                      >
-                        Future and past emails
-                      </ContextMenuItem>
-
-
-
-                    </ContextMenuSubContent>
-                  </ContextMenuSub>
-                ) : (
-                  <ContextMenuItem disabled>No sender address</ContextMenuItem>
-                )}
-                {domain && (
-                  <ContextMenuSub>
-                    <ContextMenuSubTrigger>
-                      <Globe className="mr-2 h-4 w-4" />
-                      <span className="truncate">Anyone @{domain}</span>
-                    </ContextMenuSubTrigger>
-                    <ContextMenuSubContent>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          try {
-                            const r = await addOverrideFn({ data: { value: domain, match_type: "domain" } });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                            toast.success(r.already ? `@${domain} already on the list` : `Future mail from @${domain} will go to inbox`);
-                          } catch (err: any) { toast.error(err.message); }
-                        }}
-                      >
-                        Future emails only
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          const d = domain.toLowerCase();
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                            prev?.filter((x) => ((x.from_addr || "").toLowerCase().split("@")[1] || "") !== d),
-                          );
-                          try {
-                            await addOverrideFn({ data: { value: domain, match_type: "domain" } });
-                            const r = await stripLabelFn({ data: { value: domain, match_type: "domain" } });
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                            qc.invalidateQueries({ queryKey: ["inbox-overrides"] });
-                            toast.success(`Added to inbox list · cleaned ${r.stripped_count} past email${r.stripped_count === 1 ? "" : "s"}`);
-                          } catch (err: any) {
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            toast.error(err.message);
-                          }
-                        }}
-                      >
-                        Future and past emails
-                      </ContextMenuItem>
-
-
-
-                    </ContextMenuSubContent>
-                  </ContextMenuSub>
-                )}
-
-                {(e.from_addr || domain) && folderList.length > 0 && (
-                  <>
-                    <ContextMenuSeparator />
-                    <ContextMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      Always send to folder
-                    </ContextMenuLabel>
-                    {e.from_addr && (
-                      <ContextMenuSub>
-                        <ContextMenuSubTrigger>
-                          <AtSign className="mr-2 h-4 w-4" />
-                          <span className="truncate">Just {e.from_addr}</span>
-                        </ContextMenuSubTrigger>
-                        <ContextMenuSubContent className="max-h-72 overflow-y-auto">
-                          {folderList.map((f) => (
-                            <ContextMenuSub key={f.id}>
-                              <ContextMenuSubTrigger disabled={f.id === currentFolderId}>
-                                <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
-                                <span className="truncate">{f.name}{f.id === currentFolderId ? " (current)" : ""}</span>
-                              </ContextMenuSubTrigger>
-                              <ContextMenuSubContent>
-                                <ContextMenuItem
-                                  onSelect={async () => {
-                                    try {
-                                      const r = await addFolderRuleFn({ data: { folder_id: f.id, field: "from", value: e.from_addr! } });
-                                      qc.invalidateQueries({ queryKey: ["folder-filters"] });
-                                      toast.success(r.already ? `${e.from_addr} already routed to ${f.name}` : `Future mail from ${e.from_addr} → ${f.name}`);
-                                    } catch (err: any) { toast.error(err.message); }
-                                  }}
-                                >
-                                  Future emails only
-                                </ContextMenuItem>
-                                <ContextMenuItem
-                                  onSelect={() => setFolderRulePrompt({
-                                    emailId: e.id,
-                                    fromFolderId: e.folder_id ?? null,
-                                    fromAddr: e.from_addr,
-                                    domain,
-                                    toFolder: f,
-                                    mode: "sender",
-                                  })}
-                                >
-                                  Future and past
-                                </ContextMenuItem>
-                              </ContextMenuSubContent>
-                            </ContextMenuSub>
-                          ))}
-                        </ContextMenuSubContent>
-                      </ContextMenuSub>
-                    )}
-                    {domain && (
-                      <ContextMenuSub>
-                        <ContextMenuSubTrigger>
-                          <Globe className="mr-2 h-4 w-4" />
-                          <span className="truncate">Anyone @{domain}</span>
-                        </ContextMenuSubTrigger>
-                        <ContextMenuSubContent className="max-h-72 overflow-y-auto">
-                          {folderList.map((f) => (
-                            <ContextMenuSub key={f.id}>
-                              <ContextMenuSubTrigger disabled={f.id === currentFolderId}>
-                                <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
-                                <span className="truncate">{f.name}{f.id === currentFolderId ? " (current)" : ""}</span>
-                              </ContextMenuSubTrigger>
-                              <ContextMenuSubContent>
-                                <ContextMenuItem
-                                  onSelect={async () => {
-                                    try {
-                                      const r = await addFolderRuleFn({ data: { folder_id: f.id, field: "domain", value: domain } });
-                                      qc.invalidateQueries({ queryKey: ["folder-filters"] });
-                                      toast.success(r.already ? `@${domain} already routed to ${f.name}` : `Future mail from @${domain} → ${f.name}`);
-                                    } catch (err: any) { toast.error(err.message); }
-                                  }}
-                                >
-                                  Future emails only
-                                </ContextMenuItem>
-                                <ContextMenuItem
-                                  onSelect={() => setFolderRulePrompt({
-                                    emailId: e.id,
-                                    fromFolderId: e.folder_id ?? null,
-                                    fromAddr: e.from_addr,
-                                    domain,
-                                    toFolder: f,
-                                    mode: "domain",
-                                  })}
-                                >
-                                  Future and past
-                                </ContextMenuItem>
-                              </ContextMenuSubContent>
-                            </ContextMenuSub>
-                          ))}
-                        </ContextMenuSubContent>
-                      </ContextMenuSub>
-                    )}
-                  </>
-                )}
-
-                <ContextMenuSeparator />
-                <ContextMenuItem
-                  onSelect={async () => {
-                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((x) => (x.id === e.id ? { ...x, is_archived: true } : x)));
-                    try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
-                    catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
-                  }}
-                >
-                  <Archive className="mr-2 h-4 w-4" />
-                  Archive
-                </ContextMenuItem>
-                <ContextMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={async () => {
-                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
-                    try { await trashFnList({ data: { id: e.id } }); toast.success("Trashed"); }
-                    catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
-                  }}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Trash
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    onSelect={async () => {
+                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                        prev?.map((x) =>
+                          x.id === e.id
+                            ? { ...x, is_archived: true, raw_labels: withoutInbox(x.raw_labels) }
+                            : x,
+                        ),
+                      );
+                      try {
+                        await archFnList({ data: { id: e.id } });
+                        toast.success("Archived");
+                      } catch (err) {
+                        qc.invalidateQueries({ queryKey: ["emails"] });
+                        toast.error(errMsg(err));
+                      }
+                    }}
+                  >
+                    <Archive className="mr-2 h-4 w-4" />
+                    Archive
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={async () => {
+                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                        prev?.filter((x) => x.id !== e.id),
+                      );
+                      try {
+                        await trashFnList({ data: { id: e.id } });
+                        toast.success("Trashed");
+                      } catch (err) {
+                        qc.invalidateQueries({ queryKey: ["emails"] });
+                        toast.error(errMsg(err));
+                      }
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Trash
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
             );
 
             return isNoRules ? (
@@ -1104,19 +1491,32 @@ function InboxPage() {
               <SwipeRow
                 key={e.id}
                 onArchive={async () => {
-                  qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((x) => x.id !== e.id));
-                  try { await archFnList({ data: { id: e.id } }); toast.success("Archived"); }
-                  catch (err: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(err.message); }
+                  qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                    prev?.filter((x) => x.id !== e.id),
+                  );
+                  try {
+                    await archFnList({ data: { id: e.id } });
+                    toast.success("Archived");
+                  } catch (err) {
+                    qc.invalidateQueries({ queryKey: ["emails"] });
+                    toast.error(errMsg(err));
+                  }
                 }}
               >
                 {rowInner}
               </SwipeRow>
             );
           })}
-        </div>
+        </PullToRefresh>
         {!isSearching && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={goPrev} disabled={page === 1}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={goPrev}
+              disabled={page === 1}
+            >
               <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Prev
             </Button>
             <span>
@@ -1129,7 +1529,13 @@ function InboxPage() {
               className="h-7 px-2"
               onClick={goNext}
               disabled={!canGoNext || pullOlderMut.isPending}
-              title={!canGoNext ? "No more emails in this view" : !hasMoreLocal ? "Pull next 50 from Gmail" : ""}
+              title={
+                !canGoNext
+                  ? "No more emails in this view"
+                  : !hasMoreLocal
+                    ? "Pull next 50 from Gmail"
+                    : ""
+              }
             >
               Next <ChevronLeft className="ml-1 h-3.5 w-3.5 rotate-180" />
             </Button>
@@ -1139,25 +1545,60 @@ function InboxPage() {
 
       {/* Reading pane */}
       <div className={`h-full min-h-0 overflow-hidden ${selected ? "block" : "hidden md:block"}`}>
-        {selected ? <Reader key={selected.id} email={selected} folders={foldersQ.data ?? []} onBack={() => setSelectedId(null)} /> : (
+        {selected ? (
+          <Reader
+            key={selected.id}
+            email={selected}
+            folders={foldersQ.data ?? []}
+            onBack={() => setSelectedId(null)}
+          />
+        ) : (
           <TrackingStandby />
         )}
       </div>
 
-      {folderRulePrompt && (
-        <MoveSimilarDialog
-          open={!!folderRulePrompt}
-          onOpenChange={(v) => { if (!v) setFolderRulePrompt(null); }}
-          emailId={folderRulePrompt.emailId}
-          fromFolderId={folderRulePrompt.fromFolderId}
-          fromAddr={folderRulePrompt.fromAddr}
-          domain={folderRulePrompt.domain}
-          toFolder={folderRulePrompt.toFolder}
+      {filterPrompt && (
+        <FilterLikeThisDrawer
+          open={!!filterPrompt}
+          onOpenChange={(v) => {
+            if (!v) setFilterPrompt(null);
+          }}
+          accountId={accountId}
+          fromAddr={filterPrompt.fromAddr}
+          subject={filterPrompt.subject}
           folders={foldersQ.data ?? []}
-          defaultMode={folderRulePrompt.mode}
+          currentFolderId={filterPrompt.currentFolderId}
         />
       )}
-      <Dialog open={!!suggestion} onOpenChange={(v) => { if (!v) setSuggestion(null); }}>
+
+      <AssistantPanel
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        accountId={accountId}
+        folders={(foldersQ.data ?? []).map((f) => ({ id: f.id, name: f.name }))}
+        selectedEmails={(() => {
+          const ids =
+            selectedIds.size > 0 ? Array.from(selectedIds) : selected ? [selected.id] : [];
+          return ids
+            .map(
+              (id) => filtered.find((e) => e.id === id) ?? (selected?.id === id ? selected : null),
+            )
+            .filter((e): e is Email => !!e)
+            .map((e) => ({
+              id: e.id,
+              from_name: e.from_name,
+              from_addr: e.from_addr,
+              subject: e.subject,
+            }));
+        })()}
+      />
+
+      <Dialog
+        open={!!suggestion}
+        onOpenChange={(v) => {
+          if (!v) setSuggestion(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create folder from selection</DialogTitle>
@@ -1166,14 +1607,18 @@ function InboxPage() {
           {suggestion && (
             <div className="space-y-3 text-sm">
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Folder name</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Folder name
+                </label>
                 <Input
                   value={suggestion.name}
                   onChange={(ev) => setSuggestion({ ...suggestion, name: ev.target.value })}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">AI rule</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  AI rule
+                </label>
                 <Textarea
                   rows={3}
                   value={suggestion.ai_rule}
@@ -1182,16 +1627,22 @@ function InboxPage() {
               </div>
               {suggestion.filter_field && suggestion.filter_op && suggestion.filter_value && (
                 <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                  Filter: <span className="font-mono">{suggestion.filter_field} {suggestion.filter_op} "{suggestion.filter_value}"</span>
+                  Filter:{" "}
+                  <span className="font-mono">
+                    {suggestion.filter_field} {suggestion.filter_op} "{suggestion.filter_value}"
+                  </span>
                 </div>
               )}
               <div className="text-xs text-muted-foreground">
-                {suggestion.email_ids.length} selected email{suggestion.email_ids.length === 1 ? "" : "s"} will be moved into this folder.
+                {suggestion.email_ids.length} selected email
+                {suggestion.email_ids.length === 1 ? "" : "s"} will be moved into this folder.
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setSuggestion(null)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setSuggestion(null)}>
+              Cancel
+            </Button>
             <Button
               disabled={!suggestion?.name.trim() || !accountId}
               onClick={async () => {
@@ -1203,9 +1654,14 @@ function InboxPage() {
                       name: suggestion.name.trim(),
                       color: suggestion.color,
                       ai_rule: suggestion.ai_rule,
-                      filter: suggestion.filter_field && suggestion.filter_op && suggestion.filter_value
-                        ? { field: suggestion.filter_field, op: suggestion.filter_op, value: suggestion.filter_value }
-                        : null,
+                      filter:
+                        suggestion.filter_field && suggestion.filter_op && suggestion.filter_value
+                          ? {
+                              field: suggestion.filter_field,
+                              op: suggestion.filter_op,
+                              value: suggestion.filter_value,
+                            }
+                          : null,
                       email_ids: suggestion.email_ids,
                     },
                   });
@@ -1214,8 +1670,8 @@ function InboxPage() {
                   setSelectedIds(new Set());
                   qc.invalidateQueries({ queryKey: ["folders"] });
                   qc.invalidateQueries({ queryKey: ["emails"] });
-                } catch (err: any) {
-                  toast.error(err?.message ?? "Failed to create folder");
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Failed to create folder");
                 }
               }}
             >
@@ -1235,7 +1691,15 @@ function labelForFolder(sel: string | "all" | "all_mail" | "no_rules", folders: 
   return folders.find((f) => f.id === sel)?.name ?? "Folder";
 }
 
-function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; onBack?: () => void }) {
+function Reader({
+  email,
+  folders,
+  onBack,
+}: {
+  email: Email;
+  folders: Folder[];
+  onBack?: () => void;
+}) {
   const isMobile = useIsMobile();
   const qc = useQueryClient();
   const markFn = useServerFn(markEmailRead);
@@ -1251,7 +1715,10 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
   const addContactFn = useServerFn(addContactFromEmail);
   const [resyncing, setResyncing] = useState(false);
   const [addingContact, setAddingContact] = useState(false);
-  const [alwaysInbox, setAlwaysInbox] = useState<null | { fromAddr: string | null; domain: string | null }>(null);
+  const [alwaysInbox, setAlwaysInbox] = useState<null | {
+    fromAddr: string | null;
+    domain: string | null;
+  }>(null);
   const [reply, setReply] = useState("");
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
@@ -1270,12 +1737,30 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     enabled: !!email.folder_id,
     queryFn: async () => {
       const [folderRes, filtersRes] = await Promise.all([
-        supabase.from("folders").select("id, name, ai_rule, gmail_label_id").eq("id", email.folder_id!).maybeSingle(),
-        supabase.from("folder_filters").select("id, field, op, value").eq("folder_id", email.folder_id!),
+        supabase
+          .from("folders")
+          .select("id, name, ai_rule, gmail_label_id, filter_tree")
+          .eq("id", email.folder_id!)
+          .maybeSingle(),
+        supabase
+          .from("folder_filters")
+          .select("id, field, op, value")
+          .eq("folder_id", email.folder_id!),
       ]);
       return {
-        folder: folderRes.data as { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null,
-        filters: (filtersRes.data ?? []) as Array<{ id: string; field: string; op: string; value: string }>,
+        folder: folderRes.data as {
+          id: string;
+          name: string;
+          ai_rule: string | null;
+          gmail_label_id: string | null;
+          filter_tree: RuleNode | null;
+        } | null,
+        filters: (filtersRes.data ?? []) as Array<{
+          id: string;
+          field: string;
+          op: string;
+          value: string;
+        }>,
       };
     },
   });
@@ -1297,7 +1782,16 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
     setMoving(true);
     // Optimistic: flip folder_id locally so the row jumps immediately.
     qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-      prev?.map((e) => (e.id === email.id ? { ...e, folder_id: target.id, is_archived: true } : e)),
+      prev?.map((e) =>
+        e.id === email.id
+          ? {
+              ...e,
+              folder_id: target.id,
+              is_archived: true,
+              raw_labels: withoutInbox(e.raw_labels),
+            }
+          : e,
+      ),
     );
     try {
       const r = await moveFn({ data: { email_id: email.id, to_folder_id: target.id } });
@@ -1310,32 +1804,49 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         domain: r.domain,
         toFolder: target,
       });
-    } catch (e: any) {
+    } catch (e) {
       qc.invalidateQueries({ queryKey: ["emails"] });
-      toast.error(e.message);
+      toast.error(errMsg(e));
     } finally {
       setMoving(false);
     }
   }
-
 
   return (
     <div className="relative flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
         <div className="flex min-w-0 items-center gap-2">
           {onBack && (
-            <button onClick={onBack} className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent md:hidden" aria-label="Back">
+            <button
+              onClick={onBack}
+              className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent md:hidden"
+              aria-label="Back"
+            >
               <ChevronLeft className="h-4 w-4" />
             </button>
           )}
-          {folder && <Badge variant="outline" className="hidden gap-1.5 md:inline-flex"><span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />{folder.name}</Badge>}
+          {folder && (
+            <Badge variant="outline" className="hidden gap-1.5 md:inline-flex">
+              <span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />
+              {folder.name}
+            </Badge>
+          )}
           {email.ai_confidence != null && email.ai_summary && (
-            <Badge variant="outline" className="hidden gap-1 text-xs md:inline-flex"><Sparkles className="h-3 w-3" />AI · {Math.round(email.ai_confidence * 100)}%</Badge>
+            <Badge variant="outline" className="hidden gap-1 text-xs md:inline-flex">
+              <Sparkles className="h-3 w-3" />
+              AI · {Math.round(email.ai_confidence * 100)}%
+            </Badge>
           )}
         </div>
         <div className="flex flex-nowrap gap-0.5 overflow-x-auto md:gap-1">
-          <Button size="sm" variant="default" onClick={() => setReplyOpen(true)} className="h-8 px-2.5">
-            <Reply className="mr-1.5 h-3.5 w-3.5" />Reply
+          <Button
+            size="sm"
+            variant="default"
+            onClick={() => setReplyOpen(true)}
+            className="h-8 px-2.5"
+          >
+            <Reply className="mr-1.5 h-3.5 w-3.5" />
+            Reply
           </Button>
           <Button
             size="sm"
@@ -1353,7 +1864,11 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                   toast.error(r.classification_reason || "AI classifier failed");
                 } else if (r.classified_by === "kept") {
                   const name = folders.find((f) => f.id === r.folder_id)?.name;
-                  toast.message(name ? `No better folder — kept in ${name}.` : "No better folder — kept current.");
+                  toast.message(
+                    name
+                      ? `No better folder — kept in ${name}.`
+                      : "No better folder — kept current.",
+                  );
                 } else if (!r.changed) {
                   toast.success("Re-analyzed — no change");
                 } else if (r.folder_id && r.folder_name) {
@@ -1361,8 +1876,8 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                 } else {
                   toast.success("Re-analyzed → Inbox");
                 }
-              } catch (e: any) {
-                toast.error(e.message);
+              } catch (e) {
+                toast.error(errMsg(e));
               } finally {
                 setReanalyzing(false);
               }
@@ -1372,7 +1887,13 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" className="h-8 px-1.5" disabled={moving} title="Move to folder">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-1.5"
+                disabled={moving}
+                title="Move to folder"
+              >
                 <FolderInput className="h-4 w-4" />
                 <ChevronDown className="ml-0.5 h-3 w-3 opacity-60" />
               </Button>
@@ -1386,19 +1907,30 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                     onSelect={async () => {
                       setMoving(true);
                       qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                        prev?.map((e) => (e.id === email.id ? { ...e, folder_id: null, is_archived: false } : e)),
+                        prev?.map((e) =>
+                          e.id === email.id
+                            ? {
+                                ...e,
+                                folder_id: null,
+                                is_archived: false,
+                                raw_labels: withInbox(e.raw_labels),
+                              }
+                            : e,
+                        ),
                       );
                       try {
-                        const r = await inboxFn({ data: { email_id: email.id, add_override: null } });
+                        const r = await inboxFn({
+                          data: { email_id: email.id, add_override: null },
+                        });
                         qc.invalidateQueries({ queryKey: ["emails"] });
                         qc.invalidateQueries({ queryKey: ["emails-summary"] });
                         toast.success("Moved to Inbox");
                         if (r.from_addr || r.domain) {
                           setAlwaysInbox({ fromAddr: r.from_addr, domain: r.domain });
                         }
-                      } catch (e: any) {
+                      } catch (e) {
                         qc.invalidateQueries({ queryKey: ["emails"] });
-                        toast.error(e.message);
+                        toast.error(errMsg(e));
                       } finally {
                         setMoving(false);
                       }
@@ -1421,25 +1953,62 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => {
-            const next = !email.is_read;
-            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)));
-            markFn({ data: { id: email.id, read: next } }).catch(() => qc.invalidateQueries({ queryKey: ["emails"] }));
-          }}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0"
+            onClick={() => {
+              const next = !email.is_read;
+              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)),
+              );
+              markFn({ data: { id: email.id, read: next } }).catch(() =>
+                qc.invalidateQueries({ queryKey: ["emails"] }),
+              );
+            }}
+          >
             {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
           </Button>
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={async () => {
-            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.map((e) => (e.id === email.id ? { ...e, is_archived: true } : e)));
-            try { await archFn({ data: { id: email.id } }); toast.success("Archived"); }
-            catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
-          }}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0"
+            onClick={async () => {
+              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                prev?.map((e) =>
+                  e.id === email.id
+                    ? { ...e, is_archived: true, raw_labels: withoutInbox(e.raw_labels) }
+                    : e,
+                ),
+              );
+              try {
+                await archFn({ data: { id: email.id } });
+                toast.success("Archived");
+              } catch (e) {
+                qc.invalidateQueries({ queryKey: ["emails"] });
+                toast.error(errMsg(e));
+              }
+            }}
+          >
             <Archive className="h-4 w-4" />
           </Button>
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={async () => {
-            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => prev?.filter((e) => e.id !== email.id));
-            try { await trashFn({ data: { id: email.id } }); toast.success("Trashed"); }
-            catch (e: any) { qc.invalidateQueries({ queryKey: ["emails"] }); toast.error(e.message); }
-          }}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0"
+            onClick={async () => {
+              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                prev?.filter((e) => e.id !== email.id),
+              );
+              try {
+                await trashFn({ data: { id: email.id } });
+                toast.success("Trashed");
+              } catch (e) {
+                qc.invalidateQueries({ queryKey: ["emails"] });
+                toast.error(errMsg(e));
+              }
+            }}
+          >
             <Trash2 className="h-4 w-4" />
           </Button>
           <Button
@@ -1454,11 +2023,13 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                 const r = await resyncFn({ data: { id: email.id } });
                 qc.invalidateQueries({ queryKey: ["emails"] });
                 qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                if ((r as any).deleted) toast.message("Removed — no longer in Gmail");
-                else if ((r as any).in_inbox) toast.success("Resynced — back in Inbox");
+                if ((r as { deleted?: boolean }).deleted)
+                  toast.message("Removed — no longer in Gmail");
+                else if ((r as { in_inbox?: boolean }).in_inbox)
+                  toast.success("Resynced — back in Inbox");
                 else toast.success("Resynced from Gmail");
-              } catch (e: any) {
-                toast.error(e.message);
+              } catch (e) {
+                toast.error(errMsg(e));
               } finally {
                 setResyncing(false);
               }
@@ -1466,17 +2037,21 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
           >
             <RefreshCw className={`h-4 w-4 ${resyncing ? "animate-spin" : ""}`} />
           </Button>
-
         </div>
-
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 md:px-6">
-        <h1 className="font-display text-lg leading-tight line-clamp-3 md:line-clamp-none md:text-2xl">{email.subject || "(no subject)"}</h1>
+        <h1 className="font-display text-lg leading-tight line-clamp-3 md:line-clamp-none md:text-2xl">
+          {email.subject || "(no subject)"}
+        </h1>
         <p className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
           <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
-          {email.from_name && email.from_addr ? <span className="hidden md:inline">{` <${email.from_addr}>`}</span> : null}
-          {email.received_at && <span>{` · ${new Date(email.received_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`}</span>}
+          {email.from_name && email.from_addr ? (
+            <span className="hidden md:inline">{` <${email.from_addr}>`}</span>
+          ) : null}
+          {email.received_at && (
+            <span>{` · ${new Date(email.received_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`}</span>
+          )}
           {email.from_addr && (
             <Button
               size="sm"
@@ -1488,16 +2063,24 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                 try {
                   const r = await addContactFn({ data: { emailId: email.id } });
                   qc.invalidateQueries({ queryKey: ["contacts"] });
-                  toast.success(
-                    <span>
-                      Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
-                      <Link to="/contacts/$id" params={{ id: r.contact.id }} className="underline">
-                        View
-                      </Link>
-                    </span>
-                  );
-                } catch (e: any) {
-                  toast.error(e.message);
+                  if (!r.contact) {
+                    toast.success("Added to contacts");
+                  } else {
+                    toast.success(
+                      <span>
+                        Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
+                        <Link
+                          to="/contacts/$id"
+                          params={{ id: r.contact.id }}
+                          className="underline"
+                        >
+                          View
+                        </Link>
+                      </span>,
+                    );
+                  }
+                } catch (e) {
+                  toast.error(errMsg(e));
                 } finally {
                   setAddingContact(false);
                 }
@@ -1511,7 +2094,10 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
         {email.ai_summary && (
           <div className="mt-2 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-sm">
             <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-            <span><span className="font-medium text-primary">Summary · </span>{email.ai_summary}</span>
+            <span>
+              <span className="font-medium text-primary">Summary · </span>
+              {email.ai_summary}
+            </span>
           </div>
         )}
 
@@ -1520,10 +2106,34 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
             <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1 text-left text-sm hover:bg-accent/40">
               <span className="flex min-w-0 flex-1 items-center gap-2">
                 <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate text-muted-foreground">Why this folder?</span>
-                <span className="hidden sm:inline-flex"><ClassifiedChip by={email.classified_by} /></span>
+                {(() => {
+                  const currentFolder = email.folder_id
+                    ? folders.find((f) => f.id === email.folder_id)
+                    : null;
+                  if (currentFolder) {
+                    return (
+                      <>
+                        <span className="hidden shrink-0 text-muted-foreground sm:inline">In</span>
+                        <span
+                          className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
+                          title={currentFolder.name}
+                        >
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ background: currentFolder.color }}
+                          />
+                          <span className="truncate">{currentFolder.name}</span>
+                        </span>
+                      </>
+                    );
+                  }
+                  return <span className="truncate text-muted-foreground">Why this folder?</span>;
+                })()}
+                <ClassifiedChip by={email.classified_by} />
               </span>
-              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`}
+              />
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 space-y-3 rounded-md border border-border bg-card/30 p-3 text-sm">
@@ -1566,9 +2176,14 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
             })()}
             {email.classified_by === "ai" && email.ai_confidence != null && (
               <div>
-                <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">AI confidence</div>
+                <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
+                  AI confidence
+                </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full bg-primary" style={{ width: `${Math.round(email.ai_confidence * 100)}%` }} />
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${Math.round(email.ai_confidence * 100)}%` }}
+                  />
                 </div>
               </div>
             )}
@@ -1576,15 +2191,20 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               <div className="text-xs text-muted-foreground">
                 Synced{" "}
                 {(() => {
-                  const delta = Math.max(0, Math.round((new Date(email.processed_at).getTime() - new Date(email.received_at).getTime()) / 1000));
+                  const delta = Math.max(
+                    0,
+                    Math.round(
+                      (new Date(email.processed_at).getTime() -
+                        new Date(email.received_at).getTime()) /
+                        1000,
+                    ),
+                  );
                   if (delta < 90) return `${delta}s`;
                   if (delta < 3600) return `${Math.round(delta / 60)} min`;
                   return `${Math.round(delta / 3600)}h`;
                 })()}{" "}
                 after Gmail received it
-                {email.processed_at && (
-                  <> · {new Date(email.processed_at).toLocaleString()}</>
-                )}
+                {email.processed_at && <> · {new Date(email.processed_at).toLocaleString()}</>}
               </div>
             )}
           </CollapsibleContent>
@@ -1598,10 +2218,11 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
               <EmailBodyFrame key={email.id} html={email.body_html} />
             )
           ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{email.body_text || email.snippet || ""}</pre>
+            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
+              {email.body_text || email.snippet || ""}
+            </pre>
           )}
         </div>
-
       </div>
 
       <div
@@ -1614,23 +2235,46 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
             Reply to {email.from_name || email.from_addr}
           </span>
           <div className="flex items-center gap-1">
-            <Button size="sm" variant="ghost" disabled={generating}
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={generating}
               onClick={async () => {
                 setGenerating(true);
-                try { const r = await genFn({ data: { id: email.id } }); setReply(r.draft); } catch (e: any) { toast.error(e.message); }
+                try {
+                  const r = await genFn({ data: { id: email.id } });
+                  setReply(r.draft);
+                } catch (e) {
+                  toast.error(errMsg(e));
+                }
                 setGenerating(false);
-              }}>
-              <Sparkles className="mr-1.5 h-3.5 w-3.5" />{generating ? "Drafting…" : "Suggest reply"}
+              }}
+            >
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              {generating ? "Drafting…" : "Suggest reply"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setReplyOpen(false)} aria-label="Close reply">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setReplyOpen(false)}
+              aria-label="Close reply"
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
         <div className="p-4">
-          <Textarea rows={6} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" autoFocus={replyOpen} />
+          <Textarea
+            rows={6}
+            value={reply}
+            onChange={(e) => setReply(e.target.value)}
+            placeholder="Write a reply…"
+            autoFocus={replyOpen}
+          />
           <div className="mt-2 flex justify-end">
-            <Button size="sm" disabled={!reply.trim() || sending}
+            <Button
+              size="sm"
+              disabled={!reply.trim() || sending}
               onClick={async () => {
                 setSending(true);
                 try {
@@ -1638,10 +2282,14 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
                   toast.success("Sent");
                   setReply("");
                   setReplyOpen(false);
-                } catch (e: any) { toast.error(e.message); }
+                } catch (e) {
+                  toast.error(errMsg(e));
+                }
                 setSending(false);
-              }}>
-              <Send className="mr-1.5 h-3.5 w-3.5" />Send
+              }}
+            >
+              <Send className="mr-1.5 h-3.5 w-3.5" />
+              Send
             </Button>
           </div>
         </div>
@@ -1650,7 +2298,9 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
       {similarPrompt && (
         <MoveSimilarDialog
           open={!!similarPrompt}
-          onOpenChange={(v) => { if (!v) setSimilarPrompt(null); }}
+          onOpenChange={(v) => {
+            if (!v) setSimilarPrompt(null);
+          }}
           emailId={email.id}
           fromFolderId={similarPrompt.fromFolderId}
           fromAddr={similarPrompt.fromAddr}
@@ -1662,7 +2312,9 @@ function Reader({ email, folders, onBack }: { email: Email; folders: Folder[]; o
       {alwaysInbox && (
         <AlwaysInboxDialog
           open={!!alwaysInbox}
-          onOpenChange={(v) => { if (!v) setAlwaysInbox(null); }}
+          onOpenChange={(v) => {
+            if (!v) setAlwaysInbox(null);
+          }}
           emailId={email.id}
           fromAddr={alwaysInbox.fromAddr}
           domain={alwaysInbox.domain}
@@ -1681,15 +2333,15 @@ function ClassifiedChip({ by }: { by: string | null }) {
     manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
     excluded: { label: "Excluded", Icon: HelpCircle, cls: "text-destructive" },
     global_exclude: { label: "Inbox list", Icon: HelpCircle, cls: "text-destructive" },
-    pending: { label: "Sorting…", Icon: Bot, cls: "text-muted-foreground" },
-    pending_ai: { label: "Sorting…", Icon: Bot, cls: "text-muted-foreground" },
     none: { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" },
   };
   const k = by ?? "none";
   const v = map[k] ?? map.none;
   const { Icon } = v;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${v.cls}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${v.cls}`}
+    >
       <Icon className="h-3 w-3" /> {v.label}
     </span>
   );
@@ -1697,43 +2349,86 @@ function ClassifiedChip({ by }: { by: string | null }) {
 
 function opLabel(op: string) {
   const m: Record<string, string> = {
-    contains: "contains", equals: "equals", starts_with: "starts with",
-    ends_with: "ends with", regex: "matches regex",
-    not_contains: "does not contain", not_equals: "does not equal",
+    contains: "contains",
+    equals: "equals",
+    starts_with: "starts with",
+    ends_with: "ends with",
+    regex: "matches regex",
+    not_contains: "does not contain",
+    not_equals: "does not equal",
   };
   return m[op] ?? op;
 }
 
-// Adapter: the Email row has nullable string fields; the shared
-// filter engine wants non-null strings. Normalize null/undefined → "".
-function emailToFilterShape(email: { from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text: string | null; has_attachment: boolean }): EmailForFilter {
-  return {
-    from_addr: email.from_addr ?? "",
-    from_name: email.from_name ?? "",
-    to_addrs: email.to_addrs ?? "",
-    subject: email.subject ?? "",
-    body_text: email.body_text ?? "",
-    has_attachment: email.has_attachment,
-  };
-}
-
+// Mirror of applyFilter in src/lib/sync.server.ts — keep in sync.
 function applyFilterClient(
-  email: { from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text: string | null; has_attachment: boolean },
+  email: {
+    from_addr: string | null;
+    from_name: string | null;
+    to_addrs: string | null;
+    subject: string | null;
+    body_text?: string | null;
+    has_attachment: boolean;
+  },
   f: { field: string; op: string; value: string },
 ): boolean {
-  // Reuses the canonical applyFilter from sync/filter-engine — no more
-  // drift between client + server filter behavior. Adds operator
-  // coverage too (starts_with, ends_with) that the old client mirror
-  // was missing.
-  return applyFilter(emailToFilterShape(email), { id: "", folder_id: "", ...f });
+  const v = (f.value || "").toLowerCase();
+  const fieldVal = (() => {
+    switch (f.field) {
+      case "from":
+        return `${email.from_addr ?? ""} ${email.from_name ?? ""}`.toLowerCase();
+      case "to":
+        return (email.to_addrs ?? "").toLowerCase();
+      case "subject":
+        return (email.subject ?? "").toLowerCase();
+      case "body":
+        return (email.body_text ?? "").toLowerCase();
+      case "domain":
+        return ((email.from_addr ?? "").split("@")[1] ?? "").toLowerCase();
+      case "has_attachment":
+        return email.has_attachment ? "true" : "false";
+      default:
+        return "";
+    }
+  })();
+  switch (f.op) {
+    case "contains":
+      return fieldVal.includes(v);
+    case "equals":
+      return fieldVal === v;
+    case "not_contains":
+      return !fieldVal.includes(v);
+    case "not_equals":
+      return fieldVal !== v;
+    case "regex":
+      try {
+        return new RegExp(f.value, "i").test(fieldVal);
+      } catch {
+        return false;
+      }
+    default:
+      return false;
+  }
 }
 
+const EXCLUDE_OPS_CLIENT = new Set(["not_contains", "not_equals"]);
+
 function TriggeredBy({
-  classifiedBy, reason, folder, filters, email,
+  classifiedBy,
+  reason,
+  folder,
+  filters,
+  email,
 }: {
   classifiedBy: string | null;
   reason: string | null;
-  folder: { id: string; name: string; ai_rule: string | null; gmail_label_id: string | null } | null;
+  folder: {
+    id: string;
+    name: string;
+    ai_rule: string | null;
+    gmail_label_id: string | null;
+    filter_tree: RuleNode | null;
+  } | null;
   filters: Array<{ id: string; field: string; op: string; value: string }>;
   email: Email;
 }) {
@@ -1749,10 +2444,29 @@ function TriggeredBy({
       // Persisted ids exist but rules have since been removed/edited.
       return { matched: [], rulesChanged: true };
     }
+    // Tree-based folder: re-evaluate the tree to pinpoint matching leaves.
+    // Tree leaves have no folder_filters row id, so synthesize entries.
+    if (folder?.filter_tree) {
+      const emailForFilter = {
+        from_addr: email.from_addr ?? "",
+        from_name: email.from_name ?? "",
+        to_addrs: email.to_addrs ?? "",
+        subject: email.subject ?? "",
+        body_text: email.body_text ?? "",
+        has_attachment: email.has_attachment,
+      };
+      const leaves = collectMatchingLeaves(emailForFilter, folder.filter_tree);
+      if (leaves.length > 0) {
+        return {
+          matched: leaves.map((l, i) => ({ id: `tree-${i}`, ...l })),
+          rulesChanged: false,
+        };
+      }
+    }
     // Legacy email: recompute the matching includes client-side.
-    const includes = filters.filter((f) => !EXCLUDE_OPS.has(f.op));
+    const includes = filters.filter((f) => !EXCLUDE_OPS_CLIENT.has(f.op));
     return { matched: includes.filter((f) => applyFilterClient(email, f)), rulesChanged: false };
-  }, [by, email, filters]);
+  }, [by, email, filters, folder]);
 
   if (by === "filter" || by === "domain_rule") {
     const showAllFallback = matched.length === 0 && filters.length > 0;
@@ -1766,7 +2480,10 @@ function TriggeredBy({
         {list.length > 0 && (
           <ul className="space-y-1">
             {list.map((f, i) => (
-              <li key={i} className="rounded border border-border bg-background/40 px-2 py-1 font-mono text-xs">
+              <li
+                key={i}
+                className="rounded border border-border bg-background/40 px-2 py-1 font-mono text-xs"
+              >
                 <span className="text-muted-foreground">{f.field}</span>{" "}
                 <span className="text-primary">{opLabel(f.op)}</span>{" "}
                 <span className="text-foreground">"{f.value}"</span>
@@ -1785,22 +2502,29 @@ function TriggeredBy({
     );
   }
 
-
   if (by === "ai") {
     return (
       <div className="space-y-2">
         {folder?.ai_rule && (
           <div>
-            <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Folder AI prompt</div>
-            <p className="rounded border border-border bg-background/40 px-2 py-1.5 text-foreground/90 italic">"{folder.ai_rule}"</p>
+            <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
+              Folder AI prompt
+            </div>
+            <p className="rounded border border-border bg-background/40 px-2 py-1.5 text-foreground/90 italic">
+              "{folder.ai_rule}"
+            </p>
           </div>
         )}
         <div>
-          <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Why the AI picked this folder</div>
+          <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
+            Why the AI picked this folder
+          </div>
           {reason ? (
             <p className="text-foreground/90">{reason}</p>
           ) : (
-            <p className="italic text-muted-foreground">No reasoning recorded for this email. Newly synced emails will include one.</p>
+            <p className="italic text-muted-foreground">
+              No reasoning recorded for this email. Newly synced emails will include one.
+            </p>
           )}
         </div>
       </div>
@@ -1830,8 +2554,12 @@ function TriggeredBy({
   if (by === "excluded") {
     return (
       <div className="space-y-1">
-        <div className="text-xs uppercase tracking-wider text-destructive">Kept in inbox by exclude rule</div>
-        <p className="text-foreground/90">{reason ?? "An exclude rule on a matching folder kept this email in your inbox."}</p>
+        <div className="text-xs uppercase tracking-wider text-destructive">
+          Kept in inbox by exclude rule
+        </div>
+        <p className="text-foreground/90">
+          {reason ?? "An exclude rule on a matching folder kept this email in your inbox."}
+        </p>
       </div>
     );
   }
@@ -1839,15 +2567,16 @@ function TriggeredBy({
   if (by === "global_exclude") {
     return (
       <div className="space-y-1">
-        <div className="text-xs uppercase tracking-wider text-destructive">Always send to inbox</div>
-        <p className="text-foreground/90">{reason ?? "This sender is on your global inbox list, so folder rules and AI sorting are skipped."}</p>
+        <div className="text-xs uppercase tracking-wider text-destructive">
+          Always send to inbox
+        </div>
+        <p className="text-foreground/90">
+          {reason ??
+            "This sender is on your global inbox list, so folder rules and AI sorting are skipped."}
+        </p>
       </div>
     );
   }
 
-  return (
-    <p className="italic text-muted-foreground">
-      This email hasn't been classified yet.
-    </p>
-  );
+  return <p className="italic text-muted-foreground">This email hasn't been classified yet.</p>;
 }

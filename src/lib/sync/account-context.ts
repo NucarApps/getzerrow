@@ -24,6 +24,11 @@ export type AccountContext = {
   overrides: Array<{ id: string; match_type: string; value: string }>;
   overrideExceptions: OverrideException[];
   enrichedFolders: ClassifyFolder[];
+  /** True when the account has the calendar cold-email guard turned on. */
+  calendarGuardEnabled: boolean;
+  /** Lowercased email addresses of people met in Google Calendar. Empty
+   * unless the guard is enabled. */
+  calendarContacts: Set<string>;
 };
 
 const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
@@ -41,10 +46,7 @@ export function invalidateAccountContext(accountId: string): void {
  * inbox_override_exceptions) where you don't know which account caches
  * need to be busted. */
 export async function invalidateAccountContextForUser(userId: string): Promise<void> {
-  const { data } = await supabaseAdmin
-    .from("gmail_accounts")
-    .select("id")
-    .eq("user_id", userId);
+  const { data } = await supabaseAdmin.from("gmail_accounts").select("id").eq("user_id", userId);
   for (const acc of data ?? []) accountContextCache.delete(acc.id);
 }
 
@@ -55,15 +57,18 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   if (folders.length === 0) return [];
   const { data: examples } = await supabaseAdmin
     .from("folder_examples")
-    .select("folder_id, from_addr, subject")
-    .in("folder_id", folders.map((f) => f.id))
+    .select("folder_id, from_addr")
+    .in(
+      "folder_id",
+      folders.map((f) => f.id),
+    )
     .order("created_at", { ascending: false })
     .limit(200);
   const byFolder = new Map<string, Array<{ from_addr: string | null; subject: string | null }>>();
   for (const e of examples ?? []) {
     if (!byFolder.has(e.folder_id)) byFolder.set(e.folder_id, []);
     const arr = byFolder.get(e.folder_id)!;
-    if (arr.length < 5) arr.push({ from_addr: e.from_addr, subject: e.subject });
+    if (arr.length < 5) arr.push({ from_addr: e.from_addr, subject: null });
   }
   return folders.map((f) => ({
     id: f.id,
@@ -74,19 +79,37 @@ async function loadFoldersWithExamples(folders: Folder[]): Promise<ClassifyFolde
   }));
 }
 
-export async function loadAccountContext(accountId: string, userId: string): Promise<AccountContext> {
+export async function loadAccountContext(
+  accountId: string,
+  userId: string,
+): Promise<AccountContext> {
   const cached = accountContextCache.get(accountId);
   if (cached && cached.expires > Date.now()) return cached.ctx;
 
-  const [{ data: folders }, { data: overrides }, { data: exceptions }] = await Promise.all([
-    supabaseAdmin
-      .from("folders")
-      .select("*")
-      .eq("gmail_account_id", accountId)
-      .order("priority", { ascending: false }),
-    supabaseAdmin.from("inbox_overrides").select("id, match_type, value").eq("user_id", userId),
-    supabaseAdmin.from("inbox_override_exceptions").select("override_id, field, op, value").eq("user_id", userId),
-  ]);
+  const [{ data: folders }, { data: overrides }, { data: exceptions }, { data: account }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("folders")
+        .select("*")
+        .eq("gmail_account_id", accountId)
+        .order("priority", { ascending: false }),
+      // Overrides scoped to this account (or unscoped legacy rows where
+      // gmail_account_id IS NULL — those apply to every account).
+      supabaseAdmin
+        .from("inbox_overrides")
+        .select("id, match_type, value")
+        .eq("user_id", userId)
+        .or(`gmail_account_id.eq.${accountId},gmail_account_id.is.null`),
+      supabaseAdmin
+        .from("inbox_override_exceptions")
+        .select("override_id, field, op, value")
+        .eq("user_id", userId),
+      supabaseAdmin
+        .from("gmail_accounts")
+        .select("calendar_guard_enabled")
+        .eq("id", accountId)
+        .maybeSingle(),
+    ]);
 
   const folderList = (folders ?? []) as Folder[];
   const folderIds = folderList.map((f) => f.id);
@@ -103,12 +126,26 @@ export async function loadAccountContext(accountId: string, userId: string): Pro
   }
   const enrichedFolders = await loadFoldersWithExamples(folderList);
 
+  const calendarGuardEnabled = !!account?.calendar_guard_enabled;
+  const calendarContacts = new Set<string>();
+  if (calendarGuardEnabled) {
+    const { data: contacts } = await supabaseAdmin
+      .from("calendar_contacts")
+      .select("email_address")
+      .eq("gmail_account_id", accountId);
+    for (const c of contacts ?? []) {
+      if (c.email_address) calendarContacts.add(c.email_address.toLowerCase());
+    }
+  }
+
   const ctx: AccountContext = {
     folders: folderList,
     filters: filterList,
     overrides: overrides ?? [],
     overrideExceptions: (exceptions ?? []) as OverrideException[],
     enrichedFolders,
+    calendarGuardEnabled,
+    calendarContacts,
   };
   accountContextCache.set(accountId, { ctx, expires: Date.now() + ACCOUNT_CONTEXT_TTL_MS });
   return ctx;
