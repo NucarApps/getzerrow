@@ -130,7 +130,7 @@ CREATE OR REPLACE FUNCTION private.decrypt_email_body(
 )
   RETURNS text
   LANGUAGE plpgsql
-  STABLE
+  VOLATILE
   SECURITY DEFINER
   SET search_path = pgsodium, public
 AS $$
