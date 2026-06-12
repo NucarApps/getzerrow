@@ -388,6 +388,31 @@ async function drainPendingAi(
     Array.from(byAccount.entries()).map(async ([aid, items]) => {
       const ctx = contextByAccount.get(aid);
       if (!ctx) return;
+      // Per-message fallback — used when the whole batch call throws AND
+      // for individual emails the batch response simply omitted.
+      const fallbackOne = async (c: PendingAi) => {
+        try {
+          const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
+          await supabaseAdmin.from("emails").update({
+            folder_id: single.folder_id,
+            ai_summary: single.summary || null,
+            ai_confidence: single.confidence,
+            classified_by: "ai",
+            classification_reason: single.reason || null,
+          }).eq("id", c.emailRowId);
+          if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
+          await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+          results.push({ id: c.job.id, ok: true });
+        } catch (innerErr: unknown) {
+          await supabaseAdmin.from("emails").update({
+            classified_by: "unclassified",
+            classification_reason: `AI classifier failed: ${((innerErr as Error)?.message ?? "unknown").slice(0, 200)}`,
+          }).eq("id", c.emailRowId);
+          await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+          results.push({ id: c.job.id, ok: true });
+        }
+      };
+
       for (let i = 0; i < items.length; i += BATCH_SIZE) {
         const chunk = items.slice(i, i + BATCH_SIZE);
         try {
@@ -395,22 +420,28 @@ async function drainPendingAi(
           await Promise.all(
             chunk.map(async (c, idx) => {
               const r = out[idx];
+              // null = the model dropped this email from its batch
+              // output. Retry it individually instead of stranding it.
+              if (!r) {
+                await fallbackOne(c);
+                return;
+              }
               // Honor each folder's min_ai_confidence — match live behavior.
-              const candidate = r?.folder_id ? ctx.folders.find((f) => f.id === r.folder_id) : null;
+              const candidate = r.folder_id ? ctx.folders.find((f) => f.id === r.folder_id) : null;
               const threshold = candidate?.min_ai_confidence ?? 0;
-              const passes = r?.folder_id && (r.confidence ?? 0) >= threshold;
+              const passes = r.folder_id && (r.confidence ?? 0) >= threshold;
               await supabaseAdmin.from("emails").update({
-                folder_id: passes ? r!.folder_id : null,
-                ai_summary: r?.summary || null,
-                ai_confidence: r?.confidence ?? 0,
-                classified_by: passes ? "ai" : (r?.folder_id ? "ai_low_confidence" : "ai"),
+                folder_id: passes ? r.folder_id : null,
+                ai_summary: r.summary || null,
+                ai_confidence: r.confidence ?? 0,
+                classified_by: passes ? "ai" : (r.folder_id ? "ai_low_confidence" : "ai"),
                 classification_reason: passes
-                  ? (r?.reason || null)
-                  : (r?.folder_id
-                      ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
-                      : (r?.reason || null)),
+                  ? (r.reason || null)
+                  : (r.folder_id
+                      ? `AI suggested "${candidate?.name ?? "?"}" at ${((r.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
+                      : (r.reason || null)),
               }).eq("id", c.emailRowId);
-              if (passes && r?.folder_id) void bumpEmailsSinceLearn(r.folder_id);
+              if (passes && r.folder_id) void bumpEmailsSinceLearn(r.folder_id);
               await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
               results.push({ id: c.job.id, ok: true });
             }),
@@ -419,30 +450,7 @@ async function drainPendingAi(
           // Batch failed — fall back to per-message classify so the
           // queue still drains.
           console.error("batch AI classify failed, falling back per-message", (e as Error)?.message ?? e);
-          await Promise.all(
-            chunk.map(async (c) => {
-              try {
-                const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
-                await supabaseAdmin.from("emails").update({
-                  folder_id: single.folder_id,
-                  ai_summary: single.summary || null,
-                  ai_confidence: single.confidence,
-                  classified_by: "ai",
-                  classification_reason: single.reason || null,
-                }).eq("id", c.emailRowId);
-                if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
-                await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
-                results.push({ id: c.job.id, ok: true });
-              } catch (innerErr: unknown) {
-                await supabaseAdmin.from("emails").update({
-                  classified_by: "unclassified",
-                  classification_reason: `AI classifier failed: ${((innerErr as Error)?.message ?? "unknown").slice(0, 200)}`,
-                }).eq("id", c.emailRowId);
-                await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
-                results.push({ id: c.job.id, ok: true });
-              }
-            }),
-          );
+          await Promise.all(chunk.map(fallbackOne));
         }
       }
     }),

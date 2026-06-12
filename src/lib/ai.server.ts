@@ -174,7 +174,10 @@ export async function classifyEmailsBatch(
     body_text: string;
   }>,
   folders: ClassifyFolder[],
-): Promise<Array<{ folder_id: string | null; confidence: number; summary: string; reason: string }>> {
+): Promise<Array<{ folder_id: string | null; confidence: number; summary: string; reason: string } | null>> {
+  // A null entry means the model returned no result for that index —
+  // the caller must treat it as a per-email failure (retry / fallback),
+  // NOT as "AI said no folder".
   if (emails.length === 0) return [];
   if (folders.length === 0) {
     return emails.map(() => ({ folder_id: null, confidence: 0, summary: "", reason: "" }));
@@ -262,7 +265,10 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
 
   return emails.map((_, i) => {
     const r = byIndex.get(i + 1);
-    if (!r) return { folder_id: null, confidence: 0, summary: "", reason: "No batch result for this email" };
+    // Missing index = the model dropped this email from its output.
+    // Surface as null so the caller falls back to per-message classify
+    // instead of silently stranding the email unclassified.
+    if (!r) return null;
     const match = folders.find((f) => f.name.toLowerCase() === r.folder_name.toLowerCase());
     return {
       folder_id: match?.id ?? null,
