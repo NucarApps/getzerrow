@@ -445,6 +445,7 @@ export type Database = {
           cc_enc: string | null
           classification_reason_enc: string | null
           classified_by: string | null
+          classify_attempts: number
           created_at: string
           folder_id: string | null
           forward_attempts: number
@@ -485,6 +486,7 @@ export type Database = {
           cc_enc?: string | null
           classification_reason_enc?: string | null
           classified_by?: string | null
+          classify_attempts?: number
           created_at?: string
           folder_id?: string | null
           forward_attempts?: number
@@ -525,6 +527,7 @@ export type Database = {
           cc_enc?: string | null
           classification_reason_enc?: string | null
           classified_by?: string | null
+          classify_attempts?: number
           created_at?: string
           folder_id?: string | null
           forward_attempts?: number
@@ -1504,6 +1507,10 @@ export type Database = {
             }
             Returns: Json
           }
+      increment_emails_since_learn: {
+        Args: { p_folder_id: string }
+        Returns: undefined
+      }
       insert_email_encrypted: {
         Args: {
           p_body_html: string
