@@ -122,3 +122,22 @@ describe("rowBelongsInList", () => {
     expect(rowBelongsInList(row(), ["emails", { folderId: "f" }])).toBe(false);
   });
 });
+
+// The two INSERT shapes process-message now emits. The pending_ai row
+// must land in the inbox list (visible while AI sorts it); the
+// rules-final row must land straight in its folder (and the archived
+// list when the folder auto-archives) — never flash through the inbox.
+describe("rowBelongsInList — classification insert shapes", () => {
+  it("a pending_ai row (no folder, not archived) belongs in the inbox list", () => {
+    const pending = row({ folder_id: null, is_archived: false, classified_by: "pending_ai" });
+    expect(rowBelongsInList(pending, ["emails", "inbox"])).toBe(true);
+    expect(rowBelongsInList(pending, ["emails", "f-work"])).toBe(false);
+  });
+
+  it("a rules-final auto-archived row belongs in its folder + archived lists, NOT the inbox", () => {
+    const routed = row({ folder_id: "f-work", is_archived: true, classified_by: "filter" });
+    expect(rowBelongsInList(routed, ["emails", "f-work"])).toBe(true);
+    expect(rowBelongsInList(routed, ["emails", "archived"])).toBe(true);
+    expect(rowBelongsInList(routed, ["emails", "inbox"])).toBe(false);
+  });
+});

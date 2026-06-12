@@ -123,10 +123,10 @@ d("gmail-backfill-tick is idempotent (no active jobs → 0 processed)", () => {
   });
 });
 
-d("gmail-retention prunes pubsub_events + DLQ rows", () => {
-  it("returns {ok, pubsub, dlq} with counts (or null if RPC missing)", async () => {
+d("gmail-retention prunes pubsub_events + DLQ + decryption audit rows", () => {
+  it("returns {ok, pubsub, dlq, audit} with counts (or null if RPC missing)", async () => {
     const res = await authedPost("/api/public/gmail-retention");
-    const json = await expectJsonShape(res, ["ok", "pubsub", "dlq"]);
+    const json = await expectJsonShape(res, ["ok", "pubsub", "dlq", "audit"]);
     expect(json.ok).toBe(true);
     if (json.pubsub) {
       expect(json.pubsub).toHaveProperty("deleted");
@@ -137,14 +137,18 @@ d("gmail-retention prunes pubsub_events + DLQ rows", () => {
       expect(json.dlq).toHaveProperty("deleted");
       expect(json.dlq).toHaveProperty("total_before");
     }
+    if (json.audit) {
+      expect(json.audit).toHaveProperty("deleted");
+      expect(json.audit).toHaveProperty("total_before");
+    }
   });
 
-  it("honors query params (pubsub_keep_days=1 caps lookback aggressively)", async () => {
+  it("honors query params (all three retention windows can be tightened)", async () => {
     // Just verify the endpoint accepts custom retention windows without
     // crashing. Doesn't assert on counts because they depend on existing
     // data.
     const res = await fetch(
-      `${BASE}/api/public/gmail-retention?pubsub_keep_days=1&pubsub_limit=10&dlq_keep_days=1&dlq_limit=10`,
+      `${BASE}/api/public/gmail-retention?pubsub_keep_days=1&pubsub_limit=10&dlq_keep_days=1&dlq_limit=10&audit_keep_days=1&audit_limit=10`,
       { method: "POST", headers: { authorization: `Bearer ${SECRET}` } },
     );
     expect(res.status, await res.clone().text()).toBe(200);

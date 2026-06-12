@@ -148,6 +148,22 @@ export async function regenerateFolderProfile(folderId: string): Promise<string 
  * errors are swallowed so they never block classification. */
 export async function bumpEmailsSinceLearn(folderId: string): Promise<void> {
   try {
+    // Atomic SQL increment — the old read-then-write pattern lost counts
+    // when two workers classified into the same folder concurrently.
+    type IncrementRpc = {
+      rpc: (
+        fn: "increment_emails_since_learn",
+        args: { p_folder_id: string },
+      ) => Promise<{ data: unknown; error: { message: string } | null }>;
+    };
+    const { error } = await (supabaseAdmin as unknown as IncrementRpc).rpc(
+      "increment_emails_since_learn",
+      { p_folder_id: folderId },
+    );
+    if (!error) return;
+    // RPC not deployed yet — fall back to read-then-write (racy but
+    // better than dropping the bump). Same pattern as bumpHistoryAndStamp.
+    console.error("increment_emails_since_learn RPC failed, falling back", error.message);
     const { data: row } = await supabaseAdmin
       .from("folders")
       .select("emails_since_learn")

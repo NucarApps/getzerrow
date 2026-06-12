@@ -90,6 +90,26 @@ export function logAudit(action: string, fields: LogFields = {}): void {
   emit("info", `audit.${action}`, { audit: true, ...fields });
 }
 
+// Backward-compatible logger shape used by older call sites.
+export const log = {
+  debug: (ctx: LogFields | string, msg?: string) => {
+    if (typeof ctx === "string") emit("info", "debug", {}, ctx);
+    else emit("info", msg ?? "debug", ctx);
+  },
+  info: (ctx: LogFields | string, msg?: string) => {
+    if (typeof ctx === "string") emit("info", "info", {}, ctx);
+    else emit("info", msg ?? "info", ctx);
+  },
+  warn: (ctx: LogFields | string, msg?: string) => {
+    if (typeof ctx === "string") emit("error", "warn", {}, ctx);
+    else emit("error", msg ?? "warn", ctx);
+  },
+  error: (ctx: LogFields | string, msg?: string) => {
+    if (typeof ctx === "string") emit("error", "error", {}, ctx);
+    else emit("error", msg ?? "error", ctx);
+  },
+};
+
 export function newRunId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   return c?.randomUUID?.() ?? Math.random().toString(36).slice(2, 14);

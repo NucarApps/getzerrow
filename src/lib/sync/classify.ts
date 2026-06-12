@@ -24,7 +24,6 @@ import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
 import { applyFilter, matchByFilters, labelOf } from "./filter-engine";
 import type { OverrideException } from "./types";
-import { logError } from "../log.server";
 
 export type ClassificationResult = {
   folder_id: string | null;
@@ -52,13 +51,23 @@ export type ParsedEmailForClassify = {
   raw_labels: string[] | null;
 };
 
-export async function classifyParsedEmail(
+export type RulesClassification = ClassificationResult & {
+  /** True when no rule fired AND there are AI-eligible folders — i.e.
+   * the result is provisional and classifyByAi should run. False means
+   * the rules result is final (matched, excluded, or nothing for AI to
+   * do). */
+  needs_ai: boolean;
+};
+
+/** Synchronous rules-only classification: inbox override (+ exceptions)
+ * → Gmail label match → folder filter tree / simple filters. Never
+ * calls the AI gateway — fast enough (10–50ms) to run before the email
+ * row is inserted. */
+export function classifyByRules(
   parsed: ParsedEmailForClassify,
-  userId: string,
-  accountId: string,
-  opts: { skipGmailLabelMatch?: boolean; context?: AccountContext; skipAi?: boolean } = {},
-): Promise<ClassificationResult> {
-  const context = opts.context ?? (await loadAccountContext(accountId, userId));
+  context: AccountContext,
+  opts: { skipGmailLabelMatch?: boolean } = {},
+): RulesClassification {
   const folderList = context.folders;
   const filterList = context.filters;
   const overrides = context.overrides;
@@ -67,7 +76,7 @@ export async function classifyParsedEmail(
   let folder_id: string | null = null;
   let classified_by = "none";
   let confidence = 0;
-  let summary = "";
+  const summary = "";
   let classification_reason: string | null = null;
   let matched_filter_ids: string[] = [];
   let matched_folder_ids: string[] = [];
@@ -75,21 +84,6 @@ export async function classifyParsedEmail(
 
   const fromAddr = (parsed.from_addr || "").toLowerCase();
   const fromDomain = fromAddr.split("@")[1] || "";
-
-  // Calendar cold-email guard: if the account has it enabled and the sender
-  // is someone the user has met in Google Calendar, they are never treated as
-  // cold. The guard is NARROW — it only keeps known contacts OUT of folders
-  // flagged `is_cold_email`. Every other rule (gmail label, inbox override,
-  // domain/filter rules, other AI folders) still applies normally, so a known
-  // contact whose domain matches e.g. a Factory rule is still filed there.
-  const isGuardedContact =
-    context.calendarGuardEnabled && !!fromAddr && context.calendarContacts.has(fromAddr);
-  const coldEmailFolderIds = new Set(
-    folderList.filter((f) => f.is_cold_email).map((f) => f.id),
-  );
-  const isColdEmailFolder = (fid: string | null): boolean =>
-    !!fid && coldEmailFolderIds.has(fid);
-
   const overrideHit = overrides.find((o) => {
     const val = (o.value || "").toLowerCase();
     return o.match_type === "email" ? val === fromAddr : val === fromDomain;
@@ -102,9 +96,7 @@ export async function classifyParsedEmail(
   if (overrideHit) {
     const exForThisOverride = overrideExceptions.filter((e) => e.override_id === overrideHit.id);
     for (const ex of exForThisOverride) {
-      if (
-        applyFilter(parsed, { id: "", folder_id: "", field: ex.field, op: ex.op, value: ex.value })
-      ) {
+      if (applyFilter(parsed, { id: "", folder_id: "", field: ex.field, op: ex.op, value: ex.value })) {
         overrideExceptionHit = ex;
         break;
       }
@@ -119,22 +111,17 @@ export async function classifyParsedEmail(
   const folderMatch = labeledFolder ? null : matchByFilters(parsed, folderList, filterList);
   const beatingFolderId =
     overrideHit && folderMatch?.kind === "match"
-      ? (folderMatch.all_matched_folder_ids.find((fid) => {
+      ? folderMatch.all_matched_folder_ids.find((fid) => {
           const f = folderList.find((x) => x.id === fid);
           return f?.overrides_inbox_override === true;
-        }) ?? null)
+        }) ?? null
       : null;
 
   const overrideWins = !!overrideHit && !overrideExceptionHit && !beatingFolderId;
 
   if (overrideWins) {
-    // Allowlist semantics: a hit forces the email into the inbox with no
-    // folder assignment, bypassing filter rules and AI. Side-effects in
-    // process-message only fire when folder_id is set, so leaving it null
-    // also disables auto-archive / hide / forward / snooze.
-    folder_id = null;
-    classified_by = "inbox_override";
-    classification_reason = `Always-inbox: ${overrideHit!.match_type} "${overrideHit!.value}"`;
+    classified_by = "global_exclude";
+    classification_reason = `Global inbox list: ${overrideHit!.match_type} "${overrideHit!.value}"`;
     aiSkipped = true;
   } else {
     if (labeledFolder) {
@@ -164,7 +151,8 @@ export async function classifyParsedEmail(
         }
         if (beatingFolderId && overrideHit) {
           classification_reason =
-            (classification_reason ?? "") + ` (beat inbox override "${overrideHit.value}")`;
+            (classification_reason ?? "") +
+            ` (beat inbox override "${overrideHit.value}")`;
         } else if (overrideExceptionHit && overrideHit) {
           classification_reason =
             (classification_reason ?? "") +
@@ -181,62 +169,8 @@ export async function classifyParsedEmail(
     }
   }
 
-  if (!folder_id && !aiSkipped && !opts.skipAi && folderList.length > 0) {
-    // Exclude folders flagged skip_ai from the AI candidate set. For a guarded
-    // calendar contact, also drop is_cold_email folders so the AI can never
-    // file a known contact as cold — it picks a real alternative or nothing.
-    const skipAiIds = new Set(folderList.filter((f) => f.skip_ai).map((f) => f.id));
-    const aiFolders = context.enrichedFolders.filter(
-      (f) => !skipAiIds.has(f.id) && !(isGuardedContact && coldEmailFolderIds.has(f.id)),
-    );
-    if (aiFolders.length > 0) {
-      try {
-        const r = await classifyEmail(parsed, aiFolders);
-        const candidate = folderList.find((f) => f.id === r.folder_id);
-        const threshold = candidate?.min_ai_confidence ?? 0;
-        if (r.folder_id && r.confidence >= threshold) {
-          folder_id = r.folder_id;
-          confidence = r.confidence;
-          summary = r.summary;
-          classified_by = "ai";
-          classification_reason = r.reason || null;
-        } else if (r.folder_id) {
-          classified_by = "ai_low_confidence";
-          confidence = r.confidence;
-          summary = r.summary;
-          classification_reason = `AI suggested "${candidate?.name ?? "?"}" at ${(r.confidence * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`;
-        } else {
-          classified_by = "ai";
-          confidence = r.confidence;
-          summary = r.summary;
-          classification_reason = r.reason || null;
-        }
-      } catch (e) {
-        logError(
-          "classify.ai_failed",
-          { user_id: userId, account_id: accountId, folder_count: aiFolders.length },
-          e,
-        );
-        classified_by = "ai_error";
-        classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
-      }
-    }
-  }
-
-  // Calendar guard, final pass: a known contact should never be filed as cold
-  // email. If any rule (filter, label, or AI) routed them into a cold-email
-  // folder, clear it and keep the message in the inbox instead.
-  if (isGuardedContact && isColdEmailFolder(folder_id)) {
-    return {
-      folder_id: null,
-      classified_by: "calendar_contact",
-      ai_confidence: 0,
-      ai_summary: summary,
-      classification_reason: "Met in Google Calendar — kept out of Cold Email",
-      matched_filter_ids: [],
-      matched_folder_ids: [],
-    };
-  }
+  const needs_ai =
+    !folder_id && !aiSkipped && folderList.length > 0 && aiCandidateFolders(context).length > 0;
 
   return {
     folder_id,
@@ -246,5 +180,66 @@ export async function classifyParsedEmail(
     classification_reason,
     matched_filter_ids,
     matched_folder_ids,
+    needs_ai,
   };
+}
+
+/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai. */
+function aiCandidateFolders(context: AccountContext) {
+  const skipAiIds = new Set(context.folders.filter((f) => f.skip_ai).map((f) => f.id));
+  return context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
+}
+
+/** AI fallback pass. Call only when classifyByRules returned
+ * needs_ai=true. Takes the rules result as `base` so non-AI fields
+ * (matched_* arrays, exception-note reason) carry through. */
+export async function classifyByAi(
+  parsed: ParsedEmailForClassify,
+  context: AccountContext,
+  base: ClassificationResult,
+): Promise<ClassificationResult> {
+  const out: ClassificationResult = { ...base };
+  const aiFolders = aiCandidateFolders(context);
+  if (aiFolders.length === 0) return out;
+  try {
+    const r = await classifyEmail(parsed, aiFolders);
+    const candidate = context.folders.find((f) => f.id === r.folder_id);
+    const threshold = candidate?.min_ai_confidence ?? 0;
+    if (r.folder_id && r.confidence >= threshold) {
+      out.folder_id = r.folder_id;
+      out.ai_confidence = r.confidence;
+      out.ai_summary = r.summary;
+      out.classified_by = "ai";
+      out.classification_reason = r.reason || null;
+    } else if (r.folder_id) {
+      out.classified_by = "ai_low_confidence";
+      out.ai_confidence = r.confidence;
+      out.ai_summary = r.summary;
+      out.classification_reason = `AI suggested "${candidate?.name ?? "?"}" at ${(r.confidence * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`;
+    } else {
+      out.classified_by = "ai";
+      out.ai_confidence = r.confidence;
+      out.ai_summary = r.summary;
+      out.classification_reason = r.reason || null;
+    }
+  } catch (e) {
+    console.error("AI classify failed", e);
+    out.classified_by = "ai_error";
+    out.classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
+  }
+  return out;
+}
+
+export async function classifyParsedEmail(
+  parsed: ParsedEmailForClassify,
+  userId: string,
+  accountId: string,
+  opts: { skipGmailLabelMatch?: boolean; context?: AccountContext; skipAi?: boolean } = {},
+): Promise<ClassificationResult> {
+  const context = opts.context ?? (await loadAccountContext(accountId, userId));
+  const rules = classifyByRules(parsed, context, { skipGmailLabelMatch: opts.skipGmailLabelMatch });
+  if (rules.needs_ai && !opts.skipAi) {
+    return classifyByAi(parsed, context, rules);
+  }
+  return rules;
 }
