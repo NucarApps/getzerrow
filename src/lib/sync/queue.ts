@@ -397,13 +397,14 @@ async function drainPendingAi(
       const fallbackOne = async (c: PendingAi) => {
         try {
           const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
-          await supabaseAdmin.from("emails").update({
+          await updateEmailEncrypted({
+            email_id: c.emailRowId,
             folder_id: single.folder_id,
             ai_summary: single.summary || null,
             ai_confidence: single.confidence,
             classified_by: "ai",
             classification_reason: single.reason || null,
-          }).eq("id", c.emailRowId);
+          });
           if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
           await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
           results.push({ id: c.job.id, ok: true });
