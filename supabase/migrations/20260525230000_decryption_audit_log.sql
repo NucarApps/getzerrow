@@ -207,8 +207,7 @@ GRANT EXECUTE ON FUNCTION private.decrypt_oauth_token(bytea, uuid, text) TO serv
 
 -- View now passes the row's id and a context label so the audit log
 -- can answer "who decrypted email X via the inbox view".
-DROP VIEW IF EXISTS public.emails_decrypted;
-CREATE VIEW public.emails_decrypted
+CREATE OR REPLACE VIEW public.emails_decrypted
 WITH (security_invoker = true)
 AS
 SELECT
