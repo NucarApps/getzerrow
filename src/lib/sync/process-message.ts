@@ -398,15 +398,16 @@ export async function processGmailMessage(
     if (t) t.ai += performance.now() - _tAi;
     folder_id = c.folder_id ?? null;
     const _tDb = performance.now();
-    await supabaseAdmin.from("emails").update(classificationPatch(c)).eq("id", inserted.id);
+    await persistClassification(inserted.id, c);
     if (folder_id) void bumpEmailsSinceLearn(folder_id);
     if (t) t.db += performance.now() - _tDb;
   } catch (e) {
     console.error("classify failed (email already visible in Inbox)", e);
-    await supabaseAdmin.from("emails").update({
+    await updateEmailEncrypted({
+      email_id: inserted.id,
       classified_by: "unclassified",
       classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
-    }).eq("id", inserted.id);
+    });
     return { id: inserted.id, classify_failed: true };
   }
 
