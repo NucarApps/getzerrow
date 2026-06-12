@@ -32,6 +32,7 @@ import { loadAccountContext } from "./account-context";
 import { jitter } from "./backoff";
 import { classifyByRules, classifyByAi, type ClassificationResult } from "./classify";
 import { bumpEmailsSinceLearn } from "./folder-learn";
+import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
 
@@ -167,8 +168,15 @@ export async function applyFolderActions(
   }
 }
 
-function classificationPatch(c: ClassificationResult) {
-  return {
+/** Persist a classification outcome onto an existing email row via the
+ * encrypted-write RPC. Sensitive fields (ai_summary, classification_reason)
+ * are encrypted; folder_id/ai_confidence/classified_by/matched_* are plain.
+ * The RPC treats a null folder_id as "leave unchanged" — every caller here
+ * runs against a row whose folder_id is already null, so a null outcome
+ * correctly leaves it in the Inbox. */
+async function persistClassification(emailId: string, c: ClassificationResult) {
+  await updateEmailEncrypted({
+    email_id: emailId,
     folder_id: c.folder_id,
     ai_summary: c.ai_summary || null,
     ai_confidence: c.ai_confidence,
@@ -176,7 +184,7 @@ function classificationPatch(c: ClassificationResult) {
     classification_reason: c.classification_reason,
     matched_filter_ids: c.matched_filter_ids,
     matched_folder_ids: c.matched_folder_ids,
-  };
+  });
 }
 
 export async function processGmailMessage(
@@ -200,12 +208,12 @@ export async function processGmailMessage(
   const t = opts.timings;
 
   const _t0 = performance.now();
-  // Check body presence via the encrypted columns. Plaintext body_text /
-  // body_html columns are zeroed by the emails_encrypt_body BEFORE
-  // trigger, so reading them would always look empty.
+  // Check body/subject presence via the encrypted columns — the plaintext
+  // columns were dropped (Phase 3 encryption). Presence of *_enc ciphertext
+  // is enough to decide whether the row needs repair.
   const { data: existing } = await supabaseAdmin
     .from("emails")
-    .select("id, from_addr, subject, body_text_encrypted, body_html_encrypted, received_at, classified_by, folder_id")
+    .select("id, from_addr, subject_enc, body_text_enc, body_html_enc, received_at, classified_by, folder_id")
     .eq("gmail_message_id", gmailId)
     .eq("gmail_account_id", accountId)
     .maybeSingle();
@@ -225,18 +233,23 @@ export async function processGmailMessage(
     // Repair rows that were inserted with missing/blank metadata.
     const needsRepair =
       !existing.from_addr ||
-      !existing.subject ||
-      (!existing.body_text_encrypted && !existing.body_html_encrypted) ||
+      !existing.subject_enc ||
+      (!existing.body_text_enc && !existing.body_html_enc) ||
       !existing.received_at;
     if (needsRepair) {
-      await supabaseAdmin.from("emails").update({
-        from_addr: parsed.from_addr,
+      // Sensitive fields go through the encrypted-write RPC; the plaintext
+      // base columns (from_addr, received_at, flags, labels) update directly.
+      await updateEmailEncrypted({
+        email_id: existing.id,
         from_name: parsed.from_name,
         to_addrs: parsed.to_addrs,
         subject: parsed.subject,
         snippet: parsed.snippet,
         body_text: parsed.body_text,
         body_html: parsed.body_html,
+      });
+      await supabaseAdmin.from("emails").update({
+        from_addr: parsed.from_addr,
         received_at: parsed.received_at,
         has_attachment: parsed.has_attachment,
         raw_labels: parsed.raw_labels,
@@ -263,7 +276,7 @@ export async function processGmailMessage(
       const _tAi = performance.now();
       const final = rules.needs_ai ? await classifyByAi(parsed, context, rules) : rules;
       if (t) t.ai += performance.now() - _tAi;
-      await supabaseAdmin.from("emails").update(classificationPatch(final)).eq("id", existing.id);
+      await persistClassification(existing.id, final);
       if (final.folder_id) {
         void bumpEmailsSinceLearn(final.folder_id);
         const folder =
@@ -305,53 +318,58 @@ export async function processGmailMessage(
   const rulesEffects = rulesFolder ? computeFolderEffects(rulesFolder, parsed, inInbox) : null;
 
   const _tIns = performance.now();
-  const { data: inserted, error } = await supabaseAdmin
-    .from("emails")
-    .insert({
-      user_id: userId,
-      gmail_account_id: accountId,
-      gmail_message_id: parsed.gmail_message_id,
-      thread_id: parsed.thread_id,
-      from_addr: parsed.from_addr,
-      from_name: parsed.from_name,
-      to_addrs: parsed.to_addrs,
-      cc: parsed.cc || null,
-      list_id: parsed.list_id || null,
-      in_reply_to: parsed.in_reply_to || null,
-      subject: parsed.subject,
-      snippet: parsed.snippet,
-      body_text: parsed.body_text,
-      body_html: parsed.body_html,
-      received_at: parsed.received_at,
-      has_attachment: parsed.has_attachment,
-      raw_labels: parsed.raw_labels,
-      processed_at: new Date().toISOString(),
-      published_at_ms: publishedAtMs,
-      ...(rules.needs_ai
-        ? {
-            // AI pending: visible in Inbox immediately; the AI pass (or
-            // the batched backfill pass / rescue sweep) UPDATEs it.
-            folder_id: null,
-            classified_by: "pending_ai",
-            classification_reason: rules.classification_reason,
-            is_archived: !inInbox,
-            is_read: parsed.is_read,
-          }
-        : {
-            // Rules-final: single INSERT with folder + flags.
-            ...classificationPatch(rules),
-            is_archived: !inInbox || (rulesEffects?.effectiveArchive ?? false),
-            is_read: parsed.is_read || (rulesFolder?.auto_mark_read ?? false),
-            ...(rulesEffects?.snoozedUntil ? { snoozed_until: rulesEffects.snoozedUntil } : {}),
-          }),
-    })
-    .select("id")
-    .single();
+  const isArchived = rules.needs_ai
+    ? !inInbox
+    : (!inInbox || (rulesEffects?.effectiveArchive ?? false));
+  const isReadFlag = rules.needs_ai
+    ? parsed.is_read
+    : (parsed.is_read || (rulesFolder?.auto_mark_read ?? false));
+
+  // Insert via the encrypted-write RPC (sensitive columns are encrypted at
+  // rest). It forces folder_id=null and can't carry classification
+  // metadata, so the rules-final / pending_ai metadata is applied in a
+  // follow-up write below.
+  const { id: insertedId, error } = await upsertEmailEncrypted({
+    user_id: userId,
+    gmail_account_id: accountId,
+    gmail_message_id: parsed.gmail_message_id,
+    thread_id: parsed.thread_id,
+    from_addr: parsed.from_addr,
+    from_name: parsed.from_name,
+    to_addrs: parsed.to_addrs,
+    cc: parsed.cc || null,
+    list_id: parsed.list_id || null,
+    in_reply_to: parsed.in_reply_to || null,
+    subject: parsed.subject,
+    snippet: parsed.snippet,
+    body_text: parsed.body_text,
+    body_html: parsed.body_html,
+    received_at: parsed.received_at,
+    is_read: isReadFlag,
+    is_archived: isArchived,
+    has_attachment: parsed.has_attachment,
+    raw_labels: parsed.raw_labels,
+    classified_by: rules.needs_ai ? "pending_ai" : rules.classified_by,
+    processed_at: new Date().toISOString(),
+    published_at_ms: publishedAtMs,
+  });
   if (t) t.db += performance.now() - _tIns;
 
-  if (error) {
+  if (error || !insertedId) {
     console.error("insert email failed", error);
-    return { error: error.message };
+    return { error: error ?? "insert failed" };
+  }
+  const inserted = { id: insertedId };
+
+  if (rules.needs_ai) {
+    if (rules.classification_reason) {
+      await updateEmailEncrypted({ email_id: insertedId, classification_reason: rules.classification_reason });
+    }
+  } else {
+    await persistClassification(insertedId, rules);
+    if (rulesEffects?.snoozedUntil) {
+      await supabaseAdmin.from("emails").update({ snoozed_until: rulesEffects.snoozedUntil }).eq("id", insertedId);
+    }
   }
 
   // 2) Rules-final path: Gmail label mutations + forward. Flags are
@@ -380,15 +398,16 @@ export async function processGmailMessage(
     if (t) t.ai += performance.now() - _tAi;
     folder_id = c.folder_id ?? null;
     const _tDb = performance.now();
-    await supabaseAdmin.from("emails").update(classificationPatch(c)).eq("id", inserted.id);
+    await persistClassification(inserted.id, c);
     if (folder_id) void bumpEmailsSinceLearn(folder_id);
     if (t) t.db += performance.now() - _tDb;
   } catch (e) {
     console.error("classify failed (email already visible in Inbox)", e);
-    await supabaseAdmin.from("emails").update({
+    await updateEmailEncrypted({
+      email_id: inserted.id,
       classified_by: "unclassified",
       classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
-    }).eq("id", inserted.id);
+    });
     return { id: inserted.id, classify_failed: true };
   }
 

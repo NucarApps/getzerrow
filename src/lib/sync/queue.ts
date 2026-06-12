@@ -44,6 +44,7 @@ import {
 } from "./backoff";
 import { type AccountContext, loadAccountContext } from "./account-context";
 import { bumpEmailsSinceLearn } from "./folder-learn";
+import { updateEmailEncrypted } from "./encrypted-writer";
 import { processGmailMessage, type ProcessTimings } from "./process-message";
 import type { classifyParsedEmail } from "./classify";
 
@@ -396,13 +397,14 @@ async function drainPendingAi(
       const fallbackOne = async (c: PendingAi) => {
         try {
           const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
-          await supabaseAdmin.from("emails").update({
+          await updateEmailEncrypted({
+            email_id: c.emailRowId,
             folder_id: single.folder_id,
             ai_summary: single.summary || null,
             ai_confidence: single.confidence,
             classified_by: "ai",
             classification_reason: single.reason || null,
-          }).eq("id", c.emailRowId);
+          });
           if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
           await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
           results.push({ id: c.job.id, ok: true });
@@ -413,10 +415,11 @@ async function drainPendingAi(
           // AI; the rescue sweep is the last-resort net. The old
           // behavior (mark 'unclassified' + delete job as ok) stranded
           // the email permanently with zero operator signal.
-          await supabaseAdmin.from("emails").update({
+          await updateEmailEncrypted({
+            email_id: c.emailRowId,
             classified_by: "pending_ai",
             classification_reason: `AI classifier failed (will retry): ${((innerErr as Error)?.message ?? "unknown").slice(0, 200)}`,
-          }).eq("id", c.emailRowId);
+          });
           await handleError(c.job, innerErr, results);
         }
       };
@@ -438,7 +441,8 @@ async function drainPendingAi(
               const candidate = r.folder_id ? ctx.folders.find((f) => f.id === r.folder_id) : null;
               const threshold = candidate?.min_ai_confidence ?? 0;
               const passes = r.folder_id && (r.confidence ?? 0) >= threshold;
-              await supabaseAdmin.from("emails").update({
+              await updateEmailEncrypted({
+                email_id: c.emailRowId,
                 folder_id: passes ? r.folder_id : null,
                 ai_summary: r.summary || null,
                 ai_confidence: r.confidence ?? 0,
@@ -448,7 +452,7 @@ async function drainPendingAi(
                   : (r.folder_id
                       ? `AI suggested "${candidate?.name ?? "?"}" at ${((r.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
                       : (r.reason || null)),
-              }).eq("id", c.emailRowId);
+              });
               if (passes && r.folder_id) void bumpEmailsSinceLearn(r.folder_id);
               await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
               results.push({ id: c.job.id, ok: true });

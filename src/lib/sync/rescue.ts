@@ -21,6 +21,8 @@ import { loadAccountContext, type AccountContext } from "./account-context";
 import { classifyByRules, type ParsedEmailForClassify } from "./classify";
 import { applyFolderActions, type ActionFolder } from "./process-message";
 import { bumpEmailsSinceLearn } from "./folder-learn";
+import { updateEmailEncrypted } from "./encrypted-writer";
+import { getEmailsDecrypted } from "./encrypted-reader";
 import { RESCUE_WINDOW_HOURS, RESCUE_MAX_ATTEMPTS, RESCUE_BATCH_LIMIT, RESCUE_AI_BATCH_SIZE } from "./config";
 
 const NON_TERMINAL_STATES = ["pending", "pending_ai", "unclassified", "ai_error"] as const;
@@ -88,7 +90,8 @@ async function finalize(
     matched_folder_ids?: string[];
   },
 ) {
-  await supabaseAdmin.from("emails").update({
+  await updateEmailEncrypted({
+    email_id: row.id,
     folder_id: outcome.folder_id,
     ai_summary: outcome.ai_summary || null,
     ai_confidence: outcome.ai_confidence,
@@ -96,7 +99,7 @@ async function finalize(
     classification_reason: outcome.classification_reason,
     ...(outcome.matched_filter_ids ? { matched_filter_ids: outcome.matched_filter_ids } : {}),
     ...(outcome.matched_folder_ids ? { matched_folder_ids: outcome.matched_folder_ids } : {}),
-  }).eq("id", row.id);
+  });
   if (outcome.folder_id) {
     void bumpEmailsSinceLearn(outcome.folder_id);
     const cached = ctx.folders.find((f) => f.id === outcome.folder_id);
@@ -126,23 +129,25 @@ async function finalize(
  * sweep, or go terminal once the attempt cap is reached. */
 async function recordFailure(row: RescueRow, attemptNumber: number, errMsg: string) {
   const terminal = attemptNumber >= RESCUE_MAX_ATTEMPTS;
-  await supabaseAdmin.from("emails").update({
+  await updateEmailEncrypted({
+    email_id: row.id,
     classified_by: terminal ? "unclassified" : "pending_ai",
     classification_reason: terminal
       ? `Classification failed after ${attemptNumber} rescue attempts: ${errMsg.slice(0, 150)}`
       : `Rescue attempt ${attemptNumber} failed (will retry): ${errMsg.slice(0, 150)}`,
-  }).eq("id", row.id);
+  });
 }
 
 export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
   const limit = opts.limit ?? RESCUE_BATCH_LIMIT;
   const since = new Date(Date.now() - RESCUE_WINDOW_HOURS * 3600_000).toISOString();
 
-  // emails_decrypted gives plaintext body_text for AI quality — the
-  // base table's body_text is zeroed by the encryption trigger.
-  const { data: rows, error } = await supabaseAdmin
-    .from("emails_decrypted")
-    .select("id, user_id, gmail_account_id, gmail_message_id, from_addr, from_name, to_addrs, cc, list_id, in_reply_to, subject, snippet, body_text, has_attachment, received_at, raw_labels, classify_attempts")
+  // Scan candidates on the base table — folder_id / classified_by /
+  // created_at / classify_attempts are plaintext and indexable (the
+  // sensitive fields are encrypted and fetched separately below).
+  const { data: baseRows, error } = await supabaseAdmin
+    .from("emails")
+    .select("id, user_id, gmail_account_id, gmail_message_id, from_addr, list_id, in_reply_to, has_attachment, received_at, raw_labels, classify_attempts")
     .is("folder_id", null)
     .in("classified_by", NON_TERMINAL_STATES as unknown as string[])
     .gte("created_at", since)
@@ -150,12 +155,42 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) {
-    // classify_attempts not deployed yet → the view lacks the column.
-    // Report instead of crashing the cron.
     console.error("rescue select failed (migration applied?)", error.message);
     return { scanned: 0, rescued: 0, failed: 0, skipped: 0, error: error.message };
   }
-  const candidates = (rows ?? []) as RescueRow[];
+  const base = baseRows ?? [];
+  if (base.length === 0) return { scanned: 0, rescued: 0, failed: 0, skipped: 0 };
+
+  // Decrypt the sensitive fields (subject/snippet/body_text/from_name/etc.)
+  // the classifier needs, via the security-definer RPC.
+  const { rows: decrypted, error: decErr } = await getEmailsDecrypted(base.map((r) => r.id));
+  if (decErr) {
+    console.error("rescue decrypt failed", decErr);
+    return { scanned: base.length, rescued: 0, failed: 0, skipped: 0, error: decErr };
+  }
+  const decById = new Map(decrypted.map((d) => [d.id, d]));
+  const candidates: RescueRow[] = base.map((b) => {
+    const d = decById.get(b.id);
+    return {
+      id: b.id,
+      user_id: b.user_id,
+      gmail_account_id: b.gmail_account_id,
+      gmail_message_id: b.gmail_message_id,
+      from_addr: b.from_addr,
+      from_name: d?.from_name ?? null,
+      to_addrs: d?.to_addrs ?? null,
+      cc: d?.cc ?? null,
+      list_id: b.list_id,
+      in_reply_to: b.in_reply_to,
+      subject: d?.subject ?? null,
+      snippet: d?.snippet ?? null,
+      body_text: d?.body_text ?? null,
+      has_attachment: b.has_attachment,
+      received_at: b.received_at,
+      raw_labels: b.raw_labels,
+      classify_attempts: b.classify_attempts,
+    };
+  });
   if (candidates.length === 0) return { scanned: 0, rescued: 0, failed: 0, skipped: 0 };
 
   // Skip emails the queue still owns — its retry path will classify

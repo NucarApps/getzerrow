@@ -69,6 +69,7 @@ export const isTransientDlqError = _isTransientDlqError;
 export const replayTransientDlq = _replayTransientDlq;
 export const retryForwardAttempts = _retryForwardAttempts;
 export { rescueStrandedEmails } from "./sync/rescue";
+export { classifyByRules } from "./sync/classify";
 export type AccountContext = _AccountContext;
 export const loadAccountContext = _loadAccountContext;
 export const invalidateAccountContext = _invalidateAccountContext;
