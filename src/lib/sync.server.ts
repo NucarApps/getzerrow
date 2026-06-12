@@ -41,7 +41,10 @@ export {
 export { computeBackoffSeconds } from "./sync/backoff";
 export {
   classifyParsedEmail,
+  classifyByRules,
+  classifyByAi,
   type ClassificationResult,
+  type RulesClassification,
 } from "./sync/classify";
 export { isTransientDlqError, replayTransientDlq } from "./sync/dlq";
 export {
@@ -55,7 +58,9 @@ export { syncSinceHistory } from "./sync/history";
 export { gmailHistoryIdGreater } from "./sync/history-id";
 export {
   processGmailMessage,
+  applyFolderActions,
   type ProcessTimings,
+  type ActionFolder,
 } from "./sync/process-message";
 export {
   enqueueMessageJob,

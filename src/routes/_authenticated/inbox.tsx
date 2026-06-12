@@ -1681,6 +1681,8 @@ function ClassifiedChip({ by }: { by: string | null }) {
     manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
     excluded: { label: "Excluded", Icon: HelpCircle, cls: "text-destructive" },
     global_exclude: { label: "Inbox list", Icon: HelpCircle, cls: "text-destructive" },
+    pending: { label: "Sorting…", Icon: Bot, cls: "text-muted-foreground" },
+    pending_ai: { label: "Sorting…", Icon: Bot, cls: "text-muted-foreground" },
     none: { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" },
   };
   const k = by ?? "none";

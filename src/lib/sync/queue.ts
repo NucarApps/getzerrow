@@ -200,14 +200,17 @@ export async function runMessageJobs(
         ),
       ])) as Awaited<ReturnType<typeof processGmailMessage>>;
 
-      // Queue for batched AI if this backfill row landed in Inbox (no
-      // folder yet) and AI was deferred.
+      // Queue for batched AI only when the message actually needs the
+      // AI pass. The old `!result.folder_id` gate also caught
+      // global_exclude / excluded rows (folder_id null but FINAL) and
+      // let the batch AI overwrite the user's blocklist decision.
       if (
         deferAi &&
         result &&
         "email_id" in result &&
         result.email_id &&
-        !result.folder_id &&
+        "needs_ai" in result &&
+        result.needs_ai === true &&
         result.parsed &&
         ctx &&
         ctx.folders.length > 0

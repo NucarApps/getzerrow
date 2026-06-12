@@ -51,13 +51,23 @@ export type ParsedEmailForClassify = {
   raw_labels: string[] | null;
 };
 
-export async function classifyParsedEmail(
+export type RulesClassification = ClassificationResult & {
+  /** True when no rule fired AND there are AI-eligible folders — i.e.
+   * the result is provisional and classifyByAi should run. False means
+   * the rules result is final (matched, excluded, or nothing for AI to
+   * do). */
+  needs_ai: boolean;
+};
+
+/** Synchronous rules-only classification: inbox override (+ exceptions)
+ * → Gmail label match → folder filter tree / simple filters. Never
+ * calls the AI gateway — fast enough (10–50ms) to run before the email
+ * row is inserted. */
+export function classifyByRules(
   parsed: ParsedEmailForClassify,
-  userId: string,
-  accountId: string,
-  opts: { skipGmailLabelMatch?: boolean; context?: AccountContext; skipAi?: boolean } = {},
-): Promise<ClassificationResult> {
-  const context = opts.context ?? (await loadAccountContext(accountId, userId));
+  context: AccountContext,
+  opts: { skipGmailLabelMatch?: boolean } = {},
+): RulesClassification {
   const folderList = context.folders;
   const filterList = context.filters;
   const overrides = context.overrides;
@@ -66,7 +76,7 @@ export async function classifyParsedEmail(
   let folder_id: string | null = null;
   let classified_by = "none";
   let confidence = 0;
-  let summary = "";
+  const summary = "";
   let classification_reason: string | null = null;
   let matched_filter_ids: string[] = [];
   let matched_folder_ids: string[] = [];
@@ -159,39 +169,8 @@ export async function classifyParsedEmail(
     }
   }
 
-  if (!folder_id && !aiSkipped && !opts.skipAi && folderList.length > 0) {
-    // Exclude folders flagged skip_ai from the AI candidate set.
-    const skipAiIds = new Set(folderList.filter((f) => f.skip_ai).map((f) => f.id));
-    const aiFolders = context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
-    if (aiFolders.length > 0) {
-      try {
-        const r = await classifyEmail(parsed, aiFolders);
-        const candidate = folderList.find((f) => f.id === r.folder_id);
-        const threshold = candidate?.min_ai_confidence ?? 0;
-        if (r.folder_id && r.confidence >= threshold) {
-          folder_id = r.folder_id;
-          confidence = r.confidence;
-          summary = r.summary;
-          classified_by = "ai";
-          classification_reason = r.reason || null;
-        } else if (r.folder_id) {
-          classified_by = "ai_low_confidence";
-          confidence = r.confidence;
-          summary = r.summary;
-          classification_reason = `AI suggested "${candidate?.name ?? "?"}" at ${(r.confidence * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`;
-        } else {
-          classified_by = "ai";
-          confidence = r.confidence;
-          summary = r.summary;
-          classification_reason = r.reason || null;
-        }
-      } catch (e) {
-        console.error("AI classify failed", e);
-        classified_by = "ai_error";
-        classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
-      }
-    }
-  }
+  const needs_ai =
+    !folder_id && !aiSkipped && folderList.length > 0 && aiCandidateFolders(context).length > 0;
 
   return {
     folder_id,
@@ -201,5 +180,66 @@ export async function classifyParsedEmail(
     classification_reason,
     matched_filter_ids,
     matched_folder_ids,
+    needs_ai,
   };
+}
+
+/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai. */
+function aiCandidateFolders(context: AccountContext) {
+  const skipAiIds = new Set(context.folders.filter((f) => f.skip_ai).map((f) => f.id));
+  return context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
+}
+
+/** AI fallback pass. Call only when classifyByRules returned
+ * needs_ai=true. Takes the rules result as `base` so non-AI fields
+ * (matched_* arrays, exception-note reason) carry through. */
+export async function classifyByAi(
+  parsed: ParsedEmailForClassify,
+  context: AccountContext,
+  base: ClassificationResult,
+): Promise<ClassificationResult> {
+  const out: ClassificationResult = { ...base };
+  const aiFolders = aiCandidateFolders(context);
+  if (aiFolders.length === 0) return out;
+  try {
+    const r = await classifyEmail(parsed, aiFolders);
+    const candidate = context.folders.find((f) => f.id === r.folder_id);
+    const threshold = candidate?.min_ai_confidence ?? 0;
+    if (r.folder_id && r.confidence >= threshold) {
+      out.folder_id = r.folder_id;
+      out.ai_confidence = r.confidence;
+      out.ai_summary = r.summary;
+      out.classified_by = "ai";
+      out.classification_reason = r.reason || null;
+    } else if (r.folder_id) {
+      out.classified_by = "ai_low_confidence";
+      out.ai_confidence = r.confidence;
+      out.ai_summary = r.summary;
+      out.classification_reason = `AI suggested "${candidate?.name ?? "?"}" at ${(r.confidence * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`;
+    } else {
+      out.classified_by = "ai";
+      out.ai_confidence = r.confidence;
+      out.ai_summary = r.summary;
+      out.classification_reason = r.reason || null;
+    }
+  } catch (e) {
+    console.error("AI classify failed", e);
+    out.classified_by = "ai_error";
+    out.classification_reason = `AI classifier failed: ${(e as Error)?.message ?? "unknown error"}`;
+  }
+  return out;
+}
+
+export async function classifyParsedEmail(
+  parsed: ParsedEmailForClassify,
+  userId: string,
+  accountId: string,
+  opts: { skipGmailLabelMatch?: boolean; context?: AccountContext; skipAi?: boolean } = {},
+): Promise<ClassificationResult> {
+  const context = opts.context ?? (await loadAccountContext(accountId, userId));
+  const rules = classifyByRules(parsed, context, { skipGmailLabelMatch: opts.skipGmailLabelMatch });
+  if (rules.needs_ai && !opts.skipAi) {
+    return classifyByAi(parsed, context, rules);
+  }
+  return rules;
 }

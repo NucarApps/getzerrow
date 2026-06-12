@@ -5,7 +5,7 @@
 // These tests pass a synthetic AccountContext so loadAccountContext never
 // touches Supabase, and use skipAi=true so we never hit the AI Gateway.
 import { describe, it, expect } from "vitest";
-import { classifyParsedEmail, type AccountContext } from "./sync.server";
+import { classifyParsedEmail, classifyByRules, type AccountContext } from "./sync.server";
 
 type Folder = AccountContext["folders"][number];
 type Filter = AccountContext["filters"][number];
@@ -266,5 +266,95 @@ describe("classifyParsedEmail — skipAi behavior", () => {
     );
     expect(r.folder_id).toBeNull();
     expect(r.classified_by).toBe("none");
+  });
+});
+
+// classifyByRules.needs_ai gates whether the AI pass runs AND whether
+// process-message can finalize the row in a single INSERT (no flicker).
+// It must be false for every terminal rules outcome.
+describe("classifyByRules — needs_ai", () => {
+  const enriched = (id: string, name: string) => ({ id, name, ai_rule: null });
+
+  it("true when nothing matched and AI-eligible folders exist", () => {
+    const f = folder({ id: "f1", name: "Work" });
+    const c = ctx({ folders: [f], enrichedFolders: [enriched("f1", "Work")] });
+    const r = classifyByRules(email({ from_addr: "nobody@nowhere.test" }), c);
+    expect(r.folder_id).toBeNull();
+    expect(r.needs_ai).toBe(true);
+  });
+
+  it("false when a filter matched", () => {
+    const f = folder({ id: "f1", name: "Work" });
+    const c = ctx({
+      folders: [f],
+      filters: [filter("f1", "from", "contains", "@acme.com")],
+      enrichedFolders: [enriched("f1", "Work")],
+    });
+    const r = classifyByRules(email({ from_addr: "me@acme.com" }), c);
+    expect(r.folder_id).toBe("f1");
+    expect(r.needs_ai).toBe(false);
+  });
+
+  it("false when a Gmail label matched", () => {
+    const f = folder({ id: "f1", name: "Work", gmail_label_id: "Label_9" });
+    const c = ctx({ folders: [f], enrichedFolders: [enriched("f1", "Work")] });
+    const r = classifyByRules(email({ raw_labels: ["INBOX", "Label_9"] }), c);
+    expect(r.classified_by).toBe("gmail_label");
+    expect(r.needs_ai).toBe(false);
+  });
+
+  it("false for global_exclude (inbox override) — AI must NOT override the blocklist", () => {
+    const f = folder({ id: "f1", name: "Work" });
+    const c = ctx({
+      folders: [f],
+      overrides: [{ id: "o1", match_type: "domain", value: "spam.test" } as never],
+      enrichedFolders: [enriched("f1", "Work")],
+    });
+    const r = classifyByRules(email({ from_addr: "x@spam.test" }), c);
+    expect(r.classified_by).toBe("global_exclude");
+    expect(r.needs_ai).toBe(false);
+  });
+
+  it("false for excluded (folder veto rule)", () => {
+    const f = folder({ id: "f1", name: "Promo", filter_logic: "all" });
+    const c = ctx({
+      folders: [f],
+      filters: [
+        filter("f1", "subject", "contains", "sale"),
+        filter("f1", "from", "not_contains", "@vip.test"),
+      ],
+      enrichedFolders: [enriched("f1", "Promo")],
+    });
+    const r = classifyByRules(email({ subject: "Big sale", from_addr: "ceo@vip.test" }), c);
+    expect(r.classified_by).toBe("excluded");
+    expect(r.needs_ai).toBe(false);
+  });
+
+  it("false when there are no folders at all", () => {
+    const r = classifyByRules(email(), ctx());
+    expect(r.needs_ai).toBe(false);
+  });
+
+  it("false when every folder is skip_ai (no AI candidates)", () => {
+    const f = folder({ id: "f1", name: "Work", skip_ai: true });
+    const c = ctx({ folders: [f], enrichedFolders: [enriched("f1", "Work")] });
+    const r = classifyByRules(email({ from_addr: "nobody@nowhere.test" }), c);
+    expect(r.folder_id).toBeNull();
+    expect(r.needs_ai).toBe(false);
+  });
+
+  it("carries the override-exception note into the provisional result", () => {
+    const f = folder({ id: "f1", name: "Work" });
+    const c = ctx({
+      folders: [f],
+      overrides: [{ id: "o1", match_type: "domain", value: "corp.test" } as never],
+      overrideExceptions: [
+        { id: "e1", override_id: "o1", field: "subject", op: "contains", value: "urgent" } as never,
+      ],
+      enrichedFolders: [enriched("f1", "Work")],
+    });
+    const r = classifyByRules(email({ from_addr: "x@corp.test", subject: "urgent thing" }), c);
+    expect(r.needs_ai).toBe(true);
+    expect(r.classification_reason).toContain("bypassed by exception");
   });
 });
