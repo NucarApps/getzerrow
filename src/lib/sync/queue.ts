@@ -44,6 +44,7 @@ import {
 } from "./backoff";
 import { type AccountContext, loadAccountContext } from "./account-context";
 import { bumpEmailsSinceLearn } from "./folder-learn";
+import { updateEmailEncrypted } from "./encrypted-writer";
 import { processGmailMessage, type ProcessTimings } from "./process-message";
 import type { classifyParsedEmail } from "./classify";
 
