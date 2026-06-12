@@ -69,3 +69,4 @@ export {
   retryMessageJob,
 } from "./sync/queue";
 export { reconcileLocalInbox } from "./sync/reconcile";
+export { rescueStrandedEmails } from "./sync/rescue";

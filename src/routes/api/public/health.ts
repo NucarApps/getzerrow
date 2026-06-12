@@ -45,6 +45,8 @@ const EXPECTED_FUNCTIONS = [
   // Audit
   "list_decryption_audit",
   "audit_encryption_leaks",
+  // Learning + rescue
+  "increment_emails_since_learn",
 ];
 
 const EXPECTED_COLUMNS: Array<{ table: string; column: string }> = [
@@ -65,6 +67,8 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string }> = [
   // Forward retry
   { table: "emails", column: "forward_attempts" },
   { table: "emails", column: "forward_locked_at" },
+  // Classification rescue sweep
+  { table: "emails", column: "classify_attempts" },
 ];
 
 type ProbeRpc = {

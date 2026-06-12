@@ -24,6 +24,7 @@ import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authen
 import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
+import { Route as ApiPublicGmailRescueClassifyRouteImport } from './routes/api/public/gmail-rescue-classify'
 import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
 import { Route as ApiPublicGmailReconcileRouteImport } from './routes/api/public/gmail-reconcile'
 import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/public/gmail-process-jobs'
@@ -120,6 +121,12 @@ const ApiPublicGmailRenewWatchesRoute =
     path: '/api/public/gmail-renew-watches',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicGmailRescueClassifyRoute =
+  ApiPublicGmailRescueClassifyRouteImport.update({
+    id: '/api/public/gmail-rescue-classify',
+    path: '/api/public/gmail-rescue-classify',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicGmailReconcileRoute = ApiPublicGmailReconcileRouteImport.update({
   id: '/api/public/gmail-reconcile',
   path: '/api/public/gmail-reconcile',
@@ -210,6 +217,7 @@ export interface FileRoutesByFullPath {
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
+  '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
@@ -239,6 +247,7 @@ export interface FileRoutesByTo {
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
+  '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
@@ -270,6 +279,7 @@ export interface FileRoutesById {
   '/api/public/gmail-process-jobs': typeof ApiPublicGmailProcessJobsRoute
   '/api/public/gmail-reconcile': typeof ApiPublicGmailReconcileRoute
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
+  '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
@@ -301,6 +311,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
+    | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/logo'
@@ -330,6 +341,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
+    | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/logo'
@@ -360,6 +372,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-process-jobs'
     | '/api/public/gmail-reconcile'
     | '/api/public/gmail-renew-watches'
+    | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/logo'
@@ -384,6 +397,7 @@ export interface RootRouteChildren {
   ApiPublicGmailProcessJobsRoute: typeof ApiPublicGmailProcessJobsRoute
   ApiPublicGmailReconcileRoute: typeof ApiPublicGmailReconcileRoute
   ApiPublicGmailRenewWatchesRoute: typeof ApiPublicGmailRenewWatchesRoute
+  ApiPublicGmailRescueClassifyRoute: typeof ApiPublicGmailRescueClassifyRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
@@ -504,6 +518,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/gmail-renew-watches'
       fullPath: '/api/public/gmail-renew-watches'
       preLoaderRoute: typeof ApiPublicGmailRenewWatchesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-rescue-classify': {
+      id: '/api/public/gmail-rescue-classify'
+      path: '/api/public/gmail-rescue-classify'
+      fullPath: '/api/public/gmail-rescue-classify'
+      preLoaderRoute: typeof ApiPublicGmailRescueClassifyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/gmail-reconcile': {
@@ -634,6 +655,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGmailProcessJobsRoute: ApiPublicGmailProcessJobsRoute,
   ApiPublicGmailReconcileRoute: ApiPublicGmailReconcileRoute,
   ApiPublicGmailRenewWatchesRoute: ApiPublicGmailRenewWatchesRoute,
+  ApiPublicGmailRescueClassifyRoute: ApiPublicGmailRescueClassifyRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicLogoRoute: ApiPublicLogoRoute,
