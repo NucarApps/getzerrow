@@ -276,7 +276,7 @@ export async function processGmailMessage(
       const _tAi = performance.now();
       const final = rules.needs_ai ? await classifyByAi(parsed, context, rules) : rules;
       if (t) t.ai += performance.now() - _tAi;
-      await supabaseAdmin.from("emails").update(classificationPatch(final)).eq("id", existing.id);
+      await persistClassification(existing.id, final);
       if (final.folder_id) {
         void bumpEmailsSinceLearn(final.folder_id);
         const folder =
