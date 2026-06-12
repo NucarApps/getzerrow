@@ -415,10 +415,11 @@ async function drainPendingAi(
           // AI; the rescue sweep is the last-resort net. The old
           // behavior (mark 'unclassified' + delete job as ok) stranded
           // the email permanently with zero operator signal.
-          await supabaseAdmin.from("emails").update({
+          await updateEmailEncrypted({
+            email_id: c.emailRowId,
             classified_by: "pending_ai",
             classification_reason: `AI classifier failed (will retry): ${((innerErr as Error)?.message ?? "unknown").slice(0, 200)}`,
-          }).eq("id", c.emailRowId);
+          });
           await handleError(c.job, innerErr, results);
         }
       };
