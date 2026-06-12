@@ -27,19 +27,18 @@ type CleanupPubsubResult = { deleted: number; kept_errors: number; total_before:
 type CleanupDlqResult = { deleted: number; total_before: number };
 type CleanupAuditResult = { deleted: number; total_before: number };
 type CleanupRpc = {
-  rpc:
-    | ((
-        fn: "cleanup_old_pubsub_events",
-        args: { p_keep_days: number; p_keep_errors_days: number; p_batch_limit: number },
-      ) => Promise<{ data: CleanupPubsubResult[] | null; error: { message: string } | null }>)
-    | ((
-        fn: "cleanup_old_dlq_jobs",
-        args: { p_keep_days: number; p_batch_limit: number },
-      ) => Promise<{ data: CleanupDlqResult[] | null; error: { message: string } | null }>)
-    | ((
-        fn: "cleanup_old_decryption_audit",
-        args: { p_keep_days: number; p_batch_limit: number },
-      ) => Promise<{ data: CleanupAuditResult[] | null; error: { message: string } | null }>);
+  rpc(
+    fn: "cleanup_old_pubsub_events",
+    args: { p_keep_days: number; p_keep_errors_days: number; p_batch_limit: number },
+  ): Promise<{ data: CleanupPubsubResult[] | null; error: { message: string } | null }>;
+  rpc(
+    fn: "cleanup_old_dlq_jobs",
+    args: { p_keep_days: number; p_batch_limit: number },
+  ): Promise<{ data: CleanupDlqResult[] | null; error: { message: string } | null }>;
+  rpc(
+    fn: "cleanup_old_decryption_audit",
+    args: { p_keep_days: number; p_batch_limit: number },
+  ): Promise<{ data: CleanupAuditResult[] | null; error: { message: string } | null }>;
 };
 
 function clampInt(s: string | null, min: number, max: number, fallback: number): number {
