@@ -345,14 +345,23 @@ async function applyLabelChange(
       const folder = labelToFolder.get(label);
       if (!folder) continue;
       try {
-        await supabaseAdmin.from("emails").update({
-          folder_id: null,
-          classified_by: "manual_inbox",
-          classification_reason: `Label "${folder.name}" removed in Gmail`,
-        })
+        // Find the matching row, then null its folder_id (real column) and
+        // set the encrypted classification_reason via the RPC.
+        const { data: matches } = await supabaseAdmin.from("emails")
+          .select("id")
           .eq("gmail_account_id", accountId)
           .eq("gmail_message_id", messageId)
           .eq("folder_id", folder.id);
+        for (const row of matches ?? []) {
+          await supabaseAdmin.from("emails").update({
+            folder_id: null,
+            classified_by: "manual_inbox",
+          }).eq("id", row.id);
+          await updateEmailEncrypted({
+            email_id: row.id,
+            classification_reason: `Label "${folder.name}" removed in Gmail`,
+          });
+        }
       } catch (e) { console.error("linked-label removal handler failed", e); }
     }
   }
