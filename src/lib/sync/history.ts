@@ -47,6 +47,7 @@ import { HISTORY_LABEL_FETCH_CONCURRENCY } from "./config";
 import { gmailHistoryIdGreater } from "./history-id";
 import { enqueueMessageJobs } from "./queue";
 import { recordManualMove } from "./folder-learn";
+import { updateEmailEncrypted } from "./encrypted-writer";
 import { backfillRecent } from "./backfill";
 import type { Folder, GmailAccount } from "./types";
 
