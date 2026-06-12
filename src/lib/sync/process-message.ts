@@ -318,53 +318,58 @@ export async function processGmailMessage(
   const rulesEffects = rulesFolder ? computeFolderEffects(rulesFolder, parsed, inInbox) : null;
 
   const _tIns = performance.now();
-  const { data: inserted, error } = await supabaseAdmin
-    .from("emails")
-    .insert({
-      user_id: userId,
-      gmail_account_id: accountId,
-      gmail_message_id: parsed.gmail_message_id,
-      thread_id: parsed.thread_id,
-      from_addr: parsed.from_addr,
-      from_name: parsed.from_name,
-      to_addrs: parsed.to_addrs,
-      cc: parsed.cc || null,
-      list_id: parsed.list_id || null,
-      in_reply_to: parsed.in_reply_to || null,
-      subject: parsed.subject,
-      snippet: parsed.snippet,
-      body_text: parsed.body_text,
-      body_html: parsed.body_html,
-      received_at: parsed.received_at,
-      has_attachment: parsed.has_attachment,
-      raw_labels: parsed.raw_labels,
-      processed_at: new Date().toISOString(),
-      published_at_ms: publishedAtMs,
-      ...(rules.needs_ai
-        ? {
-            // AI pending: visible in Inbox immediately; the AI pass (or
-            // the batched backfill pass / rescue sweep) UPDATEs it.
-            folder_id: null,
-            classified_by: "pending_ai",
-            classification_reason: rules.classification_reason,
-            is_archived: !inInbox,
-            is_read: parsed.is_read,
-          }
-        : {
-            // Rules-final: single INSERT with folder + flags.
-            ...classificationPatch(rules),
-            is_archived: !inInbox || (rulesEffects?.effectiveArchive ?? false),
-            is_read: parsed.is_read || (rulesFolder?.auto_mark_read ?? false),
-            ...(rulesEffects?.snoozedUntil ? { snoozed_until: rulesEffects.snoozedUntil } : {}),
-          }),
-    })
-    .select("id")
-    .single();
+  const isArchived = rules.needs_ai
+    ? !inInbox
+    : (!inInbox || (rulesEffects?.effectiveArchive ?? false));
+  const isReadFlag = rules.needs_ai
+    ? parsed.is_read
+    : (parsed.is_read || (rulesFolder?.auto_mark_read ?? false));
+
+  // Insert via the encrypted-write RPC (sensitive columns are encrypted at
+  // rest). It forces folder_id=null and can't carry classification
+  // metadata, so the rules-final / pending_ai metadata is applied in a
+  // follow-up write below.
+  const { id: insertedId, error } = await upsertEmailEncrypted({
+    user_id: userId,
+    gmail_account_id: accountId,
+    gmail_message_id: parsed.gmail_message_id,
+    thread_id: parsed.thread_id,
+    from_addr: parsed.from_addr,
+    from_name: parsed.from_name,
+    to_addrs: parsed.to_addrs,
+    cc: parsed.cc || null,
+    list_id: parsed.list_id || null,
+    in_reply_to: parsed.in_reply_to || null,
+    subject: parsed.subject,
+    snippet: parsed.snippet,
+    body_text: parsed.body_text,
+    body_html: parsed.body_html,
+    received_at: parsed.received_at,
+    is_read: isReadFlag,
+    is_archived: isArchived,
+    has_attachment: parsed.has_attachment,
+    raw_labels: parsed.raw_labels,
+    classified_by: rules.needs_ai ? "pending_ai" : rules.classified_by,
+    processed_at: new Date().toISOString(),
+    published_at_ms: publishedAtMs,
+  });
   if (t) t.db += performance.now() - _tIns;
 
-  if (error) {
+  if (error || !insertedId) {
     console.error("insert email failed", error);
-    return { error: error.message };
+    return { error: error ?? "insert failed" };
+  }
+  const inserted = { id: insertedId };
+
+  if (rules.needs_ai) {
+    if (rules.classification_reason) {
+      await updateEmailEncrypted({ email_id: insertedId, classification_reason: rules.classification_reason });
+    }
+  } else {
+    await persistClassification(insertedId, rules);
+    if (rulesEffects?.snoozedUntil) {
+      await supabaseAdmin.from("emails").update({ snoozed_until: rulesEffects.snoozedUntil }).eq("id", insertedId);
+    }
   }
 
   // 2) Rules-final path: Gmail label mutations + forward. Flags are
