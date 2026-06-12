@@ -90,7 +90,8 @@ async function finalize(
     matched_folder_ids?: string[];
   },
 ) {
-  await supabaseAdmin.from("emails").update({
+  await updateEmailEncrypted({
+    email_id: row.id,
     folder_id: outcome.folder_id,
     ai_summary: outcome.ai_summary || null,
     ai_confidence: outcome.ai_confidence,
@@ -98,7 +99,7 @@ async function finalize(
     classification_reason: outcome.classification_reason,
     ...(outcome.matched_filter_ids ? { matched_filter_ids: outcome.matched_filter_ids } : {}),
     ...(outcome.matched_folder_ids ? { matched_folder_ids: outcome.matched_folder_ids } : {}),
-  }).eq("id", row.id);
+  });
   if (outcome.folder_id) {
     void bumpEmailsSinceLearn(outcome.folder_id);
     const cached = ctx.folders.find((f) => f.id === outcome.folder_id);
