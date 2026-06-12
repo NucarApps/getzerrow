@@ -129,12 +129,13 @@ async function finalize(
  * sweep, or go terminal once the attempt cap is reached. */
 async function recordFailure(row: RescueRow, attemptNumber: number, errMsg: string) {
   const terminal = attemptNumber >= RESCUE_MAX_ATTEMPTS;
-  await supabaseAdmin.from("emails").update({
+  await updateEmailEncrypted({
+    email_id: row.id,
     classified_by: terminal ? "unclassified" : "pending_ai",
     classification_reason: terminal
       ? `Classification failed after ${attemptNumber} rescue attempts: ${errMsg.slice(0, 150)}`
       : `Rescue attempt ${attemptNumber} failed (will retry): ${errMsg.slice(0, 150)}`,
-  }).eq("id", row.id);
+  });
 }
 
 export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
