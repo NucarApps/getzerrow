@@ -168,8 +168,15 @@ export async function applyFolderActions(
   }
 }
 
-function classificationPatch(c: ClassificationResult) {
-  return {
+/** Persist a classification outcome onto an existing email row via the
+ * encrypted-write RPC. Sensitive fields (ai_summary, classification_reason)
+ * are encrypted; folder_id/ai_confidence/classified_by/matched_* are plain.
+ * The RPC treats a null folder_id as "leave unchanged" — every caller here
+ * runs against a row whose folder_id is already null, so a null outcome
+ * correctly leaves it in the Inbox. */
+async function persistClassification(emailId: string, c: ClassificationResult) {
+  await updateEmailEncrypted({
+    email_id: emailId,
     folder_id: c.folder_id,
     ai_summary: c.ai_summary || null,
     ai_confidence: c.ai_confidence,
@@ -177,7 +184,7 @@ function classificationPatch(c: ClassificationResult) {
     classification_reason: c.classification_reason,
     matched_filter_ids: c.matched_filter_ids,
     matched_folder_ids: c.matched_folder_ids,
-  };
+  });
 }
 
 export async function processGmailMessage(
