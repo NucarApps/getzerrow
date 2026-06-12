@@ -407,12 +407,17 @@ async function drainPendingAi(
           await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
           results.push({ id: c.job.id, ok: true });
         } catch (innerErr: unknown) {
+          // Keep the row in 'pending_ai' and route the job through the
+          // normal retry/backoff/DLQ machinery. A retried job re-enters
+          // processGmailMessage's pending-reclassify branch and re-runs
+          // AI; the rescue sweep is the last-resort net. The old
+          // behavior (mark 'unclassified' + delete job as ok) stranded
+          // the email permanently with zero operator signal.
           await supabaseAdmin.from("emails").update({
-            classified_by: "unclassified",
-            classification_reason: `AI classifier failed: ${((innerErr as Error)?.message ?? "unknown").slice(0, 200)}`,
+            classified_by: "pending_ai",
+            classification_reason: `AI classifier failed (will retry): ${((innerErr as Error)?.message ?? "unknown").slice(0, 200)}`,
           }).eq("id", c.emailRowId);
-          await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
-          results.push({ id: c.job.id, ok: true });
+          await handleError(c.job, innerErr, results);
         }
       };
 
