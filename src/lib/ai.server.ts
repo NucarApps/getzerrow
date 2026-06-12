@@ -2,12 +2,19 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
+import {
+  AI_CLASSIFY_ATTEMPT_TIMEOUT_MS,
+  AI_CLASSIFY_TOTAL_BUDGET_MS,
+  AI_BATCH_ATTEMPT_TIMEOUT_MS,
+} from "./sync/config";
 
 function getModel(modelId: string = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY;
   if (!key) throw new Error("LOVABLE_API_KEY missing");
   return createLovableAiGatewayProvider(key)(modelId);
 }
+
+import { remainingAttemptTimeout, timeoutSignal } from "./ai-budget";
 
 export type ClassifyFolder = {
   id: string;
@@ -67,6 +74,10 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
 
   type Out = z.infer<typeof schema>;
   let lastError = "";
+  // Total wall-clock budget across all cascade attempts, with a
+  // per-attempt cap. Without this a hung gateway call eats the whole
+  // 25s job timeout and burns a retry attempt for nothing.
+  const deadline = Date.now() + AI_CLASSIFY_TOTAL_BUDGET_MS;
 
   function describeError(e: any): string {
     const parts: string[] = [];
@@ -78,11 +89,17 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
   }
 
   async function tryStructured(modelId: string, trim: boolean): Promise<Out | null> {
+    const timeout = remainingAttemptTimeout(deadline, AI_CLASSIFY_ATTEMPT_TIMEOUT_MS);
+    if (timeout === null) {
+      lastError = lastError || "AI budget exhausted";
+      return null;
+    }
     try {
       const { output } = await generateText({
         model: getModel(modelId),
         output: Output.object({ schema }),
         prompt: buildPrompt({ trim }),
+        abortSignal: timeoutSignal(timeout),
       });
       return output as Out;
     } catch (e) {
@@ -93,6 +110,11 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
   }
 
   async function tryTextJson(modelId: string, trim: boolean): Promise<Out | null> {
+    const timeout = remainingAttemptTimeout(deadline, AI_CLASSIFY_ATTEMPT_TIMEOUT_MS);
+    if (timeout === null) {
+      lastError = lastError || "AI budget exhausted";
+      return null;
+    }
     try {
       const { text } = await generateText({
         model: getModel(modelId),
@@ -100,6 +122,7 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
 
 Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
 {"folder_name":"<one of: ${folderNames.map((n) => `"${n}"`).join(", ")} or \\"NONE\\">","confidence":<0..1>,"summary":"<<=140 chars>","reason":"<<=200 chars>"}`,
+        abortSignal: timeoutSignal(timeout),
       });
       const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
       const start = cleaned.indexOf("{");
@@ -222,6 +245,7 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
         model: getModel(modelId),
         output: Output.object({ schema }),
         prompt,
+        abortSignal: timeoutSignal(AI_BATCH_ATTEMPT_TIMEOUT_MS),
       });
       parsed = output as Out;
       break;
