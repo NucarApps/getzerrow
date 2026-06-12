@@ -43,6 +43,7 @@ import {
   GmailApiError,
 } from "../gmail.server";
 import { withAccountLock } from "./account-lock";
+import { HISTORY_LABEL_FETCH_CONCURRENCY } from "./config";
 import { gmailHistoryIdGreater } from "./history-id";
 import { enqueueMessageJobs } from "./queue";
 import { recordManualMove } from "./folder-learn";
@@ -111,6 +112,10 @@ async function syncSinceHistoryLocked(
     const toDelete = new Set<string>();
     type LabelOp = { messageId: string; currentLabels: string[] | undefined; added: string[]; removed: string[] };
     const labelOps: LabelOp[] = [];
+    // Manual-move learning events (a linked folder label was added in
+    // Gmail). Collected during the loop, drained with a bounded pool
+    // below — the metadata fetches were the slow sequential part.
+    const manualMoveEvents = new Map<string, Set<Folder>>();
 
     for (const h of hist.history || []) {
       const added = h.messagesAdded?.map((x) => x.message) ?? h.messages ?? [];
@@ -122,20 +127,9 @@ async function syncSinceHistoryLocked(
         labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
         const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
         if (matched.length === 0) continue;
-        try {
-          // Metadata fetch — 10x smaller than full body — is enough to
-          // record the manual-move example (from_addr/subject/snippet).
-          const meta = await getMessageMetadata(accountId, ev.message.id);
-          const p = parseMessage(meta);
-          for (const folder of matched) {
-            await recordManualMove(folder, accountId, account.user_id, {
-              gmail_message_id: p.gmail_message_id,
-              from_addr: p.from_addr,
-              subject: p.subject,
-              snippet: p.snippet,
-            });
-          }
-        } catch (e) { console.error("labelAdded handler failed", e); }
+        let set = manualMoveEvents.get(ev.message.id);
+        if (!set) manualMoveEvents.set(ev.message.id, (set = new Set()));
+        for (const f of matched) set.add(f);
       }
       for (const ev of h.labelsRemoved ?? []) {
         labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: [], removed: ev.labelIds });
@@ -143,6 +137,37 @@ async function syncSinceHistoryLocked(
       for (const ev of h.messagesDeleted ?? []) {
         toDelete.add(ev.message.id);
       }
+    }
+
+    // Drain the manual-move events with a small worker pool. Metadata
+    // fetch — 10x smaller than full body — is enough to record the
+    // manual-move example (from_addr/subject/snippet). Per-task
+    // try/catch so one failure doesn't kill the page.
+    if (manualMoveEvents.size > 0) {
+      const tasks = Array.from(manualMoveEvents.entries());
+      const workers = Array.from(
+        { length: Math.min(HISTORY_LABEL_FETCH_CONCURRENCY, tasks.length) },
+        async () => {
+          for (;;) {
+            const task = tasks.shift();
+            if (!task) return;
+            const [messageId, folderSet] = task;
+            try {
+              const meta = await getMessageMetadata(accountId, messageId);
+              const p = parseMessage(meta);
+              for (const folder of folderSet) {
+                await recordManualMove(folder, accountId, account.user_id, {
+                  gmail_message_id: p.gmail_message_id,
+                  from_addr: p.from_addr,
+                  subject: p.subject,
+                  snippet: p.snippet,
+                });
+              }
+            } catch (e) { console.error("labelAdded handler failed", e); }
+          }
+        },
+      );
+      await Promise.all(workers);
     }
 
     // Bulk-enqueue all newly-added messages in one upsert (vs the
@@ -168,7 +193,7 @@ async function syncSinceHistoryLocked(
     // correctly from parseMessage when the queued job runs.
     for (const op of labelOps) {
       if (seenAdded.has(op.messageId)) continue;
-      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed); }
+      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed, labelToFolder); }
       catch (e) { console.error("applyLabelChange failed", e); }
     }
 
@@ -295,6 +320,7 @@ async function applyLabelChange(
   currentLabels: string[] | undefined,
   added: string[],
   removed: string[],
+  labelToFolder?: Map<string, Folder>,
 ) {
   const patch: { raw_labels?: string[]; is_archived?: boolean; is_read?: boolean } = {};
   if (currentLabels) patch.raw_labels = currentLabels;
@@ -308,6 +334,29 @@ async function applyLabelChange(
       .eq("gmail_message_id", messageId);
     return;
   }
+
+  // A linked folder label was removed in Gmail → move the email back to
+  // the inbox locally. The .eq("folder_id", folder.id) guard makes this
+  // a no-op for app-initiated moves (which already cleared folder_id and
+  // echo a labelsRemoved event back from Gmail) — no loop. The label-ADD
+  // side is handled by recordManualMove in the manual-move drain above.
+  if (labelToFolder) {
+    for (const label of removed) {
+      const folder = labelToFolder.get(label);
+      if (!folder) continue;
+      try {
+        await supabaseAdmin.from("emails").update({
+          folder_id: null,
+          classified_by: "manual_inbox",
+          classification_reason: `Label "${folder.name}" removed in Gmail`,
+        })
+          .eq("gmail_account_id", accountId)
+          .eq("gmail_message_id", messageId)
+          .eq("folder_id", folder.id);
+      } catch (e) { console.error("linked-label removal handler failed", e); }
+    }
+  }
+
   if (Object.keys(patch).length === 0) return;
   await supabaseAdmin.from("emails").update(patch)
     .eq("gmail_account_id", accountId)

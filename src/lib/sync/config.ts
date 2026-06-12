@@ -49,6 +49,43 @@ export const REARM_COOLDOWN_MS = 30 * 60 * 1000; // 30min
  * push → visible latency without risking redelivery. */
 export const WEBHOOK_INLINE_DRAIN_BUDGET_MS = 4_000;
 
+// ─── History sync ────────────────────────────────────────────────────────
+
+/** Parallelism for the labelsAdded metadata fetches in syncSinceHistory.
+ * Each fetch is ~200ms against the Gmail API; sequential fetching made a
+ * push with N label events cost N×200ms. */
+export const HISTORY_LABEL_FETCH_CONCURRENCY = 5;
+
+// ─── AI classification budgets ───────────────────────────────────────────
+
+/** Per-model-attempt timeout inside classifyEmail's fallback cascade.
+ * Without this a slow first attempt eats the whole 25s job budget. */
+export const AI_CLASSIFY_ATTEMPT_TIMEOUT_MS = 7_000;
+
+/** Total wall-clock budget across ALL cascade attempts. Must stay under
+ * the queue's 25s JOB_TIMEOUT_MS with headroom for fetch + DB writes. */
+export const AI_CLASSIFY_TOTAL_BUDGET_MS = 18_000;
+
+/** Per-attempt timeout for the batched backfill classifier (bigger
+ * prompts, only 2 attempts). */
+export const AI_BATCH_ATTEMPT_TIMEOUT_MS = 12_000;
+
+// ─── Stranded-email rescue sweep ─────────────────────────────────────────
+
+/** Only rescue emails that arrived within this window. Older mail is
+ * presumed deliberately left in Inbox. */
+export const RESCUE_WINDOW_HOURS = 48;
+
+/** Per-email cap on rescue attempts. After this the email stays as
+ * classified_by='unclassified' (visible in Inbox — correct failure mode). */
+export const RESCUE_MAX_ATTEMPTS = 3;
+
+/** Max emails per sweep tick. */
+export const RESCUE_BATCH_LIMIT = 50;
+
+/** Emails per batched LLM call inside the rescue sweep. */
+export const RESCUE_AI_BATCH_SIZE = 8;
+
 // ─── Watch renewal ───────────────────────────────────────────────────────
 
 /** Watch renewal cron runs every 6h and renews any watch expiring
