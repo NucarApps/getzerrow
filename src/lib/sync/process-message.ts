@@ -233,18 +233,23 @@ export async function processGmailMessage(
     // Repair rows that were inserted with missing/blank metadata.
     const needsRepair =
       !existing.from_addr ||
-      !existing.subject ||
-      (!existing.body_text_encrypted && !existing.body_html_encrypted) ||
+      !existing.subject_enc ||
+      (!existing.body_text_enc && !existing.body_html_enc) ||
       !existing.received_at;
     if (needsRepair) {
-      await supabaseAdmin.from("emails").update({
-        from_addr: parsed.from_addr,
+      // Sensitive fields go through the encrypted-write RPC; the plaintext
+      // base columns (from_addr, received_at, flags, labels) update directly.
+      await updateEmailEncrypted({
+        email_id: existing.id,
         from_name: parsed.from_name,
         to_addrs: parsed.to_addrs,
         subject: parsed.subject,
         snippet: parsed.snippet,
         body_text: parsed.body_text,
         body_html: parsed.body_html,
+      });
+      await supabaseAdmin.from("emails").update({
+        from_addr: parsed.from_addr,
         received_at: parsed.received_at,
         has_attachment: parsed.has_attachment,
         raw_labels: parsed.raw_labels,
