@@ -21,6 +21,8 @@ import { loadAccountContext, type AccountContext } from "./account-context";
 import { classifyByRules, type ParsedEmailForClassify } from "./classify";
 import { applyFolderActions, type ActionFolder } from "./process-message";
 import { bumpEmailsSinceLearn } from "./folder-learn";
+import { updateEmailEncrypted } from "./encrypted-writer";
+import { getEmailsDecrypted } from "./encrypted-reader";
 import { RESCUE_WINDOW_HOURS, RESCUE_MAX_ATTEMPTS, RESCUE_BATCH_LIMIT, RESCUE_AI_BATCH_SIZE } from "./config";
 
 const NON_TERMINAL_STATES = ["pending", "pending_ai", "unclassified", "ai_error"] as const;
