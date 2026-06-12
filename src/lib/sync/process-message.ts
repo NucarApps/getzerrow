@@ -32,6 +32,7 @@ import { loadAccountContext } from "./account-context";
 import { jitter } from "./backoff";
 import { classifyByRules, classifyByAi, type ClassificationResult } from "./classify";
 import { bumpEmailsSinceLearn } from "./folder-learn";
+import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
 
