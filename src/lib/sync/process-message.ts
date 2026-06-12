@@ -208,12 +208,12 @@ export async function processGmailMessage(
   const t = opts.timings;
 
   const _t0 = performance.now();
-  // Check body presence via the encrypted columns. Plaintext body_text /
-  // body_html columns are zeroed by the emails_encrypt_body BEFORE
-  // trigger, so reading them would always look empty.
+  // Check body/subject presence via the encrypted columns — the plaintext
+  // columns were dropped (Phase 3 encryption). Presence of *_enc ciphertext
+  // is enough to decide whether the row needs repair.
   const { data: existing } = await supabaseAdmin
     .from("emails")
-    .select("id, from_addr, subject, body_text_encrypted, body_html_encrypted, received_at, classified_by, folder_id")
+    .select("id, from_addr, subject_enc, body_text_enc, body_html_enc, received_at, classified_by, folder_id")
     .eq("gmail_message_id", gmailId)
     .eq("gmail_account_id", accountId)
     .maybeSingle();
