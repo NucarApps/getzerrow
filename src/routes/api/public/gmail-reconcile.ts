@@ -7,7 +7,7 @@
 // last_history_sync_at) get a larger reconcile window to compensate.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { reconcileLocalInbox } from "@/lib/sync.server";
+import { reconcileLocalInbox, syncReadState } from "@/lib/sync.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 import { withCronRun, logError } from "@/lib/log.server";
 
