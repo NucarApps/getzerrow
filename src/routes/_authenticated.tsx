@@ -210,44 +210,41 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     },
   });
 
-  const emailsQ = useQuery({
-    queryKey: ["emails", "counts", accountId],
+  // Unread/folder counts are computed server-side by a single aggregate RPC
+  // instead of downloading thousands of email rows to count in the browser.
+  // Kept under its own ["folder-counts"] key (NOT ["emails"]) so routine
+  // email mutations don't sweep it; realtime + a light interval keep it fresh.
+  const countsQ = useQuery({
+    queryKey: ["folder-counts", accountId],
     enabled: !!accountId,
+    refetchInterval: 60_000,
     queryFn: async () => {
-      const { data } = await supabase
-        .from("emails")
-        .select("id,folder_id,is_read,is_archived,raw_labels")
-        .eq("gmail_account_id", accountId!)
-        .limit(5000);
-      return (data ?? []) as Array<{
-        id: string;
-        folder_id: string | null;
-        is_read: boolean;
-        is_archived: boolean;
-        raw_labels: string[] | null;
-      }>;
+      const { data } = await supabase.rpc("get_folder_unread_counts", {
+        p_account_id: accountId!,
+      });
+      const raw = (data ?? { byFolder: {}, no_rules: 0, total: 0 }) as {
+        byFolder?: Record<string, number>;
+        no_rules?: number;
+        total?: number;
+      };
+      return {
+        byFolder: raw.byFolder ?? {},
+        no_rules: raw.no_rules ?? 0,
+        total: raw.total ?? 0,
+      };
     },
   });
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
-    let total = 0;
-    for (const e of emailsQ.data ?? []) {
-      // "In inbox" == Gmail says the INBOX label is on the message.
-      // Using is_archived alone drifts when our local flag and Gmail's
-      // label state diverge (e.g. an archive call we didn't see).
-      const inInbox = (e.raw_labels ?? []).includes("INBOX");
-      if (e.folder_id) {
-        if (!e.is_read) m.set(e.folder_id, (m.get(e.folder_id) ?? 0) + 1);
-        if (!e.is_read && inInbox) total++;
-      } else {
-        if (!e.is_read && inInbox) total++;
-        const hasUserLabel = e.raw_labels?.some((l) => l.startsWith("Label_")) ?? false;
-        if (!hasUserLabel) m.set("no_rules", (m.get("no_rules") ?? 0) + 1);
-      }
+    const data = countsQ.data;
+    if (!data) return { byFolder: m, total: 0 };
+    for (const [folderId, n] of Object.entries(data.byFolder)) {
+      if (n > 0) m.set(folderId, n);
     }
-    return { byFolder: m, total };
-  }, [emailsQ.data]);
+    if (data.no_rules > 0) m.set("no_rules", data.no_rules);
+    return { byFolder: m, total: data.total };
+  }, [countsQ.data]);
 
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
