@@ -15,6 +15,7 @@ import {
   cancelBackfillJob,
   invalidateAccountContext,
   invalidateAccountContextForUser,
+  syncReadState,
 } from "./sync.server";
 import {
   listLabels,
