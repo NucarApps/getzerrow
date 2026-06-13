@@ -1,46 +1,41 @@
-# Match the read indicator with Gmail (two-way, all folders)
+# Fix "duplicate key" error when keeping mail in the inbox
 
-## Goal
-When a message is read (or marked unread) directly in Gmail, Zerrow's unread dot should update to match — across every connected account and every folder, not just the most recent inbox messages.
+## What's happening
 
-## Why the current behavior falls short
-Today inbound read changes only arrive via Gmail push/history events and the 15‑minute reconcile cron. The reconcile re-checks read state on a small window (60 newest inbox rows + a slow tail + 200 archived rows) using one Gmail request per message, so reading an older or folder-filed message in Gmail can stay "unread" in Zerrow for a long time. The app→Gmail direction (marking read in Zerrow) already works.
-
-## Approach: a cheap "unread set" diff
-Gmail can return every currently-unread message in one paged list call (`q = is:unread`). Comparing that set against local read flags is far cheaper than per-message label fetches and naturally covers all folders and archived mail.
+When you pick **Inbox — always show** for a sender/domain, the app saves an "always keep in inbox" rule. For `manueldesantaren.com` it crashed with:
 
 ```text
-Gmail:  messages.list q="is:unread"  ->  set of unread message IDs (whole mailbox)
-
-local unread rows NOT in Gmail's set  -> mark read   (is_read = true)
-Gmail's set rows that are local-read  -> mark unread (is_read = false)
+duplicate key value violates unique constraint
+"inbox_overrides_user_id_match_type_value_key"
 ```
 
-Both directions only touch the small unread sets, never the whole table. Each `is_read` change already flows to the UI through existing realtime, so the dot updates without a refresh.
+## Why
 
-## What gets built
+The "always-inbox" rules table (`inbox_overrides`) enforces uniqueness on **(user, match type, value)** — it does **not** include which Gmail account the rule belongs to.
 
-1. **New helper `syncReadState(accountId)`** (`src/lib/sync/read-state.ts`)
-   - Page Gmail `messages.list` with `q = "is:unread -in:chats -in:spam -in:trash"` (cap ~5000 ids) into a `Set`.
-   - Fetch local rows for the account where `is_read = false` (id + gmail_message_id only — no decryption); any whose id is not in the set get batched into a `mark read` update.
-   - Chunk the Gmail unread ids and query local rows that are `is_read = true` but appear in the set; batch them into a `mark unread` update.
-   - Batched `update({ is_read }).in("id", chunk)` calls (chunks of 500). Returns counts for logging.
+But the save code first checks "does this rule already exist?" while *also* filtering by Gmail account. Your existing `manueldesantaren.com` rule is tied to a specific Gmail account, while the save screen creates a rule with **no account** (applies to all accounts). So:
 
-2. **Wire into the reconcile cron** (`src/routes/api/public/gmail-reconcile.ts`)
-   - Call `syncReadState(acc.id)` for each non-reconnect account every tick, so all accounts/folders stay matched within ~15 minutes as a guaranteed backstop. Per-account try/catch + logging, consistent with the existing loop.
+1. The "already exists?" check looks for an account-less rule → finds nothing.
+2. It then tries to insert → the database rejects it because a rule with the same user + type + value already exists (just on a different account).
 
-3. **On-demand sync when the user is looking** (fast path)
-   - New authenticated server function `syncMyReadState` (`src/lib/gmail.functions.ts`) that runs `syncReadState` for the caller's connected account(s).
-   - Call it from the inbox (`src/routes/_authenticated/inbox.tsx`) on mount and on `visibilitychange -> visible`, debounced, so returning to the tab quickly reconciles the dots. Failures are silent (the cron remains the backstop).
+In short: the existence check and the database's uniqueness rule disagree on whether the account matters, so an already-existing rule slips past the check and the insert blows up.
 
-4. **Keep the existing push/history path** unchanged — it stays the real-time fast path; the diff is the reliable catch-all.
+## The fix
 
-## Scope / non-goals
-- Only the read/unread flag is reconciled here. Archive/move/delete drift continues to be handled by the existing reconcile passes.
-- No schema changes. No new secrets. Uses the existing service-role Gmail helpers and realtime.
+Make the save operation idempotent and aligned with the actual uniqueness rule, in `addInboxOverride` (`src/lib/gmail.functions.ts`):
 
-## Verification
-- Read a message in Gmail (recent, old, and one filed in a folder) → confirm the dot clears in Zerrow after the on-demand trigger (tab focus) and independently via a manual reconcile run.
-- Mark a read message unread in Gmail → confirm the dot returns.
-- Repeat with a second connected account to confirm all-accounts coverage.
-- Add a unit test for the diff logic (pure set comparison producing the two id lists).
+- Change the "already exists?" check to match on **(user, match type, value)** only — drop the `gmail_account_id` filter — so an existing rule (account-scoped or global) is correctly detected as already present.
+- When it already exists, skip the insert and return `already: true`, so the UI shows **"Already on the inbox list"** instead of crashing.
+- As a safety net, switch the insert to an upsert that ignores conflicts on the `(user_id, match_type, value)` constraint, so a race or edge case can never surface a raw database error again.
+
+No schema/migration change is needed — we're conforming the code to the existing constraint.
+
+## Verify
+
+- Re-run the exact flow from the screenshot (Domain → `manueldesantaren.com` → Inbox — always show) → expect a friendly "Already on the inbox list" toast, no error.
+- Add a brand-new domain the same way → expect "Future mail kept in inbox".
+- Confirm routing still works: account-scoped and global overrides are both still honored (no behavior change to how mail is kept in the inbox).
+
+## Technical detail
+
+The mismatch is between `inbox_overrides_user_id_match_type_value_key UNIQUE (user_id, match_type, value)` and the existence query in `addInboxOverride`, which adds `.eq("gmail_account_id", …)` / `.is("gmail_account_id", null)`. Removing that account predicate from the pre-check (and using `upsert(..., { onConflict: "user_id,match_type,value", ignoreDuplicates: true })`) resolves it without touching the reprocess-past logic.
