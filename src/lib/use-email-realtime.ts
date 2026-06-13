@@ -181,6 +181,11 @@ export function useEmailRealtime() {
       qc.invalidateQueries({ queryKey: ["folders-full"] });
     };
 
+    // Unread/folder counts now live under their own key (a cheap server-side
+    // aggregate), so they're not swept by ["emails"] mutations. Refresh them
+    // explicitly whenever an email row changes read/label/folder state.
+    const bumpCounts = () => qc.invalidateQueries({ queryKey: ["folder-counts"] });
+
     function scheduleReconnect() {
       if (cancelled || reconnectTimer) return;
       const delays = [1000, 2000, 5000];
