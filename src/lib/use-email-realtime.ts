@@ -140,6 +140,7 @@ export function useEmailRealtime() {
           return next;
         });
       }
+      bumpCounts();
     }
 
     function applyUpdate(row: EmailRow) {
