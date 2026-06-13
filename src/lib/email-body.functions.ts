@@ -56,3 +56,34 @@ export const getEmailListFields = createServerFn({ method: "POST" })
     if (error) return { fields: [], error };
     return { fields: rows, error: null };
   });
+
+// One-shot decrypted, paginated inbox list. Replaces the previous
+// two-phase fetch (client metadata query + getEmailListFields decrypt)
+// for the default folder/inbox views. Ownership is enforced inside the
+// RPC via p_user_id (taken from the authenticated context, never the client).
+export const getInboxList = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data) =>
+    z
+      .object({
+        account_id: z.string().uuid(),
+        scope: z.enum(["all", "all_mail", "no_rules", "folder"]),
+        folder_id: z.string().uuid().nullable().default(null),
+        cursor: z.string().nullable().default(null),
+        limit: z.number().int().min(1).max(500).default(51),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { rows, error } = await getEmailsListDecrypted({
+      accountId: data.account_id,
+      userId,
+      scope: data.scope,
+      folderId: data.scope === "folder" ? data.folder_id : null,
+      cursor: data.cursor,
+      limit: data.limit,
+    });
+    if (error) return { rows: [], error };
+    return { rows, error: null };
+  });
