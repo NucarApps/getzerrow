@@ -616,14 +616,17 @@ function InboxPage() {
             (r as { ingested?: number }).ingested);
         if (!cancelled && changed) {
           qc.invalidateQueries({ queryKey: ["emails"] });
+          qc.invalidateQueries({ queryKey: ["folder-counts"] });
         }
       } catch {
         // best-effort; the cron reconcile path is the backstop.
       }
     };
-    // Initial run after a short delay so the page loads first.
+    // Initial run after a short delay so the page loads first. The 15-minute
+    // pg_cron reconcile is the real backstop; this in-tab loop is a light
+    // self-heal, so we run it infrequently rather than every 45s per tab.
     const initial = setTimeout(tick, 3_000);
-    const handle = setInterval(tick, 45_000);
+    const handle = setInterval(tick, 300_000);
     return () => {
       cancelled = true;
       clearTimeout(initial);
