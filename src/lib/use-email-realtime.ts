@@ -242,6 +242,7 @@ export function useEmailRealtime() {
             // Catch up on anything missed while disconnected.
             qc.invalidateQueries({ queryKey: ["emails"] });
             qc.invalidateQueries({ queryKey: ["folders"] });
+            bumpCounts();
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
             scheduleReconnect();
           }
