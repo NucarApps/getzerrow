@@ -165,6 +165,7 @@ export function useEmailRealtime() {
       if (needsRefetch) {
         Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
       }
+      bumpCounts();
     }
 
     function applyDelete(row: { id: string }) {
@@ -175,6 +176,7 @@ export function useEmailRealtime() {
         if (!rows || !rows.some((r) => r.id === row.id)) continue;
         patchOneQuery(key as unknown[], (curr) => curr.filter((r) => r.id !== row.id));
       }
+      bumpCounts();
     }
 
     const invalidateFolders = () => {
