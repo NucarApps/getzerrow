@@ -1,73 +1,60 @@
-# Stop always-inbox overrides from resurrecting old mail
+# Speed up inbox loading & refresh
 
-## Goal
+Goal: make the inbox render faster on first paint, refresh instantly, and stop the background work that's hammering the database. Findings below are grounded in the live DB's slowest-query stats and the current query code.
 
-An "always send to inbox" override (e.g. the domain rule for `nucar.com`) should only affect **newly-arriving** mail. It must never reach into Gmail and re-add the `INBOX` label to messages you already archived. Per your choice, no cleanup of already-resurfaced emails — just stop it going forward.
-
-## Root cause (confirmed)
-
-`src/lib/sync/process-message.ts` (the `else if` branch around lines 328–357) restores a message to the inbox whenever it matches an `inbox_override` / `calendar_contact` classification and is not currently in the Gmail inbox — with **no check on how old the message is**. For historical mail (backfilled, reconciled, or re-synced) this:
-
-1. Calls `modifyMessage(..., ["INBOX"], [])` — writes the `INBOX` label back into real Gmail.
-2. Sets `is_archived: false` and adds `INBOX` to `raw_labels` locally.
-
-Once the label is back in Gmail, `reconcileInboxFromGmail`'s incoming pass treats it as legitimately in the inbox and keeps resurfacing it, creating the oscillation you saw.
-
-## The fix
-
-### 1. Add a recency guard to the automatic restore (primary change)
-
-In `src/lib/sync/process-message.ts`, gate the inbox-override restore branch on the message being a genuine recent arrival. Only restore when `received_at` is within a short window (proposed: **3 days**). Old mail is left exactly as Gmail has it (archived), and **no Gmail label write happens**.
+## What's slow today
 
 ```text
-const RESTORE_INBOX_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
-
-} else if (
-    (classifiedBy === "inbox_override" || classifiedBy === "calendar_contact") &&
-    !inInbox
-) {
-    const receivedMs = Date.parse(parsed.received_at ?? "");
-    const isRecentArrival =
-        Number.isFinite(receivedMs) &&
-        Date.now() - receivedMs < RESTORE_INBOX_WINDOW_MS;
-
-    if (isRecentArrival) {
-        // existing restore logic: modifyMessage add INBOX + set is_archived=false
-    }
-    // else: leave the row archived (upsert already set is_archived = !inInbox = true).
-    // Respect Gmail's current state for historical mail — never re-add INBOX.
-}
+#1  214,778 calls  ~20,000s total   sidebar unread-count query (5,000 rows/account)
+#2   94,507 calls  ~14,000s total   a "select *" emails scan (to be pinned down)
+#3   38,878 calls   ~3,360s total   inbox INBOX list query (metadata)
+#4    9,437 calls   ~2,990s total   inbox list (older variant)
 ```
 
-Why recency rather than a "backfill" flag: historical mail reaches this branch through several paths (deep backfill, `reconcileInboxFromGmail` re-ingestion at live priority, history catch-up). A `received_at` recency check covers all of them, while still restoring legitimately-new mail that a Gmail filter pre-archived.
+Root causes:
+1. The sidebar counts query fetches up to 5,000 rows per account and counts in the browser. It's keyed under `["emails"]`, so every email action and every realtime event re-runs it.
+2. The list renders in two round-trips: metadata first, then a second server call to decrypt subject/sender/snippet — so the list looks blank until the second call lands.
+3. The list refetches every 15s even though realtime already pushes changes, plus a 45s Gmail reconcile loop runs per open tab.
+4. Refresh and most actions invalidate the entire `["emails"]` key, refetching every cached page and the counts query instead of just the current view.
 
-### 2. Keep user-initiated restores intact
+## Plan
 
-The explicit, user-triggered paths in `src/lib/gmail.functions.ts` are left as-is, because they only act on emails the user is actively reclassifying and only touch messages currently filed in a folder (`folder_id` set), never archived historical mail:
+### 1. Move unread counts to a server-side aggregate (biggest win)
+- Add a `SECURITY DEFINER` SQL function `get_folder_unread_counts(p_account_id uuid)` returning per-folder unread counts, the `no_rules` count, and the inbox total — computed with `COUNT(...) GROUP BY` in Postgres instead of shipping 5,000 rows.
+- Replace the 5,000-row `emailsQ` in `src/routes/_authenticated.tsx` with a call to this function.
+- Key it as `["folder-counts", accountId]` (NOT under `["emails"]`) so routine email mutations don't sweep it. Refresh it via realtime + an explicit invalidate after actions that change unread state.
 
-- `reanalyzeEmail` (single "Reanalyze")
-- `reclassifyEmails` (bulk reclassify)
-- `addInboxOverride` with `reprocess_past` (only runs when you explicitly add an override and ask to reprocess past mail)
-- `moveEmailToInbox` (manual "Move to Inbox")
+### 2. Collapse the inbox list into a single decrypted, paginated RPC
+- Add `get_emails_list_decrypted(p_account_id, p_scope, p_folder_id, p_cursor, p_limit, p_key)` that filters/paginates server-side and returns the list columns already decrypted (subject, snippet, from_name, ai_summary, classification_reason) in one shot.
+- Add a server fn wrapper in `src/lib/email-body.functions.ts` (or a new `email-list.functions.ts`) using the existing `EMAIL_ENC_KEY` pattern from `encrypted-reader.ts`.
+- Rewrite `emailsQ` in `src/routes/_authenticated/inbox.tsx` to call it, removing the separate `getEmailListFields` / `listFieldsQ` second round-trip for the normal (non-search) path.
+- Net effect: one round-trip instead of two; the list shows sender/subject on first paint.
 
-No change there — those remain deliberate, user-driven actions.
+### 3. Stop redundant background refetching
+- Remove `refetchInterval: 15_000` from the inbox list query (realtime already keeps it live), or raise it to 60s as a safety net.
+- Reduce the in-component 45s reconcile loop to run once on mount + on manual refresh, leaning on the existing 15-minute cron reconcile as the backstop. Keep `refetchOnWindowFocus`.
 
-## What this fixes
+### 4. Narrow cache invalidation to the active view
+- Replace blanket `qc.invalidateQueries({ queryKey: ["emails"] })` / `refetchQueries(["emails"])` in `inbox.tsx` and `use-email-realtime.ts` with the current folder/page key where possible, so a single action no longer refetches every cached page + counts.
+- Keep the existing optimistic `setQueriesData` updates; just drop the broad follow-up refetch where realtime + optimism already cover it.
 
-- New mail from always-inbox senders/domains still lands in the inbox, even if a Gmail filter tried to archive it.
-- Historical mail you already archived is never pulled back, and the `INBOX` label is never re-stamped onto old messages in Gmail — which breaks the resurrection loop at its source.
+### 5. Indexing
+- Add a partial index to match the dominant INBOX query shape:
+  `CREATE INDEX emails_inbox_active_idx ON public.emails (gmail_account_id, received_at DESC) WHERE is_archived = false;`
+- Add a GIN index on `raw_labels` if `EXPLAIN` shows the `raw_labels @> ['INBOX']` containment is still scanning after the partial index.
+- Re-run `EXPLAIN (ANALYZE, BUFFERS)` on the inbox query before/after to confirm the plan improves.
 
-## What this does NOT do (per your choice)
-
-- It does not re-archive or strip `INBOX` from the ~20k override emails or the 127 already resurfaced today. They stay as they are; if any remain in your inbox you can archive them manually. (We can run a targeted cleanup later if you change your mind.)
-
-## Verification
-
-- Re-check the account after deploy: confirm no new pre-2026 emails get `is_archived = false` / `INBOX` re-added on subsequent sync/reconcile ticks.
-- Confirm a freshly-arriving test email from an always-inbox domain still appears in the inbox.
+### 6. Pin down and scope query #2
+- Identify the source of the `select *` emails scan (94k calls). Likely a summary/report/learn path selecting all columns including encrypted bodies. Narrow it to the columns it actually needs and ensure it's account- or user-scoped and indexed.
 
 ## Technical notes
+- All new SQL: `public` schema function with explicit `GRANT EXECUTE ... TO authenticated, service_role`, `SET search_path = public`, and never expose `EMAIL_ENC_KEY` to the client (server fns pass `p_key` from `process.env`, same as `get_emails_decrypted`).
+- Counts function reads `is_read`, `raw_labels` (for INBOX membership), `folder_id` — no decryption needed, so it can be a plain aggregate.
+- Search path (operator + free-text) keeps its current behavior for now; the single-RPC change targets the default folder/inbox views that dominate traffic.
+- Verification: after each change, re-check `slow_queries` and confirm call counts/total time on the counts and list queries drop, and confirm the inbox still updates live via realtime.
 
-- Single-file behavioral change: `src/lib/sync/process-message.ts`.
-- `received_at` is already parsed and stored before this branch, so the guard adds no extra fetch.
-- The window constant (3 days) is conservative — large enough to absorb push/poll delays and short outages, far smaller than the months/years-old mail being resurrected.
+## Expected impact
+- Eliminates the 5,000-row-per-account count fetch (the single largest DB load).
+- Halves round-trips for the list (one decrypted RPC instead of two calls).
+- Cuts steady-state background load from 15s polling + 45s reconcile per tab.
+- Faster first paint and snappier refresh, with fewer redundant refetches per action.
