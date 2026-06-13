@@ -279,6 +279,7 @@ export function useEmailRealtime() {
       if (document.visibilityState === "visible") {
         qc.invalidateQueries({ queryKey: ["emails"] });
         qc.invalidateQueries({ queryKey: ["folders"] });
+        bumpCounts();
       }
     };
     document.addEventListener("visibilitychange", onVisible);
