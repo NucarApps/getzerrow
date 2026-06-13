@@ -512,6 +512,7 @@ function InboxPage() {
   const parsedQuery = useMemo(() => parseSearchQuery(query.trim()), [query]);
   const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
+  const fetchInboxList = useServerFn(getInboxList);
   const emailsQ = useQuery<Email[]>({
     queryKey: [
       "emails",
@@ -568,32 +569,32 @@ function InboxPage() {
         }
         return rows;
       }
-      let q = supabase
-        .from("emails")
-        .select(LIST_COLUMNS)
-        .eq("gmail_account_id", accountId!)
-        .order("received_at", { ascending: false, nullsFirst: false })
-        .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
-      if (cursor) q = q.lt("received_at", cursor);
-      if (isAllMail) {
-        // no filter — show everything (including snoozed)
-      } else {
-        const nowIso = new Date().toISOString();
-        q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
-        if (selectedFolder === "all")
-          q = q.contains("raw_labels", ["INBOX"]).eq("is_archived", false);
-        else if (isNoRules) q = q.is("folder_id", null);
-        else q = q.eq("folder_id", selectedFolder);
-      }
-      const { data } = await q;
-      let rows = (data ?? []) as unknown as Email[];
-      if (isNoRules) {
-        rows = rows.filter((e) => !e.raw_labels?.some((l: string) => l.startsWith("Label_")));
-      }
-      return rows;
+      // Non-search: one decrypted, server-paginated round-trip. The RPC
+      // applies the snoozed / INBOX / no-rules / folder filters and returns
+      // sender + subject + AI fields already decrypted, so the list renders
+      // in a single pass instead of a metadata fetch + separate decrypt call.
+      const scope: "all" | "all_mail" | "no_rules" | "folder" = isAllMail
+        ? "all_mail"
+        : isNoRules
+          ? "no_rules"
+          : selectedFolder === "all"
+            ? "all"
+            : "folder";
+      const r = await fetchInboxList({
+        data: {
+          account_id: accountId!,
+          scope,
+          folder_id: scope === "folder" ? selectedFolder : null,
+          cursor,
+          limit: PAGE_SIZE + 1,
+        },
+      });
+      return (r.rows ?? []) as unknown as Email[];
     },
+    // Realtime keeps this list live (inserts/updates/deletes are patched into
+    // the cache directly), so we don't poll on an interval — that just re-ran
+    // the decrypt round-trip every 15s. Refresh on focus + manual pull only.
     refetchOnWindowFocus: true,
-    refetchInterval: 15_000,
   });
 
   // Background self-heal: ask Gmail which currently-inbox messages have
