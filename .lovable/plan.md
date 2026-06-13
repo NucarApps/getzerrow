@@ -1,41 +1,38 @@
-# Fix "duplicate key" error when keeping mail in the inbox
+# Fix: domain set to "always inbox" still files mail into Orders on other accounts
 
-## What's happening
+## What happened
 
-When you pick **Inbox — always show** for a sender/domain, the app saves an "always keep in inbox" rule. For `manueldesantaren.com` it crashed with:
-
-```text
-duplicate key value violates unique constraint
-"inbox_overrides_user_id_match_type_value_key"
-```
+- Lynne's email `lynne@manueldesantaren.com` arrived on the **chris@dagesse.com** account and AI-filed it into **Orders** (confidence 0.9).
+- Your "always show in inbox" rule for `manueldesantaren.com` exists, but it is **tied to a single account** — **chris@nucar.com** — not to all your inboxes.
 
 ## Why
 
-The "always-inbox" rules table (`inbox_overrides`) enforces uniqueness on **(user, match type, value)** — it does **not** include which Gmail account the rule belongs to.
+Inbox-override rules can be stored either as "all accounts" (no account attached) or "one account only". The path that created your `manueldesantaren.com` rule (Move to inbox → keep domain in inbox) saved it **attached to the account the original email came from** (chris@nucar.com).
 
-But the save code first checks "does this rule already exist?" while *also* filtering by Gmail account. Your existing `manueldesantaren.com` rule is tied to a specific Gmail account, while the save screen creates a rule with **no account** (applies to all accounts). So:
+When mail routing runs, it only loads overrides that are either global or belong to the receiving account. Lynne's email came in on chris@dagesse.com, so the chris@nucar.com-scoped rule was invisible to it, and the AI classifier sent it to Orders.
 
-1. The "already exists?" check looks for an account-less rule → finds nothing.
-2. It then tries to insert → the database rejects it because a rule with the same user + type + value already exists (just on a different account).
-
-In short: the existence check and the database's uniqueness rule disagree on whether the account matters, so an already-existing rule slips past the check and the insert blows up.
+You have three connected inboxes (chris@dagesse.com, chanelldagesse@gmail.com, chris@nucar.com), so any account-scoped override silently fails to protect the other two.
 
 ## The fix
 
-Make the save operation idempotent and aligned with the actual uniqueness rule, in `addInboxOverride` (`src/lib/gmail.functions.ts`):
+Make inbox overrides apply across **all** of your accounts — which is what the unique rule already implies (one rule per user + type + value, account not included).
 
-- Change the "already exists?" check to match on **(user, match type, value)** only — drop the `gmail_account_id` filter — so an existing rule (account-scoped or global) is correctly detected as already present.
-- When it already exists, skip the insert and return `already: true`, so the UI shows **"Already on the inbox list"** instead of crashing.
-- As a safety net, switch the insert to an upsert that ignores conflicts on the `(user_id, match_type, value)` constraint, so a race or edge case can never surface a raw database error again.
+1. **Save new overrides globally.** In `addInboxOverride` and in the `add_override` branch of the move-to-inbox handler (`src/lib/gmail.functions.ts`), store the rule with **no account attached** (`gmail_account_id: null`) so it covers every inbox. If a matching account-scoped row already exists, promote it to global.
 
-No schema/migration change is needed — we're conforming the code to the existing constraint.
+2. **Promote existing rules (data migration).** Set `gmail_account_id = NULL` for all existing `inbox_overrides` rows so every current rule now applies to every account. This is safe because the table already only allows one rule per (user, type, value).
+
+3. **Bring misfiled past mail back.** Reprocess emails that match an existing override but are sitting in a folder on any account — move them out of the folder, restore the INBOX label locally and in Gmail. This reuses the existing reprocess-past logic (already user-wide, not account-scoped) and will pull Lynne's Orders email (and any siblings) back into the inbox.
 
 ## Verify
 
-- Re-run the exact flow from the screenshot (Domain → `manueldesantaren.com` → Inbox — always show) → expect a friendly "Already on the inbox list" toast, no error.
-- Add a brand-new domain the same way → expect "Future mail kept in inbox".
-- Confirm routing still works: account-scoped and global overrides are both still honored (no behavior change to how mail is kept in the inbox).
+- After the migration, confirm `manueldesantaren.com` override has no account attached.
+- Confirm Lynne's email (`lynne@manueldesantaren.com`, currently in Orders) is back in the inbox with `classified_by = inbox_override`.
+- Send/simulate a new message from the domain to chris@dagesse.com and chanelldagesse@gmail.com → it stays in the inbox, not Orders.
+- Existing "keep in inbox" rules for other domains continue to work and now span all accounts.
 
 ## Technical detail
 
-The mismatch is between `inbox_overrides_user_id_match_type_value_key UNIQUE (user_id, match_type, value)` and the existence query in `addInboxOverride`, which adds `.eq("gmail_account_id", …)` / `.is("gmail_account_id", null)`. Removing that account predicate from the pre-check (and using `upsert(..., { onConflict: "user_id,match_type,value", ignoreDuplicates: true })`) resolves it without touching the reprocess-past logic.
+- Account routing reads overrides via `or(gmail_account_id.eq.<accountId>,gmail_account_id.is.null)` in `src/lib/sync/account-context.ts`; account-scoped rows are the gap. Moving to global (`null`) closes it.
+- Migration: `UPDATE public.inbox_overrides SET gmail_account_id = NULL WHERE gmail_account_id IS NOT NULL;`
+- Reprocess: invoke the existing reprocess-past routine (the loop currently inside `addInboxOverride` that re-files matching emails to inbox via `modifyMessage`) for each affected override, or run it as a one-off backfill for this user. No schema change beyond the migration above.
+- After writes, bust the per-account context cache with `invalidateAccountContextForUser` so routing picks up the promoted overrides immediately.
