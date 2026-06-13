@@ -719,10 +719,19 @@ function InboxPage() {
     return merged;
   }, [isSearching, rawEmails, gmailHitRowsQ.data]);
 
-  // ai_summary / classification_reason live in encrypted columns only after
-  // Phase 3. Batch-decrypt the visible page via the SECURITY DEFINER RPC and
-  // merge into list rows for rendering.
-  const visibleIds = useMemo(() => baseRows.map((r) => r.id), [baseRows]);
+  // Decrypt only the rows that still lack plaintext fields. The non-search
+  // list now arrives already-decrypted from getInboxList, so those rows are
+  // skipped here (no second round-trip). This still covers (a) search results,
+  // which come from a raw metadata query, and (b) rows spliced in by realtime
+  // INSERTs, which carry only the encrypted columns. A row needs decryption
+  // when its `subject` key is absent (raw rows expose `subject_enc` instead).
+  const visibleIds = useMemo(
+    () =>
+      baseRows
+        .filter((r) => (r as { subject?: string | null }).subject === undefined)
+        .map((r) => r.id),
+    [baseRows],
+  );
   const visibleIdsKey = useMemo(() => visibleIds.join(","), [visibleIds]);
   const fetchListFields = useServerFn(getEmailListFields);
   const listFieldsQ = useQuery({
