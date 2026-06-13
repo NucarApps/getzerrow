@@ -650,7 +650,7 @@ function InboxPage() {
       if (now - lastRun < 15_000) return;
       lastRun = now;
       try {
-        await syncReadStateFn({ data: {} });
+        await syncReadStateFn();
       } catch {
         // best-effort; the reconcile cron is the backstop.
       }
