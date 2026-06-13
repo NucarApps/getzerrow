@@ -20,6 +20,7 @@ import {
   suggestFolderFromSelection,
   createFolderAndAssign,
   reconcileInboxFromGmail,
+  syncMyReadState,
 } from "@/lib/gmail.functions";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -633,6 +634,40 @@ function InboxPage() {
       clearInterval(handle);
     };
   }, [accountId, reconcileInboxFn, qc]);
+
+  // Keep the unread dots matched with Gmail. A single is:unread diff per
+  // account (whole mailbox, all folders) marks read/unread anything changed
+  // directly in Gmail. The is_read updates flow back through realtime, so the
+  // dots update in place. Runs on mount and whenever the tab regains focus;
+  // the 15-minute reconcile cron is the backstop. Debounced so rapid focus
+  // toggles don't fan out duplicate calls.
+  const syncReadStateFn = useServerFn(syncMyReadState);
+  useEffect(() => {
+    let cancelled = false;
+    let lastRun = 0;
+    const run = async () => {
+      const now = Date.now();
+      if (now - lastRun < 15_000) return;
+      lastRun = now;
+      try {
+        await syncReadStateFn();
+      } catch {
+        // best-effort; the reconcile cron is the backstop.
+      }
+      if (cancelled) return;
+    };
+    const initial = setTimeout(run, 1_500);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void run();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearTimeout(initial);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [syncReadStateFn]);
+
 
   // When searching, also ask Gmail for matching messages and ingest any we
   // don't have locally — then refetch so they appear in the results.

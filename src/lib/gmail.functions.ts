@@ -15,6 +15,7 @@ import {
   cancelBackfillJob,
   invalidateAccountContext,
   invalidateAccountContextForUser,
+  syncReadState,
 } from "./sync.server";
 import {
   listLabels,
@@ -836,6 +837,36 @@ export const markEmailRead = createServerFn({ method: "POST" })
     await supabaseAdmin.from("emails").update({ is_read: data.read }).eq("id", data.id);
     return { ok: true };
   });
+
+/**
+ * On-demand read-state reconciliation for the signed-in user's connected
+ * accounts. Pulls Gmail's current unread set per account and diffs it against
+ * local read flags so the unread dots match Gmail. Called from the inbox on
+ * mount and on tab focus; the 15-minute reconcile cron is the backstop.
+ */
+export const syncMyReadState = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: accounts } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("id")
+      .eq("user_id", context.userId)
+      .eq("needs_reconnect", false);
+    let markedRead = 0;
+    let markedUnread = 0;
+    for (const acc of accounts ?? []) {
+      try {
+        const r = await syncReadState(acc.id);
+        markedRead += r.marked_read;
+        markedUnread += r.marked_unread;
+      } catch (e) {
+        logError("gmail.sync_my_read_state_failed", { account_id: acc.id }, e);
+      }
+    }
+    return { ok: true, marked_read: markedRead, marked_unread: markedUnread };
+  });
+
+
 
 export const archiveEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

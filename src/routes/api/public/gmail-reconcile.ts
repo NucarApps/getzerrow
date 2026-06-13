@@ -7,7 +7,7 @@
 // last_history_sync_at) get a larger reconcile window to compensate.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { reconcileLocalInbox } from "@/lib/sync.server";
+import { reconcileLocalInbox, syncReadState } from "@/lib/sync.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 import { withCronRun, logError } from "@/lib/log.server";
 
@@ -60,7 +60,19 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
             const tAcc = Date.now();
             try {
               const r = await reconcileLocalInbox(acc.id, limit);
-              results.push({ account_id: acc.id, result: r, limit });
+              // Mailbox-wide read-state diff: catches read/unread changes made
+              // in Gmail that the history poll missed, across all folders.
+              let readState: unknown;
+              try {
+                readState = await syncReadState(acc.id);
+              } catch (e) {
+                logError(
+                  "reconcile.read_state_failed",
+                  { run_id: runId, account_id: acc.id },
+                  e,
+                );
+              }
+              results.push({ account_id: acc.id, result: { ...(r as object), readState }, limit });
             } catch (e) {
               const msg = (e as Error)?.message ?? String(e);
               logError(
