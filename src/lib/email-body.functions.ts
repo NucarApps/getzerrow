@@ -8,7 +8,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getEmailsDecrypted, getEmailListFieldsDecrypted } from "./sync/encrypted-reader";
+import {
+  getEmailsDecrypted,
+  getEmailListFieldsDecrypted,
+  getEmailsListDecrypted,
+} from "./sync/encrypted-reader";
 
 export const getEmailBody = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
