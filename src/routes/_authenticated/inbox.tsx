@@ -78,7 +78,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
-import { getEmailBody, getEmailListFields } from "@/lib/email-body.functions";
+import { getEmailBody, getEmailListFields, getInboxList } from "@/lib/email-body.functions";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
