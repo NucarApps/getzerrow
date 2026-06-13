@@ -1891,18 +1891,28 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
       if (value) {
         const { data: existing } = await supabaseAdmin
           .from("inbox_overrides")
-          .select("id")
+          .select("id, gmail_account_id")
           .eq("user_id", context.userId)
           .eq("match_type", data.add_override)
           .eq("value", value)
           .maybeSingle();
         if (!existing) {
+          // Store globally (no account) so the override keeps mail in the
+          // inbox across every connected account, not just this one.
           await supabaseAdmin.from("inbox_overrides").insert({
             user_id: context.userId,
-            gmail_account_id: email.gmail_account_id,
+            gmail_account_id: null,
             match_type: data.add_override,
             value,
           });
+          await invalidateAccountContextForUser(context.userId);
+        } else if (existing.gmail_account_id) {
+          // Promote a legacy account-scoped override to global.
+          await supabaseAdmin
+            .from("inbox_overrides")
+            .update({ gmail_account_id: null })
+            .eq("id", existing.id);
+          await invalidateAccountContextForUser(context.userId);
         }
         override_added = data.add_override;
       }
