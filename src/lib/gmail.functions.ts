@@ -1937,24 +1937,30 @@ export const addInboxOverride = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const value = data.value.trim().toLowerCase().replace(/^@/, "");
     if (!value) throw new Error("Empty value");
-    let existQ = supabaseAdmin
+    // The unique constraint is (user_id, match_type, value) and does NOT
+    // include gmail_account_id, so the existence check must match those three
+    // columns only — an account-scoped row counts as "already present" even
+    // when this save creates a global (null-account) override.
+    const { data: existing } = await supabaseAdmin
       .from("inbox_overrides")
       .select("id")
       .eq("user_id", context.userId)
       .eq("match_type", data.match_type)
-      .eq("value", value);
-    existQ = data.gmail_account_id
-      ? existQ.eq("gmail_account_id", data.gmail_account_id)
-      : existQ.is("gmail_account_id", null);
-    const { data: existing } = await existQ.maybeSingle();
+      .eq("value", value)
+      .maybeSingle();
     const already = !!existing;
     if (!already) {
-      const { error } = await supabaseAdmin.from("inbox_overrides").insert({
-        user_id: context.userId,
-        gmail_account_id: data.gmail_account_id ?? null,
-        match_type: data.match_type,
-        value,
-      });
+      // Upsert with ignoreDuplicates as a safety net so a race can never
+      // surface a raw duplicate-key error to the user.
+      const { error } = await supabaseAdmin.from("inbox_overrides").upsert(
+        {
+          user_id: context.userId,
+          gmail_account_id: data.gmail_account_id ?? null,
+          match_type: data.match_type,
+          value,
+        },
+        { onConflict: "user_id,match_type,value", ignoreDuplicates: true },
+      );
       if (error) throw new Error(error.message);
       // Bust caches across every account this user owns so the new override
       // routes incoming mail immediately.
