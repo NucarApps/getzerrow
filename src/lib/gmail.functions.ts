@@ -1937,13 +1937,14 @@ export const addInboxOverride = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const value = data.value.trim().toLowerCase().replace(/^@/, "");
     if (!value) throw new Error("Empty value");
-    // The unique constraint is (user_id, match_type, value) and does NOT
-    // include gmail_account_id, so the existence check must match those three
-    // columns only — an account-scoped row counts as "already present" even
-    // when this save creates a global (null-account) override.
+    // Inbox overrides are user-wide: they apply to every connected account,
+    // so we always store gmail_account_id = null. The unique constraint is
+    // (user_id, match_type, value) and does NOT include gmail_account_id, so
+    // the existence check matches those three columns only — an account-scoped
+    // row counts as "already present".
     const { data: existing } = await supabaseAdmin
       .from("inbox_overrides")
-      .select("id")
+      .select("id, gmail_account_id")
       .eq("user_id", context.userId)
       .eq("match_type", data.match_type)
       .eq("value", value)
@@ -1955,7 +1956,7 @@ export const addInboxOverride = createServerFn({ method: "POST" })
       const { error } = await supabaseAdmin.from("inbox_overrides").upsert(
         {
           user_id: context.userId,
-          gmail_account_id: data.gmail_account_id ?? null,
+          gmail_account_id: null,
           match_type: data.match_type,
           value,
         },
@@ -1964,6 +1965,14 @@ export const addInboxOverride = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       // Bust caches across every account this user owns so the new override
       // routes incoming mail immediately.
+      await invalidateAccountContextForUser(context.userId);
+    } else if (existing.gmail_account_id) {
+      // Promote a legacy account-scoped override to global so it now protects
+      // mail arriving on every connected account.
+      await supabaseAdmin
+        .from("inbox_overrides")
+        .update({ gmail_account_id: null })
+        .eq("id", existing.id);
       await invalidateAccountContextForUser(context.userId);
     }
 
