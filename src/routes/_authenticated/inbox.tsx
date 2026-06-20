@@ -987,6 +987,11 @@ function InboxPage() {
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
             <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
+            {syncMut.isPending && (
+              <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground animate-pulse">
+                Catching up…
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <Button
