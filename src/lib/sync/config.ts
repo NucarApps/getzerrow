@@ -70,6 +70,22 @@ export const AI_CLASSIFY_TOTAL_BUDGET_MS = 18_000;
  * prompts, only 2 attempts). */
 export const AI_BATCH_ATTEMPT_TIMEOUT_MS = 12_000;
 
+// ─── Synchronous catch-up sync ───────────────────────────────────────────
+
+/** When the user opens the app after time away, triggerSync processes
+ * up to this many newly-enqueued messages SYNCHRONOUSLY before
+ * returning, so the client's refetch lands all the new mail in one go
+ * (no row-by-row trickle). Anything beyond this falls back to the
+ * regular live-cron lane. Tuned conservatively because triggerSync
+ * already does backfillRecent + reconcile and Safari drops requests
+ * that run too long. */
+export const CATCHUP_BULK_LIMIT = 30;
+
+/** Parallelism for the bulk Gmail getMessage(format=full) fetch inside
+ * the catch-up path. Gmail tolerates ~10-20 concurrent reads per user
+ * comfortably. */
+export const CATCHUP_FETCH_CONCURRENCY = 20;
+
 // ─── Stranded-email rescue sweep ─────────────────────────────────────────
 
 /** Only rescue emails that arrived within this window. Older mail is
