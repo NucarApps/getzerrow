@@ -136,6 +136,57 @@ export async function getEmailListFieldsDecrypted(
   return { rows: (data as EmailListFields[] | null) ?? [], error: null };
 }
 
+// Full inbox list page, decrypted in one round-trip. Filters + paginates
+// server-side so the browser never downloads the whole corpus, and the list
+// can render sender/subject on first paint without a second decrypt call.
+export type EmailListRow = {
+  id: string;
+  from_addr: string | null;
+  from_name: string | null;
+  subject: string | null;
+  snippet: string | null;
+  to_addrs: string | null;
+  ai_summary: string | null;
+  classification_reason: string | null;
+  received_at: string | null;
+  is_read: boolean;
+  is_archived: boolean;
+  folder_id: string | null;
+  ai_confidence: number | null;
+  thread_id: string | null;
+  classified_by: string | null;
+  matched_filter_ids: string[] | null;
+  matched_folder_ids: string[] | null;
+  has_attachment: boolean;
+  processed_at: string | null;
+  raw_labels: string[] | null;
+  snoozed_until: string | null;
+  gmail_message_id: string | null;
+};
+
+export type EmailListScope = "all" | "all_mail" | "no_rules" | "folder";
+
+export async function getEmailsListDecrypted(args: {
+  accountId: string;
+  userId: string;
+  scope: EmailListScope;
+  folderId: string | null;
+  cursor: string | null;
+  limit: number;
+}): Promise<{ rows: EmailListRow[]; error: string | null }> {
+  const { data, error } = await supabaseAdmin.rpc("get_emails_list_decrypted", {
+    p_account_id: args.accountId,
+    p_user_id: args.userId,
+    p_scope: args.scope,
+    p_folder_id: args.folderId,
+    p_cursor: args.cursor,
+    p_limit: args.limit,
+    p_key: getKey(),
+  } as never);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data as EmailListRow[] | null) ?? [], error: null };
+}
+
 export type ContactListFields = {
   id: string;
   relationship_summary: string | null;

@@ -70,6 +70,8 @@ export const replayTransientDlq = _replayTransientDlq;
 export const retryForwardAttempts = _retryForwardAttempts;
 export { rescueStrandedEmails } from "./sync/rescue";
 export { bulkCatchupClaim, type CatchupResult } from "./sync/catchup";
+export { classifyByRules } from "./sync/classify";
+export { syncReadState } from "./sync/read-state";
 export type AccountContext = _AccountContext;
 export const loadAccountContext = _loadAccountContext;
 export const invalidateAccountContext = _invalidateAccountContext;

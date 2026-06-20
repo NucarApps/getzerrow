@@ -16,6 +16,7 @@ import {
   invalidateAccountContext,
   invalidateAccountContextForUser,
   bulkCatchupClaim,
+  syncReadState,
 } from "./sync.server";
 import {
   listLabels,
@@ -852,6 +853,36 @@ export const markEmailRead = createServerFn({ method: "POST" })
     await supabaseAdmin.from("emails").update({ is_read: data.read }).eq("id", data.id);
     return { ok: true };
   });
+
+/**
+ * On-demand read-state reconciliation for the signed-in user's connected
+ * accounts. Pulls Gmail's current unread set per account and diffs it against
+ * local read flags so the unread dots match Gmail. Called from the inbox on
+ * mount and on tab focus; the 15-minute reconcile cron is the backstop.
+ */
+export const syncMyReadState = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: accounts } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("id")
+      .eq("user_id", context.userId)
+      .eq("needs_reconnect", false);
+    let markedRead = 0;
+    let markedUnread = 0;
+    for (const acc of accounts ?? []) {
+      try {
+        const r = await syncReadState(acc.id);
+        markedRead += r.marked_read;
+        markedUnread += r.marked_unread;
+      } catch (e) {
+        logError("gmail.sync_my_read_state_failed", { account_id: acc.id }, e);
+      }
+    }
+    return { ok: true, marked_read: markedRead, marked_unread: markedUnread };
+  });
+
+
 
 export const archiveEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1876,18 +1907,28 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
       if (value) {
         const { data: existing } = await supabaseAdmin
           .from("inbox_overrides")
-          .select("id")
+          .select("id, gmail_account_id")
           .eq("user_id", context.userId)
           .eq("match_type", data.add_override)
           .eq("value", value)
           .maybeSingle();
         if (!existing) {
+          // Store globally (no account) so the override keeps mail in the
+          // inbox across every connected account, not just this one.
           await supabaseAdmin.from("inbox_overrides").insert({
             user_id: context.userId,
-            gmail_account_id: email.gmail_account_id,
+            gmail_account_id: null,
             match_type: data.add_override,
             value,
           });
+          await invalidateAccountContextForUser(context.userId);
+        } else if (existing.gmail_account_id) {
+          // Promote a legacy account-scoped override to global.
+          await supabaseAdmin
+            .from("inbox_overrides")
+            .update({ gmail_account_id: null })
+            .eq("id", existing.id);
+          await invalidateAccountContextForUser(context.userId);
         }
         override_added = data.add_override;
       }
@@ -1922,27 +1963,42 @@ export const addInboxOverride = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const value = data.value.trim().toLowerCase().replace(/^@/, "");
     if (!value) throw new Error("Empty value");
-    let existQ = supabaseAdmin
+    // Inbox overrides are user-wide: they apply to every connected account,
+    // so we always store gmail_account_id = null. The unique constraint is
+    // (user_id, match_type, value) and does NOT include gmail_account_id, so
+    // the existence check matches those three columns only — an account-scoped
+    // row counts as "already present".
+    const { data: existing } = await supabaseAdmin
       .from("inbox_overrides")
-      .select("id")
+      .select("id, gmail_account_id")
       .eq("user_id", context.userId)
       .eq("match_type", data.match_type)
-      .eq("value", value);
-    existQ = data.gmail_account_id
-      ? existQ.eq("gmail_account_id", data.gmail_account_id)
-      : existQ.is("gmail_account_id", null);
-    const { data: existing } = await existQ.maybeSingle();
+      .eq("value", value)
+      .maybeSingle();
     const already = !!existing;
     if (!already) {
-      const { error } = await supabaseAdmin.from("inbox_overrides").insert({
-        user_id: context.userId,
-        gmail_account_id: data.gmail_account_id ?? null,
-        match_type: data.match_type,
-        value,
-      });
+      // Upsert with ignoreDuplicates as a safety net so a race can never
+      // surface a raw duplicate-key error to the user.
+      const { error } = await supabaseAdmin.from("inbox_overrides").upsert(
+        {
+          user_id: context.userId,
+          gmail_account_id: null,
+          match_type: data.match_type,
+          value,
+        },
+        { onConflict: "user_id,match_type,value", ignoreDuplicates: true },
+      );
       if (error) throw new Error(error.message);
       // Bust caches across every account this user owns so the new override
       // routes incoming mail immediately.
+      await invalidateAccountContextForUser(context.userId);
+    } else if (existing.gmail_account_id) {
+      // Promote a legacy account-scoped override to global so it now protects
+      // mail arriving on every connected account.
+      await supabaseAdmin
+        .from("inbox_overrides")
+        .update({ gmail_account_id: null })
+        .eq("id", existing.id);
       await invalidateAccountContextForUser(context.userId);
     }
 

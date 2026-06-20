@@ -206,6 +206,7 @@ export function useEmailRealtime() {
       if (anyRefetch) {
         Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
       }
+      bumpCounts();
     }
 
     function scheduleFlush() {
@@ -215,6 +216,7 @@ export function useEmailRealtime() {
       } else {
         rafHandle = setTimeout(flush, 16) as unknown as number;
       }
+      bumpCounts();
     }
 
     function applyInsert(row: EmailRow) {
@@ -238,6 +240,11 @@ export function useEmailRealtime() {
       qc.invalidateQueries({ queryKey: ["folders"] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
     };
+
+    // Unread/folder counts now live under their own key (a cheap server-side
+    // aggregate), so they're not swept by ["emails"] mutations. Refresh them
+    // explicitly whenever an email row changes read/label/folder state.
+    const bumpCounts = () => qc.invalidateQueries({ queryKey: ["folder-counts"] });
 
     function scheduleReconnect() {
       if (cancelled || reconnectTimer) return;
@@ -292,6 +299,7 @@ export function useEmailRealtime() {
             // Catch up on anything missed while disconnected.
             qc.invalidateQueries({ queryKey: ["emails"] });
             qc.invalidateQueries({ queryKey: ["folders"] });
+            bumpCounts();
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
             scheduleReconnect();
           }
@@ -334,6 +342,7 @@ export function useEmailRealtime() {
       if (document.visibilityState === "visible") {
         qc.invalidateQueries({ queryKey: ["emails"] });
         qc.invalidateQueries({ queryKey: ["folders"] });
+        bumpCounts();
       }
     };
     document.addEventListener("visibilitychange", onVisible);

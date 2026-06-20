@@ -20,6 +20,7 @@ import {
   suggestFolderFromSelection,
   createFolderAndAssign,
   reconcileInboxFromGmail,
+  syncMyReadState,
 } from "@/lib/gmail.functions";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -78,7 +79,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
-import { getEmailBody, getEmailListFields } from "@/lib/email-body.functions";
+import { getEmailBody, getEmailListFields, getInboxList } from "@/lib/email-body.functions";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -512,6 +513,7 @@ function InboxPage() {
   const parsedQuery = useMemo(() => parseSearchQuery(query.trim()), [query]);
   const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
+  const fetchInboxList = useServerFn(getInboxList);
   const emailsQ = useQuery<Email[]>({
     queryKey: [
       "emails",
@@ -568,32 +570,32 @@ function InboxPage() {
         }
         return rows;
       }
-      let q = supabase
-        .from("emails")
-        .select(LIST_COLUMNS)
-        .eq("gmail_account_id", accountId!)
-        .order("received_at", { ascending: false, nullsFirst: false })
-        .limit((isNoRules ? PAGE_SIZE * 3 : PAGE_SIZE) + 1);
-      if (cursor) q = q.lt("received_at", cursor);
-      if (isAllMail) {
-        // no filter — show everything (including snoozed)
-      } else {
-        const nowIso = new Date().toISOString();
-        q = q.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
-        if (selectedFolder === "all")
-          q = q.contains("raw_labels", ["INBOX"]).eq("is_archived", false);
-        else if (isNoRules) q = q.is("folder_id", null);
-        else q = q.eq("folder_id", selectedFolder);
-      }
-      const { data } = await q;
-      let rows = (data ?? []) as unknown as Email[];
-      if (isNoRules) {
-        rows = rows.filter((e) => !e.raw_labels?.some((l: string) => l.startsWith("Label_")));
-      }
-      return rows;
+      // Non-search: one decrypted, server-paginated round-trip. The RPC
+      // applies the snoozed / INBOX / no-rules / folder filters and returns
+      // sender + subject + AI fields already decrypted, so the list renders
+      // in a single pass instead of a metadata fetch + separate decrypt call.
+      const scope: "all" | "all_mail" | "no_rules" | "folder" = isAllMail
+        ? "all_mail"
+        : isNoRules
+          ? "no_rules"
+          : selectedFolder === "all"
+            ? "all"
+            : "folder";
+      const r = await fetchInboxList({
+        data: {
+          account_id: accountId!,
+          scope,
+          folder_id: scope === "folder" ? selectedFolder : null,
+          cursor,
+          limit: PAGE_SIZE + 1,
+        },
+      });
+      return (r.rows ?? []) as unknown as Email[];
     },
+    // Realtime keeps this list live (inserts/updates/deletes are patched into
+    // the cache directly), so we don't poll on an interval — that just re-ran
+    // the decrypt round-trip every 15s. Refresh on focus + manual pull only.
     refetchOnWindowFocus: true,
-    refetchInterval: 15_000,
   });
 
   // Background self-heal: ask Gmail which currently-inbox messages have
@@ -615,20 +617,57 @@ function InboxPage() {
             (r as { ingested?: number }).ingested);
         if (!cancelled && changed) {
           qc.invalidateQueries({ queryKey: ["emails"] });
+          qc.invalidateQueries({ queryKey: ["folder-counts"] });
         }
       } catch {
         // best-effort; the cron reconcile path is the backstop.
       }
     };
-    // Initial run after a short delay so the page loads first.
+    // Initial run after a short delay so the page loads first. The 15-minute
+    // pg_cron reconcile is the real backstop; this in-tab loop is a light
+    // self-heal, so we run it infrequently rather than every 45s per tab.
     const initial = setTimeout(tick, 3_000);
-    const handle = setInterval(tick, 45_000);
+    const handle = setInterval(tick, 300_000);
     return () => {
       cancelled = true;
       clearTimeout(initial);
       clearInterval(handle);
     };
   }, [accountId, reconcileInboxFn, qc]);
+
+  // Keep the unread dots matched with Gmail. A single is:unread diff per
+  // account (whole mailbox, all folders) marks read/unread anything changed
+  // directly in Gmail. The is_read updates flow back through realtime, so the
+  // dots update in place. Runs on mount and whenever the tab regains focus;
+  // the 15-minute reconcile cron is the backstop. Debounced so rapid focus
+  // toggles don't fan out duplicate calls.
+  const syncReadStateFn = useServerFn(syncMyReadState);
+  useEffect(() => {
+    let cancelled = false;
+    let lastRun = 0;
+    const run = async () => {
+      const now = Date.now();
+      if (now - lastRun < 15_000) return;
+      lastRun = now;
+      try {
+        await syncReadStateFn();
+      } catch {
+        // best-effort; the reconcile cron is the backstop.
+      }
+      if (cancelled) return;
+    };
+    const initial = setTimeout(run, 1_500);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void run();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearTimeout(initial);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [syncReadStateFn]);
+
 
   // When searching, also ask Gmail for matching messages and ingest any we
   // don't have locally — then refetch so they appear in the results.
@@ -715,10 +754,19 @@ function InboxPage() {
     return merged;
   }, [isSearching, rawEmails, gmailHitRowsQ.data]);
 
-  // ai_summary / classification_reason live in encrypted columns only after
-  // Phase 3. Batch-decrypt the visible page via the SECURITY DEFINER RPC and
-  // merge into list rows for rendering.
-  const visibleIds = useMemo(() => baseRows.map((r) => r.id), [baseRows]);
+  // Decrypt only the rows that still lack plaintext fields. The non-search
+  // list now arrives already-decrypted from getInboxList, so those rows are
+  // skipped here (no second round-trip). This still covers (a) search results,
+  // which come from a raw metadata query, and (b) rows spliced in by realtime
+  // INSERTs, which carry only the encrypted columns. A row needs decryption
+  // when its `subject` key is absent (raw rows expose `subject_enc` instead).
+  const visibleIds = useMemo(
+    () =>
+      baseRows
+        .filter((r) => (r as { subject?: string | null }).subject === undefined)
+        .map((r) => r.id),
+    [baseRows],
+  );
   const visibleIdsKey = useMemo(() => visibleIds.join(","), [visibleIds]);
   const fetchListFields = useServerFn(getEmailListFields);
   const listFieldsQ = useQuery({

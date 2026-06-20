@@ -1,73 +1,38 @@
-# Stop always-inbox overrides from resurrecting old mail
+# Fix: domain set to "always inbox" still files mail into Orders on other accounts
 
-## Goal
+## What happened
 
-An "always send to inbox" override (e.g. the domain rule for `nucar.com`) should only affect **newly-arriving** mail. It must never reach into Gmail and re-add the `INBOX` label to messages you already archived. Per your choice, no cleanup of already-resurfaced emails — just stop it going forward.
+- Lynne's email `lynne@manueldesantaren.com` arrived on the **chris@dagesse.com** account and AI-filed it into **Orders** (confidence 0.9).
+- Your "always show in inbox" rule for `manueldesantaren.com` exists, but it is **tied to a single account** — **chris@nucar.com** — not to all your inboxes.
 
-## Root cause (confirmed)
+## Why
 
-`src/lib/sync/process-message.ts` (the `else if` branch around lines 328–357) restores a message to the inbox whenever it matches an `inbox_override` / `calendar_contact` classification and is not currently in the Gmail inbox — with **no check on how old the message is**. For historical mail (backfilled, reconciled, or re-synced) this:
+Inbox-override rules can be stored either as "all accounts" (no account attached) or "one account only". The path that created your `manueldesantaren.com` rule (Move to inbox → keep domain in inbox) saved it **attached to the account the original email came from** (chris@nucar.com).
 
-1. Calls `modifyMessage(..., ["INBOX"], [])` — writes the `INBOX` label back into real Gmail.
-2. Sets `is_archived: false` and adds `INBOX` to `raw_labels` locally.
+When mail routing runs, it only loads overrides that are either global or belong to the receiving account. Lynne's email came in on chris@dagesse.com, so the chris@nucar.com-scoped rule was invisible to it, and the AI classifier sent it to Orders.
 
-Once the label is back in Gmail, `reconcileInboxFromGmail`'s incoming pass treats it as legitimately in the inbox and keeps resurfacing it, creating the oscillation you saw.
+You have three connected inboxes (chris@dagesse.com, chanelldagesse@gmail.com, chris@nucar.com), so any account-scoped override silently fails to protect the other two.
 
 ## The fix
 
-### 1. Add a recency guard to the automatic restore (primary change)
+Make inbox overrides apply across **all** of your accounts — which is what the unique rule already implies (one rule per user + type + value, account not included).
 
-In `src/lib/sync/process-message.ts`, gate the inbox-override restore branch on the message being a genuine recent arrival. Only restore when `received_at` is within a short window (proposed: **3 days**). Old mail is left exactly as Gmail has it (archived), and **no Gmail label write happens**.
+1. **Save new overrides globally.** In `addInboxOverride` and in the `add_override` branch of the move-to-inbox handler (`src/lib/gmail.functions.ts`), store the rule with **no account attached** (`gmail_account_id: null`) so it covers every inbox. If a matching account-scoped row already exists, promote it to global.
 
-```text
-const RESTORE_INBOX_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+2. **Promote existing rules (data migration).** Set `gmail_account_id = NULL` for all existing `inbox_overrides` rows so every current rule now applies to every account. This is safe because the table already only allows one rule per (user, type, value).
 
-} else if (
-    (classifiedBy === "inbox_override" || classifiedBy === "calendar_contact") &&
-    !inInbox
-) {
-    const receivedMs = Date.parse(parsed.received_at ?? "");
-    const isRecentArrival =
-        Number.isFinite(receivedMs) &&
-        Date.now() - receivedMs < RESTORE_INBOX_WINDOW_MS;
+3. **Bring misfiled past mail back.** Reprocess emails that match an existing override but are sitting in a folder on any account — move them out of the folder, restore the INBOX label locally and in Gmail. This reuses the existing reprocess-past logic (already user-wide, not account-scoped) and will pull Lynne's Orders email (and any siblings) back into the inbox.
 
-    if (isRecentArrival) {
-        // existing restore logic: modifyMessage add INBOX + set is_archived=false
-    }
-    // else: leave the row archived (upsert already set is_archived = !inInbox = true).
-    // Respect Gmail's current state for historical mail — never re-add INBOX.
-}
-```
+## Verify
 
-Why recency rather than a "backfill" flag: historical mail reaches this branch through several paths (deep backfill, `reconcileInboxFromGmail` re-ingestion at live priority, history catch-up). A `received_at` recency check covers all of them, while still restoring legitimately-new mail that a Gmail filter pre-archived.
+- After the migration, confirm `manueldesantaren.com` override has no account attached.
+- Confirm Lynne's email (`lynne@manueldesantaren.com`, currently in Orders) is back in the inbox with `classified_by = inbox_override`.
+- Send/simulate a new message from the domain to chris@dagesse.com and chanelldagesse@gmail.com → it stays in the inbox, not Orders.
+- Existing "keep in inbox" rules for other domains continue to work and now span all accounts.
 
-### 2. Keep user-initiated restores intact
+## Technical detail
 
-The explicit, user-triggered paths in `src/lib/gmail.functions.ts` are left as-is, because they only act on emails the user is actively reclassifying and only touch messages currently filed in a folder (`folder_id` set), never archived historical mail:
-
-- `reanalyzeEmail` (single "Reanalyze")
-- `reclassifyEmails` (bulk reclassify)
-- `addInboxOverride` with `reprocess_past` (only runs when you explicitly add an override and ask to reprocess past mail)
-- `moveEmailToInbox` (manual "Move to Inbox")
-
-No change there — those remain deliberate, user-driven actions.
-
-## What this fixes
-
-- New mail from always-inbox senders/domains still lands in the inbox, even if a Gmail filter tried to archive it.
-- Historical mail you already archived is never pulled back, and the `INBOX` label is never re-stamped onto old messages in Gmail — which breaks the resurrection loop at its source.
-
-## What this does NOT do (per your choice)
-
-- It does not re-archive or strip `INBOX` from the ~20k override emails or the 127 already resurfaced today. They stay as they are; if any remain in your inbox you can archive them manually. (We can run a targeted cleanup later if you change your mind.)
-
-## Verification
-
-- Re-check the account after deploy: confirm no new pre-2026 emails get `is_archived = false` / `INBOX` re-added on subsequent sync/reconcile ticks.
-- Confirm a freshly-arriving test email from an always-inbox domain still appears in the inbox.
-
-## Technical notes
-
-- Single-file behavioral change: `src/lib/sync/process-message.ts`.
-- `received_at` is already parsed and stored before this branch, so the guard adds no extra fetch.
-- The window constant (3 days) is conservative — large enough to absorb push/poll delays and short outages, far smaller than the months/years-old mail being resurrected.
+- Account routing reads overrides via `or(gmail_account_id.eq.<accountId>,gmail_account_id.is.null)` in `src/lib/sync/account-context.ts`; account-scoped rows are the gap. Moving to global (`null`) closes it.
+- Migration: `UPDATE public.inbox_overrides SET gmail_account_id = NULL WHERE gmail_account_id IS NOT NULL;`
+- Reprocess: invoke the existing reprocess-past routine (the loop currently inside `addInboxOverride` that re-files matching emails to inbox via `modifyMessage`) for each affected override, or run it as a one-off backfill for this user. No schema change beyond the migration above.
+- After writes, bust the per-account context cache with `invalidateAccountContextForUser` so routing picks up the promoted overrides immediately.

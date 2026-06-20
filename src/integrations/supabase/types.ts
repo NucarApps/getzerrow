@@ -445,6 +445,7 @@ export type Database = {
           cc_enc: string | null
           classification_reason_enc: string | null
           classified_by: string | null
+          classify_attempts: number
           created_at: string
           folder_id: string | null
           forward_attempts: number
@@ -485,6 +486,7 @@ export type Database = {
           cc_enc?: string | null
           classification_reason_enc?: string | null
           classified_by?: string | null
+          classify_attempts?: number
           created_at?: string
           folder_id?: string | null
           forward_attempts?: number
@@ -525,6 +527,7 @@ export type Database = {
           cc_enc?: string | null
           classification_reason_enc?: string | null
           classified_by?: string | null
+          classify_attempts?: number
           created_at?: string
           folder_id?: string | null
           forward_attempts?: number
@@ -1444,6 +1447,41 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_emails_list_decrypted: {
+        Args: {
+          p_account_id: string
+          p_cursor: string
+          p_folder_id: string
+          p_key: string
+          p_limit: number
+          p_scope: string
+          p_user_id: string
+        }
+        Returns: {
+          ai_confidence: number
+          ai_summary: string
+          classification_reason: string
+          classified_by: string
+          folder_id: string
+          from_addr: string
+          from_name: string
+          gmail_message_id: string
+          has_attachment: boolean
+          id: string
+          is_archived: boolean
+          is_read: boolean
+          matched_filter_ids: string[]
+          matched_folder_ids: string[]
+          processed_at: string
+          raw_labels: string[]
+          received_at: string
+          snippet: string
+          snoozed_until: string
+          subject: string
+          thread_id: string
+          to_addrs: string
+        }[]
+      }
       get_emails_list_fields_decrypted: {
         Args: { p_ids: string[]; p_key: string }
         Returns: {
@@ -1471,6 +1509,10 @@ export type Database = {
           subject: string
           user_id: string
         }[]
+      }
+      get_folder_unread_counts: {
+        Args: { p_account_id: string }
+        Returns: Json
       }
       get_gmail_oauth_tokens: {
         Args: { p_account_id: string; p_key: string }
@@ -1504,6 +1546,10 @@ export type Database = {
             }
             Returns: Json
           }
+      increment_emails_since_learn: {
+        Args: { p_folder_id: string }
+        Returns: undefined
+      }
       insert_email_encrypted: {
         Args: {
           p_body_html: string
