@@ -70,6 +70,61 @@ export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): b
   return matchesScope(row, scope);
 }
 
+/** Coalesced realtime op buffered before a flush. Later ops for the
+ * same id win — the buffer self-deduplicates. */
+export type PendingRealtimeOp =
+  | { kind: "insert"; row: EmailRow }
+  | { kind: "update"; row: EmailRow }
+  | { kind: "delete"; row: { id: string } };
+
+/** Pure: apply a batch of coalesced ops to one cached list. Returns the
+ * next list (sorted) plus whether a refetch is needed for any "row newly
+ * belongs but wasn't present" case. Returns null `next` when nothing
+ * changed — caller leaves the list untouched (avoids re-renders).
+ *
+ * Exported so the coalescer logic can be unit-tested without spinning
+ * up React or React Query. */
+export function applyPendingOpsToList(
+  rows: EmailRow[],
+  ops: PendingRealtimeOp[],
+  queryKey: readonly unknown[],
+): { next: EmailRow[] | null; needsRefetch: boolean } {
+  let next = rows;
+  let mutated = false;
+  let needsRefetch = false;
+  for (const op of ops) {
+    if (op.kind === "insert") {
+      if (!rowBelongsInList(op.row, queryKey)) continue;
+      if (next.some((r) => r.id === op.row.id)) continue;
+      next = [op.row, ...next];
+      mutated = true;
+    } else if (op.kind === "update") {
+      const present = next.some((r) => r.id === op.row.id);
+      const belongs = rowBelongsInList(op.row, queryKey);
+      if (present && !belongs) {
+        next = next.filter((r) => r.id !== op.row.id);
+        mutated = true;
+      } else if (present && belongs) {
+        next = next.map((r) => (r.id === op.row.id ? { ...r, ...op.row } : r));
+        mutated = true;
+      } else if (!present && belongs) {
+        needsRefetch = true;
+      }
+    } else if (op.kind === "delete") {
+      if (!next.some((r) => r.id === op.row.id)) continue;
+      next = next.filter((r) => r.id !== op.row.id);
+      mutated = true;
+    }
+  }
+  if (!mutated) return { next: null, needsRefetch };
+  next = next.slice().sort((a, b) => {
+    const ta = a.received_at ? new Date(a.received_at).getTime() : 0;
+    const tb = b.received_at ? new Date(b.received_at).getTime() : 0;
+    return tb - ta;
+  });
+  return { next, needsRefetch };
+}
+
 function matchesScope(row: EmailRow, scope: string): boolean {
   if (scope === "all_mail") return true;
   if (scope === "all" || scope === "inbox") {
@@ -125,58 +180,60 @@ export function useEmailRealtime() {
       });
     }
 
-    function applyInsert(row: EmailRow) {
+    // Coalesce realtime events into a single rAF tick. A catch-up burst
+    // that delivers N events within ~16ms now collapses to ONE
+    // setQueryData call per cached query — one React render instead of N.
+    // Buffer is keyed by row id; later events for the same id win
+    // (UPDATE after INSERT, DELETE after either) so it self-deduplicates.
+    const pending = new Map<string, PendingRealtimeOp>();
+    let rafHandle: number | null = null;
+
+    function flush() {
+      rafHandle = null;
+      if (pending.size === 0) return;
+      const ops = Array.from(pending.values());
+      pending.clear();
+
       const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
+      let anyRefetch = false;
       for (const [key] of entries) {
-        if (!rowBelongsInList(row, key as unknown[])) continue;
         patchOneQuery(key as unknown[], (rows) => {
-          if (rows.some((r) => r.id === row.id)) return null;
-          const next = [row, ...rows];
-          next.sort((a, b) => {
-            const ta = a.received_at ? new Date(a.received_at).getTime() : 0;
-            const tb = b.received_at ? new Date(b.received_at).getTime() : 0;
-            return tb - ta;
-          });
+          const { next, needsRefetch } = applyPendingOpsToList(rows, ops, key as unknown[]);
+          if (needsRefetch) anyRefetch = true;
           return next;
         });
       }
-      bumpCounts();
-    }
-
-    function applyUpdate(row: EmailRow) {
-      const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
-      let needsRefetch = false;
-      for (const [key, value] of entries) {
-        if (!value) continue;
-        const rows = Array.isArray(value) ? value : Array.isArray(value.rows) ? value.rows : null;
-        if (!rows) continue;
-        const present = rows.some((r) => r.id === row.id);
-        const belongs = rowBelongsInList(row, key as unknown[]);
-        if (present && !belongs) {
-          patchOneQuery(key as unknown[], (curr) => curr.filter((r) => r.id !== row.id));
-        } else if (present && belongs) {
-          patchOneQuery(key as unknown[], (curr) =>
-            curr.map((r) => (r.id === row.id ? { ...r, ...row } : r)),
-          );
-        } else if (!present && belongs) {
-          needsRefetch = true;
-        }
-      }
-      if (needsRefetch) {
+      if (anyRefetch) {
         Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
       }
       bumpCounts();
     }
 
-    function applyDelete(row: { id: string }) {
-      const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
-      for (const [key, value] of entries) {
-        if (!value) continue;
-        const rows = Array.isArray(value) ? value : Array.isArray(value.rows) ? value.rows : null;
-        if (!rows || !rows.some((r) => r.id === row.id)) continue;
-        patchOneQuery(key as unknown[], (curr) => curr.filter((r) => r.id !== row.id));
+    function scheduleFlush() {
+      if (rafHandle !== null) return;
+      if (typeof requestAnimationFrame === "function") {
+        rafHandle = requestAnimationFrame(flush);
+      } else {
+        rafHandle = setTimeout(flush, 16) as unknown as number;
       }
       bumpCounts();
+    }
+
+    function applyInsert(row: EmailRow) {
+      pending.set(row.id, { kind: "insert", row });
+      scheduleFlush();
+    }
+
+    function applyUpdate(row: EmailRow) {
+      // An update supersedes a pending insert (the row already exists in
+      // the DB; we want the latest version).
+      pending.set(row.id, { kind: "update", row });
+      scheduleFlush();
+    }
+
+    function applyDelete(row: { id: string }) {
+      pending.set(row.id, { kind: "delete", row });
+      scheduleFlush();
     }
 
     const invalidateFolders = () => {
@@ -254,6 +311,12 @@ export function useEmailRealtime() {
         supabase.removeChannel(channel);
         channel = null;
       }
+      if (rafHandle !== null) {
+        if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafHandle);
+        else clearTimeout(rafHandle as unknown as ReturnType<typeof setTimeout>);
+        rafHandle = null;
+      }
+      pending.clear();
     }
 
     connect();

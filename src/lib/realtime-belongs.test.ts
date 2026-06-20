@@ -3,7 +3,7 @@
 // row appearing in a folder=B list). The contract has to stay in sync with
 // the query keys inbox.tsx uses — these tests pin that contract.
 import { describe, it, expect } from "vitest";
-import { rowBelongsInList, type EmailRow } from "./use-email-realtime";
+import { rowBelongsInList, applyPendingOpsToList, type EmailRow } from "./use-email-realtime";
 
 const ACC = "acc-1";
 
@@ -139,5 +139,64 @@ describe("rowBelongsInList — classification insert shapes", () => {
     expect(rowBelongsInList(routed, ["emails", "f-work"])).toBe(true);
     expect(rowBelongsInList(routed, ["emails", "archived"])).toBe(true);
     expect(rowBelongsInList(routed, ["emails", "inbox"])).toBe(false);
+  });
+});
+
+// The coalescer flushes a buffered set of INSERT/UPDATE/DELETE ops in
+// one shot. A catch-up burst of N inserts must produce ONE next-list
+// (one React render) instead of N.
+describe("applyPendingOpsToList — coalesced flush", () => {
+  const baseRow = (id: string, received_at: string): EmailRow => ({
+    id,
+    user_id: "u1",
+    gmail_message_id: `m-${id}`,
+    received_at,
+    is_archived: false,
+    folder_id: null,
+    raw_labels: ["INBOX"],
+  });
+
+  it("applies N inserts in one call, sorted by received_at desc", () => {
+    const existing = [baseRow("a", "2024-01-01T00:00:00Z")];
+    const ops: import("./use-email-realtime").PendingRealtimeOp[] = [
+      { kind: "insert", row: baseRow("b", "2024-01-03T00:00:00Z") },
+      { kind: "insert", row: baseRow("c", "2024-01-02T00:00:00Z") },
+      { kind: "insert", row: baseRow("d", "2024-01-04T00:00:00Z") },
+    ];
+    const { next, needsRefetch } = applyPendingOpsToList(existing, ops, ["emails", "inbox"]);
+    expect(needsRefetch).toBe(false);
+    expect(next?.map((r) => r.id)).toEqual(["d", "b", "c", "a"]);
+  });
+
+  it("returns next=null when no op applies (no spurious render)", () => {
+    const existing = [baseRow("a", "2024-01-01T00:00:00Z")];
+    const ops: import("./use-email-realtime").PendingRealtimeOp[] = [
+      // archived row to inbox list — rejected by rowBelongsInList
+      { kind: "insert", row: { ...baseRow("b", "2024-01-02T00:00:00Z"), is_archived: true } },
+    ];
+    const { next } = applyPendingOpsToList(existing, ops, ["emails", "inbox"]);
+    expect(next).toBeNull();
+  });
+
+  it("update for a row that now belongs but isn't present signals refetch", () => {
+    const existing = [baseRow("a", "2024-01-01T00:00:00Z")];
+    const ops: import("./use-email-realtime").PendingRealtimeOp[] = [
+      { kind: "update", row: { ...baseRow("z", "2024-02-01T00:00:00Z"), folder_id: "f-1" } },
+    ];
+    const { next, needsRefetch } = applyPendingOpsToList(existing, ops, ["emails", "f-1"]);
+    expect(needsRefetch).toBe(true);
+    expect(next).toBeNull();
+  });
+
+  it("mix of insert + update for the same id merges correctly in one pass", () => {
+    const existing = [baseRow("a", "2024-01-01T00:00:00Z")];
+    const ops: import("./use-email-realtime").PendingRealtimeOp[] = [
+      { kind: "insert", row: baseRow("b", "2024-01-05T00:00:00Z") },
+      { kind: "update", row: { ...baseRow("b", "2024-01-05T00:00:00Z"), classified_by: "ai" } },
+    ];
+    const { next } = applyPendingOpsToList(existing, ops, ["emails", "inbox"]);
+    expect(next).toHaveLength(2);
+    expect(next?.[0].id).toBe("b");
+    expect(next?.[0].classified_by).toBe("ai");
   });
 });
