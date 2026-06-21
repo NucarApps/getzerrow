@@ -154,7 +154,7 @@ describe("buildCatchupRow", () => {
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "ceo@vip.example" }), c);
     expect(built!.needs_ai).toBe(false);
-    expect(built!.row.classified_by).toBe("inbox_override");
-    expect(built!.row.folder_id).toBeNull();
+    expect(built!.upsert.classified_by).toBe("inbox_override");
+    expect(built!.folder_id).toBeNull();
   });
 });
