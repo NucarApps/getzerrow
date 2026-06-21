@@ -8,6 +8,28 @@ import { toast } from "sonner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
 export const Route = createFileRoute("/login")({
+  head: () => ({
+    meta: [
+      { title: "Sign in — Zerrow" },
+      {
+        name: "description",
+        content:
+          "Sign in to Zerrow and connect your Gmail account in one step to start sorting your inbox with AI.",
+      },
+      { property: "og:title", content: "Sign in to Zerrow" },
+      {
+        property: "og:description",
+        content: "Connect your Gmail account and let Zerrow sort your inbox with AI.",
+      },
+      { property: "og:url", content: "https://getzerrow.com/login" },
+      { name: "twitter:title", content: "Sign in to Zerrow" },
+      {
+        name: "twitter:description",
+        content: "Connect your Gmail account and let Zerrow sort your inbox with AI.",
+      },
+    ],
+    links: [{ rel: "canonical", href: "https://getzerrow.com/login" }],
+  }),
   beforeLoad: async () => {
     if (typeof window === "undefined") return;
     const { data } = await supabase.auth.getSession();
