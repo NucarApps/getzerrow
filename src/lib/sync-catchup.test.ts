@@ -141,8 +141,8 @@ describe("buildCatchupRow", () => {
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "nobody@nowhere.test" }), c);
     expect(built!.needs_ai).toBe(true);
-    expect(built!.row.folder_id).toBeNull();
-    expect(built!.row.classified_by).toBe("pending_ai");
+    expect(built!.folder_id).toBeNull();
+    expect(built!.upsert.classified_by).toBe("pending_ai");
   });
 
   it("inbox_override (allowlist) stays terminal — AI must NOT route into a folder", () => {
