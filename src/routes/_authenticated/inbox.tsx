@@ -1119,6 +1119,11 @@ function InboxPage() {
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
+  // Only block the whole list on a true cold start (nothing to show yet).
+  // When a list exists, it stays visible and the subtle header pulse signals
+  // the in-flight catch-up instead.
+  const showColdGate = isCatchingUp && rawEmails.length === 0;
+
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
       {/* List */}
