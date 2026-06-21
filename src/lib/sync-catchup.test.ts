@@ -106,8 +106,8 @@ describe("buildCatchupRow", () => {
     expect(built).not.toBeNull();
     expect(built!.needs_ai).toBe(false);
     expect(built!.folder_id).toBe("f1");
-    expect(built!.row.classified_by).toBe("filter");
-    expect(built!.row.folder_id).toBe("f1");
+    expect(built!.upsert.classified_by).toBe("filter");
+    expect(built!.update!.folder_id).toBe("f1");
   });
 
   it("rule-matched mail with auto_archive: is_archived true in INSERT (no flicker)", () => {
@@ -118,8 +118,8 @@ describe("buildCatchupRow", () => {
       enrichedFolders: [{ id: "f1", name: "Newsletters", ai_rule: null }],
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "a@news.test", raw_labels: ["INBOX"] }), c);
-    expect(built!.row.is_archived).toBe(true);
-    expect(built!.row.folder_id).toBe("f1");
+    expect(built!.upsert.is_archived).toBe(true);
+    expect(built!.update!.folder_id).toBe("f1");
   });
 
   it("rule-matched mail with auto_mark_read: is_read true in INSERT", () => {
@@ -130,7 +130,7 @@ describe("buildCatchupRow", () => {
       enrichedFolders: [{ id: "f1", name: "Promo", ai_rule: null }],
     });
     const built = buildCatchupRow(job, parsed({ subject: "Big sale", is_read: false }), c);
-    expect(built!.row.is_read).toBe(true);
+    expect(built!.upsert.is_read).toBe(true);
   });
 
   it("no rule matches + AI candidates exist: row is pending_ai, folder null", () => {
@@ -141,8 +141,8 @@ describe("buildCatchupRow", () => {
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "nobody@nowhere.test" }), c);
     expect(built!.needs_ai).toBe(true);
-    expect(built!.row.folder_id).toBeNull();
-    expect(built!.row.classified_by).toBe("pending_ai");
+    expect(built!.folder_id).toBeNull();
+    expect(built!.upsert.classified_by).toBe("pending_ai");
   });
 
   it("inbox_override (allowlist) stays terminal — AI must NOT route into a folder", () => {
@@ -154,7 +154,7 @@ describe("buildCatchupRow", () => {
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "ceo@vip.example" }), c);
     expect(built!.needs_ai).toBe(false);
-    expect(built!.row.classified_by).toBe("inbox_override");
-    expect(built!.row.folder_id).toBeNull();
+    expect(built!.upsert.classified_by).toBe("global_exclude");
+    expect(built!.folder_id).toBeNull();
   });
 });

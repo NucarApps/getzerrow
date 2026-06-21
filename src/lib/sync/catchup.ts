@@ -32,6 +32,12 @@ import { classifyByRules } from "./classify";
 import { applyFolderActions, type ActionFolder } from "./process-message";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { CATCHUP_BULK_LIMIT, CATCHUP_FETCH_CONCURRENCY } from "./config";
+import {
+  upsertEmailEncrypted,
+  updateEmailEncrypted,
+  type UpsertEmailInput,
+  type UpdateEmailInput,
+} from "./encrypted-writer";
 
 type ClaimedJob = {
   id: string;
@@ -87,22 +93,32 @@ function resolveActionFolder(ctx: AccountContext, folderId: string): ActionFolde
   };
 }
 
-/** Build the INSERT row for one parsed message. Mirrors the single-row
- * INSERT shape in processGmailMessage so the two paths produce
- * indistinguishable results — same fields, same flag computation.
+/** Build the encrypted-write payload for one parsed message. Mirrors the
+ * single-row write in processGmailMessage so the two paths produce
+ * indistinguishable results — same fields, same flag computation. Sensitive
+ * columns are encrypted at rest via the upsert/update RPCs (Phase 3), so we
+ * never write plaintext columns directly.
  * Exported for unit-testability. */
+export type CatchupBuilt = {
+  upsert: UpsertEmailInput;
+  update: UpdateEmailInput | null;
+  snoozed_until: string | null;
+  needs_ai: boolean;
+  folder_id: string | null;
+};
+
 export function buildCatchupRow(
   job: ClaimedJob,
   parsed: Parsed,
   ctx: AccountContext,
-): { row: Record<string, unknown>; needs_ai: boolean; folder_id: string | null } | null {
+): CatchupBuilt | null {
   const labels = parsed.raw_labels ?? [];
   const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
   if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return null;
   const inInbox = labels.includes("INBOX");
 
   const rules = classifyByRules(parsed, ctx);
-  const baseRow = {
+  const baseUpsert: UpsertEmailInput = {
     user_id: job.user_id,
     gmail_account_id: job.gmail_account_id,
     gmail_message_id: parsed.gmail_message_id,
@@ -118,26 +134,20 @@ export function buildCatchupRow(
     body_text: parsed.body_text,
     body_html: parsed.body_html,
     received_at: parsed.received_at,
+    is_read: parsed.is_read,
+    is_archived: !inInbox,
     has_attachment: parsed.has_attachment,
     raw_labels: parsed.raw_labels,
+    classified_by: "pending_ai",
     processed_at: new Date().toISOString(),
     published_at_ms: job.published_at_ms,
   };
 
   if (rules.needs_ai) {
     return {
-      row: {
-        ...baseRow,
-        folder_id: null,
-        classified_by: "pending_ai",
-        classification_reason: rules.classification_reason,
-        is_archived: !inInbox,
-        is_read: parsed.is_read,
-        ai_confidence: 0,
-        ai_summary: null,
-        matched_filter_ids: [] as string[],
-        matched_folder_ids: [] as string[],
-      },
+      upsert: baseUpsert,
+      update: null,
+      snoozed_until: null,
       needs_ai: true,
       folder_id: null,
     };
@@ -160,8 +170,9 @@ export function buildCatchupRow(
     }
   }
   return {
-    row: {
-      ...baseRow,
+    upsert: { ...baseUpsert, classified_by: rules.classified_by, is_archived: archived, is_read: read },
+    update: {
+      email_id: "",
       folder_id: rules.folder_id,
       classified_by: rules.classified_by,
       classification_reason: rules.classification_reason,
@@ -169,14 +180,13 @@ export function buildCatchupRow(
       ai_summary: rules.ai_summary || null,
       matched_filter_ids: rules.matched_filter_ids,
       matched_folder_ids: rules.matched_folder_ids,
-      is_archived: archived,
-      is_read: read,
-      ...(snoozedUntil ? { snoozed_until: snoozedUntil } : {}),
     },
+    snoozed_until: snoozedUntil,
     needs_ai: false,
     folder_id: rules.folder_id,
   };
 }
+
 
 export type CatchupResult = {
   scanned: number;
@@ -228,8 +238,8 @@ export async function bulkCatchupClaim(
   // ─── 3. Bulk Gmail fetch in parallel.
   const fetched = await parallelFetch(accountId, jobs, CATCHUP_FETCH_CONCURRENCY);
 
-  // ─── 4. Classify by rules, build INSERT rows, partition by needs_ai.
-  const rowsToInsert: Record<string, unknown>[] = [];
+  // ─── 4. Classify by rules, build write payloads, partition by needs_ai.
+  const toWrite: CatchupBuilt[] = [];
   const rulesMatchedJobIds: string[] = []; // job rows to DELETE (done)
   const pendingAiJobIds: string[] = []; // job rows to RESET → pending
   const releaseJobIds: string[] = []; // jobs whose Gmail fetch failed (transient)
@@ -259,7 +269,7 @@ export async function bulkCatchupClaim(
       rulesMatchedJobIds.push(job.id);
       continue;
     }
-    rowsToInsert.push(built.row);
+    toWrite.push(built);
     if (built.needs_ai) {
       pendingAiJobIds.push(job.id);
     } else {
@@ -278,25 +288,33 @@ export async function bulkCatchupClaim(
     }
   }
 
-  // ─── 5. Bulk INSERT. ignoreDuplicates handles the rare case where a
-  //         webhook beat us to inserting the same gmail_message_id.
+  // ─── 5. Persist via the encrypted-write RPCs. Sensitive columns are
+  //         encrypted at rest (Phase 3) so we cannot bulk-INSERT plaintext;
+  //         the RPC upserts on (gmail_account_id, gmail_message_id), which
+  //         also handles the rare case where a webhook beat us to it.
   let inserted = 0;
-  if (rowsToInsert.length > 0) {
-    const { error: insErr, count } = await supabaseAdmin
-      .from("emails")
-      .upsert(rowsToInsert, {
-        onConflict: "gmail_account_id,gmail_message_id",
-        ignoreDuplicates: true,
-        count: "exact",
-      });
-    if (insErr) {
-      logError("catchup.bulk_insert_failed", { account_id: accountId, n: rowsToInsert.length }, insErr);
-      // Release everything we claimed — cron lane will retry per-message.
-      await releaseClaimed(jobs);
-      return { scanned: jobs.length, inserted: 0, ai_pending: 0, fetch_failed, overflowed: false };
+  for (const item of toWrite) {
+    const { id, error: upErr } = await upsertEmailEncrypted(item.upsert);
+    if (upErr || !id) {
+      logError(
+        "catchup.upsert_failed",
+        { account_id: accountId, gmail_message_id: item.upsert.gmail_message_id },
+        upErr,
+      );
+      continue;
     }
-    inserted = count ?? rowsToInsert.length;
+    inserted++;
+    if (item.update) {
+      const { error: updErr } = await updateEmailEncrypted({ ...item.update, email_id: id });
+      if (updErr) {
+        logError("catchup.update_failed", { account_id: accountId, email_id: id }, updErr);
+      }
+    }
+    if (item.snoozed_until) {
+      await supabaseAdmin.from("emails").update({ snoozed_until: item.snoozed_until }).eq("id", id);
+    }
   }
+
 
   // ─── 6. Update job queue: drop done jobs, reset AI-needed back to
   //         pending so the live cron lane (5s) picks them up to run AI.
