@@ -11,7 +11,9 @@ export const Route = createFileRoute("/privacy")({
       },
       { property: "og:title", content: "Privacy Policy — Zerrow" },
       { property: "og:description", content: "How Zerrow collects, uses, and protects your data." },
+      { property: "og:url", content: "https://getzerrow.com/privacy" },
     ],
+    links: [{ rel: "canonical", href: "https://getzerrow.com/privacy" }],
   }),
   component: PrivacyPage,
 });

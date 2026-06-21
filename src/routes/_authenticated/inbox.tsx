@@ -1294,7 +1294,7 @@ function InboxPage() {
           )}
           {!isCatchingUp && !emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
-              <img src={cobwebInbox} alt="" className="h-32 w-auto opacity-90" />
+              <img src={cobwebInbox} alt="Empty inbox illustration" className="h-32 w-auto opacity-90" />
               {isSearching ? (
                 gmailSearching ? (
                   <p className="text-sm">Checking Gmail for "{query.trim()}"…</p>

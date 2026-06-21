@@ -4,10 +4,19 @@ export const Route = createFileRoute("/terms")({
   head: () => ({
     meta: [
       { title: "Terms & Conditions — Zerrow" },
-      { name: "description", content: "The terms that govern your use of Zerrow." },
+      {
+        name: "description",
+        content:
+          "Read the terms and conditions that govern your use of Zerrow, the AI inbox that automatically sorts your Gmail into the folders you actually use.",
+      },
       { property: "og:title", content: "Terms & Conditions — Zerrow" },
-      { property: "og:description", content: "The terms that govern your use of Zerrow." },
+      {
+        property: "og:description",
+        content: "The terms that govern your use of Zerrow, the AI inbox that sorts itself.",
+      },
+      { property: "og:url", content: "https://getzerrow.com/terms" },
     ],
+    links: [{ rel: "canonical", href: "https://getzerrow.com/terms" }],
   }),
   component: TermsPage,
 });
