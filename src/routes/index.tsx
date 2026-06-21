@@ -670,7 +670,7 @@ function LandingPage() {
               <summary>
                 <span className="faq-num">Q.01</span>
                 <span>Does Zerrow store my emails?</span>
-                <span className="faq-toggle">+</span>
+                <span className="faq-toggle" aria-hidden="true">+</span>
               </summary>
               <div className="faq-body">
                 Zerrow syncs message metadata and content so it can classify and summarize.
@@ -682,7 +682,7 @@ function LandingPage() {
               <summary>
                 <span className="faq-num">Q.02</span>
                 <span>Will it move emails in Gmail itself?</span>
-                <span className="faq-toggle">+</span>
+                <span className="faq-toggle" aria-hidden="true">+</span>
               </summary>
               <div className="faq-body">
                 Yes — when Zerrow files an email into a folder, it applies the matching Gmail label
@@ -693,7 +693,7 @@ function LandingPage() {
               <summary>
                 <span className="faq-num">Q.03</span>
                 <span>What if it gets it wrong?</span>
-                <span className="faq-toggle">+</span>
+                <span className="faq-toggle" aria-hidden="true">+</span>
               </summary>
               <div className="faq-body">
                 Move the email to the correct folder and Zerrow learns from it. The next time a
@@ -705,7 +705,7 @@ function LandingPage() {
               <summary>
                 <span className="faq-num">Q.04</span>
                 <span>Which mail providers are supported?</span>
-                <span className="faq-toggle">+</span>
+                <span className="faq-toggle" aria-hidden="true">+</span>
               </summary>
               <div className="faq-body">
                 <b>Gmail and Google Workspace</b> today. Other providers may come later.
