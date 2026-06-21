@@ -43,7 +43,19 @@ import { AccountPicker } from "@/components/settings/AccountPicker";
 import { CalendarGuardCard } from "@/components/settings/CalendarGuardCard";
 import { useAccountSelection } from "@/lib/account-selection";
 
-export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
+export const Route = createFileRoute("/_authenticated/settings")({
+  head: () => ({
+    meta: [
+      { title: "Settings — Zerrow" },
+      {
+        name: "description",
+        content: "Manage your Zerrow account, connected Gmail accounts, and preferences.",
+      },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
+  component: SettingsPage,
+});
 
 function SettingsPage() {
   const qc = useQueryClient();

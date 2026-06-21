@@ -14,6 +14,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/contacts/scan")({
+  head: () => ({
+    meta: [
+      { title: "Scan a card — Zerrow" },
+      { name: "description", content: "Scan a business card to add a new contact in Zerrow." },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
   component: ScanPage,
 });
 

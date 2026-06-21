@@ -45,6 +45,21 @@ export const Route = createFileRoute("/c/$handle")({
         { name: "twitter:image", content: ogImage },
       ],
       links: [{ rel: "canonical", href: url }],
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Person",
+            name: card.name || card.handle,
+            ...(card.title ? { jobTitle: card.title } : {}),
+            ...(card.company ? { worksFor: { "@type": "Organization", name: card.company } } : {}),
+            ...(card.email ? { email: card.email } : {}),
+            ...(card.website ? { url: card.website } : {}),
+            ...(card.avatar_url ? { image: card.avatar_url } : {}),
+          }),
+        },
+      ],
     };
   },
   notFoundComponent: () => (

@@ -88,6 +88,30 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: "Zerrow" },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Organization",
+              name: "Zerrow",
+              url: "https://getzerrow.com",
+              logo: "https://getzerrow.com/favicon-512.png",
+              description:
+                "Zerrow auto-categorizes your Gmail inbox using folders and AI rules in real time.",
+            },
+            {
+              "@type": "WebSite",
+              name: "Zerrow",
+              url: "https://getzerrow.com",
+            },
+          ],
+        }),
+      },
     ],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },

@@ -1,0 +1,15 @@
+# Zerrow
+
+> Zerrow connects to your Gmail account and automatically files incoming mail into the folders you actually use, combining deterministic filters with AI classification so your inbox shows only what needs a human.
+
+Zerrow is an AI inbox assistant for Gmail and Google Workspace. It reads every new email, summarizes it, and routes it into user-defined folders in real time — keeping the inbox at zero without manual triage.
+
+## Pages
+
+- [Home](/): What Zerrow is and how AI-powered Gmail sorting works.
+- [Sign in](/login): Connect your Gmail account to get started.
+
+## Optional
+
+- [Privacy Policy](/privacy): How Zerrow collects, uses, and protects your data, including Google user data.
+- [Terms & Conditions](/terms): The terms that govern your use of Zerrow.
