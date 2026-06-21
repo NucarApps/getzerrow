@@ -106,8 +106,8 @@ describe("buildCatchupRow", () => {
     expect(built).not.toBeNull();
     expect(built!.needs_ai).toBe(false);
     expect(built!.folder_id).toBe("f1");
-    expect(built!.row.classified_by).toBe("filter");
-    expect(built!.row.folder_id).toBe("f1");
+    expect(built!.upsert.classified_by).toBe("filter");
+    expect(built!.update!.folder_id).toBe("f1");
   });
 
   it("rule-matched mail with auto_archive: is_archived true in INSERT (no flicker)", () => {
