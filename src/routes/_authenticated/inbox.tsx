@@ -679,6 +679,73 @@ function InboxPage() {
     };
   }, [syncReadStateFn]);
 
+  // On the first open of a session for an account, run a full catch-up sync
+  // and hold the list behind a brief "Catching up…" gate so the inbox renders
+  // already up to date — no stale rows, no row-by-row trickle. Runs once per
+  // account per mount; later in-session navigations show the cached list and
+  // rely on realtime + the background tick below.
+  useEffect(() => {
+    if (!accountId) return;
+    if (caughtUpAccountsRef.current.has(accountId)) return;
+    caughtUpAccountsRef.current.add(accountId);
+    let cancelled = false;
+    setIsCatchingUp(true);
+    syncInFlightRef.current = true;
+    (async () => {
+      try {
+        await sync({ data: { account_id: accountId } });
+        if (!cancelled) await qc.refetchQueries({ queryKey: ["emails"] });
+      } catch {
+        // best-effort; the cached list + background tick are the backstop.
+      } finally {
+        syncInFlightRef.current = false;
+        if (!cancelled) setIsCatchingUp(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, sync, qc]);
+
+  // Keep an open inbox current without a manual refresh or page reload. A
+  // lightweight background sync (history pull + bounded queue drain) runs on a
+  // steady interval and once on tab refocus. Silent — no gate, no spinner —
+  // new mail flows in via realtime + a quiet invalidate. Paused while hidden;
+  // skipped while any other sync is in flight.
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      if (document.visibilityState !== "visible") return;
+      if (syncInFlightRef.current) return;
+      syncInFlightRef.current = true;
+      try {
+        await backgroundSyncFn({ data: { account_id: accountId } });
+        if (!cancelled) {
+          qc.invalidateQueries({ queryKey: ["emails"] });
+          qc.invalidateQueries({ queryKey: ["folder-counts"] });
+        }
+      } catch {
+        // best-effort; realtime + the 5-min reconcile are the backstop.
+      } finally {
+        syncInFlightRef.current = false;
+      }
+    };
+    const handle = setInterval(tick, BACKGROUND_SYNC_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [accountId, backgroundSyncFn, qc]);
+
+
+
 
   // When searching, also ask Gmail for matching messages and ingest any we
   // don't have locally — then refetch so they appear in the results.
