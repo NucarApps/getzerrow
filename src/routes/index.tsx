@@ -22,6 +22,7 @@ export const Route = createFileRoute("/")({
         property: "og:description",
         content: "AI-powered Gmail sorting built around the folders you already think in.",
       },
+      { property: "og:url", content: "https://getzerrow.com/" },
       { name: "twitter:title", content: "Zerrow — An inbox that sorts itself" },
       {
         name: "twitter:description",
@@ -36,6 +37,50 @@ export const Route = createFileRoute("/")({
         href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
       },
       { rel: "stylesheet", href: "/zerrow-landing.css" },
+      { rel: "canonical", href: "https://getzerrow.com/" },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: [
+            {
+              "@type": "Question",
+              name: "Does Zerrow store my emails?",
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: "Zerrow syncs message metadata and content so it can classify and summarize. Everything is scoped to your account, and you can disconnect Gmail at any time from Settings.",
+              },
+            },
+            {
+              "@type": "Question",
+              name: "Will it move emails in Gmail itself?",
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: "Yes — when Zerrow files an email into a folder, it applies the matching Gmail label so your phone, web, and other clients stay in sync.",
+              },
+            },
+            {
+              "@type": "Question",
+              name: "What if it gets it wrong?",
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: "Move the email to the correct folder and Zerrow learns from it. The next time a similar email arrives, it routes correctly. You can also hit Reanalyze on any single message.",
+              },
+            },
+            {
+              "@type": "Question",
+              name: "Which mail providers are supported?",
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: "Gmail and Google Workspace today. Other providers may come later.",
+              },
+            },
+          ],
+        }),
+      },
     ],
   }),
   component: LandingPage,
