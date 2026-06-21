@@ -86,6 +86,24 @@ export const CATCHUP_BULK_LIMIT = 30;
  * comfortably. */
 export const CATCHUP_FETCH_CONCURRENCY = 20;
 
+/** Max number of consecutive bulkCatchupClaim rounds a single sync will
+ * run. After a long absence the queue can hold far more than
+ * CATCHUP_BULK_LIMIT; looping a few rounds drains most of it in one sync
+ * so new mail lands at once instead of trickling via the cron lane.
+ * Bounded so a huge backlog can't run forever. */
+export const CATCHUP_MAX_ROUNDS = 6;
+
+/** Wall-clock budget across all catch-up rounds in a single sync. Stops
+ * the loop before the browser drops a long-running request (Safari
+ * surfaces this as "Load failed"); the remainder falls back to the cron
+ * lane / background tick. */
+export const CATCHUP_TOTAL_BUDGET_MS = 12_000;
+
+/** How often the open inbox runs a silent background sync (history pull +
+ * bounded catch-up drain) so it stays current without a manual refresh or
+ * page reload. Paused while the tab is hidden. */
+export const BACKGROUND_SYNC_INTERVAL_MS = 30_000;
+
 // ─── Stranded-email rescue sweep ─────────────────────────────────────────
 
 /** Only rescue emails that arrived within this window. Older mail is
