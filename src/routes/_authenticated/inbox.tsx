@@ -1363,7 +1363,7 @@ function InboxPage() {
             </div>
           )}
 
-          {!isCatchingUp &&
+          {!showColdGate &&
             filtered.map((e) => {
             const domain = e.from_addr?.includes("@")
               ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
