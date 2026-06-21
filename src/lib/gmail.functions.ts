@@ -807,19 +807,15 @@ export const triggerSync = createServerFn({ method: "POST" })
     const histResult = await syncSinceHistory(data.account_id);
     // Bulk catch-up: synchronously drain the messages we just enqueued
     // so the client's refetch sees them all at once instead of letting
-    // them trickle in via the 5s cron lane. Tight budget (CATCHUP_BULK_LIMIT
-    // is conservative) so the manual refresh stays under the Safari
-    // "Load failed" wall-clock; anything beyond it stays in the queue.
-    let catchup: Awaited<ReturnType<typeof bulkCatchupClaim>> | null = null;
-    try {
-      catchup = await bulkCatchupClaim(data.account_id, context.userId);
-    } catch (e) {
-      logError(
-        "gmail.manual_sync.catchup_failed",
-        { account_id: data.account_id, user_id: context.userId },
-        e,
-      );
-    }
+    // them trickle in via the 5s cron lane. Runs in bounded rounds so a
+    // backlog after a long absence mostly clears in one sync; the budget
+    // keeps it under the Safari "Load failed" wall-clock and anything
+    // beyond it stays in the queue for the cron lane.
+    const catchup = await drainCatchupRounds(
+      data.account_id,
+      context.userId,
+      "gmail.manual_sync.catchup_failed",
+    );
     // Safety net: history events can be missed (webhook drops, expired
     // historyId, etc.), so always do a small recent backfill on manual sync.
     let recent_synced = 0;
