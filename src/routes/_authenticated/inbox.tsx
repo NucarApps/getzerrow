@@ -1030,6 +1030,7 @@ function InboxPage() {
   const syncMut = useMutation({
     mutationFn: async () => {
       if (!accountId) throw new Error("Connect Gmail in Settings first");
+      syncInFlightRef.current = true;
       // The DB is the source of truth and is kept current by the webhook +
       // background crons, so always refresh from it first — this is fast and
       // reliable and means the list updates even if the Gmail round-trip below
