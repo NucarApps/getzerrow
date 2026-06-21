@@ -1099,8 +1099,10 @@ function InboxPage() {
         qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([, d]) => d ?? []) ?? [];
       if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
     },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Couldn't refresh. Please try again."),
+    onError: (e) => {
+      syncInFlightRef.current = false;
+      toast.error(e instanceof Error ? e.message : "Couldn't refresh. Please try again.");
+    },
   });
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
