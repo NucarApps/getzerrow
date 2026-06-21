@@ -861,6 +861,7 @@ export function FolderEditor({
                       size="icon"
                       variant="ghost"
                       className="h-6 w-6 shrink-0"
+                      aria-label="Remove filter"
                       onClick={() => removeFilter(f.id)}
                     >
                       <X className="h-3 w-3" />
@@ -1607,6 +1608,7 @@ function SummariesPanel({ folderId }: { folderId: string }) {
                       onClick={() => runNow(s)}
                       disabled={runningId === s.id}
                       title="Run now"
+                      aria-label="Run now"
                     >
                       {runningId === s.id ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1623,6 +1625,7 @@ function SummariesPanel({ folderId }: { folderId: string }) {
                         setShowForm(false);
                       }}
                       title="Edit"
+                      aria-label="Edit"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
@@ -1632,6 +1635,7 @@ function SummariesPanel({ folderId }: { folderId: string }) {
                       className="h-7 w-7"
                       onClick={() => remove(s)}
                       title="Delete"
+                      aria-label="Delete"
                     >
                       <Trash2 className="h-3.5 w-3.5 text-destructive" />
                     </Button>
@@ -1862,7 +1866,7 @@ function RuleGroupEditor({
             onChange={(e) => onChange({ ...node, value: e.target.value })}
           />
           {onRemove && (
-            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={onRemove}>
+            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" aria-label="Remove condition" onClick={onRemove}>
               <X className="h-3 w-3" />
             </Button>
           )}
@@ -1924,7 +1928,7 @@ function RuleGroupEditor({
             <Plus className="mr-1 h-3 w-3" /> Group
           </Button>
           {!isRoot && onRemove && (
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onRemove}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Remove group" onClick={onRemove}>
               <X className="h-3 w-3" />
             </Button>
           )}

@@ -81,7 +81,7 @@ export function RocketIndicator({ pull, phase }: Props) {
         )}
         <img
           src={zerrowShip}
-          alt=""
+          alt="Zerrow spacecraft illustration"
           draggable={false}
           style={{
             width: "100%",
