@@ -753,6 +753,7 @@ function LandingPage() {
             </div>
             <div className="footer__links">
               <a href="#features">Features</a>
+              <Link to="/guides/gmail-reminders">Gmail reminders guide</Link>
               <Link to="/privacy">Privacy</Link>
               <Link to="/terms">Terms</Link>
               <Link to="/login">Sign in</Link>
