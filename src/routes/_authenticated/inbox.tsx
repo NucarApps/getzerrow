@@ -679,21 +679,31 @@ function InboxPage() {
     };
   }, [syncReadStateFn]);
 
-  // On the first open of a session for an account, run a full catch-up sync
-  // and hold the list behind a brief "Catching up…" gate so the inbox renders
-  // already up to date — no stale rows, no row-by-row trickle. Runs once per
-  // account per mount; later in-session navigations show the cached list and
-  // rely on realtime + the background tick below.
+  // On the first open of a session for an account, refresh from Gmail in the
+  // background. The local DB is the source of truth and renders instantly, so
+  // we never hide an existing list — we only show the blocking "Catching up…"
+  // gate on a true cold start (nothing cached yet), and even then cap it so it
+  // self-clears within a few seconds. Uses the lightweight backgroundSync
+  // (history + bounded catch-up); the heavy backfill + reconcile stay on the
+  // manual Refresh button and the cron lanes.
   useEffect(() => {
     if (!accountId) return;
     if (caughtUpAccountsRef.current.has(accountId)) return;
     caughtUpAccountsRef.current.add(accountId);
     let cancelled = false;
-    setIsCatchingUp(true);
+    const cached = qc
+      .getQueriesData<Email[]>({ queryKey: ["emails"] })
+      .flatMap(([, d]) => d ?? []);
+    if (cached.length === 0) setIsCatchingUp(true);
+    // Safety cap: never hold the gate open more than a few seconds — reveal
+    // whatever has loaded and let realtime + the background tick fill the rest.
+    const gateTimer = setTimeout(() => {
+      if (!cancelled) setIsCatchingUp(false);
+    }, 3500);
     syncInFlightRef.current = true;
     (async () => {
       try {
-        await sync({ data: { account_id: accountId } });
+        await backgroundSyncFn({ data: { account_id: accountId } });
         if (!cancelled) await qc.refetchQueries({ queryKey: ["emails"] });
       } catch {
         // best-effort; the cached list + background tick are the backstop.
@@ -704,8 +714,10 @@ function InboxPage() {
     })();
     return () => {
       cancelled = true;
+      clearTimeout(gateTimer);
     };
-  }, [accountId, sync, qc]);
+  }, [accountId, backgroundSyncFn, qc]);
+
 
   // Keep an open inbox current without a manual refresh or page reload. A
   // lightweight background sync (history pull + bounded queue drain) runs on a
