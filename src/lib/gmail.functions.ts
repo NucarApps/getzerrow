@@ -18,6 +18,7 @@ import {
   bulkCatchupClaim,
   syncReadState,
 } from "./sync.server";
+import { CATCHUP_MAX_ROUNDS, CATCHUP_TOTAL_BUDGET_MS } from "./sync/config";
 import {
   listLabels,
   createLabel,
