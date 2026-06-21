@@ -1342,7 +1342,8 @@ function InboxPage() {
             </div>
           )}
 
-          {filtered.map((e) => {
+          {!isCatchingUp &&
+            filtered.map((e) => {
             const domain = e.from_addr?.includes("@")
               ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
               : null;
