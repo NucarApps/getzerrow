@@ -435,9 +435,9 @@ function InboxPage() {
   // Shared guard so the open catch-up, the recurring background tick, and the
   // manual Refresh button never run a sync on top of each other.
   const syncInFlightRef = useRef(false);
-  // Brief gate shown on the first open of a session while catch-up runs, so the
-  // list renders already up to date instead of showing stale rows that then
-  // trickle in one by one.
+  // Cold-start gate: shown only on the first open when there is nothing cached
+  // to display yet. When a local list exists it stays visible and a subtle
+  // header pulse signals the in-flight background catch-up instead.
   const [isCatchingUp, setIsCatchingUp] = useState(false);
   const caughtUpAccountsRef = useRef<Set<string>>(new Set());
   const fetchEmailBody = useServerFn(getEmailBody);
@@ -679,21 +679,31 @@ function InboxPage() {
     };
   }, [syncReadStateFn]);
 
-  // On the first open of a session for an account, run a full catch-up sync
-  // and hold the list behind a brief "Catching up…" gate so the inbox renders
-  // already up to date — no stale rows, no row-by-row trickle. Runs once per
-  // account per mount; later in-session navigations show the cached list and
-  // rely on realtime + the background tick below.
+  // On the first open of a session for an account, refresh from Gmail in the
+  // background. The local DB is the source of truth and renders instantly, so
+  // we never hide an existing list — we only show the blocking "Catching up…"
+  // gate on a true cold start (nothing cached yet), and even then cap it so it
+  // self-clears within a few seconds. Uses the lightweight backgroundSync
+  // (history + bounded catch-up); the heavy backfill + reconcile stay on the
+  // manual Refresh button and the cron lanes.
   useEffect(() => {
     if (!accountId) return;
     if (caughtUpAccountsRef.current.has(accountId)) return;
     caughtUpAccountsRef.current.add(accountId);
     let cancelled = false;
-    setIsCatchingUp(true);
+    const cached = qc
+      .getQueriesData<Email[]>({ queryKey: ["emails"] })
+      .flatMap(([, d]) => d ?? []);
+    if (cached.length === 0) setIsCatchingUp(true);
+    // Safety cap: never hold the gate open more than a few seconds — reveal
+    // whatever has loaded and let realtime + the background tick fill the rest.
+    const gateTimer = setTimeout(() => {
+      if (!cancelled) setIsCatchingUp(false);
+    }, 3500);
     syncInFlightRef.current = true;
     (async () => {
       try {
-        await sync({ data: { account_id: accountId } });
+        await backgroundSyncFn({ data: { account_id: accountId } });
         if (!cancelled) await qc.refetchQueries({ queryKey: ["emails"] });
       } catch {
         // best-effort; the cached list + background tick are the backstop.
@@ -704,8 +714,10 @@ function InboxPage() {
     })();
     return () => {
       cancelled = true;
+      clearTimeout(gateTimer);
     };
-  }, [accountId, sync, qc]);
+  }, [accountId, backgroundSyncFn, qc]);
+
 
   // Keep an open inbox current without a manual refresh or page reload. A
   // lightweight background sync (history pull + bounded queue drain) runs on a
@@ -1107,6 +1119,11 @@ function InboxPage() {
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
+  // Only block the whole list on a true cold start (nothing to show yet).
+  // When a list exists, it stays visible and the subtle header pulse signals
+  // the in-flight catch-up instead.
+  const showColdGate = isCatchingUp && rawEmails.length === 0;
+
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
       {/* List */}
@@ -1117,7 +1134,7 @@ function InboxPage() {
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
             <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
-            {syncMut.isPending && (
+            {(syncMut.isPending || isCatchingUp) && (
               <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground animate-pulse">
                 Catching up…
               </span>
@@ -1283,16 +1300,16 @@ function InboxPage() {
             ]);
           }}
         >
-          {isCatchingUp && (
+          {showColdGate && (
             <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
               <RefreshCw className="h-4 w-4 animate-spin" />
               Catching up…
             </div>
           )}
-          {!isCatchingUp && emailsQ.isLoading && (
+          {!showColdGate && emailsQ.isLoading && rawEmails.length === 0 && (
             <div className="p-6 text-sm text-muted-foreground">Loading…</div>
           )}
-          {!isCatchingUp && !emailsQ.isLoading && filtered.length === 0 && (
+          {!showColdGate && !emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
               <img src={cobwebInbox} alt="Empty inbox illustration" className="h-32 w-auto opacity-90" />
               {isSearching ? (
@@ -1346,7 +1363,7 @@ function InboxPage() {
             </div>
           )}
 
-          {!isCatchingUp &&
+          {!showColdGate &&
             filtered.map((e) => {
             const domain = e.from_addr?.includes("@")
               ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
