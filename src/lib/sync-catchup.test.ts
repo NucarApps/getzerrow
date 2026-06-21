@@ -118,8 +118,8 @@ describe("buildCatchupRow", () => {
       enrichedFolders: [{ id: "f1", name: "Newsletters", ai_rule: null }],
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "a@news.test", raw_labels: ["INBOX"] }), c);
-    expect(built!.row.is_archived).toBe(true);
-    expect(built!.row.folder_id).toBe("f1");
+    expect(built!.upsert.is_archived).toBe(true);
+    expect(built!.update!.folder_id).toBe("f1");
   });
 
   it("rule-matched mail with auto_mark_read: is_read true in INSERT", () => {
