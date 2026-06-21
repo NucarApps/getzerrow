@@ -797,7 +797,7 @@ async function drainCatchupRounds(
   return agg;
 }
 
-
+export const triggerSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) =>
     z.object({ account_id: z.string().uuid() }).parse(d),
