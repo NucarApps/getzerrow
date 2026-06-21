@@ -1,55 +1,37 @@
-# Instant + continuously-updating inbox
+# Fix the slow "Catching up…" inbox gate
 
 ## Problem
-1. **On open:** the inbox shows your last-known (stale) emails, then new mail **trickles in one row at a time** as a background lane drains queued jobs every 5s.
-2. **While open:** new mail only reliably appears on manual Refresh or a page reload — there's no steady background pull keeping the open inbox current.
 
-Cause: the list renders the DB immediately; the fast **bulk catch-up path** (`bulkCatchupClaim`) only runs on the Refresh button and processes a single batch (~30); and there is **no recurring background sync** while the inbox is mounted. Realtime only reflects whatever the slow cron lane has already processed.
+On first open of an account, the inbox hides the whole list behind a full-screen "Catching up…" placeholder (`isCatchingUp`) until the heavy `triggerSync` server function finishes. `triggerSync` runs, in sequence:
 
-## Goal (per your choices + this request)
-- On open: brief **"Catching up…"** indicator, then render the **fully up-to-date** list at once — no stale rows, no row-by-row trickle.
-- **Long absences:** drain new mail in **several bounded batches** so most lands at once; remainder falls back to the background lane.
-- **While the inbox stays open:** it **keeps itself current automatically** on a steady interval (and on tab refocus) — no manual refresh or reload needed.
+1. `syncSinceHistory`
+2. `drainCatchupRounds` — up to 6 rounds / 12s budget
+3. `backfillRecent` (30 messages)
+4. `reconcileLocalInbox` (up to ~20 sequential Gmail API calls)
+
+The local database is already the source of truth and loads in milliseconds, so blocking the render on this entire Gmail round-trip is what makes it feel stuck.
 
 ## Approach
 
-### 1. Make catch-up drain multiple batches (server)
-Turn the single bulk pass into a bounded loop so backlogs mostly clear in one sync, while staying under the browser request wall-clock (Safari "Load failed").
+The local email list should appear immediately; the Gmail sync should refresh it in the background with a non-blocking indicator. We already have the lighter `backgroundSync` (history + bounded catch-up only, no backfill/reconcile) and a subtle inline "Catching up…" pulse in the list header — we reuse both.
 
-- Add knobs in `src/lib/sync/config.ts`:
-  - `CATCHUP_MAX_ROUNDS` (e.g. `6`)
-  - `CATCHUP_TOTAL_BUDGET_MS` (e.g. `12_000`)
-- In `triggerSync` (`src/lib/gmail.functions.ts`), after `syncSinceHistory`, loop `bulkCatchupClaim` instead of calling it once: continue while the previous round reported `overflowed === true` and `scanned > 0`, stopping at `CATCHUP_MAX_ROUNDS` or once elapsed time exceeds `CATCHUP_TOTAL_BUDGET_MS`. Aggregate per-round results and return a final `overflowed` flag.
-- Add a lighter server fn `backgroundSync` (same file) for the recurring path: runs `syncSinceHistory` + the bounded `bulkCatchupClaim` loop, but **skips** the heavier `backfillRecent` + full `reconcileLocalInbox` (those stay on the existing 5-min loop and cron). This keeps each background tick cheap.
+### 1. Make the first-open sync lightweight and non-blocking (`inbox.tsx`)
+- In the first-open `useEffect` (around lines 687-708), call `backgroundSync` instead of the heavy `triggerSync`, and **do not** flip `isCatchingUp` when the local list already has data. The list renders from cache/DB instantly; the sync then quietly refetches `["emails"]`.
+- Keep the heavy `triggerSync` (backfill + reconcile) only on the manual Refresh button and the existing cron/5-min lanes.
 
-### 2. Auto catch-up on open, gated by a brief state (client)
-In `src/routes/_authenticated/inbox.tsx`:
-- Add `isCatchingUp` state + a per-account "ran once this mount" ref.
-- `useEffect` on `accountId`: on first availability set `isCatchingUp = true`, call `triggerSync`, `await qc.refetchQueries({ queryKey: ["emails"] })`, then clear the flag (try/finally so it always clears; failures fall back to the cached list).
-- **Render gating:** on the first open of the session, show a lightweight "Catching up…" placeholder (reuse existing skeleton styling) while `emailsQ.isLoading || isCatchingUp`, so stale rows + trickle are never shown. The finished list then appears in one update. Subsequent in-session navigations show the cached list instantly.
+### 2. Only gate on a true cold start, with a hard cap (`inbox.tsx`)
+- Show the blocking "Catching up…" placeholder (lines 1286-1349) **only** when there are genuinely no emails to show yet (`emailsQ` has no cached data and is still loading) — never when a populated list exists.
+- Add a short safety timeout (~3-4s) so even a cold start reveals whatever has loaded and falls back to the inline header indicator + realtime, instead of holding the full-screen gate open.
 
-### 3. Continuous background updates while open (client)
-Also in `inbox.tsx`, add a recurring background refresher (separate from the gated open path, **never** shows the "Catching up…" gate):
-- A `setInterval` (e.g. every `BACKGROUND_SYNC_INTERVAL_MS` ≈ 30s) that calls the new `backgroundSync({ data: { account_id } })`, then patches the list via realtime + a quiet `qc.invalidateQueries({ queryKey: ["emails"] })`. New mail appears in place with no flashing or spinner.
-- **Visibility-aware:** pause the interval when `document.visibilityState !== "visible"`; run one immediate tick when the tab regains focus (reuse the existing visibilitychange pattern already used for read-state sync).
-- **Overlap guard:** a ref flag skips a tick if a sync (background, manual Refresh, or the open catch-up) is already in flight, so calls never stack.
-- Tear down the interval and listener on unmount.
-- Realtime stays wired as-is; the background tick is the safety net that guarantees consistency even when Gmail push/webhook is delayed.
+### 3. Keep the live indicator subtle
+- While the background open-sync runs, rely on the existing inline header pulse ("Catching up…", lines 1120-1124) rather than the full-screen overlay, so the list stays visible and interactive the entire time.
 
-### 4. Keep it snappy when nothing is new
-The "Catching up…" indicator only shows while the open call is in flight; with no new mail it resolves near-instantly. Background ticks are silent and cheap (`syncSinceHistory` + at most a small drain). The bounded budgets guarantee neither path can hang the UI.
+## Result
 
-## Files touched
-- `src/lib/sync/config.ts` — add `CATCHUP_MAX_ROUNDS`, `CATCHUP_TOTAL_BUDGET_MS`, `BACKGROUND_SYNC_INTERVAL_MS`.
-- `src/lib/gmail.functions.ts` — bounded multi-round loop in `triggerSync`; new lightweight `backgroundSync` server fn.
-- `src/routes/_authenticated/inbox.tsx` — open catch-up with `isCatchingUp` gating; visibility-aware background sync interval with an overlap guard.
+- Returning to the inbox: the list shows instantly from the local DB; new mail flows in within a second or two via the background sync + realtime, with only a subtle header pulse.
+- Cold start (no local data yet): a brief gate that self-clears within a few seconds.
+- Manual Refresh still runs the full backfill + reconcile.
+- No database, schema, realtime, or cron changes.
 
-No database/schema changes, no new public endpoints. Existing RLS, realtime, cron lanes, reconcile loop, and the manual Refresh button keep working.
-
-## Verification
-- Open with queued mail: brief "Catching up…" → full updated list at once, no trickle.
-- Large backlog (>30): most lands in the batched sync; remainder fills via the background lane.
-- Leave the inbox open and send/receive new mail: it appears within ~30s with no refresh, no spinner, no reload.
-- Switch tabs away and back: a sync fires immediately on refocus.
-- No new mail: open is near-instant; background ticks are silent and don't cause flicker.
-- Manual Refresh still works and now drains larger batches.
+## Files
+- `src/routes/_authenticated/inbox.tsx`
