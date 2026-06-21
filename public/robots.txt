@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+Disallow: /inbox
+Disallow: /settings
+Disallow: /contacts
+Disallow: /reports
+Disallow: /my-card
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://getzerrow.com/sitemap.xml
