@@ -1279,8 +1279,16 @@ function InboxPage() {
             ]);
           }}
         >
-          {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
-          {!emailsQ.isLoading && filtered.length === 0 && (
+          {isCatchingUp && (
+            <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Catching up…
+            </div>
+          )}
+          {!isCatchingUp && emailsQ.isLoading && (
+            <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+          )}
+          {!isCatchingUp && !emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
               <img src={cobwebInbox} alt="" className="h-32 w-auto opacity-90" />
               {isSearching ? (
