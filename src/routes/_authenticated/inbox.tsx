@@ -435,11 +435,6 @@ function InboxPage() {
   // Shared guard so the open catch-up, the recurring background tick, and the
   // manual Refresh button never run a sync on top of each other.
   const syncInFlightRef = useRef(false);
-  // Cold-start gate: shown only on the first open when there is nothing cached
-  // to display yet. When a local list exists it stays visible and a subtle
-  // header pulse signals the in-flight background catch-up instead.
-  const [isCatchingUp, setIsCatchingUp] = useState(false);
-  const caughtUpAccountsRef = useRef<Set<string>>(new Set());
   const fetchEmailBody = useServerFn(getEmailBody);
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
