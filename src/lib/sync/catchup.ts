@@ -93,22 +93,32 @@ function resolveActionFolder(ctx: AccountContext, folderId: string): ActionFolde
   };
 }
 
-/** Build the INSERT row for one parsed message. Mirrors the single-row
- * INSERT shape in processGmailMessage so the two paths produce
- * indistinguishable results — same fields, same flag computation.
+/** Build the encrypted-write payload for one parsed message. Mirrors the
+ * single-row write in processGmailMessage so the two paths produce
+ * indistinguishable results — same fields, same flag computation. Sensitive
+ * columns are encrypted at rest via the upsert/update RPCs (Phase 3), so we
+ * never write plaintext columns directly.
  * Exported for unit-testability. */
+export type CatchupBuilt = {
+  upsert: UpsertEmailInput;
+  update: UpdateEmailInput | null;
+  snoozed_until: string | null;
+  needs_ai: boolean;
+  folder_id: string | null;
+};
+
 export function buildCatchupRow(
   job: ClaimedJob,
   parsed: Parsed,
   ctx: AccountContext,
-): { row: Record<string, unknown>; needs_ai: boolean; folder_id: string | null } | null {
+): CatchupBuilt | null {
   const labels = parsed.raw_labels ?? [];
   const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
   if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return null;
   const inInbox = labels.includes("INBOX");
 
   const rules = classifyByRules(parsed, ctx);
-  const baseRow = {
+  const baseUpsert: UpsertEmailInput = {
     user_id: job.user_id,
     gmail_account_id: job.gmail_account_id,
     gmail_message_id: parsed.gmail_message_id,
@@ -124,26 +134,20 @@ export function buildCatchupRow(
     body_text: parsed.body_text,
     body_html: parsed.body_html,
     received_at: parsed.received_at,
+    is_read: parsed.is_read,
+    is_archived: !inInbox,
     has_attachment: parsed.has_attachment,
     raw_labels: parsed.raw_labels,
+    classified_by: "pending_ai",
     processed_at: new Date().toISOString(),
     published_at_ms: job.published_at_ms,
   };
 
   if (rules.needs_ai) {
     return {
-      row: {
-        ...baseRow,
-        folder_id: null,
-        classified_by: "pending_ai",
-        classification_reason: rules.classification_reason,
-        is_archived: !inInbox,
-        is_read: parsed.is_read,
-        ai_confidence: 0,
-        ai_summary: null,
-        matched_filter_ids: [] as string[],
-        matched_folder_ids: [] as string[],
-      },
+      upsert: baseUpsert,
+      update: null,
+      snoozed_until: null,
       needs_ai: true,
       folder_id: null,
     };
@@ -166,8 +170,9 @@ export function buildCatchupRow(
     }
   }
   return {
-    row: {
-      ...baseRow,
+    upsert: { ...baseUpsert, classified_by: rules.classified_by, is_archived: archived, is_read: read },
+    update: {
+      email_id: "",
       folder_id: rules.folder_id,
       classified_by: rules.classified_by,
       classification_reason: rules.classification_reason,
@@ -175,14 +180,13 @@ export function buildCatchupRow(
       ai_summary: rules.ai_summary || null,
       matched_filter_ids: rules.matched_filter_ids,
       matched_folder_ids: rules.matched_folder_ids,
-      is_archived: archived,
-      is_read: read,
-      ...(snoozedUntil ? { snoozed_until: snoozedUntil } : {}),
     },
+    snoozed_until: snoozedUntil,
     needs_ai: false,
     folder_id: rules.folder_id,
   };
 }
+
 
 export type CatchupResult = {
   scanned: number;
