@@ -18,6 +18,7 @@ import {
   bulkCatchupClaim,
   syncReadState,
 } from "./sync.server";
+import { CATCHUP_MAX_ROUNDS, CATCHUP_TOTAL_BUDGET_MS } from "./sync/config";
 import {
   listLabels,
   createLabel,
@@ -744,6 +745,58 @@ export const cancelDeepBackfill = createServerFn({ method: "POST" })
     return cancelBackfillJob(data.job_id, context.userId);
   });
 
+// Aggregated result of running several catch-up rounds in one sync.
+type CatchupRound = Awaited<ReturnType<typeof bulkCatchupClaim>>;
+type DrainResult = {
+  scanned: number;
+  inserted: number;
+  ai_pending: number;
+  fetch_failed: number;
+  overflowed: boolean;
+  rounds: number;
+};
+
+// Drain the message-job queue in bounded rounds so a backlog lands at
+// once instead of trickling via the 5s cron lane. Stops when a round
+// claims nothing, the queue is no longer overflowing, the round cap is
+// hit, or the wall-clock budget is exceeded (keeps the request under the
+// Safari "Load failed" wall). Anything left falls back to the cron lane.
+async function drainCatchupRounds(
+  accountId: string,
+  userId: string,
+  logKey: string,
+): Promise<DrainResult> {
+  const agg: DrainResult = {
+    scanned: 0,
+    inserted: 0,
+    ai_pending: 0,
+    fetch_failed: 0,
+    overflowed: false,
+    rounds: 0,
+  };
+  const startedAt = Date.now();
+  for (let i = 0; i < CATCHUP_MAX_ROUNDS; i++) {
+    let round: CatchupRound;
+    try {
+      round = await bulkCatchupClaim(accountId, userId);
+    } catch (e) {
+      logError(logKey, { account_id: accountId, user_id: userId }, e);
+      break;
+    }
+    agg.rounds += 1;
+    agg.scanned += round.scanned;
+    agg.inserted += round.inserted;
+    agg.ai_pending += round.ai_pending;
+    agg.fetch_failed += round.fetch_failed;
+    agg.overflowed = round.overflowed;
+    // Nothing left to claim, or queue drained — stop.
+    if (round.scanned === 0 || !round.overflowed) break;
+    // Respect the wall-clock budget before starting another round.
+    if (Date.now() - startedAt > CATCHUP_TOTAL_BUDGET_MS) break;
+  }
+  return agg;
+}
+
 export const triggerSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) =>
@@ -754,19 +807,15 @@ export const triggerSync = createServerFn({ method: "POST" })
     const histResult = await syncSinceHistory(data.account_id);
     // Bulk catch-up: synchronously drain the messages we just enqueued
     // so the client's refetch sees them all at once instead of letting
-    // them trickle in via the 5s cron lane. Tight budget (CATCHUP_BULK_LIMIT
-    // is conservative) so the manual refresh stays under the Safari
-    // "Load failed" wall-clock; anything beyond it stays in the queue.
-    let catchup: Awaited<ReturnType<typeof bulkCatchupClaim>> | null = null;
-    try {
-      catchup = await bulkCatchupClaim(data.account_id, context.userId);
-    } catch (e) {
-      logError(
-        "gmail.manual_sync.catchup_failed",
-        { account_id: data.account_id, user_id: context.userId },
-        e,
-      );
-    }
+    // them trickle in via the 5s cron lane. Runs in bounded rounds so a
+    // backlog after a long absence mostly clears in one sync; the budget
+    // keeps it under the Safari "Load failed" wall-clock and anything
+    // beyond it stays in the queue for the cron lane.
+    const catchup = await drainCatchupRounds(
+      data.account_id,
+      context.userId,
+      "gmail.manual_sync.catchup_failed",
+    );
     // Safety net: history events can be missed (webhook drops, expired
     // historyId, etc.), so always do a small recent backfill on manual sync.
     let recent_synced = 0;
@@ -796,6 +845,28 @@ export const triggerSync = createServerFn({ method: "POST" })
       );
     }
     return { ...histResult, recent_synced, reconciled: recon, catchup };
+  });
+
+// Lightweight recurring sync for an open inbox. Pulls new mail via Gmail
+// history and drains the queue in bounded rounds, but SKIPS the heavier
+// backfillRecent + full reconcileLocalInbox that triggerSync runs — those
+// stay on the 5-minute in-tab loop and the cron backstop. Cheap enough to
+// run on a ~30s interval so the inbox keeps itself current without a
+// manual refresh or page reload.
+export const backgroundSync = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { account_id: string }) =>
+    z.object({ account_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await getOwnedAccount(context.userId, data.account_id);
+    const histResult = await syncSinceHistory(data.account_id);
+    const catchup = await drainCatchupRounds(
+      data.account_id,
+      context.userId,
+      "gmail.background_sync.catchup_failed",
+    );
+    return { ...histResult, catchup };
   });
 
 export const renewGmailWatch = createServerFn({ method: "POST" })

@@ -21,7 +21,9 @@ import {
   createFolderAndAssign,
   reconcileInboxFromGmail,
   syncMyReadState,
+  backgroundSync,
 } from "@/lib/gmail.functions";
+import { BACKGROUND_SYNC_INTERVAL_MS } from "@/lib/sync/config";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -429,6 +431,15 @@ function tokenFuzzyMatches(token: string, words: string[]): boolean {
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
+  const backgroundSyncFn = useServerFn(backgroundSync);
+  // Shared guard so the open catch-up, the recurring background tick, and the
+  // manual Refresh button never run a sync on top of each other.
+  const syncInFlightRef = useRef(false);
+  // Brief gate shown on the first open of a session while catch-up runs, so the
+  // list renders already up to date instead of showing stale rows that then
+  // trickle in one by one.
+  const [isCatchingUp, setIsCatchingUp] = useState(false);
+  const caughtUpAccountsRef = useRef<Set<string>>(new Set());
   const fetchEmailBody = useServerFn(getEmailBody);
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
@@ -667,6 +678,73 @@ function InboxPage() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [syncReadStateFn]);
+
+  // On the first open of a session for an account, run a full catch-up sync
+  // and hold the list behind a brief "Catching up…" gate so the inbox renders
+  // already up to date — no stale rows, no row-by-row trickle. Runs once per
+  // account per mount; later in-session navigations show the cached list and
+  // rely on realtime + the background tick below.
+  useEffect(() => {
+    if (!accountId) return;
+    if (caughtUpAccountsRef.current.has(accountId)) return;
+    caughtUpAccountsRef.current.add(accountId);
+    let cancelled = false;
+    setIsCatchingUp(true);
+    syncInFlightRef.current = true;
+    (async () => {
+      try {
+        await sync({ data: { account_id: accountId } });
+        if (!cancelled) await qc.refetchQueries({ queryKey: ["emails"] });
+      } catch {
+        // best-effort; the cached list + background tick are the backstop.
+      } finally {
+        syncInFlightRef.current = false;
+        if (!cancelled) setIsCatchingUp(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, sync, qc]);
+
+  // Keep an open inbox current without a manual refresh or page reload. A
+  // lightweight background sync (history pull + bounded queue drain) runs on a
+  // steady interval and once on tab refocus. Silent — no gate, no spinner —
+  // new mail flows in via realtime + a quiet invalidate. Paused while hidden;
+  // skipped while any other sync is in flight.
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      if (document.visibilityState !== "visible") return;
+      if (syncInFlightRef.current) return;
+      syncInFlightRef.current = true;
+      try {
+        await backgroundSyncFn({ data: { account_id: accountId } });
+        if (!cancelled) {
+          qc.invalidateQueries({ queryKey: ["emails"] });
+          qc.invalidateQueries({ queryKey: ["folder-counts"] });
+        }
+      } catch {
+        // best-effort; realtime + the 5-min reconcile are the backstop.
+      } finally {
+        syncInFlightRef.current = false;
+      }
+    };
+    const handle = setInterval(tick, BACKGROUND_SYNC_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [accountId, backgroundSyncFn, qc]);
+
+
 
 
   // When searching, also ask Gmail for matching messages and ingest any we
@@ -952,6 +1030,7 @@ function InboxPage() {
   const syncMut = useMutation({
     mutationFn: async () => {
       if (!accountId) throw new Error("Connect Gmail in Settings first");
+      syncInFlightRef.current = true;
       // The DB is the source of truth and is kept current by the webhook +
       // background crons, so always refresh from it first — this is fast and
       // reliable and means the list updates even if the Gmail round-trip below
@@ -992,6 +1071,7 @@ function InboxPage() {
         });
       let res = await runOnce();
       if (res === null) res = await runOnce();
+      syncInFlightRef.current = false;
       return res;
     },
     onSuccess: async (res) => {
@@ -1019,8 +1099,10 @@ function InboxPage() {
         qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([, d]) => d ?? []) ?? [];
       if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
     },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Couldn't refresh. Please try again."),
+    onError: (e) => {
+      syncInFlightRef.current = false;
+      toast.error(e instanceof Error ? e.message : "Couldn't refresh. Please try again.");
+    },
   });
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
@@ -1201,8 +1283,16 @@ function InboxPage() {
             ]);
           }}
         >
-          {emailsQ.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
-          {!emailsQ.isLoading && filtered.length === 0 && (
+          {isCatchingUp && (
+            <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Catching up…
+            </div>
+          )}
+          {!isCatchingUp && emailsQ.isLoading && (
+            <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+          )}
+          {!isCatchingUp && !emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
               <img src={cobwebInbox} alt="" className="h-32 w-auto opacity-90" />
               {isSearching ? (
@@ -1256,7 +1346,8 @@ function InboxPage() {
             </div>
           )}
 
-          {filtered.map((e) => {
+          {!isCatchingUp &&
+            filtered.map((e) => {
             const domain = e.from_addr?.includes("@")
               ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
               : null;
