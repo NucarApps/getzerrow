@@ -1071,6 +1071,7 @@ function InboxPage() {
         });
       let res = await runOnce();
       if (res === null) res = await runOnce();
+      syncInFlightRef.current = false;
       return res;
     },
     onSuccess: async (res) => {
