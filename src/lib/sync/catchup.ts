@@ -238,8 +238,8 @@ export async function bulkCatchupClaim(
   // ─── 3. Bulk Gmail fetch in parallel.
   const fetched = await parallelFetch(accountId, jobs, CATCHUP_FETCH_CONCURRENCY);
 
-  // ─── 4. Classify by rules, build INSERT rows, partition by needs_ai.
-  const rowsToInsert: Record<string, unknown>[] = [];
+  // ─── 4. Classify by rules, build write payloads, partition by needs_ai.
+  const toWrite: CatchupBuilt[] = [];
   const rulesMatchedJobIds: string[] = []; // job rows to DELETE (done)
   const pendingAiJobIds: string[] = []; // job rows to RESET → pending
   const releaseJobIds: string[] = []; // jobs whose Gmail fetch failed (transient)
@@ -269,7 +269,7 @@ export async function bulkCatchupClaim(
       rulesMatchedJobIds.push(job.id);
       continue;
     }
-    rowsToInsert.push(built.row);
+    toWrite.push(built);
     if (built.needs_ai) {
       pendingAiJobIds.push(job.id);
     } else {
@@ -288,25 +288,33 @@ export async function bulkCatchupClaim(
     }
   }
 
-  // ─── 5. Bulk INSERT. ignoreDuplicates handles the rare case where a
-  //         webhook beat us to inserting the same gmail_message_id.
+  // ─── 5. Persist via the encrypted-write RPCs. Sensitive columns are
+  //         encrypted at rest (Phase 3) so we cannot bulk-INSERT plaintext;
+  //         the RPC upserts on (gmail_account_id, gmail_message_id), which
+  //         also handles the rare case where a webhook beat us to it.
   let inserted = 0;
-  if (rowsToInsert.length > 0) {
-    const { error: insErr, count } = await supabaseAdmin
-      .from("emails")
-      .upsert(rowsToInsert, {
-        onConflict: "gmail_account_id,gmail_message_id",
-        ignoreDuplicates: true,
-        count: "exact",
-      });
-    if (insErr) {
-      logError("catchup.bulk_insert_failed", { account_id: accountId, n: rowsToInsert.length }, insErr);
-      // Release everything we claimed — cron lane will retry per-message.
-      await releaseClaimed(jobs);
-      return { scanned: jobs.length, inserted: 0, ai_pending: 0, fetch_failed, overflowed: false };
+  for (const item of toWrite) {
+    const { id, error: upErr } = await upsertEmailEncrypted(item.upsert);
+    if (upErr || !id) {
+      logError(
+        "catchup.upsert_failed",
+        { account_id: accountId, gmail_message_id: item.upsert.gmail_message_id },
+        upErr,
+      );
+      continue;
     }
-    inserted = count ?? rowsToInsert.length;
+    inserted++;
+    if (item.update) {
+      const { error: updErr } = await updateEmailEncrypted({ ...item.update, email_id: id });
+      if (updErr) {
+        logError("catchup.update_failed", { account_id: accountId, email_id: id }, updErr);
+      }
+    }
+    if (item.snoozed_until) {
+      await supabaseAdmin.from("emails").update({ snoozed_until: item.snoozed_until }).eq("id", id);
+    }
   }
+
 
   // ─── 6. Update job queue: drop done jobs, reset AI-needed back to
   //         pending so the live cron lane (5s) picks them up to run AI.
