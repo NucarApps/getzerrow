@@ -130,7 +130,7 @@ describe("buildCatchupRow", () => {
       enrichedFolders: [{ id: "f1", name: "Promo", ai_rule: null }],
     });
     const built = buildCatchupRow(job, parsed({ subject: "Big sale", is_read: false }), c);
-    expect(built!.row.is_read).toBe(true);
+    expect(built!.upsert.is_read).toBe(true);
   });
 
   it("no rule matches + AI candidates exist: row is pending_ai, folder null", () => {
