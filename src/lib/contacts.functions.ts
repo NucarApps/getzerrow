@@ -602,7 +602,7 @@ ${convoSample}`,
     return { contact: decRow ?? updated, skipped: false as const };
   });
 
-const PHONE_NUMBER_RE = /^[+\d\s().-]{3,60}$/;
+const PHONE_NUMBER_RE = /^[+\d\s().,#x/A-Za-z-]{3,60}$/;
 const phoneEntrySchema = z.object({
   label: z.string().trim().min(1).max(20),
   number: z.string().trim().min(3).max(60).regex(PHONE_NUMBER_RE, "Invalid phone format"),
