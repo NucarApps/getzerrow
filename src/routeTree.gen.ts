@@ -15,6 +15,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GuidesGmailRemindersRouteImport } from './routes/guides.gmail-reminders'
 import { Route as CHandleRouteImport } from './routes/c.$handle'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
@@ -71,6 +72,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesGmailRemindersRoute = GuidesGmailRemindersRouteImport.update({
+  id: '/guides/gmail-reminders',
+  path: '/guides/gmail-reminders',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CHandleRoute = CHandleRouteImport.update({
@@ -239,6 +245,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
@@ -274,6 +281,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
@@ -311,6 +319,7 @@ export interface FileRoutesById {
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
@@ -348,6 +357,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/c/$handle'
+    | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/public/encryption-backfill'
@@ -383,6 +393,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/c/$handle'
+    | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/public/encryption-backfill'
@@ -419,6 +430,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reports'
     | '/_authenticated/settings'
     | '/c/$handle'
+    | '/guides/gmail-reminders'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
     | '/api/public/encryption-backfill'
@@ -450,6 +462,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TermsRoute: typeof TermsRoute
   CHandleRoute: typeof CHandleRoute
+  GuidesGmailRemindersRoute: typeof GuidesGmailRemindersRoute
   ApiPublicEncryptionBackfillRoute: typeof ApiPublicEncryptionBackfillRoute
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailDlqReplayRoute: typeof ApiPublicGmailDlqReplayRoute
@@ -512,6 +525,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/gmail-reminders': {
+      id: '/guides/gmail-reminders'
+      path: '/guides/gmail-reminders'
+      fullPath: '/guides/gmail-reminders'
+      preLoaderRoute: typeof GuidesGmailRemindersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$handle': {
@@ -749,6 +769,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TermsRoute: TermsRoute,
   CHandleRoute: CHandleRoute,
+  GuidesGmailRemindersRoute: GuidesGmailRemindersRoute,
   ApiPublicEncryptionBackfillRoute: ApiPublicEncryptionBackfillRoute,
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailDlqReplayRoute: ApiPublicGmailDlqReplayRoute,
