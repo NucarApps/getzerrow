@@ -1,37 +1,37 @@
-# Fix the slow "Catching up…" inbox gate
+## Goal
+When the user opens Zerrow inbox, the list should reflect the latest processed Gmail state before it settles on screen. It should not show stale rows first and then visibly move emails after page load.
 
-## Problem
+## Plan
 
-On first open of an account, the inbox hides the whole list behind a full-screen "Catching up…" placeholder (`isCatchingUp`) until the heavy `triggerSync` server function finishes. `triggerSync` runs, in sequence:
+1. **Add a dedicated “sync before list” server function**
+   - Add a lightweight authenticated function in `src/lib/gmail.functions.ts` for inbox entry.
+   - It will verify account ownership, run Gmail history sync, drain the catch-up queue in bounded rounds, and return quickly.
+   - Keep heavy backfill/reconcile work out of this path so opening the inbox does not hang for 15–20 seconds.
 
-1. `syncSinceHistory`
-2. `drainCatchupRounds` — up to 6 rounds / 12s budget
-3. `backfillRecent` (30 messages)
-4. `reconcileLocalInbox` (up to ~20 sequential Gmail API calls)
+2. **Gate the inbox list query on that pre-sync**
+   - In `src/routes/_authenticated/inbox.tsx`, run the entry sync query before `getInboxList` is enabled for the selected account.
+   - Once the entry sync completes or times out safely, fetch the inbox list from the database.
+   - This changes the sequence from:
 
-The local database is already the source of truth and loads in milliseconds, so blocking the render on this entire Gmail round-trip is what makes it feel stuck.
+```text
+load inbox list -> start catch-up -> refetch/move rows
+```
 
-## Approach
+   to:
 
-The local email list should appear immediately; the Gmail sync should refresh it in the background with a non-blocking indicator. We already have the lighter `backgroundSync` (history + bounded catch-up only, no backfill/reconcile) and a subtle inline "Catching up…" pulse in the list header — we reuse both.
+```text
+bounded catch-up -> load inbox list once with latest processed state
+```
 
-### 1. Make the first-open sync lightweight and non-blocking (`inbox.tsx`)
-- In the first-open `useEffect` (around lines 687-708), call `backgroundSync` instead of the heavy `triggerSync`, and **do not** flip `isCatchingUp` when the local list already has data. The list renders from cache/DB instantly; the sync then quietly refetches `["emails"]`.
-- Keep the heavy `triggerSync` (backfill + reconcile) only on the manual Refresh button and the existing cron/5-min lanes.
+3. **Keep the UX fast with a strict safety cap**
+   - Show the existing “Catching up…” state only during the initial pre-sync when there is no list ready yet.
+   - Add a short client-side timeout fallback so a slow Gmail API call never blocks the inbox indefinitely.
+   - If timeout happens, load the best current database state and let the existing server crons/realtime finish quietly.
 
-### 2. Only gate on a true cold start, with a hard cap (`inbox.tsx`)
-- Show the blocking "Catching up…" placeholder (lines 1286-1349) **only** when there are genuinely no emails to show yet (`emailsQ` has no cached data and is still loading) — never when a populated list exists.
-- Add a short safety timeout (~3-4s) so even a cold start reveals whatever has loaded and falls back to the inline header indicator + realtime, instead of holding the full-screen gate open.
+4. **Keep live updates after load**
+   - Preserve the existing realtime updates and recurring open-inbox background sync.
+   - Manual Refresh will still run the heavier full sync/backfill/reconcile path.
 
-### 3. Keep the live indicator subtle
-- While the background open-sync runs, rely on the existing inline header pulse ("Catching up…", lines 1120-1124) rather than the full-screen overlay, so the list stays visible and interactive the entire time.
-
-## Result
-
-- Returning to the inbox: the list shows instantly from the local DB; new mail flows in within a second or two via the background sync + realtime, with only a subtle header pulse.
-- Cold start (no local data yet): a brief gate that self-clears within a few seconds.
-- Manual Refresh still runs the full backfill + reconcile.
-- No database, schema, realtime, or cron changes.
-
-## Files
-- `src/routes/_authenticated/inbox.tsx`
+5. **Verify behavior**
+   - Confirm the inbox no longer renders stale data before the first catch-up finishes.
+   - Confirm manual Refresh still works and the existing live update loop remains active.

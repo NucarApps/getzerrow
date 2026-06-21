@@ -435,11 +435,6 @@ function InboxPage() {
   // Shared guard so the open catch-up, the recurring background tick, and the
   // manual Refresh button never run a sync on top of each other.
   const syncInFlightRef = useRef(false);
-  // Cold-start gate: shown only on the first open when there is nothing cached
-  // to display yet. When a local list exists it stays visible and a subtle
-  // header pulse signals the in-flight background catch-up instead.
-  const [isCatchingUp, setIsCatchingUp] = useState(false);
-  const caughtUpAccountsRef = useRef<Set<string>>(new Set());
   const fetchEmailBody = useServerFn(getEmailBody);
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
@@ -524,6 +519,41 @@ function InboxPage() {
   const parsedQuery = useMemo(() => parseSearchQuery(query.trim()), [query]);
   const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
+  // Entry pre-sync: before the inbox list is fetched for an account, run a
+  // bounded Gmail catch-up (history pull + queue drain) so the very first
+  // render already reflects the latest processed state — instead of loading a
+  // stale list and visibly shuffling rows afterward. Runs once per account per
+  // session (staleTime: Infinity, no refetch-on-focus); a hard client timeout
+  // guarantees a slow Gmail round-trip never blocks the inbox indefinitely.
+  const ENTRY_SYNC_TIMEOUT_MS = 6_000;
+  const entrySyncQ = useQuery({
+    queryKey: ["inbox-entry-sync", accountId],
+    enabled: !!accountId,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    queryFn: async () => {
+      if (!accountId) return { done: false };
+      syncInFlightRef.current = true;
+      try {
+        await Promise.race([
+          backgroundSyncFn({ data: { account_id: accountId } }).catch(() => {
+            // best-effort; the DB + realtime + cron lanes are the backstop.
+          }),
+          new Promise((resolve) => setTimeout(resolve, ENTRY_SYNC_TIMEOUT_MS)),
+        ]);
+      } finally {
+        syncInFlightRef.current = false;
+      }
+      return { done: true };
+    },
+  });
+  // The list waits for the pre-sync to settle (or time out) for the active
+  // account; after that it stays ready and folder/page switches are instant.
+  const entryReady = !accountId || entrySyncQ.isSuccess;
+
   const fetchInboxList = useServerFn(getInboxList);
   const emailsQ = useQuery<Email[]>({
     queryKey: [
@@ -532,7 +562,7 @@ function InboxPage() {
       selectedFolder,
       isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
     ],
-    enabled: !!accountId,
+    enabled: !!accountId && entryReady,
     queryFn: async () => {
       const isNoRules = selectedFolder === "no_rules";
       const isAllMail = selectedFolder === "all_mail";
@@ -679,44 +709,7 @@ function InboxPage() {
     };
   }, [syncReadStateFn]);
 
-  // On the first open of a session for an account, refresh from Gmail in the
-  // background. The local DB is the source of truth and renders instantly, so
-  // we never hide an existing list — we only show the blocking "Catching up…"
-  // gate on a true cold start (nothing cached yet), and even then cap it so it
-  // self-clears within a few seconds. Uses the lightweight backgroundSync
-  // (history + bounded catch-up); the heavy backfill + reconcile stay on the
-  // manual Refresh button and the cron lanes.
-  useEffect(() => {
-    if (!accountId) return;
-    if (caughtUpAccountsRef.current.has(accountId)) return;
-    caughtUpAccountsRef.current.add(accountId);
-    let cancelled = false;
-    const cached = qc
-      .getQueriesData<Email[]>({ queryKey: ["emails"] })
-      .flatMap(([, d]) => d ?? []);
-    if (cached.length === 0) setIsCatchingUp(true);
-    // Safety cap: never hold the gate open more than a few seconds — reveal
-    // whatever has loaded and let realtime + the background tick fill the rest.
-    const gateTimer = setTimeout(() => {
-      if (!cancelled) setIsCatchingUp(false);
-    }, 3500);
-    syncInFlightRef.current = true;
-    (async () => {
-      try {
-        await backgroundSyncFn({ data: { account_id: accountId } });
-        if (!cancelled) await qc.refetchQueries({ queryKey: ["emails"] });
-      } catch {
-        // best-effort; the cached list + background tick are the backstop.
-      } finally {
-        syncInFlightRef.current = false;
-        if (!cancelled) setIsCatchingUp(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      clearTimeout(gateTimer);
-    };
-  }, [accountId, backgroundSyncFn, qc]);
+
 
 
   // Keep an open inbox current without a manual refresh or page reload. A
@@ -1119,10 +1112,11 @@ function InboxPage() {
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
-  // Only block the whole list on a true cold start (nothing to show yet).
-  // When a list exists, it stays visible and the subtle header pulse signals
-  // the in-flight catch-up instead.
-  const showColdGate = isCatchingUp && rawEmails.length === 0;
+  // Block the whole list only on a true cold start: the entry pre-sync is still
+  // running and there is nothing cached to show yet. Once a list exists, it
+  // stays visible and the subtle header pulse signals any in-flight sync.
+  const entrySyncPending = !!accountId && !entrySyncQ.isSuccess;
+  const showColdGate = entrySyncPending && rawEmails.length === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
@@ -1134,7 +1128,7 @@ function InboxPage() {
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
             <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
-            {(syncMut.isPending || isCatchingUp) && (
+            {(syncMut.isPending || entrySyncPending) && (
               <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground animate-pulse">
                 Catching up…
               </span>
