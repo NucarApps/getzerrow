@@ -431,6 +431,15 @@ function tokenFuzzyMatches(token: string, words: string[]): boolean {
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
+  const backgroundSyncFn = useServerFn(backgroundSync);
+  // Shared guard so the open catch-up, the recurring background tick, and the
+  // manual Refresh button never run a sync on top of each other.
+  const syncInFlightRef = useRef(false);
+  // Brief gate shown on the first open of a session while catch-up runs, so the
+  // list renders already up to date instead of showing stale rows that then
+  // trickle in one by one.
+  const [isCatchingUp, setIsCatchingUp] = useState(false);
+  const caughtUpAccountsRef = useRef<Set<string>>(new Set());
   const fetchEmailBody = useServerFn(getEmailBody);
   const moveFolderFn = useServerFn(moveEmailToFolder);
   const moveInboxFn = useServerFn(moveEmailToInbox);
