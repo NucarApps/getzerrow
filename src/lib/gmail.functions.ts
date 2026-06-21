@@ -847,6 +847,28 @@ export const triggerSync = createServerFn({ method: "POST" })
     return { ...histResult, recent_synced, reconciled: recon, catchup };
   });
 
+// Lightweight recurring sync for an open inbox. Pulls new mail via Gmail
+// history and drains the queue in bounded rounds, but SKIPS the heavier
+// backfillRecent + full reconcileLocalInbox that triggerSync runs — those
+// stay on the 5-minute in-tab loop and the cron backstop. Cheap enough to
+// run on a ~30s interval so the inbox keeps itself current without a
+// manual refresh or page reload.
+export const backgroundSync = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { account_id: string }) =>
+    z.object({ account_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await getOwnedAccount(context.userId, data.account_id);
+    const histResult = await syncSinceHistory(data.account_id);
+    const catchup = await drainCatchupRounds(
+      data.account_id,
+      context.userId,
+      "gmail.background_sync.catchup_failed",
+    );
+    return { ...histResult, catchup };
+  });
+
 export const renewGmailWatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) =>
