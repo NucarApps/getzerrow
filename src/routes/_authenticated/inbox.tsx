@@ -519,6 +519,41 @@ function InboxPage() {
   const parsedQuery = useMemo(() => parseSearchQuery(query.trim()), [query]);
   const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
+  // Entry pre-sync: before the inbox list is fetched for an account, run a
+  // bounded Gmail catch-up (history pull + queue drain) so the very first
+  // render already reflects the latest processed state — instead of loading a
+  // stale list and visibly shuffling rows afterward. Runs once per account per
+  // session (staleTime: Infinity, no refetch-on-focus); a hard client timeout
+  // guarantees a slow Gmail round-trip never blocks the inbox indefinitely.
+  const ENTRY_SYNC_TIMEOUT_MS = 6_000;
+  const entrySyncQ = useQuery({
+    queryKey: ["inbox-entry-sync", accountId],
+    enabled: !!accountId,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    queryFn: async () => {
+      if (!accountId) return { done: false };
+      syncInFlightRef.current = true;
+      try {
+        await Promise.race([
+          backgroundSyncFn({ data: { account_id: accountId } }).catch(() => {
+            // best-effort; the DB + realtime + cron lanes are the backstop.
+          }),
+          new Promise((resolve) => setTimeout(resolve, ENTRY_SYNC_TIMEOUT_MS)),
+        ]);
+      } finally {
+        syncInFlightRef.current = false;
+      }
+      return { done: true };
+    },
+  });
+  // The list waits for the pre-sync to settle (or time out) for the active
+  // account; after that it stays ready and folder/page switches are instant.
+  const entryReady = !accountId || entrySyncQ.isSuccess;
+
   const fetchInboxList = useServerFn(getInboxList);
   const emailsQ = useQuery<Email[]>({
     queryKey: [
@@ -527,7 +562,7 @@ function InboxPage() {
       selectedFolder,
       isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
     ],
-    enabled: !!accountId,
+    enabled: !!accountId && entryReady,
     queryFn: async () => {
       const isNoRules = selectedFolder === "no_rules";
       const isAllMail = selectedFolder === "all_mail";
