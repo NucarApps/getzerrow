@@ -32,6 +32,9 @@ import { classifyByRules } from "./classify";
 import { applyFolderActions, type ActionFolder } from "./process-message";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { CATCHUP_BULK_LIMIT, CATCHUP_FETCH_CONCURRENCY } from "./config";
+import type { Database } from "@/integrations/supabase/types";
+
+type EmailInsert = Database["public"]["Tables"]["emails"]["Insert"];
 
 type ClaimedJob = {
   id: string;
