@@ -316,6 +316,51 @@ type BackfillJob = {
   already_had: number;
 };
 
+function resolveActionFolderFromContext(
+  context: AccountContext | undefined,
+  folderId: string | null | undefined,
+): ActionFolder | null {
+  if (!context || !folderId) return null;
+  const cached = context.folders.find((f) => f.id === folderId);
+  if (!cached) return null;
+  return {
+    id: cached.id,
+    gmail_label_id: cached.gmail_label_id,
+    auto_archive: cached.auto_archive,
+    auto_mark_read: cached.auto_mark_read,
+    auto_star: cached.auto_star,
+    hide_from_inbox: cached.hide_from_inbox,
+    forward_to: cached.forward_to,
+    snooze_hours: cached.snooze_hours,
+  };
+}
+
+async function applyClassifiedFolderActions(
+  job: { gmail_account_id: string; gmail_message_id: string },
+  emailRowId: string,
+  parsed: Parameters<typeof classifyParsedEmail>[0],
+  folder: ActionFolder | null,
+): Promise<void> {
+  if (!folder) return;
+  await applyFolderActions(
+    job.gmail_account_id,
+    job.gmail_message_id,
+    emailRowId,
+    folder,
+    {
+      raw_labels: parsed.raw_labels,
+      subject: parsed.subject,
+      from_addr: parsed.from_addr,
+      from_name: parsed.from_name,
+      received_at: parsed.received_at,
+      body_text: parsed.body_text,
+      snippet: parsed.snippet,
+    },
+    (parsed.raw_labels ?? []).includes("INBOX"),
+    { persistFlags: true },
+  );
+}
+
 const BACKFILL_LIST_PAGES_PER_TICK = 20; // ~2000 IDs per tick
 const BACKFILL_PAGE_SIZE = 100;
 
