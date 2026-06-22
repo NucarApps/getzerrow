@@ -57,7 +57,9 @@ import {
   loadOlderFromLabel as _loadOlderFromLabel,
 } from "./sync/folder-learn";
 import {
+  applyFolderActions,
   processGmailMessage as _processGmailMessage,
+  type ActionFolder as _ActionFolder,
   type ProcessTimings as _ProcessTimings,
 } from "./sync/process-message";
 
@@ -84,6 +86,7 @@ export const bumpEmailsSinceLearn = _bumpEmailsSinceLearn;
 export const learnFromLinkedLabel = _learnFromLinkedLabel;
 export const loadOlderFromLabel = _loadOlderFromLabel;
 export const processGmailMessage = _processGmailMessage;
+type ActionFolder = _ActionFolder;
 export type ProcessTimings = _ProcessTimings;
 // recordManualMove is internal to the sync pipeline — used by the
 // inline syncSinceHistoryLocked / labelsAdded path that will eventually
