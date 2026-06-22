@@ -186,6 +186,31 @@ export function useEmailRealtime() {
     let reconnectAttempt = 0;
 
     type CachedList = EmailRow[] | { rows: EmailRow[] };
+    type FolderRow = {
+      id: string;
+      auto_archive?: boolean | null;
+      hide_from_inbox?: boolean | null;
+    };
+
+    function withCachedFolder(row: EmailRow): EmailRow {
+      if (!row.folder_id || row.folder) return row;
+      const folders = qc.getQueriesData<FolderRow[]>({ queryKey: ["folders"] });
+      for (const [key, value] of folders) {
+        if (!Array.isArray(value)) continue;
+        const queryKey = key as unknown[];
+        if (
+          typeof row.gmail_account_id === "string" &&
+          typeof queryKey[1] === "string" &&
+          queryKey[1] !== row.gmail_account_id
+        ) {
+          continue;
+        }
+        const folder = value.find((candidate) => candidate.id === row.folder_id);
+        if (folder) return { ...row, folder };
+      }
+      return row;
+    }
+
     function patchOneQuery(
       key: unknown[],
       transform: (rows: EmailRow[]) => EmailRow[] | null,
@@ -244,14 +269,14 @@ export function useEmailRealtime() {
     }
 
     function applyInsert(row: EmailRow) {
-      pending.set(row.id, { kind: "insert", row });
+      pending.set(row.id, { kind: "insert", row: withCachedFolder(row) });
       scheduleFlush();
     }
 
     function applyUpdate(row: EmailRow) {
       // An update supersedes a pending insert (the row already exists in
       // the DB; we want the latest version).
-      pending.set(row.id, { kind: "update", row });
+      pending.set(row.id, { kind: "update", row: withCachedFolder(row) });
       scheduleFlush();
     }
 
