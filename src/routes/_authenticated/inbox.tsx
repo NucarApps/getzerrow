@@ -175,6 +175,8 @@ function isInProgressEmail(email: Pick<Email, "classified_by">): boolean {
 function emailBelongsInScope(email: Email, selectedFolder: string, folders: Folder[]): boolean {
   if (selectedFolder === "all_mail") return true;
   if (isInProgressEmail(email)) return false;
+  const snoozedMs = email.snoozed_until ? new Date(email.snoozed_until).getTime() : 0;
+  if (snoozedMs && snoozedMs > Date.now()) return false;
   const labels = email.raw_labels ?? [];
   const folder = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
   if (selectedFolder === "all") {
@@ -185,10 +187,8 @@ function emailBelongsInScope(email: Email, selectedFolder: string, folders: Fold
     );
   }
   if (selectedFolder === "no_rules") {
-    const snoozedMs = email.snoozed_until ? new Date(email.snoozed_until).getTime() : 0;
     return (
       email.folder_id === null &&
-      (!snoozedMs || snoozedMs <= Date.now()) &&
       !labels.some((label) => label.startsWith("Label_"))
     );
   }
