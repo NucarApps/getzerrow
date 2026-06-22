@@ -130,30 +130,32 @@ describe("rowBelongsInList", () => {
 // The rules-final row goes straight to its folder; 'all_mail' shows
 // everything including in-progress mail (diagnostic view).
 describe("rowBelongsInList — classification insert shapes", () => {
-  it("a pending_ai row is hidden from the inbox until classification settles", () => {
+  // Real inbox query keys are ["emails", accountId, scope, pageKey].
+  const key = (scope: string) => ["emails", ACC, scope, "page:1:start"];
+
+  it("a pending_ai row is hidden from every settled view until classification settles", () => {
     const pending = row({ folder_id: null, is_archived: false, classified_by: "pending_ai" });
-    expect(rowBelongsInList(pending, ["emails", "inbox"])).toBe(false);
-    expect(rowBelongsInList(pending, ["emails", "no_rules"])).toBe(false);
-    expect(rowBelongsInList(pending, ["emails", "f-work"])).toBe(false);
+    expect(rowBelongsInList(pending, key("all"))).toBe(false);
+    expect(rowBelongsInList(pending, key("no_rules"))).toBe(false);
+    expect(rowBelongsInList(pending, key("f-work"))).toBe(false);
     // ...but the diagnostic All-mail scope still surfaces it.
-    expect(rowBelongsInList(pending, ["emails", ACC, "all_mail"])).toBe(true);
+    expect(rowBelongsInList(pending, key("all_mail"))).toBe(true);
   });
 
   it("a pending row is hidden from the inbox until classification settles", () => {
     const pending = row({ folder_id: null, is_archived: false, classified_by: "pending" });
-    expect(rowBelongsInList(pending, ["emails", "inbox"])).toBe(false);
+    expect(rowBelongsInList(pending, key("all"))).toBe(false);
   });
 
   it("once settled, an AI-classified inbox row belongs in the inbox", () => {
     const settled = row({ folder_id: null, is_archived: false, classified_by: "ai" });
-    expect(rowBelongsInList(settled, ["emails", "inbox"])).toBe(true);
+    expect(rowBelongsInList(settled, key("all"))).toBe(true);
   });
 
-  it("a rules-final auto-archived row belongs in its folder + archived lists, NOT the inbox", () => {
+  it("a rules-final auto-archived row belongs in its folder, NOT the inbox", () => {
     const routed = row({ folder_id: "f-work", is_archived: true, classified_by: "filter" });
-    expect(rowBelongsInList(routed, ["emails", "f-work"])).toBe(true);
-    expect(rowBelongsInList(routed, ["emails", "archived"])).toBe(true);
-    expect(rowBelongsInList(routed, ["emails", "inbox"])).toBe(false);
+    expect(rowBelongsInList(routed, key("f-work"))).toBe(true);
+    expect(rowBelongsInList(routed, key("all"))).toBe(false);
   });
 });
 
