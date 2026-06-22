@@ -140,6 +140,9 @@ export function applyPendingOpsToList(
 
 function matchesScope(row: EmailRow, scope: string): boolean {
   if (scope === "all_mail") return true;
+  // Everything below is a "settled" view — never surface mail that is still
+  // being classified/filed. It enters its real destination once done.
+  if (isInProgress(row)) return false;
   if (scope === "all" || scope === "inbox") {
     return (
       row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX")
