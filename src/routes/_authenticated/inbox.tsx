@@ -844,7 +844,13 @@ function InboxPage() {
     [isSearching, gmailHitIds, query],
   );
   const gmailHitRowsQ = useQuery<Email[]>({
-    queryKey: ["emails-gmail-hits", accountId, query.trim().toLowerCase(), gmailHitIdList.length],
+    queryKey: [
+      "emails-gmail-hits",
+      accountId,
+      selectedFolder,
+      query.trim().toLowerCase(),
+      gmailHitIdList.length,
+    ],
     enabled: !!accountId && gmailHitIdList.length > 0 && foldersQ.isSuccess,
     queryFn: async () => {
       const ids = gmailHitIdList.slice(0, 500);
