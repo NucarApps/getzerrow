@@ -17,6 +17,7 @@ function row(over: Partial<EmailRow> = {}): EmailRow {
     folder_id: over.folder_id ?? null,
     gmail_account_id: "gmail_account_id" in over ? over.gmail_account_id : ACC,
     raw_labels: "raw_labels" in over ? over.raw_labels : ["INBOX"],
+    classified_by: "classified_by" in over ? over.classified_by : null,
   };
 }
 
