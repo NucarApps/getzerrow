@@ -954,6 +954,10 @@ export async function runMessageJobs(
                   : null;
                 const threshold = candidate?.min_ai_confidence ?? 0;
                 const passes = r?.folder_id && (r.confidence ?? 0) >= threshold;
+                if (passes && r?.folder_id) {
+                  const folder = resolveActionFolderFromContext(ctx, r.folder_id);
+                  await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
+                }
                 await updateEmailEncrypted({
                   email_id: c.emailRowId,
                   folder_id: passes ? r!.folder_id : null,
@@ -967,8 +971,6 @@ export async function runMessageJobs(
                       : r?.reason || null,
                 });
                 if (passes && r?.folder_id) {
-                  const folder = resolveActionFolderFromContext(ctx, r.folder_id);
-                  await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
                   void bumpEmailsSinceLearn(r.folder_id);
                 }
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
@@ -986,6 +988,10 @@ export async function runMessageJobs(
               chunk.map(async (c) => {
                 try {
                   const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
+                  if (single.folder_id) {
+                    const folder = resolveActionFolderFromContext(ctx, single.folder_id);
+                    await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
+                  }
                   await updateEmailEncrypted({
                     email_id: c.emailRowId,
                     folder_id: single.folder_id,
@@ -995,8 +1001,6 @@ export async function runMessageJobs(
                     classification_reason: single.reason || null,
                   });
                   if (single.folder_id) {
-                    const folder = resolveActionFolderFromContext(ctx, single.folder_id);
-                    await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
                     void bumpEmailsSinceLearn(single.folder_id);
                   }
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
