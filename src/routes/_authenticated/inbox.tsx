@@ -157,7 +157,43 @@ type Email = {
   gmail_message_id?: string | null;
 };
 
-type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
+type Folder = {
+  id: string;
+  name: string;
+  color: string;
+  gmail_label_id: string | null;
+  auto_archive: boolean;
+  hide_from_inbox: boolean;
+};
+
+const IN_PROGRESS_CLASSIFICATIONS = new Set(["pending", "pending_ai"]);
+
+function isInProgressEmail(email: Pick<Email, "classified_by">): boolean {
+  return typeof email.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(email.classified_by);
+}
+
+function emailBelongsInScope(email: Email, selectedFolder: string, folders: Folder[]): boolean {
+  if (selectedFolder === "all_mail") return true;
+  if (isInProgressEmail(email)) return false;
+  const labels = email.raw_labels ?? [];
+  const folder = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
+  if (selectedFolder === "all") {
+    return (
+      email.is_archived !== true &&
+      labels.includes("INBOX") &&
+      !(folder?.auto_archive || folder?.hide_from_inbox)
+    );
+  }
+  if (selectedFolder === "no_rules") {
+    const snoozedMs = email.snoozed_until ? new Date(email.snoozed_until).getTime() : 0;
+    return (
+      email.folder_id === null &&
+      (!snoozedMs || snoozedMs <= Date.now()) &&
+      !labels.some((label) => label.startsWith("Label_"))
+    );
+  }
+  return email.folder_id === selectedFolder;
+}
 
 const PAGE_SIZE = 50;
 
@@ -459,7 +495,7 @@ function InboxPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("folders")
-        .select("id,name,color,gmail_label_id")
+        .select("id,name,color,gmail_label_id,auto_archive,hide_from_inbox")
         .eq("gmail_account_id", accountId!)
         .order("priority", { ascending: false });
       return (data ?? []) as Folder[];
