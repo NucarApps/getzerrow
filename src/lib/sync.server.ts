@@ -966,7 +966,11 @@ export async function runMessageJobs(
                       ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
                       : r?.reason || null,
                 });
-                if (passes && r?.folder_id) void bumpEmailsSinceLearn(r.folder_id);
+                if (passes && r?.folder_id) {
+                  const folder = resolveActionFolderFromContext(ctx, r.folder_id);
+                  await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
+                  void bumpEmailsSinceLearn(r.folder_id);
+                }
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                 results.push({ id: c.job.id, ok: true });
               }),
@@ -990,7 +994,11 @@ export async function runMessageJobs(
                     classified_by: "ai",
                     classification_reason: single.reason || null,
                   });
-                  if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
+                  if (single.folder_id) {
+                    const folder = resolveActionFolderFromContext(ctx, single.folder_id);
+                    await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
+                    void bumpEmailsSinceLearn(single.folder_id);
+                  }
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
                 } catch (innerErr: unknown) {
