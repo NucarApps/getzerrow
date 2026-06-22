@@ -12,6 +12,10 @@ export type EmailRow = {
   gmail_account_id?: string | null;
   raw_labels?: string[] | null;
   classified_by?: string | null;
+  folder?: {
+    auto_archive?: boolean | null;
+    hide_from_inbox?: boolean | null;
+  } | null;
   [key: string]: unknown;
 };
 
@@ -145,7 +149,11 @@ function matchesScope(row: EmailRow, scope: string): boolean {
   if (isInProgress(row)) return false;
   if (scope === "all" || scope === "inbox") {
     return (
-      row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX")
+      row.is_archived !== true &&
+      Array.isArray(row.raw_labels) &&
+      row.raw_labels.includes("INBOX") &&
+      row.folder?.auto_archive !== true &&
+      row.folder?.hide_from_inbox !== true
     );
   }
   if (scope === "archived") return row.is_archived === true;
