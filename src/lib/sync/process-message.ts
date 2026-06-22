@@ -276,16 +276,16 @@ export async function processGmailMessage(
       const _tAi = performance.now();
       const final = rules.needs_ai ? await classifyByAi(parsed, context, rules) : rules;
       if (t) t.ai += performance.now() - _tAi;
-      await persistClassification(existing.id, final);
       if (final.folder_id) {
-        void bumpEmailsSinceLearn(final.folder_id);
         const folder =
           resolveFolderFromContext(context, final.folder_id) ?? (await fetchActionFolder(final.folder_id));
         if (folder) {
           const inInboxNow = (parsed.raw_labels ?? []).includes("INBOX");
           await applyFolderActions(accountId, gmailId, existing.id, folder, parsed, inInboxNow, { persistFlags: true });
         }
+        void bumpEmailsSinceLearn(final.folder_id);
       }
+      await persistClassification(existing.id, final);
       return { id: existing.id, email_id: existing.id, folder_id: final.folder_id, parsed, reclassified: true };
     }
 
@@ -397,6 +397,12 @@ export async function processGmailMessage(
     const c = await classifyByAi(parsed, context, rules);
     if (t) t.ai += performance.now() - _tAi;
     folder_id = c.folder_id ?? null;
+    if (folder_id) {
+      const folder = resolveFolderFromContext(context, folder_id) ?? (await fetchActionFolder(folder_id));
+      if (folder) {
+        await applyFolderActions(accountId, gmailId, inserted.id, folder, parsed, inInbox, { persistFlags: true });
+      }
+    }
     const _tDb = performance.now();
     await persistClassification(inserted.id, c);
     if (folder_id) void bumpEmailsSinceLearn(folder_id);
@@ -409,14 +415,6 @@ export async function processGmailMessage(
       classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
     });
     return { id: inserted.id, classify_failed: true };
-  }
-
-  // 5) Folder actions for the AI-routed path (patches flags post-hoc).
-  if (folder_id) {
-    const folder = resolveFolderFromContext(context, folder_id) ?? (await fetchActionFolder(folder_id));
-    if (folder) {
-      await applyFolderActions(accountId, gmailId, inserted.id, folder, parsed, inInbox, { persistFlags: true });
-    }
   }
 
   return { id: inserted.id, email_id: inserted.id, folder_id, parsed, needs_ai: false };
