@@ -1,28 +1,22 @@
-Goal: when you open the inbox, it should already reflect the processed Zerrow state. You should not see mail load and then disappear one by one as classification/foldering finishes.
+## Plan
 
-Plan:
+1. **Fix the real backend cause of the “one-by-one disappearing” effect**
+   - Update the queued AI classification worker so when it assigns an email to a folder, it also applies the folder’s final effects immediately: auto-archive, hide from inbox, mark read, star, snooze, forwarding, and local flags.
+   - This removes the current gap where batched/backfill AI sets `folder_id` but leaves the row looking like it still belongs in the inbox until a later reconcile/page-load repair updates it.
 
-1. Stop showing intermediate “pending” mail in the inbox
-- Treat messages still being classified or filed as not ready for the Zerrow inbox.
-- Hide `pending` / `pending_ai` rows from the normal Inbox, No rules, and folder views until backend processing finishes.
-- Keep All mail available as the diagnostic/full-mail view if needed.
-- Update the realtime cache logic so an intermediate insert does not briefly appear and then disappear; the row only enters the inbox once its final classification says it belongs there.
+2. **Make the Inbox list show only settled, actionable inbox mail**
+   - Update the inbox list database function so the default Zerrow Inbox excludes mail that is already assigned to a folder whose rules say it should be hidden/archived, even if local Gmail-label state is temporarily behind.
+   - Keep folder views and All mail usable for inspecting filed mail.
 
-2. Make the initial inbox load wait for a settled backend state
-- Replace the current lightweight entry catch-up with a stricter “settle inbox” server function.
-- On inbox entry, it will pull Gmail history, drain newly queued live mail, and try to finish the immediate classification queue within a short safety budget.
-- If the budget is exceeded, the page will still load, but because pending rows are hidden, you won’t see the one-by-one cleanup.
+3. **Apply the same visibility rules everywhere the inbox reads mail**
+   - Update unread counts to match the same “settled actionable inbox” contract.
+   - Update direct search queries in the inbox UI so search does not leak `pending` / `pending_ai` rows or hidden-folder rows into the visible list.
 
-3. Strengthen always-on processing when nobody is logged in
-- Verify the backend schedules that run Gmail polling and mail processing without a browser session.
-- Update the live-processing schedule/limit if needed so newly queued live mail is drained more aggressively server-side.
-- Keep webhook, polling, queue processing, and reconcile jobs as backend-only work so they continue when the site is closed or you are logged out.
+4. **Remove page-load repair as the thing users notice**
+   - Keep the entry catch-up as a safety net, but make it unable to reveal mail that is still being sorted or already filed.
+   - Keep realtime updates, but make them only add mail to the Inbox after it truly belongs there.
 
-4. Clean up the “Catching up…” experience
-- Only show it while the first settled fetch is waiting and there is no usable cached list.
-- Do not show a visible “catching up” pulse after the inbox has rendered unless the user manually clicks Refresh.
-
-5. Verify the behavior
-- Check backend cron/job state after the change.
-- Add/update tests for the realtime list membership rule so pending mail cannot flash into the inbox.
-- Verify in the browser that opening the inbox no longer shows rows disappearing one by one after load.
+5. **Verify with backend data and tests**
+   - Add/update tests for the realtime visibility rules.
+   - Check recent database rows before and after the fix to confirm mail in auto-archive/hidden folders no longer appears in the Inbox.
+   - Run the targeted inbox/realtime tests after implementation.
