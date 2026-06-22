@@ -1,37 +1,28 @@
-## Goal
-When the user opens Zerrow inbox, the list should reflect the latest processed Gmail state before it settles on screen. It should not show stale rows first and then visibly move emails after page load.
+Goal: when you open the inbox, it should already reflect the processed Zerrow state. You should not see mail load and then disappear one by one as classification/foldering finishes.
 
-## Plan
+Plan:
 
-1. **Add a dedicated “sync before list” server function**
-   - Add a lightweight authenticated function in `src/lib/gmail.functions.ts` for inbox entry.
-   - It will verify account ownership, run Gmail history sync, drain the catch-up queue in bounded rounds, and return quickly.
-   - Keep heavy backfill/reconcile work out of this path so opening the inbox does not hang for 15–20 seconds.
+1. Stop showing intermediate “pending” mail in the inbox
+- Treat messages still being classified or filed as not ready for the Zerrow inbox.
+- Hide `pending` / `pending_ai` rows from the normal Inbox, No rules, and folder views until backend processing finishes.
+- Keep All mail available as the diagnostic/full-mail view if needed.
+- Update the realtime cache logic so an intermediate insert does not briefly appear and then disappear; the row only enters the inbox once its final classification says it belongs there.
 
-2. **Gate the inbox list query on that pre-sync**
-   - In `src/routes/_authenticated/inbox.tsx`, run the entry sync query before `getInboxList` is enabled for the selected account.
-   - Once the entry sync completes or times out safely, fetch the inbox list from the database.
-   - This changes the sequence from:
+2. Make the initial inbox load wait for a settled backend state
+- Replace the current lightweight entry catch-up with a stricter “settle inbox” server function.
+- On inbox entry, it will pull Gmail history, drain newly queued live mail, and try to finish the immediate classification queue within a short safety budget.
+- If the budget is exceeded, the page will still load, but because pending rows are hidden, you won’t see the one-by-one cleanup.
 
-```text
-load inbox list -> start catch-up -> refetch/move rows
-```
+3. Strengthen always-on processing when nobody is logged in
+- Verify the backend schedules that run Gmail polling and mail processing without a browser session.
+- Update the live-processing schedule/limit if needed so newly queued live mail is drained more aggressively server-side.
+- Keep webhook, polling, queue processing, and reconcile jobs as backend-only work so they continue when the site is closed or you are logged out.
 
-   to:
+4. Clean up the “Catching up…” experience
+- Only show it while the first settled fetch is waiting and there is no usable cached list.
+- Do not show a visible “catching up” pulse after the inbox has rendered unless the user manually clicks Refresh.
 
-```text
-bounded catch-up -> load inbox list once with latest processed state
-```
-
-3. **Keep the UX fast with a strict safety cap**
-   - Show the existing “Catching up…” state only during the initial pre-sync when there is no list ready yet.
-   - Add a short client-side timeout fallback so a slow Gmail API call never blocks the inbox indefinitely.
-   - If timeout happens, load the best current database state and let the existing server crons/realtime finish quietly.
-
-4. **Keep live updates after load**
-   - Preserve the existing realtime updates and recurring open-inbox background sync.
-   - Manual Refresh will still run the heavier full sync/backfill/reconcile path.
-
-5. **Verify behavior**
-   - Confirm the inbox no longer renders stale data before the first catch-up finishes.
-   - Confirm manual Refresh still works and the existing live update loop remains active.
+5. Verify the behavior
+- Check backend cron/job state after the change.
+- Add/update tests for the realtime list membership rule so pending mail cannot flash into the inbox.
+- Verify in the browser that opening the inbox no longer shows rows disappearing one by one after load.
