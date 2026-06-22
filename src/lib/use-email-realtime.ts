@@ -11,8 +11,21 @@ export type EmailRow = {
   folder_id: string | null;
   gmail_account_id?: string | null;
   raw_labels?: string[] | null;
+  classified_by?: string | null;
   [key: string]: unknown;
 };
+
+// Mail still being classified/filed by the backend (rules pending or AI
+// pending). It must never flash into the Inbox / No-rules / folder views —
+// it only appears once its final classification settles. The "All mail"
+// diagnostic scope still shows it.
+const IN_PROGRESS_CLASSIFICATIONS = new Set(["pending", "pending_ai"]);
+
+function isInProgress(row: EmailRow): boolean {
+  return (
+    typeof row.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(row.classified_by)
+  );
+}
 
 /**
  * Heuristic: do we believe `row` belongs in the list identified by
