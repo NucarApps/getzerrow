@@ -288,6 +288,8 @@ export function useEmailRealtime() {
     const invalidateFolders = () => {
       qc.invalidateQueries({ queryKey: ["folders"] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
+      qc.invalidateQueries({ queryKey: ["emails"] });
+      bumpCounts();
     };
 
     // Unread/folder counts now live under their own key (a cheap server-side
