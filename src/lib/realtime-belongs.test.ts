@@ -123,15 +123,29 @@ describe("rowBelongsInList", () => {
   });
 });
 
-// The two INSERT shapes process-message now emits. The pending_ai row
-// must land in the inbox list (visible while AI sorts it); the
-// rules-final row must land straight in its folder (and the archived
-// list when the folder auto-archives) — never flash through the inbox.
+// Classification insert shapes. Mail still being sorted (classified_by
+// 'pending' / 'pending_ai') must NEVER flash into a settled view (Inbox /
+// No-rules / folder) — it only appears once its final classification lands.
+// The rules-final row goes straight to its folder; 'all_mail' shows
+// everything including in-progress mail (diagnostic view).
 describe("rowBelongsInList — classification insert shapes", () => {
-  it("a pending_ai row (no folder, not archived) belongs in the inbox list", () => {
+  it("a pending_ai row is hidden from the inbox until classification settles", () => {
     const pending = row({ folder_id: null, is_archived: false, classified_by: "pending_ai" });
-    expect(rowBelongsInList(pending, ["emails", "inbox"])).toBe(true);
+    expect(rowBelongsInList(pending, ["emails", "inbox"])).toBe(false);
+    expect(rowBelongsInList(pending, ["emails", "no_rules"])).toBe(false);
     expect(rowBelongsInList(pending, ["emails", "f-work"])).toBe(false);
+    // ...but the diagnostic All-mail scope still surfaces it.
+    expect(rowBelongsInList(pending, ["emails", ACC, "all_mail"])).toBe(true);
+  });
+
+  it("a pending row is hidden from the inbox until classification settles", () => {
+    const pending = row({ folder_id: null, is_archived: false, classified_by: "pending" });
+    expect(rowBelongsInList(pending, ["emails", "inbox"])).toBe(false);
+  });
+
+  it("once settled, an AI-classified inbox row belongs in the inbox", () => {
+    const settled = row({ folder_id: null, is_archived: false, classified_by: "ai" });
+    expect(rowBelongsInList(settled, ["emails", "inbox"])).toBe(true);
   });
 
   it("a rules-final auto-archived row belongs in its folder + archived lists, NOT the inbox", () => {
