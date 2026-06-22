@@ -598,10 +598,11 @@ function InboxPage() {
       selectedFolder,
       isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
     ],
-    enabled: !!accountId && entryReady,
+    enabled: !!accountId && entryReady && (!isSearching || foldersQ.isSuccess),
     queryFn: async () => {
       const isNoRules = selectedFolder === "no_rules";
       const isAllMail = selectedFolder === "all_mail";
+      const folderRows = foldersQ.data ?? [];
       if (isSearching) {
         // Operator-aware search: when the user typed `from:` / `to:`, filter
         // server-side so we don't get capped by the 2000-newest window.
@@ -626,7 +627,8 @@ function InboxPage() {
             q = q.ilike("from_addr", `%${v}%`);
           }
           const { data } = await q;
-          return (data ?? []) as unknown as Email[];
+          const rows = (data ?? []) as unknown as Email[];
+          return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
         }
         // Free-text search: load the most recent corpus and score locally.
         const q = supabase
@@ -638,14 +640,8 @@ function InboxPage() {
         // Don't restrict to INBOX while searching — Gmail's search spans all
         // mail, and most older hits will be archived.
         const { data } = await q;
-        let rows = (data ?? []) as unknown as Email[];
-        if (!isAllMail && selectedFolder !== "all") {
-          rows = rows.filter((e) => {
-            if (isNoRules) return e.folder_id === null;
-            return e.folder_id === selectedFolder;
-          });
-        }
-        return rows;
+        const rows = (data ?? []) as unknown as Email[];
+        return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
       }
       // Non-search: one decrypted, server-paginated round-trip. The RPC
       // applies the snoozed / INBOX / no-rules / folder filters and returns
