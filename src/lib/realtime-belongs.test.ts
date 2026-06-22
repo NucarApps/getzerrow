@@ -18,6 +18,7 @@ function row(over: Partial<EmailRow> = {}): EmailRow {
     gmail_account_id: "gmail_account_id" in over ? over.gmail_account_id : ACC,
     raw_labels: "raw_labels" in over ? over.raw_labels : ["INBOX"],
     classified_by: "classified_by" in over ? over.classified_by : null,
+    folder: "folder" in over ? over.folder : null,
   };
 }
 
@@ -32,7 +33,7 @@ describe("rowBelongsInList", () => {
     expect(rowBelongsInList(row({ gmail_account_id: "other" }), ["emails", ACC])).toBe(false);
   });
 
-  it("['emails', accountId, 'all'] accepts only unarchived rows whose raw_labels include INBOX", () => {
+  it("['emails', accountId, 'all'] accepts only actionable unarchived inbox rows", () => {
     expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), ["emails", ACC, "all"])).toBe(true);
     expect(
       rowBelongsInList(row({ raw_labels: ["INBOX", "Label_123"], folder_id: "f-1" }), [
@@ -49,6 +50,16 @@ describe("rowBelongsInList", () => {
     );
     expect(rowBelongsInList(row({ raw_labels: [] }), ["emails", ACC, "all"])).toBe(false);
     expect(rowBelongsInList(row({ raw_labels: null }), ["emails", ACC, "all"])).toBe(false);
+    expect(
+      rowBelongsInList(
+        row({
+          raw_labels: ["INBOX"],
+          folder_id: "f-hidden",
+          folder: { auto_archive: true, hide_from_inbox: false },
+        }),
+        ["emails", ACC, "all"],
+      ),
+    ).toBe(false);
   });
 
   it("['emails', accountId, 'all_mail'] accepts everything for that account", () => {
@@ -154,6 +165,17 @@ describe("rowBelongsInList — classification insert shapes", () => {
 
   it("a rules-final auto-archived row belongs in its folder, NOT the inbox", () => {
     const routed = row({ folder_id: "f-work", is_archived: true, classified_by: "filter" });
+    expect(rowBelongsInList(routed, key("f-work"))).toBe(true);
+    expect(rowBelongsInList(routed, key("all"))).toBe(false);
+  });
+
+  it("a settled row in an auto-archived folder stays out of the inbox even before local archive flags catch up", () => {
+    const routed = row({
+      folder_id: "f-work",
+      is_archived: false,
+      classified_by: "ai",
+      folder: { auto_archive: true, hide_from_inbox: false },
+    });
     expect(rowBelongsInList(routed, key("f-work"))).toBe(true);
     expect(rowBelongsInList(routed, key("all"))).toBe(false);
   });

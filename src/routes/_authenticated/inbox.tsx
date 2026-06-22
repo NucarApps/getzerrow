@@ -157,7 +157,43 @@ type Email = {
   gmail_message_id?: string | null;
 };
 
-type Folder = { id: string; name: string; color: string; gmail_label_id: string | null };
+type Folder = {
+  id: string;
+  name: string;
+  color: string;
+  gmail_label_id: string | null;
+  auto_archive: boolean;
+  hide_from_inbox: boolean;
+};
+
+const IN_PROGRESS_CLASSIFICATIONS = new Set(["pending", "pending_ai"]);
+
+function isInProgressEmail(email: Pick<Email, "classified_by">): boolean {
+  return typeof email.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(email.classified_by);
+}
+
+function emailBelongsInScope(email: Email, selectedFolder: string, folders: Folder[]): boolean {
+  if (selectedFolder === "all_mail") return true;
+  if (isInProgressEmail(email)) return false;
+  const snoozedMs = email.snoozed_until ? new Date(email.snoozed_until).getTime() : 0;
+  if (snoozedMs && snoozedMs > Date.now()) return false;
+  const labels = email.raw_labels ?? [];
+  const folder = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
+  if (selectedFolder === "all") {
+    return (
+      email.is_archived !== true &&
+      labels.includes("INBOX") &&
+      !(folder?.auto_archive || folder?.hide_from_inbox)
+    );
+  }
+  if (selectedFolder === "no_rules") {
+    return (
+      email.folder_id === null &&
+      !labels.some((label) => label.startsWith("Label_"))
+    );
+  }
+  return email.folder_id === selectedFolder;
+}
 
 const PAGE_SIZE = 50;
 
@@ -459,7 +495,7 @@ function InboxPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("folders")
-        .select("id,name,color,gmail_label_id")
+        .select("id,name,color,gmail_label_id,auto_archive,hide_from_inbox")
         .eq("gmail_account_id", accountId!)
         .order("priority", { ascending: false });
       return (data ?? []) as Folder[];
@@ -562,10 +598,11 @@ function InboxPage() {
       selectedFolder,
       isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
     ],
-    enabled: !!accountId && entryReady,
+    enabled: !!accountId && entryReady && (!isSearching || foldersQ.isSuccess),
     queryFn: async () => {
       const isNoRules = selectedFolder === "no_rules";
       const isAllMail = selectedFolder === "all_mail";
+      const folderRows = foldersQ.data ?? [];
       if (isSearching) {
         // Operator-aware search: when the user typed `from:` / `to:`, filter
         // server-side so we don't get capped by the 2000-newest window.
@@ -590,7 +627,8 @@ function InboxPage() {
             q = q.ilike("from_addr", `%${v}%`);
           }
           const { data } = await q;
-          return (data ?? []) as unknown as Email[];
+          const rows = (data ?? []) as unknown as Email[];
+          return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
         }
         // Free-text search: load the most recent corpus and score locally.
         const q = supabase
@@ -602,14 +640,8 @@ function InboxPage() {
         // Don't restrict to INBOX while searching — Gmail's search spans all
         // mail, and most older hits will be archived.
         const { data } = await q;
-        let rows = (data ?? []) as unknown as Email[];
-        if (!isAllMail && selectedFolder !== "all") {
-          rows = rows.filter((e) => {
-            if (isNoRules) return e.folder_id === null;
-            return e.folder_id === selectedFolder;
-          });
-        }
-        return rows;
+        const rows = (data ?? []) as unknown as Email[];
+        return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
       }
       // Non-search: one decrypted, server-paginated round-trip. The RPC
       // applies the snoozed / INBOX / no-rules / folder filters and returns
@@ -812,8 +844,14 @@ function InboxPage() {
     [isSearching, gmailHitIds, query],
   );
   const gmailHitRowsQ = useQuery<Email[]>({
-    queryKey: ["emails-gmail-hits", accountId, query.trim().toLowerCase(), gmailHitIdList.length],
-    enabled: !!accountId && gmailHitIdList.length > 0,
+    queryKey: [
+      "emails-gmail-hits",
+      accountId,
+      selectedFolder,
+      query.trim().toLowerCase(),
+      gmailHitIdList.length,
+    ],
+    enabled: !!accountId && gmailHitIdList.length > 0 && foldersQ.isSuccess,
     queryFn: async () => {
       const ids = gmailHitIdList.slice(0, 500);
       const { data } = await supabase
@@ -821,7 +859,10 @@ function InboxPage() {
         .select(LIST_COLUMNS)
         .eq("gmail_account_id", accountId!)
         .in("gmail_message_id", ids);
-      return (data ?? []) as unknown as Email[];
+      const rows = (data ?? []) as unknown as Email[];
+      return rows.filter((email) =>
+        emailBelongsInScope(email, selectedFolder, foldersQ.data ?? []),
+      );
     },
   });
 
@@ -1178,7 +1219,7 @@ function InboxPage() {
           </div>
           {isSearching && (
             <div className="mt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              {gmailSearching ? "Checking Gmail…" : "Searching all folders, including archived"}
+              {gmailSearching ? "Checking Gmail…" : `Searching ${headerLabel}`}
             </div>
           )}
           {isSearching && lastGmailResult?.reason === "reauth_required" && (

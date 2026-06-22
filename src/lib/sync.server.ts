@@ -57,7 +57,9 @@ import {
   loadOlderFromLabel as _loadOlderFromLabel,
 } from "./sync/folder-learn";
 import {
+  applyFolderActions,
   processGmailMessage as _processGmailMessage,
+  type ActionFolder as _ActionFolder,
   type ProcessTimings as _ProcessTimings,
 } from "./sync/process-message";
 
@@ -84,6 +86,7 @@ export const bumpEmailsSinceLearn = _bumpEmailsSinceLearn;
 export const learnFromLinkedLabel = _learnFromLinkedLabel;
 export const loadOlderFromLabel = _loadOlderFromLabel;
 export const processGmailMessage = _processGmailMessage;
+type ActionFolder = _ActionFolder;
 export type ProcessTimings = _ProcessTimings;
 // recordManualMove is internal to the sync pipeline — used by the
 // inline syncSinceHistoryLocked / labelsAdded path that will eventually
@@ -312,6 +315,51 @@ type BackfillJob = {
   total_enqueued: number;
   already_had: number;
 };
+
+function resolveActionFolderFromContext(
+  context: AccountContext | undefined,
+  folderId: string | null | undefined,
+): ActionFolder | null {
+  if (!context || !folderId) return null;
+  const cached = context.folders.find((f) => f.id === folderId);
+  if (!cached) return null;
+  return {
+    id: cached.id,
+    gmail_label_id: cached.gmail_label_id,
+    auto_archive: cached.auto_archive,
+    auto_mark_read: cached.auto_mark_read,
+    auto_star: cached.auto_star,
+    hide_from_inbox: cached.hide_from_inbox,
+    forward_to: cached.forward_to,
+    snooze_hours: cached.snooze_hours,
+  };
+}
+
+async function applyClassifiedFolderActions(
+  job: { gmail_account_id: string; gmail_message_id: string },
+  emailRowId: string,
+  parsed: Parameters<typeof classifyParsedEmail>[0],
+  folder: ActionFolder | null,
+): Promise<void> {
+  if (!folder) return;
+  await applyFolderActions(
+    job.gmail_account_id,
+    job.gmail_message_id,
+    emailRowId,
+    folder,
+    {
+      raw_labels: parsed.raw_labels,
+      subject: parsed.subject,
+      from_addr: parsed.from_addr,
+      from_name: parsed.from_name,
+      received_at: parsed.received_at,
+      body_text: parsed.body_text,
+      snippet: parsed.snippet,
+    },
+    (parsed.raw_labels ?? []).includes("INBOX"),
+    { persistFlags: true },
+  );
+}
 
 const BACKFILL_LIST_PAGES_PER_TICK = 20; // ~2000 IDs per tick
 const BACKFILL_PAGE_SIZE = 100;
@@ -906,6 +954,10 @@ export async function runMessageJobs(
                   : null;
                 const threshold = candidate?.min_ai_confidence ?? 0;
                 const passes = r?.folder_id && (r.confidence ?? 0) >= threshold;
+                if (passes && r?.folder_id) {
+                  const folder = resolveActionFolderFromContext(ctx, r.folder_id);
+                  await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
+                }
                 await updateEmailEncrypted({
                   email_id: c.emailRowId,
                   folder_id: passes ? r!.folder_id : null,
@@ -918,7 +970,9 @@ export async function runMessageJobs(
                       ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
                       : r?.reason || null,
                 });
-                if (passes && r?.folder_id) void bumpEmailsSinceLearn(r.folder_id);
+                if (passes && r?.folder_id) {
+                  void bumpEmailsSinceLearn(r.folder_id);
+                }
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                 results.push({ id: c.job.id, ok: true });
               }),
@@ -934,6 +988,10 @@ export async function runMessageJobs(
               chunk.map(async (c) => {
                 try {
                   const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
+                  if (single.folder_id) {
+                    const folder = resolveActionFolderFromContext(ctx, single.folder_id);
+                    await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
+                  }
                   await updateEmailEncrypted({
                     email_id: c.emailRowId,
                     folder_id: single.folder_id,
@@ -942,7 +1000,9 @@ export async function runMessageJobs(
                     classified_by: "ai",
                     classification_reason: single.reason || null,
                   });
-                  if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
+                  if (single.folder_id) {
+                    void bumpEmailsSinceLearn(single.folder_id);
+                  }
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
                   results.push({ id: c.job.id, ok: true });
                 } catch (innerErr: unknown) {
