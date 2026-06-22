@@ -1219,7 +1219,7 @@ function InboxPage() {
           </div>
           {isSearching && (
             <div className="mt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              {gmailSearching ? "Checking Gmail…" : "Searching all folders, including archived"}
+              {gmailSearching ? "Checking Gmail…" : `Searching ${headerLabel}`}
             </div>
           )}
           {isSearching && lastGmailResult?.reason === "reauth_required" && (
