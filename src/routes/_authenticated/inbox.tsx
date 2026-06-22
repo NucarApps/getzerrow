@@ -845,7 +845,7 @@ function InboxPage() {
   );
   const gmailHitRowsQ = useQuery<Email[]>({
     queryKey: ["emails-gmail-hits", accountId, query.trim().toLowerCase(), gmailHitIdList.length],
-    enabled: !!accountId && gmailHitIdList.length > 0,
+    enabled: !!accountId && gmailHitIdList.length > 0 && foldersQ.isSuccess,
     queryFn: async () => {
       const ids = gmailHitIdList.slice(0, 500);
       const { data } = await supabase
@@ -853,7 +853,10 @@ function InboxPage() {
         .select(LIST_COLUMNS)
         .eq("gmail_account_id", accountId!)
         .in("gmail_message_id", ids);
-      return (data ?? []) as unknown as Email[];
+      const rows = (data ?? []) as unknown as Email[];
+      return rows.filter((email) =>
+        emailBelongsInScope(email, selectedFolder, foldersQ.data ?? []),
+      );
     },
   });
 
