@@ -82,6 +82,7 @@ import {
 } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
 import { getEmailBody, getEmailListFields, getInboxList } from "@/lib/email-body.functions";
+import { metaKeyFor, loadInboxMeta, saveInboxMeta } from "@/lib/inbox-meta-cache";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -155,6 +156,10 @@ type Email = {
   raw_labels?: string[] | null;
   snoozed_until?: string | null;
   gmail_message_id?: string | null;
+  // Set on rows reconstructed from the metadata-only localStorage cache: the
+  // content fields (sender, subject, snippet, ai summary) are null and shimmer
+  // in the UI until the live DB read replaces the row.
+  __placeholder?: boolean;
 };
 
 type Folder = {
@@ -509,6 +514,9 @@ function InboxPage() {
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assistantOpen, setAssistantOpen] = useState(false);
+  // True while the silent background catch-up is in flight — drives the subtle
+  // "Syncing…" header hint (never blocks the list).
+  const [bgSyncing, setBgSyncing] = useState(false);
   const isNoRules = selectedFolder === "no_rules";
   useEffect(() => {
     setPage(1);
@@ -554,42 +562,19 @@ function InboxPage() {
   const parsedQuery = useMemo(() => parseSearchQuery(query.trim()), [query]);
   const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
-  // Entry pre-sync: before the inbox list is fetched for an account, run a
-  // bounded Gmail catch-up (history pull + queue drain) so the very first
-  // render already reflects the latest processed state — instead of loading a
-  // stale list and visibly shuffling rows afterward. Runs once per account per
-  // session (staleTime: Infinity, no refetch-on-focus); a hard client timeout
-  // guarantees a slow Gmail round-trip never blocks the inbox indefinitely.
-  const ENTRY_SYNC_TIMEOUT_MS = 6_000;
-  const entrySyncQ = useQuery({
-    queryKey: ["inbox-entry-sync", accountId],
-    enabled: !!accountId,
-    staleTime: Infinity,
-    gcTime: Infinity,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    queryFn: async () => {
-      if (!accountId) return { done: false };
-      syncInFlightRef.current = true;
-      try {
-        await Promise.race([
-          backgroundSyncFn({ data: { account_id: accountId } }).catch(() => {
-            // best-effort; the DB + realtime + cron lanes are the backstop.
-          }),
-          new Promise((resolve) => setTimeout(resolve, ENTRY_SYNC_TIMEOUT_MS)),
-        ]);
-      } finally {
-        syncInFlightRef.current = false;
-      }
-      return { done: true };
-    },
-  });
-  // The list waits for the pre-sync to settle (or time out) for the active
-  // account; after that it stays ready and folder/page switches are instant.
-  const entryReady = !accountId || entrySyncQ.isSuccess;
-
+  // No entry pre-sync gate. The inbox renders immediately from the local DB
+  // (the source of truth, kept current by the webhook + poll crons), and the
+  // Gmail catch-up runs silently in the background on mount (see the
+  // background-sync effect below). Anything it discovers flows in via realtime
+  // + a change-gated invalidate, so first paint never waits on a Gmail
+  // round-trip and the list no longer shows a blocking "Catching up…" gate.
   const fetchInboxList = useServerFn(getInboxList);
+
+  // Key for the metadata-only localStorage cache, mirroring the non-search
+  // query-key segments below. Used as a 0ms placeholder on a cold reload so the
+  // inbox *structure* paints instantly while content hydrates from the DB read.
+  const metaKey =
+    accountId && !isSearching ? metaKeyFor(accountId, selectedFolder, page, cursor) : null;
   const emailsQ = useQuery<Email[]>({
     queryKey: [
       "emails",
@@ -597,7 +582,7 @@ function InboxPage() {
       selectedFolder,
       isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
     ],
-    enabled: !!accountId && entryReady && (!isSearching || foldersQ.isSuccess),
+    enabled: !!accountId && (!isSearching || foldersQ.isSuccess),
     queryFn: async () => {
       const isNoRules = selectedFolder === "no_rules";
       const isAllMail = selectedFolder === "all_mail";
@@ -662,12 +647,22 @@ function InboxPage() {
           limit: PAGE_SIZE + 1,
         },
       });
-      return (r.rows ?? []) as unknown as Email[];
+      const rows = (r.rows ?? []) as unknown as Email[];
+      // Persist non-content metadata for a 0ms structural paint on the next
+      // cold reload of this exact view (no decrypted content is written —
+      // saveInboxMeta projects to a fixed allowlist).
+      if (metaKey) saveInboxMeta(metaKey, rows as unknown as Record<string, unknown>[]);
+      return rows;
     },
     // Realtime keeps this list live (inserts/updates/deletes are patched into
     // the cache directly), so we don't poll on an interval — that just re-ran
     // the decrypt round-trip every 15s. Refresh on focus + manual pull only.
     refetchOnWindowFocus: true,
+    // Keep the previous list painted across folder/page switches (no empty
+    // flash); on a cold mount with nothing in memory, fall back to the
+    // metadata-only localStorage cache so the structure paints at 0ms.
+    placeholderData: (prev: Email[] | undefined) =>
+      prev ?? (metaKey ? (loadInboxMeta(metaKey) as unknown as Email[] | undefined) : undefined),
   });
 
   // Background self-heal: ask Gmail which currently-inbox messages have
@@ -741,10 +736,11 @@ function InboxPage() {
   }, [syncReadStateFn]);
 
   // Keep an open inbox current without a manual refresh or page reload. A
-  // lightweight background sync (history pull + bounded queue drain) runs on a
-  // steady interval and once on tab refocus. Silent — no gate, no spinner —
-  // new mail flows in via realtime + a quiet invalidate. Paused while hidden;
-  // skipped while any other sync is in flight.
+  // lightweight background sync (history pull + bounded queue drain) runs once
+  // immediately on mount, then on a steady interval and on tab refocus. Silent
+  // — no gate, just the header "Syncing…" pulse — new mail flows in via
+  // realtime + a change-gated invalidate. Paused while hidden; skipped while
+  // any other sync is in flight.
   useEffect(() => {
     if (!accountId) return;
     let cancelled = false;
@@ -753,9 +749,18 @@ function InboxPage() {
       if (document.visibilityState !== "visible") return;
       if (syncInFlightRef.current) return;
       syncInFlightRef.current = true;
+      setBgSyncing(true);
       try {
-        await backgroundSyncFn({ data: { account_id: accountId } });
-        if (!cancelled) {
+        const r = (await backgroundSyncFn({ data: { account_id: accountId } })) as {
+          synced?: number;
+          catchup?: { inserted?: number };
+        };
+        // Only refetch when the sync actually pulled new mail — otherwise the
+        // list would needlessly re-run the decrypt round-trip on every tick.
+        // (In-Gmail label/archive changes aren't in this count; they arrive via
+        // realtime UPDATE/DELETE and the 5-min reconcile backstop.)
+        const changed = (r?.synced ?? 0) > 0 || (r?.catchup?.inserted ?? 0) > 0;
+        if (!cancelled && changed) {
           qc.invalidateQueries({ queryKey: ["emails"] });
           qc.invalidateQueries({ queryKey: ["folder-counts"] });
         }
@@ -763,6 +768,7 @@ function InboxPage() {
         // best-effort; realtime + the 5-min reconcile are the backstop.
       } finally {
         syncInFlightRef.current = false;
+        if (!cancelled) setBgSyncing(false);
       }
     };
     const handle = setInterval(tick, BACKGROUND_SYNC_INTERVAL_MS);
@@ -770,6 +776,9 @@ function InboxPage() {
       if (document.visibilityState === "visible") void tick();
     };
     document.addEventListener("visibilitychange", onVisible);
+    // Immediate first catch-up on mount — silent and non-blocking; the list has
+    // already painted from the local DB (and the metadata cache before that).
+    void tick();
     return () => {
       cancelled = true;
       clearInterval(handle);
@@ -1146,11 +1155,11 @@ function InboxPage() {
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
-  // Block the whole list only on a true cold start: the entry pre-sync is still
-  // running and there is nothing cached to show yet. Once a list exists, it
-  // stays visible and the subtle header pulse signals any in-flight sync.
-  const entrySyncPending = !!accountId && !entrySyncQ.isSuccess;
-  const showColdGate = entrySyncPending && rawEmails.length === 0;
+  // The only blocking state is a genuine cold DB read with nothing to paint yet
+  // (no in-memory rows and no metadata-cache placeholder). It shows a brief
+  // skeleton and never waits on Gmail. An in-flight background sync is signalled
+  // only by the subtle header pulse.
+  const coldLoading = emailsQ.isLoading && rawEmails.length === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
@@ -1162,9 +1171,9 @@ function InboxPage() {
           <div className="flex items-baseline gap-2 min-w-0">
             <h2 className="truncate font-display text-xl">{headerLabel}</h2>
             <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
-            {(syncMut.isPending || showColdGate) && (
+            {(syncMut.isPending || bgSyncing) && (
               <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground animate-pulse">
-                Catching up…
+                Syncing…
               </span>
             )}
           </div>
@@ -1328,16 +1337,21 @@ function InboxPage() {
             ]);
           }}
         >
-          {showColdGate && (
-            <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              Catching up…
+          {coldLoading && (
+            <div className="divide-y divide-border" aria-hidden>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="space-y-2 px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="h-3.5 w-32 animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-10 animate-pulse rounded bg-muted" />
+                  </div>
+                  <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
+                  <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                </div>
+              ))}
             </div>
           )}
-          {!showColdGate && emailsQ.isLoading && rawEmails.length === 0 && (
-            <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-          )}
-          {!showColdGate && !emailsQ.isLoading && filtered.length === 0 && (
+          {!emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
               <img
                 src={cobwebInbox}
@@ -1395,312 +1409,320 @@ function InboxPage() {
             </div>
           )}
 
-          {!showColdGate &&
-            filtered.map((e) => {
-              const domain = e.from_addr?.includes("@")
-                ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
-                : null;
-              const folderList = foldersQ.data ?? [];
-              const currentFolderId = e.folder_id;
-              const showFolderPill =
-                (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
-              const rowFolder =
-                showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
-              const isChecked = selectedIds.has(e.id);
-              const toggleCheck = () => {
-                setSelectedIds((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(e.id)) next.delete(e.id);
-                  else next.add(e.id);
-                  return next;
-                });
-              };
+          {filtered.map((e) => {
+            const domain = e.from_addr?.includes("@")
+              ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
+              : null;
+            const folderList = foldersQ.data ?? [];
+            const currentFolderId = e.folder_id;
+            const showFolderPill =
+              (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
+            const rowFolder =
+              showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
+            const isChecked = selectedIds.has(e.id);
+            const toggleCheck = () => {
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(e.id)) next.delete(e.id);
+                else next.add(e.id);
+                return next;
+              });
+            };
 
-              const RowTag = isNoRules ? "div" : "button";
-              const rowInner = (
-                <ContextMenu>
-                  <ContextMenuTrigger asChild>
-                    <RowTag
-                      role={isNoRules ? "button" : undefined}
-                      tabIndex={isNoRules ? 0 : undefined}
-                      onClick={() => {
-                        if (isNoRules) {
-                          toggleCheck();
-                          return;
-                        }
-                        setSelectedId(e.id);
-                      }}
-                      className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
-                    >
-                      {isNoRules && (
-                        <div
-                          className="absolute left-3 top-1/2 -translate-y-1/2"
-                          onClick={(ev) => ev.stopPropagation()}
-                        >
-                          <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
-                        </div>
-                      )}
-                      {!e.is_read && !isNoRules && (
-                        <span
-                          className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary"
-                          aria-hidden
-                        />
-                      )}
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span
-                          className={`truncate text-sm text-foreground ${e.is_read ? "font-medium" : "font-semibold"}`}
-                        >
-                          {decodeEntities(e.from_name) || e.from_addr || "Unknown"}
-                        </span>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
-                          {e.received_at
-                            ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false })
-                            : ""}
-                        </span>
+            const RowTag = isNoRules ? "div" : "button";
+            const rowInner = (
+              <ContextMenu>
+                <ContextMenuTrigger asChild>
+                  <RowTag
+                    role={isNoRules ? "button" : undefined}
+                    tabIndex={isNoRules ? 0 : undefined}
+                    onClick={() => {
+                      if (isNoRules) {
+                        toggleCheck();
+                        return;
+                      }
+                      setSelectedId(e.id);
+                    }}
+                    className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
+                  >
+                    {isNoRules && (
+                      <div
+                        className="absolute left-3 top-1/2 -translate-y-1/2"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <div
-                          className={`min-w-0 flex-1 truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}
-                        >
-                          {decodeEntities(e.subject) || "(no subject)"}
-                        </div>
-                        {rowFolder && (
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                            <span
-                              className="h-1.5 w-1.5 rounded-full"
-                              style={{ background: rowFolder.color }}
-                              aria-hidden
-                            />
-                            <span className="max-w-[80px] truncate">{rowFolder.name}</span>
-                          </span>
-                        )}
-                      </div>
-                      {e.ai_summary ? (
-                        <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
-                          <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
-                          <span className="line-clamp-1">{decodeEntities(e.ai_summary)}</span>
-                        </div>
-                      ) : (
-                        <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                          {decodeEntities(e.snippet)}
-                        </div>
-                      )}
-                    </RowTag>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent className="w-64">
-                    {(e.is_archived || e.folder_id || !(e.raw_labels ?? []).includes("INBOX")) && (
-                      <>
-                        <ContextMenuItem
-                          onSelect={async () => {
-                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                              prev?.map((x) =>
-                                x.id === e.id
-                                  ? {
-                                      ...x,
-                                      folder_id: null,
-                                      is_archived: false,
-                                      raw_labels: withInbox(x.raw_labels),
-                                      classified_by: "manual_inbox",
-                                    }
-                                  : x,
-                              ),
-                            );
-                            try {
-                              await moveInboxFn({ data: { email_id: e.id } });
-                              toast.success("Moved to inbox");
-                              qc.invalidateQueries({ queryKey: ["emails"] });
-                            } catch (err) {
-                              qc.invalidateQueries({ queryKey: ["emails"] });
-                              toast.error(errMsg(err));
-                            }
-                          }}
-                        >
-                          <Inbox className="mr-2 h-4 w-4" />
-                          Move to Inbox
-                        </ContextMenuItem>
-                        <ContextMenuSeparator />
-                      </>
                     )}
-
-                    <ContextMenuSub>
-                      <ContextMenuSubTrigger>
-                        <FolderInput className="mr-2 h-4 w-4" />
-                        Move to folder
-                      </ContextMenuSubTrigger>
-                      <ContextMenuSubContent className="max-h-72 overflow-y-auto">
-                        {currentFolderId && (
-                          <>
-                            <ContextMenuItem
-                              onSelect={async () => {
-                                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                                  prev?.map((x) =>
-                                    x.id === e.id
-                                      ? {
-                                          ...x,
-                                          folder_id: null,
-                                          is_archived: false,
-                                          raw_labels: withInbox(x.raw_labels),
-                                          classified_by: "manual_inbox",
-                                        }
-                                      : x,
-                                  ),
-                                );
-                                try {
-                                  await moveInboxFn({ data: { email_id: e.id } });
-                                  toast.success("Moved to inbox");
-                                  qc.invalidateQueries({ queryKey: ["emails"] });
-                                } catch (err) {
-                                  qc.invalidateQueries({ queryKey: ["emails"] });
-                                  toast.error(errMsg(err));
-                                }
-                              }}
-                            >
-                              <Inbox className="mr-2 h-4 w-4" />
-                              Inbox (no folder)
-                            </ContextMenuItem>
-                            <ContextMenuSeparator />
-                          </>
+                    {!e.is_read && !isNoRules && (
+                      <span
+                        className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary"
+                        aria-hidden
+                      />
+                    )}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span
+                        className={`truncate text-sm text-foreground ${e.is_read ? "font-medium" : "font-semibold"}`}
+                      >
+                        {e.__placeholder ? (
+                          <span className="inline-block h-3.5 w-32 animate-pulse rounded bg-muted align-middle" />
+                        ) : (
+                          decodeEntities(e.from_name) || e.from_addr || "Unknown"
                         )}
-                        {folderList.length === 0 && (
-                          <ContextMenuItem disabled>No folders yet</ContextMenuItem>
+                      </span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {e.received_at
+                          ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false })
+                          : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className={`min-w-0 flex-1 truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}
+                      >
+                        {e.__placeholder ? (
+                          <span className="inline-block h-3.5 w-3/4 max-w-full animate-pulse rounded bg-muted align-middle" />
+                        ) : (
+                          decodeEntities(e.subject) || "(no subject)"
                         )}
-                        {folderList
-                          .filter((f) => f.id !== currentFolderId)
-                          .map((f) => (
-                            <ContextMenuItem
-                              key={f.id}
-                              onSelect={async () => {
-                                // Optimistically remove from any view that wouldn't show an archived row in this folder.
-                                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                                  prev?.flatMap((x) => {
-                                    if (x.id !== e.id) return [x];
-                                    // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
-                                    return [
-                                      {
-                                        ...x,
-                                        folder_id: f.id,
-                                        is_archived: true,
-                                        raw_labels: withoutInbox(x.raw_labels),
-                                        classified_by: "manual_move",
-                                      },
-                                    ];
-                                  }),
-                                );
-                                qc.setQueriesData<Email[]>(
-                                  { queryKey: ["emails", "all"] },
-                                  (prev) => prev?.filter((x) => x.id !== e.id),
-                                );
-                                try {
-                                  await moveFolderFn({
-                                    data: { email_id: e.id, to_folder_id: f.id },
-                                  });
-                                  toast.success(`Moved to ${f.name}`);
-                                  // Defer refetch so the server-side Gmail label sync settles
-                                  // before a stale reconcile flips is_archived back to false.
-                                  setTimeout(
-                                    () => qc.invalidateQueries({ queryKey: ["emails"] }),
-                                    1500,
-                                  );
-                                } catch (err) {
-                                  qc.invalidateQueries({ queryKey: ["emails"] });
-                                  toast.error(errMsg(err));
-                                }
-                              }}
-                            >
-                              <span
-                                className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
-                                style={{ background: f.color }}
-                              />
-                              <span className="truncate">{f.name}</span>
-                            </ContextMenuItem>
-                          ))}
-                      </ContextMenuSubContent>
-                    </ContextMenuSub>
-
-                    {(e.from_addr || domain || e.subject) && (
-                      <>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem
-                          onSelect={() =>
-                            setFilterPrompt({
-                              fromAddr: e.from_addr,
-                              subject: e.subject,
-                              currentFolderId: e.folder_id ?? null,
-                            })
+                      </div>
+                      {rowFolder && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <span
+                            className="h-1.5 w-1.5 rounded-full"
+                            style={{ background: rowFolder.color }}
+                            aria-hidden
+                          />
+                          <span className="max-w-[80px] truncate">{rowFolder.name}</span>
+                        </span>
+                      )}
+                    </div>
+                    {e.__placeholder ? (
+                      <div className="mt-1.5 h-3 w-1/2 animate-pulse rounded bg-muted" />
+                    ) : e.ai_summary ? (
+                      <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
+                        <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
+                        <span className="line-clamp-1">{decodeEntities(e.ai_summary)}</span>
+                      </div>
+                    ) : (
+                      <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                        {decodeEntities(e.snippet)}
+                      </div>
+                    )}
+                  </RowTag>
+                </ContextMenuTrigger>
+                <ContextMenuContent className="w-64">
+                  {(e.is_archived || e.folder_id || !(e.raw_labels ?? []).includes("INBOX")) && (
+                    <>
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                            prev?.map((x) =>
+                              x.id === e.id
+                                ? {
+                                    ...x,
+                                    folder_id: null,
+                                    is_archived: false,
+                                    raw_labels: withInbox(x.raw_labels),
+                                    classified_by: "manual_inbox",
+                                  }
+                                : x,
+                            ),
+                          );
+                          try {
+                            await moveInboxFn({ data: { email_id: e.id } });
+                            toast.success("Moved to inbox");
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                          } catch (err) {
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                            toast.error(errMsg(err));
                           }
-                        >
-                          <FilterIcon className="mr-2 h-4 w-4" />
-                          Filter messages like this…
-                        </ContextMenuItem>
-                      </>
-                    )}
+                        }}
+                      >
+                        <Inbox className="mr-2 h-4 w-4" />
+                        Move to Inbox
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                    </>
+                  )}
 
-                    <ContextMenuSeparator />
-                    <ContextMenuItem
-                      onSelect={async () => {
-                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                          prev?.map((x) =>
-                            x.id === e.id
-                              ? { ...x, is_archived: true, raw_labels: withoutInbox(x.raw_labels) }
-                              : x,
-                          ),
-                        );
-                        try {
-                          await archFnList({ data: { id: e.id } });
-                          toast.success("Archived");
-                        } catch (err) {
-                          qc.invalidateQueries({ queryKey: ["emails"] });
-                          toast.error(errMsg(err));
-                        }
-                      }}
-                    >
-                      <Archive className="mr-2 h-4 w-4" />
-                      Archive
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onSelect={async () => {
-                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                          prev?.filter((x) => x.id !== e.id),
-                        );
-                        try {
-                          await trashFnList({ data: { id: e.id } });
-                          toast.success("Trashed");
-                        } catch (err) {
-                          qc.invalidateQueries({ queryKey: ["emails"] });
-                          toast.error(errMsg(err));
-                        }
-                      }}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Trash
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-              );
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger>
+                      <FolderInput className="mr-2 h-4 w-4" />
+                      Move to folder
+                    </ContextMenuSubTrigger>
+                    <ContextMenuSubContent className="max-h-72 overflow-y-auto">
+                      {currentFolderId && (
+                        <>
+                          <ContextMenuItem
+                            onSelect={async () => {
+                              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                                prev?.map((x) =>
+                                  x.id === e.id
+                                    ? {
+                                        ...x,
+                                        folder_id: null,
+                                        is_archived: false,
+                                        raw_labels: withInbox(x.raw_labels),
+                                        classified_by: "manual_inbox",
+                                      }
+                                    : x,
+                                ),
+                              );
+                              try {
+                                await moveInboxFn({ data: { email_id: e.id } });
+                                toast.success("Moved to inbox");
+                                qc.invalidateQueries({ queryKey: ["emails"] });
+                              } catch (err) {
+                                qc.invalidateQueries({ queryKey: ["emails"] });
+                                toast.error(errMsg(err));
+                              }
+                            }}
+                          >
+                            <Inbox className="mr-2 h-4 w-4" />
+                            Inbox (no folder)
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                        </>
+                      )}
+                      {folderList.length === 0 && (
+                        <ContextMenuItem disabled>No folders yet</ContextMenuItem>
+                      )}
+                      {folderList
+                        .filter((f) => f.id !== currentFolderId)
+                        .map((f) => (
+                          <ContextMenuItem
+                            key={f.id}
+                            onSelect={async () => {
+                              // Optimistically remove from any view that wouldn't show an archived row in this folder.
+                              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                                prev?.flatMap((x) => {
+                                  if (x.id !== e.id) return [x];
+                                  // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
+                                  return [
+                                    {
+                                      ...x,
+                                      folder_id: f.id,
+                                      is_archived: true,
+                                      raw_labels: withoutInbox(x.raw_labels),
+                                      classified_by: "manual_move",
+                                    },
+                                  ];
+                                }),
+                              );
+                              qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
+                                prev?.filter((x) => x.id !== e.id),
+                              );
+                              try {
+                                await moveFolderFn({
+                                  data: { email_id: e.id, to_folder_id: f.id },
+                                });
+                                toast.success(`Moved to ${f.name}`);
+                                // Defer refetch so the server-side Gmail label sync settles
+                                // before a stale reconcile flips is_archived back to false.
+                                setTimeout(
+                                  () => qc.invalidateQueries({ queryKey: ["emails"] }),
+                                  1500,
+                                );
+                              } catch (err) {
+                                qc.invalidateQueries({ queryKey: ["emails"] });
+                                toast.error(errMsg(err));
+                              }
+                            }}
+                          >
+                            <span
+                              className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                              style={{ background: f.color }}
+                            />
+                            <span className="truncate">{f.name}</span>
+                          </ContextMenuItem>
+                        ))}
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
 
-              return isNoRules ? (
-                <div key={e.id}>{rowInner}</div>
-              ) : (
-                <SwipeRow
-                  key={e.id}
-                  onArchive={async () => {
-                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                      prev?.filter((x) => x.id !== e.id),
-                    );
-                    try {
-                      await archFnList({ data: { id: e.id } });
-                      toast.success("Archived");
-                    } catch (err) {
-                      qc.invalidateQueries({ queryKey: ["emails"] });
-                      toast.error(errMsg(err));
-                    }
-                  }}
-                >
-                  {rowInner}
-                </SwipeRow>
-              );
-            })}
+                  {(e.from_addr || domain || e.subject) && (
+                    <>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onSelect={() =>
+                          setFilterPrompt({
+                            fromAddr: e.from_addr,
+                            subject: e.subject,
+                            currentFolderId: e.folder_id ?? null,
+                          })
+                        }
+                      >
+                        <FilterIcon className="mr-2 h-4 w-4" />
+                        Filter messages like this…
+                      </ContextMenuItem>
+                    </>
+                  )}
+
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    onSelect={async () => {
+                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                        prev?.map((x) =>
+                          x.id === e.id
+                            ? { ...x, is_archived: true, raw_labels: withoutInbox(x.raw_labels) }
+                            : x,
+                        ),
+                      );
+                      try {
+                        await archFnList({ data: { id: e.id } });
+                        toast.success("Archived");
+                      } catch (err) {
+                        qc.invalidateQueries({ queryKey: ["emails"] });
+                        toast.error(errMsg(err));
+                      }
+                    }}
+                  >
+                    <Archive className="mr-2 h-4 w-4" />
+                    Archive
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={async () => {
+                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                        prev?.filter((x) => x.id !== e.id),
+                      );
+                      try {
+                        await trashFnList({ data: { id: e.id } });
+                        toast.success("Trashed");
+                      } catch (err) {
+                        qc.invalidateQueries({ queryKey: ["emails"] });
+                        toast.error(errMsg(err));
+                      }
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Trash
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            );
+
+            return isNoRules ? (
+              <div key={e.id}>{rowInner}</div>
+            ) : (
+              <SwipeRow
+                key={e.id}
+                onArchive={async () => {
+                  qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                    prev?.filter((x) => x.id !== e.id),
+                  );
+                  try {
+                    await archFnList({ data: { id: e.id } });
+                    toast.success("Archived");
+                  } catch (err) {
+                    qc.invalidateQueries({ queryKey: ["emails"] });
+                    toast.error(errMsg(err));
+                  }
+                }}
+              >
+                {rowInner}
+              </SwipeRow>
+            );
+          })}
         </PullToRefresh>
         {!isSearching && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">

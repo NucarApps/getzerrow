@@ -10,6 +10,7 @@ import {
 import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { clearInboxMeta } from "@/lib/inbox-meta-cache";
 
 import appCss from "../styles.css?url";
 
@@ -159,8 +160,10 @@ function AuthSync() {
     } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
         // Drop all cached queries so mounted observers don't refetch
-        // protected server fns without a bearer token.
+        // protected server fns without a bearer token, and purge the
+        // persisted inbox metadata so nothing survives sign-out on disk.
         qc.clear();
+        clearInboxMeta();
         router.invalidate();
         return;
       }
