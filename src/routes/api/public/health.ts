@@ -24,7 +24,10 @@ import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.s
 
 // Every SQL object the deployed code expects to exist. Update this
 // list when a new migration introduces a new dependency.
-const EXPECTED_VIEWS = ["emails_decrypted"];
+//
+// No views: the emails_decrypted view was dropped (2026-05-28) when reads
+// moved to the get_emails_decrypted RPC under the encrypt-on-write design.
+const EXPECTED_VIEWS: string[] = [];
 
 const EXPECTED_FUNCTIONS = [
   // Core sync
@@ -51,15 +54,15 @@ const EXPECTED_FUNCTIONS = [
 
 const EXPECTED_COLUMNS: Array<{ table: string; column: string }> = [
   // OAuth encryption
-  { table: "gmail_accounts", column: "access_token_encrypted" },
-  { table: "gmail_accounts", column: "refresh_token_encrypted" },
+  { table: "gmail_accounts", column: "access_token_enc" },
+  { table: "gmail_accounts", column: "refresh_token_enc" },
   // Silence detection
   { table: "gmail_accounts", column: "last_push_at" },
   { table: "gmail_accounts", column: "last_history_sync_at" },
   { table: "gmail_accounts", column: "reconcile_cursor" },
   // Body encryption
-  { table: "emails", column: "body_text_encrypted" },
-  { table: "emails", column: "body_html_encrypted" },
+  { table: "emails", column: "body_text_enc" },
+  { table: "emails", column: "body_html_enc" },
   // Push latency telemetry
   { table: "emails", column: "published_at_ms" },
   { table: "message_jobs", column: "published_at_ms" },
