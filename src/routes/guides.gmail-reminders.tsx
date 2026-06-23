@@ -126,30 +126,29 @@ function GmailRemindersGuide() {
         <div className="mt-12 space-y-10 text-base leading-relaxed" style={{ color: INK_SOFT }}>
           <p>
             Email only works when the right messages come back at the right time. Gmail gives you a
-            few native tools for this, but they rely on you remembering to use them. This guide walks
-            through the built-in options, then shows how to automate reminders and follow-ups so
-            nothing slips through.
+            few native tools for this, but they rely on you remembering to use them. This guide
+            walks through the built-in options, then shows how to automate reminders and follow-ups
+            so nothing slips through.
           </p>
 
           <Section title="1. Turn on Gmail nudges">
             Nudges resurface emails Gmail thinks you forgot to reply to, or that you sent and never
             heard back on. Open <em>Settings → See all settings → General → Nudges</em> and enable
-            both options. It is the lowest-effort reminder Gmail offers, but it is a suggestion engine
-            — it will not catch every thread that matters to you.
+            both options. It is the lowest-effort reminder Gmail offers, but it is a suggestion
+            engine — it will not catch every thread that matters to you.
           </Section>
 
           <Section title="2. Snooze messages to a future time">
-            Snooze removes an email from your inbox and brings it back at a time you choose. Hover any
-            message and click the clock icon, then pick a preset or a custom time. Use it as a manual
-            reminder: snooze a waiting-on-reply thread to tomorrow morning and it lands back on top.
-            The catch is that you have to snooze every message by hand.
+            Snooze removes an email from your inbox and brings it back at a time you choose. Hover
+            any message and click the clock icon, then pick a preset or a custom time. Use it as a
+            manual reminder: snooze a waiting-on-reply thread to tomorrow morning and it lands back
+            on top. The catch is that you have to snooze every message by hand.
           </Section>
 
           <Section title="3. Star and label waiting-for-reply emails">
-            A common manual system is to star sent emails that need a reply and create a
-            "Waiting" label. It works, but it is entirely manual upkeep — you have to remember to
-            star, label, and check the label regularly. The moment your inbox gets busy, the system
-            breaks down.
+            A common manual system is to star sent emails that need a reply and create a "Waiting"
+            label. It works, but it is entirely manual upkeep — you have to remember to star, label,
+            and check the label regularly. The moment your inbox gets busy, the system breaks down.
           </Section>
 
           <Section title="4. Automate follow-ups with Zerrow">
@@ -157,11 +156,12 @@ function GmailRemindersGuide() {
             AI, and files it into the folders you actually use. To turn that into a reminder system:
             <br />
             <br />
-            Create an <strong>Awaiting reply</strong> folder, add a simple rule (for example, replies
-            to threads you started, or emails that mention a deadline), and let AI classification do
-            the routing. Instead of remembering to star and snooze, you open one folder and see
-            exactly what needs a human. Pair it with Gmail's snooze for time-based nudges and you get
-            both deadline reminders and follow-up tracking without the manual overhead.
+            Create an <strong>Awaiting reply</strong> folder, add a simple rule (for example,
+            replies to threads you started, or emails that mention a deadline), and let AI
+            classification do the routing. Instead of remembering to star and snooze, you open one
+            folder and see exactly what needs a human. Pair it with Gmail's snooze for time-based
+            nudges and you get both deadline reminders and follow-up tracking without the manual
+            overhead.
           </Section>
 
           <Section title="When to automate vs. do it manually">

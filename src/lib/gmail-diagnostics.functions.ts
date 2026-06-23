@@ -24,21 +24,28 @@ import { getEmailAccount } from "./gmail-helpers.server";
 export const listFolderHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; limit?: number; offset?: number }) =>
-    z.object({
-      folder_id: z.string().uuid(),
-      limit: z.number().min(1).max(200).optional(),
-      offset: z.number().min(0).max(10000).optional(),
-    }).parse(d)
+    z
+      .object({
+        folder_id: z.string().uuid(),
+        limit: z.number().min(1).max(200).optional(),
+        offset: z.number().min(0).max(10000).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
-      .from("folders").select("id, user_id").eq("id", data.folder_id).single();
+      .from("folders")
+      .select("id, user_id")
+      .eq("id", data.folder_id)
+      .single();
     if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
     const limit = data.limit ?? 25;
     const offset = data.offset ?? 0;
     const { data: rows } = await supabaseAdmin
       .from("emails")
-      .select("id, subject, from_addr, from_name, received_at, classified_by, ai_confidence, ai_summary, snippet")
+      .select(
+        "id, subject, from_addr, from_name, received_at, classified_by, ai_confidence, ai_summary, snippet",
+      )
       .eq("user_id", context.userId)
       .eq("folder_id", data.folder_id)
       .order("received_at", { ascending: false })
@@ -51,11 +58,23 @@ export const listFolderHistory = createServerFn({ method: "POST" })
 export const listPubsubEvents = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({
-      event_type: z.enum(["push", "push_empty", "poll", "watch_renew", "watch_rearm_auto", "gmail_api_error", "webhook_test"]).optional(),
-      only_errors: z.boolean().optional(),
-      limit: z.number().min(1).max(500).optional(),
-    }).parse(input ?? {})
+    z
+      .object({
+        event_type: z
+          .enum([
+            "push",
+            "push_empty",
+            "poll",
+            "watch_renew",
+            "watch_rearm_auto",
+            "gmail_api_error",
+            "webhook_test",
+          ])
+          .optional(),
+        only_errors: z.boolean().optional(),
+        limit: z.number().min(1).max(500).optional(),
+      })
+      .parse(input ?? {}),
   )
   .handler(async ({ data, context }) => {
     const limit = data.limit ?? 100;
@@ -74,9 +93,18 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       return {
         events: [],
         stats: {
-          push24: 0, poll24: 0, renew24: 0, accounts24: 0, synced24: 0,
-          errors24: 0, gmailErrors24: 0, pushEmpty24: 0, pushUnmatched24: 0,
-          lastReceivedAt: null, lastPollAt: null, lastPushAt: null,
+          push24: 0,
+          poll24: 0,
+          renew24: 0,
+          accounts24: 0,
+          synced24: 0,
+          errors24: 0,
+          gmailErrors24: 0,
+          pushEmpty24: 0,
+          pushUnmatched24: 0,
+          lastReceivedAt: null,
+          lastPollAt: null,
+          lastPushAt: null,
         },
         diagnostics: {
           lastPush: null,
@@ -91,7 +119,9 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
 
     let q = supabaseAdmin
       .from("pubsub_events")
-      .select("id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details")
+      .select(
+        "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details",
+      )
       .in("email_address", myEmails)
       .order("received_at", { ascending: false })
       .limit(limit);
@@ -108,7 +138,15 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .gte("received_at", since)
       .limit(5000);
 
-    let push24 = 0, poll24 = 0, renew24 = 0, accounts24 = 0, synced24 = 0, errors24 = 0, gmailErrors24 = 0, pushEmpty24 = 0, pushUnmatched24 = 0;
+    let push24 = 0,
+      poll24 = 0,
+      renew24 = 0,
+      accounts24 = 0,
+      synced24 = 0,
+      errors24 = 0,
+      gmailErrors24 = 0,
+      pushEmpty24 = 0,
+      pushUnmatched24 = 0;
     let lastPollAt: string | null = null;
     let lastPushAt: string | null = null;
     for (const r of agg ?? []) {
@@ -133,7 +171,8 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
 
     // Synthetic webhook_test rows are excluded — they're app-side tests,
     // not proof of GCP delivery.
-    const cols = "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details";
+    const cols =
+      "id, received_at, event_type, email_address, history_id, accounts_matched, synced_count, error, message_id, publish_time, subscription, payload, details";
     const { data: anyPushRows } = await supabaseAdmin
       .from("pubsub_events")
       .select(cols)
@@ -141,7 +180,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .in("event_type", ["push", "push_empty"])
       .order("received_at", { ascending: false })
       .limit(1);
-    const lastPush: any = anyPushRows?.[0] ?? null;
+    const lastPush = anyPushRows?.[0] ?? null;
 
     const { data: lastTestRows } = await supabaseAdmin
       .from("pubsub_events")
@@ -192,8 +231,15 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
     return {
       events: rows ?? [],
       stats: {
-        push24, poll24, renew24, accounts24, synced24, errors24, gmailErrors24,
-        pushEmpty24, pushUnmatched24,
+        push24,
+        poll24,
+        renew24,
+        accounts24,
+        synced24,
+        errors24,
+        gmailErrors24,
+        pushEmpty24,
+        pushUnmatched24,
         lastReceivedAt: rows?.[0]?.received_at ?? null,
         lastPollAt,
         lastPushAt,
@@ -228,11 +274,14 @@ export const resyncMessage = createServerFn({ method: "POST" })
     }
     const inInbox = labels.includes("INBOX");
     const unread = labels.includes("UNREAD");
-    await supabaseAdmin.from("emails").update({
-      raw_labels: labels,
-      is_archived: !inInbox,
-      is_read: !unread,
-    }).eq("id", data.id);
+    await supabaseAdmin
+      .from("emails")
+      .update({
+        raw_labels: labels,
+        is_archived: !inInbox,
+        is_read: !unread,
+      })
+      .eq("id", data.id);
     return { in_inbox: inInbox, unread, labels };
   });
 
@@ -245,7 +294,16 @@ export const resyncMessage = createServerFn({ method: "POST" })
 export const getSyncLatencyStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
-    z.object({ lookback_hours: z.number().int().min(1).max(24 * 7).optional() }).parse(d ?? {}),
+    z
+      .object({
+        lookback_hours: z
+          .number()
+          .int()
+          .min(1)
+          .max(24 * 7)
+          .optional(),
+      })
+      .parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
     type LatencyBucket = {
@@ -278,11 +336,13 @@ export const getSyncLatencyStats = createServerFn({ method: "POST" })
         error: error.message,
       } satisfies LatencyStats & { error: string };
     }
-    return stats ?? {
-      push_to_ack: { count: 0, p50: null, p95: null, p99: null },
-      push_to_visible: { count: 0, p50: null, p95: null, p99: null },
-      since: new Date(Date.now() - (data.lookback_hours ?? 24) * 3600_000).toISOString(),
-    };
+    return (
+      stats ?? {
+        push_to_ack: { count: 0, p50: null, p95: null, p99: null },
+        push_to_visible: { count: 0, p50: null, p95: null, p99: null },
+        since: new Date(Date.now() - (data.lookback_hours ?? 24) * 3600_000).toISOString(),
+      }
+    );
   });
 
 /**
@@ -350,7 +410,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         mode,
         account_email,
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       return {
         url,
         ok: false,
@@ -359,7 +419,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
         mode,
         account_email,
-        error: e?.message ?? String(e),
+        error: (e as Error)?.message ?? String(e),
       };
     }
   });
@@ -368,16 +428,20 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
 export const listMessageJobs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({
-      status: z.enum(["pending", "running", "dlq", "all"]).optional(),
-      limit: z.number().min(1).max(500).optional(),
-    }).parse(input ?? {})
+    z
+      .object({
+        status: z.enum(["pending", "running", "dlq", "all"]).optional(),
+        limit: z.number().min(1).max(500).optional(),
+      })
+      .parse(input ?? {}),
   )
   .handler(async ({ data, context }) => {
     const limit = data.limit ?? 100;
     let q = supabaseAdmin
       .from("message_jobs")
-      .select("id, gmail_account_id, gmail_message_id, attempt, status, next_run_at, last_error, from_addr, subject, created_at, updated_at")
+      .select(
+        "id, gmail_account_id, gmail_message_id, attempt, status, next_run_at, last_error, from_addr, subject, created_at, updated_at",
+      )
       .eq("user_id", context.userId)
       .order("updated_at", { ascending: false })
       .limit(limit);
@@ -417,7 +481,7 @@ export const retryJob = createServerFn({ method: "POST" })
 export const runJobsNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({ limit: z.number().min(1).max(100).optional() }).parse(input ?? {})
+    z.object({ limit: z.number().min(1).max(100).optional() }).parse(input ?? {}),
   )
   .handler(async ({ data }) => {
     return await runMessageJobs(data.limit ?? 25);
@@ -427,10 +491,12 @@ export const runJobsNow = createServerFn({ method: "POST" })
 export const enqueueGmailMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { gmail_account_id: string; gmail_message_id: string }) =>
-    z.object({
-      gmail_account_id: z.string().uuid(),
-      gmail_message_id: z.string().min(1).max(64),
-    }).parse(d)
+    z
+      .object({
+        gmail_account_id: z.string().uuid(),
+        gmail_message_id: z.string().min(1).max(64),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: acc } = await supabaseAdmin

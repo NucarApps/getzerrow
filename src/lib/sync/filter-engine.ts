@@ -190,7 +190,7 @@ export function matchByFilters(
     const hasTree =
       !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
 
-    let passes = false;
+    let passes: boolean;
     let includeHits: Filter[] = [];
     if (hasTree) {
       passes = evalNode(email, tree!);

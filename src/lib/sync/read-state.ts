@@ -108,12 +108,17 @@ export async function syncReadState(
   // 4. Apply batched updates.
   for (const ids of chunk(toMarkRead, UPDATE_CHUNK)) {
     const { error } = await supabaseAdmin.from("emails").update({ is_read: true }).in("id", ids);
-    if (error) logError("read_state.mark_read_failed", { account_id: accountId, count: ids.length }, error);
+    if (error)
+      logError("read_state.mark_read_failed", { account_id: accountId, count: ids.length }, error);
   }
   for (const ids of chunk(toMarkUnread, UPDATE_CHUNK)) {
     const { error } = await supabaseAdmin.from("emails").update({ is_read: false }).in("id", ids);
     if (error)
-      logError("read_state.mark_unread_failed", { account_id: accountId, count: ids.length }, error);
+      logError(
+        "read_state.mark_unread_failed",
+        { account_id: accountId, count: ids.length },
+        error,
+      );
   }
 
   return {

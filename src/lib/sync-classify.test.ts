@@ -408,7 +408,6 @@ describe("classifyParsedEmail — calendar cold-email guard", () => {
   });
 });
 
-
 describe("classifyParsedEmail — skipAi behavior", () => {
   it("returns null folder with classified_by='none' when no match and skipAi=true", async () => {
     const r = await classifyParsedEmail(

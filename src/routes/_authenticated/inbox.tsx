@@ -169,7 +169,9 @@ type Folder = {
 const IN_PROGRESS_CLASSIFICATIONS = new Set(["pending", "pending_ai"]);
 
 function isInProgressEmail(email: Pick<Email, "classified_by">): boolean {
-  return typeof email.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(email.classified_by);
+  return (
+    typeof email.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(email.classified_by)
+  );
 }
 
 function emailBelongsInScope(email: Email, selectedFolder: string, folders: Folder[]): boolean {
@@ -187,10 +189,7 @@ function emailBelongsInScope(email: Email, selectedFolder: string, folders: Fold
     );
   }
   if (selectedFolder === "no_rules") {
-    return (
-      email.folder_id === null &&
-      !labels.some((label) => label.startsWith("Label_"))
-    );
+    return email.folder_id === null && !labels.some((label) => label.startsWith("Label_"));
   }
   return email.folder_id === selectedFolder;
 }
@@ -741,9 +740,6 @@ function InboxPage() {
     };
   }, [syncReadStateFn]);
 
-
-
-
   // Keep an open inbox current without a manual refresh or page reload. A
   // lightweight background sync (history pull + bounded queue drain) runs on a
   // steady interval and once on tab refocus. Silent — no gate, no spinner —
@@ -780,9 +776,6 @@ function InboxPage() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [accountId, backgroundSyncFn, qc]);
-
-
-
 
   // When searching, also ask Gmail for matching messages and ingest any we
   // don't have locally — then refetch so they appear in the results.
@@ -1346,7 +1339,11 @@ function InboxPage() {
           )}
           {!showColdGate && !emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
-              <img src={cobwebInbox} alt="Empty inbox illustration" className="h-32 w-auto opacity-90" />
+              <img
+                src={cobwebInbox}
+                alt="Empty inbox illustration"
+                className="h-32 w-auto opacity-90"
+              />
               {isSearching ? (
                 gmailSearching ? (
                   <p className="text-sm">Checking Gmail for "{query.trim()}"…</p>
@@ -1400,309 +1397,310 @@ function InboxPage() {
 
           {!showColdGate &&
             filtered.map((e) => {
-            const domain = e.from_addr?.includes("@")
-              ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
-              : null;
-            const folderList = foldersQ.data ?? [];
-            const currentFolderId = e.folder_id;
-            const showFolderPill =
-              (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
-            const rowFolder =
-              showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
-            const isChecked = selectedIds.has(e.id);
-            const toggleCheck = () => {
-              setSelectedIds((prev) => {
-                const next = new Set(prev);
-                if (next.has(e.id)) next.delete(e.id);
-                else next.add(e.id);
-                return next;
-              });
-            };
+              const domain = e.from_addr?.includes("@")
+                ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
+                : null;
+              const folderList = foldersQ.data ?? [];
+              const currentFolderId = e.folder_id;
+              const showFolderPill =
+                (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
+              const rowFolder =
+                showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
+              const isChecked = selectedIds.has(e.id);
+              const toggleCheck = () => {
+                setSelectedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(e.id)) next.delete(e.id);
+                  else next.add(e.id);
+                  return next;
+                });
+              };
 
-            const RowTag = isNoRules ? "div" : "button";
-            const rowInner = (
-              <ContextMenu>
-                <ContextMenuTrigger asChild>
-                  <RowTag
-                    role={isNoRules ? "button" : undefined}
-                    tabIndex={isNoRules ? 0 : undefined}
-                    onClick={() => {
-                      if (isNoRules) {
-                        toggleCheck();
-                        return;
-                      }
-                      setSelectedId(e.id);
-                    }}
-                    className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
-                  >
-                    {isNoRules && (
-                      <div
-                        className="absolute left-3 top-1/2 -translate-y-1/2"
-                        onClick={(ev) => ev.stopPropagation()}
-                      >
-                        <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
-                      </div>
-                    )}
-                    {!e.is_read && !isNoRules && (
-                      <span
-                        className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary"
-                        aria-hidden
-                      />
-                    )}
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span
-                        className={`truncate text-sm text-foreground ${e.is_read ? "font-medium" : "font-semibold"}`}
-                      >
-                        {decodeEntities(e.from_name) || e.from_addr || "Unknown"}
-                      </span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {e.received_at
-                          ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false })
-                          : ""}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        className={`min-w-0 flex-1 truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}
-                      >
-                        {decodeEntities(e.subject) || "(no subject)"}
-                      </div>
-                      {rowFolder && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                          <span
-                            className="h-1.5 w-1.5 rounded-full"
-                            style={{ background: rowFolder.color }}
-                            aria-hidden
-                          />
-                          <span className="max-w-[80px] truncate">{rowFolder.name}</span>
-                        </span>
-                      )}
-                    </div>
-                    {e.ai_summary ? (
-                      <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
-                        <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
-                        <span className="line-clamp-1">{decodeEntities(e.ai_summary)}</span>
-                      </div>
-                    ) : (
-                      <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                        {decodeEntities(e.snippet)}
-                      </div>
-                    )}
-                  </RowTag>
-                </ContextMenuTrigger>
-                <ContextMenuContent className="w-64">
-                  {(e.is_archived || e.folder_id || !(e.raw_labels ?? []).includes("INBOX")) && (
-                    <>
-                      <ContextMenuItem
-                        onSelect={async () => {
-                          qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                            prev?.map((x) =>
-                              x.id === e.id
-                                ? {
-                                    ...x,
-                                    folder_id: null,
-                                    is_archived: false,
-                                    raw_labels: withInbox(x.raw_labels),
-                                    classified_by: "manual_inbox",
-                                  }
-                                : x,
-                            ),
-                          );
-                          try {
-                            await moveInboxFn({ data: { email_id: e.id } });
-                            toast.success("Moved to inbox");
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                          } catch (err) {
-                            qc.invalidateQueries({ queryKey: ["emails"] });
-                            toast.error(errMsg(err));
-                          }
-                        }}
-                      >
-                        <Inbox className="mr-2 h-4 w-4" />
-                        Move to Inbox
-                      </ContextMenuItem>
-                      <ContextMenuSeparator />
-                    </>
-                  )}
-
-                  <ContextMenuSub>
-                    <ContextMenuSubTrigger>
-                      <FolderInput className="mr-2 h-4 w-4" />
-                      Move to folder
-                    </ContextMenuSubTrigger>
-                    <ContextMenuSubContent className="max-h-72 overflow-y-auto">
-                      {currentFolderId && (
-                        <>
-                          <ContextMenuItem
-                            onSelect={async () => {
-                              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                                prev?.map((x) =>
-                                  x.id === e.id
-                                    ? {
-                                        ...x,
-                                        folder_id: null,
-                                        is_archived: false,
-                                        raw_labels: withInbox(x.raw_labels),
-                                        classified_by: "manual_inbox",
-                                      }
-                                    : x,
-                                ),
-                              );
-                              try {
-                                await moveInboxFn({ data: { email_id: e.id } });
-                                toast.success("Moved to inbox");
-                                qc.invalidateQueries({ queryKey: ["emails"] });
-                              } catch (err) {
-                                qc.invalidateQueries({ queryKey: ["emails"] });
-                                toast.error(errMsg(err));
-                              }
-                            }}
-                          >
-                            <Inbox className="mr-2 h-4 w-4" />
-                            Inbox (no folder)
-                          </ContextMenuItem>
-                          <ContextMenuSeparator />
-                        </>
-                      )}
-                      {folderList.length === 0 && (
-                        <ContextMenuItem disabled>No folders yet</ContextMenuItem>
-                      )}
-                      {folderList
-                        .filter((f) => f.id !== currentFolderId)
-                        .map((f) => (
-                          <ContextMenuItem
-                            key={f.id}
-                            onSelect={async () => {
-                              // Optimistically remove from any view that wouldn't show an archived row in this folder.
-                              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                                prev?.flatMap((x) => {
-                                  if (x.id !== e.id) return [x];
-                                  // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
-                                  return [
-                                    {
-                                      ...x,
-                                      folder_id: f.id,
-                                      is_archived: true,
-                                      raw_labels: withoutInbox(x.raw_labels),
-                                      classified_by: "manual_move",
-                                    },
-                                  ];
-                                }),
-                              );
-                              qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
-                                prev?.filter((x) => x.id !== e.id),
-                              );
-                              try {
-                                await moveFolderFn({
-                                  data: { email_id: e.id, to_folder_id: f.id },
-                                });
-                                toast.success(`Moved to ${f.name}`);
-                                // Defer refetch so the server-side Gmail label sync settles
-                                // before a stale reconcile flips is_archived back to false.
-                                setTimeout(
-                                  () => qc.invalidateQueries({ queryKey: ["emails"] }),
-                                  1500,
-                                );
-                              } catch (err) {
-                                qc.invalidateQueries({ queryKey: ["emails"] });
-                                toast.error(errMsg(err));
-                              }
-                            }}
-                          >
-                            <span
-                              className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
-                              style={{ background: f.color }}
-                            />
-                            <span className="truncate">{f.name}</span>
-                          </ContextMenuItem>
-                        ))}
-                    </ContextMenuSubContent>
-                  </ContextMenuSub>
-
-                  {(e.from_addr || domain || e.subject) && (
-                    <>
-                      <ContextMenuSeparator />
-                      <ContextMenuItem
-                        onSelect={() =>
-                          setFilterPrompt({
-                            fromAddr: e.from_addr,
-                            subject: e.subject,
-                            currentFolderId: e.folder_id ?? null,
-                          })
+              const RowTag = isNoRules ? "div" : "button";
+              const rowInner = (
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>
+                    <RowTag
+                      role={isNoRules ? "button" : undefined}
+                      tabIndex={isNoRules ? 0 : undefined}
+                      onClick={() => {
+                        if (isNoRules) {
+                          toggleCheck();
+                          return;
                         }
-                      >
-                        <FilterIcon className="mr-2 h-4 w-4" />
-                        Filter messages like this…
-                      </ContextMenuItem>
-                    </>
-                  )}
+                        setSelectedId(e.id);
+                      }}
+                      className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
+                    >
+                      {isNoRules && (
+                        <div
+                          className="absolute left-3 top-1/2 -translate-y-1/2"
+                          onClick={(ev) => ev.stopPropagation()}
+                        >
+                          <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
+                        </div>
+                      )}
+                      {!e.is_read && !isNoRules && (
+                        <span
+                          className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary"
+                          aria-hidden
+                        />
+                      )}
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span
+                          className={`truncate text-sm text-foreground ${e.is_read ? "font-medium" : "font-semibold"}`}
+                        >
+                          {decodeEntities(e.from_name) || e.from_addr || "Unknown"}
+                        </span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          {e.received_at
+                            ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false })
+                            : ""}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div
+                          className={`min-w-0 flex-1 truncate text-sm ${e.is_read ? "text-foreground/85" : "text-foreground"}`}
+                        >
+                          {decodeEntities(e.subject) || "(no subject)"}
+                        </div>
+                        {rowFolder && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            <span
+                              className="h-1.5 w-1.5 rounded-full"
+                              style={{ background: rowFolder.color }}
+                              aria-hidden
+                            />
+                            <span className="max-w-[80px] truncate">{rowFolder.name}</span>
+                          </span>
+                        )}
+                      </div>
+                      {e.ai_summary ? (
+                        <div className="mt-1 flex items-start gap-1.5 text-xs text-primary/90">
+                          <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span className="line-clamp-1">{decodeEntities(e.ai_summary)}</span>
+                        </div>
+                      ) : (
+                        <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                          {decodeEntities(e.snippet)}
+                        </div>
+                      )}
+                    </RowTag>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="w-64">
+                    {(e.is_archived || e.folder_id || !(e.raw_labels ?? []).includes("INBOX")) && (
+                      <>
+                        <ContextMenuItem
+                          onSelect={async () => {
+                            qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                              prev?.map((x) =>
+                                x.id === e.id
+                                  ? {
+                                      ...x,
+                                      folder_id: null,
+                                      is_archived: false,
+                                      raw_labels: withInbox(x.raw_labels),
+                                      classified_by: "manual_inbox",
+                                    }
+                                  : x,
+                              ),
+                            );
+                            try {
+                              await moveInboxFn({ data: { email_id: e.id } });
+                              toast.success("Moved to inbox");
+                              qc.invalidateQueries({ queryKey: ["emails"] });
+                            } catch (err) {
+                              qc.invalidateQueries({ queryKey: ["emails"] });
+                              toast.error(errMsg(err));
+                            }
+                          }}
+                        >
+                          <Inbox className="mr-2 h-4 w-4" />
+                          Move to Inbox
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                      </>
+                    )}
 
-                  <ContextMenuSeparator />
-                  <ContextMenuItem
-                    onSelect={async () => {
-                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                        prev?.map((x) =>
-                          x.id === e.id
-                            ? { ...x, is_archived: true, raw_labels: withoutInbox(x.raw_labels) }
-                            : x,
-                        ),
-                      );
-                      try {
-                        await archFnList({ data: { id: e.id } });
-                        toast.success("Archived");
-                      } catch (err) {
-                        qc.invalidateQueries({ queryKey: ["emails"] });
-                        toast.error(errMsg(err));
-                      }
-                    }}
-                  >
-                    <Archive className="mr-2 h-4 w-4" />
-                    Archive
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onSelect={async () => {
-                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                        prev?.filter((x) => x.id !== e.id),
-                      );
-                      try {
-                        await trashFnList({ data: { id: e.id } });
-                        toast.success("Trashed");
-                      } catch (err) {
-                        qc.invalidateQueries({ queryKey: ["emails"] });
-                        toast.error(errMsg(err));
-                      }
-                    }}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Trash
-                  </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
-            );
+                    <ContextMenuSub>
+                      <ContextMenuSubTrigger>
+                        <FolderInput className="mr-2 h-4 w-4" />
+                        Move to folder
+                      </ContextMenuSubTrigger>
+                      <ContextMenuSubContent className="max-h-72 overflow-y-auto">
+                        {currentFolderId && (
+                          <>
+                            <ContextMenuItem
+                              onSelect={async () => {
+                                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                                  prev?.map((x) =>
+                                    x.id === e.id
+                                      ? {
+                                          ...x,
+                                          folder_id: null,
+                                          is_archived: false,
+                                          raw_labels: withInbox(x.raw_labels),
+                                          classified_by: "manual_inbox",
+                                        }
+                                      : x,
+                                  ),
+                                );
+                                try {
+                                  await moveInboxFn({ data: { email_id: e.id } });
+                                  toast.success("Moved to inbox");
+                                  qc.invalidateQueries({ queryKey: ["emails"] });
+                                } catch (err) {
+                                  qc.invalidateQueries({ queryKey: ["emails"] });
+                                  toast.error(errMsg(err));
+                                }
+                              }}
+                            >
+                              <Inbox className="mr-2 h-4 w-4" />
+                              Inbox (no folder)
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
+                          </>
+                        )}
+                        {folderList.length === 0 && (
+                          <ContextMenuItem disabled>No folders yet</ContextMenuItem>
+                        )}
+                        {folderList
+                          .filter((f) => f.id !== currentFolderId)
+                          .map((f) => (
+                            <ContextMenuItem
+                              key={f.id}
+                              onSelect={async () => {
+                                // Optimistically remove from any view that wouldn't show an archived row in this folder.
+                                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                                  prev?.flatMap((x) => {
+                                    if (x.id !== e.id) return [x];
+                                    // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
+                                    return [
+                                      {
+                                        ...x,
+                                        folder_id: f.id,
+                                        is_archived: true,
+                                        raw_labels: withoutInbox(x.raw_labels),
+                                        classified_by: "manual_move",
+                                      },
+                                    ];
+                                  }),
+                                );
+                                qc.setQueriesData<Email[]>(
+                                  { queryKey: ["emails", "all"] },
+                                  (prev) => prev?.filter((x) => x.id !== e.id),
+                                );
+                                try {
+                                  await moveFolderFn({
+                                    data: { email_id: e.id, to_folder_id: f.id },
+                                  });
+                                  toast.success(`Moved to ${f.name}`);
+                                  // Defer refetch so the server-side Gmail label sync settles
+                                  // before a stale reconcile flips is_archived back to false.
+                                  setTimeout(
+                                    () => qc.invalidateQueries({ queryKey: ["emails"] }),
+                                    1500,
+                                  );
+                                } catch (err) {
+                                  qc.invalidateQueries({ queryKey: ["emails"] });
+                                  toast.error(errMsg(err));
+                                }
+                              }}
+                            >
+                              <span
+                                className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                                style={{ background: f.color }}
+                              />
+                              <span className="truncate">{f.name}</span>
+                            </ContextMenuItem>
+                          ))}
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
 
-            return isNoRules ? (
-              <div key={e.id}>{rowInner}</div>
-            ) : (
-              <SwipeRow
-                key={e.id}
-                onArchive={async () => {
-                  qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                    prev?.filter((x) => x.id !== e.id),
-                  );
-                  try {
-                    await archFnList({ data: { id: e.id } });
-                    toast.success("Archived");
-                  } catch (err) {
-                    qc.invalidateQueries({ queryKey: ["emails"] });
-                    toast.error(errMsg(err));
-                  }
-                }}
-              >
-                {rowInner}
-              </SwipeRow>
-            );
-          })}
+                    {(e.from_addr || domain || e.subject) && (
+                      <>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          onSelect={() =>
+                            setFilterPrompt({
+                              fromAddr: e.from_addr,
+                              subject: e.subject,
+                              currentFolderId: e.folder_id ?? null,
+                            })
+                          }
+                        >
+                          <FilterIcon className="mr-2 h-4 w-4" />
+                          Filter messages like this…
+                        </ContextMenuItem>
+                      </>
+                    )}
+
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      onSelect={async () => {
+                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                          prev?.map((x) =>
+                            x.id === e.id
+                              ? { ...x, is_archived: true, raw_labels: withoutInbox(x.raw_labels) }
+                              : x,
+                          ),
+                        );
+                        try {
+                          await archFnList({ data: { id: e.id } });
+                          toast.success("Archived");
+                        } catch (err) {
+                          qc.invalidateQueries({ queryKey: ["emails"] });
+                          toast.error(errMsg(err));
+                        }
+                      }}
+                    >
+                      <Archive className="mr-2 h-4 w-4" />
+                      Archive
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={async () => {
+                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                          prev?.filter((x) => x.id !== e.id),
+                        );
+                        try {
+                          await trashFnList({ data: { id: e.id } });
+                          toast.success("Trashed");
+                        } catch (err) {
+                          qc.invalidateQueries({ queryKey: ["emails"] });
+                          toast.error(errMsg(err));
+                        }
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Trash
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              );
+
+              return isNoRules ? (
+                <div key={e.id}>{rowInner}</div>
+              ) : (
+                <SwipeRow
+                  key={e.id}
+                  onArchive={async () => {
+                    qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                      prev?.filter((x) => x.id !== e.id),
+                    );
+                    try {
+                      await archFnList({ data: { id: e.id } });
+                      toast.success("Archived");
+                    } catch (err) {
+                      qc.invalidateQueries({ queryKey: ["emails"] });
+                      toast.error(errMsg(err));
+                    }
+                  }}
+                >
+                  {rowInner}
+                </SwipeRow>
+              );
+            })}
         </PullToRefresh>
         {!isSearching && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">

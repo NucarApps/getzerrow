@@ -1305,8 +1305,8 @@ function ReasonBlock({
   const meta = getReasonMeta(by);
   const Icon = meta.Icon;
 
-  let title = "";
-  let body: ReactNode = null;
+  let title: string;
+  let body: ReactNode;
 
   if (by === "ai") {
     const conf = email.ai_confidence != null ? Math.round(email.ai_confidence * 100) : null;
@@ -1866,7 +1866,13 @@ function RuleGroupEditor({
             onChange={(e) => onChange({ ...node, value: e.target.value })}
           />
           {onRemove && (
-            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" aria-label="Remove condition" onClick={onRemove}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 shrink-0"
+              aria-label="Remove condition"
+              onClick={onRemove}
+            >
               <X className="h-3 w-3" />
             </Button>
           )}
@@ -1928,7 +1934,13 @@ function RuleGroupEditor({
             <Plus className="mr-1 h-3 w-3" /> Group
           </Button>
           {!isRoot && onRemove && (
-            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Remove group" onClick={onRemove}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              aria-label="Remove group"
+              onClick={onRemove}
+            >
               <X className="h-3 w-3" />
             </Button>
           )}

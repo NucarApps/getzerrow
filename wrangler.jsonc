@@ -6,6 +6,6 @@
   "main": "src/server.ts",
   "vars": {
     "SUPABASE_URL": "https://axilcinlnaujxyksfjin.supabase.co",
-    "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aWxjaW5sbmF1anh5a3NmamluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDUwMDYsImV4cCI6MjA5NDc4MTAwNn0.G_LCsns9WKBptWkWdjDzDx7jzcXGBK0R8Pa_ESs7sZ4"
-  }
+    "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aWxjaW5sbmF1anh5a3NmamluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDUwMDYsImV4cCI6MjA5NDc4MTAwNn0.G_LCsns9WKBptWkWdjDzDx7jzcXGBK0R8Pa_ESs7sZ4",
+  },
 }

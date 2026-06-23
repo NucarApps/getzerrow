@@ -8,7 +8,12 @@
 //   p50 ≥ LATENCY_WARN_MS  → red
 // Thresholds live in src/lib/sync/config.ts; changing them = breaking
 // the operator dashboard, so the test suite pins these.
-import { LATENCY_GOOD_MS, LATENCY_WARN_MS, STALENESS_LIVE_HOURS, STALENESS_AMBER_HOURS } from "@/lib/sync/config";
+import {
+  LATENCY_GOOD_MS,
+  LATENCY_WARN_MS,
+  STALENESS_LIVE_HOURS,
+  STALENESS_AMBER_HOURS,
+} from "@/lib/sync/config";
 
 /** Compact human readout for a latency value (ms). Empty / non-finite
  * values render as an em-dash so the eye skips them. */

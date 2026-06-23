@@ -21,12 +21,7 @@
 //   onto emails.published_at_ms so get_sync_latency_stats() can compute
 //   push → visible latency.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  getMessage,
-  modifyMessage,
-  parseMessage,
-  sendMessage,
-} from "../gmail.server";
+import { getMessage, modifyMessage, parseMessage, sendMessage } from "../gmail.server";
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
 import { jitter } from "./backoff";
@@ -49,7 +44,10 @@ export type ActionFolder = {
   snooze_hours: number;
 };
 
-function resolveFolderFromContext(context: AccountContext | undefined, folderId: string): ActionFolder | null {
+function resolveFolderFromContext(
+  context: AccountContext | undefined,
+  folderId: string,
+): ActionFolder | null {
   const cached = context?.folders.find((f) => f.id === folderId);
   if (!cached) return null;
   return {
@@ -67,7 +65,9 @@ function resolveFolderFromContext(context: AccountContext | undefined, folderId:
 async function fetchActionFolder(folderId: string): Promise<ActionFolder | null> {
   const { data } = await supabaseAdmin
     .from("folders")
-    .select("id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours")
+    .select(
+      "id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours",
+    )
     .eq("id", folderId)
     .maybeSingle();
   return data ?? null;
@@ -76,12 +76,17 @@ async function fetchActionFolder(folderId: string): Promise<ActionFolder | null>
 /** Gmail label mutations + local flag effects for routing into `folder`.
  * Single source of truth so the insert path and the post-hoc patch path
  * can't diverge. */
-function computeFolderEffects(folder: ActionFolder, parsed: { raw_labels: string[] | null }, inInbox: boolean) {
+function computeFolderEffects(
+  folder: ActionFolder,
+  parsed: { raw_labels: string[] | null },
+  inInbox: boolean,
+) {
   // hide_from_inbox behaves like auto_archive for the inbox view.
   const effectiveArchive = folder.auto_archive || folder.hide_from_inbox;
   const addLabels: string[] = [];
   const removeLabels: string[] = [];
-  if (folder.gmail_label_id && !parsed.raw_labels?.includes(folder.gmail_label_id)) addLabels.push(folder.gmail_label_id);
+  if (folder.gmail_label_id && !parsed.raw_labels?.includes(folder.gmail_label_id))
+    addLabels.push(folder.gmail_label_id);
   if (folder.auto_mark_read) removeLabels.push("UNREAD");
   if (folder.auto_star && !parsed.raw_labels?.includes("STARRED")) addLabels.push("STARRED");
   if (inInbox && effectiveArchive) removeLabels.push("INBOX");
@@ -116,11 +121,18 @@ export async function applyFolderActions(
   inInbox: boolean,
   opts: { persistFlags: boolean },
 ) {
-  const { effectiveArchive, addLabels, removeLabels, snoozedUntil } = computeFolderEffects(folder, parsed, inInbox);
+  const { effectiveArchive, addLabels, removeLabels, snoozedUntil } = computeFolderEffects(
+    folder,
+    parsed,
+    inInbox,
+  );
 
   if (addLabels.length || removeLabels.length) {
-    try { await modifyMessage(accountId, gmailId, addLabels, removeLabels); }
-    catch (e) { console.error("modify failed", e); }
+    try {
+      await modifyMessage(accountId, gmailId, addLabels, removeLabels);
+    } catch (e) {
+      console.error("modify failed", e);
+    }
   }
 
   const patch: {
@@ -213,7 +225,9 @@ export async function processGmailMessage(
   // is enough to decide whether the row needs repair.
   const { data: existing } = await supabaseAdmin
     .from("emails")
-    .select("id, from_addr, subject_enc, body_text_enc, body_html_enc, received_at, classified_by, folder_id")
+    .select(
+      "id, from_addr, subject_enc, body_text_enc, body_html_enc, received_at, classified_by, folder_id",
+    )
     .eq("gmail_message_id", gmailId)
     .eq("gmail_account_id", accountId)
     .maybeSingle();
@@ -248,13 +262,16 @@ export async function processGmailMessage(
         body_text: parsed.body_text,
         body_html: parsed.body_html,
       });
-      await supabaseAdmin.from("emails").update({
-        from_addr: parsed.from_addr,
-        received_at: parsed.received_at,
-        has_attachment: parsed.has_attachment,
-        raw_labels: parsed.raw_labels,
-        is_read: parsed.is_read,
-      }).eq("id", existing.id);
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          from_addr: parsed.from_addr,
+          received_at: parsed.received_at,
+          has_attachment: parsed.has_attachment,
+          raw_labels: parsed.raw_labels,
+          is_read: parsed.is_read,
+        })
+        .eq("id", existing.id);
       return { repaired: true };
     }
 
@@ -278,15 +295,24 @@ export async function processGmailMessage(
       if (t) t.ai += performance.now() - _tAi;
       if (final.folder_id) {
         const folder =
-          resolveFolderFromContext(context, final.folder_id) ?? (await fetchActionFolder(final.folder_id));
+          resolveFolderFromContext(context, final.folder_id) ??
+          (await fetchActionFolder(final.folder_id));
         if (folder) {
           const inInboxNow = (parsed.raw_labels ?? []).includes("INBOX");
-          await applyFolderActions(accountId, gmailId, existing.id, folder, parsed, inInboxNow, { persistFlags: true });
+          await applyFolderActions(accountId, gmailId, existing.id, folder, parsed, inInboxNow, {
+            persistFlags: true,
+          });
         }
         void bumpEmailsSinceLearn(final.folder_id);
       }
       await persistClassification(existing.id, final);
-      return { id: existing.id, email_id: existing.id, folder_id: final.folder_id, parsed, reclassified: true };
+      return {
+        id: existing.id,
+        email_id: existing.id,
+        folder_id: final.folder_id,
+        parsed,
+        reclassified: true,
+      };
     }
 
     return { skipped: true };
@@ -313,17 +339,18 @@ export async function processGmailMessage(
   let rulesFolder: ActionFolder | null = null;
   if (!rules.needs_ai && rules.folder_id) {
     rulesFolder =
-      resolveFolderFromContext(context, rules.folder_id) ?? (await fetchActionFolder(rules.folder_id));
+      resolveFolderFromContext(context, rules.folder_id) ??
+      (await fetchActionFolder(rules.folder_id));
   }
   const rulesEffects = rulesFolder ? computeFolderEffects(rulesFolder, parsed, inInbox) : null;
 
   const _tIns = performance.now();
   const isArchived = rules.needs_ai
     ? !inInbox
-    : (!inInbox || (rulesEffects?.effectiveArchive ?? false));
+    : !inInbox || (rulesEffects?.effectiveArchive ?? false);
   const isReadFlag = rules.needs_ai
     ? parsed.is_read
-    : (parsed.is_read || (rulesFolder?.auto_mark_read ?? false));
+    : parsed.is_read || (rulesFolder?.auto_mark_read ?? false);
 
   // Insert via the encrypted-write RPC (sensitive columns are encrypted at
   // rest). It forces folder_id=null and can't carry classification
@@ -363,12 +390,18 @@ export async function processGmailMessage(
 
   if (rules.needs_ai) {
     if (rules.classification_reason) {
-      await updateEmailEncrypted({ email_id: insertedId, classification_reason: rules.classification_reason });
+      await updateEmailEncrypted({
+        email_id: insertedId,
+        classification_reason: rules.classification_reason,
+      });
     }
   } else {
     await persistClassification(insertedId, rules);
     if (rulesEffects?.snoozedUntil) {
-      await supabaseAdmin.from("emails").update({ snoozed_until: rulesEffects.snoozedUntil }).eq("id", insertedId);
+      await supabaseAdmin
+        .from("emails")
+        .update({ snoozed_until: rulesEffects.snoozedUntil })
+        .eq("id", insertedId);
     }
   }
 
@@ -378,10 +411,18 @@ export async function processGmailMessage(
     if (rules.folder_id) {
       void bumpEmailsSinceLearn(rules.folder_id);
       if (rulesFolder) {
-        await applyFolderActions(accountId, gmailId, inserted.id, rulesFolder, parsed, inInbox, { persistFlags: false });
+        await applyFolderActions(accountId, gmailId, inserted.id, rulesFolder, parsed, inInbox, {
+          persistFlags: false,
+        });
       }
     }
-    return { id: inserted.id, email_id: inserted.id, folder_id: rules.folder_id, parsed, needs_ai: false };
+    return {
+      id: inserted.id,
+      email_id: inserted.id,
+      folder_id: rules.folder_id,
+      parsed,
+      needs_ai: false,
+    };
   }
 
   // 3) Backfill lane: defer AI to the caller's batched pass.
@@ -391,16 +432,19 @@ export async function processGmailMessage(
 
   // 4) AI pass. The email is already visible in Inbox, so a slow or
   //    failed call costs classification latency, not visibility.
-  let folder_id: string | null = null;
+  let folder_id: string | null;
   try {
     const _tAi = performance.now();
     const c = await classifyByAi(parsed, context, rules);
     if (t) t.ai += performance.now() - _tAi;
     folder_id = c.folder_id ?? null;
     if (folder_id) {
-      const folder = resolveFolderFromContext(context, folder_id) ?? (await fetchActionFolder(folder_id));
+      const folder =
+        resolveFolderFromContext(context, folder_id) ?? (await fetchActionFolder(folder_id));
       if (folder) {
-        await applyFolderActions(accountId, gmailId, inserted.id, folder, parsed, inInbox, { persistFlags: true });
+        await applyFolderActions(accountId, gmailId, inserted.id, folder, parsed, inInbox, {
+          persistFlags: true,
+        });
       }
     }
     const _tDb = performance.now();

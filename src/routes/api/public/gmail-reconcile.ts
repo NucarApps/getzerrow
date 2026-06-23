@@ -66,11 +66,7 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
               try {
                 readState = await syncReadState(acc.id);
               } catch (e) {
-                logError(
-                  "reconcile.read_state_failed",
-                  { run_id: runId, account_id: acc.id },
-                  e,
-                );
+                logError("reconcile.read_state_failed", { run_id: runId, account_id: acc.id }, e);
               }
               results.push({ account_id: acc.id, result: { ...(r as object), readState }, limit });
             } catch (e) {

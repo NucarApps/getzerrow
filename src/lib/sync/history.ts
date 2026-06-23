@@ -88,10 +88,13 @@ async function syncSinceHistoryLocked(
       // poll cron will keep thinking this account is push-silent.
       if (opts.publishedAtMs != null) {
         try {
-          await supabaseAdmin.from("gmail_accounts")
+          await supabaseAdmin
+            .from("gmail_accounts")
             .update({ last_push_at: new Date().toISOString() })
             .eq("id", accountId);
-        } catch { /* best-effort */ }
+        } catch {
+          /* best-effort */
+        }
       }
       return r;
     } catch (e) {
@@ -103,7 +106,10 @@ async function syncSinceHistoryLocked(
   try {
     const hist = await listHistory(accountId, account.history_id);
     const seenAdded = new Set<string>();
-    const { data: folders } = await supabaseAdmin.from("folders").select("*").eq("gmail_account_id", accountId);
+    const { data: folders } = await supabaseAdmin
+      .from("folders")
+      .select("*")
+      .eq("gmail_account_id", accountId);
     const folderList = (folders ?? []) as Folder[];
     const labelToFolder = new Map<string, Folder>();
     for (const f of folderList) if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f);
@@ -111,7 +117,12 @@ async function syncSinceHistoryLocked(
     // Batch deletes / label changes so a history page with N events is
     // N events worth of work, not N×roundtrips.
     const toDelete = new Set<string>();
-    type LabelOp = { messageId: string; currentLabels: string[] | undefined; added: string[]; removed: string[] };
+    type LabelOp = {
+      messageId: string;
+      currentLabels: string[] | undefined;
+      added: string[];
+      removed: string[];
+    };
     const labelOps: LabelOp[] = [];
     // Manual-move learning events (a linked folder label was added in
     // Gmail). Collected during the loop, drained with a bounded pool
@@ -125,7 +136,12 @@ async function syncSinceHistoryLocked(
         seenAdded.add(m.id);
       }
       for (const ev of h.labelsAdded ?? []) {
-        labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: ev.labelIds, removed: [] });
+        labelOps.push({
+          messageId: ev.message.id,
+          currentLabels: ev.message.labelIds,
+          added: ev.labelIds,
+          removed: [],
+        });
         const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
         if (matched.length === 0) continue;
         let set = manualMoveEvents.get(ev.message.id);
@@ -133,7 +149,12 @@ async function syncSinceHistoryLocked(
         for (const f of matched) set.add(f);
       }
       for (const ev of h.labelsRemoved ?? []) {
-        labelOps.push({ messageId: ev.message.id, currentLabels: ev.message.labelIds, added: [], removed: ev.labelIds });
+        labelOps.push({
+          messageId: ev.message.id,
+          currentLabels: ev.message.labelIds,
+          added: [],
+          removed: ev.labelIds,
+        });
       }
       for (const ev of h.messagesDeleted ?? []) {
         toDelete.add(ev.message.id);
@@ -164,7 +185,9 @@ async function syncSinceHistoryLocked(
                   snippet: p.snippet,
                 });
               }
-            } catch (e) { console.error("labelAdded handler failed", e); }
+            } catch (e) {
+              console.error("labelAdded handler failed", e);
+            }
           }
         },
       );
@@ -177,14 +200,12 @@ async function syncSinceHistoryLocked(
     // the job.
     if (seenAdded.size > 0) {
       try {
-        await enqueueMessageJobs(
-          accountId,
-          account.user_id,
-          Array.from(seenAdded),
-          0,
-          { publishedAtMs: opts.publishedAtMs ?? null },
-        );
-      } catch (e) { console.error("bulk enqueue failed", e); }
+        await enqueueMessageJobs(accountId, account.user_id, Array.from(seenAdded), 0, {
+          publishedAtMs: opts.publishedAtMs ?? null,
+        });
+      } catch (e) {
+        console.error("bulk enqueue failed", e);
+      }
     }
 
     // Apply label ops sequentially per message. SKIP ops whose message
@@ -194,16 +215,30 @@ async function syncSinceHistoryLocked(
     // correctly from parseMessage when the queued job runs.
     for (const op of labelOps) {
       if (seenAdded.has(op.messageId)) continue;
-      try { await applyLabelChange(accountId, op.messageId, op.currentLabels, op.added, op.removed, labelToFolder); }
-      catch (e) { console.error("applyLabelChange failed", e); }
+      try {
+        await applyLabelChange(
+          accountId,
+          op.messageId,
+          op.currentLabels,
+          op.added,
+          op.removed,
+          labelToFolder,
+        );
+      } catch (e) {
+        console.error("applyLabelChange failed", e);
+      }
     }
 
     if (toDelete.size > 0) {
       try {
-        await supabaseAdmin.from("emails").delete()
+        await supabaseAdmin
+          .from("emails")
+          .delete()
           .eq("gmail_account_id", accountId)
           .in("gmail_message_id", Array.from(toDelete));
-      } catch (e) { console.error("messagesDeleted batch handler failed", e); }
+      } catch (e) {
+        console.error("messagesDeleted batch handler failed", e);
+      }
     }
 
     if (hist.historyId) await bumpHistoryAndWatch(accountId, hist.historyId);
@@ -220,7 +255,9 @@ async function syncSinceHistoryLocked(
     if (opts.publishedAtMs != null) stamp.last_push_at = new Date().toISOString();
     try {
       await supabaseAdmin.from("gmail_accounts").update(stamp).eq("id", accountId);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     return { synced: seenAdded.size };
   } catch (e: unknown) {
     const msg = (e as Error)?.message ?? String(e);
@@ -308,10 +345,13 @@ async function bootstrapAccount(accountId: string, userId: string) {
   // Stamp last_history_sync_at so the poll cron's silence-detection
   // treats this freshly-bootstrapped account as healthy.
   try {
-    await supabaseAdmin.from("gmail_accounts")
+    await supabaseAdmin
+      .from("gmail_accounts")
       .update({ last_history_sync_at: new Date().toISOString() })
       .eq("id", accountId);
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
   return { bootstrapped: true };
 }
 
@@ -330,7 +370,9 @@ async function applyLabelChange(
   if (removed.includes("UNREAD")) patch.is_read = true;
   if (added.includes("UNREAD")) patch.is_read = false;
   if (added.includes("TRASH")) {
-    await supabaseAdmin.from("emails").delete()
+    await supabaseAdmin
+      .from("emails")
+      .delete()
       .eq("gmail_account_id", accountId)
       .eq("gmail_message_id", messageId);
     return;
@@ -348,27 +390,35 @@ async function applyLabelChange(
       try {
         // Find the matching row, then null its folder_id (real column) and
         // set the encrypted classification_reason via the RPC.
-        const { data: matches } = await supabaseAdmin.from("emails")
+        const { data: matches } = await supabaseAdmin
+          .from("emails")
           .select("id")
           .eq("gmail_account_id", accountId)
           .eq("gmail_message_id", messageId)
           .eq("folder_id", folder.id);
         for (const row of matches ?? []) {
-          await supabaseAdmin.from("emails").update({
-            folder_id: null,
-            classified_by: "manual_inbox",
-          }).eq("id", row.id);
+          await supabaseAdmin
+            .from("emails")
+            .update({
+              folder_id: null,
+              classified_by: "manual_inbox",
+            })
+            .eq("id", row.id);
           await updateEmailEncrypted({
             email_id: row.id,
             classification_reason: `Label "${folder.name}" removed in Gmail`,
           });
         }
-      } catch (e) { console.error("linked-label removal handler failed", e); }
+      } catch (e) {
+        console.error("linked-label removal handler failed", e);
+      }
     }
   }
 
   if (Object.keys(patch).length === 0) return;
-  await supabaseAdmin.from("emails").update(patch)
+  await supabaseAdmin
+    .from("emails")
+    .update(patch)
     .eq("gmail_account_id", accountId)
     .eq("gmail_message_id", messageId);
 }
@@ -424,7 +474,10 @@ async function bumpHistoryAndStamp(
       if (extra.watch_expiration) {
         await supabaseAdmin
           .from("gmail_accounts")
-          .update({ watch_expiration: extra.watch_expiration, last_poll_at: new Date().toISOString() })
+          .update({
+            watch_expiration: extra.watch_expiration,
+            last_poll_at: new Date().toISOString(),
+          })
           .eq("id", accountId);
       }
       return;

@@ -213,7 +213,12 @@ describe("applyPendingOpsToList — coalesced flush", () => {
       // archived row to inbox list — rejected by rowBelongsInList
       { kind: "insert", row: { ...baseRow("b", "2024-01-02T00:00:00Z"), is_archived: true } },
     ];
-    const { next } = applyPendingOpsToList(existing, ops, ["emails", "acc-1", "all", "page:1:start"]);
+    const { next } = applyPendingOpsToList(existing, ops, [
+      "emails",
+      "acc-1",
+      "all",
+      "page:1:start",
+    ]);
     expect(next).toBeNull();
   });
 

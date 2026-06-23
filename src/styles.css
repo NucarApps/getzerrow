@@ -2,7 +2,6 @@
 @source "../src";
 @import "tw-animate-css";
 
-
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -41,30 +40,30 @@
 :root {
   --radius: 0.25rem;
   /* Zerrow deep-space palette — mirrored from public/zerrow-landing.css */
-  --background: oklch(0.16 0.025 265);          /* #0a0e1a */
-  --foreground: oklch(0.96 0.005 95);           /* bone #f5f5f0 */
-  --card: oklch(0.20 0.022 265);                /* #131826 */
+  --background: oklch(0.16 0.025 265); /* #0a0e1a */
+  --foreground: oklch(0.96 0.005 95); /* bone #f5f5f0 */
+  --card: oklch(0.2 0.022 265); /* #131826 */
   --card-foreground: oklch(0.96 0.005 95);
-  --popover: oklch(0.20 0.022 265);
+  --popover: oklch(0.2 0.022 265);
   --popover-foreground: oklch(0.96 0.005 95);
-  --primary: oklch(0.72 0.19 40);               /* NASA orange #ff6b3d */
+  --primary: oklch(0.72 0.19 40); /* NASA orange #ff6b3d */
   --primary-foreground: oklch(0.16 0.025 265);
-  --secondary: oklch(0.23 0.022 265);           /* #1a1f2e */
+  --secondary: oklch(0.23 0.022 265); /* #1a1f2e */
   --secondary-foreground: oklch(0.96 0.005 95);
   --muted: oklch(0.22 0.022 265);
-  --muted-foreground: oklch(0.66 0.018 260);    /* #8a92a8 */
+  --muted-foreground: oklch(0.66 0.018 260); /* #8a92a8 */
   --accent: oklch(0.27 0.025 265);
   --accent-foreground: oklch(0.96 0.005 95);
-  --destructive: oklch(0.62 0.22 27);           /* #ef4444 */
+  --destructive: oklch(0.62 0.22 27); /* #ef4444 */
   --destructive-foreground: oklch(0.98 0.005 95);
-  --border: oklch(0.30 0.025 265);              /* #232a3d */
+  --border: oklch(0.3 0.025 265); /* #232a3d */
   --input: oklch(0.23 0.022 265);
   --ring: oklch(0.72 0.19 40);
-  --sidebar: oklch(0.18 0.025 265);             /* #0d1220 */
+  --sidebar: oklch(0.18 0.025 265); /* #0d1220 */
   --sidebar-foreground: oklch(0.88 0.008 95);
   --sidebar-accent: oklch(0.24 0.022 265);
   --sidebar-accent-foreground: oklch(0.96 0.005 95);
-  --sidebar-border: oklch(0.30 0.025 265);
+  --sidebar-border: oklch(0.3 0.025 265);
 }
 
 .dark {
@@ -76,10 +75,16 @@
   * {
     border-color: var(--color-border);
   }
-  html, body {
+  html,
+  body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   ::selection {
@@ -88,20 +93,49 @@
 }
 
 @keyframes rocket-blastoff {
-  0% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
-  40% { transform: translateY(-40px) scale(1.02) rotate(-2deg); opacity: 1; }
-  100% { transform: translateY(-280px) scale(0.55) rotate(-4deg); opacity: 0; }
+  0% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  40% {
+    transform: translateY(-40px) scale(1.02) rotate(-2deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-280px) scale(0.55) rotate(-4deg);
+    opacity: 0;
+  }
 }
 @keyframes rocket-return {
-  0% { transform: translateY(40px) scale(0.7); opacity: 0; }
-  60% { transform: translateY(-4px) scale(1.05); opacity: 1; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+  0% {
+    transform: translateY(40px) scale(0.7);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-4px) scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }
 @keyframes rocket-bob {
-  0%, 100% { transform: translateY(-2px) scale(1); }
-  50% { transform: translateY(2px) scale(1); }
+  0%,
+  100% {
+    transform: translateY(-2px) scale(1);
+  }
+  50% {
+    transform: translateY(2px) scale(1);
+  }
 }
 @keyframes flame-flicker {
-  from { opacity: 0.7; transform: translateX(-50%) scaleY(0.9); }
-  to { opacity: 1; transform: translateX(-50%) scaleY(1.1); }
+  from {
+    opacity: 0.7;
+    transform: translateX(-50%) scaleY(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scaleY(1.1);
+  }
 }
