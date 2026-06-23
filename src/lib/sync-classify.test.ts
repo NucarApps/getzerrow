@@ -464,7 +464,7 @@ describe("classifyByRules — needs_ai", () => {
       enrichedFolders: [enriched("f1", "Work")],
     });
     const r = classifyByRules(email({ from_addr: "x@spam.test" }), c);
-    expect(r.classified_by).toBe("global_exclude");
+    expect(r.classified_by).toBe("inbox_override");
     expect(r.needs_ai).toBe(false);
   });
 

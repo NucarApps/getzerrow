@@ -120,7 +120,7 @@ export function classifyByRules(
   const overrideWins = !!overrideHit && !overrideExceptionHit && !beatingFolderId;
 
   if (overrideWins) {
-    classified_by = "global_exclude";
+    classified_by = "inbox_override";
     classification_reason = `Global inbox list: ${overrideHit!.match_type} "${overrideHit!.value}"`;
     aiSkipped = true;
   } else {
@@ -157,6 +157,16 @@ export function classifyByRules(
           classification_reason =
             (classification_reason ?? "") +
             ` (exception to inbox override "${overrideHit.value}": ${overrideExceptionHit.field} ${overrideExceptionHit.op} "${overrideExceptionHit.value}")`;
+        }
+        // Calendar cold-email guard: known calendar contacts must never be
+        // routed into a folder flagged is_cold_email when the guard is on.
+        if (context.calendarGuardEnabled && context.calendarContacts.has(fromAddr)) {
+          const winningFolder = folderList.find((f) => f.id === winningFolderId);
+          if (winningFolder?.is_cold_email) {
+            folder_id = null;
+            classified_by = "calendar_contact";
+            classification_reason = `Known calendar contact — not routed to "${winningFolder.name}"`;
+          }
         }
       } else if (m?.kind === "excluded") {
         classified_by = "excluded";
