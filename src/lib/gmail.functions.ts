@@ -953,8 +953,6 @@ export const syncMyReadState = createServerFn({ method: "POST" })
     return { ok: true, marked_read: markedRead, marked_unread: markedUnread };
   });
 
-
-
 export const archiveEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))

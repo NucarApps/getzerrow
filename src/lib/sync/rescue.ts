@@ -23,7 +23,12 @@ import { applyFolderActions, type ActionFolder } from "./process-message";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { updateEmailEncrypted } from "./encrypted-writer";
 import { getEmailsDecrypted } from "./encrypted-reader";
-import { RESCUE_WINDOW_HOURS, RESCUE_MAX_ATTEMPTS, RESCUE_BATCH_LIMIT, RESCUE_AI_BATCH_SIZE } from "./config";
+import {
+  RESCUE_WINDOW_HOURS,
+  RESCUE_MAX_ATTEMPTS,
+  RESCUE_BATCH_LIMIT,
+  RESCUE_AI_BATCH_SIZE,
+} from "./config";
 
 const NON_TERMINAL_STATES = ["pending", "pending_ai", "unclassified", "ai_error"] as const;
 
@@ -118,7 +123,12 @@ async function finalize(
     if (folder) {
       const inInbox = (row.raw_labels ?? []).includes("INBOX");
       await applyFolderActions(
-        row.gmail_account_id, row.gmail_message_id, row.id, folder, actionParsed(row), inInbox,
+        row.gmail_account_id,
+        row.gmail_message_id,
+        row.id,
+        folder,
+        actionParsed(row),
+        inInbox,
         { persistFlags: true },
       );
     }
@@ -147,7 +157,9 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
   // sensitive fields are encrypted and fetched separately below).
   const { data: baseRows, error } = await supabaseAdmin
     .from("emails")
-    .select("id, user_id, gmail_account_id, gmail_message_id, from_addr, list_id, in_reply_to, has_attachment, received_at, raw_labels, classify_attempts")
+    .select(
+      "id, user_id, gmail_account_id, gmail_message_id, from_addr, list_id, in_reply_to, has_attachment, received_at, raw_labels, classify_attempts",
+    )
     .is("folder_id", null)
     .in("classified_by", NON_TERMINAL_STATES as unknown as string[])
     .gte("created_at", since)
@@ -202,7 +214,9 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
     .in("gmail_account_id", accountIds)
     .in("status", ["pending", "running"]);
   const owned = new Set((liveJobs ?? []).map((j) => `${j.gmail_account_id}:${j.gmail_message_id}`));
-  const eligible = candidates.filter((r) => !owned.has(`${r.gmail_account_id}:${r.gmail_message_id}`));
+  const eligible = candidates.filter(
+    (r) => !owned.has(`${r.gmail_account_id}:${r.gmail_message_id}`),
+  );
   const skipped = candidates.length - eligible.length;
   if (eligible.length === 0) return { scanned: candidates.length, rescued: 0, failed: 0, skipped };
 
@@ -277,7 +291,10 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
     for (let i = 0; i < needAi.length; i += RESCUE_AI_BATCH_SIZE) {
       const chunk = needAi.slice(i, i + RESCUE_AI_BATCH_SIZE);
       try {
-        const out = await classifyEmailsBatch(chunk.map((r) => toParsed(r)), ctx.enrichedFolders);
+        const out = await classifyEmailsBatch(
+          chunk.map((r) => toParsed(r)),
+          ctx.enrichedFolders,
+        );
         for (let idx = 0; idx < chunk.length; idx++) {
           const row = chunk[idx];
           const r = out[idx];
@@ -291,19 +308,22 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
           const passes = Boolean(r.folder_id && (r.confidence ?? 0) >= threshold);
           await finalize(row, ctx, {
             folder_id: passes ? r.folder_id : null,
-            classified_by: passes ? "ai" : (r.folder_id ? "ai_low_confidence" : "ai"),
+            classified_by: passes ? "ai" : r.folder_id ? "ai_low_confidence" : "ai",
             ai_confidence: r.confidence ?? 0,
             ai_summary: r.summary ?? "",
             classification_reason: passes
-              ? (r.reason || null)
-              : (r.folder_id
-                  ? `AI suggested "${candidate?.name ?? "?"}" at ${((r.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
-                  : (r.reason || null)),
+              ? r.reason || null
+              : r.folder_id
+                ? `AI suggested "${candidate?.name ?? "?"}" at ${((r.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
+                : r.reason || null,
           });
           rescued++;
         }
       } catch (e) {
-        console.error("rescue batch AI failed, falling back per-message", (e as Error)?.message ?? e);
+        console.error(
+          "rescue batch AI failed, falling back per-message",
+          (e as Error)?.message ?? e,
+        );
         for (const row of chunk) await fallbackOne(row);
       }
     }

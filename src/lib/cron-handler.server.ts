@@ -51,7 +51,13 @@ export function cronHandler<T extends object>(
 
 /** Helper for the very common pattern of "clamp a query-string int to
  * a [min, max] range with a fallback." */
-export function clampIntParam(url: URL, key: string, min: number, max: number, fallback: number): number {
+export function clampIntParam(
+  url: URL,
+  key: string,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
   const raw = url.searchParams.get(key);
   if (raw == null) return fallback;
   const n = parseInt(raw, 10);
@@ -60,7 +66,12 @@ export function clampIntParam(url: URL, key: string, min: number, max: number, f
 }
 
 /** Optional integer param — returns undefined if absent or invalid. */
-export function optionalIntParam(url: URL, key: string, min: number, max: number): number | undefined {
+export function optionalIntParam(
+  url: URL,
+  key: string,
+  min: number,
+  max: number,
+): number | undefined {
   const raw = url.searchParams.get(key);
   if (raw == null || raw === "") return undefined;
   const n = parseInt(raw, 10);

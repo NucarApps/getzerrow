@@ -75,7 +75,10 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string }> = [
 ];
 
 type ProbeRpc = {
-  rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
+  rpc: (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
 };
 
 export const Route = createFileRoute("/api/public/health")({
@@ -101,7 +104,10 @@ export const Route = createFileRoute("/api/public/health")({
           // pg_views isn't in the PostgREST schema by default — fall back
           // to a probe per view via to_regclass.
           for (const v of EXPECTED_VIEWS) {
-            const probe = await (supabaseAdmin as unknown as ProbeRpc).rpc("to_regclass" as never, { obj: `public.${v}` } as never);
+            const probe = await (supabaseAdmin as unknown as ProbeRpc).rpc(
+              "to_regclass" as never,
+              { obj: `public.${v}` } as never,
+            );
             if (!probe.data) missing.push({ kind: "view", name: v });
           }
         }
@@ -137,7 +143,9 @@ export const Route = createFileRoute("/api/public/health")({
             .select("table_name, column_name" as never)
             .eq("table_schema" as never, "public")
             .in("table_name" as never, tables as never);
-          const have = new Set(((cols ?? []) as unknown as ColRow[]).map((c) => `${c.table_name}.${c.column_name}`));
+          const have = new Set(
+            ((cols ?? []) as unknown as ColRow[]).map((c) => `${c.table_name}.${c.column_name}`),
+          );
           for (const c of EXPECTED_COLUMNS) {
             if (!have.has(`${c.table}.${c.column}`)) {
               missing.push({ kind: "column", name: `${c.table}.${c.column}` });
@@ -169,10 +177,10 @@ export const Route = createFileRoute("/api/public/health")({
           // RPC not deployed yet — treated as a missing function above.
         }
         const totalLeaks = leaks
-          ? Number(leaks.emails_body_text_leaks ?? 0)
-            + Number(leaks.emails_body_html_leaks ?? 0)
-            + Number(leaks.oauth_access_token_leaks ?? 0)
-            + Number(leaks.oauth_refresh_token_leaks ?? 0)
+          ? Number(leaks.emails_body_text_leaks ?? 0) +
+            Number(leaks.emails_body_html_leaks ?? 0) +
+            Number(leaks.oauth_access_token_leaks ?? 0) +
+            Number(leaks.oauth_refresh_token_leaks ?? 0)
           : 0;
 
         const ok = missing.length === 0 && totalLeaks === 0;

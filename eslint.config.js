@@ -38,12 +38,15 @@ export default tseslint.config(
   },
   {
     // Files that intentionally co-export non-components alongside a component:
+    //  - TanStack file-based route modules (export the `Route` object created
+    //    by createFileRoute alongside the route component)
     //  - vendored shadcn/ui primitives (cva variant helpers, useFormField)
     //  - context-provider modules co-exporting their use* hook
     //  - the card-theme data module (CARD_THEMES / getTheme + ThemePicker)
     // These are deliberate shared-module patterns; Fast Refresh isn't a concern,
     // so relax the rule here rather than fork conventions or churn every import.
     files: [
+      "src/routes/**/*.{ts,tsx}",
       "src/components/ui/**/*.{ts,tsx}",
       "src/lib/account-selection.tsx",
       "src/lib/folder-selection.tsx",

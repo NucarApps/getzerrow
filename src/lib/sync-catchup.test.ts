@@ -117,7 +117,11 @@ describe("buildCatchupRow", () => {
       filters: [filter("f1", "from", "contains", "@news.test")],
       enrichedFolders: [{ id: "f1", name: "Newsletters", ai_rule: null }],
     });
-    const built = buildCatchupRow(job, parsed({ from_addr: "a@news.test", raw_labels: ["INBOX"] }), c);
+    const built = buildCatchupRow(
+      job,
+      parsed({ from_addr: "a@news.test", raw_labels: ["INBOX"] }),
+      c,
+    );
     expect(built!.upsert.is_archived).toBe(true);
     expect(built!.update!.folder_id).toBe("f1");
   });

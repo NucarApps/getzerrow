@@ -10,13 +10,13 @@ Questionnaire / OWASP ASVS).
 
 Scopes are declared in `src/lib/google-oauth.server.ts` (`GMAIL_SCOPES`).
 
-| Scope | Class | Why it's required | Where used |
-|-------|-------|-------------------|------------|
-| `gmail.modify` | Restricted | Apply/remove Gmail labels to route mail into user-defined folders, mark read, and trash on the user's behalf. Core product function. | `batchModifyMessages`, `/messages/{id}/modify`, `/messages/{id}/trash` in `src/lib/gmail.server.ts` |
-| `gmail.send` | Restricted | Send replies and forwards the user composes in-app. | `/messages/send` in `src/lib/gmail.server.ts` |
-| `gmail.readonly` | Restricted | Declares explicit read intent for the message-fetch and parse paths (`getMessage`/history sync in `src/lib/gmail.server.ts`) independent of the write grant. `gmail.modify` also grants read, so this overlaps; we **keep it this cycle** rather than change the consent screen and re-trigger verification mid-assessment. Revisit dropping it at the next annual renewal. | message reads / history sync in `src/lib/gmail.server.ts` |
-| `calendar.readonly` | Sensitive | Build the known-correspondent list ("cold email guard") from past calendar attendees so first-contact senders can be flagged. Read-only. | `src/lib/calendar.server.ts` → `calendar_contacts` |
-| `userinfo.email`, `openid` | Non-sensitive | Identify the connected mailbox. | OAuth callback |
+| Scope                      | Class         | Why it's required                                                                                                                                                                                                                                                                                                                                                           | Where used                                                                                          |
+| -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `gmail.modify`             | Restricted    | Apply/remove Gmail labels to route mail into user-defined folders, mark read, and trash on the user's behalf. Core product function.                                                                                                                                                                                                                                        | `batchModifyMessages`, `/messages/{id}/modify`, `/messages/{id}/trash` in `src/lib/gmail.server.ts` |
+| `gmail.send`               | Restricted    | Send replies and forwards the user composes in-app.                                                                                                                                                                                                                                                                                                                         | `/messages/send` in `src/lib/gmail.server.ts`                                                       |
+| `gmail.readonly`           | Restricted    | Declares explicit read intent for the message-fetch and parse paths (`getMessage`/history sync in `src/lib/gmail.server.ts`) independent of the write grant. `gmail.modify` also grants read, so this overlaps; we **keep it this cycle** rather than change the consent screen and re-trigger verification mid-assessment. Revisit dropping it at the next annual renewal. | message reads / history sync in `src/lib/gmail.server.ts`                                           |
+| `calendar.readonly`        | Sensitive     | Build the known-correspondent list ("cold email guard") from past calendar attendees so first-contact senders can be flagged. Read-only.                                                                                                                                                                                                                                    | `src/lib/calendar.server.ts` → `calendar_contacts`                                                  |
+| `userinfo.email`, `openid` | Non-sensitive | Identify the connected mailbox.                                                                                                                                                                                                                                                                                                                                             | OAuth callback                                                                                      |
 
 Sync is incremental via Gmail push (Pub/Sub `watch`/`stop`) and history, not bulk
 polling — consistent with minimal, purpose-limited access.
@@ -25,7 +25,6 @@ polling — consistent with minimal, purpose-limited access.
 
 > A per-chapter ASVS L2 → control → evidence map (for pasting into the assessor's SAQ) lives
 > in [`casa-asvs-map.md`](./casa-asvs-map.md). The list below is the narrative summary.
-
 
 - **Encryption in transit** — HTTPS everywhere (Cloudflare); HSTS 2y + preload,
   strong CSP, `X-Frame-Options: DENY`, `nosniff`, restrictive `Permissions-Policy`
@@ -50,9 +49,9 @@ polling — consistent with minimal, purpose-limited access.
   `.env.example`, `.dev.vars.example`. No secrets in source or git history.
 - **Dependency / vuln management** — bun is canonical (single lockfile); CI runs
   `bun audit --prod` + Semgrep SAST (`p/secrets`, `p/owasp-top-ten`, `p/javascript`)
-  + tests on every PR (`.github/workflows/ci.yml`); Dependabot watches deps and
-  Actions (`.github/dependabot.yml`). A `minimumReleaseAge` guard (`bunfig.toml`)
-  blocks <24h-old releases (supply-chain hygiene).
+  - tests on every PR (`.github/workflows/ci.yml`); Dependabot watches deps and
+    Actions (`.github/dependabot.yml`). A `minimumReleaseAge` guard (`bunfig.toml`)
+    blocks <24h-old releases (supply-chain hygiene).
 - **Logging & audit** — Structured JSON logs; no decrypted content is ever logged.
   Security-lifecycle events emit `audit.*` records (metadata only): `gmail.connected`,
   `gmail.disconnected`, `account.deleted` (`logAudit` in `src/lib/log.server.ts`).

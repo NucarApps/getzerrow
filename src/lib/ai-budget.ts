@@ -3,7 +3,11 @@
 
 /** Timeout (ms) for the next cascade attempt, or null when the total
  * budget is exhausted (< 500ms left — not worth starting a call). */
-export function remainingAttemptTimeout(deadline: number, attemptMs: number, now = Date.now()): number | null {
+export function remainingAttemptTimeout(
+  deadline: number,
+  attemptMs: number,
+  now = Date.now(),
+): number | null {
   const remaining = deadline - now;
   if (remaining < 500) return null;
   return Math.min(attemptMs, remaining);

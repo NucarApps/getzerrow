@@ -39,9 +39,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { GmailApiError, getMessageMetadata, parseMessage } from "../gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "../ai.server";
-import {
-  MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS, computeBackoffSeconds,
-} from "./backoff";
+import { MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS, computeBackoffSeconds } from "./backoff";
 import { type AccountContext, loadAccountContext } from "./account-context";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { updateEmailEncrypted } from "./encrypted-writer";
@@ -91,12 +89,10 @@ export async function enqueueMessageJobs(
   }));
   // Supabase caps a single upsert at ~1000 rows; we chunk just to be safe.
   for (let i = 0; i < rows.length; i += 500) {
-    await supabaseAdmin
-      .from("message_jobs")
-      .upsert(rows.slice(i, i + 500), {
-        onConflict: "gmail_account_id,gmail_message_id",
-        ignoreDuplicates: true,
-      });
+    await supabaseAdmin.from("message_jobs").upsert(rows.slice(i, i + 500), {
+      onConflict: "gmail_account_id,gmail_message_id",
+      ignoreDuplicates: true,
+    });
   }
 }
 
@@ -134,7 +130,10 @@ export async function runMessageJobs(
 
   // ─── Atomic claim: single round-trip, parallel workers can't collide.
   type ClaimRpc = {
-    rpc: (fn: "claim_message_jobs", args: { p_limit: number; p_priority?: number }) => Promise<{
+    rpc: (
+      fn: "claim_message_jobs",
+      args: { p_limit: number; p_priority?: number },
+    ) => Promise<{
       data: ClaimedJob[] | null;
       error: { message: string } | null;
     }>;
@@ -155,7 +154,8 @@ export async function runMessageJobs(
   // ─── Prefetch per-account context once for the whole batch.
   const accountIds = Array.from(new Set(claimed.map((j) => j.gmail_account_id)));
   const userByAccount = new Map<string, string>();
-  for (const j of claimed) if (!userByAccount.has(j.gmail_account_id)) userByAccount.set(j.gmail_account_id, j.user_id);
+  for (const j of claimed)
+    if (!userByAccount.has(j.gmail_account_id)) userByAccount.set(j.gmail_account_id, j.user_id);
   const contextByAccount = new Map<string, AccountContext>();
   await Promise.all(
     accountIds.map(async (aid) => {
@@ -193,9 +193,12 @@ export async function runMessageJobs(
         }),
         new Promise((_, reject) =>
           setTimeout(
-            () => reject(new Error(
-              `job timeout after ${JOB_TIMEOUT_MS}ms (fetch=${timings.fetch.toFixed(0)} ai=${timings.ai.toFixed(0)} db=${timings.db.toFixed(0)})`,
-            )),
+            () =>
+              reject(
+                new Error(
+                  `job timeout after ${JOB_TIMEOUT_MS}ms (fetch=${timings.fetch.toFixed(0)} ai=${timings.ai.toFixed(0)} db=${timings.db.toFixed(0)})`,
+                ),
+              ),
             JOB_TIMEOUT_MS,
           ),
         ),
@@ -244,20 +247,23 @@ export async function runMessageJobs(
 
   return {
     processed: results.length,
-    ok: results.filter(r => r.ok).length,
-    failed: results.filter(r => !r.ok && !r.dlq).length,
-    dlq: results.filter(r => r.dlq).length,
-    retryable: results.filter(r => r.retryable).length,
+    ok: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok && !r.dlq).length,
+    dlq: results.filter((r) => r.dlq).length,
+    retryable: results.filter((r) => r.retryable).length,
   };
 }
 
 export async function retryMessageJob(jobId: string) {
-  await supabaseAdmin.from("message_jobs").update({
-    status: "pending",
-    attempt: 0,
-    locked_at: null,
-    next_run_at: new Date().toISOString(),
-  }).eq("id", jobId);
+  await supabaseAdmin
+    .from("message_jobs")
+    .update({
+      status: "pending",
+      attempt: 0,
+      locked_at: null,
+      next_run_at: new Date().toISOString(),
+    })
+    .eq("id", jobId);
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────
@@ -270,37 +276,41 @@ async function reclaimStuckJobs(stuckMs: number) {
     .eq("status", "running")
     .lt("locked_at", stuckCutoff);
   for (const s of stuck ?? []) {
-    const wasReclaimed = typeof s.last_error === "string" && s.last_error.startsWith("stuck (worker timeout)");
+    const wasReclaimed =
+      typeof s.last_error === "string" && s.last_error.startsWith("stuck (worker timeout)");
     const nextAttempt = wasReclaimed ? (s.attempt ?? 0) + 1 : (s.attempt ?? 0);
     if (nextAttempt >= MAX_JOB_ATTEMPTS) {
-      await supabaseAdmin.from("message_jobs").update({
-        status: "dlq",
-        attempt: nextAttempt,
-        last_error: "stuck (worker timeout — exceeded max attempts)",
-        locked_at: null,
-      }).eq("id", s.id);
+      await supabaseAdmin
+        .from("message_jobs")
+        .update({
+          status: "dlq",
+          attempt: nextAttempt,
+          last_error: "stuck (worker timeout — exceeded max attempts)",
+          locked_at: null,
+        })
+        .eq("id", s.id);
     } else {
-      await supabaseAdmin.from("message_jobs").update({
-        status: "pending",
-        attempt: nextAttempt,
-        last_error: "stuck (worker timeout) — auto-reclaimed",
-        locked_at: null,
-        next_run_at: new Date().toISOString(),
-      }).eq("id", s.id);
+      await supabaseAdmin
+        .from("message_jobs")
+        .update({
+          status: "pending",
+          attempt: nextAttempt,
+          last_error: "stuck (worker timeout) — auto-reclaimed",
+          locked_at: null,
+          next_run_at: new Date().toISOString(),
+        })
+        .eq("id", s.id);
     }
   }
 }
 
-async function handleError(
-  job: ClaimedJob,
-  e: unknown,
-  results: ProcessResult[],
-): Promise<void> {
+async function handleError(job: ClaimedJob, e: unknown, results: ProcessResult[]): Promise<void> {
   const msg = (e as Error)?.message ?? String(e);
   const status: number | undefined = e instanceof GmailApiError ? e.status : undefined;
-  const retryable: boolean = e instanceof GmailApiError
-    ? e.retryable
-    : (typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg));
+  const retryable: boolean =
+    e instanceof GmailApiError
+      ? e.retryable
+      : typeof msg === "string" && /timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg);
   const retryAfterSeconds: number | null = e instanceof GmailApiError ? e.retryAfterSeconds : null;
   const isQuotaExceeded: boolean = e instanceof GmailApiError ? e.isQuotaExceeded : false;
 
@@ -314,9 +324,8 @@ async function handleError(
 
   const terminal = status === 400 || status === 401 || status === 403;
   const currentAttempt = job.attempt ?? 0;
-  const nextAttempt = retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS
-    ? currentAttempt
-    : currentAttempt + 1;
+  const nextAttempt =
+    retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS ? currentAttempt : currentAttempt + 1;
 
   if (terminal || nextAttempt >= MAX_JOB_ATTEMPTS) {
     // Park in DLQ with from/subject for the operator UI.
@@ -327,15 +336,20 @@ async function handleError(
       const p = parseMessage(meta);
       from_addr = p.from_addr ?? null;
       subject = p.subject ?? null;
-    } catch { /* best-effort */ }
-    await supabaseAdmin.from("message_jobs").update({
-      status: "dlq",
-      attempt: nextAttempt,
-      last_error: msg.slice(0, 1000),
-      locked_at: null,
-      from_addr,
-      subject,
-    }).eq("id", job.id);
+    } catch {
+      /* best-effort */
+    }
+    await supabaseAdmin
+      .from("message_jobs")
+      .update({
+        status: "dlq",
+        attempt: nextAttempt,
+        last_error: msg.slice(0, 1000),
+        locked_at: null,
+        from_addr,
+        subject,
+      })
+      .eq("id", job.id);
     results.push({ id: job.id, ok: false, dlq: true, error: msg });
   } else {
     const backoffSeconds = computeBackoffSeconds({
@@ -345,13 +359,16 @@ async function handleError(
       currentAttempt,
       nextAttempt,
     });
-    await supabaseAdmin.from("message_jobs").update({
-      status: "pending",
-      attempt: nextAttempt,
-      last_error: msg.slice(0, 1000),
-      locked_at: null,
-      next_run_at: new Date(Date.now() + backoffSeconds * 1000).toISOString(),
-    }).eq("id", job.id);
+    await supabaseAdmin
+      .from("message_jobs")
+      .update({
+        status: "pending",
+        attempt: nextAttempt,
+        last_error: msg.slice(0, 1000),
+        locked_at: null,
+        next_run_at: new Date(Date.now() + backoffSeconds * 1000).toISOString(),
+      })
+      .eq("id", job.id);
     results.push({ id: job.id, ok: false, retryable, error: msg });
   }
 
@@ -364,7 +381,9 @@ async function handleError(
         history_id: null,
         error: `Gmail API ${status}: ${msg.slice(0, 300)}`,
       });
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 }
 
@@ -427,7 +446,10 @@ async function drainPendingAi(
       for (let i = 0; i < items.length; i += BATCH_SIZE) {
         const chunk = items.slice(i, i + BATCH_SIZE);
         try {
-          const out = await classifyEmailsBatch(chunk.map((c) => c.parsed), ctx.enrichedFolders);
+          const out = await classifyEmailsBatch(
+            chunk.map((c) => c.parsed),
+            ctx.enrichedFolders,
+          );
           await Promise.all(
             chunk.map(async (c, idx) => {
               const r = out[idx];
@@ -446,12 +468,12 @@ async function drainPendingAi(
                 folder_id: passes ? r.folder_id : null,
                 ai_summary: r.summary || null,
                 ai_confidence: r.confidence ?? 0,
-                classified_by: passes ? "ai" : (r.folder_id ? "ai_low_confidence" : "ai"),
+                classified_by: passes ? "ai" : r.folder_id ? "ai_low_confidence" : "ai",
                 classification_reason: passes
-                  ? (r.reason || null)
-                  : (r.folder_id
-                      ? `AI suggested "${candidate?.name ?? "?"}" at ${((r.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
-                      : (r.reason || null)),
+                  ? r.reason || null
+                  : r.folder_id
+                    ? `AI suggested "${candidate?.name ?? "?"}" at ${((r.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
+                    : r.reason || null,
               });
               if (passes && r.folder_id) void bumpEmailsSinceLearn(r.folder_id);
               await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
@@ -461,7 +483,10 @@ async function drainPendingAi(
         } catch (e: unknown) {
           // Batch failed — fall back to per-message classify so the
           // queue still drains.
-          console.error("batch AI classify failed, falling back per-message", (e as Error)?.message ?? e);
+          console.error(
+            "batch AI classify failed, falling back per-message",
+            (e as Error)?.message ?? e,
+          );
           await Promise.all(chunk.map(fallbackOne));
         }
       }

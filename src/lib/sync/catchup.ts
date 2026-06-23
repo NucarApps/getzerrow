@@ -170,7 +170,12 @@ export function buildCatchupRow(
     }
   }
   return {
-    upsert: { ...baseUpsert, classified_by: rules.classified_by, is_archived: archived, is_read: read },
+    upsert: {
+      ...baseUpsert,
+      classified_by: rules.classified_by,
+      is_archived: archived,
+      is_read: read,
+    },
     update: {
       email_id: "",
       folder_id: rules.folder_id,
@@ -186,7 +191,6 @@ export function buildCatchupRow(
     folder_id: rules.folder_id,
   };
 }
-
 
 export type CatchupResult = {
   scanned: number;
@@ -315,25 +319,30 @@ export async function bulkCatchupClaim(
     }
   }
 
-
   // ─── 6. Update job queue: drop done jobs, reset AI-needed back to
   //         pending so the live cron lane (5s) picks them up to run AI.
   if (rulesMatchedJobIds.length > 0) {
     await supabaseAdmin.from("message_jobs").delete().in("id", rulesMatchedJobIds);
   }
   if (pendingAiJobIds.length > 0) {
-    await supabaseAdmin.from("message_jobs").update({
-      status: "pending",
-      locked_at: null,
-      next_run_at: new Date().toISOString(),
-    }).in("id", pendingAiJobIds);
+    await supabaseAdmin
+      .from("message_jobs")
+      .update({
+        status: "pending",
+        locked_at: null,
+        next_run_at: new Date().toISOString(),
+      })
+      .in("id", pendingAiJobIds);
   }
   if (releaseJobIds.length > 0) {
-    await supabaseAdmin.from("message_jobs").update({
-      status: "pending",
-      locked_at: null,
-      next_run_at: new Date(Date.now() + 30_000).toISOString(),
-    }).in("id", releaseJobIds);
+    await supabaseAdmin
+      .from("message_jobs")
+      .update({
+        status: "pending",
+        locked_at: null,
+        next_run_at: new Date(Date.now() + 30_000).toISOString(),
+      })
+      .in("id", releaseJobIds);
   }
 
   // ─── 7. Folder side effects (Gmail label modify, forward) for
@@ -393,5 +402,8 @@ async function releaseClaimed(jobs: ClaimedJob[]) {
   await supabaseAdmin
     .from("message_jobs")
     .update({ status: "pending", locked_at: null })
-    .in("id", jobs.map((j) => j.id));
+    .in(
+      "id",
+      jobs.map((j) => j.id),
+    );
 }

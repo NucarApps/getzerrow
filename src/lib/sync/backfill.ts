@@ -70,7 +70,10 @@ export async function backfillWindow(
       pageToken,
     });
     for (const m of list.messages ?? []) {
-      if (!seen.has(m.id)) { seen.add(m.id); ids.push(m.id); }
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        ids.push(m.id);
+      }
       if (ids.length >= maxMessages) break;
     }
     pageToken = list.nextPageToken;
@@ -193,7 +196,9 @@ export async function cancelBackfillJob(jobId: string, userId: string) {
 export async function tickBackfillJobs(maxJobs = 2) {
   const { data: jobs } = await supabaseAdmin
     .from("backfill_jobs")
-    .select("id, user_id, gmail_account_id, query, status, next_page_token, total_found, total_enqueued, already_had")
+    .select(
+      "id, user_id, gmail_account_id, query, status, next_page_token, total_found, total_enqueued, already_had",
+    )
     .in("status", ["listing", "processing"])
     .order("updated_at", { ascending: true })
     .limit(maxJobs);
