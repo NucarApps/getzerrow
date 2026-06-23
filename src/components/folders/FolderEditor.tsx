@@ -1305,8 +1305,8 @@ function ReasonBlock({
   const meta = getReasonMeta(by);
   const Icon = meta.Icon;
 
-  let title = "";
-  let body: ReactNode = null;
+  let title: string;
+  let body: ReactNode;
 
   if (by === "ai") {
     const conf = email.ai_confidence != null ? Math.round(email.ai_confidence * 100) : null;

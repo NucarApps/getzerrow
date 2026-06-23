@@ -34,6 +34,14 @@ export default tseslint.config(
       ],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
+      // The React Compiler-era react-hooks rules (refs / purity / immutability /
+      // set-state-in-effect) flag patterns pervasively across this pre-existing
+      // codebase. Keep rules-of-hooks + exhaustive-deps enforced; adopt the
+      // stricter set incrementally rather than block every PR on a large refactor.
+      "react-hooks/refs": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/set-state-in-effect": "off",
     },
   },
   {
@@ -54,6 +62,14 @@ export default tseslint.config(
     ],
     rules: {
       "react-refresh/only-export-components": "off",
+    },
+  },
+  {
+    // Vendored shadcn/ui primitives carry a few upstream `any`s (chart tooltip
+    // payloads, sidebar context). Don't fight upstream types in vendored code.
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   eslintPluginPrettier,

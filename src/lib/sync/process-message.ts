@@ -432,7 +432,7 @@ export async function processGmailMessage(
 
   // 4) AI pass. The email is already visible in Inbox, so a slow or
   //    failed call costs classification latency, not visibility.
-  let folder_id: string | null = null;
+  let folder_id: string | null;
   try {
     const _tAi = performance.now();
     const c = await classifyByAi(parsed, context, rules);

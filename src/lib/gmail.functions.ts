@@ -972,7 +972,7 @@ export const archiveEmail = createServerFn({ method: "POST" })
         },
         e,
       );
-      throw new Error((e as Error)?.message || "Failed to archive in Gmail");
+      throw new Error((e as Error)?.message || "Failed to archive in Gmail", { cause: e });
     }
     // Pull the current raw_labels so we can strip INBOX in the same UPDATE
     // the realtime subscribers will see. Without this, the cached list keeps

@@ -180,7 +180,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
       .in("event_type", ["push", "push_empty"])
       .order("received_at", { ascending: false })
       .limit(1);
-    const lastPush: any = anyPushRows?.[0] ?? null;
+    const lastPush = anyPushRows?.[0] ?? null;
 
     const { data: lastTestRows } = await supabaseAdmin
       .from("pubsub_events")
@@ -410,7 +410,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         mode,
         account_email,
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       return {
         url,
         ok: false,
@@ -419,7 +419,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         topic_set: !!process.env.GMAIL_PUBSUB_TOPIC,
         mode,
         account_email,
-        error: e?.message ?? String(e),
+        error: (e as Error)?.message ?? String(e),
       };
     }
   });
