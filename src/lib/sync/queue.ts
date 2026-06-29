@@ -473,6 +473,7 @@ async function drainPendingAi(
             classification_reason: single.reason || null,
           });
           if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
+          await applyLiveEffects(c, single.folder_id);
           await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
           results.push({ id: c.job.id, ok: true });
         } catch (innerErr: unknown) {
