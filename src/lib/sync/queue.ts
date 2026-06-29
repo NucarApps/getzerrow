@@ -43,7 +43,13 @@ import { MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS, computeBackoffSeconds } from
 import { type AccountContext, loadAccountContext } from "./account-context";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { updateEmailEncrypted } from "./encrypted-writer";
-import { processGmailMessage, type ProcessTimings } from "./process-message";
+import {
+  applyFolderActions,
+  processGmailMessage,
+  resolveFolderFromContext,
+  type ProcessTimings,
+} from "./process-message";
+import { JOB_WORKER_CONCURRENCY, LIVE_BATCH_AI_THRESHOLD } from "./config";
 import type { classifyParsedEmail } from "./classify";
 
 export async function enqueueMessageJob(
