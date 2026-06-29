@@ -175,19 +175,31 @@ export async function runMessageJobs(
 
   const results: ProcessResult[] = [];
 
-  // After the first per-message pass, backfill messages still needing
-  // AI are queued here for a single batched LLM call per account.
+  // After the first per-message pass, messages still needing AI are
+  // queued here for a single batched LLM call per account. Backfill
+  // always defers; live mail defers only under a burst (see below).
+  // `applyEffects` marks live entries that still need folder side-effects
+  // (Gmail labels / archive / forward) applied after the batch resolves —
+  // backfill entries skip side-effects (don't re-forward historical mail).
   type PendingAi = {
     job: ClaimedJob;
     emailRowId: string;
     parsed: Parameters<typeof classifyParsedEmail>[0];
+    applyEffects: boolean;
   };
   const pendingAi: PendingAi[] = [];
 
+  // Under a burst, route the live lane's AI step through the batched
+  // classifier (8/call) instead of N inline calls. A single new email
+  // (claim batch below the threshold) keeps its inline, instant-folder
+  // behavior.
+  const liveBurst = claimed.length >= LIVE_BATCH_AI_THRESHOLD;
+
   const processOne = async (job: ClaimedJob) => {
     const ctx = contextByAccount.get(job.gmail_account_id);
-    // Backfill jobs (priority>=10) defer AI to the batched pass below.
-    const deferAi = job.priority >= 10;
+    const isBackfill = job.priority >= 10;
+    // Backfill always defers AI; live mail defers only during a burst.
+    const deferAi = isBackfill || liveBurst;
     const timings: ProcessTimings = { fetch: 0, ai: 0, db: 0 };
     try {
       const result = (await Promise.race([
@@ -225,7 +237,13 @@ export async function runMessageJobs(
         ctx &&
         ctx.folders.length > 0
       ) {
-        pendingAi.push({ job, emailRowId: result.email_id, parsed: result.parsed });
+        pendingAi.push({
+          job,
+          emailRowId: result.email_id,
+          parsed: result.parsed,
+          // Live (non-backfill) mail still needs folder side-effects applied.
+          applyEffects: !isBackfill,
+        });
         // Don't delete the job row yet — finalize after batch AI completes.
         return;
       }
