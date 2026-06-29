@@ -436,6 +436,29 @@ async function drainPendingAi(
     Array.from(byAccount.entries()).map(async ([aid, items]) => {
       const ctx = contextByAccount.get(aid);
       if (!ctx) return;
+      // Live (non-backfill) entries still need folder side-effects (Gmail
+      // label mutations / auto-archive / forward) applied once the batch
+      // resolves their folder. Backfill entries skip this so historical
+      // mail isn't re-labelled or re-forwarded.
+      const applyLiveEffects = async (c: PendingAi, folderId: string | null) => {
+        if (!c.applyEffects || !folderId) return;
+        const folder = resolveFolderFromContext(ctx, folderId);
+        if (!folder) return;
+        const inInbox = (c.parsed.raw_labels ?? []).includes("INBOX");
+        try {
+          await applyFolderActions(
+            c.job.gmail_account_id,
+            c.job.gmail_message_id,
+            c.emailRowId,
+            folder,
+            c.parsed,
+            inInbox,
+            { persistFlags: true },
+          );
+        } catch (e) {
+          console.error("live batch folder side-effects failed", (e as Error)?.message ?? e);
+        }
+      };
       // Per-message fallback — used when the whole batch call throws AND
       // for individual emails the batch response simply omitted.
       const fallbackOne = async (c: PendingAi) => {
