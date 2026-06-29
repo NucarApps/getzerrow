@@ -2,6 +2,26 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
+import {
+  AI_CLASSIFY_ATTEMPT_TIMEOUT_MS,
+  AI_CLASSIFY_TOTAL_BUDGET_MS,
+} from "./sync/config";
+
+/** Race a promise against a hard per-attempt timeout so one stalled
+ * upstream model call can't eat the whole classification budget. */
+async function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race<T>([
+      p,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function getModel(modelId: string = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY;
