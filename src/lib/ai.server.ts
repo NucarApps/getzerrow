@@ -122,13 +122,20 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
     return parts.join(" | ").slice(0, 400) || "unknown error";
   }
 
+  const deadline = Date.now() + AI_CLASSIFY_TOTAL_BUDGET_MS;
+  const budgetLeft = () => deadline - Date.now();
+
   async function tryStructured(modelId: string, trim: boolean): Promise<Out | null> {
     try {
-      const { output } = await generateText({
-        model: getModel(modelId),
-        output: Output.object({ schema }),
-        prompt: buildPrompt({ trim }),
-      });
+      const { output } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          output: Output.object({ schema }),
+          prompt: buildPrompt({ trim }),
+        }),
+        Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
+        `classify structured (${modelId})`,
+      );
       return output as Out;
     } catch (e) {
       lastError = describeError(e);
@@ -139,13 +146,17 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
 
   async function tryTextJson(modelId: string, trim: boolean): Promise<Out | null> {
     try {
-      const { text } = await generateText({
-        model: getModel(modelId),
-        prompt: `${buildPrompt({ trim })}
+      const { text } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          prompt: `${buildPrompt({ trim })}
 
 Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
 {"folder_name":"<one of: ${folderNames.map((n) => `"${n}"`).join(", ")} or \\"NONE\\">","confidence":<0..1>,"summary":"<<=140 chars>","reason":"<<=200 chars>"}`,
-      });
+        }),
+        Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
+        `classify text-json (${modelId})`,
+      );
       const cleaned = text
         .trim()
         .replace(/^```(?:json)?\s*/i, "")
@@ -166,13 +177,28 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
     }
   }
 
-  const output =
-    (await tryStructured("google/gemini-2.5-flash", false)) ||
-    (await tryTextJson("google/gemini-2.5-flash", false)) ||
-    (await tryStructured("google/gemini-2.5-flash-lite", false)) ||
-    (await tryTextJson("google/gemini-2.5-flash-lite", false)) ||
-    (await tryTextJson("openai/gpt-5-mini", true)) ||
-    (await tryTextJson("openai/gpt-5-nano", true));
+  // Run the cascade in budget-aware order: lead with the fastest model
+  // (flash-lite) so the common case returns quickly, then escalate. Each
+  // step is skipped once the total budget is exhausted.
+  type Attempt = () => Promise<Out | null>;
+  const cascade: Attempt[] = [
+    () => tryStructured("google/gemini-2.5-flash-lite", false),
+    () => tryTextJson("google/gemini-2.5-flash-lite", false),
+    () => tryStructured("google/gemini-2.5-flash", false),
+    () => tryTextJson("google/gemini-2.5-flash", false),
+    () => tryTextJson("openai/gpt-5-mini", true),
+    () => tryTextJson("openai/gpt-5-nano", true),
+  ];
+
+  let output: Out | null = null;
+  for (const attempt of cascade) {
+    if (budgetLeft() <= 0) {
+      lastError = lastError || "classification budget exhausted";
+      break;
+    }
+    output = await attempt();
+    if (output) break;
+  }
 
   if (!output)
     throw new Error(
