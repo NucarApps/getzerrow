@@ -865,10 +865,18 @@ export async function runMessageJobs(
     }
   };
 
+  // Under a burst, route the live lane's AI step through the batched
+  // classifier (8/call) instead of N inline AI calls. A single new email
+  // (claim batch below the threshold) keeps its inline, instant-folder
+  // behavior. The batched second pass below applies folder side-effects.
+  const liveBurst = claimed.length >= LIVE_BATCH_AI_THRESHOLD;
+
   const processOne = async (job: ClaimedJob) => {
     const ctx = contextByAccount.get(job.gmail_account_id);
-    // For backfill jobs (priority>=10) defer AI to the batched pass below.
-    const deferAi = job.priority >= 10;
+    // Backfill jobs (priority>=10) always defer AI to the batched pass; live
+    // mail defers only during a burst so big bursts batch instead of doing
+    // one slow inline AI call per message.
+    const deferAi = job.priority >= 10 || liveBurst;
     const timings: ProcessTimings = { fetch: 0, ai: 0, db: 0 };
     try {
       const result = (await Promise.race([
@@ -891,14 +899,17 @@ export async function runMessageJobs(
         ),
       ])) as Awaited<ReturnType<typeof processGmailMessage>>;
 
-      // Queue for batched AI if this backfill row landed in Inbox (no folder yet)
-      // and AI was deferred. We use classified_by check via the parsed result.
+      // Queue for batched AI only when the message actually needs the AI
+      // pass (needs_ai === true). Using needs_ai instead of `!folder_id`
+      // avoids re-classifying excluded/blocklisted rows (folder_id null but
+      // FINAL) and overwriting the user's decision.
       if (
         deferAi &&
         result &&
         "email_id" in result &&
         result.email_id &&
-        !result.folder_id &&
+        "needs_ai" in result &&
+        result.needs_ai === true &&
         result.parsed &&
         ctx &&
         ctx.folders.length > 0
@@ -907,6 +918,7 @@ export async function runMessageJobs(
         // Don't delete the job row yet — finalize after batch AI completes.
         return;
       }
+
 
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
       results.push({ id: job.id, ok: true });
