@@ -1,22 +1,18 @@
 ## Plan
 
-1. **Fix the real backend cause of the “one-by-one disappearing” effect**
-   - Update the queued AI classification worker so when it assigns an email to a folder, it also applies the folder’s final effects immediately: auto-archive, hide from inbox, mark read, star, snooze, forwarding, and local flags.
-   - This removes the current gap where batched/backfill AI sets `folder_id` but leaves the row looking like it still belongs in the inbox until a later reconcile/page-load repair updates it.
+1. **Finish the server-side reconciliation fix**
+   - Update `src/routes/api/public/gmail-reconcile.ts` to honor the new `max_accounts` cron parameter.
+   - Process only the oldest-due accounts by `last_reconcile_at ASC NULLS FIRST` so reconciliation rotates instead of timing out by trying every account in one request.
+   - Stamp `last_reconcile_at` in a `finally` block after each account attempt so one slow/broken account does not starve the others.
 
-2. **Make the Inbox list show only settled, actionable inbox mail**
-   - Update the inbox list database function so the default Zerrow Inbox excludes mail that is already assigned to a folder whose rules say it should be hidden/archived, even if local Gmail-label state is temporarily behind.
-   - Keep folder views and All mail usable for inspecting filed mail.
+2. **Fix the stale UI refresh edge cases**
+   - Correct the `pullOlderMut` refetch query key from `['emails', selectedFolder]` to an account-aware key so it actually matches the inbox list cache.
+   - Avoid the manual Refresh button showing a stale pre-sync refetch by refetching the email list after the Gmail/background sync finishes, not before it.
 
-3. **Apply the same visibility rules everywhere the inbox reads mail**
-   - Update unread counts to match the same “settled actionable inbox” contract.
-   - Update direct search queries in the inbox UI so search does not leak `pending` / `pending_ai` rows or hidden-folder rows into the visible list.
+3. **Keep realtime structurally safe**
+   - Move `useEmailRealtime()` inside `AccountSelectionProvider` so future account-scoped realtime behavior can use the same account context as the inbox.
+   - Do not change unrelated inbox behavior or SEO/security findings.
 
-4. **Remove page-load repair as the thing users notice**
-   - Keep the entry catch-up as a safety net, but make it unable to reveal mail that is still being sorted or already filed.
-   - Keep realtime updates, but make them only add mail to the Inbox after it truly belongs there.
-
-5. **Verify with backend data and tests**
-   - Add/update tests for the realtime visibility rules.
-   - Check recent database rows before and after the fix to confirm mail in auto-archive/hidden folders no longer appears in the Inbox.
-   - Run the targeted inbox/realtime tests after implementation.
+4. **Verify**
+   - Confirm cron calls are returning 200 and `poll`/`reconcile` events are logging.
+   - Run the existing realtime/inbox-related tests after implementation.
