@@ -415,6 +415,7 @@ type PendingAi = {
   job: ClaimedJob;
   emailRowId: string;
   parsed: Parameters<typeof classifyParsedEmail>[0];
+  applyEffects: boolean;
 };
 
 async function drainPendingAi(
