@@ -303,11 +303,15 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
 
   for (const modelId of ["google/gemini-2.5-flash-lite", "google/gemini-2.5-flash"]) {
     try {
-      const { output } = await generateText({
-        model: getModel(modelId),
-        output: Output.object({ schema }),
-        prompt,
-      });
+      const { output } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          output: Output.object({ schema }),
+          prompt,
+        }),
+        AI_BATCH_ATTEMPT_TIMEOUT_MS,
+        `classifyEmailsBatch (${modelId})`,
+      );
       parsed = output as Out;
       break;
     } catch (e) {
