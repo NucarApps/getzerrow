@@ -3,6 +3,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 import {
+  AI_BATCH_ATTEMPT_TIMEOUT_MS,
   AI_CLASSIFY_ATTEMPT_TIMEOUT_MS,
   AI_CLASSIFY_TOTAL_BUDGET_MS,
 } from "./sync/config";
