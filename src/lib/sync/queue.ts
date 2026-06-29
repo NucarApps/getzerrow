@@ -525,6 +525,7 @@ async function drainPendingAi(
                     : r.reason || null,
               });
               if (passes && r.folder_id) void bumpEmailsSinceLearn(r.folder_id);
+              await applyLiveEffects(c, passes ? r.folder_id : null);
               await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
               results.push({ id: c.job.id, ok: true });
             }),
