@@ -44,7 +44,7 @@ export type ActionFolder = {
   snooze_hours: number;
 };
 
-function resolveFolderFromContext(
+export function resolveFolderFromContext(
   context: AccountContext | undefined,
   folderId: string,
 ): ActionFolder | null {
