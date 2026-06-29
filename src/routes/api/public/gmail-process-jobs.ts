@@ -21,7 +21,7 @@ export const Route = createFileRoute("/api/public/gmail-process-jobs")({
               : undefined;
           const t0 = Date.now();
           try {
-            const r = await runMessageJobs(limit, 16, { priority });
+            const r = await runMessageJobs(limit, JOB_WORKER_CONCURRENCY, { priority });
             return Response.json({ ...r, ok: true, run_id: runId });
           } catch (e: unknown) {
             logError(
