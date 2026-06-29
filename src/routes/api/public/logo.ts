@@ -56,6 +56,39 @@ async function tryFetch(url: string): Promise<Response | null> {
   }
 }
 
+// In-memory cache to prevent repeated upstream fanout for the same logo.
+// Because logos are loaded via <img src> (no Authorization header can be
+// attached), the endpoint stays public; this cache plus the long CDN
+// Cache-Control headers below are the defense against quota exhaustion and
+// cost amplification from bulk/anonymous requests.
+type CacheHit = { buf: ArrayBuffer; contentType: string };
+type CacheEntry = { hit: CacheHit | null; expires: number };
+const HIT_TTL_MS = 24 * 60 * 60 * 1000; // 24h for found logos
+const MISS_TTL_MS = 60 * 60 * 1000; // 1h for negative results
+const MAX_ENTRIES = 2000;
+const logoCache = new Map<string, CacheEntry>();
+
+function readCache(key: string): CacheEntry | null {
+  const entry = logoCache.get(key);
+  if (!entry) return null;
+  if (entry.expires <= Date.now()) {
+    logoCache.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function writeCache(key: string, hit: CacheHit | null): void {
+  if (logoCache.size >= MAX_ENTRIES) {
+    const oldest = logoCache.keys().next().value;
+    if (oldest !== undefined) logoCache.delete(oldest);
+  }
+  logoCache.set(key, {
+    hit,
+    expires: Date.now() + (hit ? HIT_TTL_MS : MISS_TTL_MS),
+  });
+}
+
 export const Route = createFileRoute("/api/public/logo")({
   server: {
     handlers: {
@@ -76,20 +109,43 @@ export const Route = createFileRoute("/api/public/logo")({
           }
           candidates = [all[idx]];
         }
+
+        const cacheKey = `${domain}|${size}|${providerParam ?? "*"}`;
+        const cached = readCache(cacheKey);
+        if (cached) {
+          if (cached.hit) {
+            return new Response(cached.hit.buf, {
+              status: 200,
+              headers: {
+                "Content-Type": cached.hit.contentType,
+                "Cache-Control": "public, max-age=2592000, s-maxage=2592000, immutable",
+                "Access-Control-Allow-Origin": "*",
+              },
+            });
+          }
+          return new Response("Not found", {
+            status: 404,
+            headers: { "Cache-Control": "public, max-age=3600" },
+          });
+        }
+
         for (const candidate of candidates) {
           const res = await tryFetch(candidate);
           if (!res) continue;
           const buf = await res.arrayBuffer();
           if (buf.byteLength < MIN_BYTES) continue;
+          const contentType = res.headers.get("content-type") || "image/png";
+          writeCache(cacheKey, { buf, contentType });
           return new Response(buf, {
             status: 200,
             headers: {
-              "Content-Type": res.headers.get("content-type") || "image/png",
+              "Content-Type": contentType,
               "Cache-Control": "public, max-age=2592000, s-maxage=2592000, immutable",
               "Access-Control-Allow-Origin": "*",
             },
           });
         }
+        writeCache(cacheKey, null);
         return new Response("Not found", {
           status: 404,
           headers: { "Cache-Control": "public, max-age=3600" },
