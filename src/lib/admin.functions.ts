@@ -3,11 +3,18 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-const ADMIN_EMAILS = ["chris@nucar.com"];
+// Admin emails are configured via the ADMIN_EMAILS env var (comma-separated),
+// kept out of source so the privileged account is not disclosed in the codebase.
+function adminEmails(): string[] {
+  return (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.toLowerCase().trim())
+    .filter((e) => e.length > 0);
+}
 
 function isAdminEmail(email: unknown): boolean {
   if (typeof email !== "string") return false;
-  return ADMIN_EMAILS.includes(email.toLowerCase().trim());
+  return adminEmails().includes(email.toLowerCase().trim());
 }
 
 function assertAdmin(claims: unknown): string {
