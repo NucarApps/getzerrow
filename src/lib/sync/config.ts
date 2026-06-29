@@ -45,9 +45,9 @@ export const REARM_COOLDOWN_MS = 30 * 60 * 1000; // 30min
 // ─── Webhook ─────────────────────────────────────────────────────────────
 
 /** Time budget for the inline post-webhook drain. Pub/Sub considers a
- * push delivered if we ack within ~10s; spending up to 4s here cuts
+ * push delivered if we ack within ~10s; spending up to 7s here cuts
  * push → visible latency without risking redelivery. */
-export const WEBHOOK_INLINE_DRAIN_BUDGET_MS = 4_000;
+export const WEBHOOK_INLINE_DRAIN_BUDGET_MS = 7_000;
 
 // ─── History sync ────────────────────────────────────────────────────────
 
