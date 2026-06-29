@@ -927,6 +927,7 @@ export type Database = {
           last_oauth_error: string | null
           last_poll_at: string | null
           last_push_at: string | null
+          last_reconcile_at: string | null
           needs_reconnect: boolean
           reconcile_cursor: string | null
           refresh_token_enc: string | null
@@ -950,6 +951,7 @@ export type Database = {
           last_oauth_error?: string | null
           last_poll_at?: string | null
           last_push_at?: string | null
+          last_reconcile_at?: string | null
           needs_reconnect?: boolean
           reconcile_cursor?: string | null
           refresh_token_enc?: string | null
@@ -973,6 +975,7 @@ export type Database = {
           last_oauth_error?: string | null
           last_poll_at?: string | null
           last_push_at?: string | null
+          last_reconcile_at?: string | null
           needs_reconnect?: boolean
           reconcile_cursor?: string | null
           refresh_token_enc?: string | null
