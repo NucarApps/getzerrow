@@ -27,7 +27,7 @@ async function drainWithBudget(budgetMs: number): Promise<{ rounds: number; proc
   let processed = 0;
   let emptyRounds = 0;
   while (Date.now() < deadline) {
-    const r = await runMessageJobs(25, 16, { priority: 0 });
+    const r = await runMessageJobs(50, JOB_WORKER_CONCURRENCY, { priority: 0 });
     rounds++;
     processed += r.processed ?? 0;
     if ((r.processed ?? 0) === 0) {
