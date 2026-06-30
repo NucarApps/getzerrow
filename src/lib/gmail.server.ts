@@ -386,6 +386,7 @@ export function parseMessage(msg: ParsableGmailMessage) {
     body_html: bodyHtml,
     received_at: new Date(parseInt(msg.internalDate ?? "0", 10)).toISOString(),
     has_attachment: hasAttachment,
+    has_calendar_invite: hasCalendarInvite,
     raw_labels: (msg.labelIds || []) as string[],
     is_read: !(msg.labelIds || []).includes("UNREAD"),
   };
