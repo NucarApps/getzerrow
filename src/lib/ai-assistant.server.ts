@@ -338,6 +338,8 @@ export async function proposeAssistantChanges(args: {
   userMessage: string;
   emails: AssistantContextEmail[];
   folders: AssistantContextFolder[];
+  folderSample?: { folderId: string; folderName: string; emails: AssistantContextEmail[] };
+  domainClusters?: DomainCluster[];
 }): Promise<AssistantProposal> {
   try {
     return await callModel(buildPrompt(args));
