@@ -608,40 +608,23 @@ function InboxPage() {
       const isAllMail = selectedFolder === "all_mail";
       const folderRows = foldersQ.data ?? [];
       if (isSearching) {
-        // Operator-aware search: when the user typed `from:` / `to:`, filter
-        // server-side so we don't get capped by the 2000-newest window.
-        if (hasOperator) {
-          const esc = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
-          let q = supabase
-            .from("emails")
-            .select(LIST_COLUMNS)
-            .eq("gmail_account_id", accountId!)
-            .order("received_at", { ascending: false, nullsFirst: false })
-            .limit(500);
-          // While searching, span all mail (Gmail itself does). Only scope
-          // when the user picked a specific folder.
-          if (!isAllMail && selectedFolder !== "all") {
-            if (isNoRules) q = q.is("folder_id", null);
-            else q = q.eq("folder_id", selectedFolder);
-          }
-          if (parsedQuery.from) {
-            const v = esc(parsedQuery.from);
-            // from_name / to_addrs / subject / snippet are encrypted; filter
-            // those client-side after hydration. from_addr is still plaintext.
-            q = q.ilike("from_addr", `%${v}%`);
-          }
-          const { data } = await q;
-          const rows = (data ?? []) as unknown as Email[];
-          return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
-        }
-        // Free-text search: ranked, server-side full-text search over the
-        // GIN-indexed search index (subject/snippet/body + sender/recipient).
-        // Only the matched rows are decrypted, server-side, so the browser no
-        // longer downloads 5,000 rows or fuzzy-scores on the main thread — the
-        // source of the freeze. We then hydrate the small result set's list
-        // metadata and keep the server's relevance ordering.
+        // Single server-side path for both free-text and `from:` / `to:`
+        // operator search. The server ranks over the GIN-indexed search index:
+        // free-text against subject/snippet/body + sender/recipient, and
+        // operators against the dedicated participant index (sender = weight A,
+        // recipient = weight B) across the WHOLE mailbox — no longer capped by
+        // a recent-rows window, and matched by email address AND display name.
+        // Only matched rows are decrypted server-side, so the browser never
+        // downloads or fuzzy-scores the corpus (the old freeze).
         const res = await searchInboxFn({
-          data: { query: searchTerm, account_id: accountId!, limit: 100 },
+          data: {
+            query: searchTerm,
+            from: parsedQuery.from,
+            to: parsedQuery.to,
+            rest: parsedQuery.rest,
+            account_id: accountId!,
+            limit: 100,
+          },
         });
         const hits = res.rows ?? [];
         if (hits.length === 0) return [];
