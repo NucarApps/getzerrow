@@ -587,7 +587,12 @@ function InboxPage() {
             to: parsedQuery.to,
             rest: parsedQuery.rest,
             account_id: accountId!,
-            limit: 100,
+            // Strict, small result window: fetch exactly one page (+1 sentinel
+            // row to detect "has more"). The SQL search RPC applies this
+            // LIMIT/OFFSET on the index BEFORE joining `emails`, so the join
+            // never reads more than PAGE_SIZE + 1 rows per search page.
+            limit: PAGE_SIZE + 1,
+            offset: (page - 1) * PAGE_SIZE,
           },
         });
         const hits = res.rows ?? [];
