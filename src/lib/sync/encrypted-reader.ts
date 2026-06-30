@@ -226,6 +226,34 @@ export async function searchEmailsDecrypted(args: {
   return { rows: (data as EmailSearchRow[] | null) ?? [], error: null };
 }
 
+// Whole-mailbox `from:` / `to:` operator search. Matches sender tokens (weight
+// A) and recipient tokens (weight B) against the dedicated participant index,
+// optionally AND-ed with free-text terms against the main full-text index, then
+// decrypts only the matched rows. Distinguishes sender from recipient and is
+// not capped by the recent-rows window the client previously scanned.
+export async function searchEmailsParticipantsDecrypted(args: {
+  userId: string;
+  from: string | null;
+  to: string | null;
+  rest: string;
+  limit: number;
+  offset: number;
+  accountId: string | null;
+}): Promise<{ rows: EmailSearchRow[]; error: string | null }> {
+  const { data, error } = await supabaseAdmin.rpc("search_emails_participants", {
+    p_user_id: args.userId,
+    p_from: args.from,
+    p_to: args.to,
+    p_rest: args.rest,
+    p_limit: args.limit,
+    p_offset: args.offset,
+    p_key: getKey(),
+    p_account_id: args.accountId,
+  } as never);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data as EmailSearchRow[] | null) ?? [], error: null };
+}
+
 export type ContactListFields = {
   id: string;
   relationship_summary: string | null;
