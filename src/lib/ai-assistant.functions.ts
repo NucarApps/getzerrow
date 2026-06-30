@@ -243,9 +243,11 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
     const folderIds = Array.from(
       new Set(
         data.actions.flatMap((a) =>
-          a.type === "move_email"
+          a.type === "move_email" || a.type === "move_matching"
             ? [a.to_folder_id]
-            : a.type === "add_filter" || a.type === "update_folder_rule"
+            : a.type === "add_filter" ||
+                a.type === "update_folder_rule" ||
+                a.type === "update_folder_profile"
               ? [a.folder_id]
               : [],
         ),
