@@ -13,7 +13,7 @@ import { withCronRun, logError } from "@/lib/log.server";
 
 type ReindexRpc = {
   rpc: (
-    fn: "reindex_email_search_sender",
+    fn: "reindex_email_search_sender" | "reindex_email_participants",
     args: { p_batch_limit: number; p_key: string },
   ) => Promise<{ data: number | null; error: { message: string } | null }>;
 };
