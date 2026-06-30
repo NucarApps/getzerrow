@@ -10,6 +10,11 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { performMove } from "./move-email.server";
 import { getEmailsDecrypted } from "./sync/encrypted-reader";
 import {
+  aggregateDomainClusters,
+  extractDomain,
+  matchFolderByName,
+} from "./ai-assistant-context";
+import {
   proposeAssistantChanges as proposeAi,
   type AssistantAction,
   type AssistantChatMessage,
@@ -27,6 +32,14 @@ const actionInputSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("move_email"),
     email_id: z.string().uuid(),
+    to_folder_id: z.string().uuid(),
+    why: z.string().max(400).optional().default(""),
+  }),
+  z.object({
+    type: z.literal("move_matching"),
+    field: z.enum(["from", "domain", "subject"]),
+    op: z.enum(["contains", "equals", "starts_with"]),
+    value: z.string().min(1).max(400),
     to_folder_id: z.string().uuid(),
     why: z.string().max(400).optional().default(""),
   }),
@@ -49,7 +62,20 @@ const actionInputSchema = z.discriminatedUnion("type", [
     ai_rule: z.string().min(1).max(500),
     why: z.string().max(400).optional().default(""),
   }),
+  z.object({
+    type: z.literal("update_folder_profile"),
+    folder_id: z.string().uuid(),
+    learned_profile: z.string().min(1).max(2000),
+    why: z.string().max(400).optional().default(""),
+  }),
 ]);
+
+// How many existing emails a single move_matching action may move.
+const MOVE_MATCHING_CAP = 200;
+// Recent emails sampled from a referenced folder so the AI can see patterns.
+const FOLDER_SAMPLE_SIZE = 20;
+// Recent account emails scanned to build sender-domain clusters.
+const DOMAIN_SCAN_WINDOW = 150;
 
 export const proposeAssistantChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
