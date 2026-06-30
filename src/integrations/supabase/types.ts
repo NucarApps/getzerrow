@@ -418,18 +418,21 @@ export type Database = {
       email_search_index: {
         Row: {
           email_id: string
+          has_sender: boolean
           tsv: unknown
           updated_at: string
           user_id: string
         }
         Insert: {
           email_id: string
+          has_sender?: boolean
           tsv: unknown
           updated_at?: string
           user_id: string
         }
         Update: {
           email_id?: string
+          has_sender?: boolean
           tsv?: unknown
           updated_at?: string
           user_id?: string
@@ -1614,8 +1617,13 @@ export type Database = {
           watch_expiration: string
         }[]
       }
+      reindex_email_search_sender: {
+        Args: { p_batch_limit: number; p_key: string }
+        Returns: number
+      }
       search_emails: {
         Args: {
+          p_account_id?: string
           p_key: string
           p_limit: number
           p_offset: number
