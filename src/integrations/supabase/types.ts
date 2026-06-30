@@ -418,24 +418,30 @@ export type Database = {
       email_search_index: {
         Row: {
           email_id: string
+          gmail_account_id: string | null
           has_sender: boolean
           participant_tsv: unknown
+          received_at: string | null
           tsv: unknown
           updated_at: string
           user_id: string
         }
         Insert: {
           email_id: string
+          gmail_account_id?: string | null
           has_sender?: boolean
           participant_tsv?: unknown
+          received_at?: string | null
           tsv: unknown
           updated_at?: string
           user_id: string
         }
         Update: {
           email_id?: string
+          gmail_account_id?: string | null
           has_sender?: boolean
           participant_tsv?: unknown
+          received_at?: string | null
           tsv?: unknown
           updated_at?: string
           user_id?: string
