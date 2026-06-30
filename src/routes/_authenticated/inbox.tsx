@@ -987,6 +987,12 @@ function InboxPage() {
   });
 
   function goNext() {
+    if (isSearching) {
+      // Offset-based paging: the query key includes `page`, so bumping it
+      // refetches the next PAGE_SIZE window from the search RPC.
+      if (hasMoreSearch) setPage((p) => p + 1);
+      return;
+    }
     if (hasMoreLocal) {
       const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
       setCursors((prev) => {
