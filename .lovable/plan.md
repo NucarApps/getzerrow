@@ -1,54 +1,44 @@
-## Goal
+# Make email search much faster
 
-Make the **Inbox assistant** chat smarter so it can diagnose *why* mail is being misfiled instead of reacting to a single hand-picked email. It should look across recent/related mail, understand each folder's full instruction set, and propose durable fixes — better instructions, domain filters, removing conflicting filters, and bulk moves.
+## What's actually slow (measured)
 
-## Problems today
+I profiled the live search path against the largest mailbox (77k indexed messages). A common-term search currently takes **~7.7 seconds**. The query plan shows why:
 
-- The assistant only receives the emails you manually select (`selected_email_ids`). With nothing selected it's blind; with one selected it can't see a pattern.
-- It never sees a folder's `learned_profile` — only the short `ai_rule` — so its rewrites ignore what the classifier actually learned.
-- Per-email context is thin (`from_addr`, `subject`, `snippet`, `folder_id`). No sender domain, reply flag, calendar flag, or *why it landed where it did* — exactly the signals needed to explain a misfile.
-- Actions are one-at-a-time on selected emails. "Move everything from @acme.com to Clients" isn't expressible.
+- `search_emails` orders results by `ts_rank(...)`. Postgres has no way to rank from an index, so for a common word it pulls **all ~64,000 matching rows**, reads their full search vectors, scores every one, then sorts the whole set on disk.
+- The search vectors are huge: the index stores up to **100,000 characters of each email body**, so the average vector is ~3.8 KB (max 164 KB). Reading them for scoring touches ~**350 MB** on every search and spills the sort to disk.
 
-## Changes
+So the cost is "read and score the entire match set to rank it" combined with "vectors are enormous because we index the whole body."
 
-### 1. Richer context gathering — `src/lib/ai-assistant.functions.ts`
-In `proposeAssistantChanges.handler`, in addition to selected emails:
-- **Include `learned_profile`** in the folder query and in `AssistantContextFolder`.
-- **Recent folder sample:** lightweight free-text parse of the user message to detect a referenced folder name (fuzzy match against the user's folders). When matched, load that folder's ~20 most recent emails (decrypted) as context so the model can see the misfiling pattern.
-- **Domain clustering:** load a recent window (~150) of the account's emails, aggregate counts by sender domain + current folder, and pass the top ~15 domain clusters (domain, count, which folders they currently land in). This is what powers "add a domain filter" suggestions without the user selecting anything.
-- **Richer per-email signals:** extend `AssistantContextEmail` with `domain`, `is_reply` (from `in_reply_to`), `has_calendar_invite`, `list_id`, and `classification_reason` so the model can explain and target fixes.
-- Keep all reads `.eq("user_id", context.userId)` / account-scoped (no security change).
+## The fix (three parts)
 
-### 2. New + improved actions — `src/lib/ai-assistant.server.ts` and `.functions.ts`
-- Add **`move_matching`** action: `{ field: from|domain|subject, op, value, to_folder_id }` — moves all of the user's emails matching the criteria into a folder (capped, e.g. 200 per apply) and is normally paired with an `add_filter` so future mail follows. Implemented in `applyAssistantChanges` by querying owned matching emails and calling `performMove` per row (reuse existing ownership checks).
-- Add **`update_folder_profile`** action: rewrite the longer `learned_profile` (validated, ≤2000 chars) so the assistant can fix classifier drift, not just the short rule.
-- Update the JSON tool schema (`TOOL_PARAMETERS_SCHEMA`), the Zod `actionSchema` (both files), and the apply handler's ownership pre-checks to cover the two new action types.
+### 1. Shrink the search vectors
+Stop indexing 100k characters of body text. Index subject + sender + recipient + snippet at full weight and only the **first ~3,000 characters** of the body. This cuts the average vector roughly 5–6×, shrinks the full-text index proportionally, and removes the disk-spilling sort. Body-deep matches beyond the first few KB are rare in email and not worth the constant cost.
 
-### 3. Stronger prompt/instructions — `buildPrompt` in `ai-assistant.server.ts`
-- Surface the new context blocks: per-folder `learned_profile`, the recent-folder sample, and the domain clusters.
-- Add guidance so the model:
-  - **Diagnoses across multiple emails** — identify the shared signal (sender, domain, list-id, reply-vs-automated) causing the misfile before proposing a fix.
-  - **Prefers durable fixes**: a `domain` filter over repeated single moves; `move_matching` + `add_filter` when many existing emails share a signal.
-  - **Detects competing filters** in *other* folders that would re-catch the mail and proposes `remove_filter` for them.
-  - **Refines instructions precisely**: tighten `ai_rule` / `learned_profile` to exclude the misfiled class (e.g. "human replies are NOT automated invites") rather than broadening.
-  - Explains its reasoning in each action's `why`.
+### 2. Order by recency from the index instead of scoring everything
+Email search almost always wants "most recent matches first," not abstract relevance. Switch the default ordering to `received_at DESC` and serve it directly from a recency-aware full-text index (RUM extension, already available on this database). RUM returns the top-N most recent matches straight from the index, so a search reads ~100 rows instead of 64,000. This is the single biggest win and makes worst-case (common word) searches as fast as best-case.
 
-### 4. UI — `src/components/inbox/AssistantPanel.tsx`
-- Add `Action` variants and `describeAction` cases for `move_matching` ("Move all <field> <op> "value" → Folder") and `update_folder_profile` ("Refine learned profile for …").
-- Update the empty-state example prompts to showcase the new power (e.g. *"Replies from clients keep landing in Invitations — fix it"*, *"Move everything from @acme.com to Clients and keep it there"*).
-- No change to the approve-before-apply flow; new actions render as normal reviewable checkboxes.
+### 3. Denormalize `received_at` into the search index
+Copy `received_at` onto each search-index row (kept in sync on write) so ordering never has to join back to the large `emails` table.
 
-### 5. Tests
-- Extend assistant-related unit coverage (or add a focused test) for: action schema parsing of the two new types, and the domain-cluster aggregation helper (pure function, extracted for testability).
+Expected result: common-term searches drop from ~7.7s to well under ~200ms, and the pathological "popular word" case stops being slow.
+
+## Rollout
+
+- One migration: install RUM, add `received_at` to the search index, add the recency RUM index, drop the now-redundant standalone full-text index to cut write overhead.
+- Update the write RPCs (`upsert_email_encrypted`, `insert_email_encrypted`, `update_email_encrypted`) to (a) cap body at ~3k chars in the vector and (b) populate `received_at`.
+- Rewrite `search_emails` and `search_emails_participants` to order by `received_at DESC` from the index. Keep an optional relevance mode for short, rare queries if desired.
+- Backfill the 145k existing rows with the smaller vector + `received_at` using the existing batched reindex cron (`/api/public/gmail-search-reindex`) — runs in the background, idempotent, no downtime. Search keeps working on old rows throughout; they just get faster as they're rebuilt.
+- No client/UI changes required; the debounced server-side search call stays the same.
 
 ## Technical notes
 
-- Reuses `performMove` (`move-email.server.ts`), `getEmailsDecrypted` (`encrypted-reader`), and the existing per-action ownership verification — no new privileged paths.
-- All AI calls stay server-side via the existing Lovable AI Gateway call in `ai-assistant.server.ts`; same model, same retry/credit-error handling.
-- Bulk move is capped and applied row-by-row through the audited `performMove` so side-effects and Gmail label sync stay consistent.
-- No schema/migration changes required — `folder_filters`, `learned_profile`, and `in_reply_to` already exist.
+- RUM index: `USING rum (tsv rum_tsvector_addon_ops, received_at)` enables `WHERE tsv @@ q ORDER BY received_at DESC LIMIT n` served from the index. The participant search uses the same pattern on `participant_tsv`.
+- The body cap is applied in three places that build the tsvector (the two insert/upsert RPCs and the update RPC) plus the reindex functions, so new and historical rows converge on the same shape.
+- Building the RUM index on 145k rows runs inside the migration; if build time is a concern we create it on the shrunk vectors after a first reindex pass.
+- Redundant index `email_search_index_tsv_idx` (plain GIN on `tsv`) is dropped; the user-scoped composite already covers all queries.
 
-## Out of scope
+## Verification
 
-- Changing the background classifier pipeline (`sync/*`) or the auto-relearn cron.
-- Persisting assistant chat history (panel stays session-only).
+- Re-run `EXPLAIN (ANALYZE, BUFFERS)` on the same common-term query and confirm it reads ~100 rows from the RUM index with no disk sort.
+- Spot-check a rare term, a `from:`/`to:` operator search, and an account-scoped search for correctness and latency.
+- Confirm new incoming mail is searchable immediately (write path) and the backfill drains the historical backlog.
