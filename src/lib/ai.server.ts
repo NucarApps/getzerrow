@@ -234,6 +234,8 @@ export async function classifyEmailsBatch(
     subject: string;
     snippet: string;
     body_text: string;
+    in_reply_to?: string;
+    has_calendar_invite?: boolean;
   }>,
   folders: ClassifyFolder[],
 ): Promise<
