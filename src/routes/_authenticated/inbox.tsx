@@ -181,47 +181,8 @@ type Folder = {
   hide_from_inbox: boolean;
 };
 
-const IN_PROGRESS_CLASSIFICATIONS = new Set(["pending", "pending_ai"]);
 
-function isInProgressEmail(email: Pick<Email, "classified_by">): boolean {
-  return (
-    typeof email.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(email.classified_by)
-  );
-}
 
-function emailBelongsInScope(email: Email, selectedFolder: string, folders: Folder[]): boolean {
-  if (selectedFolder === "all_mail") return true;
-  if (isInProgressEmail(email)) return false;
-  const snoozedMs = email.snoozed_until ? new Date(email.snoozed_until).getTime() : 0;
-  if (snoozedMs && snoozedMs > Date.now()) return false;
-  const labels = email.raw_labels ?? [];
-  const folder = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
-  if (selectedFolder === "all") {
-    return (
-      email.is_archived !== true &&
-      labels.includes("INBOX") &&
-      !(folder?.auto_archive || folder?.hide_from_inbox)
-    );
-  }
-  if (selectedFolder === "no_rules") {
-    return email.folder_id === null && !labels.some((label) => label.startsWith("Label_"));
-  }
-  return email.folder_id === selectedFolder;
-}
-
-// Search spans the WHOLE mailbox, not the currently-selected inbox view. The
-// server already ranks matches across archived, sent, and folder-filed mail,
-// so we must not re-apply the inbox scope here — doing so silently discarded
-// every archived/filed hit (e.g. a contact you email back and forth with) and
-// left the UI stuck on "Pulling N matches from Gmail…" with nothing rendered.
-// We only drop rows that genuinely aren't ready to show: still-classifying
-// (in-progress) rows and currently-snoozed rows.
-function matchesSearchScope(email: Email): boolean {
-  if (isInProgressEmail(email)) return false;
-  const snoozedMs = email.snoozed_until ? new Date(email.snoozed_until).getTime() : 0;
-  if (snoozedMs && snoozedMs > Date.now()) return false;
-  return true;
-}
 
 const PAGE_SIZE = 50;
 
