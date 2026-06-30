@@ -72,6 +72,7 @@ function parsed(over: Partial<ReturnType<typeof import("./gmail.server").parseMe
     body_html: over.body_html ?? "",
     received_at: over.received_at ?? new Date().toISOString(),
     has_attachment: over.has_attachment ?? false,
+    has_calendar_invite: over.has_calendar_invite ?? false,
     raw_labels: over.raw_labels ?? ["INBOX"],
     is_read: over.is_read ?? false,
   };
