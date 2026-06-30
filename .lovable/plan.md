@@ -1,46 +1,48 @@
-# Make background mail processing faster
+# Make email search fast and stop the freeze
 
-Goal: drain backlogs faster **and** lower per-email latency. You chose "speed first," so these changes trade some extra AI/compute usage for throughput.
+## What's wrong today
 
-## Where the time goes today
+Free-text inbox search ignores the full-text search infrastructure that already exists and instead does the heaviest possible thing in the browser:
 
-- **Live lane** (`gmail-process-live-5s`): every 5s, a single request, `limit=50`, worker concurrency **16**. Live mail runs **one AI classification per email inline** — a 4-model cascade with a 7s/attempt, 18s total budget. That cascade is the dominant cost.
-- **Mixed lane** (`gmail-process-jobs-30s`): 4 parallel requests, `limit=100`, every 30s.
-- **Webhook** drain on push: `runMessageJobs(25, 16)` with a 4s inline budget.
-- Backfill already batches AI 8-per-call; live mail does not.
+1. On **every keystroke** (no debounce), it fetches up to **5,000 raw email rows** for the account.
+2. It then makes a second server round-trip to **decrypt up to 5,000 rows** (`getEmailListFields`).
+3. It then runs **fuzzy token scoring** over all of them on the main thread (`decodeEntities`, edit-distance matching).
 
-## Changes
+For large mailboxes (one account here has ~76k emails) this locks up the tab and forces a page refresh.
 
-### 1. Pump more work per tick (throughput)
-- Raise worker concurrency from **16 → 32** for the job runners (`runMessageJobs` default + the values passed in `gmail-process-jobs.ts` and the webhook handler).
-- Live lane (`gmail-process-live-5s`): bump `limit` from 50 → **100** and fan out from **1 → 3** parallel POSTs per 5s tick (matching the mixed-lane pattern). This roughly triples live drain capacity.
-- Mixed lane (`gmail-process-jobs-30s`): keep 4 POSTs but they now run at concurrency 32.
+Meanwhile the app already has everything needed for instant search, just unused by the UI:
+- `email_search_index` table with a `tsv` column, GIN-indexed, fully populated (144k rows, 0 missing).
+- A ranked, paginated, decrypting RPC `public.search_emails(user_id, query, limit, offset, key)` using `websearch_to_tsquery` + `ts_rank`.
 
-### 2. Speed up the live AI cascade (latency)
-In `src/lib/sync/config.ts` / `src/lib/ai.server.ts`:
-- Drop `AI_CLASSIFY_ATTEMPT_TIMEOUT_MS` from **7s → 5s** so a slow model attempt fails over to the next one faster.
-- Reorder/trim the `classifyEmail` cascade so the fast path wins first (lead with `gemini-2.5-flash-lite`, fall back to `flash`), cutting tail latency on the common case. Keep the same total-budget guard.
+## The fix
 
-### 3. Batch the live AI lane under burst (backlog throughput)
-- When the live runner claims a batch with many AI-eligible messages, route the AI step through the existing **batched** classifier (`classifyEmailsBatch`, 8/call) — the same second-pass path backfill uses — instead of N sequential single calls. Small messages still classify inline by rules (fast, instant folder); only the AI-fallback ones get batched. Net: large bursts drain in a fraction of the LLM round-trips while single new emails keep their inline, instant-folder behavior.
+Route search through the existing server-side full-text RPC instead of the browser, debounce input, and abort stale requests. Add a composite DB index so ranking is fast even on the biggest mailboxes.
 
-### 4. More aggressive webhook drain (push → visible latency)
-- Raise `WEBHOOK_INLINE_DRAIN_BUDGET_MS` from **4s → 7s** and the webhook's inline `runMessageJobs` limit/concurrency, so a freshly-pushed email is far more likely to be fully filed before the ack returns (still safely under Pub/Sub's ~10s redelivery window).
+### 1. Database (migration)
+- Enable the `btree_gin` extension and add a composite index `email_search_index USING gin (user_id, tsv)`. This removes the current "BitmapAnd of two separate indexes" step (measured ~1.1s on the 76k mailbox) and lets a single index serve the user-scoped ranked lookup.
+- Extend `search_emails` to accept an optional `p_account_id uuid` so multi-account users only search the selected account, and so results don't need re-filtering for the wrong account. Keep the existing signature working (overload / default) to avoid breaking anything.
+
+### 2. Server function
+- Add a `searchEmailsDecrypted(...)` helper in `src/lib/sync/encrypted-reader.ts` that calls `search_emails` via `supabaseAdmin` with `EMAIL_ENC_KEY` and the caller's `userId`.
+- Add a `searchInbox` server function (`createServerFn` + `requireSupabaseAuth`) in `src/lib/email-body.functions.ts`. It takes `{ query, account_id, scope, folder_id, limit }`, derives `userId` from the auth context (never the client), and returns already-decrypted, ranked rows. The RPC is `service_role`-only, so this stays server-side.
+
+### 3. Inbox UI (`src/routes/_authenticated/inbox.tsx`)
+- Replace the free-text search branch of `emailsQ`: instead of the 5,000-row fetch + `getEmailListFields` decrypt + local fuzzy scoring, call `searchInbox` and render its ranked, pre-decrypted results directly.
+- Debounce the search input (~300ms) so we don't fire a query per keystroke, and let React Query abort superseded searches (stable query key on the debounced term).
+- Apply the existing `emailBelongsInScope` filter on the small returned set (≤200 rows) for folder/no-rules scoping — cheap now.
+- Keep the existing "also ask Gmail and ingest older matches" background step; newly-ingested rows already update `email_search_index`, so they flow into the next search automatically.
+- Remove the now-dead local fuzzy-scoring path for search (keep it only if still needed for the operator `from:`/`to:` view, which the RPC otherwise covers).
+
+## Result
+- Search returns ranked matches from a server-side index in well under a second instead of downloading and decrypting thousands of rows in the browser.
+- No more main-thread fuzzy scoring over the whole corpus, so the tab no longer freezes and you won't need to refresh.
+- Searching spans all mail (as Gmail does) and respects the selected account.
+
+## Verification
+- `EXPLAIN ANALYZE` the new composite-index query to confirm the BitmapAnd is gone and latency drops.
+- In the browser: type a query in a large mailbox, confirm results appear quickly, no freeze, and stale in-flight searches are cancelled.
+- Confirm multi-account scoping (results only from the selected account) and folder scoping still behave.
 
 ## Technical notes
-- Cron schedule changes (live-lane fan-out, limits) are applied as `cron.schedule(...)` SQL via the DB tooling, not a code migration — these are operator settings, consistent with how the crons are currently defined (`private.cron_post`).
-- Concurrency 32 with Gmail fetch + AI per message stays within Cloudflare Worker subrequest limits for a `limit=100` batch.
-- Rate-limit safety: if the AI gateway starts returning 429s under the higher concurrency, the existing backoff/retry path absorbs it; we can dial concurrency back to 24 if needed.
-- No schema changes; no change to the durable `message_jobs` queue semantics (still `claim_message_jobs` SKIP LOCKED + 60s lease).
-
-## Files touched
-- `src/lib/sync/config.ts` — timeout/budget/concurrency constants
-- `src/lib/sync/queue.ts` (`runMessageJobs` default concurrency + live batched-AI path)
-- `src/routes/api/public/gmail-process-jobs.ts` — concurrency
-- `src/routes/api/public/gmail-webhook.ts` — drain limit/concurrency/budget
-- `src/lib/ai.server.ts` — cascade order/timeouts
-- Cron jobs `gmail-process-live-5s` / `gmail-process-jobs-30s` (SQL, applied at build time)
-
-## Verify
-- Run the live + mixed job endpoints directly and confirm higher `processed` counts per call with no new error/DLQ spike.
-- Watch `pubsub_events` for `gmail_api_error` 429s after rollout; confirm push → visible latency drops in the latency stats.
+- `search_emails` is `SECURITY DEFINER` and granted only to `service_role`; it must be called from the server function with the server-held `EMAIL_ENC_KEY`, never from the client.
+- `email_search_index` is kept fresh by `upsert_email_encrypted` / `update_email_encrypted` at ingest/update time, so no backfill is required (already 0 missing).
