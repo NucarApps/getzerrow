@@ -263,13 +263,16 @@ export async function classifyEmailsBatch(
     .join("\n\n");
 
   const emailBlocks = emails
-    .map(
-      (e, i) => `--- EMAIL ${i + 1} ---
+    .map((e, i) => {
+      const isReply = !!(e.in_reply_to && e.in_reply_to.trim());
+      const hasCal = !!e.has_calendar_invite;
+      return `--- EMAIL ${i + 1} ---
 From: ${e.from_name} <${e.from_addr}>
 Subject: ${e.subject}
+Signals: ${hasCal ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
 Body:
-${(e.body_text || e.snippet || "").slice(0, 1500)}`,
-    )
+${(e.body_text || e.snippet || "").slice(0, 1500)}`;
+    })
     .join("\n\n");
 
   const itemSchema = z.object({
