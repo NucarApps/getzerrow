@@ -24,6 +24,14 @@ import { proposeAssistantChanges, applyAssistantChanges } from "@/lib/ai-assista
 type Action =
   | { type: "move_email"; email_id: string; to_folder_id: string; why: string }
   | {
+      type: "move_matching";
+      field: "from" | "domain" | "subject";
+      op: "contains" | "equals" | "starts_with";
+      value: string;
+      to_folder_id: string;
+      why: string;
+    }
+  | {
       type: "add_filter";
       folder_id: string;
       field: "from" | "domain" | "subject";
@@ -32,7 +40,8 @@ type Action =
       why: string;
     }
   | { type: "remove_filter"; filter_id: string; why: string }
-  | { type: "update_folder_rule"; folder_id: string; ai_rule: string; why: string };
+  | { type: "update_folder_rule"; folder_id: string; ai_rule: string; why: string }
+  | { type: "update_folder_profile"; folder_id: string; learned_profile: string; why: string };
 
 type Proposal = {
   reply: string;
