@@ -417,6 +417,13 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
             .update({ ai_rule: action.ai_rule.trim() })
             .eq("id", action.folder_id);
           if (error) throw new Error(error.message);
+        } else if (action.type === "update_folder_profile") {
+          if (!ownedFolderIds.has(action.folder_id)) throw new Error("Folder not owned");
+          const { error } = await supabaseAdmin
+            .from("folders")
+            .update({ learned_profile: action.learned_profile.trim() })
+            .eq("id", action.folder_id);
+          if (error) throw new Error(error.message);
         }
         results.push({ action, ok: true });
       } catch (err: unknown) {
