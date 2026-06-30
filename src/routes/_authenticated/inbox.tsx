@@ -865,12 +865,17 @@ function InboxPage() {
 
   const rawEmails = useMemo(() => emailsQ.data ?? [], [emailsQ.data]);
   const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
+  // The search query fetches PAGE_SIZE + 1 rows; a full extra row means there
+  // is another page to offset into.
+  const hasMoreSearch = isSearching && rawEmails.length > PAGE_SIZE;
   const baseRows = useMemo(() => {
-    if (!isSearching) return rawEmails.slice(0, PAGE_SIZE);
+    // Always trim to the page window so we never render the +1 sentinel row.
+    const windowRows = rawEmails.slice(0, PAGE_SIZE);
+    if (!isSearching) return windowRows;
     const extra = gmailHitRowsQ.data ?? [];
-    if (extra.length === 0) return rawEmails;
-    const seen = new Set(rawEmails.map((r) => r.id));
-    const merged = [...rawEmails];
+    if (extra.length === 0) return windowRows;
+    const seen = new Set(windowRows.map((r) => r.id));
+    const merged = [...windowRows];
     for (const r of extra) if (!seen.has(r.id)) merged.push(r);
     return merged;
   }, [isSearching, rawEmails, gmailHitRowsQ.data]);
