@@ -45,6 +45,8 @@ export async function classifyEmail(
     subject: string;
     snippet: string;
     body_text: string;
+    in_reply_to?: string;
+    has_calendar_invite?: boolean;
   },
   folders: ClassifyFolder[],
 ) {
@@ -91,6 +93,8 @@ export async function classifyEmail(
 
   function buildPrompt(opts: { trim: boolean }) {
     const bodyLimit = opts.trim ? 2000 : 4000;
+    const isReply = !!(email.in_reply_to && email.in_reply_to.trim());
+    const hasCalendarInvite = !!email.has_calendar_invite;
     return `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
 
 Folders:
@@ -99,8 +103,11 @@ ${buildFolderList(!opts.trim)}
 Email:
 From: ${email.from_name} <${email.from_addr}>
 Subject: ${email.subject}
+Signals: ${hasCalendarInvite ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
 Body:
 ${(email.body_text || email.snippet || "").slice(0, bodyLimit)}
+
+Guidance: Treat an email as an automated calendar invite ONLY when it actually carries a calendar event. A human reply in an existing thread is NOT an automated invite — do not route it into an automated-invite folder unless that folder's rule explicitly targets replies.
 
 Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line summary AND a short reason explaining the match.`;
   }
@@ -227,6 +234,8 @@ export async function classifyEmailsBatch(
     subject: string;
     snippet: string;
     body_text: string;
+    in_reply_to?: string;
+    has_calendar_invite?: boolean;
   }>,
   folders: ClassifyFolder[],
 ): Promise<
@@ -254,13 +263,16 @@ export async function classifyEmailsBatch(
     .join("\n\n");
 
   const emailBlocks = emails
-    .map(
-      (e, i) => `--- EMAIL ${i + 1} ---
+    .map((e, i) => {
+      const isReply = !!(e.in_reply_to && e.in_reply_to.trim());
+      const hasCal = !!e.has_calendar_invite;
+      return `--- EMAIL ${i + 1} ---
 From: ${e.from_name} <${e.from_addr}>
 Subject: ${e.subject}
+Signals: ${hasCal ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
 Body:
-${(e.body_text || e.snippet || "").slice(0, 1500)}`,
-    )
+${(e.body_text || e.snippet || "").slice(0, 1500)}`;
+    })
     .join("\n\n");
 
   const itemSchema = z.object({
@@ -283,6 +295,8 @@ You are given ${emails.length} emails. For EACH one return an object with:
 - confidence: 0..1
 - summary: one-line summary of THAT email (max 140 chars)
 - reason: short explanation citing the rule/profile/example that matched (max 200 chars)
+
+Guidance: Treat an email as an automated calendar invite ONLY when it actually carries a calendar event. A human reply in an existing thread is NOT an automated invite — do not route it into an automated-invite folder unless that folder's rule explicitly targets replies.
 
 Emails:
 ${emailBlocks}

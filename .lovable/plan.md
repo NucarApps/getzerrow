@@ -1,58 +1,41 @@
-# Whole-mailbox `from:` / `to:` email search
+# Fix: real replies getting filed into the "Invitations" folder
 
-## Goal
+## What's happening
 
-Typing `from:alice@x.com`, `to:bob`, or `from:"Alice Smith" invoice` in the inbox search box should match **across your entire mailbox** — by email address **and** display name — not just the ~500 most-recent emails currently loaded in the browser.
+The "Invitations" folder is filled by the **AI classifier** (the description you pasted is its learned profile). The AI only sees the sender, subject, and body text. A genuine reply from someone you emailed — e.g. "Re: Invitation to the planning meeting" — reads to the AI exactly like an automated calendar invite, so it gets dropped into Invitations.
 
-## Why it's limited today
+The thing that *actually* separates the two is never given to the AI:
 
-The `from:` / `to:` operators already parse in the search box, but:
+- A **real automated calendar invite** carries an embedded calendar event (a `text/calendar` MIME part, usually an `.ics` "REQUEST"). Humans replying in a thread don't.
+- A **human reply** is part of an existing conversation (it has an "in-reply-to" reference). Automated invites typically aren't replies.
 
-- `from:` by **email** filters server-side on the plaintext `from_addr` only.
-- `from:` by **name** and **all `to:` matches** run in the browser over the ~500 rows already on screen, because sender names and recipient addresses are encrypted at rest. Older mail is silently missed.
-
-The existing full-text index can't cleanly answer "is this person the **sender** vs the **recipient**" because its tsvector blends sender, subject, and recipient tokens together.
+We already capture the reply marker during parsing but don't pass it to the AI, and we don't detect the calendar-event marker at all.
 
 ## The fix
 
-Add a dedicated, encrypted-aware **participant index** so the server can answer "from this person" and "to this person" precisely and fast, then route the operator search through it.
+Give the classifier these two signals and teach it how to use them. This is a general improvement to classification (not hardcoded to "Invitations"), so it also helps any other automated-vs-human folder.
 
-### 1. Database
-- Add a `participant_tsv` tsvector column to `email_search_index`, with two weight classes:
-  - weight **A** = sender (`from_addr` + decrypted `from_name`)
-  - weight **B** = recipients (decrypted `to_addrs`)
-- Add a GIN index on `(user_id, participant_tsv)` so lookups stay sub-second on the biggest mailboxes.
-- Populate `participant_tsv` on every write by updating the existing `upsert_email_encrypted` / `update_email_encrypted` functions (new + re-filed mail is indexed instantly).
-- Add a backfill function `reindex_email_participants(batch, key)` that fills `participant_tsv` for existing rows in batches, newest-first. This only decrypts the small name/recipient fields (not bodies), so it's light.
-- Add a `search_emails_participants(...)` RPC that:
-  - matches `from:` needles against weight-A lexemes and `to:` needles against weight-B lexemes (so a recipient never matches a `from:` query and vice-versa),
-  - optionally ANDs in free-text terms against the existing full-text index,
-  - decrypts only the matched rows and returns them ranked, scoped to the selected account.
+1. **Detect the calendar-event marker when parsing each email.** Add a `has_calendar_invite` flag computed by walking the message's MIME parts for a `text/calendar` part or an `.ics` attachment. (Transient — used only at classification time, no database change.)
 
-### 2. Backfill cron
-- Point the existing per-minute search-reindex endpoint (`/api/public/gmail-search-reindex`) at the new participant backfill so historical mail becomes searchable by sender/recipient without a manual step.
+2. **Pass both signals to the AI classifier.** Forward `is_reply` (already parsed) and the new `has_calendar_invite` flag into the classify call.
 
-### 3. Server function
-- Extend `searchInbox` to accept parsed `from` / `to` / `rest` parts and, when an operator is present, call the new participant RPC via a `searchEmailsParticipantsDecrypted` helper; otherwise keep the current free-text path.
+3. **Update the classifier instructions** so the model understands:
+   - An email should only be treated as an automated calendar invite when it actually carries a calendar event.
+   - A human reply in an existing thread should not be routed into an automated-invite folder, unless a folder explicitly targets replies.
 
-### 4. Inbox UI (`src/routes/_authenticated/inbox.tsx`)
-- Replace the operator branch of the search query: instead of the 500-row `from_addr` ilike + local fuzzy filtering, call `searchInbox` with the parsed `from` / `to` / `rest` and render the server-ranked, pre-decrypted results directly.
-- Simplify the `filtered` memo so operator results (already matched server-side) render as-is — removing the main-thread re-scoring.
-- Keep the existing background "also ask Gmail for older matches" step; newly ingested rows get participant-indexed automatically.
+4. **Refresh the "Invitations" learned profile wording** to mention that it applies to messages carrying an actual calendar event, not thread replies — reinforcing the new signal.
 
 ## Result
-- `from:` / `to:` match the whole mailbox by email **and** name, fast, with no freeze.
-- Sender vs recipient is distinguished correctly.
-- Free-text and combined queries (`from:alice invoice`) keep working.
 
-## Rollout note
-Whole-mailbox **name** matching for older emails becomes complete as the participant backfill drains (it runs automatically each minute after publish). Email-address `from:` matches work immediately. New mail is indexed on arrival.
+- Automated Google/Teams/Zoom calendar invites → still land in Invitations.
+- Real replies from people you've emailed → stay in your inbox (or wherever their own rules send them), not Invitations.
 
-## Technical notes
-- Operator needles are converted to weight-tagged tsqueries safely by lexeme-normalizing user input (`to_tsvector` → append `:A`/`:B`), avoiding `to_tsquery` injection/syntax errors.
-- `search_emails_participants` is `SECURITY DEFINER`, granted to `service_role` only, and called from the server function with the server-held `EMAIL_ENC_KEY` — never from the client.
-- `participant_tsv` carries only sender/recipient tokens; the existing `tsv` (subject/snippet/body) is untouched, so the current free-text search is unaffected.
+You can keep correcting any stragglers with the existing "move to folder" action, which re-trains the folder.
 
-## Verification
-- `EXPLAIN ANALYZE` a `from:`/`to:` query to confirm the GIN index is used.
-- In the browser: `from:<email>` and `from:<name>` return matches beyond the recent window; `to:<email>` matches recipients only; combined `from:x term` narrows correctly; multi-account scoping respected; no freeze.
+## Technical details
+
+- `src/lib/gmail.server.ts` (`parseMessage`): add a `has_calendar_invite` boolean by walking `payload.parts` for `mimeType` starting with `text/calendar`, or a filename ending in `.ics`.
+- `src/lib/sync/classify.ts`: add `has_calendar_invite` to `ParsedEmailForClassify`; pass `is_reply` (derived from `in_reply_to`) and `has_calendar_invite` through `classifyByAi` → `classifyEmail`.
+- `src/lib/ai.server.ts`: extend the `classifyEmail` (and the batch `classifyEmailsBatch`) email input + prompt to include the two flags and the guardrail wording above.
+- No migration required (signals are computed and consumed in-flight).
+- Add/extend a unit test in `src/lib/gmail-parse.test.ts` for `has_calendar_invite`, and verify classification logic compiles and existing sync tests pass.
