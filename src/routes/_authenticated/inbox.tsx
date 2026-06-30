@@ -1701,7 +1701,7 @@ function InboxPage() {
             );
           })}
         </PullToRefresh>
-        {!isSearching && (
+        {(!isSearching || page > 1 || hasMoreSearch) && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
             <Button
               size="sm"
@@ -1724,8 +1724,8 @@ function InboxPage() {
               disabled={!canGoNext || pullOlderMut.isPending}
               title={
                 !canGoNext
-                  ? "No more emails in this view"
-                  : !hasMoreLocal
+                  ? "No more results in this view"
+                  : !isSearching && !hasMoreLocal
                     ? "Pull next 50 from Gmail"
                     : ""
               }
