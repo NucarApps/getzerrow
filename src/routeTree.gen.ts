@@ -28,6 +28,7 @@ import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
 import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
+import { Route as ApiPublicGmailSearchReindexRouteImport } from './routes/api/public/gmail-search-reindex'
 import { Route as ApiPublicGmailRetentionRouteImport } from './routes/api/public/gmail-retention'
 import { Route as ApiPublicGmailRescueClassifyRouteImport } from './routes/api/public/gmail-rescue-classify'
 import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
@@ -141,6 +142,12 @@ const ApiPublicGmailWebhookRoute = ApiPublicGmailWebhookRouteImport.update({
   path: '/api/public/gmail-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGmailSearchReindexRoute =
+  ApiPublicGmailSearchReindexRouteImport.update({
+    id: '/api/public/gmail-search-reindex',
+    path: '/api/public/gmail-search-reindex',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicGmailRetentionRoute = ApiPublicGmailRetentionRouteImport.update({
   id: '/api/public/gmail-retention',
   path: '/api/public/gmail-retention',
@@ -257,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/gmail-search-reindex': typeof ApiPublicGmailSearchReindexRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
@@ -293,6 +301,7 @@ export interface FileRoutesByTo {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/gmail-search-reindex': typeof ApiPublicGmailSearchReindexRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
@@ -331,6 +340,7 @@ export interface FileRoutesById {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/gmail-search-reindex': typeof ApiPublicGmailSearchReindexRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
@@ -369,6 +379,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-retention'
+    | '/api/public/gmail-search-reindex'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
@@ -405,6 +416,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-retention'
+    | '/api/public/gmail-search-reindex'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
@@ -442,6 +454,7 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-retention'
+    | '/api/public/gmail-search-reindex'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
@@ -472,6 +485,7 @@ export interface RootRouteChildren {
   ApiPublicGmailRenewWatchesRoute: typeof ApiPublicGmailRenewWatchesRoute
   ApiPublicGmailRescueClassifyRoute: typeof ApiPublicGmailRescueClassifyRoute
   ApiPublicGmailRetentionRoute: typeof ApiPublicGmailRetentionRoute
+  ApiPublicGmailSearchReindexRoute: typeof ApiPublicGmailSearchReindexRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
@@ -616,6 +630,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/gmail-webhook'
       fullPath: '/api/public/gmail-webhook'
       preLoaderRoute: typeof ApiPublicGmailWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-search-reindex': {
+      id: '/api/public/gmail-search-reindex'
+      path: '/api/public/gmail-search-reindex'
+      fullPath: '/api/public/gmail-search-reindex'
+      preLoaderRoute: typeof ApiPublicGmailSearchReindexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/gmail-retention': {
@@ -779,6 +800,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGmailRenewWatchesRoute: ApiPublicGmailRenewWatchesRoute,
   ApiPublicGmailRescueClassifyRoute: ApiPublicGmailRescueClassifyRoute,
   ApiPublicGmailRetentionRoute: ApiPublicGmailRetentionRoute,
+  ApiPublicGmailSearchReindexRoute: ApiPublicGmailSearchReindexRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
