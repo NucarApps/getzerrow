@@ -92,11 +92,17 @@ function describeAction(
     const who = e?.from_name || e?.from_addr || "this email";
     return `Move "${e?.subject ?? "email"}" from ${who} → ${folderName(folders, action.to_folder_id)}`;
   }
+  if (action.type === "move_matching") {
+    return `Move all where ${action.field} ${action.op} "${action.value}" → ${folderName(folders, action.to_folder_id)}`;
+  }
   if (action.type === "add_filter") {
     return `Add filter on "${folderName(folders, action.folder_id)}": ${action.field} ${action.op} "${action.value}"`;
   }
   if (action.type === "remove_filter") {
     return `Remove an existing filter rule`;
+  }
+  if (action.type === "update_folder_profile") {
+    return `Refine learned profile for "${folderName(folders, action.folder_id)}"`;
   }
   return `Update AI rule for "${folderName(folders, action.folder_id)}"`;
 }
