@@ -8,6 +8,7 @@
 // Gemini handles flat JSON-schema objects reliably but chokes on Zod
 // discriminated unions translated to JSON Schema.
 import { z } from "zod";
+import type { DomainCluster } from "./ai-assistant-context";
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-3-flash-preview";
@@ -36,6 +37,23 @@ const actionSchema = z.discriminatedUnion("type", [
     type: z.literal("update_folder_rule"),
     folder_id: z.string(),
     ai_rule: z.string().min(1).max(500),
+    why: z.string().max(200).optional().default(""),
+  }),
+  // Bulk move every existing email matching a signal into a folder. Usually
+  // paired with add_filter so future mail follows the same rule.
+  z.object({
+    type: z.literal("move_matching"),
+    field: z.enum(["from", "domain", "subject"]),
+    op: z.enum(["contains", "equals", "starts_with"]),
+    value: z.string().min(1).max(400),
+    to_folder_id: z.string(),
+    why: z.string().max(200).optional().default(""),
+  }),
+  // Rewrite the longer learned profile that steers the classifier.
+  z.object({
+    type: z.literal("update_folder_profile"),
+    folder_id: z.string(),
+    learned_profile: z.string().min(1).max(2000),
     why: z.string().max(200).optional().default(""),
   }),
 ]);
