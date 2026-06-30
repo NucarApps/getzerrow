@@ -204,6 +204,20 @@ function emailBelongsInScope(email: Email, selectedFolder: string, folders: Fold
   return email.folder_id === selectedFolder;
 }
 
+// Search spans the WHOLE mailbox, not the currently-selected inbox view. The
+// server already ranks matches across archived, sent, and folder-filed mail,
+// so we must not re-apply the inbox scope here — doing so silently discarded
+// every archived/filed hit (e.g. a contact you email back and forth with) and
+// left the UI stuck on "Pulling N matches from Gmail…" with nothing rendered.
+// We only drop rows that genuinely aren't ready to show: still-classifying
+// (in-progress) rows and currently-snoozed rows.
+function matchesSearchScope(email: Email): boolean {
+  if (isInProgressEmail(email)) return false;
+  const snoozedMs = email.snoozed_until ? new Date(email.snoozed_until).getTime() : 0;
+  if (snoozedMs && snoozedMs > Date.now()) return false;
+  return true;
+}
+
 const PAGE_SIZE = 50;
 
 const withInbox = (labels: string[] | null | undefined): string[] =>
@@ -620,7 +634,8 @@ function InboxPage() {
             } as unknown as Email;
           })
           .filter((r): r is Email => r !== null);
-        return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
+        // Search spans the whole mailbox — keep archived/filed matches.
+        return rows.filter(matchesSearchScope);
       }
       // Non-search: one decrypted, server-paginated round-trip. The RPC
       // applies the snoozed / INBOX / no-rules / folder filters and returns
@@ -857,9 +872,8 @@ function InboxPage() {
         .eq("gmail_account_id", accountId!)
         .in("gmail_message_id", ids);
       const rows = (data ?? []) as unknown as Email[];
-      return rows.filter((email) =>
-        emailBelongsInScope(email, selectedFolder, foldersQ.data ?? []),
-      );
+      // Search spans the whole mailbox — keep archived/filed matches.
+      return rows.filter(matchesSearchScope);
     },
   });
 
@@ -1361,13 +1375,23 @@ function InboxPage() {
                         : "Wait about a minute and try the search again."}
                     </p>
                   </>
-                ) : (lastGmailResult?.found ?? 0) > 0 ? (
+                ) : (lastGmailResult?.found ?? 0) > 0 &&
+                  (gmailHitRowsQ.isFetching || emailsQ.isFetching) ? (
                   <>
                     <p className="text-sm">
                       Pulling {lastGmailResult!.found} match
                       {lastGmailResult!.found === 1 ? "" : "es"} from Gmail…
                     </p>
                     <p className="text-xs">Results will appear in a moment.</p>
+                  </>
+                ) : (lastGmailResult?.found ?? 0) > 0 ? (
+                  <>
+                    <p className="text-sm">
+                      Found {lastGmailResult!.found} match
+                      {lastGmailResult!.found === 1 ? "" : "es"} in Gmail, but they
+                      couldn't be loaded.
+                    </p>
+                    <p className="text-xs">Try searching again in a moment.</p>
                   </>
                 ) : (
                   <>

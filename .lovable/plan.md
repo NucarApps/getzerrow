@@ -1,44 +1,33 @@
-# Make email search much faster
+# Fix: search hangs on "Pulling N matches from Gmail…" and never shows results
 
-## What's actually slow (measured)
+## What's wrong
 
-I profiled the live search path against the largest mailbox (77k indexed messages). A common-term search currently takes **~7.7 seconds**. The query plan shows why:
+When you search (e.g. `shawn@nucar.com`), the server-side index already returns matches across your **entire mailbox** — archived mail, sent replies, and mail filed into folders included. But the inbox UI then re-applies an inbox-only scope filter to those results, discarding everything that isn't currently sitting in the inbox.
 
-- `search_emails` orders results by `ts_rank(...)`. Postgres has no way to rank from an index, so for a common word it pulls **all ~64,000 matching rows**, reads their full search vectors, scores every one, then sorts the whole set on disk.
-- The search vectors are huge: the index stores up to **100,000 characters of each email body**, so the average vector is ~3.8 KB (max 164 KB). Reading them for scoring touches ~**350 MB** on every search and spills the sort to disk.
+For a contact you email back and forth with, nearly all matches are archived or filed, so they all get discarded → the list shows 0 rows. At the same time the code still knows Gmail found 203 matches, so it shows the **"Pulling 203 matches from Gmail…"** placeholder indefinitely. Nothing ever loads.
 
-So the cost is "read and score the entire match set to rank it" combined with "vectors are enormous because we index the whole body."
+This affects every search done from "All inbox" (and any folder view): search behaves as "search within this view" even though the header reads "Searching all inbox."
 
-## The fix (three parts)
+## The fix
 
-### 1. Shrink the search vectors
-Stop indexing 100k characters of body text. Index subject + sender + recipient + snippet at full weight and only the **first ~3,000 characters** of the body. This cuts the average vector roughly 5–6×, shrinks the full-text index proportionally, and removes the disk-spilling sort. Body-deep matches beyond the first few KB are rare in email and not worth the constant cost.
+Make search results span the whole mailbox, matching what the server already returns and what the UI promises.
 
-### 2. Order by recency from the index instead of scoring everything
-Email search almost always wants "most recent matches first," not abstract relevance. Switch the default ordering to `received_at DESC` and serve it directly from a recency-aware full-text index (RUM extension, already available on this database). RUM returns the top-N most recent matches straight from the index, so a search reads ~100 rows instead of 64,000. This is the single biggest win and makes worst-case (common word) searches as fast as best-case.
+### 1. Don't scope search results to the current folder
+In `src/routes/_authenticated/inbox.tsx`:
+- In the main search query (`emailsQ`, the `isSearching` branch, ~line 623), stop filtering returned rows through `emailBelongsInScope(email, selectedFolder, …)`. Search results should be shown as the whole-mailbox matches the server ranked.
+- In the supplemental Gmail-hit query (`gmailHitRowsQ`, ~line 861), apply the same relaxation so freshly-ingested older/archived matches are not discarded either.
+- Preserve only the genuinely-not-ready exclusions: keep filtering out in-progress / still-classifying rows (`isInProgressEmail`) and currently-snoozed rows, but include archived and folder-filed mail. (Effectively: search uses the same permissiveness as the `all_mail` scope, minus in-progress rows.)
 
-### 3. Denormalize `received_at` into the search index
-Copy `received_at` onto each search-index row (kept in sync on write) so ordering never has to join back to the large `emails` table.
+### 2. Resolve the stuck placeholder
+Once results are no longer discarded, the "Pulling N matches from Gmail…" empty state naturally disappears because rows render. As a safety net, also ensure that empty state only persists while a Gmail fetch is actually in flight or rows are still arriving — so a search that genuinely has no remaining matches falls through to the normal "No matches" copy instead of spinning forever.
 
-Expected result: common-term searches drop from ~7.7s to well under ~200ms, and the pathological "popular word" case stops being slow.
-
-## Rollout
-
-- One migration: install RUM, add `received_at` to the search index, add the recency RUM index, drop the now-redundant standalone full-text index to cut write overhead.
-- Update the write RPCs (`upsert_email_encrypted`, `insert_email_encrypted`, `update_email_encrypted`) to (a) cap body at ~3k chars in the vector and (b) populate `received_at`.
-- Rewrite `search_emails` and `search_emails_participants` to order by `received_at DESC` from the index. Keep an optional relevance mode for short, rare queries if desired.
-- Backfill the 145k existing rows with the smaller vector + `received_at` using the existing batched reindex cron (`/api/public/gmail-search-reindex`) — runs in the background, idempotent, no downtime. Search keeps working on old rows throughout; they just get faster as they're rebuilt.
-- No client/UI changes required; the debounced server-side search call stays the same.
+### 3. Verify
+- Search a sender whose mail is mostly archived/filed and confirm results now appear (not a permanent "Pulling…" state).
+- Confirm normal inbox browsing (non-search) is unchanged — the scope filter still applies there.
+- Confirm a truly-no-match query shows "No matches" rather than hanging.
+- Run typecheck and existing inbox/search tests.
 
 ## Technical notes
-
-- RUM index: `USING rum (tsv rum_tsvector_addon_ops, received_at)` enables `WHERE tsv @@ q ORDER BY received_at DESC LIMIT n` served from the index. The participant search uses the same pattern on `participant_tsv`.
-- The body cap is applied in three places that build the tsvector (the two insert/upsert RPCs and the update RPC) plus the reindex functions, so new and historical rows converge on the same shape.
-- Building the RUM index on 145k rows runs inside the migration; if build time is a concern we create it on the shrunk vectors after a first reindex pass.
-- Redundant index `email_search_index_tsv_idx` (plain GIN on `tsv`) is dropped; the user-scoped composite already covers all queries.
-
-## Verification
-
-- Re-run `EXPLAIN (ANALYZE, BUFFERS)` on the same common-term query and confirm it reads ~100 rows from the RUM index with no disk sort.
-- Spot-check a rare term, a `from:`/`to:` operator search, and an account-scoped search for correctness and latency.
-- Confirm new incoming mail is searchable immediately (write path) and the backfill drains the historical backlog.
+- Root cause is purely client-side presentation filtering in `inbox.tsx`; the `search_emails` / `search_emails_participants` RPCs and `searchInbox` server function already return whole-mailbox results and need no change.
+- No schema, migration, or backend changes required.
+- `emailBelongsInScope` stays as-is for the non-search browsing path; only the search code paths change.
