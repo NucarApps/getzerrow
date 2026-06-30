@@ -22,6 +22,8 @@ function msg(opts: {
   textBody?: string;
   htmlBody?: string;
   attachments?: string[];
+  calendarPart?: boolean;
+  icsAttachment?: boolean;
 }) {
   const headers = Object.entries(opts.headers ?? {}).map(([name, value]) => ({ name, value }));
   const parts: unknown[] = [];
@@ -30,6 +32,15 @@ function msg(opts: {
   }
   if (opts.htmlBody !== undefined) {
     parts.push({ mimeType: "text/html", body: { data: b64url(opts.htmlBody) } });
+  }
+  if (opts.calendarPart) {
+    parts.push({
+      mimeType: 'text/calendar; method=REQUEST; charset="UTF-8"',
+      body: { data: b64url("BEGIN:VCALENDAR\nEND:VCALENDAR") },
+    });
+  }
+  if (opts.icsAttachment) {
+    parts.push({ filename: "invite.ics", body: { attachmentId: "att-ics" } });
   }
   for (const filename of opts.attachments ?? []) {
     parts.push({ filename, body: { attachmentId: `att-${filename}` } });
