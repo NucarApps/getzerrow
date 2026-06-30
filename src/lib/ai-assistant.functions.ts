@@ -109,11 +109,12 @@ export const proposeAssistantChanges = createServerFn({ method: "POST" })
 
     const { data: folderRows } = await supabaseAdmin
       .from("folders")
-      .select("id, name, ai_rule")
+      .select("id, name, ai_rule, learned_profile")
       .eq("user_id", context.userId)
       .eq("gmail_account_id", data.gmail_account_id);
 
     const folderIds = (folderRows ?? []).map((f) => f.id);
+    const folderNameById = new Map((folderRows ?? []).map((f) => [f.id, f.name]));
     const { data: filterRows } = folderIds.length
       ? await supabaseAdmin
           .from("folder_filters")
@@ -125,22 +126,26 @@ export const proposeAssistantChanges = createServerFn({ method: "POST" })
       id: f.id,
       name: f.name,
       ai_rule: f.ai_rule,
+      learned_profile: f.learned_profile ?? null,
       filters: (filterRows ?? [])
         .filter((r) => r.folder_id === f.id)
         .map((r) => ({ id: r.id, field: r.field, op: r.op, value: r.value })),
     }));
 
-    // 2. Load only the selected emails (scoped to this user).
-    let emails: AssistantContextEmail[] = [];
-    if (data.selected_email_ids.length > 0) {
-      const { data: emailRows } = await supabaseAdmin
-        .from("emails")
-        .select("id, from_addr, folder_id, user_id")
-        .in("id", data.selected_email_ids)
-        .eq("user_id", context.userId);
-      const decRes = await getEmailsDecrypted((emailRows ?? []).map((r) => r.id));
+    // Shared helper: hydrate plaintext rows with decrypted display fields and
+    // derive the extra signals the model reasons over.
+    type RawEmailRow = {
+      id: string;
+      from_addr: string | null;
+      folder_id: string | null;
+      in_reply_to: string | null;
+      list_id: string | null;
+    };
+    async function toContextEmails(rows: RawEmailRow[]): Promise<AssistantContextEmail[]> {
+      if (rows.length === 0) return [];
+      const decRes = await getEmailsDecrypted(rows.map((r) => r.id));
       const decMap = new Map(decRes.rows.map((r) => [r.id, r]));
-      emails = (emailRows ?? []).map((e) => {
+      return rows.map((e) => {
         const d = decMap.get(e.id);
         return {
           id: e.id,
@@ -149,15 +154,68 @@ export const proposeAssistantChanges = createServerFn({ method: "POST" })
           subject: d?.subject ?? null,
           snippet: d?.snippet ?? null,
           folder_id: e.folder_id,
+          domain: extractDomain(e.from_addr),
+          is_reply: !!(e.in_reply_to && e.in_reply_to.trim()),
+          list_id: e.list_id,
+          classification_reason: d?.classification_reason ?? null,
         };
       });
     }
+
+    // 2. Load the selected emails (scoped to this user), if any.
+    let emails: AssistantContextEmail[] = [];
+    if (data.selected_email_ids.length > 0) {
+      const { data: emailRows } = await supabaseAdmin
+        .from("emails")
+        .select("id, from_addr, folder_id, in_reply_to, list_id, user_id")
+        .in("id", data.selected_email_ids)
+        .eq("user_id", context.userId);
+      emails = await toContextEmails((emailRows ?? []) as RawEmailRow[]);
+    }
+
+    // 3. If the user names a folder, sample its recent mail so the model can
+    //    see the misfiling pattern even without hand-picked emails.
+    let folderSample:
+      | { folderId: string; folderName: string; emails: AssistantContextEmail[] }
+      | undefined;
+    const referencedFolderId = matchFolderByName(data.user_message, folderRows ?? []);
+    if (referencedFolderId) {
+      const { data: sampleRows } = await supabaseAdmin
+        .from("emails")
+        .select("id, from_addr, folder_id, in_reply_to, list_id")
+        .eq("user_id", context.userId)
+        .eq("gmail_account_id", data.gmail_account_id)
+        .eq("folder_id", referencedFolderId)
+        .order("received_at", { ascending: false })
+        .limit(FOLDER_SAMPLE_SIZE);
+      const sampleEmails = await toContextEmails((sampleRows ?? []) as RawEmailRow[]);
+      if (sampleEmails.length > 0) {
+        folderSample = {
+          folderId: referencedFolderId,
+          folderName: folderNameById.get(referencedFolderId) ?? "folder",
+          emails: sampleEmails,
+        };
+      }
+    }
+
+    // 4. Cluster recent mail by sender domain to power durable domain-filter
+    //    suggestions. Plaintext from_addr + folder_id only — no decryption.
+    const { data: recentRows } = await supabaseAdmin
+      .from("emails")
+      .select("from_addr, folder_id")
+      .eq("user_id", context.userId)
+      .eq("gmail_account_id", data.gmail_account_id)
+      .order("received_at", { ascending: false })
+      .limit(DOMAIN_SCAN_WINDOW);
+    const domainClusters = aggregateDomainClusters(recentRows ?? [], folderNameById);
 
     return proposeAi({
       history: data.history,
       userMessage: data.user_message,
       emails,
       folders,
+      folderSample,
+      domainClusters,
     });
   });
 
