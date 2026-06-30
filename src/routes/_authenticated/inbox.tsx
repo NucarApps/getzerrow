@@ -634,17 +634,35 @@ function InboxPage() {
           const rows = (data ?? []) as unknown as Email[];
           return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
         }
-        // Free-text search: load the most recent corpus and score locally.
-        const q = supabase
-          .from("emails")
-          .select(LIST_COLUMNS)
-          .eq("gmail_account_id", accountId!)
-          .order("received_at", { ascending: false })
-          .limit(5000);
-        // Don't restrict to INBOX while searching — Gmail's search spans all
-        // mail, and most older hits will be archived.
-        const { data } = await q;
-        const rows = (data ?? []) as unknown as Email[];
+        // Free-text search: ranked, server-side full-text search over the
+        // GIN-indexed search index (subject/snippet/body + sender/recipient).
+        // Only the matched rows are decrypted, server-side, so the browser no
+        // longer downloads 5,000 rows or fuzzy-scores on the main thread — the
+        // source of the freeze. We then hydrate the small result set's list
+        // metadata and keep the server's relevance ordering.
+        const res = await searchInboxFn({
+          data: { query: searchTerm, account_id: accountId!, limit: 100 },
+        });
+        const hits = res.rows ?? [];
+        if (hits.length === 0) return [];
+        const ids = hits.map((h) => h.id);
+        const { data } = await supabase.from("emails").select(LIST_COLUMNS).in("id", ids);
+        const metaById = new Map<string, Email>();
+        for (const m of (data ?? []) as unknown as Email[]) metaById.set(m.id, m);
+        const rows = hits
+          .map((h) => {
+            const meta = metaById.get(h.id);
+            if (!meta) return null;
+            // Attach the already-decrypted content fields so the row renders
+            // without a second decrypt round-trip (listFieldsQ skips it).
+            return {
+              ...meta,
+              subject: h.subject,
+              snippet: h.snippet,
+              from_name: h.from_name,
+            } as unknown as Email;
+          })
+          .filter((r): r is Email => r !== null);
         return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
       }
       // Non-search: one decrypted, server-paginated round-trip. The RPC
