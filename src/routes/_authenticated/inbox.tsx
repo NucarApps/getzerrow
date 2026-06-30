@@ -839,7 +839,7 @@ function InboxPage() {
     ids: new Set(),
   });
   useEffect(() => {
-    const qstr = query.trim();
+    const qstr = searchTerm;
     if (qstr.length < 3) {
       setLastGmailResult(null);
       setGmailHitIds({ query: "", ids: new Set() });
