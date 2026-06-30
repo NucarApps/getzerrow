@@ -365,6 +365,18 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
           if (!ownedFolderIds.has(action.to_folder_id)) throw new Error("Folder not owned");
           const r = await performMove(userId, action.email_id, action.to_folder_id);
           if (!r.ok) throw new Error(r.error || "Move failed");
+        } else if (action.type === "move_matching") {
+          if (!ownedFolderIds.has(action.to_folder_id)) throw new Error("Folder not owned");
+          const matchedIds = await findMatchingEmailIds(action);
+          let moved = 0;
+          for (const id of matchedIds) {
+            const r = await performMove(userId, id, action.to_folder_id);
+            if (r.ok) moved += 1;
+          }
+          if (moved === 0 && matchedIds.length === 0) {
+            // Not an error — there may simply be no existing mail to move; the
+            // paired add_filter still handles future mail.
+          }
         } else if (action.type === "add_filter") {
           if (!ownedFolderIds.has(action.folder_id)) throw new Error("Folder not owned");
           const value =
