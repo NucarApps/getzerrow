@@ -562,7 +562,9 @@ function InboxPage() {
       "emails",
       accountId,
       selectedFolder,
-      isSearching ? `search:${searchTerm.toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
+      isSearching
+        ? `search:${searchTerm.toLowerCase()}:p${page}`
+        : `page:${page}:${cursor ?? "start"}`,
     ],
     enabled: !!accountId && (!isSearching || foldersQ.isSuccess),
     queryFn: async () => {
