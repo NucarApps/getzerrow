@@ -201,27 +201,45 @@ const TOOL_PARAMETERS_SCHEMA = {
         properties: {
           type: {
             type: "string",
-            enum: ["move_email", "add_filter", "remove_filter", "update_folder_rule"],
+            enum: [
+              "move_email",
+              "move_matching",
+              "add_filter",
+              "remove_filter",
+              "update_folder_rule",
+              "update_folder_profile",
+            ],
           },
           email_id: { type: "string", description: "Required when type is move_email." },
-          to_folder_id: { type: "string", description: "Required when type is move_email." },
+          to_folder_id: {
+            type: "string",
+            description: "Required when type is move_email or move_matching.",
+          },
           folder_id: {
             type: "string",
-            description: "Required when type is add_filter or update_folder_rule.",
+            description:
+              "Required when type is add_filter, update_folder_rule, or update_folder_profile.",
           },
           filter_id: { type: "string", description: "Required when type is remove_filter." },
           field: {
             type: "string",
             enum: ["from", "domain", "subject"],
-            description: "Required when type is add_filter.",
+            description: "Required when type is add_filter or move_matching.",
           },
           op: {
             type: "string",
             enum: ["contains", "equals", "starts_with"],
-            description: "Required when type is add_filter.",
+            description: "Required when type is add_filter or move_matching.",
           },
-          value: { type: "string", description: "Required when type is add_filter." },
+          value: {
+            type: "string",
+            description: "Required when type is add_filter or move_matching.",
+          },
           ai_rule: { type: "string", description: "Required when type is update_folder_rule." },
+          learned_profile: {
+            type: "string",
+            description: "Required when type is update_folder_profile.",
+          },
           why: { type: "string", description: "Optional short reason." },
         },
         required: ["type"],
