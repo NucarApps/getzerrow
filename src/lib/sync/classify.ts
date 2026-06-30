@@ -47,6 +47,7 @@ export type ParsedEmailForClassify = {
   body_text: string;
   body_html: string;
   has_attachment: boolean;
+  has_calendar_invite?: boolean;
   received_at: string;
   raw_labels: string[] | null;
 };
