@@ -521,7 +521,11 @@ function InboxPage() {
     },
   });
 
-  const isSearching = query.trim().length > 0;
+  // Search data fetching keys off the debounced term so it's stable across
+  // keystrokes; `searchTerm` is the single source of truth for "what are we
+  // searching for right now".
+  const searchTerm = debouncedQuery.trim();
+  const isSearching = searchTerm.length > 0;
 
   // Pagination state — reset to page 1 whenever the folder or search changes.
   // cursors[i] is the `received_at <` cursor used to fetch page i+1 (cursors[0] = null).
