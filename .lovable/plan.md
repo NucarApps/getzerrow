@@ -1,41 +1,54 @@
-# Fix: real replies getting filed into the "Invitations" folder
+## Goal
 
-## What's happening
+Make the **Inbox assistant** chat smarter so it can diagnose *why* mail is being misfiled instead of reacting to a single hand-picked email. It should look across recent/related mail, understand each folder's full instruction set, and propose durable fixes — better instructions, domain filters, removing conflicting filters, and bulk moves.
 
-The "Invitations" folder is filled by the **AI classifier** (the description you pasted is its learned profile). The AI only sees the sender, subject, and body text. A genuine reply from someone you emailed — e.g. "Re: Invitation to the planning meeting" — reads to the AI exactly like an automated calendar invite, so it gets dropped into Invitations.
+## Problems today
 
-The thing that *actually* separates the two is never given to the AI:
+- The assistant only receives the emails you manually select (`selected_email_ids`). With nothing selected it's blind; with one selected it can't see a pattern.
+- It never sees a folder's `learned_profile` — only the short `ai_rule` — so its rewrites ignore what the classifier actually learned.
+- Per-email context is thin (`from_addr`, `subject`, `snippet`, `folder_id`). No sender domain, reply flag, calendar flag, or *why it landed where it did* — exactly the signals needed to explain a misfile.
+- Actions are one-at-a-time on selected emails. "Move everything from @acme.com to Clients" isn't expressible.
 
-- A **real automated calendar invite** carries an embedded calendar event (a `text/calendar` MIME part, usually an `.ics` "REQUEST"). Humans replying in a thread don't.
-- A **human reply** is part of an existing conversation (it has an "in-reply-to" reference). Automated invites typically aren't replies.
+## Changes
 
-We already capture the reply marker during parsing but don't pass it to the AI, and we don't detect the calendar-event marker at all.
+### 1. Richer context gathering — `src/lib/ai-assistant.functions.ts`
+In `proposeAssistantChanges.handler`, in addition to selected emails:
+- **Include `learned_profile`** in the folder query and in `AssistantContextFolder`.
+- **Recent folder sample:** lightweight free-text parse of the user message to detect a referenced folder name (fuzzy match against the user's folders). When matched, load that folder's ~20 most recent emails (decrypted) as context so the model can see the misfiling pattern.
+- **Domain clustering:** load a recent window (~150) of the account's emails, aggregate counts by sender domain + current folder, and pass the top ~15 domain clusters (domain, count, which folders they currently land in). This is what powers "add a domain filter" suggestions without the user selecting anything.
+- **Richer per-email signals:** extend `AssistantContextEmail` with `domain`, `is_reply` (from `in_reply_to`), `has_calendar_invite`, `list_id`, and `classification_reason` so the model can explain and target fixes.
+- Keep all reads `.eq("user_id", context.userId)` / account-scoped (no security change).
 
-## The fix
+### 2. New + improved actions — `src/lib/ai-assistant.server.ts` and `.functions.ts`
+- Add **`move_matching`** action: `{ field: from|domain|subject, op, value, to_folder_id }` — moves all of the user's emails matching the criteria into a folder (capped, e.g. 200 per apply) and is normally paired with an `add_filter` so future mail follows. Implemented in `applyAssistantChanges` by querying owned matching emails and calling `performMove` per row (reuse existing ownership checks).
+- Add **`update_folder_profile`** action: rewrite the longer `learned_profile` (validated, ≤2000 chars) so the assistant can fix classifier drift, not just the short rule.
+- Update the JSON tool schema (`TOOL_PARAMETERS_SCHEMA`), the Zod `actionSchema` (both files), and the apply handler's ownership pre-checks to cover the two new action types.
 
-Give the classifier these two signals and teach it how to use them. This is a general improvement to classification (not hardcoded to "Invitations"), so it also helps any other automated-vs-human folder.
+### 3. Stronger prompt/instructions — `buildPrompt` in `ai-assistant.server.ts`
+- Surface the new context blocks: per-folder `learned_profile`, the recent-folder sample, and the domain clusters.
+- Add guidance so the model:
+  - **Diagnoses across multiple emails** — identify the shared signal (sender, domain, list-id, reply-vs-automated) causing the misfile before proposing a fix.
+  - **Prefers durable fixes**: a `domain` filter over repeated single moves; `move_matching` + `add_filter` when many existing emails share a signal.
+  - **Detects competing filters** in *other* folders that would re-catch the mail and proposes `remove_filter` for them.
+  - **Refines instructions precisely**: tighten `ai_rule` / `learned_profile` to exclude the misfiled class (e.g. "human replies are NOT automated invites") rather than broadening.
+  - Explains its reasoning in each action's `why`.
 
-1. **Detect the calendar-event marker when parsing each email.** Add a `has_calendar_invite` flag computed by walking the message's MIME parts for a `text/calendar` part or an `.ics` attachment. (Transient — used only at classification time, no database change.)
+### 4. UI — `src/components/inbox/AssistantPanel.tsx`
+- Add `Action` variants and `describeAction` cases for `move_matching` ("Move all <field> <op> "value" → Folder") and `update_folder_profile` ("Refine learned profile for …").
+- Update the empty-state example prompts to showcase the new power (e.g. *"Replies from clients keep landing in Invitations — fix it"*, *"Move everything from @acme.com to Clients and keep it there"*).
+- No change to the approve-before-apply flow; new actions render as normal reviewable checkboxes.
 
-2. **Pass both signals to the AI classifier.** Forward `is_reply` (already parsed) and the new `has_calendar_invite` flag into the classify call.
+### 5. Tests
+- Extend assistant-related unit coverage (or add a focused test) for: action schema parsing of the two new types, and the domain-cluster aggregation helper (pure function, extracted for testability).
 
-3. **Update the classifier instructions** so the model understands:
-   - An email should only be treated as an automated calendar invite when it actually carries a calendar event.
-   - A human reply in an existing thread should not be routed into an automated-invite folder, unless a folder explicitly targets replies.
+## Technical notes
 
-4. **Refresh the "Invitations" learned profile wording** to mention that it applies to messages carrying an actual calendar event, not thread replies — reinforcing the new signal.
+- Reuses `performMove` (`move-email.server.ts`), `getEmailsDecrypted` (`encrypted-reader`), and the existing per-action ownership verification — no new privileged paths.
+- All AI calls stay server-side via the existing Lovable AI Gateway call in `ai-assistant.server.ts`; same model, same retry/credit-error handling.
+- Bulk move is capped and applied row-by-row through the audited `performMove` so side-effects and Gmail label sync stay consistent.
+- No schema/migration changes required — `folder_filters`, `learned_profile`, and `in_reply_to` already exist.
 
-## Result
+## Out of scope
 
-- Automated Google/Teams/Zoom calendar invites → still land in Invitations.
-- Real replies from people you've emailed → stay in your inbox (or wherever their own rules send them), not Invitations.
-
-You can keep correcting any stragglers with the existing "move to folder" action, which re-trains the folder.
-
-## Technical details
-
-- `src/lib/gmail.server.ts` (`parseMessage`): add a `has_calendar_invite` boolean by walking `payload.parts` for `mimeType` starting with `text/calendar`, or a filename ending in `.ics`.
-- `src/lib/sync/classify.ts`: add `has_calendar_invite` to `ParsedEmailForClassify`; pass `is_reply` (derived from `in_reply_to`) and `has_calendar_invite` through `classifyByAi` → `classifyEmail`.
-- `src/lib/ai.server.ts`: extend the `classifyEmail` (and the batch `classifyEmailsBatch`) email input + prompt to include the two flags and the guardrail wording above.
-- No migration required (signals are computed and consumed in-flight).
-- Add/extend a unit test in `src/lib/gmail-parse.test.ts` for `has_calendar_invite`, and verify classification logic compiles and existing sync tests pass.
+- Changing the background classifier pipeline (`sync/*`) or the auto-relearn cron.
+- Persisting assistant chat history (panel stays session-only).
