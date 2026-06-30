@@ -1008,7 +1008,9 @@ function InboxPage() {
   function goPrev() {
     if (page > 1) setPage((p) => p - 1);
   }
-  const canGoNext = !isSearching && (hasMoreLocal || canPullFromGmail);
+  const canGoNext = isSearching
+    ? hasMoreSearch
+    : hasMoreLocal || canPullFromGmail;
 
   const selectedListItem = filtered.find((e) => e.id === selectedId) ?? null;
 
