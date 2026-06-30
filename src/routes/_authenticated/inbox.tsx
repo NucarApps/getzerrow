@@ -543,6 +543,7 @@ function InboxPage() {
     setSelectedId(null);
     setSelectedIds(new Set());
     setQuery("");
+    setDebouncedQuery("");
     setLastGmailResult(null);
     setGmailHitIds({ query: "", ids: new Set() });
   }, [selectedFolder]);
