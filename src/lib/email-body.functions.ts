@@ -12,6 +12,7 @@ import {
   getEmailsDecrypted,
   getEmailListFieldsDecrypted,
   getEmailsListDecrypted,
+  searchEmailsDecrypted,
 } from "./sync/encrypted-reader";
 
 export const getEmailBody = createServerFn({ method: "POST" })
