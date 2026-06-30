@@ -93,6 +93,8 @@ export async function classifyEmail(
 
   function buildPrompt(opts: { trim: boolean }) {
     const bodyLimit = opts.trim ? 2000 : 4000;
+    const isReply = !!(email.in_reply_to && email.in_reply_to.trim());
+    const hasCalendarInvite = !!email.has_calendar_invite;
     return `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
 
 Folders:
@@ -101,8 +103,11 @@ ${buildFolderList(!opts.trim)}
 Email:
 From: ${email.from_name} <${email.from_addr}>
 Subject: ${email.subject}
+Signals: ${hasCalendarInvite ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
 Body:
 ${(email.body_text || email.snippet || "").slice(0, bodyLimit)}
+
+Guidance: Treat an email as an automated calendar invite ONLY when it actually carries a calendar event. A human reply in an existing thread is NOT an automated invite — do not route it into an automated-invite folder unless that folder's rule explicitly targets replies.
 
 Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line summary AND a short reason explaining the match.`;
   }
