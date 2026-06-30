@@ -435,44 +435,6 @@ function parseSearchQuery(input: string): { from: string | null; to: string | nu
   return { from, to, rest };
 }
 
-// Bounded Levenshtein — returns true if edit distance between a and b is ≤ max.
-function withinEditDistance(a: string, b: string, max: number): boolean {
-  if (Math.abs(a.length - b.length) > max) return false;
-  const m = a.length,
-    n = b.length;
-  if (m === 0) return n <= max;
-  if (n === 0) return m <= max;
-  let prev = new Array(n + 1);
-  let curr = new Array(n + 1);
-  for (let j = 0; j <= n; j++) prev[j] = j;
-  for (let i = 1; i <= m; i++) {
-    curr[0] = i;
-    let rowMin = curr[0];
-    for (let j = 1; j <= n; j++) {
-      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
-      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
-      if (curr[j] < rowMin) rowMin = curr[j];
-    }
-    if (rowMin > max) return false;
-    [prev, curr] = [curr, prev];
-  }
-  return prev[n] <= max;
-}
-
-function tokenFuzzyMatches(token: string, words: string[]): boolean {
-  if (token.length < 3) {
-    // Too short for fuzzy — require exact substring somewhere.
-    return words.some((w) => w.includes(token));
-  }
-  const maxDist = token.length >= 5 ? 2 : 1;
-  for (const w of words) {
-    if (w.includes(token) || w.startsWith(token)) return true;
-    if (Math.abs(w.length - token.length) <= maxDist && withinEditDistance(w, token, maxDist))
-      return true;
-  }
-  return false;
-}
-
 function InboxPage() {
   const qc = useQueryClient();
   const sync = useServerFn(triggerSync);
@@ -580,7 +542,7 @@ function InboxPage() {
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
   const parsedQuery = useMemo(() => parseSearchQuery(searchTerm), [searchTerm]);
-  const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
+  
 
   // No entry pre-sync gate. The inbox renders immediately from the local DB
   // (the source of truth, kept current by the webhook + poll crons), and the
@@ -608,40 +570,23 @@ function InboxPage() {
       const isAllMail = selectedFolder === "all_mail";
       const folderRows = foldersQ.data ?? [];
       if (isSearching) {
-        // Operator-aware search: when the user typed `from:` / `to:`, filter
-        // server-side so we don't get capped by the 2000-newest window.
-        if (hasOperator) {
-          const esc = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
-          let q = supabase
-            .from("emails")
-            .select(LIST_COLUMNS)
-            .eq("gmail_account_id", accountId!)
-            .order("received_at", { ascending: false, nullsFirst: false })
-            .limit(500);
-          // While searching, span all mail (Gmail itself does). Only scope
-          // when the user picked a specific folder.
-          if (!isAllMail && selectedFolder !== "all") {
-            if (isNoRules) q = q.is("folder_id", null);
-            else q = q.eq("folder_id", selectedFolder);
-          }
-          if (parsedQuery.from) {
-            const v = esc(parsedQuery.from);
-            // from_name / to_addrs / subject / snippet are encrypted; filter
-            // those client-side after hydration. from_addr is still plaintext.
-            q = q.ilike("from_addr", `%${v}%`);
-          }
-          const { data } = await q;
-          const rows = (data ?? []) as unknown as Email[];
-          return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
-        }
-        // Free-text search: ranked, server-side full-text search over the
-        // GIN-indexed search index (subject/snippet/body + sender/recipient).
-        // Only the matched rows are decrypted, server-side, so the browser no
-        // longer downloads 5,000 rows or fuzzy-scores on the main thread — the
-        // source of the freeze. We then hydrate the small result set's list
-        // metadata and keep the server's relevance ordering.
+        // Single server-side path for both free-text and `from:` / `to:`
+        // operator search. The server ranks over the GIN-indexed search index:
+        // free-text against subject/snippet/body + sender/recipient, and
+        // operators against the dedicated participant index (sender = weight A,
+        // recipient = weight B) across the WHOLE mailbox — no longer capped by
+        // a recent-rows window, and matched by email address AND display name.
+        // Only matched rows are decrypted server-side, so the browser never
+        // downloads or fuzzy-scores the corpus (the old freeze).
         const res = await searchInboxFn({
-          data: { query: searchTerm, account_id: accountId!, limit: 100 },
+          data: {
+            query: searchTerm,
+            from: parsedQuery.from,
+            to: parsedQuery.to,
+            rest: parsedQuery.rest,
+            account_id: accountId!,
+            limit: 100,
+          },
         });
         const hits = res.rows ?? [];
         if (hits.length === 0) return [];
@@ -986,40 +931,13 @@ function InboxPage() {
   }, [baseRows, listFieldsQ.data]);
 
   const filtered = useMemo(() => {
-    if (!isSearching) return pageRows;
-    // Free-text search is matched and relevance-ranked server-side, so just
-    // keep that order — no main-thread re-scoring (that was the freeze).
-    if (!hasOperator) return pageRows;
-    // Operator search (from:/to:) still filters locally over hydrated rows.
-    const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
-    const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
-    const rest = parsedQuery.rest.toLowerCase();
+    // Both free-text and `from:` / `to:` operator searches are now matched and
+    // relevance-ranked entirely server-side (operators via the participant
+    // index across the whole mailbox), so we keep the server order as-is — no
+    // main-thread re-scoring, which was the source of the freeze.
+    return pageRows;
+  }, [pageRows]);
 
-    const scored = pageRows.map((e) => {
-      const fromAddr = (e.from_addr ?? "").toLowerCase();
-      const fromName = e.from_name ? decodeEntities(e.from_name).toLowerCase() : "";
-      const toAddrs = (e.to_addrs ?? "").toLowerCase();
-      const subject = e.subject ? decodeEntities(e.subject).toLowerCase() : "";
-      const snippet = e.snippet ? decodeEntities(e.snippet).toLowerCase() : "";
-
-      let hit = true;
-      if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle)))
-        hit = false;
-      if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
-      if (rest) {
-        // Exclude to_addrs from the haystack — it almost always contains
-        // the current user's own name/email, which would make every
-        // received email match a search for the user's own name.
-        const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
-        const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
-        const tokens = rest.split(/\s+/).filter(Boolean);
-        const allTokensMatch = tokens.every((t) => tokenFuzzyMatches(t, words));
-        if (!allTokensMatch) hit = false;
-      }
-      return { e, hit };
-    });
-    return scored.filter((s) => s.hit).map((s) => s.e);
-  }, [pageRows, isSearching, hasOperator, parsedQuery]);
 
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;

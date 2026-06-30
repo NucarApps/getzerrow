@@ -1,48 +1,58 @@
-# Make email search fast and stop the freeze
+# Whole-mailbox `from:` / `to:` email search
 
-## What's wrong today
+## Goal
 
-Free-text inbox search ignores the full-text search infrastructure that already exists and instead does the heaviest possible thing in the browser:
+Typing `from:alice@x.com`, `to:bob`, or `from:"Alice Smith" invoice` in the inbox search box should match **across your entire mailbox** — by email address **and** display name — not just the ~500 most-recent emails currently loaded in the browser.
 
-1. On **every keystroke** (no debounce), it fetches up to **5,000 raw email rows** for the account.
-2. It then makes a second server round-trip to **decrypt up to 5,000 rows** (`getEmailListFields`).
-3. It then runs **fuzzy token scoring** over all of them on the main thread (`decodeEntities`, edit-distance matching).
+## Why it's limited today
 
-For large mailboxes (one account here has ~76k emails) this locks up the tab and forces a page refresh.
+The `from:` / `to:` operators already parse in the search box, but:
 
-Meanwhile the app already has everything needed for instant search, just unused by the UI:
-- `email_search_index` table with a `tsv` column, GIN-indexed, fully populated (144k rows, 0 missing).
-- A ranked, paginated, decrypting RPC `public.search_emails(user_id, query, limit, offset, key)` using `websearch_to_tsquery` + `ts_rank`.
+- `from:` by **email** filters server-side on the plaintext `from_addr` only.
+- `from:` by **name** and **all `to:` matches** run in the browser over the ~500 rows already on screen, because sender names and recipient addresses are encrypted at rest. Older mail is silently missed.
+
+The existing full-text index can't cleanly answer "is this person the **sender** vs the **recipient**" because its tsvector blends sender, subject, and recipient tokens together.
 
 ## The fix
 
-Route search through the existing server-side full-text RPC instead of the browser, debounce input, and abort stale requests. Add a composite DB index so ranking is fast even on the biggest mailboxes.
+Add a dedicated, encrypted-aware **participant index** so the server can answer "from this person" and "to this person" precisely and fast, then route the operator search through it.
 
-### 1. Database (migration)
-- Enable the `btree_gin` extension and add a composite index `email_search_index USING gin (user_id, tsv)`. This removes the current "BitmapAnd of two separate indexes" step (measured ~1.1s on the 76k mailbox) and lets a single index serve the user-scoped ranked lookup.
-- Extend `search_emails` to accept an optional `p_account_id uuid` so multi-account users only search the selected account, and so results don't need re-filtering for the wrong account. Keep the existing signature working (overload / default) to avoid breaking anything.
+### 1. Database
+- Add a `participant_tsv` tsvector column to `email_search_index`, with two weight classes:
+  - weight **A** = sender (`from_addr` + decrypted `from_name`)
+  - weight **B** = recipients (decrypted `to_addrs`)
+- Add a GIN index on `(user_id, participant_tsv)` so lookups stay sub-second on the biggest mailboxes.
+- Populate `participant_tsv` on every write by updating the existing `upsert_email_encrypted` / `update_email_encrypted` functions (new + re-filed mail is indexed instantly).
+- Add a backfill function `reindex_email_participants(batch, key)` that fills `participant_tsv` for existing rows in batches, newest-first. This only decrypts the small name/recipient fields (not bodies), so it's light.
+- Add a `search_emails_participants(...)` RPC that:
+  - matches `from:` needles against weight-A lexemes and `to:` needles against weight-B lexemes (so a recipient never matches a `from:` query and vice-versa),
+  - optionally ANDs in free-text terms against the existing full-text index,
+  - decrypts only the matched rows and returns them ranked, scoped to the selected account.
 
-### 2. Server function
-- Add a `searchEmailsDecrypted(...)` helper in `src/lib/sync/encrypted-reader.ts` that calls `search_emails` via `supabaseAdmin` with `EMAIL_ENC_KEY` and the caller's `userId`.
-- Add a `searchInbox` server function (`createServerFn` + `requireSupabaseAuth`) in `src/lib/email-body.functions.ts`. It takes `{ query, account_id, scope, folder_id, limit }`, derives `userId` from the auth context (never the client), and returns already-decrypted, ranked rows. The RPC is `service_role`-only, so this stays server-side.
+### 2. Backfill cron
+- Point the existing per-minute search-reindex endpoint (`/api/public/gmail-search-reindex`) at the new participant backfill so historical mail becomes searchable by sender/recipient without a manual step.
 
-### 3. Inbox UI (`src/routes/_authenticated/inbox.tsx`)
-- Replace the free-text search branch of `emailsQ`: instead of the 5,000-row fetch + `getEmailListFields` decrypt + local fuzzy scoring, call `searchInbox` and render its ranked, pre-decrypted results directly.
-- Debounce the search input (~300ms) so we don't fire a query per keystroke, and let React Query abort superseded searches (stable query key on the debounced term).
-- Apply the existing `emailBelongsInScope` filter on the small returned set (≤200 rows) for folder/no-rules scoping — cheap now.
-- Keep the existing "also ask Gmail and ingest older matches" background step; newly-ingested rows already update `email_search_index`, so they flow into the next search automatically.
-- Remove the now-dead local fuzzy-scoring path for search (keep it only if still needed for the operator `from:`/`to:` view, which the RPC otherwise covers).
+### 3. Server function
+- Extend `searchInbox` to accept parsed `from` / `to` / `rest` parts and, when an operator is present, call the new participant RPC via a `searchEmailsParticipantsDecrypted` helper; otherwise keep the current free-text path.
+
+### 4. Inbox UI (`src/routes/_authenticated/inbox.tsx`)
+- Replace the operator branch of the search query: instead of the 500-row `from_addr` ilike + local fuzzy filtering, call `searchInbox` with the parsed `from` / `to` / `rest` and render the server-ranked, pre-decrypted results directly.
+- Simplify the `filtered` memo so operator results (already matched server-side) render as-is — removing the main-thread re-scoring.
+- Keep the existing background "also ask Gmail for older matches" step; newly ingested rows get participant-indexed automatically.
 
 ## Result
-- Search returns ranked matches from a server-side index in well under a second instead of downloading and decrypting thousands of rows in the browser.
-- No more main-thread fuzzy scoring over the whole corpus, so the tab no longer freezes and you won't need to refresh.
-- Searching spans all mail (as Gmail does) and respects the selected account.
+- `from:` / `to:` match the whole mailbox by email **and** name, fast, with no freeze.
+- Sender vs recipient is distinguished correctly.
+- Free-text and combined queries (`from:alice invoice`) keep working.
 
-## Verification
-- `EXPLAIN ANALYZE` the new composite-index query to confirm the BitmapAnd is gone and latency drops.
-- In the browser: type a query in a large mailbox, confirm results appear quickly, no freeze, and stale in-flight searches are cancelled.
-- Confirm multi-account scoping (results only from the selected account) and folder scoping still behave.
+## Rollout note
+Whole-mailbox **name** matching for older emails becomes complete as the participant backfill drains (it runs automatically each minute after publish). Email-address `from:` matches work immediately. New mail is indexed on arrival.
 
 ## Technical notes
-- `search_emails` is `SECURITY DEFINER` and granted only to `service_role`; it must be called from the server function with the server-held `EMAIL_ENC_KEY`, never from the client.
-- `email_search_index` is kept fresh by `upsert_email_encrypted` / `update_email_encrypted` at ingest/update time, so no backfill is required (already 0 missing).
+- Operator needles are converted to weight-tagged tsqueries safely by lexeme-normalizing user input (`to_tsvector` → append `:A`/`:B`), avoiding `to_tsquery` injection/syntax errors.
+- `search_emails_participants` is `SECURITY DEFINER`, granted to `service_role` only, and called from the server function with the server-held `EMAIL_ENC_KEY` — never from the client.
+- `participant_tsv` carries only sender/recipient tokens; the existing `tsv` (subject/snippet/body) is untouched, so the current free-text search is unaffected.
+
+## Verification
+- `EXPLAIN ANALYZE` a `from:`/`to:` query to confirm the GIN index is used.
+- In the browser: `from:<email>` and `from:<name>` return matches beyond the recent window; `to:<email>` matches recipients only; combined `from:x term` narrows correctly; multi-account scoping respected; no freeze.

@@ -13,7 +13,7 @@ import { withCronRun, logError } from "@/lib/log.server";
 
 type ReindexRpc = {
   rpc: (
-    fn: "reindex_email_search_sender",
+    fn: "reindex_email_search_sender" | "reindex_email_participants",
     args: { p_batch_limit: number; p_key: string },
   ) => Promise<{ data: number | null; error: { message: string } | null }>;
 };
@@ -44,6 +44,7 @@ export const Route = createFileRoute("/api/public/gmail-search-reindex")({
           const client = supabaseAdmin as unknown as ReindexRpc;
           let processed = 0;
           let batches = 0;
+          let participantsProcessed = 0;
           let error: string | null = null;
 
           for (let i = 0; i < maxBatches; i++) {
@@ -62,7 +63,38 @@ export const Route = createFileRoute("/api/public/gmail-search-reindex")({
             if (n < batch) break;
           }
 
-          return Response.json({ ok: error == null, run_id: runId, processed, batches, error });
+          // Backfill the participant index (sender + recipient tokens, weighted
+          // for from:/to: operator search), newest-first and idempotent via the
+          // null `participant_tsv` gate.
+          if (error == null) {
+            for (let i = 0; i < maxBatches; i++) {
+              const r = await client.rpc("reindex_email_participants", {
+                p_batch_limit: batch,
+                p_key: key,
+              });
+              if (r.error) {
+                error = r.error.message;
+                logError(
+                  "gmail-search-reindex.participants_rpc_error",
+                  { run_id: runId, participantsProcessed },
+                  r.error,
+                );
+                break;
+              }
+              const n = r.data ?? 0;
+              participantsProcessed += n;
+              if (n < batch) break;
+            }
+          }
+
+          return Response.json({
+            ok: error == null,
+            run_id: runId,
+            processed,
+            participantsProcessed,
+            batches,
+            error,
+          });
         });
       },
       GET: async () => new Response("Use POST", { status: 405 }),
