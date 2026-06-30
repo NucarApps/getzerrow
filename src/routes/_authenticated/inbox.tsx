@@ -1375,13 +1375,23 @@ function InboxPage() {
                         : "Wait about a minute and try the search again."}
                     </p>
                   </>
-                ) : (lastGmailResult?.found ?? 0) > 0 ? (
+                ) : (lastGmailResult?.found ?? 0) > 0 &&
+                  (gmailHitRowsQ.isFetching || emailsQ.isFetching) ? (
                   <>
                     <p className="text-sm">
                       Pulling {lastGmailResult!.found} match
                       {lastGmailResult!.found === 1 ? "" : "es"} from Gmail…
                     </p>
                     <p className="text-xs">Results will appear in a moment.</p>
+                  </>
+                ) : (lastGmailResult?.found ?? 0) > 0 ? (
+                  <>
+                    <p className="text-sm">
+                      Found {lastGmailResult!.found} match
+                      {lastGmailResult!.found === 1 ? "" : "es"} in Gmail, but they
+                      couldn't be loaded.
+                    </p>
+                    <p className="text-xs">Try searching again in a moment.</p>
                   </>
                 ) : (
                   <>
