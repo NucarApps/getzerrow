@@ -509,6 +509,11 @@ function InboxPage() {
     setLastGmailResult(null);
     setGmailHitIds({ query: "", ids: new Set() });
   }, [selectedFolder]);
+  // A new/changed search restarts at page 1 so the offset window is correct.
+  useEffect(() => {
+    setPage(1);
+    setCursors([null]);
+  }, [searchTerm]);
   const cursor = cursors[page - 1] ?? null;
 
   const reclassifyFn = useServerFn(reclassifyEmails);
