@@ -298,6 +298,66 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
       }
     }
 
+    // Resolve the email ids that match a move_matching signal, scoped to this
+    // user. from/domain match the plaintext from_addr column directly; subject
+    // requires a bounded decrypt scan since subjects are encrypted at rest.
+    async function findMatchingEmailIds(action: {
+      field: "from" | "domain" | "subject";
+      op: "contains" | "equals" | "starts_with";
+      value: string;
+    }): Promise<string[]> {
+      const value = action.value.trim();
+      if (!value) return [];
+
+      if (action.field === "from" || action.field === "domain") {
+        const v = value.toLowerCase().replace(/^@/, "");
+        let pattern: string;
+        if (action.field === "domain") {
+          // Domain match keys off the address host regardless of op.
+          pattern = action.op === "equals" ? `%@${v}` : `%${v}%`;
+        } else if (action.op === "equals") {
+          pattern = v;
+        } else if (action.op === "starts_with") {
+          pattern = `${v}%`;
+        } else {
+          pattern = `%${v}%`;
+        }
+        const { data: rows } = await supabaseAdmin
+          .from("emails")
+          .select("id")
+          .eq("user_id", userId)
+          .ilike("from_addr", pattern)
+          .order("received_at", { ascending: false })
+          .limit(MOVE_MATCHING_CAP);
+        return (rows ?? []).map((r) => r.id);
+      }
+
+      // subject: bounded scan over recent rows, decrypt, then match in memory.
+      const { data: rows } = await supabaseAdmin
+        .from("emails")
+        .select("id")
+        .eq("user_id", userId)
+        .order("received_at", { ascending: false })
+        .limit(500);
+      const ids = (rows ?? []).map((r) => r.id);
+      if (ids.length === 0) return [];
+      const dec = await getEmailsDecrypted(ids);
+      const needle = value.toLowerCase();
+      const matched: string[] = [];
+      for (const r of dec.rows) {
+        const subject = (r.subject ?? "").toLowerCase();
+        const hit =
+          action.op === "equals"
+            ? subject === needle
+            : action.op === "starts_with"
+              ? subject.startsWith(needle)
+              : subject.includes(needle);
+        if (hit) matched.push(r.id);
+        if (matched.length >= MOVE_MATCHING_CAP) break;
+      }
+      return matched;
+    }
+
     for (const action of data.actions) {
       try {
         if (action.type === "move_email") {
