@@ -872,9 +872,8 @@ function InboxPage() {
         .eq("gmail_account_id", accountId!)
         .in("gmail_message_id", ids);
       const rows = (data ?? []) as unknown as Email[];
-      return rows.filter((email) =>
-        emailBelongsInScope(email, selectedFolder, foldersQ.data ?? []),
-      );
+      // Search spans the whole mailbox — keep archived/filed matches.
+      return rows.filter(matchesSearchScope);
     },
   });
 
