@@ -489,6 +489,16 @@ function InboxPage() {
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Debounced copy of `query` that drives all *data* fetching. The input stays
+  // bound to `query` for instant typing feedback, but the heavy search only
+  // fires ~250ms after the user stops typing, so each keystroke no longer kicks
+  // off a request.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const h = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(h);
+  }, [query]);
+  const searchInboxFn = useServerFn(searchInbox);
   const [filterPrompt, setFilterPrompt] = useState<null | {
     fromAddr: string | null;
     subject: string | null;
