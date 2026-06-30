@@ -542,7 +542,7 @@ function InboxPage() {
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
   const parsedQuery = useMemo(() => parseSearchQuery(searchTerm), [searchTerm]);
-  const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
+  
 
   // No entry pre-sync gate. The inbox renders immediately from the local DB
   // (the source of truth, kept current by the webhook + poll crons), and the
