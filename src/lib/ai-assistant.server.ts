@@ -8,6 +8,7 @@
 // Gemini handles flat JSON-schema objects reliably but chokes on Zod
 // discriminated unions translated to JSON Schema.
 import { z } from "zod";
+import type { DomainCluster } from "./ai-assistant-context";
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-3-flash-preview";
@@ -38,6 +39,23 @@ const actionSchema = z.discriminatedUnion("type", [
     ai_rule: z.string().min(1).max(500),
     why: z.string().max(200).optional().default(""),
   }),
+  // Bulk move every existing email matching a signal into a folder. Usually
+  // paired with add_filter so future mail follows the same rule.
+  z.object({
+    type: z.literal("move_matching"),
+    field: z.enum(["from", "domain", "subject"]),
+    op: z.enum(["contains", "equals", "starts_with"]),
+    value: z.string().min(1).max(400),
+    to_folder_id: z.string(),
+    why: z.string().max(200).optional().default(""),
+  }),
+  // Rewrite the longer learned profile that steers the classifier.
+  z.object({
+    type: z.literal("update_folder_profile"),
+    folder_id: z.string(),
+    learned_profile: z.string().min(1).max(2000),
+    why: z.string().max(200).optional().default(""),
+  }),
 ]);
 
 export type AssistantAction = z.infer<typeof actionSchema>;
@@ -61,22 +79,38 @@ export type AssistantContextEmail = {
   subject: string | null;
   snippet: string | null;
   folder_id: string | null;
+  domain: string | null;
+  is_reply: boolean;
+  list_id: string | null;
+  classification_reason: string | null;
 };
 
 export type AssistantContextFolder = {
   id: string;
   name: string;
   ai_rule: string | null;
+  learned_profile: string | null;
   filters: Array<{ id: string; field: string; op: string; value: string }>;
 };
 
 export type AssistantChatMessage = { role: "user" | "assistant"; content: string };
+
+function describeContextEmail(e: AssistantContextEmail): string {
+  const flags: string[] = [];
+  if (e.is_reply) flags.push("reply");
+  if (e.list_id) flags.push("mailing-list");
+  const flagStr = flags.length ? ` [${flags.join(", ")}]` : "";
+  const reason = e.classification_reason ? ` | why: ${e.classification_reason.slice(0, 120)}` : "";
+  return `  - email ${e.id}: from ${e.from_name ?? ""} <${e.from_addr ?? ""}> (domain: ${e.domain ?? "?"}) | subject: ${e.subject ?? ""} | folder: ${e.folder_id ?? "(none)"}${flagStr} | snippet: ${(e.snippet ?? "").slice(0, 140)}${reason}`;
+}
 
 function buildPrompt(args: {
   history: AssistantChatMessage[];
   userMessage: string;
   emails: AssistantContextEmail[];
   folders: AssistantContextFolder[];
+  folderSample?: { folderId: string; folderName: string; emails: AssistantContextEmail[] };
+  domainClusters?: DomainCluster[];
   extraReminder?: string;
 }) {
   const folderBlock = args.folders
@@ -86,18 +120,29 @@ function buildPrompt(args: {
         : "      (no filters)";
       return `  - folder ${f.id}: "${f.name}"
       rule: ${f.ai_rule || "(none)"}
+      learned profile: ${f.learned_profile ? f.learned_profile.slice(0, 400) : "(none)"}
 ${filters}`;
     })
     .join("\n");
 
   const emailBlock = args.emails.length
-    ? args.emails
-        .map(
-          (e) =>
-            `  - email ${e.id}: from ${e.from_name ?? ""} <${e.from_addr ?? ""}> | subject: ${e.subject ?? ""} | folder: ${e.folder_id ?? "(none)"} | snippet: ${(e.snippet ?? "").slice(0, 160)}`,
-        )
-        .join("\n")
+    ? args.emails.map(describeContextEmail).join("\n")
     : "  (none — user has not selected any emails)";
+
+  const folderSampleBlock =
+    args.folderSample && args.folderSample.emails.length
+      ? `\nRecent emails currently in "${args.folderSample.folderName}" (folder ${args.folderSample.folderId}) — inspect these to diagnose misfiling:\n${args.folderSample.emails.map(describeContextEmail).join("\n")}\n`
+      : "";
+
+  const domainBlock =
+    args.domainClusters && args.domainClusters.length
+      ? `\nRecent sender-domain clusters (where mail from each domain currently lands) — use these to suggest durable domain filters:\n${args.domainClusters
+          .map(
+            (c) =>
+              `  - ${c.domain}: ${c.count} recent emails → ${c.folders.map((f) => `${f.name} (${f.count})`).join(", ")}`,
+          )
+          .join("\n")}\n`
+      : "";
 
   const historyBlock = args.history.length
     ? args.history.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n")
@@ -110,7 +155,7 @@ ${folderBlock}
 
 Currently selected emails (use these EXACT email IDs):
 ${emailBlock}
-
+${folderSampleBlock}${domainBlock}
 Prior conversation:
 ${historyBlock}
 
@@ -118,18 +163,25 @@ User's new message:
 "${args.userMessage}"
 
 Action types:
-- move_email: move a selected email to a different folder.
+- move_email: move ONE selected email (by email_id) to a different folder.
+- move_matching: move ALL existing emails matching a signal (field/op/value) into a folder. Use this — not many move_email actions — when several emails share the same sender, domain, or subject. Almost always pair it with add_filter so FUTURE mail follows too.
 - add_filter: add a filter rule to a folder. Fields: from (sender address), domain (bare domain like "acme.com"), subject. Ops: contains, equals, starts_with.
-- remove_filter: remove an existing filter by filter_id (only if it routes to the WRONG folder).
-- update_folder_rule: replace a folder's natural-language AI rule.
+- remove_filter: remove an existing filter by filter_id (only if it routes mail to the WRONG folder).
+- update_folder_rule: replace a folder's short natural-language AI rule.
+- update_folder_profile: rewrite the folder's longer learned profile (the description that steers the AI classifier). Use this to fix classifier drift — e.g. to explicitly EXCLUDE a class of mail that keeps getting misfiled.
+
+How to diagnose (do this before proposing actions):
+1. Look across the selected emails, the recent folder sample, and the domain clusters to find the SHARED signal causing the problem — a sender address, a bare domain, a mailing-list id, a subject pattern, or reply-vs-automated.
+2. Prefer DURABLE, structural fixes over one-off moves: a domain filter beats repeated single moves; when many existing emails share a signal, propose move_matching + add_filter together.
+3. Check whether a filter on ANOTHER folder is wrongly catching this mail; if so, propose remove_filter for that competing filter.
+4. When the misfiling is fuzzy (the AI classifier, not a filter), tighten the folder's rule or learned profile to EXCLUDE the misfiled class precisely (e.g. "human replies in a thread are NOT automated invites") rather than broadening it.
 
 Guidelines:
-- Prefer the smallest set of changes.
-- If the user describes a routing rule by sender, domain, or subject (with or without any selected emails), propose add_filter on the target folder. You do NOT need a selected email to add a filter.
-- If a user says "anything that starts with X goes to folder Y", use add_filter with field: subject, op: starts_with, value: X on folder Y. If another folder currently has a filter that would catch the same mail and route it elsewhere, ALSO propose remove_filter for that competing filter.
+- Prefer the smallest set of changes that actually fixes the pattern.
+- You do NOT need a selected email to add a filter, move matching mail, or refine instructions.
 - Match folders by name fuzzily (case-insensitive, ignore plural/singular) against the list above. Always reference folder/filter/email IDs from the lists above — never invent IDs.
-- If the user says "this email" but nothing is selected, leave actions empty and set clarifying_question.
-- "reply" is a short friendly summary of what you'll change. "clarifying_question" is a single short question if you truly cannot proceed, otherwise empty.
+- Put a short, concrete reason in each action's "why".
+- "reply" is a short friendly summary of what you'll change. "clarifying_question" is a single short question only if you truly cannot proceed, otherwise empty.
 
 Prefer calling the propose_changes tool. Only reply in plain text if you genuinely need to ask a clarifying question and cannot express it via the tool's clarifying_question field.${args.extraReminder ? `\n${args.extraReminder}` : ""}`;
 }
@@ -149,27 +201,45 @@ const TOOL_PARAMETERS_SCHEMA = {
         properties: {
           type: {
             type: "string",
-            enum: ["move_email", "add_filter", "remove_filter", "update_folder_rule"],
+            enum: [
+              "move_email",
+              "move_matching",
+              "add_filter",
+              "remove_filter",
+              "update_folder_rule",
+              "update_folder_profile",
+            ],
           },
           email_id: { type: "string", description: "Required when type is move_email." },
-          to_folder_id: { type: "string", description: "Required when type is move_email." },
+          to_folder_id: {
+            type: "string",
+            description: "Required when type is move_email or move_matching.",
+          },
           folder_id: {
             type: "string",
-            description: "Required when type is add_filter or update_folder_rule.",
+            description:
+              "Required when type is add_filter, update_folder_rule, or update_folder_profile.",
           },
           filter_id: { type: "string", description: "Required when type is remove_filter." },
           field: {
             type: "string",
             enum: ["from", "domain", "subject"],
-            description: "Required when type is add_filter.",
+            description: "Required when type is add_filter or move_matching.",
           },
           op: {
             type: "string",
             enum: ["contains", "equals", "starts_with"],
-            description: "Required when type is add_filter.",
+            description: "Required when type is add_filter or move_matching.",
           },
-          value: { type: "string", description: "Required when type is add_filter." },
+          value: {
+            type: "string",
+            description: "Required when type is add_filter or move_matching.",
+          },
           ai_rule: { type: "string", description: "Required when type is update_folder_rule." },
+          learned_profile: {
+            type: "string",
+            description: "Required when type is update_folder_profile.",
+          },
           why: { type: "string", description: "Optional short reason." },
         },
         required: ["type"],
@@ -268,6 +338,8 @@ export async function proposeAssistantChanges(args: {
   userMessage: string;
   emails: AssistantContextEmail[];
   folders: AssistantContextFolder[];
+  folderSample?: { folderId: string; folderName: string; emails: AssistantContextEmail[] };
+  domainClusters?: DomainCluster[];
 }): Promise<AssistantProposal> {
   try {
     return await callModel(buildPrompt(args));
