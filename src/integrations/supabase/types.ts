@@ -419,6 +419,7 @@ export type Database = {
         Row: {
           email_id: string
           has_sender: boolean
+          participant_tsv: unknown
           tsv: unknown
           updated_at: string
           user_id: string
@@ -426,6 +427,7 @@ export type Database = {
         Insert: {
           email_id: string
           has_sender?: boolean
+          participant_tsv?: unknown
           tsv: unknown
           updated_at?: string
           user_id: string
@@ -433,6 +435,7 @@ export type Database = {
         Update: {
           email_id?: string
           has_sender?: boolean
+          participant_tsv?: unknown
           tsv?: unknown
           updated_at?: string
           user_id?: string
@@ -1309,6 +1312,14 @@ export type Database = {
           user_id: string
         }[]
       }
+      build_participant_tsv: {
+        Args: { p_from_addr: string; p_from_name: string; p_to_addrs: string }
+        Returns: unknown
+      }
+      build_weighted_tsquery: {
+        Args: { p_text: string; p_weight: string }
+        Returns: unknown
+      }
       bump_history_id_if_greater: {
         Args: {
           p_account_id: string
@@ -1617,6 +1628,10 @@ export type Database = {
           watch_expiration: string
         }[]
       }
+      reindex_email_participants: {
+        Args: { p_batch_limit: number; p_key: string }
+        Returns: number
+      }
       reindex_email_search_sender: {
         Args: { p_batch_limit: number; p_key: string }
         Returns: number
@@ -1628,6 +1643,33 @@ export type Database = {
           p_limit: number
           p_offset: number
           p_query: string
+          p_user_id: string
+        }
+        Returns: {
+          folder_id: string
+          from_addr: string
+          from_name: string
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          is_archived: boolean
+          is_read: boolean
+          rank: number
+          received_at: string
+          snippet: string
+          subject: string
+          thread_id: string
+        }[]
+      }
+      search_emails_participants: {
+        Args: {
+          p_account_id?: string
+          p_from: string
+          p_key: string
+          p_limit: number
+          p_offset: number
+          p_rest: string
+          p_to: string
           p_user_id: string
         }
         Returns: {
