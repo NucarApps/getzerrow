@@ -969,40 +969,13 @@ function InboxPage() {
   }, [baseRows, listFieldsQ.data]);
 
   const filtered = useMemo(() => {
-    if (!isSearching) return pageRows;
-    // Free-text search is matched and relevance-ranked server-side, so just
-    // keep that order — no main-thread re-scoring (that was the freeze).
-    if (!hasOperator) return pageRows;
-    // Operator search (from:/to:) still filters locally over hydrated rows.
-    const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
-    const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
-    const rest = parsedQuery.rest.toLowerCase();
+    // Both free-text and `from:` / `to:` operator searches are now matched and
+    // relevance-ranked entirely server-side (operators via the participant
+    // index across the whole mailbox), so we keep the server order as-is — no
+    // main-thread re-scoring, which was the source of the freeze.
+    return pageRows;
+  }, [pageRows]);
 
-    const scored = pageRows.map((e) => {
-      const fromAddr = (e.from_addr ?? "").toLowerCase();
-      const fromName = e.from_name ? decodeEntities(e.from_name).toLowerCase() : "";
-      const toAddrs = (e.to_addrs ?? "").toLowerCase();
-      const subject = e.subject ? decodeEntities(e.subject).toLowerCase() : "";
-      const snippet = e.snippet ? decodeEntities(e.snippet).toLowerCase() : "";
-
-      let hit = true;
-      if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle)))
-        hit = false;
-      if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
-      if (rest) {
-        // Exclude to_addrs from the haystack — it almost always contains
-        // the current user's own name/email, which would make every
-        // received email match a search for the user's own name.
-        const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
-        const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
-        const tokens = rest.split(/\s+/).filter(Boolean);
-        const allTokensMatch = tokens.every((t) => tokenFuzzyMatches(t, words));
-        if (!allTokensMatch) hit = false;
-      }
-      return { e, hit };
-    });
-    return scored.filter((s) => s.hit).map((s) => s.e);
-  }, [pageRows, isSearching, hasOperator, parsedQuery]);
 
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
