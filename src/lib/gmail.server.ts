@@ -356,6 +356,21 @@ export function parseMessage(msg: ParsableGmailMessage) {
     };
     return ((payload.parts as unknown[]) || []).some(walk);
   })();
+  // True automated calendar invites (Google/Teams/Zoom) carry an embedded
+  // calendar event: a `text/calendar` MIME part, or an attached `.ics` file.
+  // Human replies in a thread never do — this is the strongest signal for
+  // distinguishing an invite from a regular reply.
+  const hasCalendarInvite = (() => {
+    const walk = (raw: unknown): boolean => {
+      const p = asPart(raw);
+      if (!p) return false;
+      const mime = (p.mimeType || "").toLowerCase();
+      if (mime.startsWith("text/calendar")) return true;
+      if ((p.filename || "").toLowerCase().endsWith(".ics")) return true;
+      return ((p.parts as unknown[]) || []).some(walk);
+    };
+    return walk(payload);
+  })();
   return {
     gmail_message_id: msg.id as string,
     thread_id: msg.threadId as string,
