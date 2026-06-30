@@ -24,11 +24,7 @@ import {
   backgroundSync,
 } from "@/lib/gmail.functions";
 import { BACKGROUND_SYNC_INTERVAL_MS } from "@/lib/sync/config";
-import {
-  isInProgressEmail,
-  emailBelongsInScope,
-  matchesSearchScope,
-} from "@/lib/search-scope";
+import { matchesSearchScope } from "@/lib/search-scope";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
