@@ -872,7 +872,7 @@ function InboxPage() {
       }
     }, 500);
     return () => clearTimeout(handle);
-  }, [query, searchGmailFn, qc]);
+  }, [searchTerm, searchGmailFn, qc]);
 
   // Supplemental fetch: pull rows for Gmail-hit ids in case they fall outside
   // the 5000-newest local corpus (older mail, archived threads, etc.).
