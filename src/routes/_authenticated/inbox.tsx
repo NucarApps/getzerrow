@@ -878,17 +878,17 @@ function InboxPage() {
   // the 5000-newest local corpus (older mail, archived threads, etc.).
   const gmailHitIdList = useMemo(
     () =>
-      isSearching && gmailHitIds.query === query.trim().toLowerCase()
+      isSearching && gmailHitIds.query === searchTerm.toLowerCase()
         ? Array.from(gmailHitIds.ids)
         : [],
-    [isSearching, gmailHitIds, query],
+    [isSearching, gmailHitIds, searchTerm],
   );
   const gmailHitRowsQ = useQuery<Email[]>({
     queryKey: [
       "emails-gmail-hits",
       accountId,
       selectedFolder,
-      query.trim().toLowerCase(),
+      searchTerm.toLowerCase(),
       gmailHitIdList.length,
     ],
     enabled: !!accountId && gmailHitIdList.length > 0 && foldersQ.isSuccess,
