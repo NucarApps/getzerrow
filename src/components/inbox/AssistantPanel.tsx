@@ -272,9 +272,10 @@ export function AssistantPanel({
               <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-4 text-xs text-muted-foreground">
                 Try things like:
                 <ul className="mt-2 list-disc space-y-1 pl-4">
-                  <li>"These should go to Marketing, not Sales."</li>
-                  <li>"Send anything from @acme.com to Clients."</li>
-                  <li>"Stop routing newsletters to Receipts."</li>
+                  <li>"My Invitations folder keeps getting real replies, not invites — fix it."</li>
+                  <li>"Send anything from @acme.com to Clients, including existing mail."</li>
+                  <li>"Newsletters keep landing in Receipts — add a domain filter to stop it."</li>
+                  <li>"Look at this folder and tighten the rule so it only catches the right mail."</li>
                 </ul>
               </div>
             )}
