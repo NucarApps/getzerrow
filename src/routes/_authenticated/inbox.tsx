@@ -986,44 +986,40 @@ function InboxPage() {
   }, [baseRows, listFieldsQ.data]);
 
   const filtered = useMemo(() => {
-    if (isSearching) {
-      const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
-      const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
-      const rest = parsedQuery.rest.toLowerCase();
-      const qLower = query.trim().toLowerCase();
-      const gmailHits = gmailHitIds.query === qLower ? gmailHitIds.ids : null;
+    if (!isSearching) return pageRows;
+    // Free-text search is matched and relevance-ranked server-side, so just
+    // keep that order — no main-thread re-scoring (that was the freeze).
+    if (!hasOperator) return pageRows;
+    // Operator search (from:/to:) still filters locally over hydrated rows.
+    const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
+    const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
+    const rest = parsedQuery.rest.toLowerCase();
 
-      const scored = pageRows.map((e) => {
-        const fromAddr = (e.from_addr ?? "").toLowerCase();
-        const fromName = e.from_name ? decodeEntities(e.from_name).toLowerCase() : "";
-        const toAddrs = (e.to_addrs ?? "").toLowerCase();
-        const subject = e.subject ? decodeEntities(e.subject).toLowerCase() : "";
-        const snippet = e.snippet ? decodeEntities(e.snippet).toLowerCase() : "";
+    const scored = pageRows.map((e) => {
+      const fromAddr = (e.from_addr ?? "").toLowerCase();
+      const fromName = e.from_name ? decodeEntities(e.from_name).toLowerCase() : "";
+      const toAddrs = (e.to_addrs ?? "").toLowerCase();
+      const subject = e.subject ? decodeEntities(e.subject).toLowerCase() : "";
+      const snippet = e.snippet ? decodeEntities(e.snippet).toLowerCase() : "";
 
-        let hit = true;
-        if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle)))
-          hit = false;
-        if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
-        if (rest) {
-          // Exclude to_addrs from the haystack — it almost always contains
-          // the current user's own name/email, which would make every
-          // received email match a search for the user's own name.
-          const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
-          const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
-          // Every token must fuzzy-match some word in the visible metadata
-          // (substring, prefix, or small edit distance). Lets "rob" match
-          // "Robb" / "Robert" without surfacing unrelated rows.
-          const tokens = rest.split(/\s+/).filter(Boolean);
-          const allTokensMatch = tokens.every((t) => tokenFuzzyMatches(t, words));
-          if (!allTokensMatch) hit = false;
-        }
-        return { e, hit };
-      });
-      // Only show actual matches — no more "long tail of unrelated mail".
-      return scored.filter((s) => s.hit).map((s) => s.e);
-    }
-    return pageRows;
-  }, [pageRows, isSearching, parsedQuery, query, gmailHitIds]);
+      let hit = true;
+      if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle)))
+        hit = false;
+      if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
+      if (rest) {
+        // Exclude to_addrs from the haystack — it almost always contains
+        // the current user's own name/email, which would make every
+        // received email match a search for the user's own name.
+        const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
+        const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
+        const tokens = rest.split(/\s+/).filter(Boolean);
+        const allTokensMatch = tokens.every((t) => tokenFuzzyMatches(t, words));
+        if (!allTokensMatch) hit = false;
+      }
+      return { e, hit };
+    });
+    return scored.filter((s) => s.hit).map((s) => s.e);
+  }, [pageRows, isSearching, hasOperator, parsedQuery]);
 
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
