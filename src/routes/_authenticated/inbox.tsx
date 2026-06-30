@@ -204,6 +204,20 @@ function emailBelongsInScope(email: Email, selectedFolder: string, folders: Fold
   return email.folder_id === selectedFolder;
 }
 
+// Search spans the WHOLE mailbox, not the currently-selected inbox view. The
+// server already ranks matches across archived, sent, and folder-filed mail,
+// so we must not re-apply the inbox scope here — doing so silently discarded
+// every archived/filed hit (e.g. a contact you email back and forth with) and
+// left the UI stuck on "Pulling N matches from Gmail…" with nothing rendered.
+// We only drop rows that genuinely aren't ready to show: still-classifying
+// (in-progress) rows and currently-snoozed rows.
+function matchesSearchScope(email: Email): boolean {
+  if (isInProgressEmail(email)) return false;
+  const snoozedMs = email.snoozed_until ? new Date(email.snoozed_until).getTime() : 0;
+  if (snoozedMs && snoozedMs > Date.now()) return false;
+  return true;
+}
+
 const PAGE_SIZE = 50;
 
 const withInbox = (labels: string[] | null | undefined): string[] =>
