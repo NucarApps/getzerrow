@@ -187,6 +187,45 @@ export async function getEmailsListDecrypted(args: {
   return { rows: (data as EmailListRow[] | null) ?? [], error: null };
 }
 
+// Ranked full-text search over the user's mailbox. Uses the GIN-indexed
+// `email_search_index` tsvector via the search_emails RPC and decrypts the
+// small set of returned rows server-side, so the browser never downloads or
+// scores the whole corpus.
+export type EmailSearchRow = {
+  id: string;
+  gmail_account_id: string;
+  gmail_message_id: string | null;
+  thread_id: string | null;
+  from_addr: string | null;
+  from_name: string | null;
+  subject: string | null;
+  snippet: string | null;
+  received_at: string | null;
+  is_read: boolean;
+  is_archived: boolean;
+  folder_id: string | null;
+  rank: number;
+};
+
+export async function searchEmailsDecrypted(args: {
+  userId: string;
+  query: string;
+  limit: number;
+  offset: number;
+  accountId: string | null;
+}): Promise<{ rows: EmailSearchRow[]; error: string | null }> {
+  const { data, error } = await supabaseAdmin.rpc("search_emails", {
+    p_user_id: args.userId,
+    p_query: args.query,
+    p_limit: args.limit,
+    p_offset: args.offset,
+    p_key: getKey(),
+    p_account_id: args.accountId,
+  } as never);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data as EmailSearchRow[] | null) ?? [], error: null };
+}
+
 export type ContactListFields = {
   id: string;
   relationship_summary: string | null;

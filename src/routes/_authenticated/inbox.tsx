@@ -81,7 +81,12 @@ import {
   UserPlus,
 } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
-import { getEmailBody, getEmailListFields, getInboxList } from "@/lib/email-body.functions";
+import {
+  getEmailBody,
+  getEmailListFields,
+  getInboxList,
+  searchInbox,
+} from "@/lib/email-body.functions";
 import { metaKeyFor, loadInboxMeta, saveInboxMeta } from "@/lib/inbox-meta-cache";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -484,6 +489,16 @@ function InboxPage() {
   const { selected: selectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Debounced copy of `query` that drives all *data* fetching. The input stays
+  // bound to `query` for instant typing feedback, but the heavy search only
+  // fires ~250ms after the user stops typing, so each keystroke no longer kicks
+  // off a request.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const h = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(h);
+  }, [query]);
+  const searchInboxFn = useServerFn(searchInbox);
   const [filterPrompt, setFilterPrompt] = useState<null | {
     fromAddr: string | null;
     subject: string | null;
@@ -506,7 +521,11 @@ function InboxPage() {
     },
   });
 
-  const isSearching = query.trim().length > 0;
+  // Search data fetching keys off the debounced term so it's stable across
+  // keystrokes; `searchTerm` is the single source of truth for "what are we
+  // searching for right now".
+  const searchTerm = debouncedQuery.trim();
+  const isSearching = searchTerm.length > 0;
 
   // Pagination state — reset to page 1 whenever the folder or search changes.
   // cursors[i] is the `received_at <` cursor used to fetch page i+1 (cursors[0] = null).
@@ -524,6 +543,7 @@ function InboxPage() {
     setSelectedId(null);
     setSelectedIds(new Set());
     setQuery("");
+    setDebouncedQuery("");
     setLastGmailResult(null);
     setGmailHitIds({ query: "", ids: new Set() });
   }, [selectedFolder]);
@@ -559,7 +579,7 @@ function InboxPage() {
 
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
-  const parsedQuery = useMemo(() => parseSearchQuery(query.trim()), [query]);
+  const parsedQuery = useMemo(() => parseSearchQuery(searchTerm), [searchTerm]);
   const hasOperator = isSearching && (parsedQuery.from !== null || parsedQuery.to !== null);
 
   // No entry pre-sync gate. The inbox renders immediately from the local DB
@@ -580,7 +600,7 @@ function InboxPage() {
       "emails",
       accountId,
       selectedFolder,
-      isSearching ? `search:${query.trim().toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
+      isSearching ? `search:${searchTerm.toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
     ],
     enabled: !!accountId && (!isSearching || foldersQ.isSuccess),
     queryFn: async () => {
@@ -614,17 +634,35 @@ function InboxPage() {
           const rows = (data ?? []) as unknown as Email[];
           return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
         }
-        // Free-text search: load the most recent corpus and score locally.
-        const q = supabase
-          .from("emails")
-          .select(LIST_COLUMNS)
-          .eq("gmail_account_id", accountId!)
-          .order("received_at", { ascending: false })
-          .limit(5000);
-        // Don't restrict to INBOX while searching — Gmail's search spans all
-        // mail, and most older hits will be archived.
-        const { data } = await q;
-        const rows = (data ?? []) as unknown as Email[];
+        // Free-text search: ranked, server-side full-text search over the
+        // GIN-indexed search index (subject/snippet/body + sender/recipient).
+        // Only the matched rows are decrypted, server-side, so the browser no
+        // longer downloads 5,000 rows or fuzzy-scores on the main thread — the
+        // source of the freeze. We then hydrate the small result set's list
+        // metadata and keep the server's relevance ordering.
+        const res = await searchInboxFn({
+          data: { query: searchTerm, account_id: accountId!, limit: 100 },
+        });
+        const hits = res.rows ?? [];
+        if (hits.length === 0) return [];
+        const ids = hits.map((h) => h.id);
+        const { data } = await supabase.from("emails").select(LIST_COLUMNS).in("id", ids);
+        const metaById = new Map<string, Email>();
+        for (const m of (data ?? []) as unknown as Email[]) metaById.set(m.id, m);
+        const rows = hits
+          .map((h) => {
+            const meta = metaById.get(h.id);
+            if (!meta) return null;
+            // Attach the already-decrypted content fields so the row renders
+            // without a second decrypt round-trip (listFieldsQ skips it).
+            return {
+              ...meta,
+              subject: h.subject,
+              snippet: h.snippet,
+              from_name: h.from_name,
+            } as unknown as Email;
+          })
+          .filter((r): r is Email => r !== null);
         return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
       }
       // Non-search: one decrypted, server-paginated round-trip. The RPC
@@ -801,7 +839,7 @@ function InboxPage() {
     ids: new Set(),
   });
   useEffect(() => {
-    const qstr = query.trim();
+    const qstr = searchTerm;
     if (qstr.length < 3) {
       setLastGmailResult(null);
       setGmailHitIds({ query: "", ids: new Set() });
@@ -834,23 +872,23 @@ function InboxPage() {
       }
     }, 500);
     return () => clearTimeout(handle);
-  }, [query, searchGmailFn, qc]);
+  }, [searchTerm, searchGmailFn, qc]);
 
   // Supplemental fetch: pull rows for Gmail-hit ids in case they fall outside
   // the 5000-newest local corpus (older mail, archived threads, etc.).
   const gmailHitIdList = useMemo(
     () =>
-      isSearching && gmailHitIds.query === query.trim().toLowerCase()
+      isSearching && gmailHitIds.query === searchTerm.toLowerCase()
         ? Array.from(gmailHitIds.ids)
         : [],
-    [isSearching, gmailHitIds, query],
+    [isSearching, gmailHitIds, searchTerm],
   );
   const gmailHitRowsQ = useQuery<Email[]>({
     queryKey: [
       "emails-gmail-hits",
       accountId,
       selectedFolder,
-      query.trim().toLowerCase(),
+      searchTerm.toLowerCase(),
       gmailHitIdList.length,
     ],
     enabled: !!accountId && gmailHitIdList.length > 0 && foldersQ.isSuccess,
@@ -948,44 +986,40 @@ function InboxPage() {
   }, [baseRows, listFieldsQ.data]);
 
   const filtered = useMemo(() => {
-    if (isSearching) {
-      const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
-      const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
-      const rest = parsedQuery.rest.toLowerCase();
-      const qLower = query.trim().toLowerCase();
-      const gmailHits = gmailHitIds.query === qLower ? gmailHitIds.ids : null;
+    if (!isSearching) return pageRows;
+    // Free-text search is matched and relevance-ranked server-side, so just
+    // keep that order — no main-thread re-scoring (that was the freeze).
+    if (!hasOperator) return pageRows;
+    // Operator search (from:/to:) still filters locally over hydrated rows.
+    const fromNeedle = parsedQuery.from?.toLowerCase() ?? null;
+    const toNeedle = parsedQuery.to?.toLowerCase() ?? null;
+    const rest = parsedQuery.rest.toLowerCase();
 
-      const scored = pageRows.map((e) => {
-        const fromAddr = (e.from_addr ?? "").toLowerCase();
-        const fromName = e.from_name ? decodeEntities(e.from_name).toLowerCase() : "";
-        const toAddrs = (e.to_addrs ?? "").toLowerCase();
-        const subject = e.subject ? decodeEntities(e.subject).toLowerCase() : "";
-        const snippet = e.snippet ? decodeEntities(e.snippet).toLowerCase() : "";
+    const scored = pageRows.map((e) => {
+      const fromAddr = (e.from_addr ?? "").toLowerCase();
+      const fromName = e.from_name ? decodeEntities(e.from_name).toLowerCase() : "";
+      const toAddrs = (e.to_addrs ?? "").toLowerCase();
+      const subject = e.subject ? decodeEntities(e.subject).toLowerCase() : "";
+      const snippet = e.snippet ? decodeEntities(e.snippet).toLowerCase() : "";
 
-        let hit = true;
-        if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle)))
-          hit = false;
-        if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
-        if (rest) {
-          // Exclude to_addrs from the haystack — it almost always contains
-          // the current user's own name/email, which would make every
-          // received email match a search for the user's own name.
-          const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
-          const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
-          // Every token must fuzzy-match some word in the visible metadata
-          // (substring, prefix, or small edit distance). Lets "rob" match
-          // "Robb" / "Robert" without surfacing unrelated rows.
-          const tokens = rest.split(/\s+/).filter(Boolean);
-          const allTokensMatch = tokens.every((t) => tokenFuzzyMatches(t, words));
-          if (!allTokensMatch) hit = false;
-        }
-        return { e, hit };
-      });
-      // Only show actual matches — no more "long tail of unrelated mail".
-      return scored.filter((s) => s.hit).map((s) => s.e);
-    }
-    return pageRows;
-  }, [pageRows, isSearching, parsedQuery, query, gmailHitIds]);
+      let hit = true;
+      if (fromNeedle && !(fromAddr.includes(fromNeedle) || fromName.includes(fromNeedle)))
+        hit = false;
+      if (toNeedle && !toAddrs.includes(toNeedle)) hit = false;
+      if (rest) {
+        // Exclude to_addrs from the haystack — it almost always contains
+        // the current user's own name/email, which would make every
+        // received email match a search for the user's own name.
+        const hay = `${fromName} ${fromAddr} ${subject} ${snippet}`;
+        const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
+        const tokens = rest.split(/\s+/).filter(Boolean);
+        const allTokensMatch = tokens.every((t) => tokenFuzzyMatches(t, words));
+        if (!allTokensMatch) hit = false;
+      }
+      return { e, hit };
+    });
+    return scored.filter((s) => s.hit).map((s) => s.e);
+  }, [pageRows, isSearching, hasOperator, parsedQuery]);
 
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
