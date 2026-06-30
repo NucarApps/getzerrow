@@ -509,6 +509,11 @@ function InboxPage() {
     setLastGmailResult(null);
     setGmailHitIds({ query: "", ids: new Set() });
   }, [selectedFolder]);
+  // A new/changed search restarts at page 1 so the offset window is correct.
+  useEffect(() => {
+    setPage(1);
+    setCursors([null]);
+  }, [searchTerm]);
   const cursor = cursors[page - 1] ?? null;
 
   const reclassifyFn = useServerFn(reclassifyEmails);
@@ -562,7 +567,9 @@ function InboxPage() {
       "emails",
       accountId,
       selectedFolder,
-      isSearching ? `search:${searchTerm.toLowerCase()}` : `page:${page}:${cursor ?? "start"}`,
+      isSearching
+        ? `search:${searchTerm.toLowerCase()}:p${page}`
+        : `page:${page}:${cursor ?? "start"}`,
     ],
     enabled: !!accountId && (!isSearching || foldersQ.isSuccess),
     queryFn: async () => {
@@ -585,7 +592,12 @@ function InboxPage() {
             to: parsedQuery.to,
             rest: parsedQuery.rest,
             account_id: accountId!,
-            limit: 100,
+            // Strict, small result window: fetch exactly one page (+1 sentinel
+            // row to detect "has more"). The SQL search RPC applies this
+            // LIMIT/OFFSET on the index BEFORE joining `emails`, so the join
+            // never reads more than PAGE_SIZE + 1 rows per search page.
+            limit: PAGE_SIZE + 1,
+            offset: (page - 1) * PAGE_SIZE,
           },
         });
         const hits = res.rows ?? [];
@@ -853,12 +865,17 @@ function InboxPage() {
 
   const rawEmails = useMemo(() => emailsQ.data ?? [], [emailsQ.data]);
   const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
+  // The search query fetches PAGE_SIZE + 1 rows; a full extra row means there
+  // is another page to offset into.
+  const hasMoreSearch = isSearching && rawEmails.length > PAGE_SIZE;
   const baseRows = useMemo(() => {
-    if (!isSearching) return rawEmails.slice(0, PAGE_SIZE);
+    // Always trim to the page window so we never render the +1 sentinel row.
+    const windowRows = rawEmails.slice(0, PAGE_SIZE);
+    if (!isSearching) return windowRows;
     const extra = gmailHitRowsQ.data ?? [];
-    if (extra.length === 0) return rawEmails;
-    const seen = new Set(rawEmails.map((r) => r.id));
-    const merged = [...rawEmails];
+    if (extra.length === 0) return windowRows;
+    const seen = new Set(windowRows.map((r) => r.id));
+    const merged = [...windowRows];
     for (const r of extra) if (!seen.has(r.id)) merged.push(r);
     return merged;
   }, [isSearching, rawEmails, gmailHitRowsQ.data]);
@@ -970,6 +987,12 @@ function InboxPage() {
   });
 
   function goNext() {
+    if (isSearching) {
+      // Offset-based paging: the query key includes `page`, so bumping it
+      // refetches the next PAGE_SIZE window from the search RPC.
+      if (hasMoreSearch) setPage((p) => p + 1);
+      return;
+    }
     if (hasMoreLocal) {
       const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
       setCursors((prev) => {
@@ -985,7 +1008,9 @@ function InboxPage() {
   function goPrev() {
     if (page > 1) setPage((p) => p - 1);
   }
-  const canGoNext = !isSearching && (hasMoreLocal || canPullFromGmail);
+  const canGoNext = isSearching
+    ? hasMoreSearch
+    : hasMoreLocal || canPullFromGmail;
 
   const selectedListItem = filtered.find((e) => e.id === selectedId) ?? null;
 
@@ -1676,7 +1701,7 @@ function InboxPage() {
             );
           })}
         </PullToRefresh>
-        {!isSearching && (
+        {(!isSearching || page > 1 || hasMoreSearch) && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
             <Button
               size="sm"
@@ -1699,8 +1724,8 @@ function InboxPage() {
               disabled={!canGoNext || pullOlderMut.isPending}
               title={
                 !canGoNext
-                  ? "No more emails in this view"
-                  : !hasMoreLocal
+                  ? "No more results in this view"
+                  : !isSearching && !hasMoreLocal
                     ? "Pull next 50 from Gmail"
                     : ""
               }
