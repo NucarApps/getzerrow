@@ -296,6 +296,8 @@ You are given ${emails.length} emails. For EACH one return an object with:
 - summary: one-line summary of THAT email (max 140 chars)
 - reason: short explanation citing the rule/profile/example that matched (max 200 chars)
 
+Guidance: Treat an email as an automated calendar invite ONLY when it actually carries a calendar event. A human reply in an existing thread is NOT an automated invite — do not route it into an automated-invite folder unless that folder's rule explicitly targets replies.
+
 Emails:
 ${emailBlocks}
 
