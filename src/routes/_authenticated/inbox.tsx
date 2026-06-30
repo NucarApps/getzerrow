@@ -81,7 +81,12 @@ import {
   UserPlus,
 } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
-import { getEmailBody, getEmailListFields, getInboxList } from "@/lib/email-body.functions";
+import {
+  getEmailBody,
+  getEmailListFields,
+  getInboxList,
+  searchInbox,
+} from "@/lib/email-body.functions";
 import { metaKeyFor, loadInboxMeta, saveInboxMeta } from "@/lib/inbox-meta-cache";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
