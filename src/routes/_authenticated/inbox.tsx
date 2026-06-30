@@ -634,7 +634,8 @@ function InboxPage() {
             } as unknown as Email;
           })
           .filter((r): r is Email => r !== null);
-        return rows.filter((email) => emailBelongsInScope(email, selectedFolder, folderRows));
+        // Search spans the whole mailbox — keep archived/filed matches.
+        return rows.filter(matchesSearchScope);
       }
       // Non-search: one decrypted, server-paginated round-trip. The RPC
       // applies the snoozed / INBOX / no-rules / folder filters and returns
