@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { isTransientWriteError, backoffDelayMs } from "./folder-write-retry";
+import {
+  isTransientWriteError,
+  backoffDelayMs,
+  resolveRetryConfig,
+  DEFAULT_RETRY_CONFIG,
+} from "./folder-write-retry";
 
 describe("isTransientWriteError", () => {
   it("treats connection / deadlock / resource SQLSTATEs as transient", () => {
