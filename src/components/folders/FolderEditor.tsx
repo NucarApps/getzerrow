@@ -418,6 +418,9 @@ export function FolderEditor({
           <TabsTrigger value="history">
             <History className="mr-1.5 h-3.5 w-3.5" /> History
           </TabsTrigger>
+          <TabsTrigger value="chat">
+            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Chat
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="settings" className="mt-4">
