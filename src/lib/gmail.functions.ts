@@ -48,7 +48,7 @@ import { getRequestHost } from "@tanstack/react-start/server";
 import { logError, logAudit } from "./log.server";
 import { removeLabelsFromCurrent } from "./sync/label-merge";
 import { buildGmailQueries } from "./sync/gmail-query-builder";
-import { matchByFilters } from "./sync/filter-engine";
+import { matchByFilters, emailVetoedForFolder } from "./sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "./sync/types";
 import {
   upsertEmailEncrypted,
