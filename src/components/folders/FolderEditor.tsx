@@ -946,6 +946,13 @@ export function FolderEditor({
             applyFn={applyFn}
           />
         </TabsContent>
+
+        <TabsContent value="chat" className="mt-4">
+          <FolderChatPanel
+            folder={local}
+            onApplied={(patch) => setLocal((p) => ({ ...p, ...patch }))}
+          />
+        </TabsContent>
       </Tabs>
     </div>
   );
