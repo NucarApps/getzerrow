@@ -65,6 +65,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { FolderChatPanel } from "./FolderChatPanel";
 
 export type RuleNode =
   | { type: "group"; op: "and" | "or"; children: RuleNode[] }
