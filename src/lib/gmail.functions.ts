@@ -3624,8 +3624,8 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
             .update({
               folder_id: null,
               is_archived: false,
-              classified_by: "inbox_override",
-              ai_confidence: 1,
+              classified_by: result.classified_by,
+              ai_confidence: result.ai_confidence,
               matched_filter_ids: [],
               raw_labels: nextLabels,
             })
