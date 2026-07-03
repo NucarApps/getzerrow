@@ -1,48 +1,45 @@
-## Problem
+# Simplify the public homepage
 
-The bulk **Select all → Re-classify** controls only render in the special **No rules** view (gated behind `isNoRules` in `src/routes/_authenticated/inbox.tsx:1189`). When you open a real folder like **GM Responses**, there is no Select all and no Re-classify — the only way to reprocess is opening each email and clicking the ↻ Re-analyze button individually. For a folder with ~236 emails that's not practical.
+Rebuild `src/routes/index.tsx` around the chosen **Centered hero, one dashboard** direction: keep the space / mission-control theme, the dark near-black + orange (`#ff5a2c`) palette, and the Space Grotesk / JetBrains Mono fonts — just far less visual noise and a cleaner vertical rhythm.
 
-## Goal
+## What changes (visual)
 
-Add a one-click **Reanalyze folder** action to the folder view that reprocesses every email in the currently selected folder, using the exact same classification + eviction logic as the existing single-email Re-analyze and bulk Re-classify (try to re-file into a better folder first; kick to the inbox only when the folder's own rules veto the sender and nothing else claims it).
+**Top telemetry bar — kept but calmed.** One thin row instead of a busy HUD: `Status // Active`, a centered "Sorting sequence" pill, and one or two live readouts. Drop the duplicated signal bars / MET / NOMINAL cluster.
 
-## Approach
+**Nav — unchanged in function.** Logo left, `Features / How it works / FAQ` center, `Sign in` + `Connect Gmail` right. Real links stay (`Link to="/login"`).
 
-Reuse the existing, already-shipped `reclassifyEmails` server function (caps at 100 ids per call) and drive it in batches from the client. This avoids a long-running single server request (which could hit the Worker execution-time limit when each email may make an AI call) and reuses proven logic — no new classification code.
+**Hero — centered, single column.** Small mono directive chip, one big headline ("An inbox that sorts itself" styled with the orange gradient accent), one concise subhead, and the two existing CTAs stacked centered. This removes the split left-text / right-launchpad layout.
 
-### 1. Server: list email IDs for a folder
+**One dashboard mockup.** Replace the large animated launchpad with a single calm, static "inbox sorting" panel (window chrome + a short sorting stream on the left and a focal completion stat on the right). No constant blinking readouts — at most one subtle pulse.
 
-Add a small `createServerFn` (e.g. `listFolderEmailIds`) in `src/lib/gmail.functions.ts`:
-- Input: `{ folder_id: string }` (uuid).
-- Auth via `requireSupabaseAuth`; verify the folder belongs to `context.userId`.
-- Return `{ ids: string[] }` — all `emails.id` where `folder_id = folder_id` and `user_id = context.userId` (no decryption needed; just IDs).
+**Stats row — 3 real metrics** in a clean divided row directly under the dashboard (messages routed · last 24h, classification accuracy, median sort time) using the app's existing truthful numbers, not invented ones.
 
-### 2. Client: Reanalyze folder button
+**Features — tightened.** Collapse the current 6-card grid into a calmer set of clean bordered cards with numbered badges, using the real feature copy (folder profiles, real-time sorting, one-line AI summaries, learns from your moves, reanalyze on demand, suggested replies). Kept as a 3-column grid with reduced chrome (no per-card kickers/countdowns).
 
-In `src/routes/_authenticated/inbox.tsx`, add an icon button (↻ with a label/tooltip "Reanalyze folder") in the folder-list header (next to the existing Refresh / Assistant buttons around lines 1133–1153). Show it only when a real folder is selected — i.e. `currentFolderObj` is non-null (already computed at line 935) — so it doesn't appear for All mail / No rules / Inbox.
+**How it works — kept, simplified** to the 3 steps (Connect Gmail → Describe your folders → Open a clean inbox) as a light 3-column row, dropping the STAGE/T-2 decoration.
 
-On click:
-- Confirm with a small dialog since it can move many emails ("Reanalyze all N emails in {folder}? Emails whose sender your folder rules no longer allow will be moved to a better folder or back to the inbox.").
-- Call `listFolderEmailIds` to get all IDs.
-- Loop in chunks of 100, calling the existing `reclassifyEmails` for each chunk, accumulating `routed` / `unchanged` / `failed`.
-- Show progress via an updating toast ("Reanalyzing… 100 / 236") and a final summary toast ("Reanalyzed {folder} · X routed, Y unchanged, Z failed").
-- Invalidate the `["emails"]` and `["emails-summary"]` queries at the end so the list and folder counts refresh.
-- Disable the button while running (reuse a busy flag pattern like the existing `reclassifyBusy`).
+**FAQ — kept** as the existing accordion, with the section header simplified (single title, drop the STAGE 01 / T-1 / kicker stack).
 
-### 3. Behavior guarantees (unchanged)
+**CTA + footer — kept, streamlined** ("Ready for ignition?"-style closer with the primary CTA, then the footer links).
 
-- Each email runs the full classifier: deterministic rules first, then AI across eligible folders.
-- A vetoed current folder (e.g. GM Responses' `domain_in` allowlist / `not_contains sullivanlaw.com`) is excluded from candidates, so the email is re-filed elsewhere if something fits, otherwise restored to the inbox (INBOX label added, folder label removed in Gmail) — keeping Gmail in sync so the next sync won't revert it.
-- Transient `ai_error` never evicts an email.
+Removed across the page: `STAGE 0X · PAYLOAD` labels, the `T-3 / T-2 / T-1` countdown blocks, and most duplicated mono kickers — the theme reads through the palette, fonts, and one telemetry bar instead of repeating everywhere.
+
+## Content integrity
+
+- Keep real copy and the app's real value props; no placeholder/marketing filler (no invented "SOC2", "1.2M emails", fake latency). Reuse the truthful stats already on the page.
+- Keep both CTA paths pointing to `/login`, and keep the `#features` / `#how` / `#faq` anchor nav working.
+- Keep the existing `head()` metadata (title, description, OG/Twitter, FAQ JSON-LD, canonical) intact.
+
+## Technical approach
+
+- **`src/routes/index.tsx`** — rewrite the `LandingPage` JSX to the simplified structure above. Keep the `Route` definition and `head()` block unchanged.
+- **Styling** — the page uses `public/zerrow-landing.css` (loaded via a `<link>` in `head()`, which is the correct pattern here). Add/adjust classes for the new centered hero, single dashboard panel, calmed status bar, and tightened feature cards. Fonts continue to load via the existing Google Fonts `<link>` in `head()` — no change to font loading.
+- **`useMissionTelemetry`** — the animated launchpad is being removed. Trim the hook to only what the calmed status bar still needs (or drop it if nothing remains dynamic), so there's no dead animation code.
+- No backend, data, or auth changes — this is frontend/presentation only.
 
 ## Verification
 
-- Open GM Responses → click Reanalyze folder → confirm → watch progress toast → external-domain emails (e.g. sullivanlaw.com) leave the folder (to inbox or a better folder), the folder count drops, and legitimately-belonging mail stays.
-- Confirm the button does not appear in All mail / Inbox / No rules views.
-- Re-run a folder that's already clean → everything reports "unchanged", nothing moves.
-- Typecheck + existing filter-engine / reclassify tests stay green.
-
-## Files
-
-- `src/lib/gmail.functions.ts` — add `listFolderEmailIds` server function.
-- `src/routes/_authenticated/inbox.tsx` — add the Reanalyze folder button, confirm dialog, batched loop, and progress/summary toasts.
+- Load `/` in the preview at desktop width and screenshot top-to-bottom: confirm centered hero, single dashboard, calm telemetry bar, tightened features, and that How it works / FAQ / CTA / footer still render.
+- Confirm nav anchors scroll correctly and both CTAs route to `/login`.
+- Check mobile width for stacking.
+- Typecheck stays green.
