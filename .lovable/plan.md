@@ -1,44 +1,41 @@
-# Fix: "internal domains only" folders must hard-block external senders
+# Reprocess GM Responses — manual walkthrough (no code changes)
 
-## Why the chat fix didn't stick
+Goal: cleanly evict the 236 external-domain emails now blocked by the folder allowlist. The **Re-classify** action re-runs each email through the (updated) rules; because the allowlist now vetoes external domains, each one is restored to the inbox and its Gmail folder label is stripped via the Gmail API — no database desync, nothing gets reverted on the next sync.
 
-Laura Steinberg (`lsteinberg@sullivanlaw.com`) was filed into **GM Responses** by the **AI classifier** (`classified_by = ai`, confidence **1.0**) — not by a rule.
+## Why this works
+- Re-classify calls the same classifier your live mail uses. The deterministic domain allowlist vetoes external senders, so the email ends up with **no folder** → it's moved back to the inbox (`is_archived = false`, `INBOX` label re-added, folder label removed in Gmail).
+- This is independent of the 0.99 confidence gate — the allowlist veto is deterministic, so you do **not** need to relax 0.99 to clear these. (That setting only affects how *new* mail gets AI-filed later.)
 
-Your chat edit turned "only internal domains" into **soft AI guidance**: it rewrote the folder's `ai_rule` and `learned_profile` ("STRICTLY INTERNAL ONLY… exclude sullivanlaw.com…") and set `min_ai_confidence` to 0.99. Those are hints the model can ignore — and it did, returning 1.0 confidence, which passes the 0.99 gate. Nothing deterministically stops an external sender.
+## The constraint that sets the batch size
+- In a folder view, **Select all** selects the currently loaded page = **50 emails**.
+- A single Re-classify call is capped at **100 emails** server-side.
+- So the practical batch is one page (50). 236 emails ≈ **5 rounds** (50 + 50 + 50 + 50 + 36).
 
-Root cause: the folder chat can only create *include* filters (`contains` / `equals` / `starts_with`). It has no way to create a hard exclusion or an allowlist, so every "exclude" request degrades into fuzzy AI text.
+## Steps
 
-## What I'll build
+```text
+1. Open Inbox.
+2. In the folder sidebar, click "GM Responses".
+   → The list now shows the archived emails filed there.
+   → Note the folder count next to it (should be ~236).
+3. Click "Select all" (selects the 50 on this page).
+4. Click "Re-classify" (outline button, circular-arrow icon).
+   → Wait for the toast: "Re-classified · N routed, M unchanged, …".
+   → "routed" = evicted back to inbox. Those rows disappear from this folder.
+5. The list refreshes to the next 50. Repeat steps 3–4.
+6. Stop when the folder count reaches your legitimate remainder
+   (internal-domain mail that still belongs), i.e. when a round reports
+   "0 routed" / only "unchanged". That's the done signal.
+```
 
-### 1. A deterministic "internal domains" allowlist (the guarantee)
-Add a new filter operator, **`domain_in`**, whose value is a comma-separated domain allowlist (e.g. `dcd.auto,nucar.com,nucarpulse.com,intervaleproperties.com`). It acts as a **veto**: if the sender's domain is not in the list, the folder is hard-blocked — before the AI classifier ever runs. This automatically catches any future external domain, not just the law firms you named.
+## What to expect per round
+- **routed** = external-domain emails evicted to the inbox this round.
+- **unchanged** = emails that still legitimately match (internal domains) — these stay in GM Responses. Once every remaining email is "unchanged," you're finished.
+- **failed** = transient errors (e.g. a Gmail API hiccup). Just run one more round on the folder; failed items are retried and usually clear.
 
-Plus the named exclusions you asked for as an extra layer: hard `not_contains` rules on `domain` for `sullivanlaw.com`, `ycst.com`, `bakertilly.com`, `clerq.io`.
+## After you finish
+- The evicted emails are back in your inbox with the Gmail "GM Responses" label removed. Because eviction goes through the Gmail API, the next sync won't revert them.
+- New external-domain mail is already blocked by the allowlist, so this cleanup is a one-time pass.
 
-### 2. Upgrade the folder chat to create hard rules
-Teach the chat's `add_filter` action to emit the exclusion operators (`domain_in` allowlist, plus `not_contains` / `not_equals`), and steer the model to prefer a deterministic rule over AI-text guidance whenever the user asks to include/exclude by sender or domain. Result: next time you say "only our internal domains," it becomes an enforced filter, not a hint.
-
-### 3. Apply it to GM Responses and reprocess
-Add the allowlist + named exclusions to the GM Responses folder now, then re-run classification on the affected emails so Laura's message (and any other external-domain mail) leaves the folder immediately.
-
-## Technical details
-
-- **`src/lib/sync/filter-engine.ts`**
-  - `applyFilter`: add `domain_in` — split `value` on commas, trim, and match the sender domain against the set. (`domain` field already resolves to `from_addr`'s domain.)
-  - Exclude/veto handling: generalize the veto so `domain_in` vetoes when the domain is *not* in the list (currently the veto only understands `not_contains`/`not_equals`). Add `domain_in` to the exclude-op set with its own "veto when predicate fails" semantics.
-  - Keep the module pure (no Supabase imports), per project rules.
-  - Extend `filter-engine.test.ts`: allowlist veto blocks external domains, admits internal ones, and produces a `kind: "excluded"` result (which sets `aiSkipped`, so AI never runs).
-
-- **`src/lib/folder-chat.server.ts`** — extend the `add_filter` op enum to include `domain_in`, `not_contains`, `not_equals`; document them in the prompt and instruct the model to prefer a deterministic filter for domain/sender include-or-exclude requests instead of `update_folder_rule`/`update_folder_profile`.
-
-- **`src/lib/folder-chat.functions.ts`** — mirror the op enum in `actionInputSchema`; normalize `domain_in` values (lowercase, strip `@`, dedupe) on insert.
-
-- **`src/components/folders/FolderEditor.tsx`** / **`FolderChatPanel.tsx`** — add `domain_in` ("sender domain is one of") to the operator picker and render it in proposed-change previews, so the same rule is visible and editable in the manual UI.
-
-- **Data change (GM Responses)** — insert one `domain_in` filter with the four internal domains, plus `not_contains` filters for the four external domains. Optionally relax `min_ai_confidence` back from 0.99 (the allowlist is now the real guard) — I'll confirm the value with you before changing it.
-
-- **Reprocess** — invoke the existing `reclassifyEmails` path for GM Responses so already-misfiled external mail is re-evaluated against the new deterministic rule and removed from the folder.
-
-## Scope notes
-- The allowlist keys on the **sender** domain (deterministic and reliable). Recipient-based "all To/Cc must be internal" is fuzzier and out of scope unless you want it.
-- No new tables; `folder_filters` has no op CHECK constraint, so the new operator needs no migration — only app-layer validation.
+## If 5 manual rounds feels tedious
+Say the word and I'll switch to build mode and add a one-click "Reprocess whole folder" action that loops server-side in batches (like the existing override-reprocess path) so all 236 clear in a single click.
