@@ -854,12 +854,12 @@ export function FolderEditor({
                   >
                     {isExclude && (
                       <span className="rounded-sm bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-destructive">
-                        Exclude
+                        {f.op === "domain_in" ? "Allowlist" : "Exclude"}
                       </span>
                     )}
                     <span className="text-muted-foreground">{f.field}</span>
                     <span className={isExclude ? "text-destructive" : "text-muted-foreground"}>
-                      {f.op}
+                      {f.op === "domain_in" ? "is one of" : f.op}
                     </span>
                     <span className="flex-1 min-w-0 break-all font-mono text-xs">{f.value}</span>
                     <Button
