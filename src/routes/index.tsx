@@ -119,7 +119,7 @@ function LandingPage() {
             Sign in
           </Link>
           <Link className="btn btn--primary" to="/login">
-            Connect Gmail <span aria-hidden="true">→</span>
+            Get started <span aria-hidden="true">→</span>
           </Link>
         </div>
       </header>
