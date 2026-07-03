@@ -8,6 +8,9 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEmailsDecrypted } from "./sync/encrypted-reader";
+import type { Database } from "@/integrations/supabase/types";
+
+type FolderUpdate = Database["public"]["Tables"]["folders"]["Update"];
 import {
   proposeFolderChatChanges,
   type FolderChatAction,
