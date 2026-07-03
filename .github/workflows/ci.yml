@@ -30,6 +30,13 @@ jobs:
         run: bunx tsc --noEmit
       - name: Unit tests
         run: bun run test
+      # Schema drift gate: replays the migrations and asserts the
+      # insert_folder_example_encrypted RPC only writes columns that still
+      # exist on folder_examples. Catches column mismatches (Postgres 42703)
+      # before deploy. Also covered by "Unit tests" above; kept as a named,
+      # required step so the failure is obvious in the PR checks.
+      - name: Schema consistency (folder_examples RPC)
+        run: bun run test:schema
       # Enforced: the codebase is ESLint-clean (0 errors, 0 warnings). Keep it
       # that way — lint failures block the PR.
       - name: Lint
