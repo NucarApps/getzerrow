@@ -1828,6 +1828,7 @@ const OP_OPTS = [
   { value: "ends_with", label: "ends with" },
   { value: "not_contains", label: "does not contain" },
   { value: "not_equals", label: "does not equal" },
+  { value: "domain_in", label: "domain is one of (allowlist)" },
   { value: "regex", label: "regex" },
 ];
 
