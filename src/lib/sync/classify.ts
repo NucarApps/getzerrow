@@ -182,7 +182,7 @@ export function classifyByRules(
   }
 
   const needs_ai =
-    !folder_id && !aiSkipped && folderList.length > 0 && aiCandidateFolders(context).length > 0;
+    !folder_id && !aiSkipped && folderList.length > 0 && aiCandidateFolders(parsed, context).length > 0;
 
   return {
     folder_id,
