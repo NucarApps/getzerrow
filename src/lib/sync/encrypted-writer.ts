@@ -165,17 +165,42 @@ export async function insertFolderExampleEncrypted(input: {
 }): Promise<{ id: string | null; error: string | null }> {
   const source = input.source ?? "seed";
   const t0 = Date.now();
-  const { data, error } = await supabaseAdmin.rpc("insert_folder_example_encrypted", {
-    p_user_id: input.user_id,
-    p_gmail_account_id: input.gmail_account_id,
-    p_folder_id: input.folder_id,
-    p_gmail_message_id: input.gmail_message_id,
-    p_from_addr: input.from_addr,
-    p_subject: input.subject,
-    p_snippet: input.snippet,
-    p_source: source,
-    p_key: getKey(),
-  } as never);
+
+  // Retry transient DB hiccups (dropped connections, deadlocks, pool
+  // exhaustion) with exponential backoff so occasional blips don't halt
+  // learning. Permanent errors (schema mismatch, constraint violations) are
+  // NOT retried — they fail identically every time and should alert fast.
+  let data: unknown = null;
+  let error: { message: string; code?: string } | null = null;
+  let attempt = 0;
+  while (attempt < FOLDER_WRITE_MAX_ATTEMPTS) {
+    attempt++;
+    const res = await supabaseAdmin.rpc("insert_folder_example_encrypted", {
+      p_user_id: input.user_id,
+      p_gmail_account_id: input.gmail_account_id,
+      p_folder_id: input.folder_id,
+      p_gmail_message_id: input.gmail_message_id,
+      p_from_addr: input.from_addr,
+      p_subject: input.subject,
+      p_snippet: input.snippet,
+      p_source: source,
+      p_key: getKey(),
+    } as never);
+    data = res.data;
+    error = res.error;
+    if (!error) break;
+    if (attempt >= FOLDER_WRITE_MAX_ATTEMPTS || !isTransientWriteError(error)) break;
+    const delayMs = backoffDelayMs(attempt);
+    logInfo("folder_example_write.retry", {
+      folder_id: input.folder_id,
+      gmail_account_id: input.gmail_account_id,
+      source,
+      error_code: pgErrorCode(error),
+      attempt,
+      next_delay_ms: delayMs,
+    });
+    await sleep(delayMs);
+  }
 
   // Metadata-only observability (no email content) so we can alert the moment
   // folder learning stops persisting examples again. See log.server.logMetric.
@@ -184,6 +209,7 @@ export async function insertFolderExampleEncrypted(input: {
     gmail_account_id: input.gmail_account_id,
     source,
     duration_ms: Date.now() - t0,
+    attempts: attempt,
   };
 
   if (error) {
@@ -210,3 +236,4 @@ export async function insertFolderExampleEncrypted(input: {
   logMetric("folder_example_write", { ...dims, outcome: "success" });
   return { id: (data as string | null) ?? null, error: null };
 }
+
