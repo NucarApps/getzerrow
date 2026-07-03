@@ -1,49 +1,48 @@
 ## Problem
 
-Clicking **Re-analyze** (the ↻ icon) on an email whose current folder now rejects it via a deterministic rule (an allowlist `domain_in` or a `not_contains` exclude) leaves the email where it is and shows "No better folder — kept in {folder}." Concretely: `lsteinberg@sullivanlaw.com` is in **GM Responses**, which carries both a `domain_in` allowlist that excludes `sullivanlaw.com` and an explicit `not_contains sullivanlaw.com` — yet Re-analyze keeps it there.
+The bulk **Select all → Re-classify** controls only render in the special **No rules** view (gated behind `isNoRules` in `src/routes/_authenticated/inbox.tsx:1189`). When you open a real folder like **GM Responses**, there is no Select all and no Re-classify — the only way to reprocess is opening each email and clicking the ↻ Re-analyze button individually. For a folder with ~236 emails that's not practical.
 
-## Root cause
+## Goal
 
-Two "reprocess" code paths behave differently:
+Add a one-click **Reanalyze folder** action to the folder view that reprocesses every email in the currently selected folder, using the exact same classification + eviction logic as the existing single-email Re-analyze and bulk Re-classify (try to re-file into a better folder first; kick to the inbox only when the folder's own rules veto the sender and nothing else claims it).
 
-- **Bulk Re-classify** (`reclassifyEmails`, `src/lib/gmail.functions.ts`) already restores any email to the inbox when the classifier assigns no folder and the reason is not a transient `ai_error`. This correctly evicts vetoed mail.
-- **Single-email Re-analyze** (`reanalyzeEmail`, same file) only restores to the inbox when the reason is an **inbox override**. For every other no-folder outcome — including a folder's own allowlist/exclude rule vetoing the sender — it hits the "keep current assignment" branch and returns `classified_by: "kept"`.
+## Approach
 
-Because the sender isn't matched by any GM Responses *include* filter, `matchByFilters` returns `null` rather than an explicit "excluded", so the veto never surfaces as a move — the email just stays put.
+Reuse the existing, already-shipped `reclassifyEmails` server function (caps at 100 ids per call) and drive it in batches from the client. This avoids a long-running single server request (which could hit the Worker execution-time limit when each email may make an AI call) and reuses proven logic — no new classification code.
 
-## Fix
+### 1. Server: list email IDs for a folder
 
-Make single-email Re-analyze evict to the inbox in the same deterministic cases the bulk path already handles, so the two buttons agree.
+Add a small `createServerFn` (e.g. `listFolderEmailIds`) in `src/lib/gmail.functions.ts`:
+- Input: `{ folder_id: string }` (uuid).
+- Auth via `requireSupabaseAuth`; verify the folder belongs to `context.userId`.
+- Return `{ ids: string[] }` — all `emails.id` where `folder_id = folder_id` and `user_id = context.userId` (no decryption needed; just IDs).
 
-In `reanalyzeEmail`, before the "keep current assignment" branch, add an eviction branch that fires when the email currently sits in a folder whose **own veto rules now reject it** — i.e. `emailVetoedForFolder(parsed, email.folder_id, context.filters)` is true (covers `domain_in` allowlists and `not_contains`/`not_equals` excludes). In that case, restore to the inbox using the exact steps the existing `inbox_override` branch and the bulk path use:
+### 2. Client: Reanalyze folder button
 
-- set `folder_id = null`, `is_archived = false`, `matched_filter_ids = []`
-- rebuild `raw_labels`: drop the folder's `gmail_label_id`, add `INBOX`
-- call `modifyMessage(...)` to add `INBOX` and remove the folder label in Gmail (best-effort, logged on failure)
-- persist the classification reason (e.g. "Removed from {folder} — sender excluded by folder rule")
-- return `changed: true` with `folder_id: null` so the UI toasts "Re-analyzed → Inbox"
+In `src/routes/_authenticated/inbox.tsx`, add an icon button (↻ with a label/tooltip "Reanalyze folder") in the folder-list header (next to the existing Refresh / Assistant buttons around lines 1133–1153). Show it only when a real folder is selected — i.e. `currentFolderObj` is non-null (already computed at line 935) — so it doesn't appear for All mail / No rules / Inbox.
 
-Keep the existing transient-failure guard: never evict on `classified_by === "ai_error"`.
+On click:
+- Confirm with a small dialog since it can move many emails ("Reanalyze all N emails in {folder}? Emails whose sender your folder rules no longer allow will be moved to a better folder or back to the inbox.").
+- Call `listFolderEmailIds` to get all IDs.
+- Loop in chunks of 100, calling the existing `reclassifyEmails` for each chunk, accumulating `routed` / `unchanged` / `failed`.
+- Show progress via an updating toast ("Reanalyzing… 100 / 236") and a final summary toast ("Reanalyzed {folder} · X routed, Y unchanged, Z failed").
+- Invalidate the `["emails"]` and `["emails-summary"]` queries at the end so the list and folder counts refresh.
+- Disable the button while running (reuse a busy flag pattern like the existing `reclassifyBusy`).
 
-Leave the genuine "AI simply found no better folder, but no rule forbids the current one" case untouched — that still returns `kept`, so a normal reanalyze of a correctly-filed email won't be cleared.
+### 3. Behavior guarantees (unchanged)
 
-## Why this is safe
-
-- The eviction is driven by deterministic folder rules (`emailVetoedForFolder`), not AI variance, so it can't be triggered by a flaky AI run.
-- It reuses the already-proven inbox-restore steps (label rewrite + Gmail `modifyMessage`), so Gmail stays in sync and the next sync won't revert it — the same guarantee the bulk path relies on.
-- Behavior now matches bulk Re-classify, removing the surprise of one "reprocess" button working and the other not.
+- Each email runs the full classifier: deterministic rules first, then AI across eligible folders.
+- A vetoed current folder (e.g. GM Responses' `domain_in` allowlist / `not_contains sullivanlaw.com`) is excluded from candidates, so the email is re-filed elsewhere if something fits, otherwise restored to the inbox (INBOX label added, folder label removed in Gmail) — keeping Gmail in sync so the next sync won't revert it.
+- Transient `ai_error` never evicts an email.
 
 ## Verification
 
-- Re-analyze the `sullivanlaw.com` email in GM Responses → it should return to the inbox, lose the GM Responses Gmail label, and toast "Re-analyzed → Inbox".
-- Re-analyze an email correctly filed by an include filter (e.g. a real `RE: Daily Report`) → still "kept", no move.
-- Run the existing filter-engine / reclassify tests, and add a unit test asserting `emailVetoedForFolder` is true for `sullivanlaw.com` against the GM Responses filter set.
+- Open GM Responses → click Reanalyze folder → confirm → watch progress toast → external-domain emails (e.g. sullivanlaw.com) leave the folder (to inbox or a better folder), the folder count drops, and legitimately-belonging mail stays.
+- Confirm the button does not appear in All mail / Inbox / No rules views.
+- Re-run a folder that's already clean → everything reports "unchanged", nothing moves.
+- Typecheck + existing filter-engine / reclassify tests stay green.
 
 ## Files
 
-- `src/lib/gmail.functions.ts` — add the deterministic-veto eviction branch to `reanalyzeEmail` (import `emailVetoedForFolder`, or reuse it via the classify context).
-- Optionally a small test alongside the existing filter-engine tests.
-
-## Note on the 236-email cleanup
-
-Once this is fixed, the single-email Re-analyze becomes a reliable one-off tool, but the bulk Re-classify path already evicts these correctly — so for clearing all 236 external-domain emails, the bulk "Select all → Re-classify" rounds remain the faster route. This fix mainly removes the confusing per-email discrepancy you just hit.
+- `src/lib/gmail.functions.ts` — add `listFolderEmailIds` server function.
+- `src/routes/_authenticated/inbox.tsx` — add the Reanalyze folder button, confirm dialog, batched loop, and progress/summary toasts.

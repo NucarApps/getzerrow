@@ -17,6 +17,7 @@ import {
   searchGmailAndIngest,
   resyncMessage,
   reclassifyEmails,
+  listFolderEmailIds,
   suggestFolderFromSelection,
   createFolderAndAssign,
   reconcileInboxFromGmail,
@@ -34,6 +35,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -493,6 +504,7 @@ function InboxPage() {
   const cursor = cursors[page - 1] ?? null;
 
   const reclassifyFn = useServerFn(reclassifyEmails);
+  const listFolderEmailIdsFn = useServerFn(listFolderEmailIds);
   const suggestFolderFn = useServerFn(suggestFolderFromSelection);
   const createFolderAndAssignFn = useServerFn(createFolderAndAssign);
   const [suggestion, setSuggestion] = useState<null | {
@@ -507,6 +519,8 @@ function InboxPage() {
   }>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [reclassifyBusy, setReclassifyBusy] = useState(false);
+  const [reanalyzeFolderBusy, setReanalyzeFolderBusy] = useState(false);
+  const [confirmReanalyzeFolder, setConfirmReanalyzeFolder] = useState(false);
 
   const loadOlderFn = useServerFn(loadOlderFromGmail);
 
@@ -935,6 +949,52 @@ function InboxPage() {
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
 
+  const runReanalyzeFolder = async () => {
+    if (!currentFolderObj) return;
+    const folderName = currentFolderObj.name;
+    setReanalyzeFolderBusy(true);
+    const toastId = toast.loading(`Reanalyzing ${folderName}…`);
+    try {
+      const { ids } = await listFolderEmailIdsFn({
+        data: { folder_id: currentFolderObj.id },
+      });
+      if (ids.length === 0) {
+        toast.message(`${folderName} has no emails to reanalyze.`, { id: toastId });
+        return;
+      }
+      const chunkSize = 100;
+      let routed = 0;
+      let unchanged = 0;
+      let failed = 0;
+      let processed = 0;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        try {
+          const r = await reclassifyFn({ data: { email_ids: chunk } });
+          routed += r?.routed ?? 0;
+          unchanged += r?.unchanged ?? 0;
+          failed += r?.failed ?? 0;
+        } catch {
+          failed += chunk.length;
+        }
+        processed += chunk.length;
+        toast.loading(`Reanalyzing ${folderName}… ${processed} / ${ids.length}`, {
+          id: toastId,
+        });
+      }
+      toast.success(
+        `Reanalyzed ${folderName} · ${routed} routed, ${unchanged} unchanged${failed ? `, ${failed} failed` : ""}`,
+        { id: toastId },
+      );
+      await qc.invalidateQueries({ queryKey: ["emails"] });
+      await qc.invalidateQueries({ queryKey: ["folder-counts"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reanalyze failed", { id: toastId });
+    } finally {
+      setReanalyzeFolderBusy(false);
+    }
+  };
+
   const pullOlderMut = useMutation({
     mutationFn: async () => {
       if (!currentFolderObj?.gmail_label_id)
@@ -1131,6 +1191,18 @@ function InboxPage() {
             )}
           </div>
           <div className="flex items-center gap-1">
+            {currentFolderObj && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() => setConfirmReanalyzeFolder(true)}
+                disabled={reanalyzeFolderBusy}
+                title="Reanalyze folder"
+              >
+                <RotateCw className={`h-4 w-4 ${reanalyzeFolderBusy ? "animate-spin" : ""}`} />
+              </Button>
+            )}
             <Button
               size="icon"
               variant="ghost"
@@ -1859,7 +1931,24 @@ function InboxPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={confirmReanalyzeFolder} onOpenChange={setConfirmReanalyzeFolder}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reanalyze {currentFolderObj?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every email in this folder will be reclassified. Emails whose sender your folder
+              rules no longer allow will be moved to a better folder or back to the inbox. This may
+              take a moment for large folders.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => runReanalyzeFolder()}>Reanalyze</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+
   );
 }
 
