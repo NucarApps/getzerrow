@@ -29,6 +29,9 @@ export type AccountContext = {
   /** Lowercased email addresses of people met in Google Calendar. Empty
    * unless the guard is enabled. */
   calendarContacts: Set<string>;
+  /** The connected Gmail address for this account. Used as the primary
+   * identity for per-folder "surface to inbox" decisions. */
+  accountEmail: string | null;
 };
 
 const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
@@ -106,7 +109,7 @@ export async function loadAccountContext(
         .eq("user_id", userId),
       supabaseAdmin
         .from("gmail_accounts")
-        .select("calendar_guard_enabled")
+        .select("calendar_guard_enabled, email_address")
         .eq("id", accountId)
         .maybeSingle(),
     ]);
@@ -146,6 +149,7 @@ export async function loadAccountContext(
     enrichedFolders,
     calendarGuardEnabled,
     calendarContacts,
+    accountEmail: account?.email_address ?? null,
   };
   accountContextCache.set(accountId, { ctx, expires: Date.now() + ACCOUNT_CONTEXT_TTL_MS });
   return ctx;

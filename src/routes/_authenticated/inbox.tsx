@@ -173,6 +173,7 @@ type Email = {
   raw_labels?: string[] | null;
   snoozed_until?: string | null;
   gmail_message_id?: string | null;
+  surfaced_to_inbox?: boolean | null;
   // Set on rows reconstructed from the metadata-only localStorage cache: the
   // content fields (sender, subject, snippet, ai summary) are null and shimmer
   // in the UI until the live DB read replaces the row.
@@ -532,7 +533,7 @@ function InboxPage() {
   // search results can apply the same visibility filter as normal lists.
   // forward_* columns are operator-facing, not rendered in the inbox.
   const LIST_COLUMNS =
-    "id,from_addr,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id";
+    "id,from_addr,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id,surfaced_to_inbox";
 
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.

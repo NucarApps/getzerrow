@@ -27,6 +27,7 @@ function email(over: Partial<ScopeEmail> = {}): ScopeEmail {
     is_archived: over.is_archived ?? false,
     folder_id: "folder_id" in over ? over.folder_id ?? null : null,
     raw_labels: "raw_labels" in over ? over.raw_labels : ["INBOX"],
+    surfaced_to_inbox: over.surfaced_to_inbox ?? false,
   };
 }
 
@@ -105,6 +106,40 @@ describe("emailBelongsInScope (narrow per-view inbox scope)", () => {
     ).toBe(false);
     expect(
       emailBelongsInScope(email({ folder_id: "f-hidden", raw_labels: ["INBOX"] }), "all", FOLDERS),
+    ).toBe(false);
+  });
+
+  it("'all' keeps a surfaced email even when its folder hides/archives", () => {
+    // Filed into a hide-from-inbox folder but surfaced back to the inbox.
+    expect(
+      emailBelongsInScope(
+        email({ folder_id: "f-hidden", raw_labels: ["INBOX"], surfaced_to_inbox: true }),
+        "all",
+        FOLDERS,
+      ),
+    ).toBe(true);
+    // Same, for an auto-archive folder.
+    expect(
+      emailBelongsInScope(
+        email({ folder_id: "f-archive", raw_labels: ["INBOX"], surfaced_to_inbox: true }),
+        "all",
+        FOLDERS,
+      ),
+    ).toBe(true);
+    // A surfaced email still must carry INBOX and not be archived.
+    expect(
+      emailBelongsInScope(
+        email({ folder_id: "f-hidden", raw_labels: [], surfaced_to_inbox: true }),
+        "all",
+        FOLDERS,
+      ),
+    ).toBe(false);
+    expect(
+      emailBelongsInScope(
+        email({ folder_id: "f-hidden", is_archived: true, surfaced_to_inbox: true }),
+        "all",
+        FOLDERS,
+      ),
     ).toBe(false);
   });
 

@@ -486,6 +486,7 @@ export type Database = {
           snippet_enc: string | null
           snoozed_until: string | null
           subject_enc: string | null
+          surfaced_to_inbox: boolean
           thread_id: string | null
           to_addrs_enc: string | null
           user_id: string
@@ -527,6 +528,7 @@ export type Database = {
           snippet_enc?: string | null
           snoozed_until?: string | null
           subject_enc?: string | null
+          surfaced_to_inbox?: boolean
           thread_id?: string | null
           to_addrs_enc?: string | null
           user_id: string
@@ -568,6 +570,7 @@ export type Database = {
           snippet_enc?: string | null
           snoozed_until?: string | null
           subject_enc?: string | null
+          surfaced_to_inbox?: boolean
           thread_id?: string | null
           to_addrs_enc?: string | null
           user_id?: string
@@ -929,6 +932,8 @@ export type Database = {
           relearn_threshold: number
           skip_ai: boolean
           snooze_hours: number
+          surface_ai_rule: string | null
+          surface_names: string | null
           user_id: string
         }
         Insert: {
@@ -959,6 +964,8 @@ export type Database = {
           relearn_threshold?: number
           skip_ai?: boolean
           snooze_hours?: number
+          surface_ai_rule?: string | null
+          surface_names?: string | null
           user_id: string
         }
         Update: {
@@ -989,6 +996,8 @@ export type Database = {
           relearn_threshold?: number
           skip_ai?: boolean
           snooze_hours?: number
+          surface_ai_rule?: string | null
+          surface_names?: string | null
           user_id?: string
         }
         Relationships: [
@@ -1624,6 +1633,7 @@ export type Database = {
           snippet: string
           snoozed_until: string
           subject: string
+          surfaced_to_inbox: boolean
           thread_id: string
           to_addrs: string
         }[]

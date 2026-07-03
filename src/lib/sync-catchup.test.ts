@@ -37,6 +37,8 @@ function folder(over: Partial<Folder> = {}): Folder {
     snooze_hours: over.snooze_hours ?? 0,
     overrides_inbox_override: over.overrides_inbox_override ?? false,
     is_cold_email: over.is_cold_email ?? false,
+    surface_ai_rule: over.surface_ai_rule ?? null,
+    surface_names: over.surface_names ?? null,
   };
 }
 
@@ -53,6 +55,7 @@ function ctx(over: Partial<AccountContext> = {}): AccountContext {
     enrichedFolders: over.enrichedFolders ?? [],
     calendarGuardEnabled: over.calendarGuardEnabled ?? false,
     calendarContacts: over.calendarContacts ?? new Set<string>(),
+    accountEmail: over.accountEmail ?? null,
   };
 }
 

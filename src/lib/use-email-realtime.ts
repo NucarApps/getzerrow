@@ -12,6 +12,7 @@ export type EmailRow = {
   gmail_account_id?: string | null;
   raw_labels?: string[] | null;
   classified_by?: string | null;
+  surfaced_to_inbox?: boolean | null;
   folder?: {
     auto_archive?: boolean | null;
     hide_from_inbox?: boolean | null;
@@ -148,12 +149,13 @@ function matchesScope(row: EmailRow, scope: string): boolean {
   // being classified/filed. It enters its real destination once done.
   if (isInProgress(row)) return false;
   if (scope === "all" || scope === "inbox") {
+    const inInbox =
+      row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
+    // A surfaced email is kept in the inbox even though its folder would
+    // normally hide/archive it.
+    if (row.surfaced_to_inbox === true) return inInbox;
     return (
-      row.is_archived !== true &&
-      Array.isArray(row.raw_labels) &&
-      row.raw_labels.includes("INBOX") &&
-      row.folder?.auto_archive !== true &&
-      row.folder?.hide_from_inbox !== true
+      inInbox && row.folder?.auto_archive !== true && row.folder?.hide_from_inbox !== true
     );
   }
   if (scope === "archived") return row.is_archived === true;

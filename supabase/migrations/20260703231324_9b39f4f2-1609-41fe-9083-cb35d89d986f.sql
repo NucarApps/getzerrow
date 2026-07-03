@@ -1,0 +1,58 @@
+DROP FUNCTION IF EXISTS public.get_emails_list_decrypted(uuid, uuid, text, uuid, timestamptz, integer, text);
+
+CREATE OR REPLACE FUNCTION public.get_emails_list_decrypted(p_account_id uuid, p_user_id uuid, p_scope text, p_folder_id uuid, p_cursor timestamp with time zone, p_limit integer, p_key text)
+ RETURNS TABLE(id uuid, from_addr text, from_name text, subject text, snippet text, to_addrs text, ai_summary text, classification_reason text, received_at timestamp with time zone, is_read boolean, is_archived boolean, folder_id uuid, ai_confidence real, thread_id text, classified_by text, matched_filter_ids uuid[], matched_folder_ids uuid[], has_attachment boolean, processed_at timestamp with time zone, raw_labels text[], snoozed_until timestamp with time zone, gmail_message_id text, surfaced_to_inbox boolean)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'private', 'extensions'
+AS $function$
+  SELECT
+    e.id,
+    e.from_addr,
+    private.decrypt_text(e.from_name_enc, p_key),
+    private.decrypt_text(e.subject_enc, p_key),
+    private.decrypt_text(e.snippet_enc, p_key),
+    private.decrypt_text(e.to_addrs_enc, p_key),
+    private.decrypt_text(e.ai_summary_enc, p_key),
+    private.decrypt_text(e.classification_reason_enc, p_key),
+    e.received_at, e.is_read, e.is_archived, e.folder_id, e.ai_confidence,
+    e.thread_id, e.classified_by, e.matched_filter_ids, e.matched_folder_ids,
+    e.has_attachment, e.processed_at, e.raw_labels, e.snoozed_until, e.gmail_message_id,
+    e.surfaced_to_inbox
+  FROM public.emails e
+  LEFT JOIN public.folders f
+    ON f.id = e.folder_id
+   AND f.user_id = e.user_id
+   AND f.gmail_account_id = e.gmail_account_id
+  WHERE e.gmail_account_id = p_account_id
+    AND e.user_id = p_user_id
+    AND (p_cursor IS NULL OR e.received_at < p_cursor)
+    AND (
+      p_scope = 'all_mail'
+      OR (
+        (e.snoozed_until IS NULL OR e.snoozed_until <= now())
+        AND (e.classified_by IS NULL OR e.classified_by NOT IN ('pending', 'pending_ai'))
+        AND (
+          (
+            p_scope = 'all'
+            AND e.raw_labels @> ARRAY['INBOX']
+            AND e.is_archived = false
+            AND (
+              e.surfaced_to_inbox = true
+              OR (
+                COALESCE(f.auto_archive, false) = false
+                AND COALESCE(f.hide_from_inbox, false) = false
+              )
+            )
+          )
+          OR (p_scope = 'no_rules' AND e.folder_id IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM unnest(COALESCE(e.raw_labels, '{}')) l WHERE l LIKE 'Label\_%'
+              ))
+          OR (p_scope = 'folder' AND e.folder_id = p_folder_id)
+        )
+      )
+    )
+  ORDER BY e.received_at DESC NULLS LAST
+  LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 50), 500));
+$function$;

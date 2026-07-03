@@ -93,6 +93,8 @@ export type Folder = {
   snooze_hours?: number;
   overrides_inbox_override?: boolean;
   is_cold_email?: boolean;
+  surface_ai_rule?: string | null;
+  surface_names?: string | null;
   auto_relearn?: boolean;
   relearn_threshold?: number;
   emails_since_learn?: number;
@@ -106,6 +108,7 @@ const reasonLabel: Record<string, string> = {
   domain_rule: "Domain rule",
   manual_move: "Moved manually",
   ai: "AI",
+  surfaced_to_inbox: "Surfaced",
   none: "Unclassified",
 };
 
@@ -202,6 +205,8 @@ export function FolderEditor({
         snooze_hours: Math.max(0, local.snooze_hours ?? 0),
         overrides_inbox_override: local.overrides_inbox_override ?? false,
         is_cold_email: local.is_cold_email ?? false,
+        surface_ai_rule: local.surface_ai_rule?.trim() || null,
+        surface_names: local.surface_names?.trim() || null,
       })
       .eq("id", folder.id);
     if (error) {
@@ -726,6 +731,35 @@ export function FolderEditor({
             </label>
           </div>
 
+          <div className="mt-4 rounded-md border border-border p-3">
+            <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
+              <Inbox className="h-3 w-3" /> Surface to inbox (AI)
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Rules file mail here as usual, but let AI keep the ones meant for you visible in the
+              inbox (still filed in this folder). Leave blank to turn off.
+            </p>
+            <Textarea
+              className="mt-2"
+              rows={2}
+              placeholder="e.g. Keep it in my inbox when it's addressed specifically to me and mentions my name, or needs a personal reply."
+              value={local.surface_ai_rule ?? ""}
+              onChange={(e) => setLocal({ ...local, surface_ai_rule: e.target.value })}
+            />
+            <Label className="mt-3 block text-xs uppercase tracking-wider text-muted-foreground">
+              Names / aliases (optional)
+            </Label>
+            <Input
+              className="mt-1.5"
+              placeholder="e.g. Jane Doe, JD, jane"
+              value={local.surface_names ?? ""}
+              onChange={(e) => setLocal({ ...local, surface_names: e.target.value })}
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Matched alongside your connected Gmail address to recognize mail addressed to you.
+            </p>
+          </div>
+
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border p-3 text-sm">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -995,6 +1029,7 @@ const reasonMeta: Record<string, { label: string; tone: ReasonTone; Icon: typeof
   filter: { label: "Rule", tone: "rule", Icon: FilterIcon },
   domain_rule: { label: "Domain rule", tone: "rule", Icon: FilterIcon },
   gmail_label: { label: "Gmail label", tone: "label", Icon: Tag },
+  surfaced_to_inbox: { label: "Surfaced", tone: "label", Icon: Inbox },
   none: { label: "Imported", tone: "muted", Icon: Inbox },
 };
 const toneClass: Record<ReasonTone, string> = {

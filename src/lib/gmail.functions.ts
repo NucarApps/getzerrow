@@ -1894,6 +1894,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       };
     }
 
+    const isSurfaced = result.classified_by === "surfaced_to_inbox";
     await updateEmailEncrypted({
       email_id: email.id,
       folder_id: result.folder_id ?? undefined,
@@ -1910,8 +1911,34 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
         classified_by: result.classified_by,
         ai_confidence: result.ai_confidence,
         matched_filter_ids: result.matched_filter_ids,
+        surfaced_to_inbox: isSurfaced,
+        // A surfaced email is filed but kept visible in the inbox.
+        ...(isSurfaced ? { is_archived: false, snoozed_until: null } : {}),
       })
       .eq("id", email.id);
+
+    // Surfaced mail must carry both its folder label AND the INBOX label.
+    if (isSurfaced && result.folder_id) {
+      const { data: sf } = await supabaseAdmin
+        .from("folders")
+        .select("gmail_label_id")
+        .eq("id", result.folder_id)
+        .maybeSingle();
+      const addLabels = ["INBOX", ...(sf?.gmail_label_id ? [sf.gmail_label_id] : [])];
+      try {
+        await modifyMessage(email.gmail_account_id, email.gmail_message_id, addLabels, []);
+      } catch (e) {
+        logError("gmail.reanalyze.surface_label_failed", { email_id: emailId }, e);
+      }
+      return {
+        ok: true,
+        folder_id: result.folder_id,
+        folder_name: null,
+        classified_by: result.classified_by,
+        classification_reason: result.classification_reason,
+        changed: true,
+      };
+    }
 
     // Best-effort Gmail label sync if folder changed.
     if (email.folder_id !== result.folder_id) {
@@ -3668,7 +3695,8 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
         const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, {
           skipGmailLabelMatch: true,
         });
-        if (result.folder_id && result.folder_id !== email.folder_id) {
+        const isSurfaced = result.classified_by === "surfaced_to_inbox";
+        if (result.folder_id && (result.folder_id !== email.folder_id || isSurfaced)) {
           await updateEmailEncrypted({
             email_id: email.id,
             classification_reason: result.classification_reason ?? "",
@@ -3680,8 +3708,29 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
               classified_by: result.classified_by,
               ai_confidence: result.ai_confidence,
               matched_filter_ids: result.matched_filter_ids,
+              surfaced_to_inbox: isSurfaced,
+              // A surfaced email is filed but kept visible in the inbox.
+              ...(isSurfaced ? { is_archived: false, snoozed_until: null } : {}),
             })
             .eq("id", email.id);
+          // Surfaced mail must carry both its folder label AND INBOX.
+          if (isSurfaced && email.gmail_message_id) {
+            const { data: sf } = await supabaseAdmin
+              .from("folders")
+              .select("gmail_label_id")
+              .eq("id", result.folder_id)
+              .maybeSingle();
+            const addLabels = ["INBOX", ...(sf?.gmail_label_id ? [sf.gmail_label_id] : [])];
+            try {
+              await modifyMessage(email.gmail_account_id, email.gmail_message_id, addLabels, []);
+            } catch (e) {
+              logError(
+                "gmail.reclassify.surface_label_failed",
+                { email_id: email.id, user_id: context.userId },
+                e,
+              );
+            }
+          }
           routed++;
         } else if (
           !result.folder_id &&

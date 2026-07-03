@@ -15,6 +15,10 @@ export type ScopeEmail = {
   is_archived: boolean;
   folder_id: string | null;
   raw_labels?: string[] | null;
+  /** True when a folder's "surface to inbox" rule kept this email
+   * visible in the main inbox even though it was filed into a folder
+   * that would normally hide/archive it. */
+  surfaced_to_inbox?: boolean | null;
 };
 
 export type ScopeFolder = {
@@ -45,6 +49,12 @@ export function emailBelongsInScope(
   const labels = email.raw_labels ?? [];
   const folder = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
   if (selectedFolder === "all") {
+    // A surfaced email was deliberately kept in the inbox by its folder's
+    // surface rule, so it bypasses the folder's auto_archive/hide check
+    // (it still must carry INBOX and not be archived).
+    if (email.surfaced_to_inbox === true) {
+      return email.is_archived !== true && labels.includes("INBOX");
+    }
     return (
       email.is_archived !== true &&
       labels.includes("INBOX") &&
