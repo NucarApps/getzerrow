@@ -843,7 +843,8 @@ export function FolderEditor({
 
             <div className="mt-2 space-y-1.5">
               {filters.map((f) => {
-                const isExclude = f.op === "not_contains" || f.op === "not_equals";
+                const isExclude =
+                  f.op === "not_contains" || f.op === "not_equals" || f.op === "domain_in";
                 return (
                   <div
                     key={f.id}
