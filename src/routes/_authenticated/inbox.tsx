@@ -962,20 +962,26 @@ function InboxPage() {
         toast.message(`${folderName} has no emails to reanalyze.`, { id: toastId });
         return;
       }
-      const chunkSize = 100;
+      const chunkSize = 25;
       let routed = 0;
       let unchanged = 0;
       let failed = 0;
       let processed = 0;
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize);
-        try {
-          const r = await reclassifyFn({ data: { email_ids: chunk } });
-          routed += r?.routed ?? 0;
-          unchanged += r?.unchanged ?? 0;
-          failed += r?.failed ?? 0;
-        } catch {
-          failed += chunk.length;
+        // Retry a chunk once before counting it as failed, so a single
+        // transient Worker timeout self-heals instead of discarding the batch.
+        let applied = false;
+        for (let attempt = 0; attempt < 2 && !applied; attempt++) {
+          try {
+            const r = await reclassifyFn({ data: { email_ids: chunk } });
+            routed += r?.routed ?? 0;
+            unchanged += r?.unchanged ?? 0;
+            failed += r?.failed ?? 0;
+            applied = true;
+          } catch {
+            if (attempt === 1) failed += chunk.length;
+          }
         }
         processed += chunk.length;
         toast.loading(`Reanalyzing ${folderName}… ${processed} / ${ids.length}`, {

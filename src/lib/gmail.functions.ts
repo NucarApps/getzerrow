@@ -3632,7 +3632,7 @@ export const listFolderEmailIds = createServerFn({ method: "GET" })
 export const reclassifyEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_ids: string[] }) =>
-    z.object({ email_ids: z.array(z.string().uuid()).min(1).max(100) }).parse(d),
+    z.object({ email_ids: z.array(z.string().uuid()).min(1).max(50) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail } = await import("./sync.server");
