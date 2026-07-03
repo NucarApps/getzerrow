@@ -260,9 +260,19 @@ export function FolderEditor({
   }
   async function addFilter() {
     if (!newF.value.trim()) return;
-    await supabase
-      .from("folder_filters")
-      .insert({ ...newF, folder_id: folder.id, value: newF.value.trim() });
+    const value =
+      newF.op === "domain_in"
+        ? Array.from(
+            new Set(
+              newF.value
+                .split(/[\s,;]+/)
+                .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+                .filter(Boolean),
+            ),
+          ).join(",")
+        : newF.value.trim();
+    if (!value) return;
+    await supabase.from("folder_filters").insert({ ...newF, folder_id: folder.id, value });
     setNewF({ field: "from", op: "contains", value: "" });
     qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
   }
