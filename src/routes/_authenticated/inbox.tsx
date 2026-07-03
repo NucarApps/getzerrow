@@ -173,6 +173,7 @@ type Email = {
   raw_labels?: string[] | null;
   snoozed_until?: string | null;
   gmail_message_id?: string | null;
+  surfaced_to_inbox?: boolean | null;
   // Set on rows reconstructed from the metadata-only localStorage cache: the
   // content fields (sender, subject, snippet, ai summary) are null and shimmer
   // in the UI until the live DB read replaces the row.
