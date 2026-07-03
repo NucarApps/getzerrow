@@ -49,3 +49,42 @@ describe("backoffDelayMs", () => {
     expect(backoffDelayMs(1, { baseMs: 100, rand: 0 })).toBeGreaterThan(0);
   });
 });
+
+describe("resolveRetryConfig", () => {
+  it("falls back to defaults when env vars are unset", () => {
+    expect(resolveRetryConfig({})).toEqual(DEFAULT_RETRY_CONFIG);
+  });
+
+  it("reads max attempts and backoff base from the environment", () => {
+    expect(
+      resolveRetryConfig({
+        FOLDER_WRITE_MAX_ATTEMPTS: "5",
+        FOLDER_WRITE_BACKOFF_BASE_MS: "250",
+      }),
+    ).toEqual({ maxAttempts: 5, baseMs: 250 });
+  });
+
+  it("clamps out-of-range values to the safety rails", () => {
+    expect(
+      resolveRetryConfig({
+        FOLDER_WRITE_MAX_ATTEMPTS: "999",
+        FOLDER_WRITE_BACKOFF_BASE_MS: "999999",
+      }),
+    ).toEqual({ maxAttempts: 10, baseMs: 60_000 });
+
+    expect(
+      resolveRetryConfig({
+        FOLDER_WRITE_MAX_ATTEMPTS: "0",
+        FOLDER_WRITE_BACKOFF_BASE_MS: "0",
+      }),
+    ).toEqual({ maxAttempts: 1, baseMs: 1 });
+  });
+
+  it("ignores invalid (non-integer / empty) values and uses defaults", () => {
+    for (const bad of ["", "  ", "abc", "1.5", "NaN"]) {
+      expect(resolveRetryConfig({ FOLDER_WRITE_MAX_ATTEMPTS: bad })).toEqual(
+        DEFAULT_RETRY_CONFIG,
+      );
+    }
+  });
+});
