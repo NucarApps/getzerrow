@@ -6,6 +6,13 @@
 // Phase 2 = dual-write: the RPCs populate BOTH plaintext and `*_enc`
 // columns. Phase 3 will stop writing plaintext and drop those columns.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { logError, logMetric } from "@/lib/log.server";
+
+/** Postgres SQLSTATE from a Supabase RPC error, if present (e.g. "42703"). */
+function pgErrorCode(err: unknown): string | undefined {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : undefined;
+}
 
 function getKey(): string {
   const key = process.env.EMAIL_ENC_KEY;
@@ -156,6 +163,8 @@ export async function insertFolderExampleEncrypted(input: {
   snippet: string | null;
   source?: string | null;
 }): Promise<{ id: string | null; error: string | null }> {
+  const source = input.source ?? "seed";
+  const t0 = Date.now();
   const { data, error } = await supabaseAdmin.rpc("insert_folder_example_encrypted", {
     p_user_id: input.user_id,
     p_gmail_account_id: input.gmail_account_id,
@@ -164,9 +173,26 @@ export async function insertFolderExampleEncrypted(input: {
     p_from_addr: input.from_addr,
     p_subject: input.subject,
     p_snippet: input.snippet,
-    p_source: input.source ?? "seed",
+    p_source: source,
     p_key: getKey(),
   } as never);
-  if (error) return { id: null, error: error.message };
+
+  // Metadata-only observability (no email content) so we can alert the moment
+  // folder learning stops persisting examples again. See log.server.logMetric.
+  const dims = {
+    folder_id: input.folder_id,
+    gmail_account_id: input.gmail_account_id,
+    source,
+    duration_ms: Date.now() - t0,
+  };
+
+  if (error) {
+    const error_code = pgErrorCode(error);
+    logMetric("folder_example_write", { ...dims, outcome: "failure", error_code });
+    logError("folder_example_write.failed", { ...dims, error_code }, error);
+    return { id: null, error: error.message };
+  }
+
+  logMetric("folder_example_write", { ...dims, outcome: "success" });
   return { id: (data as string | null) ?? null, error: null };
 }
