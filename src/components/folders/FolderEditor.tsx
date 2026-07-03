@@ -901,6 +901,7 @@ export function FolderEditor({
                     <SelectItem value="ends_with">ends with</SelectItem>
                     <SelectItem value="not_contains">does not contain</SelectItem>
                     <SelectItem value="not_equals">does not equal</SelectItem>
+                    <SelectItem value="domain_in">domain is one of (allowlist)</SelectItem>
                     <SelectItem value="regex">regex</SelectItem>
                   </SelectContent>
                 </Select>
