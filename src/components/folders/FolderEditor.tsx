@@ -205,6 +205,8 @@ export function FolderEditor({
         snooze_hours: Math.max(0, local.snooze_hours ?? 0),
         overrides_inbox_override: local.overrides_inbox_override ?? false,
         is_cold_email: local.is_cold_email ?? false,
+        surface_ai_rule: local.surface_ai_rule?.trim() || null,
+        surface_names: local.surface_names?.trim() || null,
       })
       .eq("id", folder.id);
     if (error) {
