@@ -34,7 +34,7 @@ type Action =
   | {
       type: "add_filter";
       field: "from" | "domain" | "subject";
-      op: "contains" | "equals" | "starts_with";
+      op: "contains" | "equals" | "starts_with" | "not_contains" | "not_equals" | "domain_in";
       value: string;
       why: string;
     }
