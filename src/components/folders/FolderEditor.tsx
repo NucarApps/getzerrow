@@ -93,6 +93,8 @@ export type Folder = {
   snooze_hours?: number;
   overrides_inbox_override?: boolean;
   is_cold_email?: boolean;
+  surface_ai_rule?: string | null;
+  surface_names?: string | null;
   auto_relearn?: boolean;
   relearn_threshold?: number;
   emails_since_learn?: number;
