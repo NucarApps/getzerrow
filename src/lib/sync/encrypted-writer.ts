@@ -214,6 +214,7 @@ export async function insertFolderExampleEncrypted(input: {
     if (attempt >= maxAttempts || !isTransientWriteError(error)) break;
     const delayMs = backoffDelayMs(attempt, { baseMs });
     logInfo("folder_example_write.retry", {
+      correlation_id,
       folder_id: input.folder_id,
       gmail_account_id: input.gmail_account_id,
       source,
