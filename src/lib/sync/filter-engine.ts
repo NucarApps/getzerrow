@@ -100,12 +100,58 @@ export function applyFilter(email: EmailForFilter, f: Filter): boolean {
       return fieldVal !== v;
     case "regex":
       return safeRegexTest(f.value, fieldVal);
+    case "domain_in": {
+      // Allowlist: the (sender) domain must be one of a comma-separated set.
+      // Natural predicate returns true when the domain IS in the list; the
+      // exclude/veto layer inverts it to block everything outside the list.
+      const domain = (email.from_addr.split("@")[1] || "").toLowerCase();
+      if (!domain) return false;
+      const allow = parseDomainList(f.value);
+      return allow.has(domain);
+    }
     default:
       return false;
   }
 }
 
-export const EXCLUDE_OPS = new Set(["not_contains", "not_equals"]);
+/** Split a comma/space/semicolon-separated domain allowlist into a lowercase
+ * set, stripping a leading "@" and surrounding whitespace from each entry. */
+export function parseDomainList(value: string): Set<string> {
+  return new Set(
+    value
+      .split(/[\s,;]+/)
+      .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+      .filter(Boolean),
+  );
+}
+
+// Ops that REMOVE a candidate folder instead of adding to it. `domain_in`
+// vetoes when the sender domain is NOT in the allowlist; not_contains /
+// not_equals veto when their positive condition holds.
+export const EXCLUDE_OPS = new Set(["not_contains", "not_equals", "domain_in"]);
+
+/** Whether an exclude-op filter vetoes this email for its folder. The veto
+ * fires when: the field CONTAINS a not_contains value, EQUALS a not_equals
+ * value, or the domain is OUTSIDE a domain_in allowlist. */
+export function filterVetoes(email: EmailForFilter, f: Filter): boolean {
+  if (f.op === "domain_in") return !applyFilter(email, f);
+  if (f.op === "not_contains") return applyFilter(email, { ...f, op: "contains" });
+  if (f.op === "not_equals") return applyFilter(email, { ...f, op: "equals" });
+  return false;
+}
+
+/** True when any of the given folder's exclude filters veto this email.
+ * Used to keep the AI classifier from assigning a folder whose allowlist /
+ * exclusion the email violates, even when no include filter matched. */
+export function emailVetoedForFolder(
+  email: EmailForFilter,
+  folderId: string,
+  filters: Filter[],
+): boolean {
+  return filters.some(
+    (f) => f.folder_id === folderId && EXCLUDE_OPS.has(f.op) && filterVetoes(email, f),
+  );
+}
 
 function evalNode(email: EmailForFilter, node: RuleNode): boolean {
   if (node.type === "cond") {
