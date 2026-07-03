@@ -97,3 +97,67 @@ export function backoffDelayMs(attempt: number, opts: BackoffOptions = {}): numb
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/**
+ * Resolved retry policy for folder-example writes. `maxAttempts` counts the
+ * initial try plus retries (so 1 = no retries). `baseMs` is the first-retry
+ * delay that `backoffDelayMs` doubles each subsequent attempt.
+ */
+export type RetryConfig = {
+  maxAttempts: number;
+  baseMs: number;
+};
+
+/** Built-in defaults used when the env vars are unset or invalid. */
+export const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxAttempts: 3,
+  baseMs: 100,
+};
+
+// Safety rails so a fat-fingered env value can't wedge the pipeline: no
+// unbounded retry storms and no multi-minute stalls per attempt.
+const MAX_ATTEMPTS_CEILING = 10;
+const BASE_MS_CEILING = 60_000;
+
+/** Parse a positive integer env value, clamped to [min, max]. */
+function parseClampedInt(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (raw == null || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * Resolve the folder-write retry policy from the environment so resilience can
+ * be tuned without a redeploy:
+ *   - FOLDER_WRITE_MAX_ATTEMPTS  (int, clamped to [1, 10], default 3)
+ *   - FOLDER_WRITE_BACKOFF_BASE_MS (int ms, clamped to [1, 60000], default 100)
+ *
+ * Invalid or missing values fall back to DEFAULT_RETRY_CONFIG. `env` is
+ * injectable for deterministic tests; it defaults to process.env and MUST be
+ * read at call time (never at module scope) so Worker env injection applies.
+ */
+export function resolveRetryConfig(
+  env: Record<string, string | undefined> = process.env,
+): RetryConfig {
+  return {
+    maxAttempts: parseClampedInt(
+      env.FOLDER_WRITE_MAX_ATTEMPTS,
+      DEFAULT_RETRY_CONFIG.maxAttempts,
+      1,
+      MAX_ATTEMPTS_CEILING,
+    ),
+    baseMs: parseClampedInt(
+      env.FOLDER_WRITE_BACKOFF_BASE_MS,
+      DEFAULT_RETRY_CONFIG.baseMs,
+      1,
+      BASE_MS_CEILING,
+    ),
+  };
+}
+
