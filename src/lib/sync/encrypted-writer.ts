@@ -172,6 +172,10 @@ export async function insertFolderExampleEncrypted(input: {
 }): Promise<{ id: string | null; error: string | null }> {
   const source = input.source ?? "seed";
   const t0 = Date.now();
+  // One id per logical folder_example_write, stamped on every retry attempt's
+  // log line plus the terminal metric / error / failure record, so all events
+  // for a single write can be traced end-to-end.
+  const correlation_id = crypto.randomUUID();
 
   // IDEMPOTENCY / DEDUPLICATION
   // ---------------------------
@@ -210,6 +214,7 @@ export async function insertFolderExampleEncrypted(input: {
     if (attempt >= maxAttempts || !isTransientWriteError(error)) break;
     const delayMs = backoffDelayMs(attempt, { baseMs });
     logInfo("folder_example_write.retry", {
+      correlation_id,
       folder_id: input.folder_id,
       gmail_account_id: input.gmail_account_id,
       source,
@@ -223,6 +228,7 @@ export async function insertFolderExampleEncrypted(input: {
   // Metadata-only observability (no email content) so we can alert the moment
   // folder learning stops persisting examples again. See log.server.logMetric.
   const dims = {
+    correlation_id,
     folder_id: input.folder_id,
     gmail_account_id: input.gmail_account_id,
     source,
@@ -244,6 +250,7 @@ export async function insertFolderExampleEncrypted(input: {
         folder_id: input.folder_id,
         error_code: error_code ?? null,
         source,
+        correlation_id,
       });
     } catch (logErr) {
       logError("folder_write_failure.record_failed", { ...dims, error_code }, logErr);

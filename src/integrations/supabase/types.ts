@@ -806,6 +806,7 @@ export type Database = {
       }
       folder_write_failures: {
         Row: {
+          correlation_id: string | null
           error_code: string | null
           folder_id: string | null
           gmail_account_id: string | null
@@ -815,6 +816,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          correlation_id?: string | null
           error_code?: string | null
           folder_id?: string | null
           gmail_account_id?: string | null
@@ -824,6 +826,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          correlation_id?: string | null
           error_code?: string | null
           folder_id?: string | null
           gmail_account_id?: string | null
