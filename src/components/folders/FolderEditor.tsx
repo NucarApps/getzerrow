@@ -260,9 +260,19 @@ export function FolderEditor({
   }
   async function addFilter() {
     if (!newF.value.trim()) return;
-    await supabase
-      .from("folder_filters")
-      .insert({ ...newF, folder_id: folder.id, value: newF.value.trim() });
+    const value =
+      newF.op === "domain_in"
+        ? Array.from(
+            new Set(
+              newF.value
+                .split(/[\s,;]+/)
+                .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+                .filter(Boolean),
+            ),
+          ).join(",")
+        : newF.value.trim();
+    if (!value) return;
+    await supabase.from("folder_filters").insert({ ...newF, folder_id: folder.id, value });
     setNewF({ field: "from", op: "contains", value: "" });
     qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
   }
@@ -843,7 +853,8 @@ export function FolderEditor({
 
             <div className="mt-2 space-y-1.5">
               {filters.map((f) => {
-                const isExclude = f.op === "not_contains" || f.op === "not_equals";
+                const isExclude =
+                  f.op === "not_contains" || f.op === "not_equals" || f.op === "domain_in";
                 return (
                   <div
                     key={f.id}
@@ -853,12 +864,12 @@ export function FolderEditor({
                   >
                     {isExclude && (
                       <span className="rounded-sm bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-destructive">
-                        Exclude
+                        {f.op === "domain_in" ? "Allowlist" : "Exclude"}
                       </span>
                     )}
                     <span className="text-muted-foreground">{f.field}</span>
                     <span className={isExclude ? "text-destructive" : "text-muted-foreground"}>
-                      {f.op}
+                      {f.op === "domain_in" ? "is one of" : f.op}
                     </span>
                     <span className="flex-1 min-w-0 break-all font-mono text-xs">{f.value}</span>
                     <Button
@@ -901,6 +912,7 @@ export function FolderEditor({
                     <SelectItem value="ends_with">ends with</SelectItem>
                     <SelectItem value="not_contains">does not contain</SelectItem>
                     <SelectItem value="not_equals">does not equal</SelectItem>
+                    <SelectItem value="domain_in">domain is one of (allowlist)</SelectItem>
                     <SelectItem value="regex">regex</SelectItem>
                   </SelectContent>
                 </Select>
@@ -924,8 +936,10 @@ export function FolderEditor({
           <ScanGmailSection
             folder={local}
             hasIncludeRules={
-              filters.some((f) => f.op !== "not_contains" && f.op !== "not_equals") ||
-              !!local.filter_tree
+              filters.some(
+                (f) =>
+                  f.op !== "not_contains" && f.op !== "not_equals" && f.op !== "domain_in",
+              ) || !!local.filter_tree
             }
           />
 
@@ -1828,6 +1842,7 @@ const OP_OPTS = [
   { value: "ends_with", label: "ends with" },
   { value: "not_contains", label: "does not contain" },
   { value: "not_equals", label: "does not equal" },
+  { value: "domain_in", label: "domain is one of (allowlist)" },
   { value: "regex", label: "regex" },
 ];
 

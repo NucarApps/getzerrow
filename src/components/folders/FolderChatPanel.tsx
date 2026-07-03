@@ -34,7 +34,7 @@ type Action =
   | {
       type: "add_filter";
       field: "from" | "domain" | "subject";
-      op: "contains" | "equals" | "starts_with";
+      op: "contains" | "equals" | "starts_with" | "not_contains" | "not_equals" | "domain_in";
       value: string;
       why: string;
     }
@@ -94,7 +94,16 @@ function describeSettings(s: SettingsPatch): string[] {
 
 function describeAction(action: Action): string {
   if (action.type === "add_filter") {
-    return `Add filter: ${action.field} ${action.op} "${action.value}"`;
+    if (action.op === "domain_in") {
+      return `Add allowlist: only mail from ${action.value.split(/[\s,;]+/).filter(Boolean).join(", ")}`;
+    }
+    const opLabel =
+      action.op === "not_contains"
+        ? "does not contain"
+        : action.op === "not_equals"
+          ? "does not equal"
+          : action.op.replace("_", " ");
+    return `Add filter: ${action.field} ${opLabel} "${action.value}"`;
   }
   if (action.type === "remove_filter") {
     return "Remove a filter";

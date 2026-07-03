@@ -51,7 +51,14 @@ const actionInputSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("add_filter"),
     field: z.enum(["from", "domain", "subject"]),
-    op: z.enum(["contains", "equals", "starts_with"]),
+    op: z.enum([
+      "contains",
+      "equals",
+      "starts_with",
+      "not_contains",
+      "not_equals",
+      "domain_in",
+    ]),
     value: z.string().min(1).max(400),
     why: z.string().max(400).optional().default(""),
   }),
@@ -223,11 +230,21 @@ export const applyFolderChanges = createServerFn({ method: "POST" })
       try {
         if (action.type === "add_filter") {
           const value =
-            action.field === "subject"
-              ? action.value.trim()
-              : action.field === "domain"
-                ? action.value.trim().toLowerCase().replace(/^@/, "")
-                : action.value.trim().toLowerCase();
+            action.op === "domain_in"
+              ? // Allowlist: normalize to a deduped, comma-separated set of bare domains.
+                Array.from(
+                  new Set(
+                    action.value
+                      .split(/[\s,;]+/)
+                      .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+                      .filter(Boolean),
+                  ),
+                ).join(",")
+              : action.field === "subject"
+                ? action.value.trim()
+                : action.field === "domain"
+                  ? action.value.trim().toLowerCase().replace(/^@/, "")
+                  : action.value.trim().toLowerCase();
           if (!value) throw new Error("Empty filter value");
           const { data: existing } = await supabaseAdmin
             .from("folder_filters")

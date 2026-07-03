@@ -22,7 +22,7 @@
 import { classifyEmail } from "../ai.server";
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
-import { applyFilter, matchByFilters, labelOf } from "./filter-engine";
+import { applyFilter, matchByFilters, labelOf, emailVetoedForFolder } from "./filter-engine";
 import type { OverrideException } from "./types";
 
 export type ClassificationResult = {
@@ -182,7 +182,7 @@ export function classifyByRules(
   }
 
   const needs_ai =
-    !folder_id && !aiSkipped && folderList.length > 0 && aiCandidateFolders(context).length > 0;
+    !folder_id && !aiSkipped && folderList.length > 0 && aiCandidateFolders(parsed, context).length > 0;
 
   return {
     folder_id,
@@ -196,10 +196,15 @@ export function classifyByRules(
   };
 }
 
-/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai. */
-function aiCandidateFolders(context: AccountContext) {
+/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai and
+ * minus any folder whose allowlist / exclusion rules the email violates (so
+ * the AI classifier can never place mail into a folder its own hard rules
+ * would reject). */
+function aiCandidateFolders(parsed: ParsedEmailForClassify, context: AccountContext) {
   const skipAiIds = new Set(context.folders.filter((f) => f.skip_ai).map((f) => f.id));
-  return context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
+  return context.enrichedFolders.filter(
+    (f) => !skipAiIds.has(f.id) && !emailVetoedForFolder(parsed, f.id, context.filters),
+  );
 }
 
 /** AI fallback pass. Call only when classifyByRules returned
@@ -211,7 +216,7 @@ export async function classifyByAi(
   base: ClassificationResult,
 ): Promise<ClassificationResult> {
   const out: ClassificationResult = { ...base };
-  const aiFolders = aiCandidateFolders(context);
+  const aiFolders = aiCandidateFolders(parsed, context);
   if (aiFolders.length === 0) return out;
   try {
     const r = await classifyEmail(parsed, aiFolders);
