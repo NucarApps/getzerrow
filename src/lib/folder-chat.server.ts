@@ -253,8 +253,16 @@ const TOOL_PARAMETERS_SCHEMA = {
           },
           op: {
             type: "string",
-            enum: ["contains", "equals", "starts_with"],
-            description: "Required when type is add_filter.",
+            enum: [
+              "contains",
+              "equals",
+              "starts_with",
+              "not_contains",
+              "not_equals",
+              "domain_in",
+            ],
+            description:
+              "Required when type is add_filter. Use not_contains/not_equals to hard-exclude, or domain_in (with field 'domain' and a comma-separated allowlist) to restrict to specific domains.",
           },
           value: { type: "string", description: "Required when type is add_filter." },
           ai_rule: { type: "string", description: "Required when type is update_folder_rule." },
