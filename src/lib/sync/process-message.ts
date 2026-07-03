@@ -25,7 +25,13 @@ import { getMessage, modifyMessage, parseMessage, sendMessage } from "../gmail.s
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
 import { jitter } from "./backoff";
-import { classifyByRules, classifyByAi, type ClassificationResult } from "./classify";
+import {
+  classifyByRules,
+  classifyByAi,
+  applySurfaceRule,
+  type ClassificationResult,
+  type ParsedEmailForClassify,
+} from "./classify";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
 
@@ -199,6 +205,60 @@ async function persistClassification(emailId: string, c: ClassificationResult) {
   });
 }
 
+/** After deterministic rules file an email into a folder that carries a
+ * "surface to inbox" rule, ask the AI whether this specific message
+ * should stay visible in the inbox (e.g. it's personally addressed to
+ * the user). When yes, reverse the folder's hiding — put it back in the
+ * inbox and mark it surfaced — while keeping it filed in the folder.
+ * When no (or the AI can't decide), the email stays filed as usual.
+ * Returns true when the email was surfaced. */
+async function maybeSurfaceRuleFiledEmail(
+  accountId: string,
+  gmailId: string,
+  emailId: string,
+  folder: ActionFolder,
+  parsed: ParsedEmailForClassify,
+  context: AccountContext,
+  base: ClassificationResult,
+  wasHiddenFromInbox: boolean,
+): Promise<boolean> {
+  const decision = await applySurfaceRule(parsed, context, folder.id);
+  if (!decision.surface) return false;
+
+  // Reverse the folder's hide: re-add INBOX (and UNREAD if auto-marked
+  // read) in Gmail. The folder label stays, so it's still filed.
+  const addLabels: string[] = [];
+  if (wasHiddenFromInbox) addLabels.push("INBOX");
+  if (folder.auto_mark_read) addLabels.push("UNREAD");
+  if (addLabels.length) {
+    try {
+      await modifyMessage(accountId, gmailId, addLabels, []);
+    } catch (e) {
+      console.error("surface modify failed", e);
+    }
+  }
+
+  await supabaseAdmin
+    .from("emails")
+    .update({
+      is_archived: false,
+      surfaced_to_inbox: true,
+      snoozed_until: null,
+      ...(folder.auto_mark_read ? { is_read: false } : {}),
+    })
+    .eq("id", emailId);
+
+  await persistClassification(emailId, {
+    ...base,
+    classified_by: "surfaced_to_inbox",
+    classification_reason: decision.reason
+      ? `Surfaced to inbox: ${decision.reason}`
+      : "Surfaced to inbox by folder rule",
+  });
+  return true;
+}
+
+
 export async function processGmailMessage(
   accountId: string,
   gmailId: string,
@@ -302,6 +362,31 @@ export async function processGmailMessage(
           await applyFolderActions(accountId, gmailId, existing.id, folder, parsed, inInboxNow, {
             persistFlags: true,
           });
+          // Respect the folder's surface rule when rules routed it here.
+          let surfaced = false;
+          if (rules.needs_surface_check && !rules.needs_ai && !opts.skipAi) {
+            const eff = computeFolderEffects(folder, parsed, inInboxNow);
+            surfaced = await maybeSurfaceRuleFiledEmail(
+              accountId,
+              gmailId,
+              existing.id,
+              folder,
+              parsed,
+              context,
+              final,
+              inInboxNow && eff.effectiveArchive,
+            );
+          }
+          if (surfaced) {
+            void bumpEmailsSinceLearn(final.folder_id);
+            return {
+              id: existing.id,
+              email_id: existing.id,
+              folder_id: final.folder_id,
+              parsed,
+              reclassified: true,
+            };
+          }
         }
         void bumpEmailsSinceLearn(final.folder_id);
       }
@@ -414,6 +499,20 @@ export async function processGmailMessage(
         await applyFolderActions(accountId, gmailId, inserted.id, rulesFolder, parsed, inInbox, {
           persistFlags: false,
         });
+        // Escape hatch: let the folder's surface rule pull a personal /
+        // for-you email back to the inbox (still filed in the folder).
+        if (rules.needs_surface_check && !opts.skipAi) {
+          await maybeSurfaceRuleFiledEmail(
+            accountId,
+            gmailId,
+            inserted.id,
+            rulesFolder,
+            parsed,
+            context,
+            rules,
+            inInbox && (rulesEffects?.effectiveArchive ?? false),
+          );
+        }
       }
     }
     return {

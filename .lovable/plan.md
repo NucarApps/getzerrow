@@ -1,27 +1,78 @@
-# Fix reanalyze "failed" spikes on large folders
+# Folder AI "surface to inbox" escape hatch
 
-## What happened
+## Goal
+Let a folder file mail by rules as usual, but give the AI a plain-English instruction to *pull back* specific matching emails so they stay visible in your inbox. Example: a Factory folder swallows everything from the factory, except an email that's addressed specifically to you and mentions your name — that one surfaces to the inbox while still being filed into Factory.
 
-Your "GM Responses" folder held ~584 emails (194 + 190 + 200). Reanalyze sends them to the server in chunks of **100**, and the server classifies each chunk **one email at a time** — an AI call plus DB reads/writes per email. A 100-email chunk takes ~100 seconds and hundreds of subrequests inside a single Cloudflare Worker request, so two of the six chunks hit the Worker time/subrequest limit and the whole request errored.
+Based on your choices:
+- Surfaced mail is **filed into the folder AND kept visible in the inbox** (not hidden/archived).
+- The exception is a **natural-language AI rule** per folder.
+- Identity matching uses your **connected Gmail address** plus any **names/aliases you type** for that folder.
 
-The client counts a thrown chunk as `failed += chunk.length`, which is why you saw exactly **200 failed** (two × 100), not 200 individual email failures. The AI itself is fine — the gateway logs show zero errors. Nothing is broken: the two failed chunks were never applied, so re-running picks them up normally.
+## How it behaves
+```text
+incoming email
+   │
+   ▼
+deterministic rules match folder "Factory"
+   │
+   ├─ folder has no surface rule ──► file normally (hide/archive per settings)
+   │
+   └─ folder has a surface rule ──► AI checks the rule against this email
+             │                        (uses to/cc, body, your identity)
+             ├─ "surface = yes" ──► label into Factory, KEEP in inbox, tag as surfaced
+             └─ "surface = no"  ──► file normally (hide/archive per settings)
+```
+Only folders that actually have a surface rule pay for an AI call, and only for mail the rules already routed there. Folders without a surface rule are unchanged.
 
-## The fix
+## What you'll configure (folder settings)
+A new "Surface to inbox (AI)" block, shown near the existing "Rules only" toggle:
+- A textarea: *"Keep in my inbox when… e.g. it's addressed specifically to me and mentions my name, or it needs my personal reply."*
+- An optional names/aliases field (comma-separated) added on top of your connected Gmail address.
+- Empty rule = feature off for that folder (default).
 
-The goal is to make each server request small enough to always finish, and to stop one slow request from throwing away 100 results.
+Surfaced emails appear in the inbox with a "Surfaced" tag and a short reason ("addressed directly to you") so it's clear why they weren't tucked away.
 
-### 1. Shrink the batch size (`src/routes/_authenticated/inbox.tsx`)
-- In `runReanalyzeFolder`, lower `chunkSize` from `100` to `25`. Four smaller requests finish comfortably inside Worker limits instead of one oversized request timing out. Progress toast still updates per chunk.
+## Scope notes
+- Applies to newly arriving mail and to reanalyze/reclassify runs.
+- Retroactively re-scanning old already-filed mail is not included in this pass (can be a follow-up).
 
-### 2. Retry a failed chunk once before giving up (`src/routes/_authenticated/inbox.tsx`)
-- Wrap the `reclassifyFn` call so that if a chunk throws, it retries the same chunk one more time before counting it as failed. A single transient timeout then self-heals instead of dumping 25 emails into `failed`.
+---
 
-### 3. Match the server cap to the new batch size (`src/lib/gmail.functions.ts`)
-- Change the `reclassifyEmails` input validator `.max(100)` to `.max(50)` so the server can never be handed an oversized batch that is guaranteed to time out. (50 leaves headroom above the new client chunk of 25 without allowing the old 100.)
+## Technical details
 
-## Result
+### 1. Database migration (`folders` + `emails`)
+- `folders.surface_ai_rule text` (nullable) — natural-language surface rule; empty/null disables.
+- `folders.surface_names text` (nullable) — extra names/aliases for identity matching.
+- `emails.surfaced_to_inbox boolean not null default false` — marks a rule-filed email that the AI forced back to the inbox.
+- No new tables, so no new GRANT/RLS blocks; existing `folders`/`emails` policies already cover the columns. Regenerate types after approval.
 
-Reanalyzing large folders will complete with routed/unchanged counts and `failed: 0` in normal conditions. If a chunk still times out once, the retry recovers it; only a genuinely repeatable error would show as failed, and it would be at most 25 at a time instead of 100.
+### 2. Account context (`src/lib/sync/account-context.ts`)
+- Add `email_address` to the `gmail_accounts` select and expose `accountEmail: string | null` on `AccountContext` (needed as the identity for the surface check). Folders already load via `select("*")`, so the two new folder columns come through automatically.
 
-## Note
-No schema, RLS, or classification-logic changes — this is purely batching and error-handling on the reanalyze path. You can safely re-run "Reanalyze" on GM Responses now and the previously-failed 200 will be processed.
+### 3. Types (`src/lib/sync/types.ts` + `FolderEditor` Folder type)
+- Add `surface_ai_rule: string | null` and `surface_names: string | null` to the `Folder` type in both places.
+
+### 4. AI surface decision (`src/lib/ai.server.ts`)
+- New `shouldSurfaceToInbox(email, opts)` using the same structured-output/fallback pattern as `classifyEmail`. Inputs: `from`, `to_addrs`, `cc`, `subject`, `body`, plus `{ folderName, surfaceRule, identityEmails, identityNames }`. Returns `{ surface: boolean, reason: string }`. Prompt frames it as: "Given the user's surface rule and identity, should this folder-filed email stay visible in the inbox?"
+
+### 5. Classification wiring (`src/lib/sync/classify.ts`)
+- Extend `RulesClassification` with `needs_surface_check: boolean` — true when rules matched a folder (`filter`/`domain_rule`/`gmail_label`) whose `surface_ai_rule` is non-empty. Keeps `classifyByRules` pure (just reads the folder field).
+- Add async helper `applySurfaceRule(parsed, context, base)` that calls `shouldSurfaceToInbox`, and returns the base result annotated with a `surfaced` flag + reason.
+
+### 6. Pipeline (`src/lib/sync/process-message.ts`)
+- When `needs_surface_check` is true, insert the email **visible** (don't pre-apply archive/hide effects), then run `applySurfaceRule`:
+  - **surface = yes:** add the folder's Gmail label + star only if configured, but skip `hide_from_inbox`/`auto_archive`; set `surfaced_to_inbox = true`, `is_archived = false`, `classified_by = "surfaced_to_inbox"`, and a reason. Folder_id stays set.
+  - **surface = no:** run the normal `applyFolderActions(..., persistFlags: true)` path (existing behavior).
+- Reuse this in the existing reclassify branch so reanalyze respects the rule.
+
+### 7. Inbox visibility (`src/lib/search-scope.ts` + `search-scope.test.ts`)
+- `emailBelongsInScope` for the main inbox (`"all"`) currently hides mail whose folder has `auto_archive`/`hide_from_inbox`. Add: an email with `surfaced_to_inbox === true` bypasses that folder-flag check (still requires the `INBOX` label and `is_archived !== true`). Add `surfaced_to_inbox?: boolean` to `ScopeEmail` and cover it with tests.
+- Ensure the inbox email query selects `surfaced_to_inbox`.
+
+### 8. Folder editor UI (`src/components/folders/FolderEditor.tsx`)
+- Add the "Surface to inbox (AI)" textarea + names/aliases input bound to `local.surface_ai_rule` / `local.surface_names`, persisted in `save()`.
+- Add `surfaced_to_inbox` to `reasonLabel`/`reasonMeta` (e.g. label "Surfaced", inbox icon) so the badge renders.
+
+### 9. Verification
+- Typecheck touched files; run `search-scope` and `filter-engine` vitest suites.
+- Drive the live preview: open a folder, set a surface rule, confirm save; confirm existing folders without a rule behave exactly as before.

@@ -223,6 +223,146 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
 }
 
 /**
+ * The per-folder "surface to inbox" escape hatch. When a folder's
+ * deterministic rules routed an email there, this asks the AI whether
+ * that specific email should nonetheless stay visible in the inbox,
+ * based on the folder's natural-language surface rule and the user's
+ * identity (their own address(es) + any names/aliases). Returns a plain
+ * yes/no plus a short human-readable reason.
+ *
+ * Fails "safe" toward NOT surfacing: on any unrecoverable AI error the
+ * caller keeps the normal folder behavior (the email is filed as usual),
+ * so a flaky model call never floods the inbox.
+ */
+export async function shouldSurfaceToInbox(
+  email: {
+    from_addr: string;
+    from_name: string;
+    to_addrs: string;
+    cc?: string;
+    subject: string;
+    snippet: string;
+    body_text: string;
+  },
+  opts: {
+    folderName: string;
+    surfaceRule: string;
+    identityEmails: string[];
+    identityNames: string[];
+  },
+): Promise<{ surface: boolean; reason: string }> {
+  const schema = z.object({
+    surface: z
+      .boolean()
+      .describe("true = keep this email visible in the inbox; false = file it into the folder"),
+    reason: z
+      .string()
+      .transform((s) => s.slice(0, 200))
+      .describe("Short explanation of the decision (<=200 chars)"),
+  });
+  type Out = z.infer<typeof schema>;
+
+  const identityEmails = opts.identityEmails.filter(Boolean);
+  const identityNames = opts.identityNames.filter(Boolean);
+
+  function buildPrompt(trim: boolean): string {
+    const bodyLimit = trim ? 2000 : 4000;
+    return `An email was automatically filed into the folder "${opts.folderName}" by deterministic rules. Decide whether it should ALSO be surfaced to the user's inbox (kept visible) instead of being tucked away.
+
+Surface it ONLY when it matches the user's surface rule below. Otherwise leave it filed (surface = false).
+
+User's surface rule:
+${opts.surfaceRule}
+
+User's identity (treat these as "me"):
+- Email address(es): ${identityEmails.length ? identityEmails.join(", ") : "(none provided)"}
+- Name(s)/alias(es): ${identityNames.length ? identityNames.join(", ") : "(none provided)"}
+
+Email:
+From: ${email.from_name} <${email.from_addr}>
+To: ${email.to_addrs || "(unknown)"}
+Cc: ${email.cc || "(none)"}
+Subject: ${email.subject}
+Body:
+${(email.body_text || email.snippet || "").slice(0, bodyLimit)}
+
+Answer with the decision and a short reason.`;
+  }
+
+  const deadline = Date.now() + AI_CLASSIFY_TOTAL_BUDGET_MS;
+  const budgetLeft = () => deadline - Date.now();
+  let lastError = "";
+
+  async function tryStructured(modelId: string, trim: boolean): Promise<Out | null> {
+    try {
+      const { output } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          output: Output.object({ schema }),
+          prompt: buildPrompt(trim),
+        }),
+        Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
+        `surface structured (${modelId})`,
+      );
+      return output as Out;
+    } catch (e) {
+      lastError = (e as Error)?.message?.slice(0, 300) ?? "unknown";
+      console.error(`surface structured failed (${modelId})`, lastError);
+      return null;
+    }
+  }
+
+  async function tryTextJson(modelId: string, trim: boolean): Promise<Out | null> {
+    try {
+      const { text } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          prompt: `${buildPrompt(trim)}
+
+Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
+{"surface":<true|false>,"reason":"<<=200 chars>"}`,
+        }),
+        Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
+        `surface text-json (${modelId})`,
+      );
+      const cleaned = text
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```\s*$/i, "");
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      if (start < 0 || end <= start) {
+        lastError = `empty/non-JSON response (len=${text.length})`;
+        return null;
+      }
+      return schema.parse(JSON.parse(cleaned.slice(start, end + 1)));
+    } catch (e) {
+      lastError = (e as Error)?.message?.slice(0, 300) ?? "unknown";
+      console.error(`surface text-json failed (${modelId})`, lastError);
+      return null;
+    }
+  }
+
+  const cascade: Array<() => Promise<Out | null>> = [
+    () => tryStructured("google/gemini-2.5-flash-lite", false),
+    () => tryTextJson("google/gemini-2.5-flash-lite", false),
+    () => tryStructured("google/gemini-2.5-flash", false),
+    () => tryTextJson("google/gemini-2.5-flash", false),
+  ];
+
+  for (const attempt of cascade) {
+    if (budgetLeft() <= 0) break;
+    const out = await attempt();
+    if (out) return { surface: out.surface, reason: out.reason };
+  }
+
+  // Fail safe: keep normal folder behavior when the model can't answer.
+  console.error("surface decision returned no parseable response", lastError);
+  return { surface: false, reason: "" };
+}
+
+
+/**
  * Batch-classify multiple emails sharing the same folder set in a single
  * Gemini call. Returns one result per input email (in order). Used by the
  * backfill worker to amortize LLM round-trip latency across many messages.
