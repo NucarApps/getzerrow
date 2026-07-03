@@ -22,7 +22,7 @@
 import { classifyEmail } from "../ai.server";
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
-import { applyFilter, matchByFilters, labelOf } from "./filter-engine";
+import { applyFilter, matchByFilters, labelOf, emailVetoedForFolder } from "./filter-engine";
 import type { OverrideException } from "./types";
 
 export type ClassificationResult = {
