@@ -3594,13 +3594,14 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
           routed++;
         } else if (
           !result.folder_id &&
-          result.classified_by === "inbox_override" &&
+          (result.classified_by === "inbox_override" || result.classified_by === "excluded") &&
           email.folder_id
         ) {
-          // An always-inbox override now wins for this email, but it is sitting
-          // in a folder. Restore it to the inbox (same steps as the manual
-          // "Move to Inbox" action) so it shows up in the inbox view, which
-          // filters on the INBOX label + is_archived = false.
+          // The email no longer belongs in its current folder — either an
+          // always-inbox override now wins, or a deterministic exclude /
+          // allowlist rule vetoes the folder. Restore it to the inbox (same
+          // steps as the manual "Move to Inbox" action) so it shows up in the
+          // inbox view, which filters on the INBOX label + is_archived = false.
           let fromLabel: string | null = null;
           const { data: f } = await supabaseAdmin
             .from("folders")
