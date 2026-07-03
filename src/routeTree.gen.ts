@@ -45,6 +45,7 @@ import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/public/hooks/relearn-folders'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
+import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
 
 const TermsRoute = TermsRouteImport.update({
@@ -240,6 +241,12 @@ const ApiPublicHooksCheckFolderWriteAlertsRoute =
     path: '/api/public/hooks/check-folder-write-alerts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksCheckFolderRetryAlertsRoute =
+  ApiPublicHooksCheckFolderRetryAlertsRouteImport.update({
+    id: '/api/public/hooks/check-folder-retry-alerts',
+    path: '/api/public/hooks/check-folder-retry-alerts',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicOgCardHandleRoute = ApiPublicOgCardHandleRouteImport.update({
   id: '/api/public/og/card/$handle',
   path: '/api/public/og/card/$handle',
@@ -277,6 +284,7 @@ export interface FileRoutesByFullPath {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -315,6 +323,7 @@ export interface FileRoutesByTo {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
+  '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -355,6 +364,7 @@ export interface FileRoutesById {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -395,6 +405,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/logo'
     | '/contacts/'
+    | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
@@ -433,6 +444,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/logo'
     | '/contacts'
+    | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
@@ -472,6 +484,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/logo'
     | '/_authenticated/contacts/'
+    | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
@@ -503,6 +516,7 @@ export interface RootRouteChildren {
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
+  ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   ApiPublicHooksRelearnFoldersRoute: typeof ApiPublicHooksRelearnFoldersRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
@@ -765,6 +779,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/check-folder-retry-alerts': {
+      id: '/api/public/hooks/check-folder-retry-alerts'
+      path: '/api/public/hooks/check-folder-retry-alerts'
+      fullPath: '/api/public/hooks/check-folder-retry-alerts'
+      preLoaderRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/og/card/$handle': {
       id: '/api/public/og/card/$handle'
       path: '/api/public/og/card/$handle'
@@ -826,6 +847,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicLogoRoute: ApiPublicLogoRoute,
+  ApiPublicHooksCheckFolderRetryAlertsRoute:
+    ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
     ApiPublicHooksCheckFolderWriteAlertsRoute,
   ApiPublicHooksRelearnFoldersRoute: ApiPublicHooksRelearnFoldersRoute,

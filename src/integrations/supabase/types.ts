@@ -681,6 +681,30 @@ export type Database = {
           },
         ]
       }
+      folder_retry_alerts: {
+        Row: {
+          fired_at: string
+          folder_id: string | null
+          id: string
+          retry_count: number
+          window_minutes: number
+        }
+        Insert: {
+          fired_at?: string
+          folder_id?: string | null
+          id?: string
+          retry_count: number
+          window_minutes: number
+        }
+        Update: {
+          fired_at?: string
+          folder_id?: string | null
+          id?: string
+          retry_count?: number
+          window_minutes?: number
+        }
+        Relationships: []
+      }
       folder_summary_jobs: {
         Row: {
           created_at: string
@@ -832,6 +856,45 @@ export type Database = {
           gmail_account_id?: string | null
           id?: string
           occurred_at?: string
+          source?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      folder_write_retries: {
+        Row: {
+          attempts: number
+          correlation_id: string | null
+          error_code: string | null
+          folder_id: string | null
+          gmail_account_id: string | null
+          id: string
+          occurred_at: string
+          outcome: string
+          source: string | null
+          user_id: string | null
+        }
+        Insert: {
+          attempts: number
+          correlation_id?: string | null
+          error_code?: string | null
+          folder_id?: string | null
+          gmail_account_id?: string | null
+          id?: string
+          occurred_at?: string
+          outcome: string
+          source?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          attempts?: number
+          correlation_id?: string | null
+          error_code?: string | null
+          folder_id?: string | null
+          gmail_account_id?: string | null
+          id?: string
+          occurred_at?: string
+          outcome?: string
           source?: string | null
           user_id?: string | null
         }

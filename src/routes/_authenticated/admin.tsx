@@ -2,18 +2,23 @@ import { createFileRoute, redirect, isRedirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
-import { Shield, Mail, Users as UsersIcon, Inbox, AlertTriangle } from "lucide-react";
+import { Shield, Mail, Users as UsersIcon, Inbox, AlertTriangle, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getAdminMe,
   listAdminUsers,
   getAdminActivity,
+  getFolderRetryMetrics,
   type AdminUser,
+  type FolderRetryMetrics,
 } from "@/lib/admin.functions";
 
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
+  Legend,
   XAxis,
   YAxis,
   Tooltip,
@@ -69,6 +74,7 @@ function AdminPage() {
   const meFn = useServerFn(getAdminMe);
   const usersFn = useServerFn(listAdminUsers);
   const activityFn = useServerFn(getAdminActivity);
+  const retryFn = useServerFn(getFolderRetryMetrics);
 
   // The route's beforeLoad already gated this page to admins, so the user
   // here is guaranteed to be an admin.
@@ -86,6 +92,13 @@ function AdminPage() {
   const activityQ = useQuery({
     queryKey: ["admin-activity", 30],
     queryFn: () => activityFn({ data: { days: 30 } }),
+  });
+
+  const retryQ = useQuery({
+    queryKey: ["admin-folder-retry-metrics", 7],
+    queryFn: () => retryFn({ data: { days: 7 } }),
+    // Retry-rate is an instability signal — keep it reasonably fresh.
+    refetchInterval: 60_000,
   });
 
   const totals = useMemo(() => {
@@ -157,6 +170,9 @@ function AdminPage() {
             color="#6bd1e0"
           />
         </section>
+
+        {/* Folder learning health (retry-rate instability) */}
+        <RetryHealthSection q={retryQ} />
 
         {/* Users table */}
         <section>
@@ -282,6 +298,176 @@ function ActivityChart({
     </div>
   );
 }
+
+function RetryHealthSection({
+  q,
+}: {
+  q: { data?: FolderRetryMetrics; isLoading: boolean };
+}) {
+  const data = q.data;
+  const totals = data?.totals ?? { retries: 0, failed: 0, folders_affected: 0 };
+  const hasAlerts = (data?.recentAlerts.length ?? 0) > 0;
+
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex items-center gap-2">
+        <RefreshCw className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          Folder learning health
+        </h2>
+      </div>
+      <p className="mb-3 -mt-1 text-xs text-muted-foreground">
+        Retried example writes (last 7 days). A rising retry rate is the earliest sign of instability
+        — it surfaces before retries exhaust and learning stops.
+      </p>
+
+      {/* Alert banner when a retry-rate alert has fired recently */}
+      {hasAlerts && (
+        <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3">
+          <div className="mb-1 flex items-center gap-2 text-sm font-medium text-destructive">
+            <AlertTriangle className="h-4 w-4" />
+            Retry-rate alerts fired ({data?.recentAlerts.length})
+          </div>
+          <ul className="space-y-0.5 text-xs text-muted-foreground">
+            {(data?.recentAlerts ?? []).slice(0, 5).map((a, i) => (
+              <li key={`${a.folder_id ?? "null"}-${a.fired_at}-${i}`}>
+                <span className="text-foreground">{a.name}</span> — {a.retry_count} retries ·{" "}
+                {fmtDateTime(a.fired_at)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <StatCard
+          icon={<RefreshCw className="h-4 w-4" />}
+          label="Retried writes"
+          value={totals.retries}
+          loading={q.isLoading}
+        />
+        <StatCard
+          icon={<AlertTriangle className="h-4 w-4" />}
+          label="Eventual failures"
+          value={totals.failed}
+          loading={q.isLoading}
+        />
+        <StatCard
+          icon={<Inbox className="h-4 w-4" />}
+          label="Folders affected"
+          value={totals.folders_affected}
+          loading={q.isLoading}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Daily retries vs eventual failures */}
+        <div className="rounded-md border border-border bg-card/40 p-4">
+          <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+            Retries per day
+          </div>
+          <div className="h-48">
+            {q.isLoading ? (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                Loading…
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={data?.daily ?? []}
+                  margin={{ top: 8, right: 8, bottom: 0, left: -20 }}
+                >
+                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(v: string) => {
+                      const d = new Date(v);
+                      return `${d.getMonth() + 1}/${d.getDate()}`;
+                    }}
+                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                    stroke="hsl(var(--border))"
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                    stroke="hsl(var(--border))"
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: 6,
+                      fontSize: 12,
+                    }}
+                    labelFormatter={(v) => new Date(v as string).toLocaleDateString()}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="retries" name="Retried" fill="hsl(var(--primary))" radius={[2, 2, 0, 0]} />
+                  <Bar
+                    dataKey="failed"
+                    name="Failed"
+                    fill="hsl(var(--destructive))"
+                    radius={[2, 2, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Per-folder breakdown */}
+        <div className="rounded-md border border-border bg-card/40 p-4">
+          <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+            Retries by folder
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-1 text-left">Folder</th>
+                  <th className="px-2 py-1 text-right">Retries</th>
+                  <th className="px-2 py-1 text-right">Failed</th>
+                  <th className="px-2 py-1 text-right">Max attempts</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {q.isLoading && (
+                  <tr>
+                    <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
+                      Loading…
+                    </td>
+                  </tr>
+                )}
+                {!q.isLoading && (data?.byFolder.length ?? 0) === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
+                      No retries in the last {data?.days ?? 7} days — learning is stable.
+                    </td>
+                  </tr>
+                )}
+                {(data?.byFolder ?? []).map((f) => (
+                  <tr key={f.folder_id ?? "null"} className="hover:bg-accent/30">
+                    <td className="px-2 py-1 text-foreground">{f.name}</td>
+                    <td className="px-2 py-1 text-right">{f.retries}</td>
+                    <td
+                      className={
+                        "px-2 py-1 text-right " + (f.failed > 0 ? "text-destructive" : "")
+                      }
+                    >
+                      {f.failed}
+                    </td>
+                    <td className="px-2 py-1 text-right">{f.max_attempts}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function UserRow({ u }: { u: AdminUser }) {
   const accounts = u.gmail_accounts;
