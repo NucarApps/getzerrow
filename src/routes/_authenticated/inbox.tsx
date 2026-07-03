@@ -1181,6 +1181,18 @@ function InboxPage() {
             )}
           </div>
           <div className="flex items-center gap-1">
+            {currentFolderObj && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() => setConfirmReanalyzeFolder(true)}
+                disabled={reanalyzeFolderBusy}
+                title="Reanalyze folder"
+              >
+                <RotateCw className={`h-4 w-4 ${reanalyzeFolderBusy ? "animate-spin" : ""}`} />
+              </Button>
+            )}
             <Button
               size="icon"
               variant="ghost"
