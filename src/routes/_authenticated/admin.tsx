@@ -170,6 +170,9 @@ function AdminPage() {
           />
         </section>
 
+        {/* Folder learning health (retry-rate instability) */}
+        <RetryHealthSection q={retryQ} />
+
         {/* Users table */}
         <section>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
