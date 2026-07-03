@@ -162,6 +162,7 @@ export type EmailListRow = {
   raw_labels: string[] | null;
   snoozed_until: string | null;
   gmail_message_id: string | null;
+  surfaced_to_inbox: boolean;
 };
 
 export type EmailListScope = "all" | "all_mail" | "no_rules" | "folder";
