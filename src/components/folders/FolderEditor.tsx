@@ -731,6 +731,35 @@ export function FolderEditor({
             </label>
           </div>
 
+          <div className="mt-4 rounded-md border border-border p-3">
+            <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
+              <Inbox className="h-3 w-3" /> Surface to inbox (AI)
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Rules file mail here as usual, but let AI keep the ones meant for you visible in the
+              inbox (still filed in this folder). Leave blank to turn off.
+            </p>
+            <Textarea
+              className="mt-2"
+              rows={2}
+              placeholder="e.g. Keep it in my inbox when it's addressed specifically to me and mentions my name, or needs a personal reply."
+              value={local.surface_ai_rule ?? ""}
+              onChange={(e) => setLocal({ ...local, surface_ai_rule: e.target.value })}
+            />
+            <Label className="mt-3 block text-xs uppercase tracking-wider text-muted-foreground">
+              Names / aliases (optional)
+            </Label>
+            <Input
+              className="mt-1.5"
+              placeholder="e.g. Jane Doe, JD, jane"
+              value={local.surface_names ?? ""}
+              onChange={(e) => setLocal({ ...local, surface_names: e.target.value })}
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Matched alongside your connected Gmail address to recognize mail addressed to you.
+            </p>
+          </div>
+
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border p-3 text-sm">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">
