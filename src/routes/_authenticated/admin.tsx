@@ -93,6 +93,13 @@ function AdminPage() {
     queryFn: () => activityFn({ data: { days: 30 } }),
   });
 
+  const retryQ = useQuery({
+    queryKey: ["admin-folder-retry-metrics", 7],
+    queryFn: () => retryFn({ data: { days: 7 } }),
+    // Retry-rate is an instability signal — keep it reasonably fresh.
+    refetchInterval: 60_000,
+  });
+
   const totals = useMemo(() => {
     const users = usersQ.data?.users ?? [];
     let emails = 0;
