@@ -236,6 +236,28 @@ export async function insertFolderExampleEncrypted(input: {
     attempts: attempt,
   };
 
+  // Durable retry record (attempt > 1) feeding the retry-rate dashboard and the
+  // check-folder-retry-alerts cron. Only retried writes are recorded — retries
+  // are rare, so this stays small while surfacing instability before learning
+  // fully stops. Best-effort: a logging insert must never mask the write result.
+  if (attempt > 1) {
+    try {
+      await supabaseAdmin.from("folder_write_retries").insert({
+        user_id: input.user_id,
+        gmail_account_id: input.gmail_account_id,
+        folder_id: input.folder_id,
+        correlation_id,
+        source,
+        attempts: attempt,
+        outcome: error ? "failure" : "success",
+        error_code: error ? (pgErrorCode(error) ?? null) : null,
+      });
+    } catch (retryErr) {
+      logError("folder_write_retry.record_failed", { ...dims }, retryErr);
+    }
+  }
+
+
   if (error) {
     const error_code = pgErrorCode(error);
     logMetric("folder_example_write", { ...dims, outcome: "failure", error_code });

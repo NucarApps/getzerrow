@@ -170,3 +170,156 @@ export const getAdminActivity = createServerFn({ method: "GET" })
       emails: series.map((r) => ({ date: r.day, count: Number(r.emails) })),
     };
   });
+
+// ─── Folder-write retry-rate metrics (instability dashboard) ────────────────
+
+export type RetryDailyPoint = { date: string; retries: number; failed: number };
+
+export type RetryFolderRow = {
+  folder_id: string | null;
+  name: string;
+  retries: number;
+  failed: number;
+  max_attempts: number;
+  last_at: string;
+};
+
+export type RetryAlertRow = {
+  folder_id: string | null;
+  name: string;
+  retry_count: number;
+  fired_at: string;
+};
+
+export type FolderRetryMetrics = {
+  days: number;
+  totals: { retries: number; failed: number; folders_affected: number };
+  daily: RetryDailyPoint[];
+  byFolder: RetryFolderRow[];
+  recentAlerts: RetryAlertRow[];
+};
+
+function dayKey(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/**
+ * Aggregate the durable folder_write_retries log into a dashboard view: a daily
+ * retries/failed series, a per-folder breakdown, and recently-fired retry
+ * alerts. Retries are rare, so fetching the (retention-bounded) window and
+ * aggregating in memory is cheap and avoids a bespoke SQL function.
+ */
+export const getFolderRetryMetrics = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { days?: number } | undefined) =>
+    z.object({ days: z.number().int().min(1).max(30).optional() }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }): Promise<FolderRetryMetrics> => {
+    assertAdmin(context.claims);
+    const days = data.days ?? 7;
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+
+    const [retryRes, alertRes] = await Promise.all([
+      supabaseAdmin
+        .from("folder_write_retries")
+        .select("folder_id, occurred_at, attempts, outcome")
+        .gte("occurred_at", since)
+        .order("occurred_at", { ascending: false })
+        .limit(10000),
+      supabaseAdmin
+        .from("folder_retry_alerts")
+        .select("folder_id, retry_count, fired_at")
+        .gte("fired_at", since)
+        .order("fired_at", { ascending: false })
+        .limit(200),
+    ]);
+    if (retryRes.error) throw new Error(retryRes.error.message);
+    if (alertRes.error) throw new Error(alertRes.error.message);
+
+    const retries = (retryRes.data ?? []) as Array<{
+      folder_id: string | null;
+      occurred_at: string;
+      attempts: number;
+      outcome: string;
+    }>;
+    const alerts = (alertRes.data ?? []) as Array<{
+      folder_id: string | null;
+      retry_count: number;
+      fired_at: string;
+    }>;
+
+    // Resolve folder names for display.
+    const folderIds = new Set<string>();
+    for (const r of retries) if (r.folder_id) folderIds.add(r.folder_id);
+    for (const a of alerts) if (a.folder_id) folderIds.add(a.folder_id);
+    const nameById = new Map<string, string>();
+    if (folderIds.size > 0) {
+      const { data: folders, error: folderErr } = await supabaseAdmin
+        .from("folders")
+        .select("id, name")
+        .in("id", Array.from(folderIds));
+      if (folderErr) throw new Error(folderErr.message);
+      for (const f of folders ?? []) nameById.set(f.id, f.name);
+    }
+    const displayName = (id: string | null): string =>
+      id ? (nameById.get(id) ?? "(deleted folder)") : "(no folder)";
+
+    // Daily series (fill every day so the chart has no gaps).
+    const dailyMap = new Map<string, RetryDailyPoint>();
+    for (let i = days - 1; i >= 0; i--) {
+      const key = dayKey(new Date(Date.now() - i * 86_400_000).toISOString());
+      dailyMap.set(key, { date: key, retries: 0, failed: 0 });
+    }
+    // Per-folder aggregation.
+    const folderMap = new Map<string, RetryFolderRow>();
+    let totalRetries = 0;
+    let totalFailed = 0;
+
+    for (const r of retries) {
+      const isFailed = r.outcome === "failure";
+      totalRetries += 1;
+      if (isFailed) totalFailed += 1;
+
+      const dKey = dayKey(r.occurred_at);
+      const point = dailyMap.get(dKey);
+      if (point) {
+        point.retries += 1;
+        if (isFailed) point.failed += 1;
+      }
+
+      const fKey = r.folder_id ?? "null";
+      const attempts = Number.isFinite(r.attempts) ? r.attempts : 0;
+      const existing = folderMap.get(fKey);
+      if (existing) {
+        existing.retries += 1;
+        if (isFailed) existing.failed += 1;
+        if (attempts > existing.max_attempts) existing.max_attempts = attempts;
+        if (r.occurred_at > existing.last_at) existing.last_at = r.occurred_at;
+      } else {
+        folderMap.set(fKey, {
+          folder_id: r.folder_id ?? null,
+          name: displayName(r.folder_id ?? null),
+          retries: 1,
+          failed: isFailed ? 1 : 0,
+          max_attempts: attempts,
+          last_at: r.occurred_at,
+        });
+      }
+    }
+
+    const byFolder = Array.from(folderMap.values()).sort((a, b) => b.retries - a.retries);
+    const recentAlerts: RetryAlertRow[] = alerts.map((a) => ({
+      folder_id: a.folder_id ?? null,
+      name: displayName(a.folder_id ?? null),
+      retry_count: Number(a.retry_count),
+      fired_at: a.fired_at,
+    }));
+
+    return {
+      days,
+      totals: { retries: totalRetries, failed: totalFailed, folders_affected: byFolder.length },
+      daily: Array.from(dailyMap.values()),
+      byFolder,
+      recentAlerts,
+    };
+  });

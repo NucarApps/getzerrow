@@ -2,18 +2,22 @@ import { createFileRoute, redirect, isRedirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
-import { Shield, Mail, Users as UsersIcon, Inbox, AlertTriangle } from "lucide-react";
+import { Shield, Mail, Users as UsersIcon, Inbox, AlertTriangle, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getAdminMe,
   listAdminUsers,
   getAdminActivity,
+  getFolderRetryMetrics,
   type AdminUser,
 } from "@/lib/admin.functions";
 
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
+  Legend,
   XAxis,
   YAxis,
   Tooltip,
