@@ -73,6 +73,7 @@ function AdminPage() {
   const meFn = useServerFn(getAdminMe);
   const usersFn = useServerFn(listAdminUsers);
   const activityFn = useServerFn(getAdminActivity);
+  const retryFn = useServerFn(getFolderRetryMetrics);
 
   // The route's beforeLoad already gated this page to admins, so the user
   // here is guaranteed to be an admin.
