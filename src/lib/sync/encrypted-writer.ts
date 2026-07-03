@@ -170,6 +170,18 @@ export async function insertFolderExampleEncrypted(input: {
   const source = input.source ?? "seed";
   const t0 = Date.now();
 
+  // IDEMPOTENCY / DEDUPLICATION
+  // ---------------------------
+  // (folder_id, gmail_message_id) is the idempotency key for a folder example:
+  // `folder_examples` has a UNIQUE(folder_id, gmail_message_id) constraint and
+  // `insert_folder_example_encrypted` does `ON CONFLICT (folder_id,
+  // gmail_message_id) DO UPDATE`. Every retry below re-sends the SAME natural
+  // key, so a write that actually committed but returned a transient error
+  // (e.g. a dropped connection after commit) is upserted in place on retry —
+  // it can never create a duplicate encrypted example. No separate idempotency
+  // token is needed because the logical identity of an example is fully
+  // captured by (folder_id, gmail_message_id).
+  //
   // Retry transient DB hiccups (dropped connections, deadlocks, pool
   // exhaustion) with exponential backoff so occasional blips don't halt
   // learning. Permanent errors (schema mismatch, constraint violations) are
