@@ -494,6 +494,7 @@ function InboxPage() {
   const cursor = cursors[page - 1] ?? null;
 
   const reclassifyFn = useServerFn(reclassifyEmails);
+  const listFolderEmailIdsFn = useServerFn(listFolderEmailIds);
   const suggestFolderFn = useServerFn(suggestFolderFromSelection);
   const createFolderAndAssignFn = useServerFn(createFolderAndAssign);
   const [suggestion, setSuggestion] = useState<null | {
