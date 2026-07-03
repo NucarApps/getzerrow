@@ -48,7 +48,7 @@ import { getRequestHost } from "@tanstack/react-start/server";
 import { logError, logAudit } from "./log.server";
 import { removeLabelsFromCurrent } from "./sync/label-merge";
 import { buildGmailQueries } from "./sync/gmail-query-builder";
-import { matchByFilters } from "./sync/filter-engine";
+import { matchByFilters, emailVetoedForFolder } from "./sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "./sync/types";
 import {
   upsertEmailEncrypted,
@@ -1707,7 +1707,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_id: string }) => z.object({ email_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { classifyParsedEmail } = await import("./sync.server");
+    const { classifyParsedEmail, loadAccountContext } = await import("./sync.server");
     const { rows } = await getEmailsDecrypted([data.email_id]);
     const email = rows[0];
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
@@ -1731,8 +1731,10 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       raw_labels: (email.raw_labels as string[] | null) ?? null,
     };
 
+    const accountContext = await loadAccountContext(email.gmail_account_id, context.userId);
     const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, {
       skipGmailLabelMatch: true,
+      context: accountContext,
     });
 
     // Always make sure we have a summary on the row after Reanalyze, even when
@@ -1808,9 +1810,72 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       };
     }
 
+    // The email's current folder now REJECTS this sender via its own
+    // deterministic rules (a domain_in allowlist or a not_contains/not_equals
+    // exclude). This is independent of the AI pass, so a flaky AI run can't
+    // trigger it. Evict to the inbox using the same steps as the inbox_override
+    // branch and the bulk reclassify path, so Gmail stays in sync and the next
+    // sync won't revert it. Mirrors reclassifyEmails, so the single-email
+    // Re-analyze and bulk Re-classify buttons agree.
+    if (
+      result.folder_id === null &&
+      email.folder_id &&
+      result.classified_by !== "ai_error" &&
+      emailVetoedForFolder(parsed, email.folder_id, accountContext.filters)
+    ) {
+      const { data: f } = await supabaseAdmin
+        .from("folders")
+        .select("gmail_label_id, name")
+        .eq("id", email.folder_id)
+        .maybeSingle();
+      const fromLabel = f?.gmail_label_id ?? null;
+      const fromName = f?.name ?? null;
+
+      const currentLabels = ((email.raw_labels as string[] | null) ?? []) as string[];
+      const nextLabels = Array.from(
+        new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
+      );
+
+      const reason = fromName
+        ? `Removed from "${fromName}" — sender excluded by folder rule`
+        : "Removed from folder — sender excluded by folder rule";
+
+      await updateEmailEncrypted({
+        email_id: email.id,
+        classification_reason: reason,
+        ai_summary: summary || "",
+      });
+      await supabaseAdmin
+        .from("emails")
+        .update({
+          folder_id: null,
+          is_archived: false,
+          classified_by: "excluded",
+          ai_confidence: 1,
+          matched_filter_ids: [],
+          raw_labels: nextLabels,
+        })
+        .eq("id", email.id);
+
+      try {
+        await modifyMessage(emailAccountId, emailMessageId, ["INBOX"], fromLabel ? [fromLabel] : []);
+      } catch (e) {
+        logError("gmail.reanalyze.inbox_restore_label_failed", { email_id: emailId }, e);
+      }
+
+      return {
+        ok: true,
+        folder_id: null,
+        folder_name: null,
+        classified_by: "excluded",
+        classification_reason: reason,
+        changed: true,
+      };
+    }
+
     // If the classifier didn't pick a folder and the email already has one,
     // keep the current assignment regardless of WHY the classifier abstained
-    // (AI no-match, excluded by rule, global override, etc.). Reanalyze should
+    // (AI no-match, global override, etc.). Reanalyze should
     // only move emails to a better folder, never silently clear them.
     if (result.folder_id === null && email.folder_id) {
       await updateEmailEncrypted({
