@@ -196,10 +196,15 @@ export function classifyByRules(
   };
 }
 
-/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai. */
-function aiCandidateFolders(context: AccountContext) {
+/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai and
+ * minus any folder whose allowlist / exclusion rules the email violates (so
+ * the AI classifier can never place mail into a folder its own hard rules
+ * would reject). */
+function aiCandidateFolders(parsed: ParsedEmailForClassify, context: AccountContext) {
   const skipAiIds = new Set(context.folders.filter((f) => f.skip_ai).map((f) => f.id));
-  return context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
+  return context.enrichedFolders.filter(
+    (f) => !skipAiIds.has(f.id) && !emailVetoedForFolder(parsed, f.id, context.filters),
+  );
 }
 
 /** AI fallback pass. Call only when classifyByRules returned
