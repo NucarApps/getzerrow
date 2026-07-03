@@ -3603,6 +3603,32 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
 
 // ─── Bulk actions on the "No rules" view ────────────────────────────────────
 
+export const listFolderEmailIds = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) =>
+    z.object({ folder_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    // Verify the folder belongs to the caller before listing its emails.
+    const { data: folder, error: folderError } = await supabaseAdmin
+      .from("folders")
+      .select("id")
+      .eq("id", data.folder_id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (folderError) throw folderError;
+    if (!folder) return { ids: [] as string[] };
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("emails")
+      .select("id")
+      .eq("folder_id", data.folder_id)
+      .eq("user_id", context.userId);
+    if (error) throw error;
+
+    return { ids: (rows ?? []).map((r) => r.id as string) };
+  });
+
 export const reclassifyEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_ids: string[] }) =>
