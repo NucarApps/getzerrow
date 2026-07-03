@@ -1707,7 +1707,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_id: string }) => z.object({ email_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { classifyParsedEmail } = await import("./sync.server");
+    const { classifyParsedEmail, loadAccountContext } = await import("./sync.server");
     const { rows } = await getEmailsDecrypted([data.email_id]);
     const email = rows[0];
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
@@ -1731,8 +1731,10 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       raw_labels: (email.raw_labels as string[] | null) ?? null,
     };
 
+    const accountContext = await loadAccountContext(email.gmail_account_id, context.userId);
     const result = await classifyParsedEmail(parsed, context.userId, email.gmail_account_id, {
       skipGmailLabelMatch: true,
+      context: accountContext,
     });
 
     // Always make sure we have a summary on the row after Reanalyze, even when
