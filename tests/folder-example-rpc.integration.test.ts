@@ -146,4 +146,33 @@ d("insert_folder_example_encrypted (live RPC regression)", () => {
     expect(rows[0].snippet).toBe("Snippet Two");
     expect(rows[0].source).toBe("correction");
   });
+
+  it("is idempotent under a retry storm: repeated identical writes never duplicate", async () => {
+    // Simulate the client-side retry loop firing the SAME logical write many
+    // times — e.g. a write that committed but returned a transient error, so
+    // `insertFolderExampleEncrypted` retries with the identical natural key.
+    // (folder_id, gmail_message_id) is the idempotency key, so every one of
+    // these must upsert in place: exactly one row, ever.
+    const ids = new Set<string>();
+    for (let i = 0; i < 5; i++) {
+      const res = await callRpc("Retry Subject", "Retry Snippet", "correction");
+      expect(res.rows[0].id, "each retry must return the upserted row id").toBeTruthy();
+      ids.add(res.rows[0].id as string);
+    }
+
+    // ON CONFLICT DO UPDATE returns the SAME row id every time — proof the
+    // retries hit one physical row rather than inserting new ones.
+    expect(ids.size, "all retries must resolve to a single row id").toBe(1);
+
+    const count = await client.query(
+      `SELECT count(*)::int AS n FROM public.folder_examples WHERE folder_id = $1`,
+      [FOLDER_ID],
+    );
+    expect(count.rows[0].n, "retry storm must not create duplicate examples").toBe(1);
+
+    const rows = await decryptedRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].subject).toBe("Retry Subject");
+    expect(rows[0].snippet).toBe("Retry Snippet");
+  });
 });
