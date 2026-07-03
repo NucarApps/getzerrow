@@ -12,6 +12,7 @@ export type EmailRow = {
   gmail_account_id?: string | null;
   raw_labels?: string[] | null;
   classified_by?: string | null;
+  surfaced_to_inbox?: boolean | null;
   folder?: {
     auto_archive?: boolean | null;
     hide_from_inbox?: boolean | null;
