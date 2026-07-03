@@ -250,6 +250,7 @@ export async function insertFolderExampleEncrypted(input: {
         folder_id: input.folder_id,
         error_code: error_code ?? null,
         source,
+        correlation_id,
       });
     } catch (logErr) {
       logError("folder_write_failure.record_failed", { ...dims, error_code }, logErr);
