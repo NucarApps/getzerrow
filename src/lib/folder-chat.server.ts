@@ -181,7 +181,10 @@ User's new message:
 "${args.userMessage}"
 
 Action types (all scoped to THIS folder):
-- add_filter: add a filter rule. Fields: from (sender address), domain (bare domain like "acme.com"), subject. Ops: contains, equals, starts_with.
+- add_filter: add a DETERMINISTIC filter rule (evaluated before the AI classifier). Fields: from (sender address), domain (bare sender domain like "acme.com"), subject. Ops:
+    - contains, equals, starts_with — positive INCLUDE match (route mail here when it matches).
+    - not_contains, not_equals — hard EXCLUDE: veto this folder when the field contains/equals the value. Use field "domain" to block a specific external domain.
+    - domain_in — ALLOWLIST: use with field "domain" and a comma-separated list of allowed domains (e.g. "acme.com,acme.co.uk"). Vetoes the folder for ANY sender whose domain is not in the list. This is the correct tool for "only our internal domains" / "no external senders".
 - remove_filter: remove an existing filter by filter_id (only from the list above).
 - update_folder_rule: replace the folder's short natural-language AI rule.
 - update_folder_profile: rewrite the folder's longer learned profile (the description that steers the AI classifier). Use to fix classifier drift — e.g. to explicitly EXCLUDE a class of mail that keeps getting misfiled.
@@ -189,10 +192,12 @@ Action types (all scoped to THIS folder):
 
 Guidelines:
 - Propose the smallest set of changes that fulfills the request.
+- CRITICAL: When the user wants to include or exclude mail based on sender or domain (e.g. "only internal domains", "no law firms", "keep external senders out"), create a DETERMINISTIC add_filter (domain_in allowlist, or not_contains/not_equals exclude) — do NOT rely on update_folder_rule / update_folder_profile text, because the AI classifier can ignore that guidance. Filter rules are enforced; profile text is only a hint.
 - Map color names to sensible hex values (e.g. green → "#22c55e", blue → "#3b82f6", red → "#ef4444").
 - Never invent filter_ids — only use ids from the list above.
 - Put a short, concrete reason in each action's "why".
 - "reply" is a short friendly summary. "clarifying_question" is a single short question only if you truly cannot proceed, otherwise empty.
+
 
 Prefer calling the propose_changes tool. Only reply in plain text if you genuinely need a clarifying question and cannot express it via the tool's clarifying_question field.${args.extraReminder ? `\n${args.extraReminder}` : ""}`;
 }
