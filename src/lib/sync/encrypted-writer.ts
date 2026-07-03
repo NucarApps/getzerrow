@@ -6,7 +6,11 @@
 // Phase 2 = dual-write: the RPCs populate BOTH plaintext and `*_enc`
 // columns. Phase 3 will stop writing plaintext and drop those columns.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { logError, logMetric } from "@/lib/log.server";
+import { logError, logInfo, logMetric } from "@/lib/log.server";
+import { backoffDelayMs, isTransientWriteError, sleep } from "@/lib/folder-write-retry";
+
+/** Max attempts (1 initial + retries) for a folder_example_write. */
+const FOLDER_WRITE_MAX_ATTEMPTS = 3;
 
 /** Postgres SQLSTATE from a Supabase RPC error, if present (e.g. "42703"). */
 function pgErrorCode(err: unknown): string | undefined {
