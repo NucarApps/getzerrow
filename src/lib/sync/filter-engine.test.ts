@@ -9,6 +9,9 @@ import {
   labelOf,
   collectMatchingLeaves,
   EXCLUDE_OPS,
+  parseDomainList,
+  filterVetoes,
+  emailVetoedForFolder,
   type EmailForFilter,
 } from "./filter-engine";
 import type { Filter, Folder, RuleNode } from "./types";
