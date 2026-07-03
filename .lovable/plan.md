@@ -1,67 +1,44 @@
-# Folder settings chat with AI-proposed changes
+# Fix: "internal domains only" folders must hard-block external senders
 
-Add a **Chat** tab inside the folder editor where you can describe what you want, and the AI proposes concrete changes to *that folder's* settings, rules, and filters. Nothing is written until you review each proposed change and approve it — matching the existing inbox assistant's approve-then-apply flow.
+## Why the chat fix didn't stick
 
-## What the chat can change
+Laura Steinberg (`lsteinberg@sullivanlaw.com`) was filed into **GM Responses** by the **AI classifier** (`classified_by = ai`, confidence **1.0**) — not by a rule.
 
-Scoped to the folder you're editing:
-- **AI rule** (short natural-language rule) and **learned profile** (longer classifier description)
-- **Filters** — add or remove field/op/value rules
-- **Behavior toggles** — auto-archive, auto mark-read, auto-star, hide from inbox, rules-only (skip AI), beat "always send to inbox", cold-email folder
-- **Delivery settings** — auto-forward address, snooze-on-arrival hours, min AI confidence, filter match logic (any/all)
-- **Basics** — name, color, priority
+Your chat edit turned "only internal domains" into **soft AI guidance**: it rewrote the folder's `ai_rule` and `learned_profile` ("STRICTLY INTERNAL ONLY… exclude sullivanlaw.com…") and set `min_ai_confidence` to 0.99. Those are hints the model can ignore — and it did, returning 1.0 confidence, which passes the 0.99 gate. Nothing deterministically stops an external sender.
 
-## User experience
+Root cause: the folder chat can only create *include* filters (`contains` / `equals` / `starts_with`). It has no way to create a hard exclusion or an allowlist, so every "exclude" request degrades into fuzzy AI text.
 
-```text
-Folder editor
- ├─ Settings tab
- ├─ History tab
- └─ Chat tab  ← new
-      • Message thread (you ↔ assistant)
-      • Assistant replies + a "Proposed changes" card
-        each change has a checkbox + plain-language description + reason
-      • [Discard]   [Apply selected]
-      • Composer textarea + send
-```
+## What I'll build
 
-Examples the user can type:
-- "Also auto-archive everything here and hide it from my inbox."
-- "Rename this to Receipts and make the color green."
-- "Stop letting human replies land here — tighten the rule."
-- "Forward everything in this folder to billing@acme.com and snooze for 24 hours."
+### 1. A deterministic "internal domains" allowlist (the guarantee)
+Add a new filter operator, **`domain_in`**, whose value is a comma-separated domain allowlist (e.g. `dcd.auto,nucar.com,nucarpulse.com,intervaleproperties.com`). It acts as a **veto**: if the sender's domain is not in the list, the folder is hard-blocked — before the AI classifier ever runs. This automatically catches any future external domain, not just the law firms you named.
 
-On **Apply selected**, approved changes save, the folder editor's Settings tab reflects the new values immediately, and folder lists refresh.
+Plus the named exclusions you asked for as an extra layer: hard `not_contains` rules on `domain` for `sullivanlaw.com`, `ycst.com`, `bakertilly.com`, `clerq.io`.
 
-## Technical plan
+### 2. Upgrade the folder chat to create hard rules
+Teach the chat's `add_filter` action to emit the exclusion operators (`domain_in` allowlist, plus `not_contains` / `not_equals`), and steer the model to prefer a deterministic rule over AI-text guidance whenever the user asks to include/exclude by sender or domain. Result: next time you say "only our internal domains," it becomes an enforced filter, not a hint.
 
-### New server functions — `src/lib/folder-chat.functions.ts`
-Dedicated, single-folder scoped (kept separate from the inbox assistant which is account-wide).
+### 3. Apply it to GM Responses and reprocess
+Add the allowlist + named exclusions to the GM Responses folder now, then re-run classification on the affected emails so Laura's message (and any other external-domain mail) leaves the folder immediately.
 
-- `proposeFolderChanges({ folder_id, user_message, history })`
-  1. Verify the folder belongs to `context.userId` (via `supabaseAdmin`), load all its columns + its `folder_filters` + a small sample of recent emails currently in it (decrypted through `getEmailsDecrypted`, same pattern as the inbox assistant).
-  2. Build a prompt describing the folder's current settings, filters, and definitions of each setting, then call the Lovable AI Gateway with an OpenAI-style `propose_changes` tool (flat JSON-schema object, like `ai-assistant.server.ts`).
-  3. Return `{ reply, clarifying_question, actions }`.
-- `applyFolderChanges({ folder_id, actions })`
-  - Verify folder ownership once, then apply each approved action; return per-action `{ ok, error }` results.
+## Technical details
 
-### Action types (single folder)
-- `add_filter` / `remove_filter` — reuse existing folder-filter logic (dedupe + ownership checks).
-- `update_folder_rule` — set `ai_rule`.
-- `update_folder_profile` — set `learned_profile`.
-- `update_folder_settings` — a patch of optional fields: `name`, `color`, `priority`, `auto_archive`, `auto_mark_read`, `auto_star`, `hide_from_inbox`, `skip_ai`, `overrides_inbox_override`, `is_cold_email`, `forward_to`, `snooze_hours`, `min_ai_confidence`, `filter_logic`. Values are clamped/validated server-side (confidence 0–1, snooze 0–720, forward_to trimmed/nullable, color hex, etc.). The tool schema exposes each as an optional property so the model only sets what it wants to change.
+- **`src/lib/sync/filter-engine.ts`**
+  - `applyFilter`: add `domain_in` — split `value` on commas, trim, and match the sender domain against the set. (`domain` field already resolves to `from_addr`'s domain.)
+  - Exclude/veto handling: generalize the veto so `domain_in` vetoes when the domain is *not* in the list (currently the veto only understands `not_contains`/`not_equals`). Add `domain_in` to the exclude-op set with its own "veto when predicate fails" semantics.
+  - Keep the module pure (no Supabase imports), per project rules.
+  - Extend `filter-engine.test.ts`: allowlist veto blocks external domains, admits internal ones, and produces a `kind: "excluded"` result (which sets `aiSkipped`, so AI never runs).
 
-### Server prompt/model
-- New `src/lib/folder-chat.server.ts` modeled on `ai-assistant.server.ts`: builds the prompt, defines the flat tool schema, calls the gateway (`google/gemini-3-flash-preview`), validates with Zod (loose parse → drop invalid actions), one retry on schema failure, and graceful 402/429 messages. Read-only — never writes.
+- **`src/lib/folder-chat.server.ts`** — extend the `add_filter` op enum to include `domain_in`, `not_contains`, `not_equals`; document them in the prompt and instruct the model to prefer a deterministic filter for domain/sender include-or-exclude requests instead of `update_folder_rule`/`update_folder_profile`.
 
-### UI — `src/components/folders/FolderChatPanel.tsx`
-- Chat thread + proposed-changes cards with checkboxes, reusing the interaction pattern from `AssistantPanel.tsx` (turns state, select/apply/discard, "Thinking…" indicator, Enter-to-send).
-- `describeAction` renders each change in plain language, including a per-field summary for `update_folder_settings` (e.g. "Turn on auto-archive · Set color to green · Rename to Receipts").
-- After apply: invalidate `["folders"]` / `["folders-full"]` / `["folder-filters", folderId]`, and lift the applied settings back into the editor via an `onApplied(patch)` callback so the Settings tab updates without a remount.
+- **`src/lib/folder-chat.functions.ts`** — mirror the op enum in `actionInputSchema`; normalize `domain_in` values (lowercase, strip `@`, dedupe) on insert.
 
-### Wire into `FolderEditor.tsx`
-- Add a third `TabsTrigger`/`TabsContent` ("Chat") and render `<FolderChatPanel folder={local} onApplied={(patch) => setLocal((p) => ({ ...p, ...patch }))} />`.
+- **`src/components/folders/FolderEditor.tsx`** / **`FolderChatPanel.tsx`** — add `domain_in` ("sender domain is one of") to the operator picker and render it in proposed-change previews, so the same rule is visible and editable in the manual UI.
 
-### Notes
-- No new DB tables or migrations — all fields already exist on `folders` / `folder_filters`.
-- Follows project rules: AI only via the gateway server-side, ownership verified with `supabaseAdmin`, no client AI calls.
+- **Data change (GM Responses)** — insert one `domain_in` filter with the four internal domains, plus `not_contains` filters for the four external domains. Optionally relax `min_ai_confidence` back from 0.99 (the allowlist is now the real guard) — I'll confirm the value with you before changing it.
+
+- **Reprocess** — invoke the existing `reclassifyEmails` path for GM Responses so already-misfiled external mail is re-evaluated against the new deterministic rule and removed from the folder.
+
+## Scope notes
+- The allowlist keys on the **sender** domain (deterministic and reliable). Recipient-based "all To/Cc must be internal" is fuzzier and out of scope unless you want it.
+- No new tables; `folder_filters` has no op CHECK constraint, so the new operator needs no migration — only app-layer validation.
