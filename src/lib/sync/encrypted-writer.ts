@@ -7,10 +7,13 @@
 // columns. Phase 3 will stop writing plaintext and drop those columns.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logError, logInfo, logMetric } from "@/lib/log.server";
-import { backoffDelayMs, isTransientWriteError, sleep } from "@/lib/folder-write-retry";
+import {
+  backoffDelayMs,
+  isTransientWriteError,
+  resolveRetryConfig,
+  sleep,
+} from "@/lib/folder-write-retry";
 
-/** Max attempts (1 initial + retries) for a folder_example_write. */
-const FOLDER_WRITE_MAX_ATTEMPTS = 3;
 
 /** Postgres SQLSTATE from a Supabase RPC error, if present (e.g. "42703"). */
 function pgErrorCode(err: unknown): string | undefined {
@@ -182,14 +185,13 @@ export async function insertFolderExampleEncrypted(input: {
   // token is needed because the logical identity of an example is fully
   // captured by (folder_id, gmail_message_id).
   //
-  // Retry transient DB hiccups (dropped connections, deadlocks, pool
-  // exhaustion) with exponential backoff so occasional blips don't halt
-  // learning. Permanent errors (schema mismatch, constraint violations) are
-  // NOT retried — they fail identically every time and should alert fast.
+  // Retry policy is read from the environment at call time so max attempts and
+  // backoff base can be tuned without a redeploy (see resolveRetryConfig).
+  const { maxAttempts, baseMs } = resolveRetryConfig();
   let data: unknown = null;
   let error: { message: string; code?: string } | null = null;
   let attempt = 0;
-  while (attempt < FOLDER_WRITE_MAX_ATTEMPTS) {
+  while (attempt < maxAttempts) {
     attempt++;
     const res = await supabaseAdmin.rpc("insert_folder_example_encrypted", {
       p_user_id: input.user_id,
@@ -205,8 +207,8 @@ export async function insertFolderExampleEncrypted(input: {
     data = res.data;
     error = res.error;
     if (!error) break;
-    if (attempt >= FOLDER_WRITE_MAX_ATTEMPTS || !isTransientWriteError(error)) break;
-    const delayMs = backoffDelayMs(attempt);
+    if (attempt >= maxAttempts || !isTransientWriteError(error)) break;
+    const delayMs = backoffDelayMs(attempt, { baseMs });
     logInfo("folder_example_write.retry", {
       folder_id: input.folder_id,
       gmail_account_id: input.gmail_account_id,
