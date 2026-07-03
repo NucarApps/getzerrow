@@ -51,7 +51,14 @@ const actionInputSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("add_filter"),
     field: z.enum(["from", "domain", "subject"]),
-    op: z.enum(["contains", "equals", "starts_with"]),
+    op: z.enum([
+      "contains",
+      "equals",
+      "starts_with",
+      "not_contains",
+      "not_equals",
+      "domain_in",
+    ]),
     value: z.string().min(1).max(400),
     why: z.string().max(400).optional().default(""),
   }),
