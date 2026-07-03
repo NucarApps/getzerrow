@@ -996,6 +996,7 @@ const reasonMeta: Record<string, { label: string; tone: ReasonTone; Icon: typeof
   filter: { label: "Rule", tone: "rule", Icon: FilterIcon },
   domain_rule: { label: "Domain rule", tone: "rule", Icon: FilterIcon },
   gmail_label: { label: "Gmail label", tone: "label", Icon: Tag },
+  surfaced_to_inbox: { label: "Surfaced", tone: "label", Icon: Inbox },
   none: { label: "Imported", tone: "muted", Icon: Inbox },
 };
 const toneClass: Record<ReasonTone, string> = {
