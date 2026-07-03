@@ -76,7 +76,17 @@ d("insert_folder_example_encrypted (live RPC regression)", () => {
       `SELECT public.insert_folder_example_encrypted(
          $1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text, $7::text, $8::text, $9::text
        ) AS id`,
-      [USER_ID, ACCOUNT_ID, FOLDER_ID, MESSAGE_ID, "from@example.com", subject, snippet, source, ENC_KEY],
+      [
+        USER_ID,
+        ACCOUNT_ID,
+        FOLDER_ID,
+        MESSAGE_ID,
+        "from@example.com",
+        subject,
+        snippet,
+        source,
+        ENC_KEY,
+      ],
     );
   }
 
