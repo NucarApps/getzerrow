@@ -1633,6 +1633,7 @@ export type Database = {
           snippet: string
           snoozed_until: string
           subject: string
+          surfaced_to_inbox: boolean
           thread_id: string
           to_addrs: string
         }[]
