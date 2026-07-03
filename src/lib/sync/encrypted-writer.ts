@@ -185,14 +185,13 @@ export async function insertFolderExampleEncrypted(input: {
   // token is needed because the logical identity of an example is fully
   // captured by (folder_id, gmail_message_id).
   //
-  // Retry transient DB hiccups (dropped connections, deadlocks, pool
-  // exhaustion) with exponential backoff so occasional blips don't halt
-  // learning. Permanent errors (schema mismatch, constraint violations) are
-  // NOT retried — they fail identically every time and should alert fast.
+  // Retry policy is read from the environment at call time so max attempts and
+  // backoff base can be tuned without a redeploy (see resolveRetryConfig).
+  const { maxAttempts, baseMs } = resolveRetryConfig();
   let data: unknown = null;
   let error: { message: string; code?: string } | null = null;
   let attempt = 0;
-  while (attempt < FOLDER_WRITE_MAX_ATTEMPTS) {
+  while (attempt < maxAttempts) {
     attempt++;
     const res = await supabaseAdmin.rpc("insert_folder_example_encrypted", {
       p_user_id: input.user_id,
