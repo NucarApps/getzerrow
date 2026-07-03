@@ -287,8 +287,8 @@ export const applyFolderChanges = createServerFn({ method: "POST" })
 // Clamp/normalize the AI-proposed settings patch to safe DB values.
 function buildSettingsPatch(
   s: Extract<FolderChatAction, { type: "update_folder_settings" }>["settings"],
-): Record<string, unknown> {
-  const patch: Record<string, unknown> = {};
+): FolderUpdate {
+  const patch: FolderUpdate = {};
   if (s.name !== undefined) patch.name = s.name.trim();
   if (s.color !== undefined) patch.color = s.color;
   if (s.priority !== undefined) patch.priority = Math.max(0, Math.min(1000, Math.round(s.priority)));
