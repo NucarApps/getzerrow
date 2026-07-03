@@ -926,8 +926,10 @@ export function FolderEditor({
           <ScanGmailSection
             folder={local}
             hasIncludeRules={
-              filters.some((f) => f.op !== "not_contains" && f.op !== "not_equals") ||
-              !!local.filter_tree
+              filters.some(
+                (f) =>
+                  f.op !== "not_contains" && f.op !== "not_equals" && f.op !== "domain_in",
+              ) || !!local.filter_tree
             }
           />
 
