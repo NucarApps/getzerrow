@@ -17,6 +17,7 @@ import {
   searchGmailAndIngest,
   resyncMessage,
   reclassifyEmails,
+  listFolderEmailIds,
   suggestFolderFromSelection,
   createFolderAndAssign,
   reconcileInboxFromGmail,
