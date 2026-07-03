@@ -248,14 +248,11 @@ export function matchByFilters(
     }
     if (!passes) continue;
 
-    // An exclude filter VETOes the folder when its *positive* condition holds:
+    // An exclude filter VETOes the folder when its positive condition holds:
     //   not_contains X → veto if the field contains X
     //   not_equals   X → veto if the field equals X
-    // (applyFilter returns the literal predicate, so checking it directly would
-    // invert the veto — fire when the value is absent.)
-    const excludeHit = excludes.find((f) =>
-      applyFilter(email, { ...f, op: f.op === "not_contains" ? "contains" : "equals" }),
-    );
+    //   domain_in  list → veto if the sender domain is NOT in the allowlist
+    const excludeHit = excludes.find((f) => filterVetoes(email, f));
     if (excludeHit) {
       excludedFolders.push({ folder, exclude: excludeHit });
       continue;
