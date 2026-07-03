@@ -172,6 +172,10 @@ export async function insertFolderExampleEncrypted(input: {
 }): Promise<{ id: string | null; error: string | null }> {
   const source = input.source ?? "seed";
   const t0 = Date.now();
+  // One id per logical folder_example_write, stamped on every retry attempt's
+  // log line plus the terminal metric / error / failure record, so all events
+  // for a single write can be traced end-to-end.
+  const correlation_id = crypto.randomUUID();
 
   // IDEMPOTENCY / DEDUPLICATION
   // ---------------------------
