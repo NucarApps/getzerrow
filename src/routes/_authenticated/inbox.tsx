@@ -939,6 +939,52 @@ function InboxPage() {
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
 
+  const runReanalyzeFolder = async () => {
+    if (!currentFolderObj) return;
+    const folderName = currentFolderObj.name;
+    setReanalyzeFolderBusy(true);
+    const toastId = toast.loading(`Reanalyzing ${folderName}…`);
+    try {
+      const { ids } = await listFolderEmailIdsFn({
+        data: { folder_id: currentFolderObj.id },
+      });
+      if (ids.length === 0) {
+        toast.message(`${folderName} has no emails to reanalyze.`, { id: toastId });
+        return;
+      }
+      const chunkSize = 100;
+      let routed = 0;
+      let unchanged = 0;
+      let failed = 0;
+      let processed = 0;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        try {
+          const r = await reclassifyFn({ data: { email_ids: chunk } });
+          routed += r?.routed ?? 0;
+          unchanged += r?.unchanged ?? 0;
+          failed += r?.failed ?? 0;
+        } catch {
+          failed += chunk.length;
+        }
+        processed += chunk.length;
+        toast.loading(`Reanalyzing ${folderName}… ${processed} / ${ids.length}`, {
+          id: toastId,
+        });
+      }
+      toast.success(
+        `Reanalyzed ${folderName} · ${routed} routed, ${unchanged} unchanged${failed ? `, ${failed} failed` : ""}`,
+        { id: toastId },
+      );
+      await qc.invalidateQueries({ queryKey: ["emails"] });
+      await qc.invalidateQueries({ queryKey: ["folder-counts"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reanalyze failed", { id: toastId });
+    } finally {
+      setReanalyzeFolderBusy(false);
+    }
+  };
+
   const pullOlderMut = useMutation({
     mutationFn: async () => {
       if (!currentFolderObj?.gmail_label_id)
