@@ -10,6 +10,7 @@ import {
   getAdminActivity,
   getFolderRetryMetrics,
   type AdminUser,
+  type FolderRetryMetrics,
 } from "@/lib/admin.functions";
 
 import {
