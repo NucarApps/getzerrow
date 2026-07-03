@@ -777,6 +777,63 @@ export type Database = {
         }
         Relationships: []
       }
+      folder_write_alerts: {
+        Row: {
+          error_code: string
+          failure_count: number
+          fired_at: string
+          folder_id: string | null
+          id: string
+          window_minutes: number
+        }
+        Insert: {
+          error_code: string
+          failure_count: number
+          fired_at?: string
+          folder_id?: string | null
+          id?: string
+          window_minutes: number
+        }
+        Update: {
+          error_code?: string
+          failure_count?: number
+          fired_at?: string
+          folder_id?: string | null
+          id?: string
+          window_minutes?: number
+        }
+        Relationships: []
+      }
+      folder_write_failures: {
+        Row: {
+          error_code: string | null
+          folder_id: string | null
+          gmail_account_id: string | null
+          id: string
+          occurred_at: string
+          source: string | null
+          user_id: string | null
+        }
+        Insert: {
+          error_code?: string | null
+          folder_id?: string | null
+          gmail_account_id?: string | null
+          id?: string
+          occurred_at?: string
+          source?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          error_code?: string | null
+          folder_id?: string | null
+          gmail_account_id?: string | null
+          id?: string
+          occurred_at?: string
+          source?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       folders: {
         Row: {
           ai_rule: string | null

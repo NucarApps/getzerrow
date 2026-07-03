@@ -190,6 +190,20 @@ export async function insertFolderExampleEncrypted(input: {
     const error_code = pgErrorCode(error);
     logMetric("folder_example_write", { ...dims, outcome: "failure", error_code });
     logError("folder_example_write.failed", { ...dims, error_code }, error);
+    // Durable failure record so the check-folder-write-alerts cron can detect
+    // spikes by (error_code, folder_id) and page us. Best-effort: a logging
+    // insert must never mask the original write failure.
+    try {
+      await supabaseAdmin.from("folder_write_failures").insert({
+        user_id: input.user_id,
+        gmail_account_id: input.gmail_account_id,
+        folder_id: input.folder_id,
+        error_code: error_code ?? null,
+        source,
+      });
+    } catch (logErr) {
+      logError("folder_write_failure.record_failed", { ...dims, error_code }, logErr);
+    }
     return { id: null, error: error.message };
   }
 
