@@ -106,6 +106,7 @@ const reasonLabel: Record<string, string> = {
   domain_rule: "Domain rule",
   manual_move: "Moved manually",
   ai: "AI",
+  surfaced_to_inbox: "Surfaced",
   none: "Unclassified",
 };
 
