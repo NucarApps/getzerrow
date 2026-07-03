@@ -207,8 +207,8 @@ export async function insertFolderExampleEncrypted(input: {
     data = res.data;
     error = res.error;
     if (!error) break;
-    if (attempt >= FOLDER_WRITE_MAX_ATTEMPTS || !isTransientWriteError(error)) break;
-    const delayMs = backoffDelayMs(attempt);
+    if (attempt >= maxAttempts || !isTransientWriteError(error)) break;
+    const delayMs = backoffDelayMs(attempt, { baseMs });
     logInfo("folder_example_write.retry", {
       folder_id: input.folder_id,
       gmail_account_id: input.gmail_account_id,
