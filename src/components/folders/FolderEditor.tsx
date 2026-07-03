@@ -65,6 +65,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { FolderChatPanel } from "./FolderChatPanel";
 
 export type RuleNode =
   | { type: "group"; op: "and" | "or"; children: RuleNode[] }
@@ -417,6 +418,9 @@ export function FolderEditor({
           <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="history">
             <History className="mr-1.5 h-3.5 w-3.5" /> History
+          </TabsTrigger>
+          <TabsTrigger value="chat">
+            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Chat
           </TabsTrigger>
         </TabsList>
 
@@ -944,6 +948,13 @@ export function FolderEditor({
             historyFn={historyFn}
             suggestFn={suggestFn}
             applyFn={applyFn}
+          />
+        </TabsContent>
+
+        <TabsContent value="chat" className="mt-4">
+          <FolderChatPanel
+            folder={local}
+            onApplied={(patch) => setLocal((p) => ({ ...p, ...patch }))}
           />
         </TabsContent>
       </Tabs>
