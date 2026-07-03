@@ -216,7 +216,7 @@ export async function classifyByAi(
   base: ClassificationResult,
 ): Promise<ClassificationResult> {
   const out: ClassificationResult = { ...base };
-  const aiFolders = aiCandidateFolders(context);
+  const aiFolders = aiCandidateFolders(parsed, context);
   if (aiFolders.length === 0) return out;
   try {
     const r = await classifyEmail(parsed, aiFolders);
