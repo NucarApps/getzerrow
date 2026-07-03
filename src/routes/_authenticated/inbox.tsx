@@ -1931,7 +1931,24 @@ function InboxPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={confirmReanalyzeFolder} onOpenChange={setConfirmReanalyzeFolder}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reanalyze {currentFolderObj?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every email in this folder will be reclassified. Emails whose sender your folder
+              rules no longer allow will be moved to a better folder or back to the inbox. This may
+              take a moment for large folders.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => runReanalyzeFolder()}>Reanalyze</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+
   );
 }
 
