@@ -228,6 +228,7 @@ export async function insertFolderExampleEncrypted(input: {
   // Metadata-only observability (no email content) so we can alert the moment
   // folder learning stops persisting examples again. See log.server.logMetric.
   const dims = {
+    correlation_id,
     folder_id: input.folder_id,
     gmail_account_id: input.gmail_account_id,
     source,
