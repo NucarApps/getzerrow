@@ -46,6 +46,7 @@ import { Route as ApiPublicHooksScheduleMeetingBotsRouteImport } from './routes/
 import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/public/hooks/relearn-folders'
+import { Route as ApiPublicHooksReconcileMeetingsRouteImport } from './routes/api/public/hooks/reconcile-meetings'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
 import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
@@ -248,6 +249,12 @@ const ApiPublicHooksRelearnFoldersRoute =
     path: '/api/public/hooks/relearn-folders',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksReconcileMeetingsRoute =
+  ApiPublicHooksReconcileMeetingsRouteImport.update({
+    id: '/api/public/hooks/reconcile-meetings',
+    path: '/api/public/hooks/reconcile-meetings',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksCheckFolderWriteAlertsRoute =
   ApiPublicHooksCheckFolderWriteAlertsRouteImport.update({
     id: '/api/public/hooks/check-folder-write-alerts',
@@ -300,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
@@ -341,6 +349,7 @@ export interface FileRoutesByTo {
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
@@ -384,6 +393,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
@@ -427,6 +437,7 @@ export interface FileRouteTypes {
     | '/contacts/'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
@@ -468,6 +479,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
@@ -510,6 +522,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
@@ -544,6 +557,7 @@ export interface RootRouteChildren {
   ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  ApiPublicHooksReconcileMeetingsRoute: typeof ApiPublicHooksReconcileMeetingsRoute
   ApiPublicHooksRelearnFoldersRoute: typeof ApiPublicHooksRelearnFoldersRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
   ApiPublicHooksRunFolderSummaryJobsRoute: typeof ApiPublicHooksRunFolderSummaryJobsRoute
@@ -813,6 +827,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksRelearnFoldersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/reconcile-meetings': {
+      id: '/api/public/hooks/reconcile-meetings'
+      path: '/api/public/hooks/reconcile-meetings'
+      fullPath: '/api/public/hooks/reconcile-meetings'
+      preLoaderRoute: typeof ApiPublicHooksReconcileMeetingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/check-folder-write-alerts': {
       id: '/api/public/hooks/check-folder-write-alerts'
       path: '/api/public/hooks/check-folder-write-alerts'
@@ -893,6 +914,7 @@ const rootRouteChildren: RootRouteChildren = {
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
     ApiPublicHooksCheckFolderWriteAlertsRoute,
+  ApiPublicHooksReconcileMeetingsRoute: ApiPublicHooksReconcileMeetingsRoute,
   ApiPublicHooksRelearnFoldersRoute: ApiPublicHooksRelearnFoldersRoute,
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
   ApiPublicHooksRunFolderSummaryJobsRoute:

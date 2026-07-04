@@ -25,7 +25,7 @@ export const Route = createFileRoute("/api/public/hooks/reconcile-meetings")({
             .select("id, user_id, recall_bot_id, status")
             .not("recall_bot_id", "is", null)
             .in("status", ["scheduled", "joining", "recording"])
-            .lte("scheduled_start", cutoff)
+            .or(`scheduled_start.is.null,scheduled_start.lte.${cutoff}`)
             .order("updated_at", { ascending: true })
             .limit(MAX_PER_RUN);
 
