@@ -1,64 +1,30 @@
-# Add meeting recording, transcript & summary (Recall.ai)
+## Problem
 
-Add a new **Meetings** section to Zerrow. Users paste a Zoom/Meet/Teams link (or let Zerrow auto-join meetings from their connected Google Calendar) and a Recall.ai bot joins, records, transcribes, and summarizes. Recordings, transcripts, and summaries are viewable in-app and linked to the matching CRM contacts.
+When recording a meeting, the link field only accepts a bare URL (e.g. `https://meet.google.com/abc-defg-hij`). You pasted the whole calendar invite text ("Chris Dagesse has invited you to join a video meeting…"), which isn't a bare URL, so:
 
-## What the user gets
+1. Validation rejected it as an "Unsupported meeting link".
+2. The raw validation error (the big JSON blob in your screenshot) was shown instead of a plain-English message.
 
-- A **Meetings** nav item with a list of past/upcoming/in-progress meetings.
-- **Paste a link** to send a bot to any live/upcoming meeting.
-- **Auto-join** toggle: Zerrow scans upcoming calendar events, finds the meeting URL, and schedules a bot to join at start time.
-- A meeting detail view: video/audio playback, full transcript, and Recall-generated summary.
-- Meeting summaries surfaced on the related **contact** pages.
+## Fix
 
-## How it works
+Make the link field forgiving: pull the real Zoom/Meet/Teams/Webex URL out of whatever text is pasted, and surface clean error messages.
 
-```text
-Paste link  ─┐
-             ├─► create Recall bot ─► bot joins & records
-Calendar tick┘                              │
-                                            ▼
-        Recall webhook (status + done) ─► store recording/transcript/summary
-                                            │
-                                            ▼
-            match attendees → link to contacts → show in Meetings + Contacts
-```
+### 1. Extract the URL from pasted text
+Add a small helper that scans any pasted string for the first supported meeting URL (Zoom, Google Meet, Teams, Webex) and returns just that link. Invite emails and calendar blurbs almost always contain the actual join URL somewhere in the text — this grabs it automatically.
 
-- **Summary engine: Recall only.** We use Recall's transcription + meeting-intelligence output for both transcript and summary — no Lovable AI in this path.
-- Follows existing patterns: push (webhook) + cron reconcile fallback, exactly like the Gmail sync pipeline. All `/api/public/*` mutation endpoints verify a secret, never the publishable key.
+- Used on the client the moment text is entered/pasted, so the field self-corrects to the clean link.
+- Also applied server-side in `recordFromLink` before validation, as a safety net.
 
-## Setup this requires (I'll walk you through in build)
+### 2. Friendly, specific errors
+- If no supported link can be found in the pasted text, show: "We couldn't find a supported meeting link. Paste a Zoom, Google Meet, or Microsoft Teams link." — instead of the raw validation JSON.
+- Keep the existing "Could not start the recording bot…" message for real bot failures.
 
-- A **Recall.ai API key** (stored as `RECALL_API_KEY`), the Recall **region** (`RECALL_REGION`), and a **webhook signing secret** (`RECALL_WEBHOOK_SECRET`). Recall isn't a Lovable connector, so this is a custom secret you'll paste.
-- One config step in your Recall dashboard: point Recall's webhook at Zerrow's endpoint (I'll give you the exact URL).
-- A cron schedule (pg_cron) for the calendar auto-join + reconcile ticks, matching the app's other hooks.
+### 3. Small UX touches on the Record dialog
+- Show a subtle inline hint under the field once a link is detected ("Detected Google Meet link ✓") so it's clear the paste worked.
+- Trim/normalize the value before sending.
 
-## Scope of changes
+## Technical details
 
-### Database (migration)
-- `meetings` table: `id`, `user_id`, `gmail_account_id` (nullable), `recall_bot_id`, `title`, `meeting_url`, `platform`, `status` (`scheduled|joining|recording|done|failed`), `scheduled_start`, `started_at`, `ended_at`, `recording_url`, `transcript` (jsonb), `summary` (text), `source` (`link|calendar`), `calendar_event_id` (nullable, for dedupe), timestamps.
-- `meeting_participants` table: `meeting_id`, `email`, `name`, `contact_id` (nullable FK to `contacts`).
-- RLS scoped to `auth.uid() = user_id`; participants scoped through their meeting. `GRANT` statements for `authenticated` + `service_role` on both tables (service_role for webhook/cron writes).
-- `gmail_accounts`: add `auto_record_meetings boolean default false` for the per-account auto-join toggle (reuses existing `calendar_access`).
-
-### Server logic
-- `src/lib/recall.server.ts` — Recall REST client (region-aware base URL): `createBot`, `getBot`, `getTranscript`, `getSummary`. Reads `RECALL_API_KEY` inside functions.
-- `src/lib/meetings.functions.ts` — `createServerFn` (auth): `recordFromLink`, `listMeetings`, `getMeeting`, `deleteMeeting`, `setAutoRecord`.
-- `src/lib/meetings-autojoin.server.ts` — list upcoming calendar events (reuse `calendar.server.ts` + `google-oauth.server.ts`), extract Meet/Zoom/Teams URLs, schedule bots with `join_at`, dedupe on `calendar_event_id`.
-- `src/lib/meetings-link.server.ts` — match participant emails to existing `contacts` and populate `contact_id`.
-
-### Public endpoints (`src/routes/api/public/`)
-- `recall-webhook.ts` — verifies Recall's Svix signature (`RECALL_WEBHOOK_SECRET`); on status/`done` events updates the meeting, stores recording URL, transcript, summary, and links participants to contacts.
-- `hooks/schedule-meeting-bots.ts` — cron tick (CRON_SECRET): auto-join scan for accounts with `auto_record_meetings`.
-- `hooks/reconcile-meetings.ts` — cron tick: poll Recall for any non-terminal meetings as a webhook fallback.
-
-### Frontend
-- `src/routes/_authenticated/meetings.tsx` — list + "Record a meeting" (paste link) dialog + detail view (playback, transcript, summary). Uses React Query, service layer via server functions.
-- Add **Meetings** nav button (Video icon) in `src/routes/_authenticated._authenticated.tsx` sidebar.
-- Contact detail (`ContactDetailView.tsx`): a "Meetings" block listing linked meetings/summaries.
-- Settings → Accounts: an **Auto-record meetings** toggle per Gmail account (next to the calendar guard card), gated on calendar access.
-
-## Notes / decisions
-
-- Meeting media stays on Recall (we store the URL Recall returns), keeping storage light.
-- Transcript stored as jsonb (speaker-segmented) for rendering; summary stored as text from Recall's output.
-- If you later want an email digest of summaries, that's a small add on top of this — out of scope for now per your choice of "view in app + attach to contacts".
+- `src/lib/meetings.functions.ts`: add an `extractMeetingUrl(text)` helper (shared, pure regex over the existing `MEETING_URL_RE` pattern, made global to search anywhere in the string). In `recordFromLink`, run the raw input through it before Zod validation; on validation failure throw a clean message rather than letting the Zod error propagate.
+- `src/routes/_authenticated/meetings.tsx` (`RecordDialog`): run the input through the same extractor on change, store the cleaned URL, show the detected-platform hint, and map failures to the friendly toast text. Disable "Send notetaker" until a valid link is detected.
+- No database or schema changes; recording/transcription pipeline is untouched.
