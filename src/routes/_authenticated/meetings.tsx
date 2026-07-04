@@ -25,7 +25,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download } from "lucide-react";
 
 const TERMINAL = new Set(["done", "failed"]);
 
