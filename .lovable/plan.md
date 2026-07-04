@@ -1,30 +1,23 @@
-## Problem
+## Plan
 
-Clicking play on a finished meeting does nothing. Root causes, in order of impact:
+1. **Make the recording state explicit**
+   - Show a clear message when a meeting is marked done but there is no playable recording URL.
+   - Show whether Zerrow found transcript/summary content so you can tell if anything was captured.
 
-1. **Inline playback is blocked.** The player is `<video src={recording_url} controls />` with no `playsInline`. The preview runs inside an iframe, and on a narrow/mobile viewport the browser wants to hand off to fullscreen playback, which is blocked in the iframe — so the tap appears to do nothing.
-2. **Fragile source.** The S3 file is served as `binary/octet-stream` (not `video/mp4`) and there's no `<source type>` hint or fallback link, so any browser that's strict about MIME type silently fails.
-3. **The signed URL expires.** Recall's recording URL is a short-lived signed S3 link (this meeting's expires ~6h after it ended). We store it once at completion, so re-opening the meeting later loads a dead URL and playback breaks again — even though the recording still exists on Recall.
-4. **Missing transcript/summary.** For the existing finished meeting, `transcript` and `summary` are `null` (captions weren't ready the instant it hit "done"), and nothing re-pulls them for an already-`done` meeting.
+2. **Improve playback fallback**
+   - Keep the inline video player, but add a visible fallback when the browser cannot load/play it.
+   - Add a primary “Open recording” action so the raw recording can be tested outside the embedded preview.
 
-## Fix
+3. **Expose refresh errors instead of silently ignoring them**
+   - If refreshing the signed recording URL fails, show a friendly error in the meeting dialog.
+   - Add a manual “Refresh recording” action for completed meetings.
 
-### 1. Make the player actually play (frontend)
-In the meeting detail dialog, update the `<video>`:
-- Add `playsInline`, `controls`, `preload="metadata"`.
-- Use a child `<source src={url} type="video/mp4" />` so the browser gets a format hint.
-- Add a guaranteed fallback below the player: an **"Open recording in new tab"** link and a **Download** link (an `<a href>` always works regardless of inline-playback quirks).
+4. **Backend refresh hardening**
+   - During refresh, verify whether Recall actually reports a video recording and transcript.
+   - Return lightweight recording diagnostics to the UI: has recording URL, has transcript, has summary.
 
-### 2. Always load a fresh recording URL + backfill transcript/summary (server)
-Add an authenticated `refreshRecording({ id })` server function that, for a `done` meeting with a `recall_bot_id`:
-- Re-pulls the bot from Recall and extracts a **fresh** signed recording URL, writes it back.
-- If `transcript`/`summary` are still null, fetches the transcript and builds the summary now (reusing the existing Recall helpers), and links participants to contacts.
-- Returns the fresh `recording_url` (and updated fields).
+## Technical notes
 
-In the detail dialog, when a `done` meeting opens, call `refreshRecording` and use the returned fresh URL for the player (falling back to the stored one while it loads). This fixes expiry permanently and fills in the missing transcript/summary for the current meeting.
-
-## Technical details
-
-- `src/routes/_authenticated/meetings.tsx` (`MeetingDetail`): switch the `<video>` to `playsInline`/`preload="metadata"` with a `<source type="video/mp4">`; add Open/Download `<a>` links; add a `useServerFn(refreshRecording)` call in an effect that runs when a `done` meeting is opened, storing the returned URL in local state and invalidating `["meeting", id]` when transcript/summary come back. No change to the "Refresh status" button already added for non-terminal meetings.
-- `src/lib/meetings.functions.ts`: add `refreshRecording` (`requireSupabaseAuth`, RLS-scoped ownership check, dynamic `import("./meetings.server")`). Add a small server helper in `src/lib/meetings.server.ts` (e.g. `refreshMeetingRecording`) that fetches the bot, extracts the recording URL, and backfills transcript/summary/contacts for an already-`done` row — mirroring the tail of `syncMeetingFromRecall` without regressing status.
-- No database or schema changes; recording pipeline, webhook, and reconcile cron untouched.
+- Files to change: `src/routes/_authenticated/meetings.tsx`, `src/lib/meetings.functions.ts`, `src/lib/meetings.server.ts`.
+- No database schema changes.
+- No changes to the recording start flow unless diagnostics show Recall never produced media.

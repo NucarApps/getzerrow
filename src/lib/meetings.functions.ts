@@ -188,7 +188,9 @@ export const refreshRecording = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
-    if (!meeting.recall_bot_id) return { recordingUrl: null };
+    if (!meeting.recall_bot_id) {
+      return { recordingUrl: null, hasRecording: false, hasTranscript: false, hasSummary: false };
+    }
     // Dynamic import keeps the service-role module out of the client bundle.
     const { refreshMeetingRecording } = await import("./meetings.server");
     return refreshMeetingRecording(meeting.id);
