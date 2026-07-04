@@ -142,19 +142,39 @@ function MeetingsPage() {
   );
 }
 
+const PLATFORM_LABEL: Record<string, string> = {
+  zoom: "Zoom",
+  google_meet: "Google Meet",
+  teams: "Microsoft Teams",
+  webex: "Webex",
+};
+
+function platformOf(url: string): string | null {
+  if (/zoom\.us/i.test(url)) return "zoom";
+  if (/meet\.google\.com/i.test(url)) return "google_meet";
+  if (/teams\.(microsoft|live)\.com/i.test(url)) return "teams";
+  if (/webex\.com/i.test(url)) return "webex";
+  return null;
+}
+
 function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const record = useServerFn(recordFromLink);
   const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
+  const [rawInput, setRawInput] = useState("");
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const detectedUrl = useMemo(() => extractMeetingUrl(rawInput), [rawInput]);
+  const detectedPlatform = detectedUrl ? platformOf(detectedUrl) : null;
+  const showInvalidHint = rawInput.trim().length > 0 && !detectedUrl;
+
   async function submit() {
+    if (!detectedUrl) return;
     setBusy(true);
     try {
-      await record({ data: { meetingUrl: url.trim(), title: title.trim() || undefined } });
+      await record({ data: { meetingUrl: detectedUrl, title: title.trim() || undefined } });
       toast.success("Notetaker is joining the meeting");
-      setUrl("");
+      setRawInput("");
       setTitle("");
       setOpen(false);
       onRecorded();
@@ -175,8 +195,8 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
         <DialogHeader>
           <DialogTitle>Record a meeting</DialogTitle>
           <DialogDescription>
-            Paste a Zoom, Google Meet, or Microsoft Teams link. A notetaker bot joins, records, and
-            transcribes the call.
+            Paste a Zoom, Google Meet, or Microsoft Teams link — or the whole invite. A notetaker bot
+            joins, records, and transcribes the call.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -184,11 +204,21 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
             <Label htmlFor="meeting-url">Meeting link</Label>
             <Input
               id="meeting-url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://zoom.us/j/…"
+              value={rawInput}
+              onChange={(e) => setRawInput(e.target.value)}
+              placeholder="https://zoom.us/j/… or paste the invite"
               autoComplete="off"
             />
+            {detectedPlatform && (
+              <p className="text-xs text-primary">
+                Detected {PLATFORM_LABEL[detectedPlatform] ?? "meeting"} link ✓
+              </p>
+            )}
+            {showInvalidHint && (
+              <p className="text-xs text-muted-foreground">
+                No supported link found yet. Paste a Zoom, Google Meet, or Microsoft Teams link.
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="meeting-title">Title (optional)</Label>
@@ -205,7 +235,7 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
           <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={busy || url.trim().length === 0}>
+          <Button onClick={submit} disabled={busy || !detectedUrl}>
             {busy ? "Starting…" : "Send notetaker"}
           </Button>
         </DialogFooter>
