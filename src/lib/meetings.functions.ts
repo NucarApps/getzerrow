@@ -76,6 +76,35 @@ export const listMeetings = createServerFn({ method: "GET" })
     return { meetings: data ?? [] };
   });
 
+/** List meetings a given contact participated in. */
+export const listMeetingsForContact = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ contactId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: parts, error } = await context.supabase
+      .from("meeting_participants")
+      .select(
+        "meeting_id, meetings!inner(id, title, status, scheduled_start, created_at, summary)",
+      )
+      .eq("contact_id", data.contactId);
+    if (error) throw new Error(error.message);
+    type Row = {
+      meetings: {
+        id: string;
+        title: string | null;
+        status: string;
+        scheduled_start: string | null;
+        created_at: string;
+        summary: string | null;
+      };
+    };
+    const meetings = (parts as unknown as Row[] | null)?.map((p) => p.meetings) ?? [];
+    meetings.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    return { meetings };
+  });
+
+
+
 /** Fetch one meeting with its participants. */
 export const getMeeting = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
