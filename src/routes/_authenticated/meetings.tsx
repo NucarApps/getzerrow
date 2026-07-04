@@ -313,6 +313,26 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, status, q.dataUpdatedAt]);
 
+  // When a finished meeting opens, fetch a fresh signed recording URL (the
+  // stored one expires) and backfill transcript/summary if they never landed.
+  useEffect(() => {
+    setFreshUrl(null);
+    if (!id || !status || !TERMINAL.has(status)) return;
+    let cancelled = false;
+    void refreshRec({ data: { id } })
+      .then((r) => {
+        if (cancelled) return;
+        if (r.recordingUrl) setFreshUrl(r.recordingUrl);
+        // Transcript/summary may have been backfilled — pull the latest row.
+        qc.invalidateQueries({ queryKey: ["meeting", id] });
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, status]);
+
   async function onRefresh() {
     if (!id) return;
     setRefreshing(true);
