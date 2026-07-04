@@ -276,8 +276,12 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const getFn = useServerFn(getMeeting);
   const del = useServerFn(deleteMeeting);
   const sync = useServerFn(syncMeeting);
+  const refreshRec = useServerFn(refreshRecording);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // A freshly-signed recording URL fetched when the meeting opens; the stored
+  // one in the DB is short-lived and may already be expired.
+  const [freshUrl, setFreshUrl] = useState<string | null>(null);
 
   const q = useQuery({
     queryKey: ["meeting", id],
