@@ -320,7 +320,12 @@ export const setEventExclusion = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAccount(context.supabase, data.accountId);
+    const { data: acct } = await context.supabase
+      .from("gmail_accounts")
+      .select("id")
+      .eq("id", data.accountId)
+      .maybeSingle();
+    if (!acct) throw new Error("Account not found");
     if (data.excluded) {
       const { error } = await context.supabase.from("meeting_autojoin_exclusions").upsert(
         {
