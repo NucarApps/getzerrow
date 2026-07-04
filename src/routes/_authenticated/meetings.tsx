@@ -443,7 +443,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                   <div className="space-y-1">
                     <p className="font-medium text-foreground">Recording status</p>
                     <p className="text-muted-foreground">
-                      Recording {diagnostics?.hasRecording || recordingUrl ? "found" : "not found yet"} · Transcript {diagnostics?.hasTranscript || transcript.length > 0 ? "found" : "not found yet"} · Summary {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
+                      Recording {hasRecording ? "found" : "not found yet"} · Transcript {diagnostics?.hasTranscript || transcript.length > 0 ? "found" : "not found yet"} · Summary {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" onClick={onRefreshRecording} disabled={refreshing}>
