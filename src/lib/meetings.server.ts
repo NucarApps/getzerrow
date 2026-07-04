@@ -139,14 +139,24 @@ export function isTerminalCode(code: string | null): boolean {
  */
 export async function refreshMeetingRecording(
   meetingId: string,
-): Promise<{ recordingUrl: string | null }> {
+): Promise<{
+  recordingUrl: string | null;
+  hasRecording: boolean;
+  hasTranscript: boolean;
+  hasSummary: boolean;
+}> {
   const { data: meeting } = await supabaseAdmin
     .from("meetings")
     .select("id, user_id, recall_bot_id, recording_url, transcript, summary")
     .eq("id", meetingId)
     .maybeSingle();
   if (!meeting?.recall_bot_id) {
-    return { recordingUrl: meeting?.recording_url ?? null };
+    return {
+      recordingUrl: meeting?.recording_url ?? null,
+      hasRecording: !!meeting?.recording_url,
+      hasTranscript: !!meeting?.transcript,
+      hasSummary: !!meeting?.summary,
+    };
   }
 
   let bot: RecallBot;
@@ -154,12 +164,19 @@ export async function refreshMeetingRecording(
     bot = await getBot(meeting.recall_bot_id);
   } catch (e) {
     logError("meeting_refresh_getbot_failed", { meetingId }, e);
-    return { recordingUrl: meeting.recording_url ?? null };
+    return {
+      recordingUrl: meeting.recording_url ?? null,
+      hasRecording: !!meeting.recording_url,
+      hasTranscript: !!meeting.transcript,
+      hasSummary: !!meeting.summary,
+    };
   }
 
   const update: MeetingUpdate = {};
   const freshUrl = extractRecordingUrl(bot);
   if (freshUrl) update.recording_url = freshUrl;
+  let hasTranscript = !!meeting.transcript;
+  let hasSummary = !!meeting.summary;
 
   // Backfill transcript/summary only if they never landed.
   if (!meeting.transcript || !meeting.summary) {
@@ -168,6 +185,8 @@ export async function refreshMeetingRecording(
       if (segments.length) {
         update.transcript = segments as unknown as MeetingUpdate["transcript"];
         update.summary = summarizeTranscript(segments);
+        hasTranscript = true;
+        hasSummary = !!update.summary;
       }
     } catch (e) {
       logError("meeting_refresh_transcript_failed", { meetingId }, e);
@@ -182,5 +201,11 @@ export async function refreshMeetingRecording(
     }
   }
 
-  return { recordingUrl: freshUrl ?? meeting.recording_url ?? null };
+  const recordingUrl = freshUrl ?? meeting.recording_url ?? null;
+  return {
+    recordingUrl,
+    hasRecording: !!recordingUrl,
+    hasTranscript,
+    hasSummary,
+  };
 }
