@@ -25,7 +25,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle } from "lucide-react";
 
 const TERMINAL = new Set(["done", "failed"]);
 
@@ -270,6 +270,11 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
 }
 
 type TranscriptSegment = { speaker: string | null; text: string; start: number | null };
+type RecordingDiagnostics = {
+  hasRecording: boolean;
+  hasTranscript: boolean;
+  hasSummary: boolean;
+};
 
 function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void }) {
   const qc = useQueryClient();
@@ -279,6 +284,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const refreshRec = useServerFn(refreshRecording);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<RecordingDiagnostics | null>(null);
   // A freshly-signed recording URL fetched when the meeting opens; the stored
   // one in the DB is short-lived and may already be expired.
   const [freshUrl, setFreshUrl] = useState<string | null>(null);
@@ -299,6 +307,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     () => (meeting?.transcript as TranscriptSegment[] | null) ?? [],
     [meeting?.transcript],
   );
+  const recordingUrl = freshUrl || meeting?.recording_url || null;
 
   // Pull the live status from Recall whenever a non-terminal meeting is open,
   // and again on each poll tick, so the badge advances even without webhooks.
@@ -317,16 +326,28 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   // stored one expires) and backfill transcript/summary if they never landed.
   useEffect(() => {
     setFreshUrl(null);
+    setRecordingError(null);
+    setVideoError(false);
+    setDiagnostics(null);
     if (!id || !status || !TERMINAL.has(status)) return;
     let cancelled = false;
     void refreshRec({ data: { id } })
       .then((r) => {
         if (cancelled) return;
         if (r.recordingUrl) setFreshUrl(r.recordingUrl);
+        setDiagnostics({
+          hasRecording: r.hasRecording,
+          hasTranscript: r.hasTranscript,
+          hasSummary: r.hasSummary,
+        });
         // Transcript/summary may have been backfilled — pull the latest row.
         qc.invalidateQueries({ queryKey: ["meeting", id] });
       })
-      .catch(() => null);
+      .catch(() => {
+        if (!cancelled) {
+          setRecordingError("Could not refresh the recording yet. Try again in a moment.");
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -342,6 +363,28 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
       await qc.invalidateQueries({ queryKey: ["meetings"] });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not refresh status");
+    }
+    setRefreshing(false);
+  }
+
+  async function onRefreshRecording() {
+    if (!id) return;
+    setRefreshing(true);
+    setRecordingError(null);
+    try {
+      const r = await refreshRec({ data: { id } });
+      if (r.recordingUrl) setFreshUrl(r.recordingUrl);
+      setDiagnostics({
+        hasRecording: r.hasRecording,
+        hasTranscript: r.hasTranscript,
+        hasSummary: r.hasSummary,
+      });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      if (!r.hasRecording) {
+        setRecordingError("The meeting is done, but no recording file is available yet.");
+      }
+    } catch (e: unknown) {
+      setRecordingError(e instanceof Error ? e.message : "Could not refresh recording");
     }
     setRefreshing(false);
   }
@@ -385,28 +428,57 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </p>
             )}
 
-            {(freshUrl || meeting.recording_url) && (
+            {meeting.status === "done" && (
+              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="font-medium text-foreground">Recording status</p>
+                    <p className="text-muted-foreground">
+                      Recording {diagnostics?.hasRecording || recordingUrl ? "found" : "not found yet"} · Transcript {diagnostics?.hasTranscript || transcript.length > 0 ? "found" : "not found yet"} · Summary {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={onRefreshRecording} disabled={refreshing}>
+                    <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                    {refreshing ? "Refreshing…" : "Refresh recording"}
+                  </Button>
+                </div>
+                {recordingError && (
+                  <p className="mt-3 flex items-start gap-2 text-destructive">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{recordingError}</span>
+                  </p>
+                )}
+              </div>
+            )}
+
+            {recordingUrl && (
               <div className="space-y-2">
                 <video
-                  key={freshUrl || meeting.recording_url}
+                  key={recordingUrl}
                   controls
                   playsInline
                   preload="metadata"
+                  onError={() => setVideoError(true)}
                   className="w-full rounded-md border border-border bg-black"
                 >
-                  <source src={(freshUrl || meeting.recording_url) as string} type="video/mp4" />
+                  <source src={recordingUrl} type="video/mp4" />
                 </video>
+                {videoError && (
+                  <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                    The embedded player could not load this recording. Open it in a new tab or download it below.
+                  </p>
+                )}
                 <div className="flex flex-wrap items-center gap-4">
                   <a
-                    href={(freshUrl || meeting.recording_url) as string}
+                    href={recordingUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" /> Open recording in new tab
+                    <ExternalLink className="h-3.5 w-3.5" /> Open recording
                   </a>
                   <a
-                    href={(freshUrl || meeting.recording_url) as string}
+                    href={recordingUrl}
                     download
                     className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                   >
