@@ -274,7 +274,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const qc = useQueryClient();
   const getFn = useServerFn(getMeeting);
   const del = useServerFn(deleteMeeting);
+  const sync = useServerFn(syncMeeting);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const q = useQuery({
     queryKey: ["meeting", id],
@@ -282,7 +284,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     enabled: !!id,
     refetchInterval: (query) => {
       const status = query.state.data?.meeting.status;
-      return status && status !== "done" && status !== "failed" ? 10000 : false;
+      return status && !TERMINAL.has(status) ? 10000 : false;
     },
   });
 
@@ -292,6 +294,33 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     () => (meeting?.transcript as TranscriptSegment[] | null) ?? [],
     [meeting?.transcript],
   );
+
+  // Pull the live status from Recall whenever a non-terminal meeting is open,
+  // and again on each poll tick, so the badge advances even without webhooks.
+  const status = meeting?.status;
+  useEffect(() => {
+    if (!id || !status || TERMINAL.has(status)) return;
+    void sync({ data: { id } })
+      .then((r) => {
+        if (r.status !== status) qc.invalidateQueries({ queryKey: ["meeting", id] });
+      })
+      .catch(() => null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, status, q.dataUpdatedAt]);
+
+  async function onRefresh() {
+    if (!id) return;
+    setRefreshing(true);
+    try {
+      await sync({ data: { id } });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      await qc.invalidateQueries({ queryKey: ["meetings"] });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not refresh status");
+    }
+    setRefreshing(false);
+  }
+
 
   async function onDelete() {
     if (!id) return;
