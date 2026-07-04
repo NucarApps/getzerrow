@@ -274,19 +274,7 @@ export const getAutoRecordStatus = createServerFn({ method: "GET" })
     };
   });
 
-/** Confirm the caller owns the given account, returning its calendar state. */
-async function assertAccount(
-  supabase: { from: (t: string) => { select: (c: string) => { eq: (k: string, v: string) => { maybeSingle: () => Promise<{ data: { calendar_access?: boolean } | null }> } } } },
-  accountId: string,
-): Promise<{ calendarAccess: boolean }> {
-  const { data } = await supabase
-    .from("gmail_accounts")
-    .select("calendar_access")
-    .eq("id", accountId)
-    .maybeSingle();
-  if (!data) throw new Error("Account not found");
-  return { calendarAccess: !!data.calendar_access };
-}
+type UpcomingCalendarEvent = import("./meetings-autojoin.server").UpcomingCalendarEvent;
 
 /**
  * List upcoming calendar events (next 14 days) for one account so the user can
@@ -296,9 +284,14 @@ export const listUpcomingCalendarEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { calendarAccess } = await assertAccount(context.supabase, data.accountId);
-    if (!calendarAccess) {
-      return { calendarAccess: false, events: [] as import("./meetings-autojoin.server").UpcomingCalendarEvent[] };
+    const { data: acct } = await context.supabase
+      .from("gmail_accounts")
+      .select("calendar_access")
+      .eq("id", data.accountId)
+      .maybeSingle();
+    if (!acct) throw new Error("Account not found");
+    if (!acct.calendar_access) {
+      return { calendarAccess: false, events: [] as UpcomingCalendarEvent[] };
     }
     const { listUpcomingCalendarEventsForAccount } = await import("./meetings-autojoin.server");
     try {
@@ -308,7 +301,7 @@ export const listUpcomingCalendarEvents = createServerFn({ method: "GET" })
       logError("meeting_list_events_failed", { accountId: data.accountId, userId: context.userId }, e);
       return {
         calendarAccess: true,
-        events: [] as import("./meetings-autojoin.server").UpcomingCalendarEvent[],
+        events: [] as UpcomingCalendarEvent[],
         error: "Couldn't load your calendar events right now.",
       };
     }
