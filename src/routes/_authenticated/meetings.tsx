@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -7,6 +7,7 @@ import {
   getMeeting,
   recordFromLink,
   deleteMeeting,
+  syncMeeting,
   extractMeetingUrl,
 } from "@/lib/meetings.functions";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw } from "lucide-react";
+
+const TERMINAL = new Set(["done", "failed"]);
+
 
 export const Route = createFileRoute("/_authenticated/meetings")({
   head: () => ({
