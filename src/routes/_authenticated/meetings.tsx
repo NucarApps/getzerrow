@@ -385,12 +385,35 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </p>
             )}
 
-            {meeting.recording_url && (
-              <video
-                src={meeting.recording_url}
-                controls
-                className="w-full rounded-md border border-border"
-              />
+            {(freshUrl || meeting.recording_url) && (
+              <div className="space-y-2">
+                <video
+                  key={freshUrl || meeting.recording_url}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="w-full rounded-md border border-border bg-black"
+                >
+                  <source src={(freshUrl || meeting.recording_url) as string} type="video/mp4" />
+                </video>
+                <div className="flex flex-wrap items-center gap-4">
+                  <a
+                    href={(freshUrl || meeting.recording_url) as string}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Open recording in new tab
+                  </a>
+                  <a
+                    href={(freshUrl || meeting.recording_url) as string}
+                    download
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download
+                  </a>
+                </div>
+              </div>
             )}
 
             {participants.length > 0 && (
