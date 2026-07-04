@@ -159,6 +159,15 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
         .maybeSingle();
       if (existing) continue;
 
+      // Skip events the user explicitly excluded from auto-record.
+      const { data: excluded } = await supabaseAdmin
+        .from("meeting_autojoin_exclusions")
+        .select("id")
+        .eq("user_id", account.user_id)
+        .eq("calendar_event_id", event.id)
+        .maybeSingle();
+      if (excluded) continue;
+
       const start = event.start?.dateTime ?? event.start?.date ?? null;
       const self = (account.email_address ?? "").toLowerCase();
       const rawPeople: Array<{ email?: string; name?: string | null }> = [
