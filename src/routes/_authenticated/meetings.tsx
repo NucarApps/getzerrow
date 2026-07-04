@@ -422,153 +422,189 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   }
 
   return (
-    <Dialog open={!!id} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+    <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+      >
         {!meeting ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
         ) : (
           <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                {meeting.title || "Untitled meeting"}
+            <SheetHeader className="space-y-1 border-b border-border p-6 pb-4 text-left">
+              <SheetTitle className="flex items-center gap-2 pr-6">
+                <span className="truncate">{meeting.title || "Untitled meeting"}</span>
                 <StatusBadge status={meeting.status} />
-              </DialogTitle>
-              <DialogDescription>
+              </SheetTitle>
+              <SheetDescription>
                 {meeting.platform ? `${meeting.platform.replace("_", " ")} · ` : ""}
                 {formatWhen(meeting.scheduled_start ?? meeting.created_at)}
-              </DialogDescription>
-            </DialogHeader>
+              </SheetDescription>
+            </SheetHeader>
 
-            {meeting.status === "failed" && meeting.error && (
-              <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {meeting.error}
-              </p>
-            )}
-
-            {meeting.status === "done" && (
-              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <p className="font-medium text-foreground">Recording status</p>
-                    <p className="text-muted-foreground">
-                      Recording {hasRecording ? "found" : "not found yet"} · Transcript {diagnostics?.hasTranscript || transcript.length > 0 ? "found" : "not found yet"} · Summary {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={onRefreshRecording} disabled={refreshing}>
-                    <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                    {refreshing ? "Refreshing…" : "Refresh recording"}
-                  </Button>
-                </div>
-                {recordingError && (
-                  <p className="mt-3 flex items-start gap-2 text-destructive">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>{recordingError}</span>
-                  </p>
-                )}
-              </div>
-            )}
-
-            {streamUrl && (
-              <div className="space-y-2">
-                <video
-                  key={streamUrl}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  onError={() => setVideoError(true)}
-                  className="w-full rounded-md border border-border bg-black"
-                >
-                  <source src={streamUrl} type="video/mp4" />
-                </video>
-                {videoError && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="space-y-4 p-6 pb-4">
+                {meeting.status === "failed" && meeting.error && (
                   <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                    The embedded player could not load this recording. Open it in a new tab or download it below.
+                    {meeting.error}
                   </p>
                 )}
-                <div className="flex flex-wrap items-center gap-4">
-                  <a
-                    href={streamUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" /> Open recording
-                  </a>
-                  <a
-                    href={`${streamUrl}&dl=1`}
-                    download
-                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    <Download className="h-3.5 w-3.5" /> Download
-                  </a>
-                </div>
-              </div>
-            )}
 
-            {participants.length > 0 && (
-              <section>
-                <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
-                  <Users className="h-4 w-4" /> Participants
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {participants.map((p) => (
-                    <span
-                      key={p.id}
-                      className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                {streamUrl && (
+                  <div className="space-y-2">
+                    <video
+                      key={streamUrl}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      onError={() => setVideoError(true)}
+                      className="w-full rounded-md border border-border bg-black"
                     >
-                      {p.name || p.email}
-                    </span>
-                  ))}
-                </div>
-              </section>
-            )}
+                      <source src={streamUrl} type="video/mp4" />
+                    </video>
+                    {videoError && (
+                      <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                        The embedded player could not load this recording. Open it in a new tab or download it below.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-4">
+                      <a
+                        href={streamUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" /> Open recording
+                      </a>
+                      <a
+                        href={`${streamUrl}&dl=1`}
+                        download
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <Download className="h-3.5 w-3.5" /> Download
+                      </a>
+                    </div>
+                  </div>
+                )}
 
-            {meeting.summary && (
-              <section>
-                <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
-                  <FileText className="h-4 w-4" /> Summary
-                </h3>
-                <p className="whitespace-pre-wrap text-sm text-muted-foreground">{meeting.summary}</p>
-              </section>
-            )}
-
-            {transcript.length > 0 && (
-              <section>
-                <h3 className="mb-2 text-sm font-medium">Transcript</h3>
-                <div className="space-y-2 rounded-md border border-border p-3">
-                  {transcript.map((seg, i) => (
-                    <p key={i} className="text-sm">
-                      {seg.speaker && (
-                        <span className="font-medium text-foreground">{seg.speaker}: </span>
-                      )}
-                      <span className="text-muted-foreground">{seg.text}</span>
-                    </p>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {!TERMINAL.has(meeting.status) && (
-              <div className="flex items-center justify-between gap-3 rounded-md bg-muted/50 p-3">
-                <p className="text-sm text-muted-foreground">
-                  Recording in progress — the transcript and summary appear here once the meeting
-                  ends.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onRefresh}
-                  disabled={refreshing}
-                  className="shrink-0"
-                >
-                  <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  {refreshing ? "Refreshing…" : "Refresh status"}
-                </Button>
+                {meeting.status === "done" && (
+                  <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">Recording status</p>
+                        <p className="text-muted-foreground">
+                          Recording {hasRecording ? "found" : "not found yet"} · Transcript {diagnostics?.hasTranscript || transcript.length > 0 ? "found" : "not found yet"} · Summary {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={onRefreshRecording} disabled={refreshing}>
+                        <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                        {refreshing ? "Refreshing…" : "Refresh recording"}
+                      </Button>
+                    </div>
+                    {recordingError && (
+                      <p className="mt-3 flex items-start gap-2 text-destructive">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{recordingError}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
 
+              <Tabs defaultValue="summary" className="flex min-h-0 flex-1 flex-col">
+                <TabsList className="mx-6 w-[calc(100%-3rem)]">
+                  <TabsTrigger value="summary" className="flex-1">
+                    Summary
+                  </TabsTrigger>
+                  <TabsTrigger value="transcript" className="flex-1">
+                    Transcript
+                  </TabsTrigger>
+                </TabsList>
 
-            <DialogFooter className="flex items-center justify-between sm:justify-between">
+                <TabsContent
+                  value="summary"
+                  className="mt-0 min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pt-4"
+                >
+                  {!TERMINAL.has(meeting.status) ? (
+                    <div className="flex items-center justify-between gap-3 rounded-md bg-muted/50 p-3">
+                      <p className="text-sm text-muted-foreground">
+                        Recording in progress — the transcript and summary appear here once the
+                        meeting ends.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onRefresh}
+                        disabled={refreshing}
+                        className="shrink-0"
+                      >
+                        <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                        {refreshing ? "Refreshing…" : "Refresh status"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      {participants.length > 0 && (
+                        <section>
+                          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+                            <Users className="h-4 w-4" /> Participants
+                          </h3>
+                          <div className="flex flex-wrap gap-1.5">
+                            {participants.map((p) => (
+                              <span
+                                key={p.id}
+                                className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                              >
+                                {p.name || p.email}
+                              </span>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+
+                      <section>
+                        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+                          <FileText className="h-4 w-4" /> Summary
+                        </h3>
+                        {meeting.summary ? (
+                          <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                            {meeting.summary}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            No summary yet. It appears here once the recording is processed.
+                          </p>
+                        )}
+                      </section>
+                    </>
+                  )}
+                </TabsContent>
+
+                <TabsContent
+                  value="transcript"
+                  className="mt-0 min-h-0 flex-1 overflow-y-auto p-6 pt-4"
+                >
+                  {transcript.length > 0 ? (
+                    <div className="space-y-2 rounded-md border border-border p-3">
+                      {transcript.map((seg, i) => (
+                        <p key={i} className="text-sm">
+                          {seg.speaker && (
+                            <span className="font-medium text-foreground">{seg.speaker}: </span>
+                          )}
+                          <span className="text-muted-foreground">{seg.text}</span>
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No transcript yet. It appears here once the recording is processed.
+                    </p>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-border p-6 py-4">
               <a
                 href={meeting.meeting_url}
                 target="_blank"
@@ -581,10 +617,10 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                 <Trash2 className="mr-1.5 h-4 w-4 text-destructive" />
                 Delete
               </Button>
-            </DialogFooter>
+            </div>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
