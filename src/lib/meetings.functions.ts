@@ -273,3 +273,78 @@ export const getAutoRecordStatus = createServerFn({ method: "GET" })
       calendarAccess: !!acct?.calendar_access,
     };
   });
+
+/** Confirm the caller owns the given account, returning its calendar state. */
+async function assertAccount(
+  supabase: { from: (t: string) => { select: (c: string) => { eq: (k: string, v: string) => { maybeSingle: () => Promise<{ data: { calendar_access?: boolean } | null }> } } } },
+  accountId: string,
+): Promise<{ calendarAccess: boolean }> {
+  const { data } = await supabase
+    .from("gmail_accounts")
+    .select("calendar_access")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (!data) throw new Error("Account not found");
+  return { calendarAccess: !!data.calendar_access };
+}
+
+/**
+ * List upcoming calendar events (next 14 days) for one account so the user can
+ * choose which ones the notetaker should skip. RLS confirms account ownership.
+ */
+export const listUpcomingCalendarEvents = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { calendarAccess } = await assertAccount(context.supabase, data.accountId);
+    if (!calendarAccess) {
+      return { calendarAccess: false, events: [] as import("./meetings-autojoin.server").UpcomingCalendarEvent[] };
+    }
+    const { listUpcomingCalendarEventsForAccount } = await import("./meetings-autojoin.server");
+    try {
+      const events = await listUpcomingCalendarEventsForAccount(data.accountId, context.userId);
+      return { calendarAccess: true, events };
+    } catch (e) {
+      logError("meeting_list_events_failed", { accountId: data.accountId, userId: context.userId }, e);
+      return {
+        calendarAccess: true,
+        events: [] as import("./meetings-autojoin.server").UpcomingCalendarEvent[],
+        error: "Couldn't load your calendar events right now.",
+      };
+    }
+  });
+
+/** Exclude (or re-include) one calendar event from auto-record. */
+export const setEventExclusion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        accountId: z.string().uuid(),
+        calendarEventId: z.string().min(1).max(1024),
+        excluded: z.boolean(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAccount(context.supabase, data.accountId);
+    if (data.excluded) {
+      const { error } = await context.supabase.from("meeting_autojoin_exclusions").upsert(
+        {
+          user_id: context.userId,
+          gmail_account_id: data.accountId,
+          calendar_event_id: data.calendarEventId,
+        },
+        { onConflict: "user_id,calendar_event_id" },
+      );
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await context.supabase
+        .from("meeting_autojoin_exclusions")
+        .delete()
+        .eq("user_id", context.userId)
+        .eq("calendar_event_id", data.calendarEventId);
+      if (error) throw new Error(error.message);
+    }
+    return { excluded: data.excluded };
+  });
