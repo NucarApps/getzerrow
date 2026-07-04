@@ -132,3 +132,20 @@ export const setAutoRecord = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { enabled: data.enabled };
   });
+
+/** Auto-record status for one account (used by the settings card). */
+export const getAutoRecordStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: acct, error } = await context.supabase
+      .from("gmail_accounts")
+      .select("auto_record_meetings, calendar_access")
+      .eq("id", data.accountId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return {
+      enabled: !!acct?.auto_record_meetings,
+      calendarAccess: !!acct?.calendar_access,
+    };
+  });
