@@ -1,0 +1,129 @@
+// Server-only helpers for the Meetings feature: finalizing a completed
+// Recall bot (recording + transcript + summary), and linking meeting
+// participants to existing CRM contacts. Uses the service-role client because
+// it runs from the Recall webhook and cron reconcile — both unauthenticated
+// contexts that must still write user-scoped rows safely (all writes are
+// keyed by the meeting's own user_id).
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { logError } from "./log.server";
+import {
+  getBot,
+  getTranscript,
+  extractRecordingUrl,
+  latestStatusCode,
+  summarizeTranscript,
+  type RecallBot,
+} from "./recall.server";
+
+const TERMINAL_CODES = new Set(["done", "fatal", "call_ended", "recording_done"]);
+const FAILED_CODES = new Set(["fatal", "call_not_started", "timeout"]);
+
+/** Map a Recall status code to our meeting_status enum. */
+export function mapStatus(code: string | null): "scheduled" | "joining" | "recording" | "done" | "failed" {
+  if (!code) return "scheduled";
+  if (FAILED_CODES.has(code)) return "failed";
+  if (code === "done" || code === "recording_done" || code === "call_ended") return "done";
+  if (code === "in_call_recording" || code === "recording") return "recording";
+  if (code === "joining_call" || code === "in_waiting_room" || code === "in_call_not_recording")
+    return "joining";
+  return "scheduled";
+}
+
+type MeetingRow = {
+  id: string;
+  user_id: string;
+  recall_bot_id: string | null;
+  status: string;
+};
+
+/**
+ * Match a meeting's participants (from meeting_participants.email) to existing
+ * contacts owned by the same user and populate contact_id. Idempotent.
+ */
+export async function linkParticipantsToContacts(meetingId: string, userId: string): Promise<void> {
+  const { data: parts } = await supabaseAdmin
+    .from("meeting_participants")
+    .select("id, email, contact_id")
+    .eq("meeting_id", meetingId);
+  if (!parts?.length) return;
+
+  const unlinked = parts.filter((p) => !p.contact_id && p.email);
+  if (!unlinked.length) return;
+
+  const emails = [...new Set(unlinked.map((p) => (p.email as string).toLowerCase()))];
+  const { data: contacts } = await supabaseAdmin
+    .from("contacts")
+    .select("id, email")
+    .eq("user_id", userId)
+    .in("email", emails);
+  if (!contacts?.length) return;
+
+  const byEmail = new Map(contacts.map((c) => [(c.email as string).toLowerCase(), c.id]));
+  for (const p of unlinked) {
+    const contactId = byEmail.get((p.email as string).toLowerCase());
+    if (contactId) {
+      await supabaseAdmin
+        .from("meeting_participants")
+        .update({ contact_id: contactId })
+        .eq("id", p.id);
+    }
+  }
+}
+
+/**
+ * Pull the latest state for one meeting from Recall and persist it. When the
+ * bot has finished, stores the recording URL, transcript, and summary, and
+ * links participants to contacts. Returns the resolved status.
+ */
+export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string> {
+  if (!meeting.recall_bot_id) return meeting.status;
+
+  let bot: RecallBot;
+  try {
+    bot = await getBot(meeting.recall_bot_id);
+  } catch (e) {
+    logError("meeting_sync_getbot_failed", e, { meetingId: meeting.id });
+    return meeting.status;
+  }
+
+  const code = latestStatusCode(bot);
+  const status = mapStatus(code);
+  const update: Record<string, unknown> = { status };
+
+  if (status === "recording" || status === "done") {
+    // best-effort recording link
+    const url = extractRecordingUrl(bot);
+    if (url) update.recording_url = url;
+  }
+
+  if (status === "done") {
+    update.ended_at = new Date().toISOString();
+    try {
+      const segments = await getTranscript(meeting.recall_bot_id);
+      if (segments.length) {
+        update.transcript = segments;
+        update.summary = summarizeTranscript(segments);
+      }
+    } catch (e) {
+      logError("meeting_sync_transcript_failed", e, { meetingId: meeting.id });
+    }
+  }
+
+  if (status === "failed") {
+    update.error = bot.status_changes?.find((c) => FAILED_CODES.has(c.code))?.message ?? "Bot failed";
+  }
+
+  const { error } = await supabaseAdmin.from("meetings").update(update).eq("id", meeting.id);
+  if (error) logError("meeting_sync_update_failed", error, { meetingId: meeting.id });
+
+  if (status === "done") {
+    await linkParticipantsToContacts(meeting.id, meeting.user_id);
+  }
+
+  return status;
+}
+
+/** Whether a status is terminal (no further polling needed). */
+export function isTerminalCode(code: string | null): boolean {
+  return code ? TERMINAL_CODES.has(code) : false;
+}
