@@ -22,11 +22,16 @@ export const Route = createFileRoute("/api/public/meeting-recording")({
           return new Response("Unauthorized", { status: 401 });
         }
 
-        const { refreshMeetingRecording } = await import("@/lib/meetings.server");
+        // Resolve a playable URL cheaply (stored URL, no transcript work).
+        const { resolvePlayableRecordingUrl, mintFreshRecordingUrl } = await import(
+          "@/lib/meetings.server"
+        );
         let recordingUrl: string | null = null;
+        let recallBotId: string | null = null;
         try {
-          const r = await refreshMeetingRecording(meetingId);
-          recordingUrl = r.recordingUrl;
+          const r = await resolvePlayableRecordingUrl(meetingId);
+          recordingUrl = r.url;
+          recallBotId = r.recallBotId;
         } catch {
           recordingUrl = null;
         }
@@ -36,9 +41,24 @@ export const Route = createFileRoute("/api/public/meeting-recording")({
 
         // Forward the browser's Range header so seeking / progressive playback works.
         const range = request.headers.get("range");
-        const upstream = await fetch(recordingUrl, {
+        let upstream = await fetch(recordingUrl, {
           headers: range ? { Range: range } : {},
         });
+
+        // The stored S3 URL is short-lived. If it has expired (403/401), mint a
+        // fresh one from Recall ONCE and retry — instead of doing that on every
+        // request, which would hammer Recall during playback.
+        if ((upstream.status === 403 || upstream.status === 401) && recallBotId) {
+          try {
+            const fresh = await mintFreshRecordingUrl(meetingId, recallBotId);
+            if (fresh) {
+              upstream = await fetch(fresh, { headers: range ? { Range: range } : {} });
+            }
+          } catch {
+            /* fall through to the error handling below */
+          }
+        }
+
         if (!upstream.ok && upstream.status !== 206) {
           return new Response("Upstream fetch failed", { status: 502 });
         }
