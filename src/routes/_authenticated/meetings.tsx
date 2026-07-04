@@ -77,6 +77,7 @@ function formatWhen(iso: string | null): string {
 function MeetingsPage() {
   const qc = useQueryClient();
   const list = useServerFn(listMeetings);
+  const sync = useServerFn(syncMeeting);
   const meetingsQ = useQuery({
     queryKey: ["meetings"],
     queryFn: () => list(),
@@ -86,8 +87,27 @@ function MeetingsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const meetings = meetingsQ.data?.meetings ?? [];
 
+  // Best-effort: pull live status for any non-terminal meetings so the list
+  // badges advance without opening each one, then refresh the list once.
+  const syncingRef = useRef(false);
+  useEffect(() => {
+    const pending = meetings.filter((m) => !TERMINAL.has(m.status));
+    if (!pending.length || syncingRef.current) return;
+    syncingRef.current = true;
+    void (async () => {
+      try {
+        await Promise.all(pending.map((m) => sync({ data: { id: m.id } }).catch(() => null)));
+        await qc.invalidateQueries({ queryKey: ["meetings"] });
+      } finally {
+        syncingRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetings.map((m) => `${m.id}:${m.status}`).join(",")]);
+
   return (
     <div className="h-full overflow-y-auto">
+
       <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
         <header className="mb-8 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
