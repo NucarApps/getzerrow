@@ -42,6 +42,7 @@ import { Route as ApiPublicEncryptionBackfillRouteImport } from './routes/api/pu
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
+import { Route as ApiPublicHooksScheduleMeetingBotsRouteImport } from './routes/api/public/hooks/schedule-meeting-bots'
 import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/public/hooks/relearn-folders'
@@ -223,6 +224,12 @@ const ApiPublicHooksSyncCalendarContactsRoute =
     path: '/api/public/hooks/sync-calendar-contacts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksScheduleMeetingBotsRoute =
+  ApiPublicHooksScheduleMeetingBotsRouteImport.update({
+    id: '/api/public/hooks/schedule-meeting-bots',
+    path: '/api/public/hooks/schedule-meeting-bots',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksRunFolderSummaryJobsRoute =
   ApiPublicHooksRunFolderSummaryJobsRouteImport.update({
     id: '/api/public/hooks/run-folder-summary-jobs',
@@ -296,6 +303,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
@@ -336,6 +344,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
@@ -378,6 +387,7 @@ export interface FileRoutesById {
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
@@ -420,6 +430,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/og/card/$handle'
   fileRoutesByTo: FileRoutesByTo
@@ -460,6 +471,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/og/card/$handle'
   id:
@@ -501,6 +513,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/og/card/$handle'
   fileRoutesById: FileRoutesById
@@ -534,6 +547,7 @@ export interface RootRouteChildren {
   ApiPublicHooksRelearnFoldersRoute: typeof ApiPublicHooksRelearnFoldersRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
   ApiPublicHooksRunFolderSummaryJobsRoute: typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  ApiPublicHooksScheduleMeetingBotsRoute: typeof ApiPublicHooksScheduleMeetingBotsRoute
   ApiPublicHooksSyncCalendarContactsRoute: typeof ApiPublicHooksSyncCalendarContactsRoute
   ApiPublicOgCardHandleRoute: typeof ApiPublicOgCardHandleRoute
 }
@@ -771,6 +785,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSyncCalendarContactsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/schedule-meeting-bots': {
+      id: '/api/public/hooks/schedule-meeting-bots'
+      path: '/api/public/hooks/schedule-meeting-bots'
+      fullPath: '/api/public/hooks/schedule-meeting-bots'
+      preLoaderRoute: typeof ApiPublicHooksScheduleMeetingBotsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/run-folder-summary-jobs': {
       id: '/api/public/hooks/run-folder-summary-jobs'
       path: '/api/public/hooks/run-folder-summary-jobs'
@@ -876,6 +897,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
   ApiPublicHooksRunFolderSummaryJobsRoute:
     ApiPublicHooksRunFolderSummaryJobsRoute,
+  ApiPublicHooksScheduleMeetingBotsRoute:
+    ApiPublicHooksScheduleMeetingBotsRoute,
   ApiPublicHooksSyncCalendarContactsRoute:
     ApiPublicHooksSyncCalendarContactsRoute,
   ApiPublicOgCardHandleRoute: ApiPublicOgCardHandleRoute,
