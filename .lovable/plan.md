@@ -1,36 +1,30 @@
 ## Problem
 
-When you record a meeting, the app creates the Recall bot and saves the row as `joining`. After that, the status is only ever advanced by:
+Clicking play on a finished meeting does nothing. Root causes, in order of impact:
 
-1. The **Recall webhook** (`/api/public/recall-webhook`), or
-2. A **reconcile cron** that polls Recall for non-terminal meetings.
-
-The reconcile cron was never actually scheduled, and the webhook only fires against the published site once Recall is fully configured — so in your session the bot joined and started recording, but nothing wrote the new status back. The UI polls the DB every 10s and just keeps seeing `joining`.
+1. **Inline playback is blocked.** The player is `<video src={recording_url} controls />` with no `playsInline`. The preview runs inside an iframe, and on a narrow/mobile viewport the browser wants to hand off to fullscreen playback, which is blocked in the iframe — so the tap appears to do nothing.
+2. **Fragile source.** The S3 file is served as `binary/octet-stream` (not `video/mp4`) and there's no `<source type>` hint or fallback link, so any browser that's strict about MIME type silently fails.
+3. **The signed URL expires.** Recall's recording URL is a short-lived signed S3 link (this meeting's expires ~6h after it ended). We store it once at completion, so re-opening the meeting later loads a dead URL and playback breaks again — even though the recording still exists on Recall.
+4. **Missing transcript/summary.** For the existing finished meeting, `transcript` and `summary` are `null` (captions weren't ready the instant it hit "done"), and nothing re-pulls them for an already-`done` meeting.
 
 ## Fix
 
-Give the app three independent ways to move the status forward, so it never gets stuck:
+### 1. Make the player actually play (frontend)
+In the meeting detail dialog, update the `<video>`:
+- Add `playsInline`, `controls`, `preload="metadata"`.
+- Use a child `<source src={url} type="video/mp4" />` so the browser gets a format hint.
+- Add a guaranteed fallback below the player: an **"Open recording in new tab"** link and a **Download** link (an `<a href>` always works regardless of inline-playback quirks).
 
-### 1. On-demand sync from the app (works immediately, no publish needed)
-Add an authenticated `syncMeeting` server function that:
-- Confirms the meeting belongs to the signed-in user (RLS).
-- Pulls the live bot state from Recall and writes back status, recording URL, transcript, and summary (reusing the existing `syncMeetingFromRecall` logic).
+### 2. Always load a fresh recording URL + backfill transcript/summary (server)
+Add an authenticated `refreshRecording({ id })` server function that, for a `done` meeting with a `recall_bot_id`:
+- Re-pulls the bot from Recall and extracts a **fresh** signed recording URL, writes it back.
+- If `transcript`/`summary` are still null, fetches the transcript and builds the summary now (reusing the existing Recall helpers), and links participants to contacts.
+- Returns the fresh `recording_url` (and updated fields).
 
-Wire it into the Meetings UI:
-- **Auto-sync** when the detail dialog opens for a non-terminal meeting, and on each poll tick while it's still `joining`/`recording`.
-- A visible **"Refresh status"** button in the detail view for a manual pull.
-- Also trigger a light sync for any non-terminal rows when the meetings list loads, so the list badge updates without opening each one.
-
-### 2. Background reconcile cron (automatic, once published)
-Schedule the existing `reconcile-meetings` endpoint to run every minute via `pg_cron`, using the project's standard `private.cron_post(...)` helper (same pattern as the other crons). This keeps statuses, recordings, transcripts, and summaries current even when nobody has the meeting open — the webhook fallback the code was already written for.
-
-### 3. Keep the webhook as the fast path
-No code change needed — once the reconcile cron and on-demand sync are in place, the webhook simply makes updates near-instant. The other two guarantee correctness if a webhook is ever missed or not yet configured.
+In the detail dialog, when a `done` meeting opens, call `refreshRecording` and use the returned fresh URL for the player (falling back to the stored one while it loads). This fixes expiry permanently and fills in the missing transcript/summary for the current meeting.
 
 ## Technical details
 
-- `src/lib/meetings.functions.ts`: add `syncMeeting({ id })` with `requireSupabaseAuth`. In the handler, verify ownership via the RLS client, then `const { syncMeetingFromRecall } = await import("./meetings.server")` (dynamic import so the service-role module never leaks into the client bundle) and run it for that row. Return the resolved status.
-- `src/routes/_authenticated/meetings.tsx`: call `syncMeeting` via `useServerFn` — on detail open + inside the existing `refetchInterval` for non-terminal statuses, add a "Refresh status" button (with a spinner + toast), and fire a best-effort sync for non-terminal rows after the list query resolves. Invalidate the `["meeting", id]` / `["meetings"]` queries after a sync.
-- New migration: `DO $$ ... cron.unschedule('reconcile-meetings-1m') ... $$;` then `cron.schedule('reconcile-meetings-1m', '* * * * *', $$ SELECT private.cron_post('/api/public/hooks/reconcile-meetings'); $$);` — mirroring the existing scheduled hooks. No table/schema changes.
-
-No changes to the recording pipeline, Recall client, or webhook handler.
+- `src/routes/_authenticated/meetings.tsx` (`MeetingDetail`): switch the `<video>` to `playsInline`/`preload="metadata"` with a `<source type="video/mp4">`; add Open/Download `<a>` links; add a `useServerFn(refreshRecording)` call in an effect that runs when a `done` meeting is opened, storing the returned URL in local state and invalidating `["meeting", id]` when transcript/summary come back. No change to the "Refresh status" button already added for non-terminal meetings.
+- `src/lib/meetings.functions.ts`: add `refreshRecording` (`requireSupabaseAuth`, RLS-scoped ownership check, dynamic `import("./meetings.server")`). Add a small server helper in `src/lib/meetings.server.ts` (e.g. `refreshMeetingRecording`) that fetches the bot, extracts the recording URL, and backfills transcript/summary/contacts for an already-`done` row — mirroring the tail of `syncMeetingFromRecall` without regressing status.
+- No database or schema changes; recording pipeline, webhook, and reconcile cron untouched.
