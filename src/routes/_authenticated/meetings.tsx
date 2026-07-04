@@ -283,14 +283,16 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const del = useServerFn(deleteMeeting);
   const sync = useServerFn(syncMeeting);
   const refreshRec = useServerFn(refreshRecording);
+  const getStream = useServerFn(getRecordingStreamUrl);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState(false);
   const [diagnostics, setDiagnostics] = useState<RecordingDiagnostics | null>(null);
-  // A freshly-signed recording URL fetched when the meeting opens; the stored
-  // one in the DB is short-lived and may already be expired.
-  const [freshUrl, setFreshUrl] = useState<string | null>(null);
+  // A same-origin, tokenized stream URL. The player can't send an auth header,
+  // and Recall's raw S3 URL is short-lived and served as octet-stream (which
+  // mobile browsers won't play), so we proxy it through our own route.
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
 
   const q = useQuery({
     queryKey: ["meeting", id],
