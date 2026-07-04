@@ -130,3 +130,57 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
 export function isTerminalCode(code: string | null): boolean {
   return code ? TERMINAL_CODES.has(code) : false;
 }
+
+/**
+ * For an already-finished meeting, pull a *fresh* signed recording URL from
+ * Recall (the stored one is short-lived and expires), and backfill the
+ * transcript/summary if they never landed. Does not change the meeting status.
+ * Returns the fresh recording URL (or the stored one when Recall has none yet).
+ */
+export async function refreshMeetingRecording(
+  meetingId: string,
+): Promise<{ recordingUrl: string | null }> {
+  const { data: meeting } = await supabaseAdmin
+    .from("meetings")
+    .select("id, user_id, recall_bot_id, recording_url, transcript, summary")
+    .eq("id", meetingId)
+    .maybeSingle();
+  if (!meeting?.recall_bot_id) {
+    return { recordingUrl: meeting?.recording_url ?? null };
+  }
+
+  let bot: RecallBot;
+  try {
+    bot = await getBot(meeting.recall_bot_id);
+  } catch (e) {
+    logError("meeting_refresh_getbot_failed", { meetingId }, e);
+    return { recordingUrl: meeting.recording_url ?? null };
+  }
+
+  const update: MeetingUpdate = {};
+  const freshUrl = extractRecordingUrl(bot);
+  if (freshUrl) update.recording_url = freshUrl;
+
+  // Backfill transcript/summary only if they never landed.
+  if (!meeting.transcript || !meeting.summary) {
+    try {
+      const segments = await getTranscript(meeting.recall_bot_id);
+      if (segments.length) {
+        update.transcript = segments as unknown as MeetingUpdate["transcript"];
+        update.summary = summarizeTranscript(segments);
+      }
+    } catch (e) {
+      logError("meeting_refresh_transcript_failed", { meetingId }, e);
+    }
+  }
+
+  if (Object.keys(update).length > 0) {
+    const { error } = await supabaseAdmin.from("meetings").update(update).eq("id", meetingId);
+    if (error) logError("meeting_refresh_update_failed", { meetingId, error: error.message });
+    if (update.transcript) {
+      await linkParticipantsToContacts(meetingId, meeting.user_id);
+    }
+  }
+
+  return { recordingUrl: freshUrl ?? meeting.recording_url ?? null };
+}

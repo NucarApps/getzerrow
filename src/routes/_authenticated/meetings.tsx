@@ -8,6 +8,7 @@ import {
   recordFromLink,
   deleteMeeting,
   syncMeeting,
+  refreshRecording,
   extractMeetingUrl,
 } from "@/lib/meetings.functions";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download } from "lucide-react";
 
 const TERMINAL = new Set(["done", "failed"]);
 
@@ -275,8 +276,12 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const getFn = useServerFn(getMeeting);
   const del = useServerFn(deleteMeeting);
   const sync = useServerFn(syncMeeting);
+  const refreshRec = useServerFn(refreshRecording);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // A freshly-signed recording URL fetched when the meeting opens; the stored
+  // one in the DB is short-lived and may already be expired.
+  const [freshUrl, setFreshUrl] = useState<string | null>(null);
 
   const q = useQuery({
     queryKey: ["meeting", id],
@@ -307,6 +312,26 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
       .catch(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, status, q.dataUpdatedAt]);
+
+  // When a finished meeting opens, fetch a fresh signed recording URL (the
+  // stored one expires) and backfill transcript/summary if they never landed.
+  useEffect(() => {
+    setFreshUrl(null);
+    if (!id || !status || !TERMINAL.has(status)) return;
+    let cancelled = false;
+    void refreshRec({ data: { id } })
+      .then((r) => {
+        if (cancelled) return;
+        if (r.recordingUrl) setFreshUrl(r.recordingUrl);
+        // Transcript/summary may have been backfilled — pull the latest row.
+        qc.invalidateQueries({ queryKey: ["meeting", id] });
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, status]);
 
   async function onRefresh() {
     if (!id) return;
@@ -360,12 +385,35 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </p>
             )}
 
-            {meeting.recording_url && (
-              <video
-                src={meeting.recording_url}
-                controls
-                className="w-full rounded-md border border-border"
-              />
+            {(freshUrl || meeting.recording_url) && (
+              <div className="space-y-2">
+                <video
+                  key={freshUrl || meeting.recording_url}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="w-full rounded-md border border-border bg-black"
+                >
+                  <source src={(freshUrl || meeting.recording_url) as string} type="video/mp4" />
+                </video>
+                <div className="flex flex-wrap items-center gap-4">
+                  <a
+                    href={(freshUrl || meeting.recording_url) as string}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Open recording in new tab
+                  </a>
+                  <a
+                    href={(freshUrl || meeting.recording_url) as string}
+                    download
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download
+                  </a>
+                </div>
+              </div>
             )}
 
             {participants.length > 0 && (

@@ -172,6 +172,28 @@ export const syncMeeting = createServerFn({ method: "POST" })
     return { status };
   });
 
+/**
+ * For a finished meeting, fetch a fresh signed recording URL from Recall (the
+ * stored one expires) and backfill the transcript/summary if they never
+ * arrived. Returns the fresh recording URL to play.
+ */
+export const refreshRecording = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    // Ownership is enforced by RLS on the per-user client.
+    const { data: meeting } = await context.supabase
+      .from("meetings")
+      .select("id, recall_bot_id, status")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!meeting) throw new Error("Meeting not found");
+    if (!meeting.recall_bot_id) return { recordingUrl: null };
+    // Dynamic import keeps the service-role module out of the client bundle.
+    const { refreshMeetingRecording } = await import("./meetings.server");
+    return refreshMeetingRecording(meeting.id);
+  });
+
 /** Delete a meeting and best-effort remove the bot from the call. */
 export const deleteMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
