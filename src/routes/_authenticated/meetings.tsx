@@ -411,11 +411,25 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </section>
             )}
 
-            {meeting.status !== "done" && meeting.status !== "failed" && (
-              <p className="text-sm text-muted-foreground">
-                Recording in progress — the transcript and summary appear here once the meeting ends.
-              </p>
+            {!TERMINAL.has(meeting.status) && (
+              <div className="flex items-center justify-between gap-3 rounded-md bg-muted/50 p-3">
+                <p className="text-sm text-muted-foreground">
+                  Recording in progress — the transcript and summary appear here once the meeting
+                  ends.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onRefresh}
+                  disabled={refreshing}
+                  className="shrink-0"
+                >
+                  <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                  {refreshing ? "Refreshing…" : "Refresh status"}
+                </Button>
+              </div>
             )}
+
 
             <DialogFooter className="flex items-center justify-between sm:justify-between">
               <a
