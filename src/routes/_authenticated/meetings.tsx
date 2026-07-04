@@ -379,14 +379,17 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     setRecordingError(null);
     try {
       const r = await refreshRec({ data: { id } });
-      if (r.recordingUrl) setFreshUrl(r.recordingUrl);
       setDiagnostics({
         hasRecording: r.hasRecording,
         hasTranscript: r.hasTranscript,
         hasSummary: r.hasSummary,
       });
       await qc.invalidateQueries({ queryKey: ["meeting", id] });
-      if (!r.hasRecording) {
+      if (r.hasRecording) {
+        const s = await getStream({ data: { id } });
+        if (s.streamUrl) setStreamUrl(s.streamUrl);
+        setVideoError(false);
+      } else {
         setRecordingError("The meeting is done, but no recording file is available yet.");
       }
     } catch (e: unknown) {
