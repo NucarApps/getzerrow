@@ -353,6 +353,10 @@ function SettingsPage() {
               <CalendarGuardCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
             ))}
 
+            {accounts.map((a) => (
+              <MeetingAutoRecordCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
+            ))}
+
             <DangerZone />
           </TabsContent>
 
