@@ -196,6 +196,29 @@ export const refreshRecording = createServerFn({ method: "POST" })
     return refreshMeetingRecording(meeting.id);
   });
 
+/**
+ * Mint a short-lived, same-origin streaming URL for a finished meeting's
+ * recording. The <video> element can't carry an auth header, so we sign a
+ * token (verified by the public streaming route) instead of exposing the raw,
+ * short-lived S3 URL. Ownership is enforced by RLS on the per-user client.
+ */
+export const getRecordingStreamUrl = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: meeting } = await context.supabase
+      .from("meetings")
+      .select("id, recall_bot_id, recording_url")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!meeting) throw new Error("Meeting not found");
+    if (!meeting.recall_bot_id && !meeting.recording_url) {
+      return { streamUrl: null as string | null };
+    }
+    const { buildRecordingStreamPath } = await import("./meeting-stream.server");
+    return { streamUrl: buildRecordingStreamPath(meeting.id) };
+  });
+
 /** Delete a meeting and best-effort remove the bot from the call. */
 export const deleteMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -249,4 +272,77 @@ export const getAutoRecordStatus = createServerFn({ method: "GET" })
       enabled: !!acct?.auto_record_meetings,
       calendarAccess: !!acct?.calendar_access,
     };
+  });
+
+type UpcomingCalendarEvent = import("./meetings-autojoin.server").UpcomingCalendarEvent;
+
+/**
+ * List upcoming calendar events (next 14 days) for one account so the user can
+ * choose which ones the notetaker should skip. RLS confirms account ownership.
+ */
+export const listUpcomingCalendarEvents = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: acct } = await context.supabase
+      .from("gmail_accounts")
+      .select("calendar_access")
+      .eq("id", data.accountId)
+      .maybeSingle();
+    if (!acct) throw new Error("Account not found");
+    if (!acct.calendar_access) {
+      return { calendarAccess: false, events: [] as UpcomingCalendarEvent[] };
+    }
+    const { listUpcomingCalendarEventsForAccount } = await import("./meetings-autojoin.server");
+    try {
+      const events = await listUpcomingCalendarEventsForAccount(data.accountId, context.userId);
+      return { calendarAccess: true, events };
+    } catch (e) {
+      logError("meeting_list_events_failed", { accountId: data.accountId, userId: context.userId }, e);
+      return {
+        calendarAccess: true,
+        events: [] as UpcomingCalendarEvent[],
+        error: "Couldn't load your calendar events right now.",
+      };
+    }
+  });
+
+/** Exclude (or re-include) one calendar event from auto-record. */
+export const setEventExclusion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        accountId: z.string().uuid(),
+        calendarEventId: z.string().min(1).max(1024),
+        excluded: z.boolean(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: acct } = await context.supabase
+      .from("gmail_accounts")
+      .select("id")
+      .eq("id", data.accountId)
+      .maybeSingle();
+    if (!acct) throw new Error("Account not found");
+    if (data.excluded) {
+      const { error } = await context.supabase.from("meeting_autojoin_exclusions").upsert(
+        {
+          user_id: context.userId,
+          gmail_account_id: data.accountId,
+          calendar_event_id: data.calendarEventId,
+        },
+        { onConflict: "user_id,calendar_event_id" },
+      );
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await context.supabase
+        .from("meeting_autojoin_exclusions")
+        .delete()
+        .eq("user_id", context.userId)
+        .eq("calendar_event_id", data.calendarEventId);
+      if (error) throw new Error(error.message);
+    }
+    return { excluded: data.excluded };
   });
