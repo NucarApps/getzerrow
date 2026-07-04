@@ -325,19 +325,18 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, status, q.dataUpdatedAt]);
 
-  // When a finished meeting opens, fetch a fresh signed recording URL (the
-  // stored one expires) and backfill transcript/summary if they never landed.
+  // When a finished meeting opens, backfill transcript/summary if they never
+  // landed, then mint a same-origin stream URL for the player.
   useEffect(() => {
-    setFreshUrl(null);
+    setStreamUrl(null);
     setRecordingError(null);
     setVideoError(false);
     setDiagnostics(null);
     if (!id || !status || !TERMINAL.has(status)) return;
     let cancelled = false;
     void refreshRec({ data: { id } })
-      .then((r) => {
+      .then(async (r) => {
         if (cancelled) return;
-        if (r.recordingUrl) setFreshUrl(r.recordingUrl);
         setDiagnostics({
           hasRecording: r.hasRecording,
           hasTranscript: r.hasTranscript,
@@ -345,10 +344,14 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
         });
         // Transcript/summary may have been backfilled — pull the latest row.
         qc.invalidateQueries({ queryKey: ["meeting", id] });
+        if (r.hasRecording) {
+          const s = await getStream({ data: { id } });
+          if (!cancelled && s.streamUrl) setStreamUrl(s.streamUrl);
+        }
       })
       .catch(() => {
         if (!cancelled) {
-          setRecordingError("Could not refresh the recording yet. Try again in a moment.");
+          setRecordingError("Could not load the recording yet. Try again in a moment.");
         }
       });
     return () => {
