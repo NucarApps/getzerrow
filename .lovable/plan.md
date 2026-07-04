@@ -1,78 +1,64 @@
-# Folder AI "surface to inbox" escape hatch
+# Add meeting recording, transcript & summary (Recall.ai)
 
-## Goal
-Let a folder file mail by rules as usual, but give the AI a plain-English instruction to *pull back* specific matching emails so they stay visible in your inbox. Example: a Factory folder swallows everything from the factory, except an email that's addressed specifically to you and mentions your name — that one surfaces to the inbox while still being filed into Factory.
+Add a new **Meetings** section to Zerrow. Users paste a Zoom/Meet/Teams link (or let Zerrow auto-join meetings from their connected Google Calendar) and a Recall.ai bot joins, records, transcribes, and summarizes. Recordings, transcripts, and summaries are viewable in-app and linked to the matching CRM contacts.
 
-Based on your choices:
-- Surfaced mail is **filed into the folder AND kept visible in the inbox** (not hidden/archived).
-- The exception is a **natural-language AI rule** per folder.
-- Identity matching uses your **connected Gmail address** plus any **names/aliases you type** for that folder.
+## What the user gets
 
-## How it behaves
+- A **Meetings** nav item with a list of past/upcoming/in-progress meetings.
+- **Paste a link** to send a bot to any live/upcoming meeting.
+- **Auto-join** toggle: Zerrow scans upcoming calendar events, finds the meeting URL, and schedules a bot to join at start time.
+- A meeting detail view: video/audio playback, full transcript, and Recall-generated summary.
+- Meeting summaries surfaced on the related **contact** pages.
+
+## How it works
+
 ```text
-incoming email
-   │
-   ▼
-deterministic rules match folder "Factory"
-   │
-   ├─ folder has no surface rule ──► file normally (hide/archive per settings)
-   │
-   └─ folder has a surface rule ──► AI checks the rule against this email
-             │                        (uses to/cc, body, your identity)
-             ├─ "surface = yes" ──► label into Factory, KEEP in inbox, tag as surfaced
-             └─ "surface = no"  ──► file normally (hide/archive per settings)
+Paste link  ─┐
+             ├─► create Recall bot ─► bot joins & records
+Calendar tick┘                              │
+                                            ▼
+        Recall webhook (status + done) ─► store recording/transcript/summary
+                                            │
+                                            ▼
+            match attendees → link to contacts → show in Meetings + Contacts
 ```
-Only folders that actually have a surface rule pay for an AI call, and only for mail the rules already routed there. Folders without a surface rule are unchanged.
 
-## What you'll configure (folder settings)
-A new "Surface to inbox (AI)" block, shown near the existing "Rules only" toggle:
-- A textarea: *"Keep in my inbox when… e.g. it's addressed specifically to me and mentions my name, or it needs my personal reply."*
-- An optional names/aliases field (comma-separated) added on top of your connected Gmail address.
-- Empty rule = feature off for that folder (default).
+- **Summary engine: Recall only.** We use Recall's transcription + meeting-intelligence output for both transcript and summary — no Lovable AI in this path.
+- Follows existing patterns: push (webhook) + cron reconcile fallback, exactly like the Gmail sync pipeline. All `/api/public/*` mutation endpoints verify a secret, never the publishable key.
 
-Surfaced emails appear in the inbox with a "Surfaced" tag and a short reason ("addressed directly to you") so it's clear why they weren't tucked away.
+## Setup this requires (I'll walk you through in build)
 
-## Scope notes
-- Applies to newly arriving mail and to reanalyze/reclassify runs.
-- Retroactively re-scanning old already-filed mail is not included in this pass (can be a follow-up).
+- A **Recall.ai API key** (stored as `RECALL_API_KEY`), the Recall **region** (`RECALL_REGION`), and a **webhook signing secret** (`RECALL_WEBHOOK_SECRET`). Recall isn't a Lovable connector, so this is a custom secret you'll paste.
+- One config step in your Recall dashboard: point Recall's webhook at Zerrow's endpoint (I'll give you the exact URL).
+- A cron schedule (pg_cron) for the calendar auto-join + reconcile ticks, matching the app's other hooks.
 
----
+## Scope of changes
 
-## Technical details
+### Database (migration)
+- `meetings` table: `id`, `user_id`, `gmail_account_id` (nullable), `recall_bot_id`, `title`, `meeting_url`, `platform`, `status` (`scheduled|joining|recording|done|failed`), `scheduled_start`, `started_at`, `ended_at`, `recording_url`, `transcript` (jsonb), `summary` (text), `source` (`link|calendar`), `calendar_event_id` (nullable, for dedupe), timestamps.
+- `meeting_participants` table: `meeting_id`, `email`, `name`, `contact_id` (nullable FK to `contacts`).
+- RLS scoped to `auth.uid() = user_id`; participants scoped through their meeting. `GRANT` statements for `authenticated` + `service_role` on both tables (service_role for webhook/cron writes).
+- `gmail_accounts`: add `auto_record_meetings boolean default false` for the per-account auto-join toggle (reuses existing `calendar_access`).
 
-### 1. Database migration (`folders` + `emails`)
-- `folders.surface_ai_rule text` (nullable) — natural-language surface rule; empty/null disables.
-- `folders.surface_names text` (nullable) — extra names/aliases for identity matching.
-- `emails.surfaced_to_inbox boolean not null default false` — marks a rule-filed email that the AI forced back to the inbox.
-- No new tables, so no new GRANT/RLS blocks; existing `folders`/`emails` policies already cover the columns. Regenerate types after approval.
+### Server logic
+- `src/lib/recall.server.ts` — Recall REST client (region-aware base URL): `createBot`, `getBot`, `getTranscript`, `getSummary`. Reads `RECALL_API_KEY` inside functions.
+- `src/lib/meetings.functions.ts` — `createServerFn` (auth): `recordFromLink`, `listMeetings`, `getMeeting`, `deleteMeeting`, `setAutoRecord`.
+- `src/lib/meetings-autojoin.server.ts` — list upcoming calendar events (reuse `calendar.server.ts` + `google-oauth.server.ts`), extract Meet/Zoom/Teams URLs, schedule bots with `join_at`, dedupe on `calendar_event_id`.
+- `src/lib/meetings-link.server.ts` — match participant emails to existing `contacts` and populate `contact_id`.
 
-### 2. Account context (`src/lib/sync/account-context.ts`)
-- Add `email_address` to the `gmail_accounts` select and expose `accountEmail: string | null` on `AccountContext` (needed as the identity for the surface check). Folders already load via `select("*")`, so the two new folder columns come through automatically.
+### Public endpoints (`src/routes/api/public/`)
+- `recall-webhook.ts` — verifies Recall's Svix signature (`RECALL_WEBHOOK_SECRET`); on status/`done` events updates the meeting, stores recording URL, transcript, summary, and links participants to contacts.
+- `hooks/schedule-meeting-bots.ts` — cron tick (CRON_SECRET): auto-join scan for accounts with `auto_record_meetings`.
+- `hooks/reconcile-meetings.ts` — cron tick: poll Recall for any non-terminal meetings as a webhook fallback.
 
-### 3. Types (`src/lib/sync/types.ts` + `FolderEditor` Folder type)
-- Add `surface_ai_rule: string | null` and `surface_names: string | null` to the `Folder` type in both places.
+### Frontend
+- `src/routes/_authenticated/meetings.tsx` — list + "Record a meeting" (paste link) dialog + detail view (playback, transcript, summary). Uses React Query, service layer via server functions.
+- Add **Meetings** nav button (Video icon) in `src/routes/_authenticated._authenticated.tsx` sidebar.
+- Contact detail (`ContactDetailView.tsx`): a "Meetings" block listing linked meetings/summaries.
+- Settings → Accounts: an **Auto-record meetings** toggle per Gmail account (next to the calendar guard card), gated on calendar access.
 
-### 4. AI surface decision (`src/lib/ai.server.ts`)
-- New `shouldSurfaceToInbox(email, opts)` using the same structured-output/fallback pattern as `classifyEmail`. Inputs: `from`, `to_addrs`, `cc`, `subject`, `body`, plus `{ folderName, surfaceRule, identityEmails, identityNames }`. Returns `{ surface: boolean, reason: string }`. Prompt frames it as: "Given the user's surface rule and identity, should this folder-filed email stay visible in the inbox?"
+## Notes / decisions
 
-### 5. Classification wiring (`src/lib/sync/classify.ts`)
-- Extend `RulesClassification` with `needs_surface_check: boolean` — true when rules matched a folder (`filter`/`domain_rule`/`gmail_label`) whose `surface_ai_rule` is non-empty. Keeps `classifyByRules` pure (just reads the folder field).
-- Add async helper `applySurfaceRule(parsed, context, base)` that calls `shouldSurfaceToInbox`, and returns the base result annotated with a `surfaced` flag + reason.
-
-### 6. Pipeline (`src/lib/sync/process-message.ts`)
-- When `needs_surface_check` is true, insert the email **visible** (don't pre-apply archive/hide effects), then run `applySurfaceRule`:
-  - **surface = yes:** add the folder's Gmail label + star only if configured, but skip `hide_from_inbox`/`auto_archive`; set `surfaced_to_inbox = true`, `is_archived = false`, `classified_by = "surfaced_to_inbox"`, and a reason. Folder_id stays set.
-  - **surface = no:** run the normal `applyFolderActions(..., persistFlags: true)` path (existing behavior).
-- Reuse this in the existing reclassify branch so reanalyze respects the rule.
-
-### 7. Inbox visibility (`src/lib/search-scope.ts` + `search-scope.test.ts`)
-- `emailBelongsInScope` for the main inbox (`"all"`) currently hides mail whose folder has `auto_archive`/`hide_from_inbox`. Add: an email with `surfaced_to_inbox === true` bypasses that folder-flag check (still requires the `INBOX` label and `is_archived !== true`). Add `surfaced_to_inbox?: boolean` to `ScopeEmail` and cover it with tests.
-- Ensure the inbox email query selects `surfaced_to_inbox`.
-
-### 8. Folder editor UI (`src/components/folders/FolderEditor.tsx`)
-- Add the "Surface to inbox (AI)" textarea + names/aliases input bound to `local.surface_ai_rule` / `local.surface_names`, persisted in `save()`.
-- Add `surfaced_to_inbox` to `reasonLabel`/`reasonMeta` (e.g. label "Surfaced", inbox icon) so the badge renders.
-
-### 9. Verification
-- Typecheck touched files; run `search-scope` and `filter-engine` vitest suites.
-- Drive the live preview: open a folder, set a surface rule, confirm save; confirm existing folders without a rule behave exactly as before.
+- Meeting media stays on Recall (we store the URL Recall returns), keeping storage light.
+- Transcript stored as jsonb (speaker-segmented) for rendering; summary stored as text from Recall's output.
+- If you later want an email digest of summaries, that's a small add on top of this — out of scope for now per your choice of "view in app + attach to contacts".
