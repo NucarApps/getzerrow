@@ -1201,6 +1201,38 @@ export type Database = {
         }
         Relationships: []
       }
+      meeting_autojoin_exclusions: {
+        Row: {
+          calendar_event_id: string
+          created_at: string
+          gmail_account_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          calendar_event_id: string
+          created_at?: string
+          gmail_account_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          calendar_event_id?: string
+          created_at?: string
+          gmail_account_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_autojoin_exclusions_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_participants: {
         Row: {
           contact_id: string | null
