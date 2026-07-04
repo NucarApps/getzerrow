@@ -39,17 +39,20 @@ export function extractMeetingUrl(event: UpcomingEvent): string | null {
   return null;
 }
 
-async function fetchUpcomingEvents(accountId: string): Promise<UpcomingEvent[]> {
+async function fetchEventsInWindow(
+  accountId: string,
+  minutesAhead: number,
+): Promise<UpcomingEvent[]> {
   const token = await getAccessToken(accountId);
   const now = new Date();
   const timeMin = now.toISOString();
-  const timeMax = new Date(now.getTime() + LOOKAHEAD_MINUTES * 60_000).toISOString();
+  const timeMax = new Date(now.getTime() + minutesAhead * 60_000).toISOString();
   const params = new URLSearchParams({
     timeMin,
     timeMax,
     singleEvents: "true",
     orderBy: "startTime",
-    maxResults: "50",
+    maxResults: "100",
     showDeleted: "false",
     conferenceDataVersion: "1",
   });
@@ -60,6 +63,66 @@ async function fetchUpcomingEvents(accountId: string): Promise<UpcomingEvent[]> 
   if (!res.ok) throw new Error(`Calendar events ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = (await res.json()) as { items?: UpcomingEvent[] };
   return body.items ?? [];
+}
+
+async function fetchUpcomingEvents(accountId: string): Promise<UpcomingEvent[]> {
+  return fetchEventsInWindow(accountId, LOOKAHEAD_MINUTES);
+}
+
+/** One upcoming calendar event surfaced in the settings notetaker list. */
+export type UpcomingCalendarEvent = {
+  id: string;
+  title: string | null;
+  start: string | null;
+  hasMeetingLink: boolean;
+  scheduled: boolean;
+  excluded: boolean;
+};
+
+const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
+
+/**
+ * List the account's upcoming events (next 14 days) for the settings UI, with
+ * flags for whether each has a supported meeting link, already has a bot
+ * scheduled, and is currently excluded from auto-record.
+ */
+export async function listUpcomingCalendarEventsForAccount(
+  accountId: string,
+  userId: string,
+): Promise<UpcomingCalendarEvent[]> {
+  const events = await fetchEventsInWindow(accountId, LIST_LOOKAHEAD_MINUTES);
+
+  const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
+  if (eventIds.length === 0) return [];
+
+  const [{ data: scheduledRows }, { data: excludedRows }] = await Promise.all([
+    supabaseAdmin
+      .from("meetings")
+      .select("calendar_event_id")
+      .eq("user_id", userId)
+      .in("calendar_event_id", eventIds),
+    supabaseAdmin
+      .from("meeting_autojoin_exclusions")
+      .select("calendar_event_id")
+      .eq("user_id", userId)
+      .in("calendar_event_id", eventIds),
+  ]);
+
+  const scheduledSet = new Set(
+    (scheduledRows ?? []).map((r) => r.calendar_event_id).filter((id): id is string => !!id),
+  );
+  const excludedSet = new Set((excludedRows ?? []).map((r) => r.calendar_event_id));
+
+  return events
+    .filter((e) => !!e.id)
+    .map((e) => ({
+      id: e.id as string,
+      title: e.summary ?? null,
+      start: e.start?.dateTime ?? e.start?.date ?? null,
+      hasMeetingLink: !!extractMeetingUrl(e),
+      scheduled: scheduledSet.has(e.id as string),
+      excluded: excludedSet.has(e.id as string),
+    }));
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
