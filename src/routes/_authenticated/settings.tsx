@@ -41,6 +41,7 @@ import { ProcessingJobs } from "@/components/settings/ProcessingJobs";
 import { AccountHealthPanel } from "@/components/settings/AccountHealthCard";
 import { AccountPicker } from "@/components/settings/AccountPicker";
 import { CalendarGuardCard } from "@/components/settings/CalendarGuardCard";
+import { MeetingAutoRecordCard } from "@/components/settings/MeetingAutoRecordCard";
 import { useAccountSelection } from "@/lib/account-selection";
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -350,6 +351,10 @@ function SettingsPage() {
 
             {accounts.map((a) => (
               <CalendarGuardCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
+            ))}
+
+            {accounts.map((a) => (
+              <MeetingAutoRecordCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
             ))}
 
             <DangerZone />

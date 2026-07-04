@@ -1058,6 +1058,7 @@ export type Database = {
       gmail_accounts: {
         Row: {
           access_token_enc: string | null
+          auto_record_meetings: boolean
           calendar_access: boolean
           calendar_guard_enabled: boolean
           calendar_sync_error: string | null
@@ -1082,6 +1083,7 @@ export type Database = {
         }
         Insert: {
           access_token_enc?: string | null
+          auto_record_meetings?: boolean
           calendar_access?: boolean
           calendar_guard_enabled?: boolean
           calendar_sync_error?: string | null
@@ -1106,6 +1108,7 @@ export type Database = {
         }
         Update: {
           access_token_enc?: string | null
+          auto_record_meetings?: boolean
           calendar_access?: boolean
           calendar_guard_enabled?: boolean
           calendar_sync_error?: string | null
@@ -1197,6 +1200,122 @@ export type Database = {
           value?: string
         }
         Relationships: []
+      }
+      meeting_participants: {
+        Row: {
+          contact_id: string | null
+          created_at: string
+          email: string | null
+          id: string
+          meeting_id: string
+          name: string | null
+        }
+        Insert: {
+          contact_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          meeting_id: string
+          name?: string | null
+        }
+        Update: {
+          contact_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          meeting_id?: string
+          name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_participants_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_participants_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meetings: {
+        Row: {
+          calendar_event_id: string | null
+          created_at: string
+          ended_at: string | null
+          error: string | null
+          gmail_account_id: string | null
+          id: string
+          meeting_url: string
+          platform: string | null
+          recall_bot_id: string | null
+          recording_url: string | null
+          scheduled_start: string | null
+          source: Database["public"]["Enums"]["meeting_source"]
+          started_at: string | null
+          status: Database["public"]["Enums"]["meeting_status"]
+          summary: string | null
+          title: string | null
+          transcript: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          calendar_event_id?: string | null
+          created_at?: string
+          ended_at?: string | null
+          error?: string | null
+          gmail_account_id?: string | null
+          id?: string
+          meeting_url: string
+          platform?: string | null
+          recall_bot_id?: string | null
+          recording_url?: string | null
+          scheduled_start?: string | null
+          source?: Database["public"]["Enums"]["meeting_source"]
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["meeting_status"]
+          summary?: string | null
+          title?: string | null
+          transcript?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          calendar_event_id?: string | null
+          created_at?: string
+          ended_at?: string | null
+          error?: string | null
+          gmail_account_id?: string | null
+          id?: string
+          meeting_url?: string
+          platform?: string | null
+          recall_bot_id?: string | null
+          recording_url?: string | null
+          scheduled_start?: string | null
+          source?: Database["public"]["Enums"]["meeting_source"]
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["meeting_status"]
+          summary?: string | null
+          title?: string | null
+          transcript?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meetings_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       message_jobs: {
         Row: {
@@ -1919,7 +2038,8 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      meeting_source: "link" | "calendar"
+      meeting_status: "scheduled" | "joining" | "recording" | "done" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2046,6 +2166,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      meeting_source: ["link", "calendar"],
+      meeting_status: ["scheduled", "joining", "recording", "done", "failed"],
+    },
   },
 } as const

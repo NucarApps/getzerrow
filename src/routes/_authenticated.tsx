@@ -22,6 +22,7 @@ import {
   BarChart3,
   Users,
   IdCard,
+  Video,
   Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -297,6 +298,16 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           }}
         >
           <Users className="h-4 w-4" /> Contacts
+        </button>
+        <button
+          type="button"
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/meetings" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          onClick={() => {
+            navigate({ to: "/meetings" });
+            onNavigate?.();
+          }}
+        >
+          <Video className="h-4 w-4" /> Meetings
         </button>
         <button
           type="button"

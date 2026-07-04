@@ -17,6 +17,7 @@ import {
   MessageSquare,
   MapPin,
   ImageIcon,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ import {
   getContactCardSignedUrl,
 } from "@/lib/contacts.functions";
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
+import { listMeetingsForContact } from "@/lib/meetings.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { toast } from "sonner";
@@ -579,8 +581,43 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         </section>
       )}
 
+      <ContactMeetings contactId={id} />
+
       <ShareContactDialog open={shareOpen} onOpenChange={setShareOpen} contactId={id} contact={c} />
     </div>
+  );
+}
+
+function ContactMeetings({ contactId }: { contactId: string }) {
+  const listFn = useServerFn(listMeetingsForContact);
+  const q = useQuery({
+    queryKey: ["contact-meetings", contactId],
+    queryFn: () => listFn({ data: { contactId } }),
+  });
+  const meetings = q.data?.meetings ?? [];
+  if (meetings.length === 0) return null;
+  return (
+    <section className="mt-10">
+      <h2 className="mb-3 text-xs uppercase tracking-widest text-muted-foreground">Meetings</h2>
+      <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
+        {meetings.map((m) => (
+          <li key={m.id} className="px-4 py-3 text-sm">
+            <div className="flex items-center gap-2">
+              <Video className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="font-medium">{m.title || "Untitled meeting"}</span>
+              <span className="text-xs text-muted-foreground">
+                {new Date(m.scheduled_start ?? m.created_at).toLocaleDateString()}
+              </span>
+            </div>
+            {m.summary && (
+              <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">
+                {m.summary}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

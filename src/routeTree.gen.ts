@@ -20,10 +20,12 @@ import { Route as CHandleRouteImport } from './routes/c.$handle'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
+import { Route as AuthenticatedMeetingsRouteImport } from './routes/_authenticated/meetings'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
+import { Route as ApiPublicRecallWebhookRouteImport } from './routes/api/public/recall-webhook'
 import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
@@ -41,9 +43,11 @@ import { Route as ApiPublicEncryptionBackfillRouteImport } from './routes/api/pu
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
+import { Route as ApiPublicHooksScheduleMeetingBotsRouteImport } from './routes/api/public/hooks/schedule-meeting-bots'
 import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/public/hooks/relearn-folders'
+import { Route as ApiPublicHooksReconcileMeetingsRouteImport } from './routes/api/public/hooks/reconcile-meetings'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
 import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
@@ -102,6 +106,11 @@ const AuthenticatedMyCardRoute = AuthenticatedMyCardRouteImport.update({
   path: '/my-card',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedMeetingsRoute = AuthenticatedMeetingsRouteImport.update({
+  id: '/meetings',
+  path: '/meetings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -123,6 +132,11 @@ const AuthenticatedContactsIndexRoute =
     path: '/contacts/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const ApiPublicRecallWebhookRoute = ApiPublicRecallWebhookRouteImport.update({
+  id: '/api/public/recall-webhook',
+  path: '/api/public/recall-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicLogoRoute = ApiPublicLogoRouteImport.update({
   id: '/api/public/logo',
   path: '/api/public/logo',
@@ -217,6 +231,12 @@ const ApiPublicHooksSyncCalendarContactsRoute =
     path: '/api/public/hooks/sync-calendar-contacts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksScheduleMeetingBotsRoute =
+  ApiPublicHooksScheduleMeetingBotsRouteImport.update({
+    id: '/api/public/hooks/schedule-meeting-bots',
+    path: '/api/public/hooks/schedule-meeting-bots',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksRunFolderSummaryJobsRoute =
   ApiPublicHooksRunFolderSummaryJobsRouteImport.update({
     id: '/api/public/hooks/run-folder-summary-jobs',
@@ -233,6 +253,12 @@ const ApiPublicHooksRelearnFoldersRoute =
   ApiPublicHooksRelearnFoldersRouteImport.update({
     id: '/api/public/hooks/relearn-folders',
     path: '/api/public/hooks/relearn-folders',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksReconcileMeetingsRoute =
+  ApiPublicHooksReconcileMeetingsRouteImport.update({
+    id: '/api/public/hooks/reconcile-meetings',
+    path: '/api/public/hooks/reconcile-meetings',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicHooksCheckFolderWriteAlertsRoute =
@@ -262,6 +288,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRoute
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/meetings': typeof AuthenticatedMeetingsRoute
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
@@ -283,12 +310,15 @@ export interface FileRoutesByFullPath {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
@@ -301,6 +331,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminRoute
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/meetings': typeof AuthenticatedMeetingsRoute
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
@@ -322,12 +353,15 @@ export interface FileRoutesByTo {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
@@ -342,6 +376,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/folders': typeof AuthenticatedFoldersRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
+  '/_authenticated/meetings': typeof AuthenticatedMeetingsRoute
   '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
@@ -363,12 +398,15 @@ export interface FileRoutesById {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
@@ -383,6 +421,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/folders'
     | '/inbox'
+    | '/meetings'
     | '/my-card'
     | '/reports'
     | '/settings'
@@ -404,12 +443,15 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/recall-webhook'
     | '/contacts/'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/og/card/$handle'
   fileRoutesByTo: FileRoutesByTo
@@ -422,6 +464,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/folders'
     | '/inbox'
+    | '/meetings'
     | '/my-card'
     | '/reports'
     | '/settings'
@@ -443,12 +486,15 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/recall-webhook'
     | '/contacts'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/og/card/$handle'
   id:
@@ -462,6 +508,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/folders'
     | '/_authenticated/inbox'
+    | '/_authenticated/meetings'
     | '/_authenticated/my-card'
     | '/_authenticated/reports'
     | '/_authenticated/settings'
@@ -483,12 +530,15 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/og/card/$handle'
   fileRoutesById: FileRoutesById
@@ -516,11 +566,14 @@ export interface RootRouteChildren {
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
+  ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  ApiPublicHooksReconcileMeetingsRoute: typeof ApiPublicHooksReconcileMeetingsRoute
   ApiPublicHooksRelearnFoldersRoute: typeof ApiPublicHooksRelearnFoldersRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
   ApiPublicHooksRunFolderSummaryJobsRoute: typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  ApiPublicHooksScheduleMeetingBotsRoute: typeof ApiPublicHooksScheduleMeetingBotsRoute
   ApiPublicHooksSyncCalendarContactsRoute: typeof ApiPublicHooksSyncCalendarContactsRoute
   ApiPublicOgCardHandleRoute: typeof ApiPublicOgCardHandleRoute
 }
@@ -604,6 +657,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMyCardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/meetings': {
+      id: '/_authenticated/meetings'
+      path: '/meetings'
+      fullPath: '/meetings'
+      preLoaderRoute: typeof AuthenticatedMeetingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/inbox': {
       id: '/_authenticated/inbox'
       path: '/inbox'
@@ -631,6 +691,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/contacts/'
       preLoaderRoute: typeof AuthenticatedContactsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/public/recall-webhook': {
+      id: '/api/public/recall-webhook'
+      path: '/api/public/recall-webhook'
+      fullPath: '/api/public/recall-webhook'
+      preLoaderRoute: typeof ApiPublicRecallWebhookRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/logo': {
       id: '/api/public/logo'
@@ -751,6 +818,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSyncCalendarContactsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/schedule-meeting-bots': {
+      id: '/api/public/hooks/schedule-meeting-bots'
+      path: '/api/public/hooks/schedule-meeting-bots'
+      fullPath: '/api/public/hooks/schedule-meeting-bots'
+      preLoaderRoute: typeof ApiPublicHooksScheduleMeetingBotsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/run-folder-summary-jobs': {
       id: '/api/public/hooks/run-folder-summary-jobs'
       path: '/api/public/hooks/run-folder-summary-jobs'
@@ -770,6 +844,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/hooks/relearn-folders'
       fullPath: '/api/public/hooks/relearn-folders'
       preLoaderRoute: typeof ApiPublicHooksRelearnFoldersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/reconcile-meetings': {
+      id: '/api/public/hooks/reconcile-meetings'
+      path: '/api/public/hooks/reconcile-meetings'
+      fullPath: '/api/public/hooks/reconcile-meetings'
+      preLoaderRoute: typeof ApiPublicHooksReconcileMeetingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/check-folder-write-alerts': {
@@ -800,6 +881,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedFoldersRoute: typeof AuthenticatedFoldersRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
+  AuthenticatedMeetingsRoute: typeof AuthenticatedMeetingsRoute
   AuthenticatedMyCardRoute: typeof AuthenticatedMyCardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
@@ -812,6 +894,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedFoldersRoute: AuthenticatedFoldersRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
+  AuthenticatedMeetingsRoute: AuthenticatedMeetingsRoute,
   AuthenticatedMyCardRoute: AuthenticatedMyCardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
@@ -847,14 +930,18 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicLogoRoute: ApiPublicLogoRoute,
+  ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
   ApiPublicHooksCheckFolderRetryAlertsRoute:
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
     ApiPublicHooksCheckFolderWriteAlertsRoute,
+  ApiPublicHooksReconcileMeetingsRoute: ApiPublicHooksReconcileMeetingsRoute,
   ApiPublicHooksRelearnFoldersRoute: ApiPublicHooksRelearnFoldersRoute,
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
   ApiPublicHooksRunFolderSummaryJobsRoute:
     ApiPublicHooksRunFolderSummaryJobsRoute,
+  ApiPublicHooksScheduleMeetingBotsRoute:
+    ApiPublicHooksScheduleMeetingBotsRoute,
   ApiPublicHooksSyncCalendarContactsRoute:
     ApiPublicHooksSyncCalendarContactsRoute,
   ApiPublicOgCardHandleRoute: ApiPublicOgCardHandleRoute,
