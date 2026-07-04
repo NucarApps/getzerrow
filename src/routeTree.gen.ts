@@ -24,6 +24,7 @@ import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
+import { Route as ApiPublicRecallWebhookRouteImport } from './routes/api/public/recall-webhook'
 import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
@@ -123,6 +124,11 @@ const AuthenticatedContactsIndexRoute =
     path: '/contacts/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const ApiPublicRecallWebhookRoute = ApiPublicRecallWebhookRouteImport.update({
+  id: '/api/public/recall-webhook',
+  path: '/api/public/recall-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicLogoRoute = ApiPublicLogoRouteImport.update({
   id: '/api/public/logo',
   path: '/api/public/logo',
@@ -283,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
@@ -322,6 +329,7 @@ export interface FileRoutesByTo {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
@@ -363,6 +371,7 @@ export interface FileRoutesById {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
@@ -404,6 +413,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/recall-webhook'
     | '/contacts/'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
@@ -443,6 +453,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/recall-webhook'
     | '/contacts'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
@@ -483,6 +494,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
@@ -516,6 +528,7 @@ export interface RootRouteChildren {
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
+  ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   ApiPublicHooksRelearnFoldersRoute: typeof ApiPublicHooksRelearnFoldersRoute
@@ -631,6 +644,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/contacts/'
       preLoaderRoute: typeof AuthenticatedContactsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/public/recall-webhook': {
+      id: '/api/public/recall-webhook'
+      path: '/api/public/recall-webhook'
+      fullPath: '/api/public/recall-webhook'
+      preLoaderRoute: typeof ApiPublicRecallWebhookRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/logo': {
       id: '/api/public/logo'
@@ -847,6 +867,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicLogoRoute: ApiPublicLogoRoute,
+  ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
   ApiPublicHooksCheckFolderRetryAlertsRoute:
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
