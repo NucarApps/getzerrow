@@ -141,16 +141,17 @@ export function isTerminalCode(code: string | null): boolean {
  */
 export async function resolvePlayableRecordingUrl(
   meetingId: string,
-): Promise<string | null> {
+): Promise<{ url: string | null; recallBotId: string | null }> {
   const { data: meeting } = await supabaseAdmin
     .from("meetings")
     .select("id, recall_bot_id, recording_url")
     .eq("id", meetingId)
     .maybeSingle();
-  if (!meeting) return null;
-  if (meeting.recording_url) return meeting.recording_url;
-  if (!meeting.recall_bot_id) return null;
-  return mintFreshRecordingUrl(meeting.id, meeting.recall_bot_id);
+  if (!meeting) return { url: null, recallBotId: null };
+  const recallBotId = meeting.recall_bot_id ?? null;
+  if (meeting.recording_url) return { url: meeting.recording_url, recallBotId };
+  if (!recallBotId) return { url: null, recallBotId: null };
+  return { url: await mintFreshRecordingUrl(meeting.id, recallBotId), recallBotId };
 }
 
 /**
