@@ -460,17 +460,17 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </div>
             )}
 
-            {recordingUrl && (
+            {streamUrl && (
               <div className="space-y-2">
                 <video
-                  key={recordingUrl}
+                  key={streamUrl}
                   controls
                   playsInline
                   preload="metadata"
                   onError={() => setVideoError(true)}
                   className="w-full rounded-md border border-border bg-black"
                 >
-                  <source src={recordingUrl} type="video/mp4" />
+                  <source src={streamUrl} type="video/mp4" />
                 </video>
                 {videoError && (
                   <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -479,7 +479,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                 )}
                 <div className="flex flex-wrap items-center gap-4">
                   <a
-                    href={recordingUrl}
+                    href={streamUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
@@ -487,7 +487,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                     <ExternalLink className="h-3.5 w-3.5" /> Open recording
                   </a>
                   <a
-                    href={recordingUrl}
+                    href={`${streamUrl}&dl=1`}
                     download
                     className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                   >
