@@ -1,43 +1,78 @@
-# Fix meeting playback + add per-event notetaker control
+# Make the embedded meeting player actually play
 
-## Part 1 — Make the embedded player actually work
+## What's wrong
 
-### Root cause (confirmed)
-Recall stores recordings in S3 and serves the file with `Content-Type: binary/octet-stream`. I verified this against your latest meeting's file:
+The recording streaming proxy (`/api/public/meeting-recording`) calls the heavy
+`refreshMeetingRecording()` on **every** HTTP request. A `<video>` element
+issues many parallel byte-range requests while playing/seeking, and each one
+currently triggers:
 
-```text
-Content-Type: binary/octet-stream
-Accept-Ranges: bytes
-Content-Range: bytes 0-100/6410520
-```
+- a Recall `getBot` API call, plus
+- (whenever `transcript` or `summary` is null — which is the case for real
+  meetings) a Recall `getTranscript` call + summarize + database writes +
+  participant→contact linking.
 
-The bytes and range requests are fine, but mobile Safari (and some desktop browsers) refuse to play a `<video>` whose response says `binary/octet-stream`, even with a `<source type="video/mp4">` hint. That is exactly the "embedded player could not load this recording" state in your screenshot.
+Under the browser's concurrent range requests this overwhelms the hot path
+(slow responses, Recall rate limits). Any failed range request returns 404
+mid-stream, so the player renders but stalls and never plays. A single `curl`
+succeeds because it's one request; a browser is not.
 
-The stored URL is also a short-lived signed S3 URL that expires, so a `<video>` element can't carry an auth header anyway.
+Verified facts:
+- The proxy already returns correct `video/mp4`, `200/206`, and honors `Range`.
+- The stored file is a valid faststart H.264/AAC MP4 — fully playable.
+- The affected meeting has a valid `recording_url` but `transcript`/`summary`
+  are `NULL`, so the per-request transcript backfill runs every time.
 
-### Fix: a same-origin streaming proxy that corrects the content type
-1. **New authenticated server function `getRecordingStreamUrl({ id })`** (in `src/lib/meetings.functions.ts`): verifies the caller owns the meeting, then mints a short-lived signed token (HMAC of `meetingId + expiry`) and returns a same-origin URL like `/api/public/meeting-recording?m={id}&t={token}&e={exp}`. The `<video>` element needs no auth header — the signed token is the credential.
-2. **New public server route `src/routes/api/public/meeting-recording.ts` (GET)**: validates the HMAC token + expiry, loads the meeting with the admin client, fetches a *fresh* signed recording URL from Recall server-side, then fetches the S3 object forwarding the browser's `Range` header and streams the body back with corrected headers: `Content-Type: video/mp4`, `Accept-Ranges: bytes`, passed-through `Content-Range`/`Content-Length`, and status `200`/`206`. A `dl=1` variant sets `Content-Disposition: attachment` for the download button.
-3. **New signing secret** `MEETING_STREAM_SECRET` (auto-generated) used only to sign/verify the stream token.
-4. **`src/routes/_authenticated/meetings.tsx`**: point the `<video>` `src` and the "Open recording"/"Download" links at the proxy URL instead of the raw S3 URL. Keep the existing "Refresh recording" fallback and error message. Because the proxy always returns `video/mp4` from a freshly-signed source, inline playback works on mobile and desktop and the URL never serves an expired link.
+## Fix: keep the streaming hot path cheap and self-healing
 
-## Part 2 — Calendar events list with per-event notetaker control
+Change the proxy so it never does transcript/summary work and only touches
+Recall when strictly necessary.
 
-Today auto-record is all-or-nothing per inbox: when it's on, the cron tick sends a bot to every upcoming calendar event that has a Zoom/Meet/Teams link. There's no way to say "skip this one."
+1. **Add a lightweight resolver** in `src/lib/meetings.server.ts`, e.g.
+   `resolvePlayableRecordingUrl(meetingId)`:
+   - Read the meeting's stored `recording_url` (service-role select only).
+   - Return it directly. No `getTranscript`, no summarize, no DB writes, no
+     participant linking.
+   - Only if there is no stored URL, call `getBot` + `extractRecordingUrl`
+     once, persist the fresh URL, and return it.
 
-### Changes
-1. **New table `meeting_autojoin_exclusions`** (`id`, `user_id`, `gmail_account_id`, `calendar_event_id`, `created_at`) with RLS scoped to `auth.uid()` and the required GRANTs. A row means "do not send the notetaker to this event."
-2. **New server function `listUpcomingCalendarEvents({ accountId })`**: fetches the account's upcoming primary-calendar events (next ~14 days), returns per event: title, start time, whether it has a supported meeting link, whether a bot is already scheduled (from `meetings.calendar_event_id`), and whether it's currently excluded.
-3. **New server function `setEventExclusion({ accountId, calendarEventId, excluded })`**: inserts/deletes an exclusion row (ownership-checked).
-4. **Update `scheduleUpcomingMeetingBots`** (`src/lib/meetings-autojoin.server.ts`): skip any event whose id is in `meeting_autojoin_exclusions` for that user, alongside the existing "already scheduled" dedupe.
-5. **New settings component `MeetingCalendarEventsCard`**: lists upcoming events for each calendar-enabled inbox with a per-event "Send notetaker" toggle (on by default; toggling off records an exclusion). Events without a supported meeting link are shown as non-recordable/greyed. Rendered in `src/routes/_authenticated/settings.tsx` right under the existing Auto-record card. Only meaningful when auto-record is on for that inbox, so it notes that.
+2. **Rework the proxy** (`src/routes/api/public/meeting-recording.ts`):
+   - Verify the token (unchanged).
+   - Get the URL from `resolvePlayableRecordingUrl`.
+   - Fetch it with the forwarded `Range` header.
+   - If that upstream fetch fails with an auth/expiry error (e.g. 403), fall
+     back **once** to `getBot` + `extractRecordingUrl` to mint a fresh signed
+     S3 URL, persist it, and retry the fetch. This makes expired-link recovery
+     automatic without doing it on every request.
+   - Keep the existing `video/mp4` rewrite, `Accept-Ranges`, `Content-Range`,
+     `Content-Length`, and download-disposition handling.
 
-## Notes / scope
-- No changes to the recording start flow, transcript, or summary logic beyond reusing the existing fresh-URL refresh.
-- One migration (the exclusions table). No changes to auth or existing tables.
-- Copy stays sentence case and friendly, matching the rest of settings.
+3. **Keep transcript/summary backfill off the streaming path.** It stays where
+   it belongs — in `refreshRecording` / `getRecordingStreamUrl`, which run once
+   when the meeting dialog opens (and via the "Refresh recording" button), not
+   per byte-range.
 
-## Technical details
-- Streaming through the Cloudflare Worker uses `fetch(freshS3Url, { headers: { Range } })` and returns `new Response(res.body, { status, headers })` — body streaming with range passthrough is supported on the runtime.
-- The stream token is verified with `crypto` HMAC + a constant-time compare and an expiry check; the `/api/public/*` route does its own auth via that token (never the publishable key), consistent with the project's public-endpoint rule.
-- `getRecordingStreamUrl` and `setEventExclusion`/`listUpcomingCalendarEvents` use `requireSupabaseAuth`; they're called from components/`useServerFn`, not from public-route loaders.
+## Not changing
+
+- The calendar-exclusion settings section is already implemented and working
+  (`MeetingCalendarEventsCard`, `meeting_autojoin_exclusions` table,
+  `listUpcomingCalendarEvents` / `setEventExclusion`, and auto-record skipping
+  excluded events). No work needed there.
+- Token signing/verification, the `<video>` UI, and Open/Download links stay as
+  they are.
+
+## Verification
+
+- Re-run the direct proxy `curl` (200 + `206` on Range) to confirm no
+  regression.
+- Load a finished meeting in the preview and confirm the video plays and seeks
+  without stalling, and that the "Refresh recording" button still backfills
+  transcript/summary.
+
+## Technical notes
+
+- Files touched: `src/lib/meetings.server.ts` (new cheap resolver + one-shot
+  refresh-on-403 helper) and `src/routes/api/public/meeting-recording.ts`
+  (use the resolver, add single retry). No schema changes, no new secrets.
+- `refreshMeetingRecording` remains for the dialog/refresh flow; only the proxy
+  stops using it.

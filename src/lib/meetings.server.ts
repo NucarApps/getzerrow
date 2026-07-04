@@ -132,6 +132,55 @@ export function isTerminalCode(code: string | null): boolean {
 }
 
 /**
+ * Resolve a playable recording URL for the streaming proxy hot path. Kept
+ * deliberately cheap: it reads the stored `recording_url` and returns it
+ * without touching transcripts, summaries, or writing rows. Only when there is
+ * no stored URL at all does it call Recall once to mint (and persist) a fresh
+ * signed S3 URL. This is what every byte-range request from the <video> element
+ * hits, so it must never do per-request Recall/transcript work.
+ */
+export async function resolvePlayableRecordingUrl(
+  meetingId: string,
+): Promise<{ url: string | null; recallBotId: string | null }> {
+  const { data: meeting } = await supabaseAdmin
+    .from("meetings")
+    .select("id, recall_bot_id, recording_url")
+    .eq("id", meetingId)
+    .maybeSingle();
+  if (!meeting) return { url: null, recallBotId: null };
+  const recallBotId = meeting.recall_bot_id ?? null;
+  if (meeting.recording_url) return { url: meeting.recording_url, recallBotId };
+  if (!recallBotId) return { url: null, recallBotId: null };
+  return { url: await mintFreshRecordingUrl(meeting.id, recallBotId), recallBotId };
+}
+
+/**
+ * Fetch a fresh signed recording URL from Recall for one meeting and persist
+ * it. No transcript/summary work. Used both when no URL is stored yet and as a
+ * one-shot recovery when a stored URL has expired mid-playback.
+ */
+export async function mintFreshRecordingUrl(
+  meetingId: string,
+  recallBotId: string,
+): Promise<string | null> {
+  let bot: RecallBot;
+  try {
+    bot = await getBot(recallBotId);
+  } catch (e) {
+    logError("meeting_mint_getbot_failed", { meetingId }, e);
+    return null;
+  }
+  const url = extractRecordingUrl(bot);
+  if (!url) return null;
+  const { error } = await supabaseAdmin
+    .from("meetings")
+    .update({ recording_url: url })
+    .eq("id", meetingId);
+  if (error) logError("meeting_mint_update_failed", { meetingId, error: error.message });
+  return url;
+}
+
+/**
  * For an already-finished meeting, pull a *fresh* signed recording URL from
  * Recall (the stored one is short-lived and expires), and backfill the
  * transcript/summary if they never landed. Does not change the meeting status.
