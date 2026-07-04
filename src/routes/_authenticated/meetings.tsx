@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -7,6 +7,7 @@ import {
   getMeeting,
   recordFromLink,
   deleteMeeting,
+  syncMeeting,
   extractMeetingUrl,
 } from "@/lib/meetings.functions";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw } from "lucide-react";
+
+const TERMINAL = new Set(["done", "failed"]);
+
 
 export const Route = createFileRoute("/_authenticated/meetings")({
   head: () => ({
@@ -73,6 +77,7 @@ function formatWhen(iso: string | null): string {
 function MeetingsPage() {
   const qc = useQueryClient();
   const list = useServerFn(listMeetings);
+  const sync = useServerFn(syncMeeting);
   const meetingsQ = useQuery({
     queryKey: ["meetings"],
     queryFn: () => list(),
@@ -82,8 +87,27 @@ function MeetingsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const meetings = meetingsQ.data?.meetings ?? [];
 
+  // Best-effort: pull live status for any non-terminal meetings so the list
+  // badges advance without opening each one, then refresh the list once.
+  const syncingRef = useRef(false);
+  useEffect(() => {
+    const pending = meetings.filter((m) => !TERMINAL.has(m.status));
+    if (!pending.length || syncingRef.current) return;
+    syncingRef.current = true;
+    void (async () => {
+      try {
+        await Promise.all(pending.map((m) => sync({ data: { id: m.id } }).catch(() => null)));
+        await qc.invalidateQueries({ queryKey: ["meetings"] });
+      } finally {
+        syncingRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetings.map((m) => `${m.id}:${m.status}`).join(",")]);
+
   return (
     <div className="h-full overflow-y-auto">
+
       <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
         <header className="mb-8 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -250,7 +274,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const qc = useQueryClient();
   const getFn = useServerFn(getMeeting);
   const del = useServerFn(deleteMeeting);
+  const sync = useServerFn(syncMeeting);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const q = useQuery({
     queryKey: ["meeting", id],
@@ -258,7 +284,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     enabled: !!id,
     refetchInterval: (query) => {
       const status = query.state.data?.meeting.status;
-      return status && status !== "done" && status !== "failed" ? 10000 : false;
+      return status && !TERMINAL.has(status) ? 10000 : false;
     },
   });
 
@@ -268,6 +294,33 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     () => (meeting?.transcript as TranscriptSegment[] | null) ?? [],
     [meeting?.transcript],
   );
+
+  // Pull the live status from Recall whenever a non-terminal meeting is open,
+  // and again on each poll tick, so the badge advances even without webhooks.
+  const status = meeting?.status;
+  useEffect(() => {
+    if (!id || !status || TERMINAL.has(status)) return;
+    void sync({ data: { id } })
+      .then((r) => {
+        if (r.status !== status) qc.invalidateQueries({ queryKey: ["meeting", id] });
+      })
+      .catch(() => null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, status, q.dataUpdatedAt]);
+
+  async function onRefresh() {
+    if (!id) return;
+    setRefreshing(true);
+    try {
+      await sync({ data: { id } });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      await qc.invalidateQueries({ queryKey: ["meetings"] });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not refresh status");
+    }
+    setRefreshing(false);
+  }
+
 
   async function onDelete() {
     if (!id) return;
@@ -358,11 +411,25 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </section>
             )}
 
-            {meeting.status !== "done" && meeting.status !== "failed" && (
-              <p className="text-sm text-muted-foreground">
-                Recording in progress — the transcript and summary appear here once the meeting ends.
-              </p>
+            {!TERMINAL.has(meeting.status) && (
+              <div className="flex items-center justify-between gap-3 rounded-md bg-muted/50 p-3">
+                <p className="text-sm text-muted-foreground">
+                  Recording in progress — the transcript and summary appear here once the meeting
+                  ends.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onRefresh}
+                  disabled={refreshing}
+                  className="shrink-0"
+                >
+                  <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                  {refreshing ? "Refreshing…" : "Refresh status"}
+                </Button>
+              </div>
             )}
+
 
             <DialogFooter className="flex items-center justify-between sm:justify-between">
               <a

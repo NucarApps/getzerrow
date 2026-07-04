@@ -147,6 +147,31 @@ export const getMeeting = createServerFn({ method: "GET" })
     return { meeting, participants: participants ?? [] };
   });
 
+/**
+ * Pull the live bot state from Recall for one of the caller's meetings and
+ * persist the resolved status (and recording/transcript/summary when ready).
+ * Works on demand from the UI without waiting for the webhook or reconcile cron.
+ */
+export const syncMeeting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    // Ownership is enforced by RLS on the per-user client.
+    const { data: meeting } = await context.supabase
+      .from("meetings")
+      .select("id, user_id, recall_bot_id, status")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!meeting) throw new Error("Meeting not found");
+    if (!meeting.recall_bot_id || meeting.status === "done" || meeting.status === "failed") {
+      return { status: meeting.status };
+    }
+    // Dynamic import keeps the service-role module out of the client bundle.
+    const { syncMeetingFromRecall } = await import("./meetings.server");
+    const status = await syncMeetingFromRecall(meeting);
+    return { status };
+  });
+
 /** Delete a meeting and best-effort remove the bot from the call. */
 export const deleteMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
