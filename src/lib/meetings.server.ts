@@ -85,13 +85,13 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
   try {
     bot = await getBot(meeting.recall_bot_id);
   } catch (e) {
-    logError("meeting_sync_getbot_failed", e, { meetingId: meeting.id });
+    logError("meeting_sync_getbot_failed", { meetingId: meeting.id }, e);
     return meeting.status;
   }
 
   const code = latestStatusCode(bot);
   const status = mapStatus(code);
-  const update: Record<string, unknown> = { status };
+  const update: MeetingUpdate = { status };
 
   if (status === "recording" || status === "done") {
     // best-effort recording link
@@ -104,11 +104,11 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
     try {
       const segments = await getTranscript(meeting.recall_bot_id);
       if (segments.length) {
-        update.transcript = segments;
+        update.transcript = segments as unknown as MeetingUpdate["transcript"];
         update.summary = summarizeTranscript(segments);
       }
     } catch (e) {
-      logError("meeting_sync_transcript_failed", e, { meetingId: meeting.id });
+      logError("meeting_sync_transcript_failed", { meetingId: meeting.id }, e);
     }
   }
 
@@ -117,7 +117,7 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
   }
 
   const { error } = await supabaseAdmin.from("meetings").update(update).eq("id", meeting.id);
-  if (error) logError("meeting_sync_update_failed", error, { meetingId: meeting.id });
+  if (error) logError("meeting_sync_update_failed", { meetingId: meeting.id, error: error.message });
 
   if (status === "done") {
     await linkParticipantsToContacts(meeting.id, meeting.user_id);
