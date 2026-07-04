@@ -1,78 +1,46 @@
-# Make the embedded meeting player actually play
+# Meeting detail: right-side drawer with tabs
 
-## What's wrong
+Turn the meeting detail view from a centered modal into a right-side sliding drawer. The video plays at the top, and the AI summary and transcript live in a tabbed panel below it.
 
-The recording streaming proxy (`/api/public/meeting-recording`) calls the heavy
-`refreshMeetingRecording()` on **every** HTTP request. A `<video>` element
-issues many parallel byte-range requests while playing/seeking, and each one
-currently triggers:
+## What changes
 
-- a Recall `getBot` API call, plus
-- (whenever `transcript` or `summary` is null — which is the case for real
-  meetings) a Recall `getTranscript` call + summarize + database writes +
-  participant→contact linking.
+All work is in `src/routes/_authenticated/meetings.tsx` — only the `MeetingDetail` component is reworked. The list, record dialog, and all server functions stay untouched. No backend or business-logic changes.
 
-Under the browser's concurrent range requests this overwhelms the hot path
-(slow responses, Recall rate limits). Any failed range request returns 404
-mid-stream, so the player renders but stalls and never plays. A single `curl`
-succeeds because it's one request; a browser is not.
+### Layout (top to bottom, inside the drawer)
 
-Verified facts:
-- The proxy already returns correct `video/mp4`, `200/206`, and honors `Range`.
-- The stored file is a valid faststart H.264/AAC MP4 — fully playable.
-- The affected meeting has a valid `recording_url` but `transcript`/`summary`
-  are `NULL`, so the per-request transcript backfill runs every time.
+```text
+┌─────────────────────────────┐
+│ Title            [status]   │  header
+│ platform · date             │
+├─────────────────────────────┤
+│  ▶  video player            │  (when recording exists)
+├─────────────────────────────┤
+│  [ Summary ] [ Transcript ] │  tab bar
+│                             │
+│  active tab content          │
+│  (scrolls)                   │
+├─────────────────────────────┤
+│ Open link          Delete    │  footer
+└─────────────────────────────┘
+```
 
-## Fix: keep the streaming hot path cheap and self-healing
+- **Summary tab**: participants chips + AI summary text. If the meeting isn't done yet, show the "recording in progress" note with the Refresh status button. If done but no summary, show a short empty state.
+- **Transcript tab**: the speaker/text segment list. Empty state when there's no transcript yet.
+- **Recording status strip** (found/not found + Refresh recording) stays directly under the video, since it drives the player.
 
-Change the proxy so it never does transcript/summary work and only touches
-Recall when strictly necessary.
+### Drawer mechanics
 
-1. **Add a lightweight resolver** in `src/lib/meetings.server.ts`, e.g.
-   `resolvePlayableRecordingUrl(meetingId)`:
-   - Read the meeting's stored `recording_url` (service-role select only).
-   - Return it directly. No `getTranscript`, no summarize, no DB writes, no
-     participant linking.
-   - Only if there is no stored URL, call `getBot` + `extractRecordingUrl`
-     once, persist the fresh URL, and return it.
+- Replace `Dialog`/`DialogContent` with `Sheet`/`SheetContent side="right"` (both already in `src/components/ui`).
+- On mobile (current viewport) the right sheet takes near-full width; on desktop it's a fixed-width side panel (`w-full sm:max-w-xl`).
+- Body is a vertical flex column: fixed header, video + status, then the `Tabs` region that scrolls internally, then a pinned footer.
+- `Tabs`/`TabsList`/`TabsTrigger`/`TabsContent` from `src/components/ui/tabs`.
+- Keep `open={!!id}` / `onClose` wiring; swap `DialogHeader/Title/Description` for `SheetHeader/Title/Description` and `DialogFooter` for a plain footer div.
 
-2. **Rework the proxy** (`src/routes/api/public/meeting-recording.ts`):
-   - Verify the token (unchanged).
-   - Get the URL from `resolvePlayableRecordingUrl`.
-   - Fetch it with the forwarded `Range` header.
-   - If that upstream fetch fails with an auth/expiry error (e.g. 403), fall
-     back **once** to `getBot` + `extractRecordingUrl` to mint a fresh signed
-     S3 URL, persist it, and retry the fetch. This makes expired-link recovery
-     automatic without doing it on every request.
-   - Keep the existing `video/mp4` rewrite, `Accept-Ranges`, `Content-Range`,
-     `Content-Length`, and download-disposition handling.
+## Behavior preserved
 
-3. **Keep transcript/summary backfill off the streaming path.** It stays where
-   it belongs — in `refreshRecording` / `getRecordingStreamUrl`, which run once
-   when the meeting dialog opens (and via the "Refresh recording" button), not
-   per byte-range.
+- All existing effects stay: live status sync for non-terminal meetings, transcript/summary backfill on open, minting the same-origin stream URL, refresh recording, delete, and the open-in-new-tab / download links under the player.
+- Polling, query keys, and toasts are unchanged.
 
-## Not changing
+## Out of scope
 
-- The calendar-exclusion settings section is already implemented and working
-  (`MeetingCalendarEventsCard`, `meeting_autojoin_exclusions` table,
-  `listUpcomingCalendarEvents` / `setEventExclusion`, and auto-record skipping
-  excluded events). No work needed there.
-- Token signing/verification, the `<video>` UI, and Open/Download links stay as
-  they are.
-
-## Verification
-
-- Re-run the direct proxy `curl` (200 + `206` on Range) to confirm no
-  regression.
-- Load a finished meeting in the preview and confirm the video plays and seeks
-  without stalling, and that the "Refresh recording" button still backfills
-  transcript/summary.
-
-## Technical notes
-
-- Files touched: `src/lib/meetings.server.ts` (new cheap resolver + one-shot
-  refresh-on-403 helper) and `src/routes/api/public/meeting-recording.ts`
-  (use the resolver, add single retry). No schema changes, no new secrets.
-- `refreshMeetingRecording` remains for the dialog/refresh flow; only the proxy
-  stops using it.
+No changes to the meetings list, the record flow, calendar-exclusion settings, or any server function / database schema.
