@@ -196,6 +196,29 @@ export const refreshRecording = createServerFn({ method: "POST" })
     return refreshMeetingRecording(meeting.id);
   });
 
+/**
+ * Mint a short-lived, same-origin streaming URL for a finished meeting's
+ * recording. The <video> element can't carry an auth header, so we sign a
+ * token (verified by the public streaming route) instead of exposing the raw,
+ * short-lived S3 URL. Ownership is enforced by RLS on the per-user client.
+ */
+export const getRecordingStreamUrl = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: meeting } = await context.supabase
+      .from("meetings")
+      .select("id, recall_bot_id, recording_url")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!meeting) throw new Error("Meeting not found");
+    if (!meeting.recall_bot_id && !meeting.recording_url) {
+      return { streamUrl: null as string | null };
+    }
+    const { buildRecordingStreamPath } = await import("./meeting-stream.server");
+    return { streamUrl: buildRecordingStreamPath(meeting.id) };
+  });
+
 /** Delete a meeting and best-effort remove the bot from the call. */
 export const deleteMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
