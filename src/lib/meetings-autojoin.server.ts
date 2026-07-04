@@ -98,13 +98,15 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
 
       const start = event.start?.dateTime ?? event.start?.date ?? null;
       const self = (account.email_address ?? "").toLowerCase();
-      const participants = [
+      const rawPeople: Array<{ email?: string; name?: string | null }> = [
         ...(event.attendees ?? []).map((a) => ({ email: a.email, name: a.displayName })),
-        event.organizer ? { email: event.organizer.email, name: event.organizer.displayName } : null,
-      ]
-        .filter((p): p is { email?: string; name?: string } => !!p && !!p.email)
-        .map((p) => ({ email: (p.email as string).toLowerCase(), name: p.name ?? null }))
-        .filter((p) => p.email !== self && EMAIL_RE.test(p.email));
+      ];
+      if (event.organizer?.email) {
+        rawPeople.push({ email: event.organizer.email, name: event.organizer.displayName });
+      }
+      const participants = rawPeople
+        .map((p) => ({ email: (p.email ?? "").toLowerCase(), name: p.name ?? null }))
+        .filter((p) => p.email !== "" && p.email !== self && EMAIL_RE.test(p.email));
 
       try {
         const bot = await createBot({
