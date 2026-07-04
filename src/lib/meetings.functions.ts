@@ -9,18 +9,41 @@ import { logError } from "./log.server";
 const MEETING_URL_RE =
   /^https?:\/\/(?:[a-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com)\//i;
 
+// Same pattern, but matches anywhere within a longer string (invite emails,
+// calendar blurbs) so we can pull the join link out of pasted text.
+const MEETING_URL_SCAN_RE =
+  /https?:\/\/(?:[a-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com)\/[^\s<>"')]*/i;
+
+/**
+ * Pull the first supported meeting URL out of any pasted text. Returns the
+ * clean link, or null when no supported link is present.
+ */
+export function extractMeetingUrl(text: string): string | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (MEETING_URL_RE.test(trimmed)) return trimmed;
+  const match = trimmed.match(MEETING_URL_SCAN_RE);
+  return match ? match[0] : null;
+}
+
+const NO_LINK_MESSAGE =
+  "We couldn't find a supported meeting link. Paste a Zoom, Google Meet, or Microsoft Teams link.";
+
 /** Send a bot to a pasted meeting link and record the meeting. */
 export const recordFromLink = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
-    z
+  .inputValidator((input) => {
+    const raw = z
       .object({
-        meetingUrl: z.string().url().regex(MEETING_URL_RE, "Unsupported meeting link"),
+        meetingUrl: z.string(),
         title: z.string().max(200).optional(),
         accountId: z.string().uuid().optional(),
       })
-      .parse(input),
-  )
+      .parse(input);
+    const meetingUrl = extractMeetingUrl(raw.meetingUrl);
+    if (!meetingUrl) throw new Error(NO_LINK_MESSAGE);
+    return { ...raw, meetingUrl };
+  })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
