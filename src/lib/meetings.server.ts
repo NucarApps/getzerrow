@@ -5,7 +5,10 @@
 // contexts that must still write user-scoped rows safely (all writes are
 // keyed by the meeting's own user_id).
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import { logError } from "./log.server";
+
+type MeetingUpdate = Database["public"]["Tables"]["meetings"]["Update"];
 import {
   getBot,
   getTranscript,
