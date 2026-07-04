@@ -26,6 +26,7 @@ import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
 import { Route as ApiPublicRecallWebhookRouteImport } from './routes/api/public/recall-webhook'
+import { Route as ApiPublicMeetingRecordingRouteImport } from './routes/api/public/meeting-recording'
 import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
@@ -137,6 +138,12 @@ const ApiPublicRecallWebhookRoute = ApiPublicRecallWebhookRouteImport.update({
   path: '/api/public/recall-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicMeetingRecordingRoute =
+  ApiPublicMeetingRecordingRouteImport.update({
+    id: '/api/public/meeting-recording',
+    path: '/api/public/meeting-recording',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicLogoRoute = ApiPublicLogoRouteImport.update({
   id: '/api/public/logo',
   path: '/api/public/logo',
@@ -310,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
@@ -353,6 +361,7 @@ export interface FileRoutesByTo {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
@@ -398,6 +407,7 @@ export interface FileRoutesById {
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
@@ -443,6 +453,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/contacts/'
     | '/api/public/hooks/check-folder-retry-alerts'
@@ -486,6 +497,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/contacts'
     | '/api/public/hooks/check-folder-retry-alerts'
@@ -530,6 +542,7 @@ export interface FileRouteTypes {
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
     | '/api/public/hooks/check-folder-retry-alerts'
@@ -566,6 +579,7 @@ export interface RootRouteChildren {
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
+  ApiPublicMeetingRecordingRoute: typeof ApiPublicMeetingRecordingRoute
   ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
@@ -697,6 +711,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/recall-webhook'
       fullPath: '/api/public/recall-webhook'
       preLoaderRoute: typeof ApiPublicRecallWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/meeting-recording': {
+      id: '/api/public/meeting-recording'
+      path: '/api/public/meeting-recording'
+      fullPath: '/api/public/meeting-recording'
+      preLoaderRoute: typeof ApiPublicMeetingRecordingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/logo': {
@@ -930,6 +951,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicLogoRoute: ApiPublicLogoRoute,
+  ApiPublicMeetingRecordingRoute: ApiPublicMeetingRecordingRoute,
   ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
   ApiPublicHooksCheckFolderRetryAlertsRoute:
     ApiPublicHooksCheckFolderRetryAlertsRoute,
