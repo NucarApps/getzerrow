@@ -310,7 +310,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     () => (meeting?.transcript as TranscriptSegment[] | null) ?? [],
     [meeting?.transcript],
   );
-  const recordingUrl = freshUrl || meeting?.recording_url || null;
+  const hasRecording = !!(diagnostics?.hasRecording || meeting?.recording_url);
 
   // Pull the live status from Recall whenever a non-terminal meeting is open,
   // and again on each poll tick, so the badge advances even without webhooks.
