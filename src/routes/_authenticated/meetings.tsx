@@ -596,7 +596,10 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
       await qc.invalidateQueries({ queryKey: ["meeting", id] });
       if (r.hasRecording) {
         const s = await getStream({ data: { id } });
-        if (s.streamUrl) setStreamUrl(s.streamUrl);
+        if (s.streamUrl) {
+          setStreamUrl(s.streamUrl);
+          setStreamKind(s.kind ?? "video");
+        }
         setVideoError(false);
       } else {
         setRecordingError("The meeting is done, but no recording file is available yet.");
