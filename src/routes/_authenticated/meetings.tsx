@@ -1059,46 +1059,12 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                     <p className="text-xs font-medium text-muted-foreground">
                       {streamKind === "audio" ? "Recording (audio)" : "Recording"}
                     </p>
-                    {streamKind === "audio" ? (
-                      <audio
-                        key={streamUrl}
-                        controls
-                        preload="metadata"
-                        onError={() => setVideoError(true)}
-                        className="w-full rounded-md border border-border bg-muted/30"
-                        src={streamUrl}
-                      />
-                    ) : (
-                      <video
-                        key={streamUrl}
-                        controls
-                        playsInline
-                        preload="metadata"
-                        onError={() => setVideoError(true)}
-                        className="w-full rounded-md border border-border bg-black"
-                      >
-                        <source src={streamUrl} type="video/mp4" />
-                      </video>
-                    )}
-                    <Collapsible
-                      open={isMobile ? extrasOpen : true}
-                      onOpenChange={setExtrasOpen}
-                      className="space-y-2"
-                    >
-                      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground md:hidden">
-                        <span>Open / download recording</span>
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform ${extrasOpen ? "rotate-180" : ""}`}
-                        />
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="space-y-2">
-                        {videoError && (
-                          <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                            {streamKind === "audio"
-                              ? "This recording is audio only. If it doesn't play here, use Open recording or Download to listen."
-                              : "The embedded player could not load this recording. Open it in a new tab or download it below."}
-                          </p>
-                        )}
+                    {videoError ? (
+                      <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                        <p className="text-sm text-muted-foreground">
+                          This recording couldn't be played here. Open it in a new tab or download
+                          it to listen.
+                        </p>
                         <div className="flex flex-wrap items-center gap-4">
                           <a
                             href={streamUrl}
@@ -1116,10 +1082,66 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                             <Download className="h-3.5 w-3.5" /> Download
                           </a>
                         </div>
-                      </CollapsibleContent>
-                    </Collapsible>
+                      </div>
+                    ) : (
+                      <>
+                        {streamKind === "audio" ? (
+                          <audio
+                            key={streamUrl}
+                            controls
+                            preload="metadata"
+                            onError={() => setVideoError(true)}
+                            className="w-full rounded-md border border-border bg-muted/30"
+                            src={streamUrl}
+                          />
+                        ) : (
+                          <video
+                            key={streamUrl}
+                            controls
+                            playsInline
+                            preload="metadata"
+                            onError={() => setVideoError(true)}
+                            className="w-full rounded-md border border-border bg-black"
+                          >
+                            <source src={streamUrl} type="video/mp4" />
+                          </video>
+                        )}
+                        <Collapsible
+                          open={isMobile ? extrasOpen : true}
+                          onOpenChange={setExtrasOpen}
+                          className="space-y-2"
+                        >
+                          <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground md:hidden">
+                            <span>Open / download recording</span>
+                            <ChevronDown
+                              className={`h-4 w-4 transition-transform ${extrasOpen ? "rotate-180" : ""}`}
+                            />
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-4">
+                              <a
+                                href={streamUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" /> Open recording
+                              </a>
+                              <a
+                                href={streamKind === "audio" ? streamUrl : `${streamUrl}&dl=1`}
+                                download
+                                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                              >
+                                <Download className="h-3.5 w-3.5" /> Download
+                              </a>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </>
+                    )}
                   </div>
                 )}
+
 
                 {meeting.status === "done" && (
                   <div className="text-sm sm:rounded-md sm:border sm:border-border sm:bg-muted/30 sm:p-3">
