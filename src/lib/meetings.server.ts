@@ -7,6 +7,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { logError } from "./log.server";
+import { collapseRunawayRepeats } from "./transcript-sanitize";
 
 type MeetingUpdate = Database["public"]["Tables"]["meetings"]["Update"];
 import {
@@ -343,35 +344,6 @@ function audioMimeFor(path: string): string {
 }
 
 /**
- * Defensive safeguard against speech-to-text hallucination loops, where a bad
- * clip makes the model emit the same phrase back-to-back many times. Collapses
- * long runs of consecutive identical sentences/phrases down to one occurrence.
- * Normal transcripts (no pathological repetition) pass through unchanged.
- */
-function collapseRepeats(text: string): string {
-  if (!text) return text;
-  // Split into sentence-like units, keeping their trailing punctuation.
-  const parts = text.match(/[^.!?]+[.!?]*\s*/g);
-  if (!parts || parts.length < 4) return text;
-
-  const out: string[] = [];
-  let prev = "";
-  let repeat = 0;
-  for (const part of parts) {
-    const norm = part.trim().toLowerCase();
-    if (norm && norm === prev) {
-      repeat += 1;
-      if (repeat >= 2) continue; // keep at most 2 consecutive identical units
-    } else {
-      prev = norm;
-      repeat = 0;
-    }
-    out.push(part);
-  }
-  return out.join("").trim();
-}
-
-/**
  * Transcribe an in-person recording via the Lovable AI speech-to-text endpoint
  * and generate a short summary, then write both to the meeting row. Downloads
  * the audio with the service-role client (it may run from an auth'd server fn,
@@ -434,7 +406,7 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
       return fail("Could not transcribe the recording.", `${res.status}: ${body}`);
     }
     const json = (await res.json()) as { text?: string };
-    transcriptText = collapseRepeats((json.text ?? "").trim());
+    transcriptText = collapseRunawayRepeats((json.text ?? "").trim());
   } catch (e) {
     return fail("Could not transcribe the recording.", e);
   }
