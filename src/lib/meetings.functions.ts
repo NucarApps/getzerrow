@@ -515,6 +515,69 @@ export const setEventExclusion = createServerFn({ method: "POST" })
     return { excluded: data.excluded };
   });
 
+// A blocklist entry is either a full email (jane@lawfirm.com) or a bare
+// domain (lawfirm.com) to skip everyone at a firm.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DOMAIN_RE = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/;
+
+/** People/domains the caller never wants auto-recorded. */
+export const listRecordBlocklist = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("meeting_record_blocklist")
+      .select("id, value, created_at")
+      .eq("user_id", context.userId)
+      .order("value", { ascending: true });
+    if (error) throw new Error(error.message);
+    return { entries: data ?? [] };
+  });
+
+/** Add an email or domain to the caller's don't-auto-record list. */
+export const addRecordBlocklistEntry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        value: z
+          .string()
+          .trim()
+          .min(1)
+          .max(320)
+          .transform((v) => v.toLowerCase())
+          .refine((v) => EMAIL_RE.test(v) || DOMAIN_RE.test(v), {
+            message: "Enter a valid email address or domain.",
+          }),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("meeting_record_blocklist")
+      .upsert(
+        { user_id: context.userId, value: data.value },
+        { onConflict: "user_id,value" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true, value: data.value };
+  });
+
+/** Remove an entry from the caller's don't-auto-record list. */
+export const removeRecordBlocklistEntry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("meeting_record_blocklist")
+      .delete()
+      .eq("user_id", context.userId)
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+
+
 const DEFAULT_CHAT_MESSAGE =
   "Hi! I'm the Zerrow notetaker. I'm here to record and summarize this meeting.";
 
