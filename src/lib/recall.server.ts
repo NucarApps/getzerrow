@@ -80,11 +80,19 @@ type CreateBotInput = {
   botName?: string;
   /** ISO timestamp; when set, Recall schedules the bot to join at that time. */
   joinAt?: string | null;
+  /** When set, the bot posts this message in the meeting chat on join. */
+  chatMessage?: string | null;
+  /** When true, also re-post the chat message each time a participant joins. */
+  chatResendOnJoin?: boolean;
+  /** Base64-encoded JPEG shown as the bot's video tile in the call. */
+  imageB64?: string | null;
 };
 
 /**
  * Create a meeting bot. Requests Recall's built-in meeting-caption transcript
  * (no third-party transcription provider needed) plus a mixed video recording.
+ * Optionally personalizes the bot name, in-call chat message, and video-tile
+ * image from the user's saved meeting-bot settings.
  */
 export async function createBot(input: CreateBotInput): Promise<RecallBot> {
   const body: Record<string, unknown> = {
@@ -95,8 +103,30 @@ export async function createBot(input: CreateBotInput): Promise<RecallBot> {
     },
   };
   if (input.joinAt) body.join_at = input.joinAt;
+
+  const chatMessage = input.chatMessage?.trim();
+  if (chatMessage) {
+    const message = chatMessage.slice(0, 4096);
+    const chat: Record<string, unknown> = {
+      on_bot_join: { send_to: "everyone", message },
+    };
+    if (input.chatResendOnJoin) {
+      chat.on_participant_join = { exclude_host: false, message };
+    }
+    body.chat = chat;
+  }
+
+  if (input.imageB64) {
+    const image = { kind: "jpeg", b64_data: input.imageB64 };
+    body.automatic_video_output = {
+      in_call_recording: image,
+      in_call_not_recording: image,
+    };
+  }
+
   return recallFetch<RecallBot>("/bot", { method: "POST", body });
 }
+
 
 /** Fetch the current bot resource. */
 export async function getBot(botId: string): Promise<RecallBot> {
