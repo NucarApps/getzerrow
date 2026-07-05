@@ -228,6 +228,18 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
         .map((p) => ({ email: (p.email ?? "").toLowerCase(), name: p.name ?? null }))
         .filter((p) => p.email !== "" && p.email !== self && EMAIL_RE.test(p.email));
 
+      // Skip auto-recording if anyone on the user's don't-record list is here.
+      if (hasBlockedAttendee(participants.map((p) => p.email), blocklist)) {
+        logInfo("meeting_autojoin_skipped_blocklist", {
+          runId,
+          accountId: account.id,
+          eventId: event.id,
+        });
+        continue;
+      }
+
+
+
       try {
         const bot = await createBot({
           meetingUrl,
