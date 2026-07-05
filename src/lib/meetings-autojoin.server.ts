@@ -148,12 +148,83 @@ async function loadBlocklist(userId: string): Promise<Blocklist> {
 
 /** True when any attendee/organizer email is on the user's don't-record list. */
 function hasBlockedAttendee(emails: string[], blocklist: Blocklist): boolean {
-  for (const email of emails) {
-    if (blocklist.emails.has(email)) return true;
+  return findBlockedEntry(emails, blocklist) !== null;
+}
+
+/** Return the first email/domain that matches the don't-record list, or null. */
+function findBlockedEntry(emails: string[], blocklist: Blocklist): string | null {
+  for (const raw of emails) {
+    const email = (raw ?? "").toLowerCase();
+    if (!email) continue;
+    if (blocklist.emails.has(email)) return email;
     const domain = email.slice(email.indexOf("@") + 1);
-    if (domain && blocklist.domains.has(domain)) return true;
+    if (domain && blocklist.domains.has(domain)) return domain;
   }
-  return false;
+  return null;
+}
+
+/** Normalize a meeting URL for comparison: lowercase host, drop query/hash. */
+function normalizeMeetingUrl(url: string): string {
+  try {
+    const u = new URL(url.trim());
+    return `${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, "")}`.toLowerCase();
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
+/**
+ * For a pasted meeting link, look across the user's calendar-enabled accounts
+ * for a matching event and return a blocked attendee/domain if one is invited.
+ * Returns null when the list is empty, no matching event is found, or nobody is
+ * blocked. Server-only; used to refuse manual "record from link".
+ */
+export async function findBlockedAttendeeForMeetingUrl(
+  userId: string,
+  meetingUrl: string,
+): Promise<string | null> {
+  const blocklist = await loadBlocklist(userId);
+  if (blocklist.emails.size === 0 && blocklist.domains.size === 0) return null;
+
+  const target = normalizeMeetingUrl(meetingUrl);
+
+  const { data: accounts } = await supabaseAdmin
+    .from("gmail_accounts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("calendar_access", true);
+
+  for (const account of accounts ?? []) {
+    let events: UpcomingEvent[];
+    try {
+      events = await fetchEventsInWindow(account.id, LIST_LOOKAHEAD_MINUTES);
+    } catch (e) {
+      logError("meeting_blocklist_calendar_failed", { userId, accountId: account.id }, e);
+      continue;
+    }
+    for (const event of events) {
+      const url = extractMeetingUrl(event);
+      if (!url || normalizeMeetingUrl(url) !== target) continue;
+      const emails = [
+        ...(event.attendees ?? []).map((a) => a.email),
+        event.organizer?.email,
+      ].filter((e): e is string => !!e);
+      const blocked = findBlockedEntry(emails, blocklist);
+      if (blocked) return blocked;
+    }
+  }
+  return null;
+}
+
+/** Load a user's blocklist and check a set of participant emails. Server-only. */
+export async function findBlockedEmailForUser(
+  userId: string,
+  emails: string[],
+): Promise<string | null> {
+  if (emails.length === 0) return null;
+  const blocklist = await loadBlocklist(userId);
+  if (blocklist.emails.size === 0 && blocklist.domains.size === 0) return null;
+  return findBlockedEntry(emails, blocklist);
 }
 
 /** Schedule bots for every account that has auto-record enabled. */
