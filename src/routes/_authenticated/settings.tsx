@@ -44,6 +44,7 @@ import { CalendarGuardCard } from "@/components/settings/CalendarGuardCard";
 import { MeetingAutoRecordCard } from "@/components/settings/MeetingAutoRecordCard";
 import { MeetingCalendarEventsCard } from "@/components/settings/MeetingCalendarEventsCard";
 import { MeetingBotCard } from "@/components/settings/MeetingBotCard";
+import { MeetingRecordBlocklistCard } from "@/components/settings/MeetingRecordBlocklistCard";
 import { useAccountSelection } from "@/lib/account-selection";
 
 export const Route = createFileRoute("/_authenticated/settings")({
