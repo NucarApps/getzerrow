@@ -1199,12 +1199,12 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
 
                 <TabsContent
                   value="transcript"
-                  className="mt-0 min-h-0 flex-1 overflow-y-auto p-6 pt-4"
+                  className="mt-0 min-h-0 flex-1 overflow-y-auto p-4 pt-4 sm:p-6"
                 >
                   {transcript.length > 0 ? (
-                    <div className="space-y-2 rounded-md border border-border p-3">
+                    <div className="space-y-3 rounded-md border border-border p-3 sm:p-4">
                       {transcript.map((seg, i) => (
-                        <p key={i} className="text-sm">
+                        <p key={i} className="text-sm leading-relaxed">
                           {seg.speaker && (
                             <span className="font-medium text-foreground">{seg.speaker}: </span>
                           )}
