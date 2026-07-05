@@ -66,7 +66,7 @@ export function UpcomingMeetingsCard() {
       <div className="flex items-start gap-3 border-b bg-muted/20 p-4 md:p-6">
         <CalendarClock className="mt-0.5 h-5 w-5 text-muted-foreground" />
         <div>
-          <h2 className="font-display text-2xl">Upcoming meetings</h2>
+          <h2 className="font-display text-lg sm:text-2xl">Upcoming meetings</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Meetings with a Zoom, Meet, or Teams link coming up in the next 14 days. Turn the
             notetaker off for any you'd rather keep private.
