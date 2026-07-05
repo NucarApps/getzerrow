@@ -148,7 +148,10 @@ export type TranscriptSegment = { speaker: string | null; text: string; start: n
 
 type RecallTranscriptWord = { text?: string; start_timestamp?: { relative?: number } | number };
 type RecallTranscriptEntry = {
+  /** Legacy shape. */
   speaker?: string | null;
+  /** Current shape: participant metadata carries the speaker name. */
+  participant?: { name?: string | null } | null;
   words?: RecallTranscriptWord[];
 };
 
@@ -159,16 +162,35 @@ function wordStart(w: RecallTranscriptWord): number | null {
   return null;
 }
 
-/** Fetch and normalize the transcript into speaker segments. Empty when none. */
-export async function getTranscript(botId: string): Promise<TranscriptSegment[]> {
+/** Signed download URL for a bot's finished transcript file, if ready. */
+export function extractTranscriptUrl(bot: RecallBot): string | null {
+  return bot.recordings?.[0]?.media_shortcuts?.transcript?.data?.download_url ?? null;
+}
+
+/**
+ * Fetch and normalize the transcript into speaker segments. Empty when none.
+ *
+ * Recall's legacy `GET /bot/{id}/transcript` endpoint was removed (it now
+ * returns 400). The transcript is delivered as a downloadable JSON file whose
+ * signed S3 URL lives on the recording's media shortcuts. We read that URL from
+ * the already-fetched bot, download the file, and map it to our segment shape.
+ * Returns an empty array when the transcript file isn't ready yet, so the
+ * refresh/poll path can backfill later.
+ */
+export async function getTranscript(bot: RecallBot): Promise<TranscriptSegment[]> {
+  const url = extractTranscriptUrl(bot);
+  if (!url) return [];
+
   let entries: RecallTranscriptEntry[];
   try {
-    entries = await recallFetch<RecallTranscriptEntry[]>(`/bot/${botId}/transcript`);
-  } catch (e) {
-    if (e instanceof RecallApiError && e.status === 404) return [];
-    throw e;
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!res.ok) return [];
+    entries = (await res.json()) as RecallTranscriptEntry[];
+  } catch {
+    return [];
   }
   if (!Array.isArray(entries)) return [];
+
   return entries
     .map((entry) => {
       const words = entry.words ?? [];
@@ -178,10 +200,12 @@ export async function getTranscript(botId: string): Promise<TranscriptSegment[]>
         .replace(/\s+/g, " ")
         .trim();
       const start = words.length ? wordStart(words[0]) : null;
-      return { speaker: entry.speaker ?? null, text, start };
+      const speaker = entry.participant?.name ?? entry.speaker ?? null;
+      return { speaker, text, start };
     })
     .filter((s) => s.text.length > 0);
 }
+
 
 /** Extract the mixed-video recording download URL from a bot, if ready. */
 export function extractRecordingUrl(bot: RecallBot): string | null {

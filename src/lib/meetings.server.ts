@@ -162,7 +162,7 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
   if (status === "done") {
     update.ended_at = new Date().toISOString();
     try {
-      const segments = await getTranscript(meeting.recall_bot_id);
+      const segments = await getTranscript(bot);
       if (segments.length) {
         update.transcript = segments as unknown as MeetingUpdate["transcript"];
         update.summary = summarizeTranscript(segments);
@@ -290,7 +290,7 @@ export async function refreshMeetingRecording(
   // Backfill transcript/summary only if they never landed.
   if (!meeting.transcript || !meeting.summary) {
     try {
-      const segments = await getTranscript(meeting.recall_bot_id);
+      const segments = await getTranscript(bot);
       if (segments.length) {
         update.transcript = segments as unknown as MeetingUpdate["transcript"];
         update.summary = summarizeTranscript(segments);
