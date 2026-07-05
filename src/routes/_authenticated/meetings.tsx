@@ -37,8 +37,9 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor } from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const TERMINAL = new Set(["done", "failed"]);
 
