@@ -243,7 +243,14 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
       if (segments.length) {
         update.transcript = segments as unknown as MeetingUpdate["transcript"];
         update.summary = summarizeTranscript(segments);
+        if (needsAutoTitle(meeting.title)) {
+          const generated = await generateMeetingTitle(
+            update.summary || segments.map((s) => s.text).join(" "),
+          );
+          if (generated) update.title = generated;
+        }
       }
+
     } catch (e) {
       logError("meeting_sync_transcript_failed", { meetingId: meeting.id }, e);
     }
