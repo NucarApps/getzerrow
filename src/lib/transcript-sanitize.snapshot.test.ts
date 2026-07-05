@@ -57,3 +57,69 @@ describe("transcript sanitizer — golden output regression", () => {
     );
   });
 });
+
+describe("transcript sanitizer — edge-case golden output", () => {
+  it("returns an empty string unchanged", () => {
+    expect(collapseRunawayRepeats("")).toMatchInlineSnapshot(`""`);
+  });
+
+  it("returns whitespace-only input unchanged", () => {
+    expect(collapseRunawayRepeats("   \n  ")).toMatchInlineSnapshot(`
+      "   
+        "
+    `);
+  });
+
+  it("collapses a loop that differs only by letter case (case-insensitive match)", () => {
+    const input = "Hello there. HELLO THERE. hello there. Hello There. Hello there.";
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Hello there."`);
+  });
+
+  it("leaves a 3-unit-total loop intact (guard requires more than 3 units)", () => {
+    const input = REPEAT("Sorry, say that again. ", 3);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Sorry, say that again. Sorry, say that again. Sorry, say that again."`);
+  });
+
+  it("keeps a block repeated only twice (below the loop threshold)", () => {
+    const input = REPEAT("Sorry, say that again. ", 2);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Sorry, say that again. Sorry, say that again."`);
+  });
+
+  it("collapses a loop in the middle while preserving surrounding speech", () => {
+    const input = "Welcome everyone. " + REPEAT("Testing one two. ", 8) + "Let's get to the agenda.";
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Welcome everyone. Testing one two. Let's get to the agenda."`);
+  });
+
+  it("collapses two distinct back-to-back loops independently", () => {
+    const input = REPEAT("Can you hear me? ", 6) + REPEAT("Is this thing on? ", 6);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Can you hear me? Is this thing on?"`);
+  });
+
+  it("collapses a two-sentence loop mixing exclamation and question marks", () => {
+    const input = REPEAT("Wait! What? ", 15);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Wait! What?"`);
+  });
+
+  it("leaves text with no sentence punctuation unchanged", () => {
+    const input = "this has no punctuation and just keeps going without any stops at all";
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"this has no punctuation and just keeps going without any stops at all"`);
+  });
+
+  it("collapses a single short word repeated many times", () => {
+    const input = REPEAT("Okay. ", 20);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Okay."`);
+  });
+
+  it("collapses a six-unit block loop (max detectable block size)", () => {
+    const input = REPEAT("One. Two. Three. Four. Five. Six. ", 5);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"One. Two. Three. Four. Five. Six."`);
+  });
+
+  it("collapses a loop separated by newlines", () => {
+    const input = REPEAT("Line one.\nLine two.\n", 8);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`
+      "Line one.
+      Line two."
+    `);
+  });
+});
