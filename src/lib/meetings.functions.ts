@@ -59,7 +59,15 @@ export const recordFromLink = createServerFn({ method: "POST" })
 
     let botId: string;
     try {
-      const bot = await createBot({ meetingUrl: data.meetingUrl, botName: "Zerrow Notetaker" });
+      const { loadBotConfig } = await import("./meetings.server");
+      const cfg = await loadBotConfig(userId);
+      const bot = await createBot({
+        meetingUrl: data.meetingUrl,
+        botName: cfg.botName,
+        chatMessage: cfg.chatMessage,
+        chatResendOnJoin: cfg.chatResendOnJoin,
+        imageB64: cfg.imageB64,
+      });
       botId = bot.id;
     } catch (e) {
       logError("meeting_record_from_link_failed", { userId }, e);
