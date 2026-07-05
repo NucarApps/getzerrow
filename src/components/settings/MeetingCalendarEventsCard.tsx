@@ -97,7 +97,7 @@ export function MeetingCalendarEventsCard({ accountId, accountEmail }: Props) {
         ) : (
           <ul className="divide-y divide-border">
             {recordable.map((e) => {
-              const send = !e.excluded;
+              const send = !e.excluded && !e.blocked;
               return (
                 <li key={e.id} className="flex items-center justify-between gap-4 py-3 first:pt-0">
                   <div className="min-w-0">
@@ -107,19 +107,25 @@ export function MeetingCalendarEventsCard({ accountId, accountEmail }: Props) {
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {formatWhen(e.start)}
-                      {e.scheduled && " · Notetaker scheduled"}
+                      {e.scheduled && !e.blocked && " · Notetaker scheduled"}
                     </p>
+                    {e.blocked && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Guest on your don't-record list — won't be recorded.
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      {send ? "Send notetaker" : "Skipped"}
+                      {e.blocked ? "Blocked" : send ? "Send notetaker" : "Skipped"}
                     </span>
                     <Switch
                       checked={send}
-                      disabled={mutation.isPending}
-                      onCheckedChange={(checked) =>
-                        mutation.mutate({ calendarEventId: e.id, excluded: !checked })
-                      }
+                      disabled={mutation.isPending || e.blocked}
+                      onCheckedChange={(checked) => {
+                        if (e.blocked) return;
+                        mutation.mutate({ calendarEventId: e.id, excluded: !checked });
+                      }}
                       aria-label={`Toggle notetaker for ${e.title || "this meeting"}`}
                     />
                   </div>
