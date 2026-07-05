@@ -16,6 +16,7 @@ import {
   latestStatusCode,
   summarizeTranscript,
   type RecallBot,
+  type TranscriptSegment,
 } from "./recall.server";
 
 const TERMINAL_CODES = new Set(["done", "fatal", "call_ended", "recording_done"]);
