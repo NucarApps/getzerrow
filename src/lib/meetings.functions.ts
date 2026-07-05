@@ -245,6 +245,76 @@ export const getRecordingStreamUrl = createServerFn({ method: "GET" })
     return { streamUrl: buildRecordingStreamPath(meeting.id), kind: "video" as const };
   });
 
+/**
+ * Create a meeting row for an in-person recording. Returns the new id and the
+ * storage path the client should upload the audio blob to, so the upload lands
+ * under the caller's own {userId}/ prefix (enforced by storage RLS).
+ */
+export const createInPersonMeeting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        title: z.string().max(200).optional(),
+        ext: z.enum(["webm", "m4a", "mp4", "ogg", "wav"]).default("webm"),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: inserted, error } = await supabase
+      .from("meetings")
+      .insert({
+        user_id: userId,
+        meeting_url: null,
+        platform: "in_person",
+        source: "in_person",
+        status: "recording",
+        title: data.title?.trim() || "In-person meeting",
+        started_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    const audioPath = `${userId}/${inserted.id}.${data.ext}`;
+    return { id: inserted.id, audioPath };
+  });
+
+/**
+ * After the client has uploaded the audio, record its storage path, then
+ * transcribe and summarize it. Ownership is enforced by RLS on the per-user
+ * client; the heavy lifting runs in a server-only helper.
+ */
+export const transcribeInPersonMeeting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({ id: z.string().uuid(), audioPath: z.string().max(300) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    // Confirm ownership and that the path is under the caller's prefix.
+    const { data: meeting } = await supabase
+      .from("meetings")
+      .select("id, source")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!meeting) throw new Error("Meeting not found");
+    if (!data.audioPath.startsWith(`${userId}/`)) throw new Error("Invalid audio path");
+
+    const { error: updErr } = await supabase
+      .from("meetings")
+      .update({ audio_storage_path: data.audioPath, status: "processing" })
+      .eq("id", data.id);
+    if (updErr) throw new Error(updErr.message);
+
+    // Dynamic import keeps the service-role module out of the client bundle.
+    const { finalizeInPersonMeeting } = await import("./meetings.server");
+    const status = await finalizeInPersonMeeting(data.id);
+    return { status };
+  });
+
+
+
 /** Delete a meeting and best-effort remove the bot from the call. */
 export const deleteMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
