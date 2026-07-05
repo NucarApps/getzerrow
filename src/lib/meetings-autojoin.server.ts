@@ -128,6 +128,34 @@ export async function listUpcomingCalendarEventsForAccount(
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** The caller's don't-auto-record list, split into exact emails and domains. */
+type Blocklist = { emails: Set<string>; domains: Set<string> };
+
+async function loadBlocklist(userId: string): Promise<Blocklist> {
+  const { data } = await supabaseAdmin
+    .from("meeting_record_blocklist")
+    .select("value")
+    .eq("user_id", userId);
+  const emails = new Set<string>();
+  const domains = new Set<string>();
+  for (const row of data ?? []) {
+    const value = (row.value ?? "").toLowerCase();
+    if (value.includes("@")) emails.add(value);
+    else if (value) domains.add(value);
+  }
+  return { emails, domains };
+}
+
+/** True when any attendee/organizer email is on the user's don't-record list. */
+function hasBlockedAttendee(emails: string[], blocklist: Blocklist): boolean {
+  for (const email of emails) {
+    if (blocklist.emails.has(email)) return true;
+    const domain = email.slice(email.indexOf("@") + 1);
+    if (domain && blocklist.domains.has(domain)) return true;
+  }
+  return false;
+}
+
 /** Schedule bots for every account that has auto-record enabled. */
 export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ scheduled: number }> {
   const { data: accounts } = await supabaseAdmin
@@ -136,8 +164,12 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
     .eq("auto_record_meetings", true)
     .eq("calendar_access", true);
 
+  // Cache each user's blocklist once per run (a user can have multiple accounts).
+  const blocklistCache = new Map<string, Blocklist>();
+
   let scheduled = 0;
   for (const account of accounts ?? []) {
+
     let events: UpcomingEvent[];
     try {
       events = await fetchUpcomingEvents(account.id);
