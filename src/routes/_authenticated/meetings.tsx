@@ -11,7 +11,10 @@ import {
   refreshRecording,
   getRecordingStreamUrl,
   extractMeetingUrl,
+  createInPersonMeeting,
+  transcribeInPersonMeeting,
 } from "@/lib/meetings.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
