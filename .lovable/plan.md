@@ -1,35 +1,23 @@
-# Fix: recording section eats all vertical space on mobile
+# Mobile: hide the "Recording status" card, keep only a refresh button
 
 ## Problem
-In the meeting detail slide-in panel (`src/routes/_authenticated/meetings.tsx`), the body is split into two competing regions:
-
-```text
-SheetHeader            (fixed)
-┌ body ───────────────────────────┐
-│ recording block  (natural height)│  ← player + error + Open/Download + "Recording status"
-│ Tabs (flex-1, inner scroll)      │  ← Summary / Transcript squeezed into leftover space
-└─────────────────────────────────┘
-Footer                 (fixed)
-```
-
-On a phone the recording block's natural height is tall (player, red audio-only note, two buttons, three-line status box), so it pins to the top and leaves the Summary/Transcript tabs only a sliver to scroll in. That's the section in the screenshot taking up all the space.
+In the meeting detail panel (`src/routes/_authenticated/meetings.tsx`, the `meeting.status === "done"` block ~line 1107), the "Recording status" card shows a heading, a "Recording found · Transcript found · Summary found" line, and a refresh button. On mobile this card is unnecessary clutter — the user only wants a way to refresh.
 
 ## Fix (presentation-only)
-Make the whole detail body one scroll column instead of a pinned block + inner-scrolling tabs. Then the recording section scrolls away naturally when the user reads the transcript/summary, and each tab uses the full width and height.
+On mobile, drop the card chrome and status text entirely and render just the refresh control. On `sm` and up, keep the full card exactly as-is.
 
-All changes are Tailwind class changes in `src/routes/_authenticated/meetings.tsx` — no logic, data, or component-structure changes.
+All changes are Tailwind class changes in the same block — no logic changes.
 
-1. **Body wrapper** (currently `flex min-h-0 flex-1 flex-col`): add `overflow-y-auto` so this single container owns the scroll.
+1. **Card wrapper** (`rounded-md border border-border bg-muted/30 p-3 text-sm`): make the border/background/padding apply only at `sm:` so on mobile it's a plain, chrome-less container (`max-sm:` resets border, bg, padding).
+2. **Status text group** (the `space-y-1` div with "Recording status" heading + the found/not-found line): add `max-sm:hidden` so heading and status line don't render on mobile.
+3. **Refresh button**: keep it visible on all sizes. On mobile it becomes the only thing in this block. Keep the current icon-only treatment on mobile (spinning icon, accessible label) and the labelled button on `sm+`. Align it left on mobile since there's no adjacent text.
+4. **Recording error** (`recordingError` paragraph): keep rendering on all sizes so failures are still surfaced.
 
-2. **Recording + status block** (the `space-y-4 p-4 pb-3 sm:p-6 sm:pb-4` div): keep as-is; it now scrolls with the rest instead of being pinned.
-
-3. **Tabs wrapper** (currently `flex min-h-0 flex-1 flex-col`): change to `flex flex-col` so it grows with content rather than fighting for leftover height.
-
-4. **TabsList**: make it stick to the top of the scroll area while scrolling — add `sticky top-0 z-10 bg-background` (keep existing margins) so the Summary/Transcript switch stays reachable.
-
-5. **Both TabsContent panels** (currently `min-h-0 flex-1 overflow-y-auto ...`): drop `min-h-0 flex-1 overflow-y-auto` and keep the padding/spacing, so content flows into the single outer scroller.
+## Result
+- Mobile: no "Recording status" card — just the refresh button (and any error message if present).
+- Desktop (`sm+`): unchanged full status card with heading, status line, and labelled refresh button.
 
 ## Verification
-- Re-check at 360px and 402px widths: the recording section no longer dominates; scrolling down reveals full-height Summary and Transcript, readable across the full width.
-- Confirm desktop (`sm:` and up) still looks correct — header/footer fixed, body scrolls, tab switch stays visible.
-- Note: this authenticated panel can't be fully rendered in the sandbox preview (no signed-in session), so final visual confirmation is best done in your live preview while signed in.
+- Check at 360px / 402px: only the refresh button shows where the card used to be.
+- Check `sm+`: full card intact.
+- Note: this authenticated panel can't be fully rendered in the sandbox preview (no signed-in session), so final confirmation is best in your live preview while signed in.
