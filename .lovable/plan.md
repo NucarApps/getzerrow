@@ -1,45 +1,45 @@
-# Keep recordings alive when Screen Wake Lock isn't supported
+# Fix looping/repeating in-person transcripts (iOS audio)
 
-## Problem
+## Root cause
 
-Both recorders in `src/routes/_authenticated/meetings.tsx` (mic-only in-person recorder and the desktop screen recorder) call a local `acquireWakeLock()` that does:
+The in-person recorder (`InPersonRecordDialog` in `src/routes/_authenticated/meetings.tsx`) captures audio with `new MediaRecorder(stream)` and no explicit format. On iPhone/iOS Safari that produces a **fragmented MP4/AAC** file. Two things break because of it:
 
-```text
-if (!("wakeLock" in navigator)) return;   // silently gives up
-```
+1. The browser `<audio>` element often can't decode it → the player shows **Error** ("audio only… doesn't play here").
+2. The speech-to-text model (`openai/gpt-4o-mini-transcribe` in `finalizeInPersonMeeting`) can't cleanly decode it either, so it **hallucinates and loops**, repeating the same phrase over and over — exactly what's on screen.
 
-On browsers without the Screen Wake Lock API (notably older iOS Safari, and some in-app/mobile webviews) nothing keeps the display on. The screen dims, the OS sleeps the device, the tab is suspended, and the `MediaRecorder` stops mid-recording — the exact "recording breaks on mobile" case.
+The transcript is saved as one segment and rendered once, so this is not a UI duplication bug; the repeated text is in the model output.
 
-## Fix
-
-Add a battery-friendly fallback: when the native Wake Lock API is missing or its request fails, play a hidden, muted, looping, `playsInline` video (the well-established NoSleep.js technique). Playing a video keeps the screen awake on browsers that lack the API. Recording always starts from a button tap, so the play() call happens inside a user gesture and is allowed.
-
-To avoid duplicating this in two places, extract the whole concern into one shared hook.
+The reliable fix (per the speech-to-text guidance) is to stop relying on the browser's opaque recorder container and instead capture raw PCM and upload a standard **WAV** file, which every browser and the STT model can decode.
 
 ## Changes
 
-### New file: `src/hooks/use-screen-wake-lock.ts`
-A `useScreenWakeLock()` hook returning `{ acquire, release }`:
+### 1. New util `src/lib/wav-encoder.ts`
+Pure function `encodeWav(chunks: Float32Array[], sampleRate: number): Blob`:
+- Concatenate PCM chunks, downsample to 16 kHz mono, write a standard 16-bit PCM WAV header + samples, return a `Blob` typed `audio/wav`.
+- No DOM/Supabase imports so it stays unit-testable.
 
-- `acquire()`:
-  1. Try `navigator.wakeLock.request("screen")` when `"wakeLock" in navigator`. On success, store the sentinel.
-  2. If unavailable or it throws, start the fallback: create (once) a detached `<video>` element that is `muted`, `loop`, `playsInline`, `webkit-playsinline`, off-screen, with a tiny inlined base64 video source, and `await video.play()`.
-- `release()`: release the native sentinel (guarded `.catch`) and pause/reset the fallback video; null out refs.
-- Re-acquire on `visibilitychange` when the document becomes visible again (browsers auto-release the native lock when the tab is hidden), so an app switch mid-recording doesn't permanently drop it.
-- Clean up the listener and any fallback video on unmount.
-- Strict TS, no `any`; type the sentinel as `WakeLockSentinel | null`.
+### 2. New util test `src/lib/wav-encoder.test.ts`
+- Verifies a valid `RIFF/WAVE` header, correct sample-rate/channel bytes, and that sample count matches the downsampled input.
 
-### `src/routes/_authenticated/meetings.tsx`
-- In the in-person (mic) recorder component: replace the local `wakeLockRef`, `acquireWakeLock`, `releaseWakeLock`, and the inline `visibilitychange` handler with the hook's `acquire`/`release`. Call `acquire()` where `void acquireWakeLock()` is today (after `recorder.start()`), and `release()` in `cleanupStream()`.
-- In the screen recorder component: same swap — drop `wakeLockRef`/`acquireWakeLock`, call `acquire()` after the recorders start, and `release()` in `cleanup()` and `finishRecording()`.
-- No change to recording, transcription, upload, or the desktop-only gating of the screen recorder.
+### 3. `src/routes/_authenticated/meetings.tsx` — in-person recorder only
+Replace the `MediaRecorder` capture with Web Audio PCM capture:
+- Keep the existing secure-context / permission checks and the `useScreenWakeLock` acquire/release wiring.
+- On start: `getUserMedia({ audio: true })` → `AudioContext` → `createMediaStreamSource` → `ScriptProcessorNode(4096,1,1)`; push `Float32Array` copies of each frame into a ref. (ScriptProcessorNode is used deliberately for iOS Safari compatibility, as in the STT guidance.)
+- On stop: stop tracks, disconnect nodes, `encodeWav(pcm, ctx.sampleRate)`, `await ctx.close()`.
+- Reject near-empty recordings with a byte floor (`blob.size < 2048`) → show "That recording was empty — please try again." instead of uploading.
+- Upload with `contentType: "audio/wav"` and call `createInPersonMeeting({ ext: "wav" })` (the validator and `audioMimeFor` already support `wav`), then `transcribeInPersonMeeting` as today.
+- Update the recorder refs/cleanup to the new nodes (source/processor/AudioContext) and drop the `MediaRecorder`/`chunksRef` for this dialog.
 
-## Technical notes
+The desktop screen recorder is unchanged — it runs in Chrome and produces WebM/Opus, which decodes fine.
 
-- The fallback video uses a very small inlined base64 clip (a fraction of a second, looped) so there is no network request and negligible memory; it is created lazily only when the native API is absent.
-- The fallback is best-effort — if even `play()` is blocked, recording still proceeds exactly as it does today (no regression), it just may not hold the screen.
-- Nothing here touches server functions, storage, or the DB.
+### 4. `src/lib/meetings.server.ts` — defensive de-loop safeguard
+In `finalizeInPersonMeeting`, after getting `transcriptText`, add a small guard that collapses pathological immediate repetition (e.g. the same sentence/phrase repeated back-to-back many times) down to a single occurrence before saving. This is a cheap safety net so a future bad clip can't produce a wall of duplicated text even if the model still loops. It only collapses exact consecutive repeats; normal transcripts are untouched.
+
+## Verification
+- Run the new WAV encoder unit test.
+- Typecheck the changed files.
+- Sanity-check in the preview that starting/stopping an in-person recording uploads a `.wav`, the player plays it back, and the transcript renders once without repetition.
 
 ## Out of scope
-- Changing which audio sources are captured or how transcripts are produced.
-- Mobile screen capture (still unsupported by mobile browsers).
+- The Recall bot meeting flow and the desktop screen-recorder flow.
+- Changing the STT model or summary generation.
