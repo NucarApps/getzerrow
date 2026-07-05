@@ -38,9 +38,10 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor, ChevronDown } from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 
 const TERMINAL = new Set(["done", "failed"]);
