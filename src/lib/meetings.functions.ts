@@ -226,15 +226,23 @@ export const getRecordingStreamUrl = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { data: meeting } = await context.supabase
       .from("meetings")
-      .select("id, recall_bot_id, recording_url")
+      .select("id, recall_bot_id, recording_url, audio_storage_path")
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
+    // In-person recordings: mint a short-lived signed URL straight from our
+    // storage bucket. RLS on the per-user client confirms ownership.
+    if (meeting.audio_storage_path) {
+      const { data: signed } = await context.supabase.storage
+        .from("meeting-recordings")
+        .createSignedUrl(meeting.audio_storage_path, 60 * 60 * 2);
+      return { streamUrl: (signed?.signedUrl ?? null) as string | null, kind: "audio" as const };
+    }
     if (!meeting.recall_bot_id && !meeting.recording_url) {
-      return { streamUrl: null as string | null };
+      return { streamUrl: null as string | null, kind: "video" as const };
     }
     const { buildRecordingStreamPath } = await import("./meeting-stream.server");
-    return { streamUrl: buildRecordingStreamPath(meeting.id) };
+    return { streamUrl: buildRecordingStreamPath(meeting.id), kind: "video" as const };
   });
 
 /** Delete a meeting and best-effort remove the bot from the call. */
