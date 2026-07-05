@@ -609,6 +609,11 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
     status: "done",
     ended_at: new Date().toISOString(),
   };
+  if (needsAutoTitle(meeting.title)) {
+    const generated = await generateMeetingTitle(summary || transcriptText);
+    if (generated) update.title = generated;
+  }
+
   const { error } = await supabaseAdmin.from("meetings").update(update).eq("id", meetingId);
   if (error) return fail("Could not save the transcript.", error.message);
 
