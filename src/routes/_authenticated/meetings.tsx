@@ -11,7 +11,10 @@ import {
   refreshRecording,
   getRecordingStreamUrl,
   extractMeetingUrl,
+  createInPersonMeeting,
+  transcribeInPersonMeeting,
 } from "@/lib/meetings.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -34,7 +37,7 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square } from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
 
 const TERMINAL = new Set(["done", "failed"]);
@@ -58,6 +61,7 @@ const STATUS_LABEL: Record<string, string> = {
   scheduled: "Scheduled",
   joining: "Joining",
   recording: "Recording",
+  processing: "Processing",
   done: "Done",
   failed: "Failed",
 };
@@ -66,6 +70,7 @@ const STATUS_STYLE: Record<string, string> = {
   scheduled: "bg-muted text-muted-foreground",
   joining: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   recording: "bg-red-500/10 text-red-600 dark:text-red-400",
+  processing: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   done: "bg-primary/10 text-primary",
   failed: "bg-destructive/10 text-destructive",
 };
@@ -132,7 +137,10 @@ function MeetingsPage() {
               </p>
             </div>
           </div>
-          <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+          <div className="flex items-center gap-2">
+            <InPersonRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+            <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+          </div>
         </header>
 
         <div className="mb-6">
@@ -283,6 +291,190 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
   );
 }
 
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
+  const createMeeting = useServerFn(createInPersonMeeting);
+  const transcribe = useServerFn(transcribeInPersonMeeting);
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [phase, setPhase] = useState<"idle" | "recording" | "processing">("idle");
+  const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function cleanupStream() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    recorderRef.current = null;
+  }
+
+  function resetState() {
+    cleanupStream();
+    chunksRef.current = [];
+    setPhase("idle");
+    setElapsed(0);
+    setError(null);
+  }
+
+  async function startRecording() {
+    setError(null);
+    if (typeof MediaRecorder === "undefined") {
+      setError("Recording isn't supported in this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        void finishRecording();
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setPhase("recording");
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
+    } catch {
+      cleanupStream();
+      setError("Microphone access was blocked. Allow it and try again.");
+    }
+  }
+
+  function stopRecording() {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+  }
+
+  async function finishRecording() {
+    const mime = recorderRef.current?.mimeType || "audio/webm";
+    cleanupStream();
+    const blob = new Blob(chunksRef.current, { type: mime });
+    chunksRef.current = [];
+    if (blob.size === 0) {
+      setError("Nothing was recorded. Try again.");
+      setPhase("idle");
+      return;
+    }
+    const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+    setPhase("processing");
+    try {
+      const { id, audioPath } = await createMeeting({
+        data: { title: title.trim() || undefined, ext },
+      });
+      const { error: upErr } = await supabase.storage
+        .from("meeting-recordings")
+        .upload(audioPath, blob, { contentType: mime, upsert: true });
+      if (upErr) throw new Error(upErr.message);
+      await transcribe({ data: { id, audioPath } });
+      toast.success("Recording saved — transcribing now");
+      onRecorded();
+      setTitle("");
+      setOpen(false);
+      resetState();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not save the recording.");
+      setPhase("idle");
+    }
+  }
+
+  function onOpenChange(next: boolean) {
+    if (!next && (phase === "recording" || phase === "processing")) return;
+    if (!next) resetState();
+    setOpen(next);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <Mic className="mr-1.5 h-4 w-4" /> Record in person
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Record an in-person meeting</DialogTitle>
+          <DialogDescription>
+            Capture the conversation with your device microphone. When you stop, we upload the audio
+            and transcribe and summarize it automatically.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="in-person-title">Title (optional)</Label>
+            <Input
+              id="in-person-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Coffee with Alex"
+              autoComplete="off"
+              disabled={phase !== "idle"}
+            />
+          </div>
+
+          <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-muted/30 p-6">
+            {phase === "recording" ? (
+              <>
+                <span className="flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                  Recording
+                </span>
+                <span className="font-mono text-2xl tabular-nums text-foreground">
+                  {formatElapsed(elapsed)}
+                </span>
+                <Button variant="destructive" onClick={stopRecording}>
+                  <Square className="mr-1.5 h-4 w-4" /> Stop &amp; save
+                </Button>
+              </>
+            ) : phase === "processing" ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin" /> Uploading and transcribing…
+              </p>
+            ) : (
+              <>
+                <Mic className="h-8 w-8 text-muted-foreground" />
+                <Button onClick={startRecording}>
+                  <Mic className="mr-1.5 h-4 w-4" /> Start recording
+                </Button>
+              </>
+            )}
+          </div>
+
+          {error && (
+            <p className="flex items-start gap-2 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+
 type TranscriptSegment = { speaker: string | null; text: string; start: number | null };
 type RecordingDiagnostics = {
   hasRecording: boolean;
@@ -306,6 +498,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   // and Recall's raw S3 URL is short-lived and served as octet-stream (which
   // mobile browsers won't play), so we proxy it through our own route.
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [streamKind, setStreamKind] = useState<"video" | "audio">("video");
 
   const q = useQuery({
     queryKey: ["meeting", id],
@@ -359,7 +552,10 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
         qc.invalidateQueries({ queryKey: ["meeting", id] });
         if (r.hasRecording) {
           const s = await getStream({ data: { id } });
-          if (!cancelled && s.streamUrl) setStreamUrl(s.streamUrl);
+          if (!cancelled && s.streamUrl) {
+            setStreamUrl(s.streamUrl);
+            setStreamKind(s.kind ?? "video");
+          }
         }
       })
       .catch(() => {
@@ -400,7 +596,10 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
       await qc.invalidateQueries({ queryKey: ["meeting", id] });
       if (r.hasRecording) {
         const s = await getStream({ data: { id } });
-        if (s.streamUrl) setStreamUrl(s.streamUrl);
+        if (s.streamUrl) {
+          setStreamUrl(s.streamUrl);
+          setStreamKind(s.kind ?? "video");
+        }
         setVideoError(false);
       } else {
         setRecordingError("The meeting is done, but no recording file is available yet.");
@@ -457,16 +656,27 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
 
                 {streamUrl && (
                   <div className="space-y-2">
-                    <video
-                      key={streamUrl}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      onError={() => setVideoError(true)}
-                      className="w-full rounded-md border border-border bg-black"
-                    >
-                      <source src={streamUrl} type="video/mp4" />
-                    </video>
+                    {streamKind === "audio" ? (
+                      <audio
+                        key={streamUrl}
+                        controls
+                        preload="metadata"
+                        onError={() => setVideoError(true)}
+                        className="w-full rounded-md border border-border bg-muted/30"
+                        src={streamUrl}
+                      />
+                    ) : (
+                      <video
+                        key={streamUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        onError={() => setVideoError(true)}
+                        className="w-full rounded-md border border-border bg-black"
+                      >
+                        <source src={streamUrl} type="video/mp4" />
+                      </video>
+                    )}
                     {videoError && (
                       <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                         The embedded player could not load this recording. Open it in a new tab or download it below.
@@ -482,7 +692,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                         <ExternalLink className="h-3.5 w-3.5" /> Open recording
                       </a>
                       <a
-                        href={`${streamUrl}&dl=1`}
+                        href={streamKind === "audio" ? streamUrl : `${streamUrl}&dl=1`}
                         download
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                       >
@@ -610,14 +820,18 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
             </div>
 
             <div className="flex items-center justify-between gap-3 border-t border-border p-6 py-4">
-              <a
-                href={meeting.meeting_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> Open meeting link
-              </a>
+              {meeting.meeting_url ? (
+                <a
+                  href={meeting.meeting_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Open meeting link
+                </a>
+              ) : (
+                <span className="text-sm text-muted-foreground">In-person recording</span>
+              )}
               <Button variant="ghost" size="sm" onClick={onDelete} disabled={busy}>
                 <Trash2 className="mr-1.5 h-4 w-4 text-destructive" />
                 Delete

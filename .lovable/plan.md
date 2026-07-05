@@ -1,55 +1,61 @@
-# Customizable meeting bot
+# In-person meeting recording
 
-Let users personalize the notetaker bot: its **name**, a **picture** (shown as the bot's video tile in the call), and the **chat message** it posts. One global setup applies to every meeting across all connected inboxes. The message posts when the bot joins and re-posts for late joiners.
+Today every meeting is recorded by sending a bot to an online call link. This adds a second path: record an in-person conversation straight from the browser microphone, upload the audio, and run it through the same transcribe → summarize flow so it lands in the meetings list next to online ones.
 
-## What you'll see
+## What the user gets
 
-A new **Meeting bot** card in Settings → Meetings, above the auto-record cards, with:
-- **Bot name** — text field (default "Zerrow Notetaker").
-- **Bot picture** — upload a JPG/PNG; we auto-crop/resize to the format meeting platforms accept and show a preview. Note: Zoom/Meet/Teams have no bot "profile photo", so this image appears as the bot's camera/video tile in the call.
-- **Chat message** — the note posted in the meeting chat (default something like "Hi! I'm the Zerrow notetaker recording and summarizing this meeting."). A toggle for "also notify people who join late".
-- Save button with success/error toasts.
+- A new "Record in person" button next to the existing "Record a meeting" button on the Meetings page.
+- Clicking it opens a dialog that asks for microphone access and shows a live recording timer with a stop button (and an optional title field).
+- On stop, the audio uploads, and the meeting appears in the list with a "Processing" badge that turns into "Done" once the transcript and summary are ready.
+- Opening the meeting shows the same detail view: playable audio recording, transcript, and a key-moments summary.
 
 ## How it works
 
 ```text
-Settings card ──save──> meeting_bot_settings row (name, message, resend flag)
-   picture ──upload──> private storage bucket  meeting-bot-avatars/{userId}/avatar.jpg
-                                   │
-Record / auto-join ──> loadBotConfig(userId) ──> Recall createBot({
-   bot_name, chat.on_bot_join, chat.on_participant_join, automatic_video_output(jpeg) })
+Browser mic ──MediaRecorder──▶ audio blob
+   │ upload (private bucket, {userId}/{meetingId}.webm)
+   ▼
+create meeting row (source=in_person, status=processing)
+   │
+   ▼ server fn: download audio ▶ Lovable AI transcribe ▶ summarize
+   ▼
+meeting updated (transcript, summary, status=done)
 ```
 
-## Technical details
+## Database (one migration)
 
-### Database (migration)
-- New table `public.meeting_bot_settings`: `user_id uuid unique` (FK auth.users), `bot_name text`, `chat_message text`, `chat_resend_on_join boolean default true`, `avatar_updated_at timestamptz null`, plus `created_at`/`updated_at` with the standard update trigger.
-- GRANT SELECT/INSERT/UPDATE/DELETE to `authenticated`, ALL to `service_role`. RLS enabled; single policy `auth.uid() = user_id` for all actions.
+- Add `in_person` to the `meeting_source` enum and `processing` to the `meeting_status` enum.
+- Make `meetings.meeting_url` nullable (in-person meetings have no link).
+- Add `meetings.audio_storage_path text` (null for bot meetings) to point at the uploaded file.
+- No new table; RLS on `meetings` already scopes rows to the owner.
 
-### Storage
-- Create a **private** bucket `meeting-bot-avatars` (via storage tool).
-- RLS policies on `storage.objects` so a user can read/write/delete only files under their own `{userId}/` prefix.
-- Client resizes the chosen image to a 1280×720 JPEG (canvas) before upload, keeping it well under the platform 1.3 MB limit. Stored at `{userId}/avatar.jpg`.
+## Storage
 
-### Server functions — `src/lib/meetings.functions.ts`
-- `getMeetingBotSettings` (GET, auth): returns the caller's row (or sensible defaults) plus whether an avatar exists.
-- `updateMeetingBotSettings` (POST, auth): upserts `bot_name` (≤100 chars), `chat_message` (≤1000 chars), `chat_resend_on_join`. The image is uploaded directly to storage by the client via the browser Supabase client (RLS-scoped); this fn just records `avatar_updated_at` when notified, and supports clearing the avatar.
+- Create a private bucket `meeting-recordings`.
+- RLS policies on `storage.objects` so an authenticated user can insert/select/delete only under their own `{userId}/` prefix.
+- The browser client uploads the recorded blob directly (same pattern already used for bot avatars).
 
-### Bot config loader — `src/lib/meetings.server.ts`
-- New `loadBotConfig(userId)` (uses `supabaseAdmin`): reads the settings row, and if an avatar exists downloads it from the private bucket and base64-encodes it. Returns `{ botName, chatMessage, chatResendOnJoin, imageB64 }` with defaults when no row exists.
+## Server functions (`src/lib/meetings.functions.ts`)
 
-### Recall client — `src/lib/recall.server.ts`
-- Extend `CreateBotInput` and `createBot` to accept optional `chatMessage`, `chatResendOnJoin`, and `imageB64`, mapping them to Recall's request body:
-  - `chat.on_bot_join = { send_to: "everyone", message }` and, when resend is on, `chat.on_participant_join = { exclude_host: false, message }`.
-  - `automatic_video_output.in_call_recording` and `in_call_not_recording = { kind: "jpeg", b64_data: imageB64 }` when an image is set.
+- `createInPersonMeeting` (POST, auth): inserts a meeting row with `source=in_person`, `platform=in_person`, `status=processing`, `audio_storage_path`, optional title; returns the new id so the client can upload to a deterministic path.
+- `transcribeInPersonMeeting` (POST, auth): verifies ownership, then delegates to a server-only helper that downloads the audio, transcribes it, generates the summary, and flips status to `done` (or `failed` with an error message).
+- Extend `getRecordingStreamUrl`: when a meeting has `audio_storage_path`, return a fresh signed Storage URL (valid ~2h) for the `<audio>`/`<video>` element instead of the Recall streaming path. Bot meetings keep their current behavior.
 
-### Wire into bot creation
-- `recordFromLink` (meetings.functions.ts): call `loadBotConfig(context.userId)` and pass name/chat/image into `createBot` instead of the hardcoded `"Zerrow Notetaker"`.
-- Auto-join (`src/lib/meetings-autojoin.server.ts`): call `loadBotConfig(account.user_id)` per account and pass the same config into its `createBot`.
+## Transcription + summary (`src/lib/meetings.server.ts`)
 
-### UI — `src/components/settings/MeetingBotCard.tsx` (new)
-- shadcn Card with the fields above, React Query for load/save, optimistic-free simple save, image upload → resize → storage upload → `updateMeetingBotSettings`. Rendered in `src/routes/_authenticated/settings.tsx` in the Meetings section (once, above the per-account cards).
+- New `finalizeInPersonMeeting(meetingId)`:
+  - Downloads the audio from the bucket with the service-role client.
+  - Sends it to the Lovable AI Gateway speech-to-text endpoint (`openai/gpt-4o-mini-transcribe`, multipart form) to get transcript text.
+  - Generates a "Key moments" summary from the transcript with the default chat model (`google/gemini-3-flash-preview`), matching the existing summary style.
+  - Writes `transcript`, `summary`, `ended_at`, and `status=done`; on any failure sets `status=failed` with a friendly error.
 
-## Notes
-- No changes to already-scheduled bots; new settings apply to bots created after saving.
-- All logic stays server-side; no secrets in the client. Image kept in a private bucket and only ever sent to Recall as base64 from the server.
+## UI
+
+- `src/routes/_authenticated/meetings.tsx`: add an `InPersonRecordDialog` component (mic capture via `MediaRecorder`, elapsed-timer, stop, upload, then call the transcribe function). Add its trigger button in the header next to the current record dialog.
+- Add `processing` to the status label/style maps and treat it as non-terminal so the list keeps polling until it flips to done.
+- The existing meeting detail sheet already renders recording + transcript + summary, so no changes are needed there beyond the audio source coming from the extended `getRecordingStreamUrl`.
+
+## Technical notes
+
+- Recording is audio-only at a modest bitrate to keep files small; MediaRecorder outputs `audio/webm` on Chrome/Firefox and `audio/mp4` on Safari, both accepted by the transcription endpoint. Very long meetings could approach the endpoint's file-size limit — MVP transcribes the whole file in one call; chunking can be added later if needed.
+- All AI and storage-admin work stays server-side; the browser only uploads the blob and calls the auth-scoped server functions. `LOVABLE_API_KEY` and `MEETING_STREAM_SECRET` already exist.
