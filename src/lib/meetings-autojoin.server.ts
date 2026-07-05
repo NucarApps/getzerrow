@@ -182,6 +182,15 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
     // event we schedule below).
     const botCfg = await loadBotConfig(account.user_id);
 
+    // Load the user's don't-auto-record list (cached per user for the run).
+    let blocklist = blocklistCache.get(account.user_id);
+    if (!blocklist) {
+      blocklist = await loadBlocklist(account.user_id);
+      blocklistCache.set(account.user_id, blocklist);
+    }
+
+
+
 
 
     for (const event of events) {
