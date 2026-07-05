@@ -88,7 +88,7 @@ export function extractParticipantEmails(bot: RecallBot): string[] {
     if (email && email.includes("@")) emails.push(email.toLowerCase());
   }
   return emails;
-};
+}
 
 type CreateBotInput = {
   meetingUrl: string;
