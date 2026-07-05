@@ -257,7 +257,7 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
         </Button>
 
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
           <DialogTitle>Record a meeting</DialogTitle>
           <DialogDescription>
