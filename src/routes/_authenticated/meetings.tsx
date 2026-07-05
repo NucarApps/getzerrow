@@ -581,24 +581,16 @@ function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const videoChunksRef = useRef<Blob[]>([]);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-
-  async function acquireWakeLock() {
-    try {
-      if (!("wakeLock" in navigator)) return;
-      wakeLockRef.current = await navigator.wakeLock.request("screen");
-    } catch {
-      // Unsupported or rejected — recording still works.
-    }
-  }
+  // Keeps the screen awake during capture, falling back to a hidden looping
+  // video where the Wake Lock API is unavailable.
+  const { acquire: acquireWakeLock, release: releaseWakeLock } = useScreenWakeLock();
 
   function cleanup() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    void wakeLockRef.current?.release().catch(() => {});
-    wakeLockRef.current = null;
+    releaseWakeLock();
     displayStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     displayStreamRef.current = null;
