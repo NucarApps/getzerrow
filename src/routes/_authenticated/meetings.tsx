@@ -656,16 +656,27 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
 
                 {streamUrl && (
                   <div className="space-y-2">
-                    <video
-                      key={streamUrl}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      onError={() => setVideoError(true)}
-                      className="w-full rounded-md border border-border bg-black"
-                    >
-                      <source src={streamUrl} type="video/mp4" />
-                    </video>
+                    {streamKind === "audio" ? (
+                      <audio
+                        key={streamUrl}
+                        controls
+                        preload="metadata"
+                        onError={() => setVideoError(true)}
+                        className="w-full rounded-md border border-border bg-muted/30"
+                        src={streamUrl}
+                      />
+                    ) : (
+                      <video
+                        key={streamUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        onError={() => setVideoError(true)}
+                        className="w-full rounded-md border border-border bg-black"
+                      >
+                        <source src={streamUrl} type="video/mp4" />
+                      </video>
+                    )}
                     {videoError && (
                       <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                         The embedded player could not load this recording. Open it in a new tab or download it below.
@@ -681,7 +692,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                         <ExternalLink className="h-3.5 w-3.5" /> Open recording
                       </a>
                       <a
-                        href={`${streamUrl}&dl=1`}
+                        href={streamKind === "audio" ? streamUrl : `${streamUrl}&dl=1`}
                         download
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                       >
