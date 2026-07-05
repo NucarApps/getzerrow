@@ -57,6 +57,14 @@ export const recordFromLink = createServerFn({ method: "POST" })
       if (!acct) throw new Error("Account not found");
     }
 
+    // Refuse to record when the meeting (matched on the calendar) includes
+    // someone on the user's don't-record list.
+    const { findBlockedAttendeeForMeetingUrl } = await import("./meetings-autojoin.server");
+    const blocked = await findBlockedAttendeeForMeetingUrl(userId, data.meetingUrl);
+    if (blocked) {
+      throw new Error(`Not recorded — ${blocked} is on your don't-record list.`);
+    }
+
     let botId: string;
     try {
       const { loadBotConfig } = await import("./meetings.server");
