@@ -319,10 +319,17 @@ export const transcribeInPersonMeeting = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
     if (!data.audioPath.startsWith(`${userId}/`)) throw new Error("Invalid audio path");
+    if (data.videoPath && !data.videoPath.startsWith(`${userId}/`)) {
+      throw new Error("Invalid video path");
+    }
 
     const { error: updErr } = await supabase
       .from("meetings")
-      .update({ audio_storage_path: data.audioPath, status: "processing" })
+      .update({
+        audio_storage_path: data.audioPath,
+        ...(data.videoPath ? { video_storage_path: data.videoPath } : {}),
+        status: "processing",
+      })
       .eq("id", data.id);
     if (updErr) throw new Error(updErr.message);
 
