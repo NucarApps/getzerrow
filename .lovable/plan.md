@@ -1,29 +1,38 @@
 ## Goal
 
-Stop the raw browser "Error" bar from appearing on an in-person recording (and any recording) when the media file can't play. Replace it with a clean, friendly fallback.
+Make in-person recordings play inline in the browser (including on iPhone), instead of showing the native "Error" bar or a download-only fallback.
 
-## Why it happens
+## Root cause (verified against the real file)
 
-In `src/routes/_authenticated/meetings.tsx`, when the recording's signed URL fails to load/decode, the native `<audio controls>` (or `<video>`) element shows the browser's own gray "Error" control. Our `onError` handler sets `videoError`, but:
+The one existing in-person recording ("Test") is stored as a **fragmented MP4** — the container `MediaRecorder` emits on iOS Safari (box order `ftyp → moov → moof → mdat`). Safari's `<audio>` element cannot play fragmented MP4 inline, so it renders "Error". The audio data is valid (AAC, mono, ~99s); remuxing to a **progressive** MP4 with faststart (`moov` before `mdat`, no `moof`) makes it play. Verified locally with ffmpeg.
 
-- We never unmount the failed native player, so the "Error" chrome stays visible.
-- The helpful message + Open/Download links sit inside a `Collapsible` that is collapsed by default on mobile, so on a phone the user only sees "Error".
+New recordings are already captured as WAV by the current recorder, which plays inline — so only legacy fragmented-MP4 files are broken.
 
-## Changes (frontend only, one file)
+## Changes
 
-`src/routes/_authenticated/meetings.tsx` — the `streamUrl` block (~lines 1057–1122):
+### 1. Repair existing legacy recordings (one-time data migration, sandbox)
+- Query in-person meetings and, for each `audio_storage_path`, download the object (service-role signed URL).
+- Detect a fragmented MP4 (presence of a `moof` box). For those, run `ffmpeg -i in -c copy -movflags +faststart` to produce a progressive file (lossless, keeps AAC).
+- Re-upload to the **same** storage path with `upsert: true`, content type `audio/mp4`.
+- Leave already-progressive files and WAV files untouched.
+- This immediately fixes the "Test" recording so it plays inline.
 
-1. When `videoError` is true, stop rendering the native `<audio>`/`<video>` element entirely so the browser's "Error" control disappears.
-2. In its place, render a small, friendly card, e.g. "This recording couldn't be played in the browser." with the existing Open recording / Download buttons directly beneath it (always visible, not hidden behind the mobile collapsible).
-3. Keep the normal (non-error) player and the collapsible Open/Download section exactly as they are for the success case.
+### 2. UI: inline playback is primary for in-person audio
+`src/routes/_authenticated/meetings.tsx` (the `streamUrl` block):
+- Revert the "swap to a download-only card on error" behavior added last turn. Always render the `<audio>` player for audio recordings so playback is the primary experience.
+- Keep Open recording / Download only as a secondary link beneath the player (in the existing collapsible), not as a replacement for it.
+- This means a working recording just plays; download is available but never takes over the UI.
 
-No changes to server functions, storage, or the recording pipeline — this only fixes how a failed playback is presented.
+### 3. Future-proofing (no code change needed, confirmed)
+The in-person recorder already encodes 16 kHz mono PCM WAV (`encodeWav`) and uploads with `audio/wav`, which plays inline everywhere — so no new fragmented-MP4 files will be created. No change required here; noted for completeness.
 
 ## Verification
 
+- After the migration, re-download the "Test" object and confirm box order is `ftyp → moov → … → mdat` with no `moof`.
 - Typecheck with `tsgo --noEmit`.
-- In the preview, open the "Test" in-person meeting on mobile width and confirm the gray "Error" bar is gone, replaced by the friendly message plus Open/Download buttons.
+- In the preview, open the "Test" in-person meeting and confirm the audio player shows real controls and plays (no "Error" bar, no download-only card).
 
-## Note
+## Technical notes
 
-This makes the failure look clean, but it does not repair the underlying file — that "Test" recording likely uploaded empty or corrupt. If you also want me to investigate why in-person recordings sometimes save an unplayable file (empty/short capture), say so and I'll add that as a follow-up.
+- ffmpeg is available in the build sandbox (used for the one-time remux) but NOT in the Cloudflare Worker runtime, so remux cannot run per-request in production. That's why the fix repairs stored files once and relies on WAV capture going forward, rather than transcoding on the fly.
+- Progressive AAC MP4 and WAV both play inline via the existing Supabase signed URL (correct content type + Range support), so no streaming proxy is needed for in-person audio.
