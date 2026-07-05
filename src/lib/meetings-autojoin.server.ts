@@ -78,6 +78,8 @@ export type UpcomingCalendarEvent = {
   hasMeetingLink: boolean;
   scheduled: boolean;
   excluded: boolean;
+  blocked: boolean;
+  blockedBy: string | null;
 };
 
 const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
