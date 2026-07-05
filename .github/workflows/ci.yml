@@ -37,6 +37,13 @@ jobs:
       # required step so the failure is obvious in the PR checks.
       - name: Schema consistency (folder_examples RPC)
         run: bun run test:schema
+      # Regression gate for the in-person meeting transcript pipeline. Runs the
+      # STT sanitizer golden-output snapshots plus the iOS-recording finalizer
+      # regression. Fails the PR if the sanitizer output changes unexpectedly
+      # (e.g. a runaway hallucination loop slips through, or normal speech gets
+      # mangled). Update intentionally with: bun run test:meetings-transcript:update
+      - name: Meetings transcript regression
+        run: bun run test:meetings-transcript
       # Enforced: the codebase is ESLint-clean (0 errors, 0 warnings). Keep it
       # that way — lint failures block the PR.
       - name: Lint
