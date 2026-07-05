@@ -1221,7 +1221,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </Tabs>
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-t border-border p-6 py-4">
+            <div className="flex items-center justify-between gap-3 border-t border-border p-4 py-3 sm:p-6 sm:py-4">
               {meeting.meeting_url ? (
                 <a
                   href={meeting.meeting_url}
