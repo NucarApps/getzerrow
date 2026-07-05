@@ -175,7 +175,7 @@ export const syncMeeting = createServerFn({ method: "POST" })
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
       .from("meetings")
-      .select("id, user_id, recall_bot_id, status")
+      .select("id, user_id, recall_bot_id, status, title")
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
