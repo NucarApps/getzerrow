@@ -457,9 +457,10 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="outline">
+        <Button variant="outline" className="w-full sm:w-auto">
           <Mic className="mr-1.5 h-4 w-4" /> Record in person
         </Button>
+
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
