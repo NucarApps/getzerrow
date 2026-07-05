@@ -1,45 +1,38 @@
-# Fix looping/repeating in-person transcripts (iOS audio)
+# Mobile responsiveness pass — Meetings page
 
-## Root cause
+## Problem
+On phones the meetings surfaces use desktop-sized padding and headings, so sections feel oversized and the summary/transcript reading areas get squeezed and hard to read. All changes are presentation-only (Tailwind classes), no logic changes.
 
-The in-person recorder (`InPersonRecordDialog` in `src/routes/_authenticated/meetings.tsx`) captures audio with `new MediaRecorder(stream)` and no explicit format. On iPhone/iOS Safari that produces a **fragmented MP4/AAC** file. Two things break because of it:
+Files touched:
+- `src/routes/_authenticated/meetings.tsx`
+- `src/components/meetings/UpcomingMeetingsCard.tsx`
 
-1. The browser `<audio>` element often can't decode it → the player shows **Error** ("audio only… doesn't play here").
-2. The speech-to-text model (`openai/gpt-4o-mini-transcribe` in `finalizeInPersonMeeting`) can't cleanly decode it either, so it **hallucinates and loops**, repeating the same phrase over and over — exactly what's on screen.
+## 1. Meeting detail panel (slide-in sheet)
+The sheet is the worst offender — every block uses fixed `p-6`, eating horizontal and vertical space so transcript/summary barely fit.
 
-The transcript is saved as one segment and rendered once, so this is not a UI duplication bug; the repeated text is in the model output.
+- Change section padding from `p-6` to responsive `p-4 sm:p-6` on: the header, the body block, the summary tab, the transcript tab, and the footer.
+- Header title: scale down on mobile (e.g. `text-base sm:text-lg`) and keep truncation so long titles don't push the badge off-screen.
+- Recording-status block and the in-progress refresh row: allow the button to wrap under the text on narrow widths instead of competing for space.
+- Ensure the tab content region keeps `flex-1 min-h-0 overflow-y-auto` so the transcript/summary scroll within the sheet and use the full available height.
+- Transcript readability: keep line text at a comfortable size with slightly looser line spacing (`leading-relaxed`) and reduce inner container padding on mobile so more of each line is visible.
 
-The reliable fix (per the speech-to-text guidance) is to stop relying on the browser's opaque recorder container and instead capture raw PCM and upload a standard **WAV** file, which every browser and the STT model can decode.
+## 2. Record dialogs (Record a meeting / Record in person / Screen record)
+- Reduce the inner recording box padding from `p-6` to `p-4 sm:p-6`.
+- Make dialog content comfortably fit a phone (respect viewport width with a small margin, scroll body if content is tall).
+- Confirm the action buttons stay full-width on mobile (already `w-full sm:w-auto`) and stack cleanly.
 
-## Changes
+## 3. Upcoming meetings card
+- Scale the `text-2xl` heading down on mobile (`text-lg sm:text-2xl`) and tighten the header padding.
+- List rows: keep the title truncating (`min-w-0`) and let the "Send notetaker" label hide on the smallest widths (show the switch only), so the toggle and title don't collide.
 
-### 1. New util `src/lib/wav-encoder.ts`
-Pure function `encodeWav(chunks: Float32Array[], sampleRate: number): Blob`:
-- Concatenate PCM chunks, downsample to 16 kHz mono, write a standard 16-bit PCM WAV header + samples, return a `Blob` typed `audio/wav`.
-- No DOM/Supabase imports so it stays unit-testable.
-
-### 2. New util test `src/lib/wav-encoder.test.ts`
-- Verifies a valid `RIFF/WAVE` header, correct sample-rate/channel bytes, and that sample count matches the downsampled input.
-
-### 3. `src/routes/_authenticated/meetings.tsx` — in-person recorder only
-Replace the `MediaRecorder` capture with Web Audio PCM capture:
-- Keep the existing secure-context / permission checks and the `useScreenWakeLock` acquire/release wiring.
-- On start: `getUserMedia({ audio: true })` → `AudioContext` → `createMediaStreamSource` → `ScriptProcessorNode(4096,1,1)`; push `Float32Array` copies of each frame into a ref. (ScriptProcessorNode is used deliberately for iOS Safari compatibility, as in the STT guidance.)
-- On stop: stop tracks, disconnect nodes, `encodeWav(pcm, ctx.sampleRate)`, `await ctx.close()`.
-- Reject near-empty recordings with a byte floor (`blob.size < 2048`) → show "That recording was empty — please try again." instead of uploading.
-- Upload with `contentType: "audio/wav"` and call `createInPersonMeeting({ ext: "wav" })` (the validator and `audioMimeFor` already support `wav`), then `transcribeInPersonMeeting` as today.
-- Update the recorder refs/cleanup to the new nodes (source/processor/AudioContext) and drop the `MediaRecorder`/`chunksRef` for this dialog.
-
-The desktop screen recorder is unchanged — it runs in Chrome and produces WebM/Opus, which decodes fine.
-
-### 4. `src/lib/meetings.server.ts` — defensive de-loop safeguard
-In `finalizeInPersonMeeting`, after getting `transcriptText`, add a small guard that collapses pathological immediate repetition (e.g. the same sentence/phrase repeated back-to-back many times) down to a single occurrence before saving. This is a cheap safety net so a future bad clip can't produce a wall of duplicated text even if the model still loops. It only collapses exact consecutive repeats; normal transcripts are untouched.
+## 4. Past meetings list + page headers
+- Scale the page `text-2xl` title responsively and reduce top/section padding slightly on mobile.
+- Verify list cards don't cause horizontal overflow at 360–402px widths.
 
 ## Verification
-- Run the new WAV encoder unit test.
-- Typecheck the changed files.
-- Sanity-check in the preview that starting/stopping an in-person recording uploads a `.wav`, the player plays it back, and the transcript renders once without repetition.
+- Re-check at 360px and 402px widths (mobile) and at `sm`/desktop to confirm no regressions.
+- Confirm no horizontal page scroll and that summary + transcript are comfortably readable with the detail panel open.
 
-## Out of scope
-- The Recall bot meeting flow and the desktop screen-recorder flow.
-- Changing the STT model or summary generation.
+## Technical notes
+- Pure Tailwind class adjustments using semantic tokens; no changes to server functions, data flow, or component structure.
+- Authenticated views (list, detail, upcoming) can't be fully rendered in the sandbox preview (no signed-in session), so final visual confirmation of those areas is best done in your live preview while signed in.

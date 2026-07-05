@@ -128,14 +128,14 @@ function MeetingsPage() {
   return (
     <div className="h-full overflow-y-auto">
 
-      <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
-        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
+        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between md:mb-8">
           <div className="flex min-w-0 items-center gap-3">
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
               <Video className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-display text-2xl text-foreground">Meetings</h1>
+              <h1 className="font-display text-xl text-foreground sm:text-2xl">Meetings</h1>
               <p className="text-sm text-muted-foreground">
                 Send a notetaker bot to record, transcribe, and summarize any call.
               </p>
@@ -257,7 +257,7 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
         </Button>
 
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
           <DialogTitle>Record a meeting</DialogTitle>
           <DialogDescription>
@@ -499,7 +499,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
         </Button>
 
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
           <DialogTitle>Record an in-person meeting</DialogTitle>
           <DialogDescription>
@@ -520,7 +520,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
             />
           </div>
 
-          <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-muted/30 p-6">
+          <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-muted/30 p-4 sm:p-6">
             {phase === "recording" ? (
               <>
                 <span className="flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
@@ -806,7 +806,7 @@ function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
           <Monitor className="mr-1.5 h-4 w-4" /> Record screen
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
           <DialogTitle>Record your screen</DialogTitle>
           <DialogDescription>
@@ -827,7 +827,7 @@ function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
             />
           </div>
 
-          <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-muted/30 p-6">
+          <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-muted/30 p-4 sm:p-6">
             {phase === "recording" ? (
               <>
                 <span className="flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
@@ -1032,8 +1032,8 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
           <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
         ) : (
           <>
-            <SheetHeader className="space-y-1 border-b border-border p-6 pb-4 text-left">
-              <SheetTitle className="flex items-center gap-2 pr-6">
+            <SheetHeader className="space-y-1 border-b border-border p-4 pb-3 text-left sm:p-6 sm:pb-4">
+              <SheetTitle className="flex items-center gap-2 pr-6 text-base sm:text-lg">
                 <span className="truncate">{meeting.title || "Untitled meeting"}</span>
                 <StatusBadge status={meeting.status} />
               </SheetTitle>
@@ -1044,7 +1044,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
             </SheetHeader>
 
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="space-y-4 p-6 pb-4">
+              <div className="space-y-4 p-4 pb-3 sm:p-6 sm:pb-4">
                 {meeting.status === "failed" && meeting.error && (
                   <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                     {meeting.error}
@@ -1129,7 +1129,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </div>
 
               <Tabs defaultValue="summary" className="flex min-h-0 flex-1 flex-col">
-                <TabsList className="mx-6 w-[calc(100%-3rem)]">
+                <TabsList className="mx-4 w-[calc(100%-2rem)] sm:mx-6 sm:w-[calc(100%-3rem)]">
                   <TabsTrigger value="summary" className="flex-1">
                     Summary
                   </TabsTrigger>
@@ -1140,10 +1140,10 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
 
                 <TabsContent
                   value="summary"
-                  className="mt-0 min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pt-4"
+                  className="mt-0 min-h-0 flex-1 space-y-5 overflow-y-auto p-4 pt-4 sm:p-6"
                 >
                   {!TERMINAL.has(meeting.status) ? (
-                    <div className="flex items-center justify-between gap-3 rounded-md bg-muted/50 p-3">
+                    <div className="flex flex-col gap-3 rounded-md bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-muted-foreground">
                         Recording in progress — the transcript and summary appear here once the
                         meeting ends.
@@ -1184,7 +1184,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                           <FileText className="h-4 w-4" /> Summary
                         </h3>
                         {meeting.summary ? (
-                          <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
                             {meeting.summary}
                           </p>
                         ) : (
@@ -1199,12 +1199,12 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
 
                 <TabsContent
                   value="transcript"
-                  className="mt-0 min-h-0 flex-1 overflow-y-auto p-6 pt-4"
+                  className="mt-0 min-h-0 flex-1 overflow-y-auto p-4 pt-4 sm:p-6"
                 >
                   {transcript.length > 0 ? (
-                    <div className="space-y-2 rounded-md border border-border p-3">
+                    <div className="space-y-3 rounded-md border border-border p-3 sm:p-4">
                       {transcript.map((seg, i) => (
-                        <p key={i} className="text-sm">
+                        <p key={i} className="text-sm leading-relaxed">
                           {seg.speaker && (
                             <span className="font-medium text-foreground">{seg.speaker}: </span>
                           )}
@@ -1221,7 +1221,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </Tabs>
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-t border-border p-6 py-4">
+            <div className="flex items-center justify-between gap-3 border-t border-border p-4 py-3 sm:p-6 sm:py-4">
               {meeting.meeting_url ? (
                 <a
                   href={meeting.meeting_url}
