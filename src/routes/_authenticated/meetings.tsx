@@ -1107,7 +1107,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                             <ExternalLink className="h-3.5 w-3.5" /> Open recording
                           </a>
                           <a
-                            href={streamKind === "audio" ? streamUrl : `${streamUrl}&dl=1`}
+                            href={`${streamUrl}&dl=1`}
                             download
                             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                           >

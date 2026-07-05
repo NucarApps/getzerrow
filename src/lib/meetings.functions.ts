@@ -238,26 +238,18 @@ export const getRecordingStreamUrl = createServerFn({ method: "GET" })
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
-    // Desktop screen recordings: play back the stored video file. Checked before
-    // the audio branch so a screen recording never renders as audio-only.
-    if (meeting.video_storage_path) {
-      const { data: signed } = await context.supabase.storage
-        .from("meeting-recordings")
-        .createSignedUrl(meeting.video_storage_path, 60 * 60 * 2);
-      return { streamUrl: (signed?.signedUrl ?? null) as string | null, kind: "video" as const };
-    }
-    // In-person recordings: mint a short-lived signed URL straight from our
-    // storage bucket. RLS on the per-user client confirms ownership.
-    if (meeting.audio_storage_path) {
-      const { data: signed } = await context.supabase.storage
-        .from("meeting-recordings")
-        .createSignedUrl(meeting.audio_storage_path, 60 * 60 * 2);
-      return { streamUrl: (signed?.signedUrl ?? null) as string | null, kind: "audio" as const };
+    const { buildRecordingStreamPath } = await import("./meeting-stream.server");
+    // Stored in-person recordings go through the same playback proxy as bot
+    // recordings so the response carries browser-friendly media headers.
+    if (meeting.video_storage_path || meeting.audio_storage_path) {
+      return {
+        streamUrl: buildRecordingStreamPath(meeting.id),
+        kind: meeting.video_storage_path ? ("video" as const) : ("audio" as const),
+      };
     }
     if (!meeting.recall_bot_id && !meeting.recording_url) {
       return { streamUrl: null as string | null, kind: "video" as const };
     }
-    const { buildRecordingStreamPath } = await import("./meeting-stream.server");
     return { streamUrl: buildRecordingStreamPath(meeting.id), kind: "video" as const };
   });
 

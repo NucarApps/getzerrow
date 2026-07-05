@@ -1,10 +1,8 @@
-// Public streaming proxy for meeting recordings. Recall serves the recording
-// from S3 with `Content-Type: binary/octet-stream`, which mobile Safari (and
-// some desktop browsers) refuse to play inline in a <video> element. This
-// route fetches a *fresh* signed recording URL server-side and streams the
-// bytes back with the correct `video/mp4` content type, forwarding Range
-// requests so seeking works. Access is gated by a short-lived HMAC token
-// (never the publishable key) minted by the authenticated getRecordingStreamUrl.
+// Public streaming proxy for meeting recordings. Some upstream/storage URLs are
+// served with generic headers, which mobile Safari and other browsers can refuse
+// to play inline. This route streams bytes back with explicit media headers and
+// forwards Range requests so seeking works. Access is gated by a short-lived HMAC
+// token minted by the authenticated getRecordingStreamUrl.
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/api/public/meeting-recording")({
@@ -28,10 +26,14 @@ export const Route = createFileRoute("/api/public/meeting-recording")({
         );
         let recordingUrl: string | null = null;
         let recallBotId: string | null = null;
+        let contentType = "video/mp4";
+        let filename = `recording-${meetingId}.mp4`;
         try {
           const r = await resolvePlayableRecordingUrl(meetingId);
           recordingUrl = r.url;
           recallBotId = r.recallBotId;
+          contentType = r.contentType;
+          filename = r.filename;
         } catch {
           recordingUrl = null;
         }
@@ -64,7 +66,7 @@ export const Route = createFileRoute("/api/public/meeting-recording")({
         }
 
         const headers = new Headers();
-        headers.set("Content-Type", "video/mp4");
+        headers.set("Content-Type", contentType);
         headers.set("Accept-Ranges", "bytes");
         headers.set("Cache-Control", "private, max-age=0, no-store");
         const contentLength = upstream.headers.get("content-length");
@@ -72,7 +74,7 @@ export const Route = createFileRoute("/api/public/meeting-recording")({
         const contentRange = upstream.headers.get("content-range");
         if (contentRange) headers.set("Content-Range", contentRange);
         if (isDownload) {
-          headers.set("Content-Disposition", `attachment; filename="recording-${meetingId}.mp4"`);
+          headers.set("Content-Disposition", `attachment; filename="${filename}"`);
         }
 
         return new Response(upstream.body, { status: upstream.status, headers });
