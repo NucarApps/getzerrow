@@ -60,11 +60,12 @@ export function MeetingRecordBlocklistCard() {
       <div className="flex items-start gap-3 border-b bg-muted/20 p-4 md:p-6">
         <ShieldOff className="mt-0.5 h-5 w-5 text-muted-foreground" />
         <div>
-          <h2 className="font-display text-2xl">Don't auto-record these people</h2>
+          <h2 className="font-display text-2xl">Don't record these people</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Meetings that include anyone on this list won't get a notetaker automatically — handy
-            for calls with your attorney or anyone you'd rather keep off the record. Add a full
-            email address, or a whole domain (for example, lawfirm.com) to skip everyone there.
+            Meetings that include anyone on this list won't be recorded — not automatically, and
+            not when you paste a link (as long as the meeting is on your calendar). Handy for calls
+            with your attorney or anyone you'd rather keep off the record. Add a full email address,
+            or a whole domain (for example, lawfirm.com) to skip everyone there.
           </p>
         </div>
       </div>
