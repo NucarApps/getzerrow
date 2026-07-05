@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor } from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 
 const TERMINAL = new Set(["done", "failed"]);
 
@@ -332,33 +333,15 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-  const visibilityHandlerRef = useRef<(() => void) | null>(null);
-
   // Keep the screen awake while recording so mobile browsers don't suspend the
   // tab (and stop the MediaRecorder) when the device would otherwise sleep.
-  async function acquireWakeLock() {
-    try {
-      if (!("wakeLock" in navigator)) return;
-      wakeLockRef.current = await navigator.wakeLock.request("screen");
-    } catch {
-      // Unsupported or rejected — recording still works, screen just isn't held.
-    }
-  }
-
-  function releaseWakeLock() {
-    void wakeLockRef.current?.release().catch(() => {});
-    wakeLockRef.current = null;
-  }
+  // Falls back to a hidden looping video where the Wake Lock API is unavailable.
+  const { acquire: acquireWakeLock, release: releaseWakeLock } = useScreenWakeLock();
 
   function cleanupStream() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
-    }
-    if (visibilityHandlerRef.current) {
-      document.removeEventListener("visibilitychange", visibilityHandlerRef.current);
-      visibilityHandlerRef.current = null;
     }
     releaseWakeLock();
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -423,14 +406,10 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       setPhase("recording");
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
+      // The hook re-acquires on visibility changes internally.
       void acquireWakeLock();
-      // Browsers auto-release the wake lock when the tab is hidden; re-acquire it
-      // when the user returns so a mid-recording app switch doesn't drop it.
-      const onVisible = () => {
-        if (document.visibilityState === "visible") void acquireWakeLock();
-      };
-      visibilityHandlerRef.current = onVisible;
-      document.addEventListener("visibilitychange", onVisible);
+
+
 
     } catch (err: unknown) {
       cleanupStream();
@@ -602,24 +581,16 @@ function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const videoChunksRef = useRef<Blob[]>([]);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-
-  async function acquireWakeLock() {
-    try {
-      if (!("wakeLock" in navigator)) return;
-      wakeLockRef.current = await navigator.wakeLock.request("screen");
-    } catch {
-      // Unsupported or rejected — recording still works.
-    }
-  }
+  // Keeps the screen awake during capture, falling back to a hidden looping
+  // video where the Wake Lock API is unavailable.
+  const { acquire: acquireWakeLock, release: releaseWakeLock } = useScreenWakeLock();
 
   function cleanup() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    void wakeLockRef.current?.release().catch(() => {});
-    wakeLockRef.current = null;
+    releaseWakeLock();
     displayStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     displayStreamRef.current = null;
@@ -765,8 +736,7 @@ function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    void wakeLockRef.current?.release().catch(() => {});
-    wakeLockRef.current = null;
+    releaseWakeLock();
     void audioCtxRef.current?.close().catch(() => {});
     audioCtxRef.current = null;
 
