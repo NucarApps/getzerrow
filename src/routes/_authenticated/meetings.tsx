@@ -135,7 +135,7 @@ function MeetingsPage() {
               <Video className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-display text-2xl text-foreground">Meetings</h1>
+              <h1 className="font-display text-xl text-foreground sm:text-2xl">Meetings</h1>
               <p className="text-sm text-muted-foreground">
                 Send a notetaker bot to record, transcribe, and summarize any call.
               </p>
