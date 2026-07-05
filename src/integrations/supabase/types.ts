@@ -1233,6 +1233,36 @@ export type Database = {
           },
         ]
       }
+      meeting_bot_settings: {
+        Row: {
+          avatar_updated_at: string | null
+          bot_name: string
+          chat_message: string
+          chat_resend_on_join: boolean
+          created_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_updated_at?: string | null
+          bot_name?: string
+          chat_message?: string
+          chat_resend_on_join?: boolean
+          created_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_updated_at?: string | null
+          bot_name?: string
+          chat_message?: string
+          chat_resend_on_join?: boolean
+          created_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       meeting_participants: {
         Row: {
           contact_id: string | null
