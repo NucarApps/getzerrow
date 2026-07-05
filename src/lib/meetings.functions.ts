@@ -192,13 +192,13 @@ export const refreshRecording = createServerFn({ method: "POST" })
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
       .from("meetings")
-      .select("id, recall_bot_id, audio_storage_path, transcript, summary, status")
+      .select("id, recall_bot_id, audio_storage_path, video_storage_path, transcript, summary, status")
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
     // In-person recordings live in our own storage bucket, not Recall. Report
     // what's on the row so the detail view can show status without calling out.
-    if (meeting.audio_storage_path) {
+    if (meeting.audio_storage_path || meeting.video_storage_path) {
       return {
         recordingUrl: null as string | null,
         hasRecording: true,
@@ -226,10 +226,18 @@ export const getRecordingStreamUrl = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { data: meeting } = await context.supabase
       .from("meetings")
-      .select("id, recall_bot_id, recording_url, audio_storage_path")
+      .select("id, recall_bot_id, recording_url, audio_storage_path, video_storage_path")
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
+    // Desktop screen recordings: play back the stored video file. Checked before
+    // the audio branch so a screen recording never renders as audio-only.
+    if (meeting.video_storage_path) {
+      const { data: signed } = await context.supabase.storage
+        .from("meeting-recordings")
+        .createSignedUrl(meeting.video_storage_path, 60 * 60 * 2);
+      return { streamUrl: (signed?.signedUrl ?? null) as string | null, kind: "video" as const };
+    }
     // In-person recordings: mint a short-lived signed URL straight from our
     // storage bucket. RLS on the per-user client confirms ownership.
     if (meeting.audio_storage_path) {
@@ -257,6 +265,8 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
       .object({
         title: z.string().max(200).optional(),
         ext: z.enum(["webm", "m4a", "mp4", "ogg", "wav"]).default("webm"),
+        withVideo: z.boolean().optional(),
+        videoExt: z.enum(["webm", "mp4"]).default("webm"),
       })
       .parse(input),
   )
@@ -277,7 +287,10 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const audioPath = `${userId}/${inserted.id}.${data.ext}`;
-    return { id: inserted.id, audioPath };
+    const videoPath = data.withVideo
+      ? `${userId}/${inserted.id}.video.${data.videoExt}`
+      : null;
+    return { id: inserted.id, audioPath, videoPath };
   });
 
 /**
@@ -288,7 +301,13 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
 export const transcribeInPersonMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({ id: z.string().uuid(), audioPath: z.string().max(300) }).parse(input),
+    z
+      .object({
+        id: z.string().uuid(),
+        audioPath: z.string().max(300),
+        videoPath: z.string().max(300).optional(),
+      })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -300,10 +319,17 @@ export const transcribeInPersonMeeting = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
     if (!data.audioPath.startsWith(`${userId}/`)) throw new Error("Invalid audio path");
+    if (data.videoPath && !data.videoPath.startsWith(`${userId}/`)) {
+      throw new Error("Invalid video path");
+    }
 
     const { error: updErr } = await supabase
       .from("meetings")
-      .update({ audio_storage_path: data.audioPath, status: "processing" })
+      .update({
+        audio_storage_path: data.audioPath,
+        ...(data.videoPath ? { video_storage_path: data.videoPath } : {}),
+        status: "processing",
+      })
       .eq("id", data.id);
     if (updErr) throw new Error(updErr.message);
 

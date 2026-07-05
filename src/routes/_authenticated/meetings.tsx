@@ -37,8 +37,9 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor } from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const TERMINAL = new Set(["done", "failed"]);
 
@@ -92,6 +93,7 @@ function formatWhen(iso: string | null): string {
 
 function MeetingsPage() {
   const qc = useQueryClient();
+  const isMobile = useIsMobile();
   const list = useServerFn(listMeetings);
   const sync = useServerFn(syncMeeting);
   const meetingsQ = useQuery({
@@ -139,6 +141,9 @@ function MeetingsPage() {
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <InPersonRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+            {!isMobile && (
+              <ScreenRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+            )}
             <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
           </div>
         </header>
@@ -566,6 +571,313 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     </Dialog>
   );
 }
+
+function pickMime(candidates: string[], fallback: string): string {
+  if (typeof MediaRecorder === "undefined") return fallback;
+  for (const c of candidates) {
+    if (MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return fallback;
+}
+
+/**
+ * Desktop-only screen recorder: captures the screen video plus mixed
+ * system/tab audio and the microphone. Two recorders run at once — one writes a
+ * playable video, the other a clean audio track used for transcription.
+ */
+function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
+  const createMeeting = useServerFn(createInPersonMeeting);
+  const transcribe = useServerFn(transcribeInPersonMeeting);
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [phase, setPhase] = useState<"idle" | "recording" | "processing">("idle");
+  const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const displayStreamRef = useRef<MediaStream | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const videoRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioRecorderRef = useRef<MediaRecorder | null>(null);
+  const videoChunksRef = useRef<Blob[]>([]);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+
+  async function acquireWakeLock() {
+    try {
+      if (!("wakeLock" in navigator)) return;
+      wakeLockRef.current = await navigator.wakeLock.request("screen");
+    } catch {
+      // Unsupported or rejected — recording still works.
+    }
+  }
+
+  function cleanup() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    void wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+    displayStreamRef.current?.getTracks().forEach((t) => t.stop());
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+    displayStreamRef.current = null;
+    micStreamRef.current = null;
+    void audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+    videoRecorderRef.current = null;
+    audioRecorderRef.current = null;
+  }
+
+  function resetState() {
+    cleanup();
+    videoChunksRef.current = [];
+    audioChunksRef.current = [];
+    setPhase("idle");
+    setElapsed(0);
+    setError(null);
+  }
+
+  async function startRecording() {
+    setError(null);
+
+    if (!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia) {
+      setError("Screen recording isn't supported in this browser.");
+      return;
+    }
+    if (typeof MediaRecorder === "undefined") {
+      setError("Recording isn't supported in this browser.");
+      return;
+    }
+
+    let displayStream: MediaStream;
+    try {
+      displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    } catch {
+      // User cancelled the picker or denied screen access.
+      setError("Screen sharing was cancelled. Choose a screen, window, or tab to record.");
+      return;
+    }
+    displayStreamRef.current = displayStream;
+
+    // Best-effort microphone capture; a denied mic still records system audio.
+    let micStream: MediaStream | null = null;
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = micStream;
+    } catch {
+      micStream = null;
+    }
+
+    const videoTrack = displayStream.getVideoTracks()[0];
+    if (!videoTrack) {
+      cleanup();
+      setError("No screen video was captured. Try again.");
+      return;
+    }
+
+    try {
+      // Mix system audio + mic into two independent destination tracks so the
+      // video and audio recorders each get their own stream.
+      const AudioCtx: typeof AudioContext =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioCtx();
+      audioCtxRef.current = ctx;
+      const videoDest = ctx.createMediaStreamDestination();
+      const audioDest = ctx.createMediaStreamDestination();
+
+      const connect = (stream: MediaStream) => {
+        if (stream.getAudioTracks().length === 0) return;
+        const src = ctx.createMediaStreamSource(stream);
+        src.connect(videoDest);
+        src.connect(audioDest);
+      };
+      connect(displayStream);
+      if (micStream) connect(micStream);
+
+      const videoStream = new MediaStream([videoTrack, ...videoDest.stream.getAudioTracks()]);
+      const audioStream = new MediaStream(audioDest.stream.getAudioTracks());
+
+      const videoMime = pickMime(
+        ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"],
+        "video/webm",
+      );
+      const audioMime = pickMime(["audio/webm;codecs=opus", "audio/webm"], "audio/webm");
+
+      videoChunksRef.current = [];
+      audioChunksRef.current = [];
+      const videoRecorder = new MediaRecorder(videoStream, { mimeType: videoMime });
+      const audioRecorder = new MediaRecorder(audioStream, { mimeType: audioMime });
+      videoRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) videoChunksRef.current.push(e.data);
+      };
+      audioRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      let stopped = 0;
+      const onOneStopped = () => {
+        stopped += 1;
+        if (stopped >= 2) void finishRecording();
+      };
+      videoRecorder.onstop = onOneStopped;
+      audioRecorder.onstop = onOneStopped;
+
+      videoRecorderRef.current = videoRecorder;
+      audioRecorderRef.current = audioRecorder;
+
+      // The browser's own "Stop sharing" control ends the screen track.
+      videoTrack.addEventListener("ended", () => stopRecording());
+
+      videoRecorder.start();
+      audioRecorder.start();
+      setPhase("recording");
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
+      void acquireWakeLock();
+    } catch {
+      cleanup();
+      setError("Couldn't start screen recording. Please try again.");
+    }
+  }
+
+  function stopRecording() {
+    const v = videoRecorderRef.current;
+    const a = audioRecorderRef.current;
+    if (v && v.state !== "inactive") v.stop();
+    if (a && a.state !== "inactive") a.stop();
+    // Stop capturing so the browser's sharing indicator clears immediately.
+    displayStreamRef.current?.getTracks().forEach((t) => t.stop());
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+  }
+
+  async function finishRecording() {
+    const videoMime = videoRecorderRef.current?.mimeType || "video/webm";
+    const audioMime = audioRecorderRef.current?.mimeType || "audio/webm";
+    const videoBlob = new Blob(videoChunksRef.current, { type: videoMime });
+    const audioBlob = new Blob(audioChunksRef.current, { type: audioMime });
+    videoChunksRef.current = [];
+    audioChunksRef.current = [];
+    // Keep the audio context/streams around no longer than needed.
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    void wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+    void audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+
+    if (videoBlob.size === 0 || audioBlob.size === 0) {
+      setError("Nothing was recorded. Try again.");
+      setPhase("idle");
+      return;
+    }
+    setPhase("processing");
+    try {
+      const { id, audioPath, videoPath } = await createMeeting({
+        data: { title: title.trim() || undefined, ext: "webm", withVideo: true, videoExt: "webm" },
+      });
+      if (!videoPath) throw new Error("Missing video path");
+      const [audioUp, videoUp] = await Promise.all([
+        supabase.storage
+          .from("meeting-recordings")
+          .upload(audioPath, audioBlob, { contentType: audioMime, upsert: true }),
+        supabase.storage
+          .from("meeting-recordings")
+          .upload(videoPath, videoBlob, { contentType: videoMime, upsert: true }),
+      ]);
+      if (audioUp.error) throw new Error(audioUp.error.message);
+      if (videoUp.error) throw new Error(videoUp.error.message);
+      await transcribe({ data: { id, audioPath, videoPath } });
+      toast.success("Recording saved — transcribing now");
+      onRecorded();
+      setTitle("");
+      setOpen(false);
+      resetState();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not save the recording.");
+      setPhase("idle");
+    }
+  }
+
+  function onOpenChange(next: boolean) {
+    if (!next && (phase === "recording" || phase === "processing")) return;
+    if (!next) resetState();
+    setOpen(next);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="w-full sm:w-auto">
+          <Monitor className="mr-1.5 h-4 w-4" /> Record screen
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Record your screen</DialogTitle>
+          <DialogDescription>
+            Capture your screen with system audio and your microphone. When you stop, we upload the
+            video and transcribe and summarize it automatically.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="screen-title">Title (optional)</Label>
+            <Input
+              id="screen-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Product demo"
+              autoComplete="off"
+              disabled={phase !== "idle"}
+            />
+          </div>
+
+          <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-muted/30 p-6">
+            {phase === "recording" ? (
+              <>
+                <span className="flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                  Recording
+                </span>
+                <span className="font-mono text-2xl tabular-nums text-foreground">
+                  {formatElapsed(elapsed)}
+                </span>
+                <Button variant="destructive" onClick={stopRecording}>
+                  <Square className="mr-1.5 h-4 w-4" /> Stop &amp; save
+                </Button>
+              </>
+            ) : phase === "processing" ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin" /> Uploading and transcribing…
+              </p>
+            ) : (
+              <>
+                <Monitor className="h-8 w-8 text-muted-foreground" />
+                <Button onClick={startRecording}>
+                  <Monitor className="mr-1.5 h-4 w-4" /> Start recording
+                </Button>
+              </>
+            )}
+          </div>
+
+          {error && (
+            <p className="flex items-start gap-2 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
 
 
 
