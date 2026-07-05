@@ -166,10 +166,10 @@ const RUNAWAY_PATTERNS: Array<{ name: string; text: string }> = [
 ];
 
 /** Read a fragmented-MP4 fixture and count its moof (fragment) boxes. */
-function readFixture(file: string): { bytes: Uint8Array; fragments: number } {
-  const bytes = new Uint8Array(
-    readFileSync(fileURLToPath(new URL(`./__fixtures__/${file}`, import.meta.url))),
-  );
+function readFixture(file: string): { bytes: Uint8Array<ArrayBuffer>; fragments: number } {
+  const raw = readFileSync(fileURLToPath(new URL(`./__fixtures__/${file}`, import.meta.url)));
+  const bytes = new Uint8Array(raw.byteLength);
+  bytes.set(raw);
   let i = 0;
   let fragments = 0;
   while (i + 8 <= bytes.byteLength) {
