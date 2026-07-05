@@ -14,6 +14,7 @@ import {
   createInPersonMeeting,
   transcribeInPersonMeeting,
 } from "@/lib/meetings.functions";
+import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
