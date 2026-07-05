@@ -39,6 +39,65 @@ type MeetingRow = {
   status: string;
 };
 
+export const DEFAULT_BOT_NAME = "Zerrow Notetaker";
+const AVATAR_BUCKET = "meeting-bot-avatars";
+
+/** Resolved notetaker bot customization for a given user. */
+export type BotConfig = {
+  botName: string;
+  chatMessage: string | null;
+  chatResendOnJoin: boolean;
+  imageB64: string | null;
+};
+
+/**
+ * Load a user's meeting-bot customization (name, chat message, picture) so the
+ * same settings apply to every bot we create for them — whether from a pasted
+ * link or calendar auto-join. Uses the service-role client because it runs from
+ * both authenticated and unauthenticated (cron) contexts; all reads are keyed
+ * by the passed userId. Never throws: falls back to sensible defaults so a bad
+ * settings row or missing picture can't block a recording from starting.
+ */
+export async function loadBotConfig(userId: string): Promise<BotConfig> {
+  const fallback: BotConfig = {
+    botName: DEFAULT_BOT_NAME,
+    chatMessage: null,
+    chatResendOnJoin: true,
+    imageB64: null,
+  };
+  try {
+    const { data: row } = await supabaseAdmin
+      .from("meeting_bot_settings")
+      .select("bot_name, chat_message, chat_resend_on_join, avatar_updated_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const botName = row?.bot_name?.trim() || DEFAULT_BOT_NAME;
+    const chatMessage = row?.chat_message?.trim() ? row.chat_message.trim() : null;
+    const chatResendOnJoin = row?.chat_resend_on_join ?? true;
+
+    let imageB64: string | null = null;
+    if (row?.avatar_updated_at) {
+      try {
+        const { data: file } = await supabaseAdmin.storage
+          .from(AVATAR_BUCKET)
+          .download(`${userId}/avatar.jpg`);
+        if (file) {
+          const buf = Buffer.from(await file.arrayBuffer());
+          imageB64 = buf.toString("base64");
+        }
+      } catch (e) {
+        logError("meeting_bot_avatar_download_failed", { userId }, e);
+      }
+    }
+
+    return { botName, chatMessage, chatResendOnJoin, imageB64 };
+  } catch (e) {
+    logError("meeting_bot_config_load_failed", { userId }, e);
+    return fallback;
+  }
+}
+
 /**
  * Match a meeting's participants (from meeting_participants.email) to existing
  * contacts owned by the same user and populate contact_id. Idempotent.
