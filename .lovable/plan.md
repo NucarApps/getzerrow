@@ -1,36 +1,29 @@
-# Reflect the don't-record list in the Upcoming meetings list
-
-## Problem
-The Upcoming meetings list (both the Meetings page card and the Settings calendar card) shows a "Send notetaker" toggle for every meeting and lets you turn it on even when a guest is on your don't-record list. The background scheduler already refuses to record those meetings, but the UI is misleading — it looks like recording is enabled.
-
 ## Goal
-Meetings that include a blocked guest appear clearly marked as blocked in the Upcoming list, with the toggle forced off and disabled so you can't turn recording on for them.
 
-## How it will work
-- Each upcoming meeting is checked against your don't-record list (attendee + organizer emails, by exact email or whole domain).
-- A blocked meeting shows a small "Blocked" label instead of "Send notetaker", the toggle is off and greyed out, and a short line explains why (e.g. "Guest on your don't-record list").
-- Everything else behaves as before.
+Stop the raw browser "Error" bar from appearing on an in-person recording (and any recording) when the media file can't play. Replace it with a clean, friendly fallback.
 
----
+## Why it happens
 
-## Technical details
+In `src/routes/_authenticated/meetings.tsx`, when the recording's signed URL fails to load/decode, the native `<audio controls>` (or `<video>`) element shows the browser's own gray "Error" control. Our `onError` handler sets `videoError`, but:
 
-### 1. Compute `blocked` server-side
-In `src/lib/meetings-autojoin.server.ts`:
-- Add `blocked: boolean` and `blockedBy: string | null` to the `UpcomingCalendarEvent` type.
-- In `listUpcomingCalendarEventsForAccount`, load the user's blocklist once (`loadBlocklist`), and for each event run the existing `findBlockedEntry` over its attendee + organizer emails. Set `blocked`/`blockedBy` on each returned event. (`findBlockedEntry` already exists in this file; no new matching logic.)
-- Since `fetchEventsInWindow` already returns `attendees` and `organizer`, no extra calendar calls are needed.
+- We never unmount the failed native player, so the "Error" chrome stays visible.
+- The helpful message + Open/Download links sit inside a `Collapsible` that is collapsed by default on mobile, so on a phone the user only sees "Error".
 
-### 2. Surface it in both cards
-`UpcomingCalendarEvent` flows through `meetings.functions.ts` unchanged (type re-export), so both consumers get the new fields.
+## Changes (frontend only, one file)
 
-In `src/components/meetings/UpcomingMeetingsCard.tsx` and `src/components/settings/MeetingCalendarEventsCard.tsx`:
-- When `e.blocked`: render the status text as "Blocked" (muted), set `<Switch checked={false} disabled>`, and add a small helper line under the title like "Guest on your don't-record list — won't be recorded." Keep the existing behavior for non-blocked events.
-- Guard the toggle handler so a blocked row can't fire the mutation.
+`src/routes/_authenticated/meetings.tsx` — the `streamUrl` block (~lines 1057–1122):
 
-### 3. No schema or server-function signature changes
-Only the returned event shape gains two fields; `setEventExclusion` is untouched. The scheduler-side skip already exists and stays as the enforcement backstop.
+1. When `videoError` is true, stop rendering the native `<audio>`/`<video>` element entirely so the browser's "Error" control disappears.
+2. In its place, render a small, friendly card, e.g. "This recording couldn't be played in the browser." with the existing Open recording / Download buttons directly beneath it (always visible, not hidden behind the mobile collapsible).
+3. Keep the normal (non-error) player and the collapsible Open/Download section exactly as they are for the success case.
 
-### Verification
-- `tsgo --noEmit` clean.
-- With a blocked attendee on an upcoming event, that row shows "Blocked", the toggle is off and disabled, and clicking it does nothing; other rows still toggle normally.
+No changes to server functions, storage, or the recording pipeline — this only fixes how a failed playback is presented.
+
+## Verification
+
+- Typecheck with `tsgo --noEmit`.
+- In the preview, open the "Test" in-person meeting on mobile width and confirm the gray "Error" bar is gone, replaced by the friendly message plus Open/Download buttons.
+
+## Note
+
+This makes the failure look clean, but it does not repair the underlying file — that "Test" recording likely uploaded empty or corrupt. If you also want me to investigate why in-person recordings sometimes save an unplayable file (empty/short capture), say so and I'll add that as a follow-up.
