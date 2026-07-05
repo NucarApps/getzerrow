@@ -1044,7 +1044,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
             </SheetHeader>
 
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="space-y-4 p-6 pb-4">
+              <div className="space-y-4 p-4 pb-3 sm:p-6 sm:pb-4">
                 {meeting.status === "failed" && meeting.error && (
                   <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                     {meeting.error}
