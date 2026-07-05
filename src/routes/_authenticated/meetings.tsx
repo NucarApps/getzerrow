@@ -125,23 +125,24 @@ function MeetingsPage() {
     <div className="h-full overflow-y-auto">
 
       <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
-        <header className="mb-8 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-md bg-primary/10 text-primary">
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
               <Video className="h-5 w-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="font-display text-2xl text-foreground">Meetings</h1>
               <p className="text-sm text-muted-foreground">
                 Send a notetaker bot to record, transcribe, and summarize any call.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <InPersonRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
             <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
           </div>
         </header>
+
 
         <Tabs defaultValue="past">
           <TabsList className="mb-6">
