@@ -1,57 +1,42 @@
-# Skip auto-recording meetings with specific people
+# Block recording meetings that include a blocked person
 
 ## Goal
-Let you keep a list of people (by email) or whole domains (e.g. your law firm's) that should never be auto-recorded. When the auto-record scheduler looks at an upcoming calendar meeting, if any attendee or the organizer matches your blocklist, it skips sending the notetaker bot — so your attorney calls stay private.
+Extend the existing "don't auto-record" list so it doesn't just skip *automatic* calendar recordings — it also refuses a **manual** "record from link" when the meeting includes someone on your list. Today the check only runs in the auto-record scheduler; a person could still paste a link and record a blocked attendee.
 
-## How it works
-- The blocklist lives per user (applies across all your connected inboxes), just like the bot customization settings.
-- Entries can be a full email (`jane@lawfirm.com`) or a bare domain (`lawfirm.com`) to block everyone at a firm.
-- Matching is case-insensitive: an event is skipped if any attendee/organizer email exactly matches a listed email, or its domain matches a listed domain.
-- This only affects *automatic* calendar-based recording. You can still manually record any meeting from a link if you choose.
+## How it will work
+- **Manual record from link:** when you paste a meeting link, before sending the notetaker the app looks up your calendar for the matching event, reads its attendees/organizer, and if any of them are on your blocklist (by email or by domain), it refuses with a clear message like "Not recorded — jane@lawfirm.com is on your don't-record list." No bot is sent, no recording starts.
+- **Auto-record (calendar):** unchanged — already skips these meetings.
+- **Safety net after the bot joins:** if a blocked person's email shows up in the meeting's participant data once the bot is in the call, the app pulls the bot out and marks the meeting stopped instead of saving the recording.
 
-## What you'll see
-A new "Don't auto-record these people" card in Settings → Meetings, under the auto-record toggle:
-- A field to add an email or domain, with an "Add" button.
-- A list of current entries, each with a remove (×) button.
-- Helper copy explaining that meetings including anyone on this list won't be auto-recorded, and that whole domains are supported.
+## Important limitation (surfaced honestly)
+Reliable blocking depends on knowing attendee **email addresses**, which come from your Google Calendar. If you paste a link for a meeting that isn't on your calendar, the app can't know who's invited until the bot joins — and meeting platforms (Zoom/Meet/Teams) usually only report participants' display names, not emails. So the pre-join block is guaranteed only for meetings on your calendar; for ad-hoc links the safety net is best-effort. This matches how the auto-record blocklist already behaves.
 
 ---
 
 ## Technical details
 
-### 1. Database (migration)
-New table `public.meeting_record_blocklist`:
-- `id uuid primary key default gen_random_uuid()`
-- `user_id uuid not null` (references the auth user)
-- `value text not null` — stored lowercased; either an email or a bare domain
-- `created_at timestamptz not null default now()`
-- `unique (user_id, value)`
+### 1. Reuse the blocklist match logic
+`src/lib/meetings-autojoin.server.ts` already has `loadBlocklist(userId)` and `hasBlockedAttendee(emails, blocklist)` plus `findBlockedAttendee` semantics. Export these (and add a variant that returns *which* entry matched, so the error message can name it) so other server code can reuse them without duplicating logic.
 
-Grants + RLS in the same migration:
-- `GRANT SELECT, INSERT, DELETE ON public.meeting_record_blocklist TO authenticated;`
-- `GRANT ALL ... TO service_role;` (the cron scheduler reads it via the admin client)
-- Enable RLS; policies scoped to `auth.uid() = user_id` for select/insert/delete. No `anon` grant.
+### 2. New server-only helper: match a link to calendar attendees
+Add `findBlockedAttendeeForMeetingUrl(userId, meetingUrl)` to `meetings-autojoin.server.ts` (server-only, uses `supabaseAdmin` + `getAccessToken`):
+- Load the user's blocklist; if empty, return `null` fast.
+- For each of the user's calendar-access gmail accounts, fetch events in a window around now (e.g. next 24h + recently started), reuse `extractMeetingUrl`, and find an event whose meeting URL matches the pasted link (normalized comparison — strip query/hash, lowercase host).
+- Collect attendee + organizer emails from the matched event and return the first blocked email/domain (or `null`).
 
-### 2. Server functions (`src/lib/meetings.functions.ts`)
-All use `.middleware([requireSupabaseAuth])`:
-- `listRecordBlocklist` (GET) — returns the caller's entries ordered by value.
-- `addRecordBlocklistEntry` (POST) — Zod-validate input: trim + lowercase, accept either a valid email or a bare domain (regex), reject otherwise; upsert on `(user_id, value)`.
-- `removeRecordBlocklistEntry` (POST) — delete by `id` scoped to the user.
+### 3. Enforce in manual record path
+In `recordFromLink` (`src/lib/meetings.functions.ts`), inside `.handler`, before `createBot`:
+- `const blocked = await (await import("./meetings-autojoin.server")).findBlockedAttendeeForMeetingUrl(userId, data.meetingUrl)`.
+- If `blocked`, throw `new Error(\`Not recorded — ${blocked} is on your don't-record list.\`)` so the existing toast surfaces it. No bot, no meeting row.
 
-### 3. Scheduler skip logic (`src/lib/meetings-autojoin.server.ts`)
-In `scheduleUpcomingMeetingBots`, per account (keyed by `account.user_id`), load the user's blocklist once (cache per user id within the run to avoid refetching for multiple accounts of the same user). Build a `Set` of blocked emails and a `Set` of blocked domains.
+### 4. Safety net in the Recall webhook / sync
+- Extend the `RecallBot` type in `src/lib/recall.server.ts` to include the participant list Recall returns (e.g. `meeting_participants: Array<{ name?: string; email?: string | null }>`), and add a small `extractParticipantEmails(bot)` helper.
+- In `syncMeetingFromRecall` (`src/lib/meetings.server.ts`), when status becomes `recording` or `done`, load the meeting owner's blocklist and check participant emails. If a blocked email is present: call `leaveBot(recall_bot_id)`, set the meeting `status = "failed"` with `error = "Recording stopped — a blocked person was in the meeting."`, and skip storing `recording_url`/`transcript`/`summary`. (Uses the existing `failed` enum value — no schema change.)
 
-For each event, before creating the bot, collect all attendee emails + organizer email (lowercased). If any email is in the blocked-emails set, or its domain (part after `@`) is in the blocked-domains set, `continue` (skip scheduling) and `logInfo("meeting_autojoin_skipped_blocklist", …)`. This check goes right after `meetingUrl`/existing/excluded checks, reusing the same email parsing already used to build `participants`.
-
-### 4. UI (`src/components/settings/MeetingRecordBlocklistCard.tsx`, new)
-A shadcn `Card` following the pattern of `MeetingBotCard`/`MeetingAutoRecordCard`:
-- React Query `useQuery` for `listRecordBlocklist`, `useServerFn` wrappers, `useMutation` for add/remove with `invalidateQueries`.
-- Input + Add button; validation error toast on bad input; list with remove buttons.
-- Friendly, sentence-case copy per brand voice.
-
-Render it in `src/routes/_authenticated/settings.tsx` Meetings tab, right after the `MeetingAutoRecordCard` block (it's user-level, so a single card, not one-per-account).
+### 5. No UI changes required
+The existing "Don't auto-record these people" card in Settings → Meetings is the single source of the list. Optionally update its helper copy to say meetings including these people won't be recorded *at all* (manual or automatic), not just auto-skipped.
 
 ### Verification
-- Typecheck with `tsgo --noEmit`.
-- Confirm the card renders in Settings → Meetings and add/remove round-trips.
-- Confirm the scheduler skip by reviewing the added `continue` path (full end-to-end needs a live calendar event with a blocked attendee).
+- `tsgo --noEmit` clean.
+- Manual: with a blocked attendee on a calendar event, pasting that event's link is refused with the named message; a link with no blocked attendee still records.
+- Review the webhook `leaveBot` + `failed` path (full end-to-end needs a live blocked participant with an email exposed by the platform).

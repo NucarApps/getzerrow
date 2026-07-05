@@ -73,7 +73,22 @@ export type RecallBot = {
     };
   }>;
   video_url?: string | null;
+  meeting_participants?: Array<{
+    name?: string | null;
+    email?: string | null;
+    extra_data?: { email?: string | null } | null;
+  }> | null;
 };
+
+/** Collect any participant email addresses Recall reports (often absent). */
+export function extractParticipantEmails(bot: RecallBot): string[] {
+  const emails: string[] = [];
+  for (const p of bot.meeting_participants ?? []) {
+    const email = p.email ?? p.extra_data?.email ?? null;
+    if (email && email.includes("@")) emails.push(email.toLowerCase());
+  }
+  return emails;
+}
 
 type CreateBotInput = {
   meetingUrl: string;

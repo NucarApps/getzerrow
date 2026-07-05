@@ -14,7 +14,9 @@ import {
   getBot,
   getTranscript,
   extractRecordingUrl,
+  extractParticipantEmails,
   latestStatusCode,
+  leaveBot,
   summarizeTranscript,
   type RecallBot,
   type TranscriptSegment,
@@ -152,6 +154,33 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
 
   const code = latestStatusCode(bot);
   const status = mapStatus(code);
+
+  // Safety net: if a blocked person's email shows up in the meeting's
+  // participants once the bot is in the call, pull the bot out and discard the
+  // recording instead of saving it. Emails are often absent from meeting
+  // platforms, so this is best-effort on top of the calendar-based check.
+  if (status === "recording" || status === "done") {
+    try {
+      const emails = extractParticipantEmails(bot);
+      const { findBlockedEmailForUser } = await import("./meetings-autojoin.server");
+      const blocked = await findBlockedEmailForUser(meeting.user_id, emails);
+      if (blocked) {
+        await leaveBot(meeting.recall_bot_id);
+        await supabaseAdmin
+          .from("meetings")
+          .update({
+            status: "failed",
+            error: "Recording stopped — a blocked person was in the meeting.",
+            ended_at: new Date().toISOString(),
+          })
+          .eq("id", meeting.id);
+        return "failed";
+      }
+    } catch (e) {
+      logError("meeting_sync_blocklist_failed", { meetingId: meeting.id }, e);
+    }
+  }
+
   const update: MeetingUpdate = { status };
 
   if (status === "recording" || status === "done") {
