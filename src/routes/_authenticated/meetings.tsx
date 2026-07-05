@@ -93,6 +93,7 @@ function formatWhen(iso: string | null): string {
 
 function MeetingsPage() {
   const qc = useQueryClient();
+  const isMobile = useIsMobile();
   const list = useServerFn(listMeetings);
   const sync = useServerFn(syncMeeting);
   const meetingsQ = useQuery({
