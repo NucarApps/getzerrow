@@ -1,46 +1,44 @@
-# Meeting detail: right-side drawer with tabs
+# Show upcoming calendar events on the Meetings page
 
-Turn the meeting detail view from a centered modal into a right-side sliding drawer. The video plays at the top, and the AI summary and transcript live in a tabbed panel below it.
+Add a section at the top of the Meetings page that lists the calendar meetings coming up in the next 14 days (across every connected Gmail inbox), so you can see what the notetaker will join and flip it off for any meeting you'd rather keep private.
 
-## What changes
+## What you'll see
 
-All work is in `src/routes/_authenticated/meetings.tsx` — only the `MeetingDetail` component is reworked. The list, record dialog, and all server functions stay untouched. No backend or business-logic changes.
-
-### Layout (top to bottom, inside the drawer)
+- A new "Upcoming meetings" card above the list of recorded meetings.
+- One combined, time-sorted list merging events from all your connected inboxes (only meetings that have a Zoom, Meet, or Teams link).
+- Each row shows the title, start time, platform, which inbox it's from (when you have more than one), and a "Send notetaker / Skipped" toggle.
+- Toggling off writes an exclusion so auto-record skips that meeting; toggling back on re-includes it. Same behavior as today's Settings control, just surfaced on the Meetings page.
+- Graceful empty/edge states: nothing with a meeting link, no calendar access yet, or no connected inboxes.
 
 ```text
-┌─────────────────────────────┐
-│ Title            [status]   │  header
-│ platform · date             │
-├─────────────────────────────┤
-│  ▶  video player            │  (when recording exists)
-├─────────────────────────────┤
-│  [ Summary ] [ Transcript ] │  tab bar
-│                             │
-│  active tab content          │
-│  (scrolls)                   │
-├─────────────────────────────┤
-│ Open link          Delete    │  footer
-└─────────────────────────────┘
+Meetings
+────────────────────────────
+Upcoming meetings
+  ▸ Weekly sync        Mon 9:00 AM · Google Meet · you@work.com   [ Send notetaker ● ]
+  ▸ Client call        Tue 2:30 PM · Zoom · you@personal.com      [ Skipped        ○ ]
+────────────────────────────
+Recorded meetings
+  ▸ ... (existing list)
 ```
 
-- **Summary tab**: participants chips + AI summary text. If the meeting isn't done yet, show the "recording in progress" note with the Refresh status button. If done but no summary, show a short empty state.
-- **Transcript tab**: the speaker/text segment list. Empty state when there's no transcript yet.
-- **Recording status strip** (found/not found + Refresh recording) stays directly under the video, since it drives the player.
+## How it works (technical)
 
-### Drawer mechanics
+### New server function — `src/lib/meetings.functions.ts`
+- Add `listAllUpcomingCalendarEvents` (GET, `requireSupabaseAuth`, no input).
+- It loads the caller's Gmail accounts that have `calendar_access = true` (RLS-scoped `context.supabase`), then for each calls the existing `listUpcomingCalendarEventsForAccount(accountId, userId)` helper from `meetings-autojoin.server.ts`.
+- Per-account Google failures are caught and logged (via `logError`) and skipped, so one bad inbox doesn't break the list — same resilience pattern as `listMeetingPeople`.
+- Returns a flat array of events, each annotated with `accountId` and `accountEmail`, plus a `calendarAccess` flag (false when no account has calendar access). Events are merged and sorted soonest-first.
+- Reuse the existing `setEventExclusion` server function unchanged for the toggle.
 
-- Replace `Dialog`/`DialogContent` with `Sheet`/`SheetContent side="right"` (both already in `src/components/ui`).
-- On mobile (current viewport) the right sheet takes near-full width; on desktop it's a fixed-width side panel (`w-full sm:max-w-xl`).
-- Body is a vertical flex column: fixed header, video + status, then the `Tabs` region that scrolls internally, then a pinned footer.
-- `Tabs`/`TabsList`/`TabsTrigger`/`TabsContent` from `src/components/ui/tabs`.
-- Keep `open={!!id}` / `onClose` wiring; swap `DialogHeader/Title/Description` for `SheetHeader/Title/Description` and `DialogFooter` for a plain footer div.
+### New component — `src/components/meetings/UpcomingMeetingsCard.tsx`
+- Modeled on `MeetingCalendarEventsCard`, but account-agnostic: it calls `listAllUpcomingCalendarEvents` (query key `["upcoming-calendar-events"]`), filters to events with `hasMeetingLink`, and renders the combined list.
+- Optimistic toggle via a `useMutation` calling `setEventExclusion({ data: { accountId: e.accountId, calendarEventId: e.id, excluded } })`, with rollback on error and invalidation on settle — mirroring the existing card's mutation.
+- Shows the inbox email per row only when events span more than one account.
+- Handles loading, no-calendar-access, and empty states with friendly copy.
 
-## Behavior preserved
+### Wire into the page — `src/routes/_authenticated/meetings.tsx`
+- Render `<UpcomingMeetingsCard />` between the page header and the recorded-meetings list. No changes to the existing recorded-meetings list, detail drawer, or record dialog.
 
-- All existing effects stay: live status sync for non-terminal meetings, transcript/summary backfill on open, minting the same-origin stream URL, refresh recording, delete, and the open-in-new-tab / download links under the player.
-- Polling, query keys, and toasts are unchanged.
-
-## Out of scope
-
-No changes to the meetings list, the record flow, calendar-exclusion settings, or any server function / database schema.
+## Notes
+- No database or schema changes; reuses the existing `meeting_autojoin_exclusions` table and `setEventExclusion`.
+- The toggle only affects auto-record scheduling (as it does today); it doesn't cancel a bot that's already scheduled — consistent with current behavior. I can extend it to that later if you want.

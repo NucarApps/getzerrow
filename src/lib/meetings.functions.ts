@@ -307,6 +307,52 @@ export const listUpcomingCalendarEvents = createServerFn({ method: "GET" })
     }
   });
 
+/** An upcoming calendar event annotated with the inbox it came from. */
+export type UpcomingCalendarEventWithAccount = UpcomingCalendarEvent & {
+  accountId: string;
+  accountEmail: string | null;
+};
+
+/**
+ * List upcoming calendar events (next 14 days) across all of the caller's
+ * calendar-enabled inboxes, merged into one time-sorted list so the meetings
+ * page can show what the notetaker will join. Per-account Google failures are
+ * logged and skipped so one bad inbox doesn't break the whole list.
+ */
+export const listAllUpcomingCalendarEvents = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: accounts } = await context.supabase
+      .from("gmail_accounts")
+      .select("id, email_address, calendar_access")
+      .eq("calendar_access", true);
+
+    if (!accounts || accounts.length === 0) {
+      return { calendarAccess: false, events: [] as UpcomingCalendarEventWithAccount[] };
+    }
+
+    const { listUpcomingCalendarEventsForAccount } = await import("./meetings-autojoin.server");
+    const events: UpcomingCalendarEventWithAccount[] = [];
+    for (const acct of accounts) {
+      try {
+        const accountEvents = await listUpcomingCalendarEventsForAccount(acct.id, context.userId);
+        for (const e of accountEvents) {
+          events.push({ ...e, accountId: acct.id, accountEmail: acct.email_address ?? null });
+        }
+      } catch (e) {
+        logError(
+          "meeting_list_all_events_failed",
+          { accountId: acct.id, userId: context.userId },
+          e,
+        );
+      }
+    }
+
+    events.sort((a, b) => (a.start ?? "").localeCompare(b.start ?? ""));
+    return { calendarAccess: true, events };
+  });
+
+
 /** Exclude (or re-include) one calendar event from auto-record. */
 export const setEventExclusion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

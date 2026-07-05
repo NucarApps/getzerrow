@@ -35,6 +35,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle } from "lucide-react";
+import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
 
 const TERMINAL = new Set(["done", "failed"]);
 
@@ -133,6 +134,10 @@ function MeetingsPage() {
           </div>
           <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
         </header>
+
+        <div className="mb-6">
+          <UpcomingMeetingsCard />
+        </div>
 
         {meetingsQ.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading meetings…</p>
