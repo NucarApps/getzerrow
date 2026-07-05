@@ -61,6 +61,7 @@ const STATUS_LABEL: Record<string, string> = {
   scheduled: "Scheduled",
   joining: "Joining",
   recording: "Recording",
+  processing: "Processing",
   done: "Done",
   failed: "Failed",
 };
@@ -69,6 +70,7 @@ const STATUS_STYLE: Record<string, string> = {
   scheduled: "bg-muted text-muted-foreground",
   joining: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   recording: "bg-red-500/10 text-red-600 dark:text-red-400",
+  processing: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   done: "bg-primary/10 text-primary",
   failed: "bg-destructive/10 text-destructive",
 };
