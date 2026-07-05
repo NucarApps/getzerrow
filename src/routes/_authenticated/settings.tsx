@@ -44,6 +44,7 @@ import { CalendarGuardCard } from "@/components/settings/CalendarGuardCard";
 import { MeetingAutoRecordCard } from "@/components/settings/MeetingAutoRecordCard";
 import { MeetingCalendarEventsCard } from "@/components/settings/MeetingCalendarEventsCard";
 import { MeetingBotCard } from "@/components/settings/MeetingBotCard";
+import { MeetingRecordBlocklistCard } from "@/components/settings/MeetingRecordBlocklistCard";
 import { useAccountSelection } from "@/lib/account-selection";
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -360,6 +361,9 @@ function SettingsPage() {
             {accounts.map((a) => (
               <MeetingAutoRecordCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
             ))}
+
+            <MeetingRecordBlocklistCard />
+
 
             {accounts.map((a) => (
               <MeetingCalendarEventsCard key={a.id} accountId={a.id} accountEmail={a.email_address} />

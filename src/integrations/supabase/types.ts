@@ -1305,6 +1305,27 @@ export type Database = {
           },
         ]
       }
+      meeting_record_blocklist: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+          value?: string
+        }
+        Relationships: []
+      }
       meetings: {
         Row: {
           audio_storage_path: string | null
