@@ -1,44 +1,55 @@
-# Show upcoming calendar events on the Meetings page
+# Customizable meeting bot
 
-Add a section at the top of the Meetings page that lists the calendar meetings coming up in the next 14 days (across every connected Gmail inbox), so you can see what the notetaker will join and flip it off for any meeting you'd rather keep private.
+Let users personalize the notetaker bot: its **name**, a **picture** (shown as the bot's video tile in the call), and the **chat message** it posts. One global setup applies to every meeting across all connected inboxes. The message posts when the bot joins and re-posts for late joiners.
 
 ## What you'll see
 
-- A new "Upcoming meetings" card above the list of recorded meetings.
-- One combined, time-sorted list merging events from all your connected inboxes (only meetings that have a Zoom, Meet, or Teams link).
-- Each row shows the title, start time, platform, which inbox it's from (when you have more than one), and a "Send notetaker / Skipped" toggle.
-- Toggling off writes an exclusion so auto-record skips that meeting; toggling back on re-includes it. Same behavior as today's Settings control, just surfaced on the Meetings page.
-- Graceful empty/edge states: nothing with a meeting link, no calendar access yet, or no connected inboxes.
+A new **Meeting bot** card in Settings → Meetings, above the auto-record cards, with:
+- **Bot name** — text field (default "Zerrow Notetaker").
+- **Bot picture** — upload a JPG/PNG; we auto-crop/resize to the format meeting platforms accept and show a preview. Note: Zoom/Meet/Teams have no bot "profile photo", so this image appears as the bot's camera/video tile in the call.
+- **Chat message** — the note posted in the meeting chat (default something like "Hi! I'm the Zerrow notetaker recording and summarizing this meeting."). A toggle for "also notify people who join late".
+- Save button with success/error toasts.
+
+## How it works
 
 ```text
-Meetings
-────────────────────────────
-Upcoming meetings
-  ▸ Weekly sync        Mon 9:00 AM · Google Meet · you@work.com   [ Send notetaker ● ]
-  ▸ Client call        Tue 2:30 PM · Zoom · you@personal.com      [ Skipped        ○ ]
-────────────────────────────
-Recorded meetings
-  ▸ ... (existing list)
+Settings card ──save──> meeting_bot_settings row (name, message, resend flag)
+   picture ──upload──> private storage bucket  meeting-bot-avatars/{userId}/avatar.jpg
+                                   │
+Record / auto-join ──> loadBotConfig(userId) ──> Recall createBot({
+   bot_name, chat.on_bot_join, chat.on_participant_join, automatic_video_output(jpeg) })
 ```
 
-## How it works (technical)
+## Technical details
 
-### New server function — `src/lib/meetings.functions.ts`
-- Add `listAllUpcomingCalendarEvents` (GET, `requireSupabaseAuth`, no input).
-- It loads the caller's Gmail accounts that have `calendar_access = true` (RLS-scoped `context.supabase`), then for each calls the existing `listUpcomingCalendarEventsForAccount(accountId, userId)` helper from `meetings-autojoin.server.ts`.
-- Per-account Google failures are caught and logged (via `logError`) and skipped, so one bad inbox doesn't break the list — same resilience pattern as `listMeetingPeople`.
-- Returns a flat array of events, each annotated with `accountId` and `accountEmail`, plus a `calendarAccess` flag (false when no account has calendar access). Events are merged and sorted soonest-first.
-- Reuse the existing `setEventExclusion` server function unchanged for the toggle.
+### Database (migration)
+- New table `public.meeting_bot_settings`: `user_id uuid unique` (FK auth.users), `bot_name text`, `chat_message text`, `chat_resend_on_join boolean default true`, `avatar_updated_at timestamptz null`, plus `created_at`/`updated_at` with the standard update trigger.
+- GRANT SELECT/INSERT/UPDATE/DELETE to `authenticated`, ALL to `service_role`. RLS enabled; single policy `auth.uid() = user_id` for all actions.
 
-### New component — `src/components/meetings/UpcomingMeetingsCard.tsx`
-- Modeled on `MeetingCalendarEventsCard`, but account-agnostic: it calls `listAllUpcomingCalendarEvents` (query key `["upcoming-calendar-events"]`), filters to events with `hasMeetingLink`, and renders the combined list.
-- Optimistic toggle via a `useMutation` calling `setEventExclusion({ data: { accountId: e.accountId, calendarEventId: e.id, excluded } })`, with rollback on error and invalidation on settle — mirroring the existing card's mutation.
-- Shows the inbox email per row only when events span more than one account.
-- Handles loading, no-calendar-access, and empty states with friendly copy.
+### Storage
+- Create a **private** bucket `meeting-bot-avatars` (via storage tool).
+- RLS policies on `storage.objects` so a user can read/write/delete only files under their own `{userId}/` prefix.
+- Client resizes the chosen image to a 1280×720 JPEG (canvas) before upload, keeping it well under the platform 1.3 MB limit. Stored at `{userId}/avatar.jpg`.
 
-### Wire into the page — `src/routes/_authenticated/meetings.tsx`
-- Render `<UpcomingMeetingsCard />` between the page header and the recorded-meetings list. No changes to the existing recorded-meetings list, detail drawer, or record dialog.
+### Server functions — `src/lib/meetings.functions.ts`
+- `getMeetingBotSettings` (GET, auth): returns the caller's row (or sensible defaults) plus whether an avatar exists.
+- `updateMeetingBotSettings` (POST, auth): upserts `bot_name` (≤100 chars), `chat_message` (≤1000 chars), `chat_resend_on_join`. The image is uploaded directly to storage by the client via the browser Supabase client (RLS-scoped); this fn just records `avatar_updated_at` when notified, and supports clearing the avatar.
+
+### Bot config loader — `src/lib/meetings.server.ts`
+- New `loadBotConfig(userId)` (uses `supabaseAdmin`): reads the settings row, and if an avatar exists downloads it from the private bucket and base64-encodes it. Returns `{ botName, chatMessage, chatResendOnJoin, imageB64 }` with defaults when no row exists.
+
+### Recall client — `src/lib/recall.server.ts`
+- Extend `CreateBotInput` and `createBot` to accept optional `chatMessage`, `chatResendOnJoin`, and `imageB64`, mapping them to Recall's request body:
+  - `chat.on_bot_join = { send_to: "everyone", message }` and, when resend is on, `chat.on_participant_join = { exclude_host: false, message }`.
+  - `automatic_video_output.in_call_recording` and `in_call_not_recording = { kind: "jpeg", b64_data: imageB64 }` when an image is set.
+
+### Wire into bot creation
+- `recordFromLink` (meetings.functions.ts): call `loadBotConfig(context.userId)` and pass name/chat/image into `createBot` instead of the hardcoded `"Zerrow Notetaker"`.
+- Auto-join (`src/lib/meetings-autojoin.server.ts`): call `loadBotConfig(account.user_id)` per account and pass the same config into its `createBot`.
+
+### UI — `src/components/settings/MeetingBotCard.tsx` (new)
+- shadcn Card with the fields above, React Query for load/save, optimistic-free simple save, image upload → resize → storage upload → `updateMeetingBotSettings`. Rendered in `src/routes/_authenticated/settings.tsx` in the Meetings section (once, above the per-account cards).
 
 ## Notes
-- No database or schema changes; reuses the existing `meeting_autojoin_exclusions` table and `setEventExclusion`.
-- The toggle only affects auto-record scheduling (as it does today); it doesn't cancel a bot that's already scheduled — consistent with current behavior. I can extend it to that later if you want.
+- No changes to already-scheduled bots; new settings apply to bots created after saving.
+- All logic stays server-side; no secrets in the client. Image kept in a private bucket and only ever sent to Recall as base64 from the server.

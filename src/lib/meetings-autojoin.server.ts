@@ -4,6 +4,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getAccessToken } from "./google-oauth.server";
 import { createBot, detectPlatform } from "./recall.server";
+import { loadBotConfig } from "./meetings.server";
 import { logError, logInfo } from "./log.server";
 
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
@@ -145,6 +146,12 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       continue;
     }
 
+    // Load the user's bot customization once per account (applies to every
+    // event we schedule below).
+    const botCfg = await loadBotConfig(account.user_id);
+
+
+
     for (const event of events) {
       if (!event.id) continue;
       const meetingUrl = extractMeetingUrl(event);
@@ -183,8 +190,11 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       try {
         const bot = await createBot({
           meetingUrl,
-          botName: "Zerrow Notetaker",
+          botName: botCfg.botName,
           joinAt: start,
+          chatMessage: botCfg.chatMessage,
+          chatResendOnJoin: botCfg.chatResendOnJoin,
+          imageB64: botCfg.imageB64,
         });
         const { data: inserted, error } = await supabaseAdmin
           .from("meetings")
