@@ -1,34 +1,28 @@
-## Goal
+# Keep mobile mic recording going when the screen would turn off
 
-Make in-person meeting recordings play back reliably as **audio only**, instead of failing with "The embedded player could not load this recording." This is a frontend + playback-path change in the meetings detail view and its stream resolver. No changes to recording capture, transcription, or summaries.
+## Problem
+On mobile, when you start an in-person recording and the phone screen turns off (locks/sleeps), the browser suspends the tab and the `MediaRecorder` stops — so you lose the rest of the conversation.
 
-## Root cause
+## Fix
+Hold a **Screen Wake Lock** while a recording is active. This keeps the screen from turning off during capture, so the mic keeps recording until you tap Stop. The lock is released the moment recording stops, so it never keeps the screen on longer than needed and doesn't affect battery outside of recording.
 
-In-person recordings are saved as an audio-only file (`audio/mp4`) in the app's storage bucket — they have no video track and no Recall bot. The playback code decides between an `<audio>` element and a `<video>` element based on a `kind` returned by `getRecordingStreamUrl`. When a recording resolves to the Recall video proxy path (`/api/public/meeting-recording`), that route tries to fetch a Recall recording; for an in-person meeting there is nothing to resolve, so it 404s and the `<video>` element fires its error handler — producing the message the user saw. The confirmed record has a valid, transcribed `audio/mp4` file, so the file itself is fine; only the playback routing is wrong.
+Scope: only the in-person mic recorder (`InPersonRecordDialog`) records on the device, so this is the only place that needs it. Nothing changes for the bot-based "Record" flow.
 
-## Changes
+## Behavior
+- Tap **Start recording** → screen stays awake for the whole recording.
+- Tap **Stop & save** (or recording ends/errors) → wake lock released, screen can sleep normally again.
+- If you switch apps and come back mid-recording, the lock is re-acquired automatically.
+- On browsers/devices without wake lock support (e.g. some iOS versions), recording works exactly as today — no error, it just can't force the screen to stay on.
 
-1. **Guarantee in-person → audio player** (`src/lib/meetings.functions.ts`, `getRecordingStreamUrl`): keep returning `kind: "audio"` with a direct signed storage URL whenever `audio_storage_path` is set, and make this the first branch so an in-person recording can never fall through to the Recall video proxy. (Already the intended behavior — this hardens and confirms it.)
+## Technical details
+In `src/routes/_authenticated/meetings.tsx`, inside `InPersonRecordDialog`:
 
-2. **Render audio-only recordings in an `<audio>` element** (`src/routes/_authenticated/meetings.tsx`): when `streamKind === "audio"`, show the audio player (no `<video>`), which is the existing branch — verify it is correct and that `streamKind` is initialized/reset so a stale `"video"` value can't be used on first render.
+1. Add a `wakeLockRef` (`WakeLockSentinel | null`) and two helpers:
+   - `acquireWakeLock()` — feature-detect `navigator.wakeLock`, call `navigator.wakeLock.request("screen")`, store the sentinel; wrap in try/catch and no-op on failure.
+   - `releaseWakeLock()` — release the sentinel if present and clear the ref.
+2. Call `acquireWakeLock()` right after `recorder.start()` succeeds (in `startRecording`).
+3. Call `releaseWakeLock()` in `cleanupStream()` so it's released on stop, finish, error, and reset — every teardown path already funnels through there.
+4. Re-acquire on resume: add a `visibilitychange` listener (active only while `phase === "recording"`) that re-requests the lock when the document becomes visible again, since the browser auto-releases wake locks when the tab is hidden. Clean up the listener on teardown.
+5. Type note: add a minimal `WakeLockSentinel` type reference (or `unknown` narrowed) to satisfy strict TypeScript without `any`.
 
-3. **Clearer, kind-aware fallback copy + actions**: when inline playback still fails on a given browser, show audio-appropriate guidance ("This recording is audio only. If it doesn't play here, use Open recording or Download to listen.") and keep the **Open recording** and **Download** buttons pointing at the direct signed audio URL, which work even when inline playback is blocked. Label the section for audio ("Recording (audio)") so it's obvious in-person meetings have no video.
-
-4. **Ship it**: the live site (getzerrow.com) is running an older build that predates the audio branch, which is why the error appears there. After the change is verified, publish so the fix reaches the live site.
-
-## Technical notes
-
-- Sentence-case, friendly copy per project conventions.
-- No new dependencies; uses the existing signed-storage-URL flow (`meeting-recordings` bucket, 2h TTL) and shadcn components.
-- No server-side transcoding is added (the Worker runtime has no ffmpeg); the direct `audio/mp4` signed URL supports Range requests and the correct `audio/mp4` content type, so a native `<audio>` element plays it inline in Chrome/Android and modern iOS Safari, with Open/Download as guaranteed fallbacks.
-
-## Verification
-
-- Confirm the type-check passes.
-- Open the existing "Test" in-person meeting and confirm an audio player renders (not a video element) and no error banner shows.
-- Confirm **Open recording** and **Download** resolve to the signed `audio/mp4` URL.
-
-## Out of scope
-
-- Recording capture format, transcription, and summary generation (all confirmed working).
-- Recall/video-meeting playback (unchanged).
+No backend, schema, or business-logic changes — this is entirely client-side capture reliability.

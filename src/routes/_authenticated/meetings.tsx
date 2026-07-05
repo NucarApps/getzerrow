@@ -327,16 +327,40 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const visibilityHandlerRef = useRef<(() => void) | null>(null);
+
+  // Keep the screen awake while recording so mobile browsers don't suspend the
+  // tab (and stop the MediaRecorder) when the device would otherwise sleep.
+  async function acquireWakeLock() {
+    try {
+      if (!("wakeLock" in navigator)) return;
+      wakeLockRef.current = await navigator.wakeLock.request("screen");
+    } catch {
+      // Unsupported or rejected — recording still works, screen just isn't held.
+    }
+  }
+
+  function releaseWakeLock() {
+    void wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+  }
 
   function cleanupStream() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (visibilityHandlerRef.current) {
+      document.removeEventListener("visibilitychange", visibilityHandlerRef.current);
+      visibilityHandlerRef.current = null;
+    }
+    releaseWakeLock();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     recorderRef.current = null;
   }
+
 
   function resetState() {
     cleanupStream();
@@ -394,6 +418,15 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       setPhase("recording");
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
+      void acquireWakeLock();
+      // Browsers auto-release the wake lock when the tab is hidden; re-acquire it
+      // when the user returns so a mid-recording app switch doesn't drop it.
+      const onVisible = () => {
+        if (document.visibilityState === "visible") void acquireWakeLock();
+      };
+      visibilityHandlerRef.current = onVisible;
+      document.addEventListener("visibilitychange", onVisible);
+
     } catch (err: unknown) {
       cleanupStream();
       const name = err instanceof DOMException ? err.name : "";
