@@ -362,6 +362,9 @@ function SettingsPage() {
               <MeetingAutoRecordCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
             ))}
 
+            <MeetingRecordBlocklistCard />
+
+
             {accounts.map((a) => (
               <MeetingCalendarEventsCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
             ))}
