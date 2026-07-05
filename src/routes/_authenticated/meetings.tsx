@@ -319,6 +319,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const [phase, setPhase] = useState<"idle" | "recording" | "processing">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -341,14 +342,40 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     setPhase("idle");
     setElapsed(0);
     setError(null);
+    setBlocked(false);
   }
+
+  const BLOCKED_MESSAGE =
+    "Microphone is blocked for this site. Click the padlock (or camera/mic icon) in your browser's address bar, set Microphone to Allow, then reload and try again.";
 
   async function startRecording() {
     setError(null);
+    setBlocked(false);
+
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setError("Recording needs a secure (https) connection in a supported browser.");
+      return;
+    }
     if (typeof MediaRecorder === "undefined") {
       setError("Recording isn't supported in this browser.");
       return;
     }
+
+    // Proactively read the permission state so a persisted block is explained
+    // without waiting for a silent getUserMedia rejection. Safari lacks this API.
+    try {
+      const status = await navigator.permissions?.query({
+        name: "microphone" as PermissionName,
+      });
+      if (status?.state === "denied") {
+        setBlocked(true);
+        setError(BLOCKED_MESSAGE);
+        return;
+      }
+    } catch {
+      // Permission query unsupported — fall through to getUserMedia.
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -365,9 +392,19 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       setPhase("recording");
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
-    } catch {
+    } catch (err: unknown) {
       cleanupStream();
-      setError("Microphone access was blocked. Allow it and try again.");
+      const name = err instanceof DOMException ? err.name : "";
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        setBlocked(true);
+        setError(BLOCKED_MESSAGE);
+      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+        setError("No microphone was found. Connect a mic and try again.");
+      } else if (name === "NotReadableError" || name === "AbortError") {
+        setError("Your microphone is in use by another app. Close it and try again.");
+      } else {
+        setError("Couldn't start recording. Please try again.");
+      }
     }
   }
 
@@ -472,10 +509,21 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
           </div>
 
           {error && (
-            <p className="flex items-start gap-2 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </p>
+            <div className="space-y-2">
+              <p className="flex items-start gap-2 text-sm text-destructive">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </p>
+              {blocked && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.reload()}
+                >
+                  <RefreshCw className="mr-1.5 h-4 w-4" /> Reload page
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </DialogContent>
