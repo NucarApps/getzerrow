@@ -70,7 +70,7 @@ export const Route = createFileRoute("/api/public/recall-webhook")({
 
         const { data: meeting } = await supabaseAdmin
           .from("meetings")
-          .select("id, user_id, recall_bot_id, status")
+          .select("id, user_id, recall_bot_id, status, title")
           .eq("recall_bot_id", botId)
           .maybeSingle();
         if (!meeting) {

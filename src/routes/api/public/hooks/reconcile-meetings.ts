@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/public/hooks/reconcile-meetings")({
           const cutoff = new Date(Date.now() + 5 * 60_000).toISOString();
           const { data: meetings } = await supabaseAdmin
             .from("meetings")
-            .select("id, user_id, recall_bot_id, status")
+            .select("id, user_id, recall_bot_id, status, title")
             .not("recall_bot_id", "is", null)
             .in("status", ["scheduled", "joining", "recording"])
             .or(`scheduled_start.is.null,scheduled_start.lte.${cutoff}`)
