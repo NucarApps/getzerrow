@@ -1129,7 +1129,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
               </div>
 
               <Tabs defaultValue="summary" className="flex min-h-0 flex-1 flex-col">
-                <TabsList className="mx-6 w-[calc(100%-3rem)]">
+                <TabsList className="mx-4 w-[calc(100%-2rem)] sm:mx-6 sm:w-[calc(100%-3rem)]">
                   <TabsTrigger value="summary" className="flex-1">
                     Summary
                   </TabsTrigger>
