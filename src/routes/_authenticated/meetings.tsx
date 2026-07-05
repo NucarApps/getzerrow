@@ -329,13 +329,19 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
 
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  // Capture raw PCM via Web Audio and encode a WAV on stop. This avoids iOS
+  // Safari's fragmented MP4 (which fails to play back and makes the STT model
+  // hallucinate/loop) by uploading a standard, decodable WAV file.
   const streamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const pcmRef = useRef<Float32Array[]>([]);
+  const sampleRateRef = useRef<number>(16000);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Keep the screen awake while recording so mobile browsers don't suspend the
-  // tab (and stop the MediaRecorder) when the device would otherwise sleep.
-  // Falls back to a hidden looping video where the Wake Lock API is unavailable.
+  // tab (and stop capture) when the device would otherwise sleep. Falls back to
+  // a hidden looping video where the Wake Lock API is unavailable.
   const { acquire: acquireWakeLock, release: releaseWakeLock } = useScreenWakeLock();
 
   function cleanupStream() {
@@ -344,9 +350,16 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       timerRef.current = null;
     }
     releaseWakeLock();
+    processorRef.current?.disconnect();
+    processorRef.current = null;
+    sourceRef.current?.disconnect();
+    sourceRef.current = null;
+    if (audioCtxRef.current && audioCtxRef.current.state !== "closed") {
+      void audioCtxRef.current.close().catch(() => {});
+    }
+    audioCtxRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    recorderRef.current = null;
   }
 
 
