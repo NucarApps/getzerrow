@@ -1113,9 +1113,20 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                           Recording {hasRecording ? "found" : "not found yet"} · Transcript {diagnostics?.hasTranscript || transcript.length > 0 ? "found" : "not found yet"} · Summary {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
                         </p>
                       </div>
-                      <Button variant="outline" size="sm" onClick={onRefreshRecording} disabled={refreshing}>
-                        <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                        {refreshing ? "Refreshing…" : "Refresh recording"}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onRefreshRecording}
+                        disabled={refreshing}
+                        aria-label={refreshing ? "Refreshing recording" : "Refresh recording"}
+                        className="shrink-0 max-sm:h-9 max-sm:w-9 max-sm:p-0"
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 sm:mr-1.5 ${refreshing ? "animate-spin" : ""}`}
+                        />
+                        <span className="max-sm:hidden">
+                          {refreshing ? "Refreshing…" : "Refresh recording"}
+                        </span>
                       </Button>
                     </div>
                     {recordingError && (
