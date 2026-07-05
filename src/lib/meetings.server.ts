@@ -41,7 +41,54 @@ type MeetingRow = {
   user_id: string;
   recall_bot_id: string | null;
   status: string;
+  title: string | null;
 };
+
+/** The generic placeholder used when an in-person meeting is created without a title. */
+const IN_PERSON_TITLE = "In-person meeting";
+
+/** True when a meeting has no meaningful, user-provided title yet. */
+function needsAutoTitle(title: string | null | undefined): boolean {
+  const t = title?.trim();
+  return !t || t === IN_PERSON_TITLE;
+}
+
+/**
+ * Generate a short, descriptive meeting title from its summary or transcript.
+ * Best-effort: returns null on any failure (missing key, AI error) so it never
+ * blocks finalizing a meeting.
+ */
+async function generateMeetingTitle(sourceText: string): Promise<string | null> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  const text = sourceText.trim();
+  if (!apiKey || !text) return null;
+  try {
+    const { generateText } = await import("ai");
+    const { createLovableAiGatewayProvider } = await import("./ai-gateway");
+    const model = createLovableAiGatewayProvider(apiKey)(SUMMARY_MODEL);
+    const { text: raw } = await generateText({
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You write concise meeting titles. Given a meeting summary or transcript, reply with a single specific title of at most 8 words in sentence case. No quotes, no trailing punctuation, no preamble.",
+        },
+        { role: "user", content: text.slice(0, 8000) },
+      ],
+    });
+    const cleaned = raw
+      .trim()
+      .replace(/^["']|["']$/g, "")
+      .replace(/[.]+$/, "")
+      .trim();
+    return cleaned ? cleaned.slice(0, 120) : null;
+  } catch (e) {
+    logError("meeting_title_generate_failed", {}, e);
+    return null;
+  }
+}
+
 
 export const DEFAULT_BOT_NAME = "Zerrow Notetaker";
 const AVATAR_BUCKET = "meeting-bot-avatars";
