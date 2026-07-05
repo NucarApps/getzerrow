@@ -552,7 +552,10 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
         qc.invalidateQueries({ queryKey: ["meeting", id] });
         if (r.hasRecording) {
           const s = await getStream({ data: { id } });
-          if (!cancelled && s.streamUrl) setStreamUrl(s.streamUrl);
+          if (!cancelled && s.streamUrl) {
+            setStreamUrl(s.streamUrl);
+            setStreamKind(s.kind ?? "video");
+          }
         }
       })
       .catch(() => {
