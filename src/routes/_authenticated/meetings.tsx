@@ -343,10 +343,6 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (visibilityHandlerRef.current) {
-      document.removeEventListener("visibilitychange", visibilityHandlerRef.current);
-      visibilityHandlerRef.current = null;
-    }
     releaseWakeLock();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
