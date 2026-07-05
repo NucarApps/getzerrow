@@ -245,9 +245,10 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
+        <Button className="w-full sm:w-auto">
           <Plus className="mr-1.5 h-4 w-4" /> Record a meeting
         </Button>
+
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
