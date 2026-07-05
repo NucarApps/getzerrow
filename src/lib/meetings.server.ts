@@ -317,3 +317,137 @@ export async function refreshMeetingRecording(
     hasSummary,
   };
 }
+
+const AI_GATEWAY_BASE = "https://ai.gateway.lovable.dev/v1";
+const STT_MODEL = "openai/gpt-4o-mini-transcribe";
+const SUMMARY_MODEL = "google/gemini-3-flash-preview";
+const RECORDINGS_BUCKET = "meeting-recordings";
+
+/** Best-effort MIME type from the stored audio file extension. */
+function audioMimeFor(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "m4a":
+    case "mp4":
+      return "audio/mp4";
+    case "ogg":
+      return "audio/ogg";
+    case "wav":
+      return "audio/wav";
+    case "mp3":
+      return "audio/mpeg";
+    default:
+      return "audio/webm";
+  }
+}
+
+/**
+ * Transcribe an in-person recording via the Lovable AI speech-to-text endpoint
+ * and generate a short summary, then write both to the meeting row. Downloads
+ * the audio with the service-role client (it may run from an auth'd server fn,
+ * but keeping storage access here avoids leaking the path handling into the
+ * client bundle). On any failure the meeting is flagged `failed` with a
+ * friendly message so the UI never gets stuck on "processing".
+ */
+export async function finalizeInPersonMeeting(meetingId: string): Promise<string> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+
+  const fail = async (message: string, e?: unknown): Promise<string> => {
+    logError("meeting_in_person_finalize_failed", { meetingId, message }, e);
+    await supabaseAdmin
+      .from("meetings")
+      .update({ status: "failed", error: message, ended_at: new Date().toISOString() })
+      .eq("id", meetingId);
+    return "failed";
+  };
+
+  if (!apiKey) return fail("Transcription is not configured.");
+
+  const { data: meeting } = await supabaseAdmin
+    .from("meetings")
+    .select("id, user_id, audio_storage_path")
+    .eq("id", meetingId)
+    .maybeSingle();
+  if (!meeting?.audio_storage_path) return fail("Recording file is missing.");
+
+  // Download the uploaded audio from storage.
+  let audioBlob: Blob;
+  try {
+    const { data: file, error } = await supabaseAdmin.storage
+      .from(RECORDINGS_BUCKET)
+      .download(meeting.audio_storage_path);
+    if (error || !file) throw error ?? new Error("empty download");
+    audioBlob = file;
+  } catch (e) {
+    return fail("Could not read the recording.", e);
+  }
+
+  // Transcribe (multipart/form-data to the OpenAI-compatible endpoint).
+  let transcriptText = "";
+  try {
+    const mime = audioMimeFor(meeting.audio_storage_path);
+    const form = new FormData();
+    form.append("model", STT_MODEL);
+    form.append(
+      "file",
+      new File([audioBlob], meeting.audio_storage_path.split("/").pop() ?? "audio.webm", {
+        type: mime,
+      }),
+    );
+    const res = await fetch(`${AI_GATEWAY_BASE}/audio/transcriptions`, {
+      method: "POST",
+      headers: { "Lovable-API-Key": apiKey },
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return fail("Could not transcribe the recording.", `${res.status}: ${body}`);
+    }
+    const json = (await res.json()) as { text?: string };
+    transcriptText = (json.text ?? "").trim();
+  } catch (e) {
+    return fail("Could not transcribe the recording.", e);
+  }
+
+  if (!transcriptText) {
+    return fail("No speech was detected in the recording.");
+  }
+
+  // Store the transcript in the same shape the detail view already renders.
+  const segments: TranscriptSegment[] = [{ speaker: null, text: transcriptText, start: 0 }];
+
+  // Summarize with the default chat model, matching the "Key moments" style.
+  let summary: string | null = null;
+  try {
+    const { generateText } = await import("ai");
+    const { createLovableAiGatewayProvider } = await import("./ai-gateway");
+    const model = createLovableAiGatewayProvider(apiKey)(SUMMARY_MODEL);
+    const { text } = await generateText({
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You summarize meeting transcripts. Reply with a heading line 'Key moments' followed by 3-6 concise bullet points starting with '• '. No preamble.",
+        },
+        { role: "user", content: transcriptText.slice(0, 24000) },
+      ],
+    });
+    summary = text.trim() || null;
+  } catch (e) {
+    logError("meeting_in_person_summary_failed", { meetingId }, e);
+    summary = summarizeTranscript(segments);
+  }
+
+  const update: MeetingUpdate = {
+    transcript: segments as unknown as MeetingUpdate["transcript"],
+    summary,
+    status: "done",
+    ended_at: new Date().toISOString(),
+  };
+  const { error } = await supabaseAdmin.from("meetings").update(update).eq("id", meetingId);
+  if (error) return fail("Could not save the transcript.", error.message);
+
+  return "done";
+}
+
