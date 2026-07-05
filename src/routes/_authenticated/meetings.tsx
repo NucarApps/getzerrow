@@ -1143,7 +1143,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                   className="mt-0 min-h-0 flex-1 space-y-5 overflow-y-auto p-4 pt-4 sm:p-6"
                 >
                   {!TERMINAL.has(meeting.status) ? (
-                    <div className="flex items-center justify-between gap-3 rounded-md bg-muted/50 p-3">
+                    <div className="flex flex-col gap-3 rounded-md bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-muted-foreground">
                         Recording in progress — the transcript and summary appear here once the
                         meeting ends.
