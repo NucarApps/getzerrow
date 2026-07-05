@@ -736,8 +736,7 @@ function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    void wakeLockRef.current?.release().catch(() => {});
-    wakeLockRef.current = null;
+    releaseWakeLock();
     void audioCtxRef.current?.close().catch(() => {});
     audioCtxRef.current = null;
 
