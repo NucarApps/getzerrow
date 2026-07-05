@@ -192,10 +192,20 @@ export const refreshRecording = createServerFn({ method: "POST" })
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
       .from("meetings")
-      .select("id, recall_bot_id, status")
+      .select("id, recall_bot_id, audio_storage_path, transcript, summary, status")
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
+    // In-person recordings live in our own storage bucket, not Recall. Report
+    // what's on the row so the detail view can show status without calling out.
+    if (meeting.audio_storage_path) {
+      return {
+        recordingUrl: null as string | null,
+        hasRecording: true,
+        hasTranscript: !!meeting.transcript,
+        hasSummary: !!meeting.summary,
+      };
+    }
     if (!meeting.recall_bot_id) {
       return { recordingUrl: null, hasRecording: false, hasTranscript: false, hasSummary: false };
     }
