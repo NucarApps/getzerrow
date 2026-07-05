@@ -596,6 +596,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   // landed, then mint a same-origin stream URL for the player.
   useEffect(() => {
     setStreamUrl(null);
+    setStreamKind("video");
     setRecordingError(null);
     setVideoError(false);
     setDiagnostics(null);
