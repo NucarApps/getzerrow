@@ -146,6 +146,12 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       continue;
     }
 
+    // Load the user's bot customization once per account (applies to every
+    // event we schedule below).
+    const botCfg = await loadBotConfig(account.user_id);
+
+
+
     for (const event of events) {
       if (!event.id) continue;
       const meetingUrl = extractMeetingUrl(event);
