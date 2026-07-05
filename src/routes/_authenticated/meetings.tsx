@@ -137,7 +137,10 @@ function MeetingsPage() {
               </p>
             </div>
           </div>
-          <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+          <div className="flex items-center gap-2">
+            <InPersonRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+            <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+          </div>
         </header>
 
         <div className="mb-6">
