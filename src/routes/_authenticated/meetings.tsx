@@ -365,7 +365,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
 
   function resetState() {
     cleanupStream();
-    chunksRef.current = [];
+    pcmRef.current = [];
     setPhase("idle");
     setElapsed(0);
     setError(null);
@@ -379,12 +379,14 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     setError(null);
     setBlocked(false);
 
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    const AudioCtx: typeof AudioContext | undefined =
+      typeof window !== "undefined"
+        ? window.AudioContext ??
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        : undefined;
+
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !AudioCtx) {
       setError("Recording needs a secure (https) connection in a supported browser.");
-      return;
-    }
-    if (typeof MediaRecorder === "undefined") {
-      setError("Recording isn't supported in this browser.");
       return;
     }
 
@@ -406,24 +408,26 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      chunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+      pcmRef.current = [];
+
+      const ctx = new AudioCtx();
+      audioCtxRef.current = ctx;
+      sampleRateRef.current = ctx.sampleRate;
+      const source = ctx.createMediaStreamSource(stream);
+      sourceRef.current = source;
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+      processor.onaudioprocess = (e) => {
+        pcmRef.current.push(new Float32Array(e.inputBuffer.getChannelData(0)));
       };
-      recorder.onstop = () => {
-        void finishRecording();
-      };
-      recorderRef.current = recorder;
-      recorder.start();
+      source.connect(processor);
+      processor.connect(ctx.destination);
+
       setPhase("recording");
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
       // The hook re-acquires on visibility changes internally.
       void acquireWakeLock();
-
-
-
     } catch (err: unknown) {
       cleanupStream();
       const name = err instanceof DOMException ? err.name : "";
@@ -441,30 +445,31 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   }
 
   function stopRecording() {
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      recorderRef.current.stop();
-    }
+    if (phase !== "recording") return;
+    void finishRecording();
   }
 
   async function finishRecording() {
-    const mime = recorderRef.current?.mimeType || "audio/webm";
+    const sampleRate = sampleRateRef.current;
+    const chunks = pcmRef.current;
+    pcmRef.current = [];
     cleanupStream();
-    const blob = new Blob(chunksRef.current, { type: mime });
-    chunksRef.current = [];
-    if (blob.size === 0) {
-      setError("Nothing was recorded. Try again.");
+
+    const blob = encodeWav(chunks, sampleRate);
+    // A silent mic or an instant start/stop yields a header-only WAV.
+    if (blob.size < 2048) {
+      setError("That recording was empty — please try again.");
       setPhase("idle");
       return;
     }
-    const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
     setPhase("processing");
     try {
       const { id, audioPath } = await createMeeting({
-        data: { title: title.trim() || undefined, ext },
+        data: { title: title.trim() || undefined, ext: "wav" },
       });
       const { error: upErr } = await supabase.storage
         .from("meeting-recordings")
-        .upload(audioPath, blob, { contentType: mime, upsert: true });
+        .upload(audioPath, blob, { contentType: "audio/wav", upsert: true });
       if (upErr) throw new Error(upErr.message);
       await transcribe({ data: { id, audioPath } });
       toast.success("Recording saved — transcribing now");
@@ -477,6 +482,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       setPhase("idle");
     }
   }
+
 
   function onOpenChange(next: boolean) {
     if (!next && (phase === "recording" || phase === "processing")) return;
