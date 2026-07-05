@@ -418,6 +418,15 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       setPhase("recording");
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
+      void acquireWakeLock();
+      // Browsers auto-release the wake lock when the tab is hidden; re-acquire it
+      // when the user returns so a mid-recording app switch doesn't drop it.
+      const onVisible = () => {
+        if (document.visibilityState === "visible") void acquireWakeLock();
+      };
+      visibilityHandlerRef.current = onVisible;
+      document.addEventListener("visibilitychange", onVisible);
+
     } catch (err: unknown) {
       cleanupStream();
       const name = err instanceof DOMException ? err.name : "";
