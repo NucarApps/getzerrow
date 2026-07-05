@@ -529,7 +529,7 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
 
   const { data: meeting } = await supabaseAdmin
     .from("meetings")
-    .select("id, user_id, audio_storage_path")
+    .select("id, user_id, audio_storage_path, title")
     .eq("id", meetingId)
     .maybeSingle();
   if (!meeting?.audio_storage_path) return fail("Recording file is missing.");
