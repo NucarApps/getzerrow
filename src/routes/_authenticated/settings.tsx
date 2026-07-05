@@ -351,6 +351,8 @@ function SettingsPage() {
               </div>
             </Card>
 
+            <MeetingBotCard />
+
             {accounts.map((a) => (
               <CalendarGuardCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
             ))}
