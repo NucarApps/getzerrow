@@ -319,6 +319,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const [phase, setPhase] = useState<"idle" | "recording" | "processing">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
