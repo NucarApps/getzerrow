@@ -1105,9 +1105,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                 )}
 
                 {meeting.status === "done" && (
-                  <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="space-y-1">
+                  <div className="text-sm sm:rounded-md sm:border sm:border-border sm:bg-muted/30 sm:p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3 max-sm:justify-start">
+                      <div className="space-y-1 max-sm:hidden">
                         <p className="font-medium text-foreground">Recording status</p>
                         <p className="text-muted-foreground">
                           Recording {hasRecording ? "found" : "not found yet"} · Transcript {diagnostics?.hasTranscript || transcript.length > 0 ? "found" : "not found yet"} · Summary {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
