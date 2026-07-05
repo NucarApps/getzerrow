@@ -269,7 +269,7 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
         meeting_url: null,
         platform: "in_person",
         source: "in_person",
-        status: "recording",
+        status: "processing",
         title: data.title?.trim() || "In-person meeting",
         started_at: new Date().toISOString(),
       })
