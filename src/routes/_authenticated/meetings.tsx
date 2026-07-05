@@ -509,10 +509,21 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
           </div>
 
           {error && (
-            <p className="flex items-start gap-2 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </p>
+            <div className="space-y-2">
+              <p className="flex items-start gap-2 text-sm text-destructive">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </p>
+              {blocked && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.reload()}
+                >
+                  <RefreshCw className="mr-1.5 h-4 w-4" /> Reload page
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </DialogContent>
