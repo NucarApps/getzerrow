@@ -596,6 +596,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   // landed, then mint a same-origin stream URL for the player.
   useEffect(() => {
     setStreamUrl(null);
+    setStreamKind("video");
     setRecordingError(null);
     setVideoError(false);
     setDiagnostics(null);
@@ -717,6 +718,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
 
                 {streamUrl && (
                   <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {streamKind === "audio" ? "Recording (audio)" : "Recording"}
+                    </p>
                     {streamKind === "audio" ? (
                       <audio
                         key={streamUrl}
@@ -740,7 +744,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                     )}
                     {videoError && (
                       <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                        The embedded player could not load this recording. Open it in a new tab or download it below.
+                        {streamKind === "audio"
+                          ? "This recording is audio only. If it doesn't play here, use Open recording or Download to listen."
+                          : "The embedded player could not load this recording. Open it in a new tab or download it below."}
                       </p>
                     )}
                     <div className="flex flex-wrap items-center gap-4">
