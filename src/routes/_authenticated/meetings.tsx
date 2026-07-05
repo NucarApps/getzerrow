@@ -1032,8 +1032,8 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
           <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
         ) : (
           <>
-            <SheetHeader className="space-y-1 border-b border-border p-6 pb-4 text-left">
-              <SheetTitle className="flex items-center gap-2 pr-6">
+            <SheetHeader className="space-y-1 border-b border-border p-4 pb-3 text-left sm:p-6 sm:pb-4">
+              <SheetTitle className="flex items-center gap-2 pr-6 text-base sm:text-lg">
                 <span className="truncate">{meeting.title || "Untitled meeting"}</span>
                 <StatusBadge status={meeting.status} />
               </SheetTitle>
