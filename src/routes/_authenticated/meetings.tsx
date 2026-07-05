@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor } from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 
 const TERMINAL = new Set(["done", "failed"]);
 
