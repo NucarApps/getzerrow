@@ -406,7 +406,7 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
       return fail("Could not transcribe the recording.", `${res.status}: ${body}`);
     }
     const json = (await res.json()) as { text?: string };
-    transcriptText = collapseRepeats((json.text ?? "").trim());
+    transcriptText = collapseRunawayRepeats((json.text ?? "").trim());
   } catch (e) {
     return fail("Could not transcribe the recording.", e);
   }
