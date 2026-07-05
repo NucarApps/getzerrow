@@ -265,6 +265,8 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
       .object({
         title: z.string().max(200).optional(),
         ext: z.enum(["webm", "m4a", "mp4", "ogg", "wav"]).default("webm"),
+        withVideo: z.boolean().optional(),
+        videoExt: z.enum(["webm", "mp4"]).default("webm"),
       })
       .parse(input),
   )
@@ -285,7 +287,10 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const audioPath = `${userId}/${inserted.id}.${data.ext}`;
-    return { id: inserted.id, audioPath };
+    const videoPath = data.withVideo
+      ? `${userId}/${inserted.id}.video.${data.videoExt}`
+      : null;
+    return { id: inserted.id, audioPath, videoPath };
   });
 
 /**
@@ -296,7 +301,13 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
 export const transcribeInPersonMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
-    z.object({ id: z.string().uuid(), audioPath: z.string().max(300) }).parse(input),
+    z
+      .object({
+        id: z.string().uuid(),
+        audioPath: z.string().max(300),
+        videoPath: z.string().max(300).optional(),
+      })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
