@@ -1307,13 +1307,14 @@ export type Database = {
       }
       meetings: {
         Row: {
+          audio_storage_path: string | null
           calendar_event_id: string | null
           created_at: string
           ended_at: string | null
           error: string | null
           gmail_account_id: string | null
           id: string
-          meeting_url: string
+          meeting_url: string | null
           platform: string | null
           recall_bot_id: string | null
           recording_url: string | null
@@ -1328,13 +1329,14 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          audio_storage_path?: string | null
           calendar_event_id?: string | null
           created_at?: string
           ended_at?: string | null
           error?: string | null
           gmail_account_id?: string | null
           id?: string
-          meeting_url: string
+          meeting_url?: string | null
           platform?: string | null
           recall_bot_id?: string | null
           recording_url?: string | null
@@ -1349,13 +1351,14 @@ export type Database = {
           user_id: string
         }
         Update: {
+          audio_storage_path?: string | null
           calendar_event_id?: string | null
           created_at?: string
           ended_at?: string | null
           error?: string | null
           gmail_account_id?: string | null
           id?: string
-          meeting_url?: string
+          meeting_url?: string | null
           platform?: string | null
           recall_bot_id?: string | null
           recording_url?: string | null
@@ -2100,8 +2103,14 @@ export type Database = {
       }
     }
     Enums: {
-      meeting_source: "link" | "calendar"
-      meeting_status: "scheduled" | "joining" | "recording" | "done" | "failed"
+      meeting_source: "link" | "calendar" | "in_person"
+      meeting_status:
+        | "scheduled"
+        | "joining"
+        | "recording"
+        | "done"
+        | "failed"
+        | "processing"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2229,8 +2238,15 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      meeting_source: ["link", "calendar"],
-      meeting_status: ["scheduled", "joining", "recording", "done", "failed"],
+      meeting_source: ["link", "calendar", "in_person"],
+      meeting_status: [
+        "scheduled",
+        "joining",
+        "recording",
+        "done",
+        "failed",
+        "processing",
+      ],
     },
   },
 } as const
