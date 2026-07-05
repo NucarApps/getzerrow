@@ -229,19 +229,98 @@ export function isTerminalCode(code: string | null): boolean {
  * signed S3 URL. This is what every byte-range request from the <video> element
  * hits, so it must never do per-request Recall/transcript work.
  */
+export type PlayableRecording = {
+  url: string | null;
+  recallBotId: string | null;
+  contentType: string;
+  filename: string;
+};
+
+function extensionFor(path: string): string {
+  return path.split(".").pop()?.toLowerCase() ?? "mp4";
+}
+
+function audioContentTypeFor(path: string): string {
+  const ext = extensionFor(path);
+  switch (ext) {
+    case "m4a":
+    case "mp4":
+      return "audio/mp4";
+    case "ogg":
+      return "audio/ogg";
+    case "wav":
+      return "audio/wav";
+    case "mp3":
+      return "audio/mpeg";
+    case "webm":
+      return "audio/webm";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function videoContentTypeFor(path: string): string {
+  const ext = extensionFor(path);
+  switch (ext) {
+    case "webm":
+      return "video/webm";
+    case "mp4":
+      return "video/mp4";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+async function signedStoredRecordingUrl(path: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin.storage
+    .from(RECORDINGS_BUCKET)
+    .createSignedUrl(path, 60 * 60 * 2);
+  if (error) return null;
+  return data?.signedUrl ?? null;
+}
+
 export async function resolvePlayableRecordingUrl(
   meetingId: string,
-): Promise<{ url: string | null; recallBotId: string | null }> {
+): Promise<PlayableRecording> {
   const { data: meeting } = await supabaseAdmin
     .from("meetings")
-    .select("id, recall_bot_id, recording_url")
+    .select("id, recall_bot_id, recording_url, audio_storage_path, video_storage_path")
     .eq("id", meetingId)
     .maybeSingle();
-  if (!meeting) return { url: null, recallBotId: null };
+  if (!meeting) {
+    return { url: null, recallBotId: null, contentType: "video/mp4", filename: `recording-${meetingId}.mp4` };
+  }
+  if (meeting.video_storage_path) {
+    const ext = extensionFor(meeting.video_storage_path);
+    return {
+      url: await signedStoredRecordingUrl(meeting.video_storage_path),
+      recallBotId: null,
+      contentType: videoContentTypeFor(meeting.video_storage_path),
+      filename: `recording-${meetingId}.${ext}`,
+    };
+  }
+  if (meeting.audio_storage_path) {
+    const ext = extensionFor(meeting.audio_storage_path);
+    return {
+      url: await signedStoredRecordingUrl(meeting.audio_storage_path),
+      recallBotId: null,
+      contentType: audioContentTypeFor(meeting.audio_storage_path),
+      filename: `recording-${meetingId}.${ext}`,
+    };
+  }
   const recallBotId = meeting.recall_bot_id ?? null;
-  if (meeting.recording_url) return { url: meeting.recording_url, recallBotId };
-  if (!recallBotId) return { url: null, recallBotId: null };
-  return { url: await mintFreshRecordingUrl(meeting.id, recallBotId), recallBotId };
+  if (meeting.recording_url) {
+    return { url: meeting.recording_url, recallBotId, contentType: "video/mp4", filename: `recording-${meetingId}.mp4` };
+  }
+  if (!recallBotId) {
+    return { url: null, recallBotId: null, contentType: "video/mp4", filename: `recording-${meetingId}.mp4` };
+  }
+  return {
+    url: await mintFreshRecordingUrl(meeting.id, recallBotId),
+    recallBotId,
+    contentType: "video/mp4",
+    filename: `recording-${meetingId}.mp4`,
+  };
 }
 
 /**
