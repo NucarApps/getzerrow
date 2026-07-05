@@ -78,6 +78,8 @@ export type UpcomingCalendarEvent = {
   hasMeetingLink: boolean;
   scheduled: boolean;
   excluded: boolean;
+  blocked: boolean;
+  blockedBy: string | null;
 };
 
 const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
@@ -114,16 +116,29 @@ export async function listUpcomingCalendarEventsForAccount(
   );
   const excludedSet = new Set((excludedRows ?? []).map((r) => r.calendar_event_id));
 
+  const blocklist = await loadBlocklist(userId);
+  const hasBlocklist = blocklist.emails.size > 0 || blocklist.domains.size > 0;
+
   return events
     .filter((e) => !!e.id)
-    .map((e) => ({
-      id: e.id as string,
-      title: e.summary ?? null,
-      start: e.start?.dateTime ?? e.start?.date ?? null,
-      hasMeetingLink: !!extractMeetingUrl(e),
-      scheduled: scheduledSet.has(e.id as string),
-      excluded: excludedSet.has(e.id as string),
-    }));
+    .map((e) => {
+      const emails = hasBlocklist
+        ? [...(e.attendees ?? []).map((a) => a.email), e.organizer?.email].filter(
+            (addr): addr is string => !!addr,
+          )
+        : [];
+      const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
+      return {
+        id: e.id as string,
+        title: e.summary ?? null,
+        start: e.start?.dateTime ?? e.start?.date ?? null,
+        hasMeetingLink: !!extractMeetingUrl(e),
+        scheduled: scheduledSet.has(e.id as string),
+        excluded: excludedSet.has(e.id as string),
+        blocked: blockedBy !== null,
+        blockedBy,
+      };
+    });
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
