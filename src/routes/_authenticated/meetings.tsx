@@ -520,7 +520,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
             />
           </div>
 
-          <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-muted/30 p-6">
+          <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-muted/30 p-4 sm:p-6">
             {phase === "recording" ? (
               <>
                 <span className="flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
