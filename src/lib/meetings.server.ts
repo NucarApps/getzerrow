@@ -7,6 +7,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { logError } from "./log.server";
+import { collapseRunawayRepeats } from "./transcript-sanitize";
 
 type MeetingUpdate = Database["public"]["Tables"]["meetings"]["Update"];
 import {
