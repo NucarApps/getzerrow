@@ -190,8 +190,11 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       try {
         const bot = await createBot({
           meetingUrl,
-          botName: "Zerrow Notetaker",
+          botName: botCfg.botName,
           joinAt: start,
+          chatMessage: botCfg.chatMessage,
+          chatResendOnJoin: botCfg.chatResendOnJoin,
+          imageB64: botCfg.imageB64,
         });
         const { data: inserted, error } = await supabaseAdmin
           .from("meetings")
