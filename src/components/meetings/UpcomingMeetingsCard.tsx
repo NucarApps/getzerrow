@@ -104,7 +104,7 @@ export function UpcomingMeetingsCard() {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <span className="hidden text-xs text-muted-foreground xs:inline sm:inline">
+                    <span className="hidden text-xs text-muted-foreground sm:inline">
                       {send ? "Send notetaker" : "Skipped"}
                     </span>
                     <Switch
