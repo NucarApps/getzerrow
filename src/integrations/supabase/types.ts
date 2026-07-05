@@ -1327,6 +1327,7 @@ export type Database = {
           transcript: Json | null
           updated_at: string
           user_id: string
+          video_storage_path: string | null
         }
         Insert: {
           audio_storage_path?: string | null
@@ -1349,6 +1350,7 @@ export type Database = {
           transcript?: Json | null
           updated_at?: string
           user_id: string
+          video_storage_path?: string | null
         }
         Update: {
           audio_storage_path?: string | null
@@ -1371,6 +1373,7 @@ export type Database = {
           transcript?: Json | null
           updated_at?: string
           user_id?: string
+          video_storage_path?: string | null
         }
         Relationships: [
           {
