@@ -12,6 +12,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:schema": "vitest run src/lib/folder-examples-schema.test.ts",
+    "test:meetings-transcript": "vitest run src/lib/transcript-sanitize.snapshot.test.ts src/lib/meetings-in-person-transcript.test.ts src/lib/wav-encoder.test.ts",
+    "test:meetings-transcript:update": "vitest run -u src/lib/transcript-sanitize.snapshot.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
