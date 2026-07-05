@@ -4,6 +4,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getAccessToken } from "./google-oauth.server";
 import { createBot, detectPlatform } from "./recall.server";
+import { loadBotConfig } from "./meetings.server";
 import { logError, logInfo } from "./log.server";
 
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
