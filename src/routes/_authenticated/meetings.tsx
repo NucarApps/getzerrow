@@ -143,46 +143,56 @@ function MeetingsPage() {
           </div>
         </header>
 
-        <div className="mb-6">
-          <UpcomingMeetingsCard />
-        </div>
+        <Tabs defaultValue="past">
+          <TabsList className="mb-6">
+            <TabsTrigger value="past">Past meetings</TabsTrigger>
+            <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
+          </TabsList>
 
-        {meetingsQ.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading meetings…</p>
-        ) : meetings.length === 0 ? (
-          <Card className="p-8 text-center">
-            <Video className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No meetings yet. Paste a Zoom, Google Meet, or Teams link to record your first one, or
-              turn on auto-record in Settings to capture calendar meetings automatically.
-            </p>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {meetings.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setSelectedId(m.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium">{m.title || "Untitled meeting"}</span>
-                    <StatusBadge status={m.status} />
-                  </div>
-                  <div className="mt-1 truncate text-xs text-muted-foreground">
-                    {m.platform ? `${m.platform.replace("_", " ")} · ` : ""}
-                    {m.source === "calendar" ? "From calendar · " : ""}
-                    {formatWhen(m.scheduled_start ?? m.created_at)}
-                  </div>
-                </div>
-                {m.summary && <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />}
-              </button>
-            ))}
-          </div>
-        )}
+          <TabsContent value="past">
+            {meetingsQ.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading meetings…</p>
+            ) : meetings.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Video className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  No meetings yet. Paste a Zoom, Google Meet, or Teams link to record your first one, or
+                  turn on auto-record in Settings to capture calendar meetings automatically.
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {meetings.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setSelectedId(m.id)}
+                    className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate font-medium">{m.title || "Untitled meeting"}</span>
+                        <StatusBadge status={m.status} />
+                      </div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground">
+                        {m.platform ? `${m.platform.replace("_", " ")} · ` : ""}
+                        {m.source === "calendar" ? "From calendar · " : ""}
+                        {formatWhen(m.scheduled_start ?? m.created_at)}
+                      </div>
+                    </div>
+                    {m.summary && <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="upcoming">
+            <UpcomingMeetingsCard />
+          </TabsContent>
+        </Tabs>
       </div>
+
 
       <MeetingDetail id={selectedId} onClose={() => setSelectedId(null)} />
     </div>
