@@ -610,14 +610,18 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
             </div>
 
             <div className="flex items-center justify-between gap-3 border-t border-border p-6 py-4">
-              <a
-                href={meeting.meeting_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> Open meeting link
-              </a>
+              {meeting.meeting_url ? (
+                <a
+                  href={meeting.meeting_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Open meeting link
+                </a>
+              ) : (
+                <span className="text-sm text-muted-foreground">In-person recording</span>
+              )}
               <Button variant="ghost" size="sm" onClick={onDelete} disabled={busy}>
                 <Trash2 className="mr-1.5 h-4 w-4 text-destructive" />
                 Delete
