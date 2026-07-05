@@ -135,6 +135,10 @@ function MeetingsPage() {
           <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
         </header>
 
+        <div className="mb-6">
+          <UpcomingMeetingsCard />
+        </div>
+
         {meetingsQ.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading meetings…</p>
         ) : meetings.length === 0 ? (
