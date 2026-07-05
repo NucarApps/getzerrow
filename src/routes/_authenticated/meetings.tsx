@@ -498,6 +498,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   // and Recall's raw S3 URL is short-lived and served as octet-stream (which
   // mobile browsers won't play), so we proxy it through our own route.
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [streamKind, setStreamKind] = useState<"video" | "audio">("video");
 
   const q = useQuery({
     queryKey: ["meeting", id],
