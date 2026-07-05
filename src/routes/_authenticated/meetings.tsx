@@ -895,6 +895,8 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   // mobile browsers won't play), so we proxy it through our own route.
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [streamKind, setStreamKind] = useState<"video" | "audio">("video");
+  const isMobile = useIsMobile();
+  const [extrasOpen, setExtrasOpen] = useState(false);
 
   const q = useQuery({
     queryKey: ["meeting", id],
