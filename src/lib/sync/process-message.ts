@@ -474,6 +474,16 @@ export async function processGmailMessage(
   }
   const inserted = { id: insertedId };
 
+  // Best-effort mobile push for fresh mail that lands in the inbox (not
+  // auto-archived/filed). Fire-and-forget — never blocks or fails processing.
+  if (!isArchived) {
+    void notifyInboxMail(userId, {
+      from_name: parsed.from_name,
+      from_addr: parsed.from_addr,
+      subject: parsed.subject,
+    });
+  }
+
   if (rules.needs_ai) {
     if (rules.classification_reason) {
       await updateEmailEncrypted({
