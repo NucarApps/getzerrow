@@ -500,9 +500,9 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="sm:h-10 sm:px-4" aria-label="Record in person">
-          <Mic className="h-4 w-4 sm:mr-1.5" />
-          <span className="hidden min-[380px]:inline">In person</span>
-          <span className="hidden sm:inline">&nbsp;</span>
+          <Mic className="h-4 w-4 min-[380px]:mr-1.5" />
+          <span className="hidden min-[380px]:inline sm:hidden">In person</span>
+          <span className="hidden sm:inline">Record in person</span>
         </Button>
 
       </DialogTrigger>
