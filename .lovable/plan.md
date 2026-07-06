@@ -1,36 +1,41 @@
-# Move meeting settings into a slide-out drawer on the Meetings page
+# Condense the Meetings header on mobile
 
-Right now all the meeting-related settings live inside the **Settings → Accounts** tab, mixed in with Gmail account management. This moves them onto the Meetings page behind a gear icon that opens a drawer sliding in from the right.
+Right now the Meetings page header stacks everything vertically on mobile: a large icon + title + description, then three full-width buttons ("Record in person", the orange "Record a meeting"), plus the gear — each on its own line. That eats most of the first screen. This plan puts the action buttons on one compact line and tightens the header.
 
-## What changes for the user
+## What changes (mobile)
 
-- A **gear icon button** appears in the Meetings page header (next to the record buttons).
-- Clicking it opens a **drawer that slides out from the right** containing all meeting settings.
-- The same settings are **removed from the Settings page**, so there's one clear home for them.
+```text
+Before                          After
+┌───────────────────────┐       ┌───────────────────────────────┐
+│ [icon] Meetings        │       │ [icon] Meetings               │
+│        Send a note...  │       │                               │
+├───────────────────────┤       │ [🎙 In person] [＋ Record] [⚙] │
+│ [ Record in person   ] │       └───────────────────────────────┘
+├───────────────────────┤
+│ [ Record a meeting   ] │
+├───────────────────────┤
+│ [⚙]                    │
+└───────────────────────┘
+```
 
-## The settings being moved
+- The three actions (Record in person, the orange Record a meeting, and the gear) sit on **one horizontal row** of small buttons instead of stacking.
+- Buttons become compact (`size="sm"`) on mobile. The gear stays icon-only; "Record in person" shrinks to a mic icon only on the smallest widths, while the orange "Record a meeting" keeps its label as the primary action.
+- The header description ("Send a notetaker bot to record…") is hidden on mobile to reclaim vertical space; it stays on larger screens.
+- Desktop layout is unchanged (buttons still show full labels in a row).
 
-These five cards move together (they currently sit in Settings → Accounts):
+## Technical details
 
-1. Meeting bot / notetaker card (`MeetingBotCard`)
-2. Calendar access guard, one per connected inbox (`CalendarGuardCard`)
-3. Auto-record toggle, one per connected inbox (`MeetingAutoRecordCard`)
-4. Don't-record blocklist (`MeetingRecordBlocklistCard`)
-5. Upcoming meetings / notetaker exclusions, one per connected inbox (`MeetingCalendarEventsCard`)
+All edits are in `src/routes/_authenticated/meetings.tsx` (presentation only, no logic changes):
 
-## Implementation
+1. **Header container (lines 136–156):**
+   - Change the action wrapper from `flex flex-col gap-2 sm:flex-row` to a row that stays horizontal on mobile too, e.g. `flex flex-row flex-wrap items-center gap-2`.
+   - Hide the description `<p>` on mobile: add `hidden sm:block`.
+   - Optionally reduce the header icon box size on mobile so the row fits.
 
-### New component `src/components/meetings/MeetingSettingsDrawer.tsx`
-- A `Sheet` with `side="right"` (same pattern as the existing meeting detail drawer), triggered by a gear (`Settings` icon) `Button`.
-- Fetches the connected inboxes with `listMyGmailAccounts` via `useServerFn` + `useQuery` (`queryKey: ["gmail-accounts"]`, matching the existing key so cache is shared).
-- Renders the five cards inside a scrollable body, mapping the per-account cards over the fetched accounts, with a clear "Meeting settings" header and short description.
+2. **Trigger buttons inside the dialog components:**
+   - `InPersonRecordDialog` trigger (line 502): switch `w-full sm:w-auto` to compact `size="sm"`; wrap the "Record in person" text in a `hidden sm:inline` span so only the mic icon shows on the narrowest screens.
+   - `RecordDialog` trigger (line 260, the orange primary): make it `size="sm"` and drop `w-full`, keep the "Record a meeting" label; shorten to "Record" on the smallest width if needed.
+   - `MeetingSettingsDrawer` gear (in `src/components/meetings/MeetingSettingsDrawer.tsx`): already `size="icon"`; make it `size="sm"`/icon so it matches the row height.
+   - `ScreenRecordDialog` stays desktop-only (already gated by `!isMobile`).
 
-### `src/routes/_authenticated/meetings.tsx`
-- Add `<MeetingSettingsDrawer />` into the header action row (alongside the record buttons), rendered as a gear icon button.
-
-### `src/routes/_authenticated/settings.tsx`
-- Remove the five meeting cards and their imports from the Accounts tab. Leave `DangerZone`, Gmail account management, and all other tabs untouched.
-
-## Notes
-- No backend/server-function changes — same components and data, relocated.
-- Verify with a typecheck and a quick browser check that the gear opens the drawer and the cards render.
+No server functions, data, or behavior change — this is a mobile layout/spacing refinement.
