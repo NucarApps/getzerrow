@@ -58,7 +58,7 @@ function needsAutoTitle(title: string | null | undefined): boolean {
  * Best-effort: returns null on any failure (missing key, AI error) so it never
  * blocks finalizing a meeting.
  */
-async function generateMeetingTitle(sourceText: string): Promise<string | null> {
+export async function generateMeetingTitle(sourceText: string): Promise<string | null> {
   const apiKey = process.env.LOVABLE_API_KEY;
   const text = sourceText.trim();
   if (!apiKey || !text) return null;

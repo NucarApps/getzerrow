@@ -7,6 +7,8 @@ import {
   getMeeting,
   recordFromLink,
   deleteMeeting,
+  renameMeeting,
+  generateTitleForMeeting,
   syncMeeting,
   refreshRecording,
   getRecordingStreamUrl,
@@ -38,7 +40,7 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor, ChevronDown } from "lucide-react";
+import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor, ChevronDown, Sparkles, Loader2, Pencil } from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -886,6 +888,8 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const sync = useServerFn(syncMeeting);
   const refreshRec = useServerFn(refreshRecording);
   const getStream = useServerFn(getRecordingStreamUrl);
+  const rename = useServerFn(renameMeeting);
+  const genTitle = useServerFn(generateTitleForMeeting);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
@@ -898,6 +902,12 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const [streamKind, setStreamKind] = useState<"video" | "audio">("video");
   const isMobile = useIsMobile();
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [generatingTitle, setGeneratingTitle] = useState(false);
+  const cancelTitleRef = useRef(false);
+
 
   const q = useQuery({
     queryKey: ["meeting", id],
@@ -1025,6 +1035,54 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     setBusy(false);
   }
 
+  function startEditTitle() {
+    if (!meeting) return;
+    setTitleDraft(meeting.title ?? "");
+    setEditingTitle(true);
+  }
+
+  function cancelEditTitle() {
+    cancelTitleRef.current = true;
+    setEditingTitle(false);
+  }
+
+  async function saveTitle() {
+    if (cancelTitleRef.current) {
+      cancelTitleRef.current = false;
+      return;
+    }
+    if (!id) return;
+    const next = titleDraft.trim();
+    if (next === (meeting?.title ?? "")) {
+      setEditingTitle(false);
+      return;
+    }
+    setSavingTitle(true);
+    try {
+      await rename({ data: { id, title: next } });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+      setEditingTitle(false);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not rename meeting");
+    }
+    setSavingTitle(false);
+  }
+
+  async function onGenerateTitle() {
+    if (!id) return;
+    setGeneratingTitle(true);
+    try {
+      const r = await genTitle({ data: { id } });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+      toast.success(`Title set to "${r.title}"`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not generate a title");
+    }
+    setGeneratingTitle(false);
+  }
+
   return (
     <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
@@ -1037,9 +1095,59 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
           <>
             <SheetHeader className="space-y-1 border-b border-border p-4 pb-3 text-left sm:p-6 sm:pb-4">
               <SheetTitle className="flex items-center gap-2 pr-6 text-base sm:text-lg">
-                <span className="truncate">{meeting.title || "Untitled meeting"}</span>
+                {editingTitle ? (
+                  <Input
+                    autoFocus
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={saveTitle}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveTitle();
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelEditTitle();
+                      }
+                    }}
+                    disabled={savingTitle}
+                    placeholder="Meeting title"
+                    className="h-8 flex-1"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startEditTitle}
+                    className="group flex min-w-0 items-center gap-1.5 rounded-md text-left hover:text-foreground/80"
+                    title="Click to rename"
+                  >
+                    <span className="truncate">{meeting.title || "Untitled meeting"}</span>
+                    <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                  </button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={onGenerateTitle}
+                  disabled={generatingTitle || savingTitle || !(meeting.summary || transcript.length)}
+                  title={
+                    meeting.summary || transcript.length
+                      ? "Generate title from the meeting"
+                      : "Add a recording first to generate a title"
+                  }
+                >
+                  {generatingTitle ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">Generate title</span>
+                </Button>
                 <StatusBadge status={meeting.status} />
               </SheetTitle>
+
               <SheetDescription>
                 {meeting.platform ? `${meeting.platform.replace("_", " ")} · ` : ""}
                 {formatWhen(meeting.scheduled_start ?? meeting.created_at)}
