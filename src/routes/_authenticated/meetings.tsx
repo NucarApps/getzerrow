@@ -888,6 +888,8 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const sync = useServerFn(syncMeeting);
   const refreshRec = useServerFn(refreshRecording);
   const getStream = useServerFn(getRecordingStreamUrl);
+  const rename = useServerFn(renameMeeting);
+  const genTitle = useServerFn(generateTitleForMeeting);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
@@ -900,6 +902,11 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const [streamKind, setStreamKind] = useState<"video" | "audio">("video");
   const isMobile = useIsMobile();
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [generatingTitle, setGeneratingTitle] = useState(false);
+
 
   const q = useQuery({
     queryKey: ["meeting", id],
