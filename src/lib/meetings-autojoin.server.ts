@@ -21,9 +21,25 @@ type UpcomingEvent = {
   description?: string;
   start?: { dateTime?: string; date?: string };
   conferenceData?: { entryPoints?: ConferenceEntryPoint[] };
-  attendees?: Array<{ email?: string; displayName?: string; self?: boolean }>;
+  attendees?: Array<{
+    email?: string;
+    displayName?: string;
+    self?: boolean;
+    responseStatus?: string;
+  }>;
   organizer?: { email?: string; displayName?: string; self?: boolean };
 };
+
+/**
+ * True when the account owner has explicitly declined the event. Google returns
+ * the owner's RSVP on the attendee entry marked `self`. Events where the owner
+ * isn't listed as an attendee (e.g. they're only the organizer) count as not
+ * declined, so behavior is unchanged for those.
+ */
+export function isDeclinedByUser(event: UpcomingEvent): boolean {
+  const self = (event.attendees ?? []).find((a) => a.self);
+  return self?.responseStatus === "declined";
+}
 
 const MEETING_URL_RE =
   /https?:\/\/(?:[a-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com)\/[^\s"'<>)]+/i;
