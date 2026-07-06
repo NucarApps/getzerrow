@@ -416,6 +416,7 @@ export const generateTitleForMeeting = createServerFn({ method: "POST" })
     return { title };
   });
 
+/** Toggle calendar auto-record for one connected account. */
 export const setAutoRecord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
