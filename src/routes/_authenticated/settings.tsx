@@ -352,25 +352,9 @@ function SettingsPage() {
               </div>
             </Card>
 
-            <MeetingBotCard />
-
-            {accounts.map((a) => (
-              <CalendarGuardCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
-            ))}
-
-            {accounts.map((a) => (
-              <MeetingAutoRecordCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
-            ))}
-
-            <MeetingRecordBlocklistCard />
-
-
-            {accounts.map((a) => (
-              <MeetingCalendarEventsCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
-            ))}
-
             <DangerZone />
           </TabsContent>
+
 
           <TabsContent value="filters" className="space-y-4">
             <AccountPicker
