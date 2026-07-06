@@ -16,7 +16,7 @@ import {
 const bodySchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("list"),
-    scope: z.enum(["all", "all_mail", "no_rules", "folder"]).default("all_mail"),
+    scope: z.enum(["all", "all_mail", "no_rules", "folder"]).default("all"),
     folder_id: z.string().uuid().nullish(),
     cursor: z.string().nullish(),
     limit: z.number().int().min(1).max(500).default(300),
