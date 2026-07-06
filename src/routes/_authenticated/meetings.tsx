@@ -1107,7 +1107,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                         void saveTitle();
                       } else if (e.key === "Escape") {
                         e.preventDefault();
-                        setEditingTitle(false);
+                        cancelEditTitle();
                       }
                     }}
                     disabled={savingTitle}
