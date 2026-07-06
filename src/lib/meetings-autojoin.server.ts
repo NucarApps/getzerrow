@@ -313,7 +313,18 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
         .maybeSingle();
       if (existing) continue;
 
-      // Skip events the user explicitly excluded from auto-record.
+      // Skip meetings the user declined, unless they opted in to recording
+      // declined meetings for this inbox.
+      if (!account.record_declined_meetings && isDeclinedByUser(event)) {
+        logInfo("meeting_autojoin_skipped_declined", {
+          runId,
+          accountId: account.id,
+          eventId: event.id,
+        });
+        continue;
+      }
+
+
       const { data: excluded } = await supabaseAdmin
         .from("meeting_autojoin_exclusions")
         .select("id")
