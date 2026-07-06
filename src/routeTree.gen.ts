@@ -41,6 +41,7 @@ import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmai
 import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public/gmail-dlq-replay'
 import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
 import { Route as ApiPublicEncryptionBackfillRouteImport } from './routes/api/public/encryption-backfill'
+import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
@@ -51,6 +52,7 @@ import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksReconcileMeetingsRouteImport } from './routes/api/public/hooks/reconcile-meetings'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
 import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
+import { Route as ApiMobileEmailsActionRouteImport } from './routes/api/mobile/emails.action'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
 
 const TermsRoute = TermsRouteImport.update({
@@ -221,6 +223,11 @@ const ApiPublicEncryptionBackfillRoute =
     path: '/api/public/encryption-backfill',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiMobileCardRoute = ApiMobileCardRouteImport.update({
+  id: '/api/mobile/card',
+  path: '/api/mobile/card',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedContactsScanRoute =
   AuthenticatedContactsScanRouteImport.update({
     id: '/contacts/scan',
@@ -280,6 +287,11 @@ const ApiPublicHooksCheckFolderRetryAlertsRoute =
     path: '/api/public/hooks/check-folder-retry-alerts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiMobileEmailsActionRoute = ApiMobileEmailsActionRouteImport.update({
+  id: '/api/mobile/emails/action',
+  path: '/api/mobile/emails/action',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicOgCardHandleRoute = ApiPublicOgCardHandleRouteImport.update({
   id: '/api/public/og/card/$handle',
   path: '/api/public/og/card/$handle',
@@ -303,6 +315,7 @@ export interface FileRoutesByFullPath {
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
@@ -320,6 +333,7 @@ export interface FileRoutesByFullPath {
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -347,6 +361,7 @@ export interface FileRoutesByTo {
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
@@ -364,6 +379,7 @@ export interface FileRoutesByTo {
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
+  '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -393,6 +409,7 @@ export interface FileRoutesById {
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
@@ -410,6 +427,7 @@ export interface FileRoutesById {
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -439,6 +457,7 @@ export interface FileRouteTypes {
     | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
+    | '/api/mobile/card'
     | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
@@ -456,6 +475,7 @@ export interface FileRouteTypes {
     | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/contacts/'
+    | '/api/mobile/emails/action'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -483,6 +503,7 @@ export interface FileRouteTypes {
     | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
+    | '/api/mobile/card'
     | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
@@ -500,6 +521,7 @@ export interface FileRouteTypes {
     | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/contacts'
+    | '/api/mobile/emails/action'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -528,6 +550,7 @@ export interface FileRouteTypes {
     | '/guides/gmail-reminders'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
+    | '/api/mobile/card'
     | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
@@ -545,6 +568,7 @@ export interface FileRouteTypes {
     | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
+    | '/api/mobile/emails/action'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -565,6 +589,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   CHandleRoute: typeof CHandleRoute
   GuidesGmailRemindersRoute: typeof GuidesGmailRemindersRoute
+  ApiMobileCardRoute: typeof ApiMobileCardRoute
   ApiPublicEncryptionBackfillRoute: typeof ApiPublicEncryptionBackfillRoute
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailDlqReplayRoute: typeof ApiPublicGmailDlqReplayRoute
@@ -581,6 +606,7 @@ export interface RootRouteChildren {
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
   ApiPublicMeetingRecordingRoute: typeof ApiPublicMeetingRecordingRoute
   ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
+  ApiMobileEmailsActionRoute: typeof ApiMobileEmailsActionRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   ApiPublicHooksReconcileMeetingsRoute: typeof ApiPublicHooksReconcileMeetingsRoute
@@ -818,6 +844,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicEncryptionBackfillRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mobile/card': {
+      id: '/api/mobile/card'
+      path: '/api/mobile/card'
+      fullPath: '/api/mobile/card'
+      preLoaderRoute: typeof ApiMobileCardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/contacts/scan': {
       id: '/_authenticated/contacts/scan'
       path: '/contacts/scan'
@@ -888,6 +921,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mobile/emails/action': {
+      id: '/api/mobile/emails/action'
+      path: '/api/mobile/emails/action'
+      fullPath: '/api/mobile/emails/action'
+      preLoaderRoute: typeof ApiMobileEmailsActionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/og/card/$handle': {
       id: '/api/public/og/card/$handle'
       path: '/api/public/og/card/$handle'
@@ -937,6 +977,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   CHandleRoute: CHandleRoute,
   GuidesGmailRemindersRoute: GuidesGmailRemindersRoute,
+  ApiMobileCardRoute: ApiMobileCardRoute,
   ApiPublicEncryptionBackfillRoute: ApiPublicEncryptionBackfillRoute,
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailDlqReplayRoute: ApiPublicGmailDlqReplayRoute,
@@ -953,6 +994,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicLogoRoute: ApiPublicLogoRoute,
   ApiPublicMeetingRecordingRoute: ApiPublicMeetingRecordingRoute,
   ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
+  ApiMobileEmailsActionRoute: ApiMobileEmailsActionRoute,
   ApiPublicHooksCheckFolderRetryAlertsRoute:
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
