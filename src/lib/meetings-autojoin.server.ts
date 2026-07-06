@@ -324,7 +324,7 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
         continue;
       }
 
-
+      // Skip events the user explicitly excluded from auto-record.
       const { data: excluded } = await supabaseAdmin
         .from("meeting_autojoin_exclusions")
         .select("id")
