@@ -1,72 +1,34 @@
-## Goal
+## Problem
 
-Serve the Apple App Site Association (AASA) file at
-`https://getzerrow.com/.well-known/apple-app-site-association` with:
-- HTTP `200`
-- `Content-Type: application/json`
-- the exact JSON body you provided
+The mobile feed endpoint `POST /api/mobile/emails/feed` (`src/routes/api/mobile/emails.feed.ts`) defaults the list `scope` to `"all_mail"`. In the `get_emails_list_decrypted` RPC, `all_mail` bypasses every inbox filter and returns **everything** — messages already filed into folders, archived, snoozed, and still `pending`/`pending_ai`.
 
-so your iOS app can verify domain ownership (Associated Domains: webcredentials + applinks).
+The web inbox's main view (`src/routes/_authenticated/inbox.tsx`, line ~621) uses scope `"all"`, which keeps only: unarchived mail carrying the `INBOX` label, not snoozed, not pending, and either surfaced-to-inbox or belonging to a folder that isn't `auto_archive`/`hide_from_inbox`.
 
-## Why a server route instead of a static `public/` file
+That mismatch is why the phone shows "already processed" mail the web app has dropped.
 
-The request asked for `public/.well-known/apple-app-site-association`. On this project's
-Cloudflare Workers deployment, an **extensionless** static file is not reliably served with
-`Content-Type: application/json` — it typically comes back as `application/octet-stream`, or the
-request falls through to the app's SPA/404 handler. Apple's fetcher rejects anything that isn't
-JSON with a 200. The project already handles this exact situation for `sitemap.xml` by using a
-**server route** (`src/routes/sitemap[.]xml.ts`) that sets the content-type explicitly. We'll do
-the same for AASA, which guarantees the status and content-type you need.
+## Fix
 
-## Change
+Make the mobile feed default to the same inbox view as the web app.
 
-Create one new server route file:
+In `src/routes/api/mobile/emails.feed.ts`:
 
-- `src/routes/[.]well-known.apple-app-site-association.ts`
+- Change the Zod default for `scope` in the `list` branch from `"all_mail"` to `"all"`, so a mobile client that omits `scope` gets the exact inbox-only view.
+- Keep the enum accepting `"all" | "all_mail" | "no_rules" | "folder"` so the app can still request other views explicitly (e.g. a folder view or full-mail search).
 
-  - The `[.]` escapes the leading dot and dots-become-slashes maps the filename to the URL
-    `/.well-known/apple-app-site-association`.
-  - `createFileRoute("/.well-known/apple-app-site-association")` with a `GET` handler.
-  - Returns the exact JSON body below, with `Content-Type: application/json` and a
-    `Cache-Control` header. AASA has no path components to match, so `applinks.details[].components`
-    stays `[]` as provided.
-
-Exact body served:
-
-```json
-{
-  "webcredentials": {
-    "apps": ["78TF75BED3.app.rork.vgbwcg1s46vqobhajrjd5"]
-  },
-  "applinks": {
-    "apps": [],
-    "details": [
-      {
-        "appIDs": ["78TF75BED3.app.rork.vgbwcg1s46vqobhajrjd5"],
-        "components": []
-      }
-    ]
-  }
-}
-```
-
-The auto-generated `src/routeTree.gen.ts` will pick up the new route on build/dev — it is not
-edited by hand.
+No other logic changes: the endpoint already loops over the user's `gmail_accounts`, calls `getEmailsListDecrypted` per account with the chosen scope, merges, sorts by `received_at` desc, and slices to `limit`. Scope `"all"` is fully handled per-account by the RPC (it does the folder join and INBOX/surfaced/hidden filtering), so merging across accounts stays correct.
 
 ## Notes
 
-- The global `securityHeaders()` wrapper in `src/server.ts` will add its standard headers to the
-  response; none of them prevent Apple from reading the JSON (the CSP does not apply to a raw JSON
-  fetch), so no changes there are needed.
-- No auth is involved — the route is public and returns no user data, so it doesn't need to live
-  under `/api/public/*`.
+- The rork app itself lives in a separate codebase we don't control here. If it is currently sending `scope: "all_mail"` explicitly, changing the server default won't help — in that case the app must send `scope: "all"` (or omit it). I'll call this out after the change so you can update the rork request if needed.
+- No database migration required; the `all` behavior already exists in the `get_emails_list_decrypted` RPC.
 
-## Verification
+### Technical detail
 
-After building, confirm:
-- `GET /.well-known/apple-app-site-association` → `200`
-- response header `content-type: application/json`
-- body byte-for-byte matches the JSON above
-
-This can be checked against the preview/published URL with a simple request, and by inspecting the
-served headers.
+File: `src/routes/api/mobile/emails.feed.ts`
+```
+scope: z.enum(["all", "all_mail", "no_rules", "folder"]).default("all_mail")
+```
+becomes
+```
+scope: z.enum(["all", "all_mail", "no_rules", "folder"]).default("all")
+```
