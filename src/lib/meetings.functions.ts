@@ -364,7 +364,58 @@ export const deleteMeeting = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/** Toggle calendar auto-record for one connected account. */
+/** Rename a meeting. An empty title clears it (falls back to "Untitled meeting"). */
+export const renameMeeting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({ id: z.string().uuid(), title: z.string().max(200) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const title = data.title.trim() || null;
+    const { error } = await context.supabase
+      .from("meetings")
+      .update({ title })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { title };
+  });
+
+/** Generate a meeting title on demand from its summary/transcript. */
+export const generateTitleForMeeting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: meeting, error } = await context.supabase
+      .from("meetings")
+      .select("id, summary, transcript")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!meeting) throw new Error("Meeting not found");
+
+    const transcriptText = Array.isArray(meeting.transcript)
+      ? (meeting.transcript as { text?: string }[])
+          .map((s) => s?.text ?? "")
+          .join(" ")
+          .trim()
+      : "";
+    const source = (meeting.summary?.trim() || transcriptText).trim();
+    if (!source) {
+      throw new Error("Add a recording first — there's nothing to base a title on yet.");
+    }
+
+    const { generateMeetingTitle } = await import("./meetings.server");
+    const title = await generateMeetingTitle(source);
+    if (!title) throw new Error("Couldn't generate a title. Please try again.");
+
+    const { error: updateError } = await context.supabase
+      .from("meetings")
+      .update({ title })
+      .eq("id", data.id);
+    if (updateError) throw new Error(updateError.message);
+    return { title };
+  });
+
 export const setAutoRecord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
