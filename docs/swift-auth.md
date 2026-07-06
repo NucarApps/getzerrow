@@ -141,9 +141,16 @@ func signInWithGoogle(presenting: UIViewController) async throws {
 
 ---
 
-## Option 1 — web redirect flow (`zerrow://auth-callback`)
+## Option 1 — web redirect flow (via the `/auth-callback` bridge)
 
-Requires the backend allow-list entry (below). Uses `ASWebAuthenticationSession`.
+A custom URL scheme (`zerrow://`) cannot be added to the backend auth redirect
+allow-list, so **do not** point Supabase OAuth directly at `zerrow://auth-callback`.
+Instead, point it at the allow-listed HTTPS bridge page
+`https://getzerrow.com/auth-callback`. That page immediately forwards the OAuth
+result (tokens or `?code=`) to `zerrow://auth-callback`, and supabase-swift's
+`session(from:)` finishes the session. No allow-list change is needed.
+
+Uses `ASWebAuthenticationSession`:
 
 ```swift
 import Supabase
@@ -151,17 +158,22 @@ import Supabase
 func signInWithGoogleRedirect() async throws {
   try await supabase.auth.signInWithOAuth(
     provider: .google,
-    redirectTo: URL(string: "zerrow://auth-callback")!,
+    redirectTo: URL(string: "https://getzerrow.com/auth-callback")!,
     scopes: "openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
     queryParams: [
       ("access_type", "offline"),
       ("prompt", "consent"), // ensures a refresh token is returned
     ]
   )
-  // supabase-swift opens ASWebAuthenticationSession and completes the session
-  // when the browser redirects back to zerrow://auth-callback.
+  // supabase-swift opens ASWebAuthenticationSession. Google redirects to the
+  // HTTPS bridge, which forwards to zerrow://auth-callback to complete sign-in.
 }
 ```
+
+> Set `ASWebAuthenticationSession`'s `callbackURLScheme` to `zerrow` so the
+> session captures the redirect to `zerrow://auth-callback`. supabase-swift does
+> this for you when you pass a `zerrow://` `redirectTo`, but here the browser is
+> sent to the HTTPS bridge first; the bridge then bounces to `zerrow://`.
 
 Handle the deep link (SwiftUI):
 
@@ -258,24 +270,20 @@ the web app.
 
 ---
 
-## Backend redirect allow-list (Option 1 only)
+## Backend redirect allow-list (not required)
 
-For Option 1, Supabase must allow redirecting to `zerrow://auth-callback` after
-OAuth. The current allow-list contains only web URLs:
+A custom URL scheme (`zerrow://auth-callback`) **cannot** be added to the auth
+redirect allow-list. That's why Option 1 redirects to the HTTPS bridge page
+`https://getzerrow.com/auth-callback` instead — it's already covered by the
+existing allow-list entry `https://getzerrow.com/**`, and it forwards the OAuth
+result on to `zerrow://auth-callback` client-side.
 
 ```
-https://getzerrow.com/**
+https://getzerrow.com/**        ← covers the /auth-callback bridge
 https://www.getzerrow.com/**
 https://getzerrow.lovable.app/**
 (+ preview URLs)
 ```
 
-The exact value to add is:
-
-```
-zerrow://auth-callback
-```
-
-Adding a custom URL scheme to the auth redirect allow-list is a backend
-auth-config change that is not editable through the current Lovable Cloud
-tooling. **Option 2 avoids this entirely** and is the recommended path.
+So no allow-list change is needed for either option. Option 2 stays the
+recommended path because it keeps the whole flow inside a native Google sheet.
