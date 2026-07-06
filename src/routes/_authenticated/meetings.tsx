@@ -1034,6 +1034,45 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     setBusy(false);
   }
 
+  function startEditTitle() {
+    if (!meeting) return;
+    setTitleDraft(meeting.title ?? "");
+    setEditingTitle(true);
+  }
+
+  async function saveTitle() {
+    if (!id) return;
+    const next = titleDraft.trim();
+    if (next === (meeting?.title ?? "")) {
+      setEditingTitle(false);
+      return;
+    }
+    setSavingTitle(true);
+    try {
+      await rename({ data: { id, title: next } });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+      setEditingTitle(false);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not rename meeting");
+    }
+    setSavingTitle(false);
+  }
+
+  async function onGenerateTitle() {
+    if (!id) return;
+    setGeneratingTitle(true);
+    try {
+      const r = await genTitle({ data: { id } });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+      toast.success(`Title set to "${r.title}"`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not generate a title");
+    }
+    setGeneratingTitle(false);
+  }
+
   return (
     <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
