@@ -276,6 +276,10 @@ export async function processGmailMessage(
      * push → visible latency. Comes from message_jobs.published_at_ms
      * when runMessageJobs invokes us. */
     publishedAtMs?: number | null;
+    /** Suppress the best-effort mobile push. Set by backfill / bulk-sync
+     * callers so connecting an inbox (or a large catch-up) can't blast the
+     * device with alerts for months-old mail. */
+    skipPush?: boolean;
   } = {},
 ) {
   const t = opts.timings;
