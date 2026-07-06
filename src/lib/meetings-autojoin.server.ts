@@ -264,7 +264,9 @@ export async function findBlockedEmailForUser(
 export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ scheduled: number }> {
   const { data: accounts } = await supabaseAdmin
     .from("gmail_accounts")
-    .select("id, user_id, email_address, auto_record_meetings, calendar_access")
+    .select(
+      "id, user_id, email_address, auto_record_meetings, calendar_access, record_declined_meetings",
+    )
     .eq("auto_record_meetings", true)
     .eq("calendar_access", true);
 
