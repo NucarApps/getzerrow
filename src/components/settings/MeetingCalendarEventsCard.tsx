@@ -61,6 +61,7 @@ export function MeetingCalendarEventsCard({ accountId, accountEmail }: Props) {
   if (!accountId) return null;
 
   const noCalendar = !!data && !data.calendarAccess;
+  const recordDeclined = !!data?.recordDeclined;
   const events = data?.events ?? [];
   const recordable = events.filter((e) => e.hasMeetingLink);
 
