@@ -154,6 +154,7 @@ export async function listUpcomingCalendarEventsForAccount(
         excluded: excludedSet.has(e.id as string),
         blocked: blockedBy !== null,
         blockedBy,
+        declined: isDeclinedByUser(e),
       };
     });
 }
