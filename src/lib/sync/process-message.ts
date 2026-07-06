@@ -34,6 +34,7 @@ import {
 } from "./classify";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
+import { notifyInboxMail } from "../push.server";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
 
@@ -472,6 +473,16 @@ export async function processGmailMessage(
     return { error: error ?? "insert failed" };
   }
   const inserted = { id: insertedId };
+
+  // Best-effort mobile push for fresh mail that lands in the inbox (not
+  // auto-archived/filed). Fire-and-forget — never blocks or fails processing.
+  if (!isArchived) {
+    void notifyInboxMail(userId, {
+      from_name: parsed.from_name,
+      from_addr: parsed.from_addr,
+      subject: parsed.subject,
+    });
+  }
 
   if (rules.needs_ai) {
     if (rules.classification_reason) {
