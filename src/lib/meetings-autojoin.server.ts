@@ -96,6 +96,7 @@ export type UpcomingCalendarEvent = {
   excluded: boolean;
   blocked: boolean;
   blockedBy: string | null;
+  declined: boolean;
 };
 
 const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
