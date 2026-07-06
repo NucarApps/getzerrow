@@ -106,7 +106,7 @@ export async function backfillWindow(
       const i = cursor++;
       if (i >= todo.length) return;
       try {
-        await processGmailMessage(accountId, todo[i], userId);
+        await processGmailMessage(accountId, todo[i], userId, { skipPush: true });
         processed++;
       } catch (e) {
         failed++;

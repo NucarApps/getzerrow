@@ -276,6 +276,10 @@ export async function processGmailMessage(
      * push → visible latency. Comes from message_jobs.published_at_ms
      * when runMessageJobs invokes us. */
     publishedAtMs?: number | null;
+    /** Suppress the best-effort mobile push. Set by backfill / bulk-sync
+     * callers so connecting an inbox (or a large catch-up) can't blast the
+     * device with alerts for months-old mail. */
+    skipPush?: boolean;
   } = {},
 ) {
   const t = opts.timings;
@@ -475,8 +479,15 @@ export async function processGmailMessage(
   const inserted = { id: insertedId };
 
   // Best-effort mobile push for fresh mail that lands in the inbox (not
-  // auto-archived/filed). Fire-and-forget — never blocks or fails processing.
-  if (!isArchived) {
+  // auto-archived/filed). Suppressed during backfill/bulk sync (opts.skipPush)
+  // and for messages older than the freshness window, so connecting an inbox
+  // or a large catch-up can't spam the device with alerts for old mail.
+  // Fire-and-forget — never blocks or fails processing.
+  const PUSH_MAX_AGE_MS = 60 * 60 * 1000; // 1h
+  const receivedMs = parsed.received_at ? Date.parse(parsed.received_at) : NaN;
+  const isFreshForPush =
+    Number.isFinite(receivedMs) && Date.now() - receivedMs <= PUSH_MAX_AGE_MS;
+  if (!isArchived && !opts.skipPush && isFreshForPush) {
     void notifyInboxMail(userId, {
       from_name: parsed.from_name,
       from_addr: parsed.from_addr,
