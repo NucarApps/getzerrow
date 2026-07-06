@@ -5,7 +5,7 @@ import { Video } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { getAutoRecordStatus, setAutoRecord } from "@/lib/meetings.functions";
+import { getAutoRecordStatus, setAutoRecord, setRecordDeclined } from "@/lib/meetings.functions";
 
 type Props = { accountId: string | null; accountEmail: string | null };
 
@@ -13,7 +13,9 @@ export function MeetingAutoRecordCard({ accountId, accountEmail }: Props) {
   const qc = useQueryClient();
   const getStatus = useServerFn(getAutoRecordStatus);
   const setEnabled = useServerFn(setAutoRecord);
+  const setDeclined = useServerFn(setRecordDeclined);
   const [busy, setBusy] = useState(false);
+  const [declinedBusy, setDeclinedBusy] = useState(false);
 
   const { data: status } = useQuery({
     queryKey: ["auto-record", accountId],
@@ -33,6 +35,24 @@ export function MeetingAutoRecordCard({ accountId, accountEmail }: Props) {
       toast.error("Couldn't update auto-record.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleDeclinedToggle = async (enabled: boolean) => {
+    setDeclinedBusy(true);
+    try {
+      await setDeclined({ data: { accountId, enabled } });
+      toast.success(
+        enabled
+          ? "Now recording meetings you've declined."
+          : "No longer recording meetings you've declined.",
+      );
+      qc.invalidateQueries({ queryKey: ["auto-record", accountId] });
+      qc.invalidateQueries({ queryKey: ["calendar-events", accountId] });
+    } catch {
+      toast.error("Couldn't update that setting.");
+    } finally {
+      setDeclinedBusy(false);
     }
   };
 
@@ -61,12 +81,28 @@ export function MeetingAutoRecordCard({ accountId, accountEmail }: Props) {
           aria-label={`Toggle auto-record for ${accountEmail ?? "this inbox"}`}
         />
       </div>
-      {noCalendar && (
+      {noCalendar ? (
         <div className="p-4 md:p-6">
           <p className="text-sm text-muted-foreground">
             Calendar access hasn't been granted yet. Reconnect Google (in the calendar guard above)
             to enable auto-record.
           </p>
+        </div>
+      ) : (
+        <div className="flex items-start justify-between gap-4 p-4 md:p-6">
+          <div>
+            <h3 className="text-sm font-medium text-foreground">Record meetings I've declined</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Send the notetaker even to meetings you've declined or aren't attending. Off by
+              default, so declined meetings are skipped.
+            </p>
+          </div>
+          <Switch
+            checked={!!status?.recordDeclined}
+            onCheckedChange={handleDeclinedToggle}
+            disabled={declinedBusy || !status?.enabled}
+            aria-label={`Toggle recording declined meetings for ${accountEmail ?? "this inbox"}`}
+          />
         </div>
       )}
     </Card>

@@ -21,9 +21,25 @@ type UpcomingEvent = {
   description?: string;
   start?: { dateTime?: string; date?: string };
   conferenceData?: { entryPoints?: ConferenceEntryPoint[] };
-  attendees?: Array<{ email?: string; displayName?: string; self?: boolean }>;
+  attendees?: Array<{
+    email?: string;
+    displayName?: string;
+    self?: boolean;
+    responseStatus?: string;
+  }>;
   organizer?: { email?: string; displayName?: string; self?: boolean };
 };
+
+/**
+ * True when the account owner has explicitly declined the event. Google returns
+ * the owner's RSVP on the attendee entry marked `self`. Events where the owner
+ * isn't listed as an attendee (e.g. they're only the organizer) count as not
+ * declined, so behavior is unchanged for those.
+ */
+export function isDeclinedByUser(event: UpcomingEvent): boolean {
+  const self = (event.attendees ?? []).find((a) => a.self);
+  return self?.responseStatus === "declined";
+}
 
 const MEETING_URL_RE =
   /https?:\/\/(?:[a-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com)\/[^\s"'<>)]+/i;
@@ -80,6 +96,7 @@ export type UpcomingCalendarEvent = {
   excluded: boolean;
   blocked: boolean;
   blockedBy: string | null;
+  declined: boolean;
 };
 
 const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
@@ -137,6 +154,7 @@ export async function listUpcomingCalendarEventsForAccount(
         excluded: excludedSet.has(e.id as string),
         blocked: blockedBy !== null,
         blockedBy,
+        declined: isDeclinedByUser(e),
       };
     });
 }
@@ -246,7 +264,9 @@ export async function findBlockedEmailForUser(
 export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ scheduled: number }> {
   const { data: accounts } = await supabaseAdmin
     .from("gmail_accounts")
-    .select("id, user_id, email_address, auto_record_meetings, calendar_access")
+    .select(
+      "id, user_id, email_address, auto_record_meetings, calendar_access, record_declined_meetings",
+    )
     .eq("auto_record_meetings", true)
     .eq("calendar_access", true);
 
@@ -292,6 +312,17 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
         .eq("calendar_event_id", event.id)
         .maybeSingle();
       if (existing) continue;
+
+      // Skip meetings the user declined, unless they opted in to recording
+      // declined meetings for this inbox.
+      if (!account.record_declined_meetings && isDeclinedByUser(event)) {
+        logInfo("meeting_autojoin_skipped_declined", {
+          runId,
+          accountId: account.id,
+          eventId: event.id,
+        });
+        continue;
+      }
 
       // Skip events the user explicitly excluded from auto-record.
       const { data: excluded } = await supabaseAdmin

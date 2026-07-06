@@ -1102,6 +1102,7 @@ export type Database = {
           last_reconcile_at: string | null
           needs_reconnect: boolean
           reconcile_cursor: string | null
+          record_declined_meetings: boolean
           refresh_token_enc: string | null
           token_expires_at: string
           updated_at: string
@@ -1127,6 +1128,7 @@ export type Database = {
           last_reconcile_at?: string | null
           needs_reconnect?: boolean
           reconcile_cursor?: string | null
+          record_declined_meetings?: boolean
           refresh_token_enc?: string | null
           token_expires_at: string
           updated_at?: string
@@ -1152,6 +1154,7 @@ export type Database = {
           last_reconcile_at?: string | null
           needs_reconnect?: boolean
           reconcile_cursor?: string | null
+          record_declined_meetings?: boolean
           refresh_token_enc?: string | null
           token_expires_at?: string
           updated_at?: string

@@ -61,6 +61,7 @@ export function MeetingCalendarEventsCard({ accountId, accountEmail }: Props) {
   if (!accountId) return null;
 
   const noCalendar = !!data && !data.calendarAccess;
+  const recordDeclined = !!data?.recordDeclined;
   const events = data?.events ?? [];
   const recordable = events.filter((e) => e.hasMeetingLink);
 
@@ -97,33 +98,51 @@ export function MeetingCalendarEventsCard({ accountId, accountEmail }: Props) {
         ) : (
           <ul className="divide-y divide-border">
             {recordable.map((e) => {
-              const send = !e.excluded && !e.blocked;
+              const skippedForDecline = e.declined && !recordDeclined;
+              const send = !e.excluded && !e.blocked && !skippedForDecline;
+              const toggleDisabled = mutation.isPending || e.blocked || skippedForDecline;
               return (
                 <li key={e.id} className="flex items-center justify-between gap-4 py-3 first:pt-0">
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
                       <Video className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       {e.title || "Untitled meeting"}
+                      {e.declined && (
+                        <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Declined
+                        </span>
+                      )}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {formatWhen(e.start)}
-                      {e.scheduled && !e.blocked && " · Notetaker scheduled"}
+                      {e.scheduled && !e.blocked && !skippedForDecline && " · Notetaker scheduled"}
                     </p>
-                    {e.blocked && (
+                    {e.blocked ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         Guest on your don't-record list — won't be recorded.
                       </p>
-                    )}
+                    ) : skippedForDecline ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        You declined this — turn on "Record meetings I've declined" above to record
+                        it.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      {e.blocked ? "Blocked" : send ? "Send notetaker" : "Skipped"}
+                      {e.blocked
+                        ? "Blocked"
+                        : skippedForDecline
+                          ? "Skipped"
+                          : send
+                            ? "Send notetaker"
+                            : "Skipped"}
                     </span>
                     <Switch
                       checked={send}
-                      disabled={mutation.isPending || e.blocked}
+                      disabled={toggleDisabled}
                       onCheckedChange={(checked) => {
-                        if (e.blocked) return;
+                        if (toggleDisabled) return;
                         mutation.mutate({ calendarEventId: e.id, excluded: !checked });
                       }}
                       aria-label={`Toggle notetaker for ${e.title || "this meeting"}`}
