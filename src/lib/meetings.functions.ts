@@ -476,22 +476,24 @@ export const listUpcomingCalendarEvents = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { data: acct } = await context.supabase
       .from("gmail_accounts")
-      .select("calendar_access")
+      .select("calendar_access, record_declined_meetings")
       .eq("id", data.accountId)
       .maybeSingle();
     if (!acct) throw new Error("Account not found");
+    const recordDeclined = !!acct.record_declined_meetings;
     if (!acct.calendar_access) {
-      return { calendarAccess: false, events: [] as UpcomingCalendarEvent[] };
+      return { calendarAccess: false, events: [] as UpcomingCalendarEvent[], recordDeclined };
     }
     const { listUpcomingCalendarEventsForAccount } = await import("./meetings-autojoin.server");
     try {
       const events = await listUpcomingCalendarEventsForAccount(data.accountId, context.userId);
-      return { calendarAccess: true, events };
+      return { calendarAccess: true, events, recordDeclined };
     } catch (e) {
       logError("meeting_list_events_failed", { accountId: data.accountId, userId: context.userId }, e);
       return {
         calendarAccess: true,
         events: [] as UpcomingCalendarEvent[],
+        recordDeclined,
         error: "Couldn't load your calendar events right now.",
       };
     }
