@@ -270,24 +270,20 @@ the web app.
 
 ---
 
-## Backend redirect allow-list (Option 1 only)
+## Backend redirect allow-list (not required)
 
-For Option 1, Supabase must allow redirecting to `zerrow://auth-callback` after
-OAuth. The current allow-list contains only web URLs:
+A custom URL scheme (`zerrow://auth-callback`) **cannot** be added to the auth
+redirect allow-list. That's why Option 1 redirects to the HTTPS bridge page
+`https://getzerrow.com/auth-callback` instead — it's already covered by the
+existing allow-list entry `https://getzerrow.com/**`, and it forwards the OAuth
+result on to `zerrow://auth-callback` client-side.
 
 ```
-https://getzerrow.com/**
+https://getzerrow.com/**        ← covers the /auth-callback bridge
 https://www.getzerrow.com/**
 https://getzerrow.lovable.app/**
 (+ preview URLs)
 ```
 
-The exact value to add is:
-
-```
-zerrow://auth-callback
-```
-
-Adding a custom URL scheme to the auth redirect allow-list is a backend
-auth-config change that is not editable through the current Lovable Cloud
-tooling. **Option 2 avoids this entirely** and is the recommended path.
+So no allow-list change is needed for either option. Option 2 stays the
+recommended path because it keeps the whole flow inside a native Google sheet.
