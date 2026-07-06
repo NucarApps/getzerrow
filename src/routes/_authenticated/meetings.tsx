@@ -1085,9 +1085,59 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
           <>
             <SheetHeader className="space-y-1 border-b border-border p-4 pb-3 text-left sm:p-6 sm:pb-4">
               <SheetTitle className="flex items-center gap-2 pr-6 text-base sm:text-lg">
-                <span className="truncate">{meeting.title || "Untitled meeting"}</span>
+                {editingTitle ? (
+                  <Input
+                    autoFocus
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={saveTitle}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void saveTitle();
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        setEditingTitle(false);
+                      }
+                    }}
+                    disabled={savingTitle}
+                    placeholder="Meeting title"
+                    className="h-8 flex-1"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startEditTitle}
+                    className="group flex min-w-0 items-center gap-1.5 rounded-md text-left hover:text-foreground/80"
+                    title="Click to rename"
+                  >
+                    <span className="truncate">{meeting.title || "Untitled meeting"}</span>
+                    <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                  </button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={onGenerateTitle}
+                  disabled={generatingTitle || savingTitle || !(meeting.summary || transcript.length)}
+                  title={
+                    meeting.summary || transcript.length
+                      ? "Generate title from the meeting"
+                      : "Add a recording first to generate a title"
+                  }
+                >
+                  {generatingTitle ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">Generate title</span>
+                </Button>
                 <StatusBadge status={meeting.status} />
               </SheetTitle>
+
               <SheetDescription>
                 {meeting.platform ? `${meeting.platform.replace("_", " ")} · ` : ""}
                 {formatWhen(meeting.scheduled_start ?? meeting.created_at)}
