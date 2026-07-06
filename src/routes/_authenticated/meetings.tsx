@@ -906,6 +906,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
   const [generatingTitle, setGeneratingTitle] = useState(false);
+  const cancelTitleRef = useRef(false);
 
 
   const q = useQuery({
