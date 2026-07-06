@@ -151,6 +151,7 @@ function MeetingsPage() {
               <ScreenRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
             )}
             <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+            <MeetingSettingsDrawer />
           </div>
         </header>
 
