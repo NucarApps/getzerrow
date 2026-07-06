@@ -50,9 +50,7 @@ async function handleUpcoming({ supabase, userId }: Auth): Promise<Response> {
     return Response.json({ ok: true, calendar_access: false, events: [] });
   }
 
-  const { listUpcomingCalendarEventsForAccount } = await import(
-    "@/lib/meetings-autojoin.server"
-  );
+  const { listUpcomingCalendarEventsForAccount } = await import("@/lib/meetings-autojoin.server");
   const events: Record<string, unknown>[] = [];
   for (const acct of accounts) {
     try {
