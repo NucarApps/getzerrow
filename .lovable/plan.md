@@ -1,23 +1,36 @@
-## Goal
+# Move meeting settings into a slide-out drawer on the Meetings page
 
-Remove the standalone "My card" item from the sidebar. Keep the existing "My card" button on the Contacts page as the only entry point for editing your card.
+Right now all the meeting-related settings live inside the **Settings → Accounts** tab, mixed in with Gmail account management. This moves them onto the Meetings page behind a gear icon that opens a drawer sliding in from the right.
 
-## Current state
+## What changes for the user
 
-- The sidebar (`src/routes/_authenticated.tsx`, ~lines 312–321) has a "My card" nav button that routes to `/my-card`.
-- The Contacts page (`src/routes/_authenticated/contacts.index.tsx`, ~line 273) already has a "My card" button linking to `/my-card`.
-- The `/my-card` route itself (`src/routes/_authenticated/my-card.tsx`) is the editor for the card.
+- A **gear icon button** appears in the Meetings page header (next to the record buttons).
+- Clicking it opens a **drawer that slides out from the right** containing all meeting settings.
+- The same settings are **removed from the Settings page**, so there's one clear home for them.
 
-## Changes
+## The settings being moved
 
-### `src/routes/_authenticated.tsx`
-- Delete the "My card" sidebar button block (the `<button>` with the `IdCard` icon that navigates to `/my-card`).
-- Remove the now-unused `IdCard` import.
+These five cards move together (they currently sit in Settings → Accounts):
 
-### No other changes
-- Keep the `/my-card` route so the Contacts page button still opens the card editor.
-- Leave the Contacts page "My card" button as-is.
+1. Meeting bot / notetaker card (`MeetingBotCard`)
+2. Calendar access guard, one per connected inbox (`CalendarGuardCard`)
+3. Auto-record toggle, one per connected inbox (`MeetingAutoRecordCard`)
+4. Don't-record blocklist (`MeetingRecordBlocklistCard`)
+5. Upcoming meetings / notetaker exclusions, one per connected inbox (`MeetingCalendarEventsCard`)
 
-## Verification
-- Typecheck with `tsgo --noEmit`.
-- Confirm the sidebar no longer lists "My card", and the "My card" button on the Contacts page still opens the editable card.
+## Implementation
+
+### New component `src/components/meetings/MeetingSettingsDrawer.tsx`
+- A `Sheet` with `side="right"` (same pattern as the existing meeting detail drawer), triggered by a gear (`Settings` icon) `Button`.
+- Fetches the connected inboxes with `listMyGmailAccounts` via `useServerFn` + `useQuery` (`queryKey: ["gmail-accounts"]`, matching the existing key so cache is shared).
+- Renders the five cards inside a scrollable body, mapping the per-account cards over the fetched accounts, with a clear "Meeting settings" header and short description.
+
+### `src/routes/_authenticated/meetings.tsx`
+- Add `<MeetingSettingsDrawer />` into the header action row (alongside the record buttons), rendered as a gear icon button.
+
+### `src/routes/_authenticated/settings.tsx`
+- Remove the five meeting cards and their imports from the Accounts tab. Leave `DangerZone`, Gmail account management, and all other tabs untouched.
+
+## Notes
+- No backend/server-function changes — same components and data, relocated.
+- Verify with a typecheck and a quick browser check that the gear opens the drawer and the cards render.

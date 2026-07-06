@@ -42,6 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor, ChevronDown, Sparkles, Loader2, Pencil } from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
+import { MeetingSettingsDrawer } from "@/components/meetings/MeetingSettingsDrawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
@@ -150,6 +151,7 @@ function MeetingsPage() {
               <ScreenRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
             )}
             <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+            <MeetingSettingsDrawer />
           </div>
         </header>
 
