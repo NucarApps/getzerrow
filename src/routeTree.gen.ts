@@ -43,6 +43,7 @@ import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/pub
 import { Route as ApiPublicEncryptionBackfillRouteImport } from './routes/api/public/encryption-backfill'
 import { Route as ApiMobilePushTestRouteImport } from './routes/api/mobile/push-test'
 import { Route as ApiMobileMeetingSettingsRouteImport } from './routes/api/mobile/meeting-settings'
+import { Route as ApiMobileGmailConnectRouteImport } from './routes/api/mobile/gmail-connect'
 import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
@@ -236,6 +237,11 @@ const ApiMobileMeetingSettingsRoute =
     path: '/api/mobile/meeting-settings',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiMobileGmailConnectRoute = ApiMobileGmailConnectRouteImport.update({
+  id: '/api/mobile/gmail-connect',
+  path: '/api/mobile/gmail-connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMobileCardRoute = ApiMobileCardRouteImport.update({
   id: '/api/mobile/card',
   path: '/api/mobile/card',
@@ -329,6 +335,7 @@ export interface FileRoutesByFullPath {
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/push-test': typeof ApiMobilePushTestRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
@@ -377,6 +384,7 @@ export interface FileRoutesByTo {
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/push-test': typeof ApiMobilePushTestRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
@@ -427,6 +435,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/push-test': typeof ApiMobilePushTestRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
@@ -477,6 +486,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/mobile/card'
+    | '/api/mobile/gmail-connect'
     | '/api/mobile/meeting-settings'
     | '/api/mobile/push-test'
     | '/api/public/encryption-backfill'
@@ -525,6 +535,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/mobile/card'
+    | '/api/mobile/gmail-connect'
     | '/api/mobile/meeting-settings'
     | '/api/mobile/push-test'
     | '/api/public/encryption-backfill'
@@ -574,6 +585,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
     | '/api/mobile/card'
+    | '/api/mobile/gmail-connect'
     | '/api/mobile/meeting-settings'
     | '/api/mobile/push-test'
     | '/api/public/encryption-backfill'
@@ -615,6 +627,7 @@ export interface RootRouteChildren {
   CHandleRoute: typeof CHandleRoute
   GuidesGmailRemindersRoute: typeof GuidesGmailRemindersRoute
   ApiMobileCardRoute: typeof ApiMobileCardRoute
+  ApiMobileGmailConnectRoute: typeof ApiMobileGmailConnectRoute
   ApiMobileMeetingSettingsRoute: typeof ApiMobileMeetingSettingsRoute
   ApiMobilePushTestRoute: typeof ApiMobilePushTestRoute
   ApiPublicEncryptionBackfillRoute: typeof ApiPublicEncryptionBackfillRoute
@@ -885,6 +898,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMobileMeetingSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mobile/gmail-connect': {
+      id: '/api/mobile/gmail-connect'
+      path: '/api/mobile/gmail-connect'
+      fullPath: '/api/mobile/gmail-connect'
+      preLoaderRoute: typeof ApiMobileGmailConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mobile/card': {
       id: '/api/mobile/card'
       path: '/api/mobile/card'
@@ -1019,6 +1039,7 @@ const rootRouteChildren: RootRouteChildren = {
   CHandleRoute: CHandleRoute,
   GuidesGmailRemindersRoute: GuidesGmailRemindersRoute,
   ApiMobileCardRoute: ApiMobileCardRoute,
+  ApiMobileGmailConnectRoute: ApiMobileGmailConnectRoute,
   ApiMobileMeetingSettingsRoute: ApiMobileMeetingSettingsRoute,
   ApiMobilePushTestRoute: ApiMobilePushTestRoute,
   ApiPublicEncryptionBackfillRoute: ApiPublicEncryptionBackfillRoute,
