@@ -7,6 +7,8 @@ import {
   getMeeting,
   recordFromLink,
   deleteMeeting,
+  renameMeeting,
+  generateTitleForMeeting,
   syncMeeting,
   refreshRecording,
   getRecordingStreamUrl,
