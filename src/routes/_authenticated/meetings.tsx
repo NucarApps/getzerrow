@@ -1040,7 +1040,16 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     setEditingTitle(true);
   }
 
+  function cancelEditTitle() {
+    cancelTitleRef.current = true;
+    setEditingTitle(false);
+  }
+
   async function saveTitle() {
+    if (cancelTitleRef.current) {
+      cancelTitleRef.current = false;
+      return;
+    }
     if (!id) return;
     const next = titleDraft.trim();
     if (next === (meeting?.title ?? "")) {
