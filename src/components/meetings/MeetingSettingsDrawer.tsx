@@ -37,6 +37,7 @@ export function MeetingSettingsDrawer() {
         onClick={() => setOpen(true)}
         aria-label="Meeting settings"
         title="Meeting settings"
+        className="h-8 w-8 sm:h-10 sm:w-10"
       >
         <Settings className="h-4 w-4" />
       </Button>
