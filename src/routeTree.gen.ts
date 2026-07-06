@@ -57,6 +57,7 @@ import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksReconcileMeetingsRouteImport } from './routes/api/public/hooks/reconcile-meetings'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
 import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
+import { Route as ApiMobileEmailsFeedRouteImport } from './routes/api/mobile/emails.feed'
 import { Route as ApiMobileEmailsActionRouteImport } from './routes/api/mobile/emails.action'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
 
@@ -319,6 +320,11 @@ const ApiPublicHooksCheckFolderRetryAlertsRoute =
     path: '/api/public/hooks/check-folder-retry-alerts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiMobileEmailsFeedRoute = ApiMobileEmailsFeedRouteImport.update({
+  id: '/api/mobile/emails/feed',
+  path: '/api/mobile/emails/feed',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMobileEmailsActionRoute = ApiMobileEmailsActionRouteImport.update({
   id: '/api/mobile/emails/action',
   path: '/api/mobile/emails/action',
@@ -371,6 +377,7 @@ export interface FileRoutesByFullPath {
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
+  '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -422,6 +429,7 @@ export interface FileRoutesByTo {
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
+  '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -475,6 +483,7 @@ export interface FileRoutesById {
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
+  '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -528,6 +537,7 @@ export interface FileRouteTypes {
     | '/api/public/recall-webhook'
     | '/contacts/'
     | '/api/mobile/emails/action'
+    | '/api/mobile/emails/feed'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -579,6 +589,7 @@ export interface FileRouteTypes {
     | '/api/public/recall-webhook'
     | '/contacts'
     | '/api/mobile/emails/action'
+    | '/api/mobile/emails/feed'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -631,6 +642,7 @@ export interface FileRouteTypes {
     | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
     | '/api/mobile/emails/action'
+    | '/api/mobile/emails/feed'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -674,6 +686,7 @@ export interface RootRouteChildren {
   ApiPublicMeetingRecordingRoute: typeof ApiPublicMeetingRecordingRoute
   ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
   ApiMobileEmailsActionRoute: typeof ApiMobileEmailsActionRoute
+  ApiMobileEmailsFeedRoute: typeof ApiMobileEmailsFeedRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   ApiPublicHooksReconcileMeetingsRoute: typeof ApiPublicHooksReconcileMeetingsRoute
@@ -1023,6 +1036,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mobile/emails/feed': {
+      id: '/api/mobile/emails/feed'
+      path: '/api/mobile/emails/feed'
+      fullPath: '/api/mobile/emails/feed'
+      preLoaderRoute: typeof ApiMobileEmailsFeedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mobile/emails/action': {
       id: '/api/mobile/emails/action'
       path: '/api/mobile/emails/action'
@@ -1103,6 +1123,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicMeetingRecordingRoute: ApiPublicMeetingRecordingRoute,
   ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
   ApiMobileEmailsActionRoute: ApiMobileEmailsActionRoute,
+  ApiMobileEmailsFeedRoute: ApiMobileEmailsFeedRoute,
   ApiPublicHooksCheckFolderRetryAlertsRoute:
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
