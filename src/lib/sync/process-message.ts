@@ -34,6 +34,7 @@ import {
 } from "./classify";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
+import { notifyInboxMail } from "../push.server";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
 
