@@ -1231,6 +1231,7 @@ export type Database = {
           created_at: string;
           gmail_account_id: string;
           id: string;
+          mode: string;
           user_id: string;
         };
         Insert: {
@@ -1238,6 +1239,7 @@ export type Database = {
           created_at?: string;
           gmail_account_id: string;
           id?: string;
+          mode?: string;
           user_id: string;
         };
         Update: {
@@ -1245,6 +1247,7 @@ export type Database = {
           created_at?: string;
           gmail_account_id?: string;
           id?: string;
+          mode?: string;
           user_id?: string;
         };
         Relationships: [

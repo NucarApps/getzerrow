@@ -267,11 +267,29 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
         ext: z.enum(["webm", "m4a", "mp4", "ogg", "wav"]).default("webm"),
         withVideo: z.boolean().optional(),
         videoExt: z.enum(["webm", "mp4"]).default("webm"),
+        // Optional link back to the calendar meeting this recording captures,
+        // so the note lands under the meeting and the bot stays away from it.
+        calendarEventId: z.string().min(1).max(1024).optional(),
+        accountId: z.string().uuid().optional(),
+        scheduledStart: z
+          .string()
+          .max(64)
+          .refine((v) => !Number.isNaN(Date.parse(v)), { message: "Invalid start time" })
+          .optional(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // If the recording is tied to a calendar event, confirm account ownership.
+    if (data.accountId) {
+      const { data: acct } = await supabase
+        .from("gmail_accounts")
+        .select("id")
+        .eq("id", data.accountId)
+        .maybeSingle();
+      if (!acct) throw new Error("Account not found");
+    }
     const { data: inserted, error } = await supabase
       .from("meetings")
       .insert({
@@ -282,6 +300,9 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
         status: "processing",
         title: data.title?.trim() || "In-person meeting",
         started_at: new Date().toISOString(),
+        gmail_account_id: data.accountId ?? null,
+        calendar_event_id: data.calendarEventId ?? null,
+        scheduled_start: data.scheduledStart ? new Date(data.scheduledStart).toISOString() : null,
       })
       .select("id")
       .single();
@@ -561,15 +582,17 @@ export const setEventExclusion = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!acct) throw new Error("Account not found");
     if (data.excluded) {
-      const { error } = await context.supabase.from("meeting_autojoin_exclusions").upsert(
+      const { upsertEventExclusion } = await import("./meetings-autojoin.server");
+      const errorMessage = await upsertEventExclusion(
+        context.supabase,
         {
-          user_id: context.userId,
-          gmail_account_id: data.accountId,
-          calendar_event_id: data.calendarEventId,
+          userId: context.userId,
+          accountId: data.accountId,
+          calendarEventId: data.calendarEventId,
         },
-        { onConflict: "user_id,calendar_event_id" },
+        "off",
       );
-      if (error) throw new Error(error.message);
+      if (errorMessage) throw new Error(errorMessage);
     } else {
       const { error } = await context.supabase
         .from("meeting_autojoin_exclusions")
@@ -579,6 +602,53 @@ export const setEventExclusion = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
     return { excluded: data.excluded };
+  });
+
+/**
+ * Set how one calendar meeting should be captured: send the notetaker bot
+ * (default — no exclusion row), record in person yourself, or don't record.
+ * "in_person" and "off" both keep the bot out; the mode remembers why so the
+ * web and iOS apps can show the same three-way choice.
+ */
+export const setEventRecordingMode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        accountId: z.string().uuid(),
+        calendarEventId: z.string().min(1).max(1024),
+        mode: z.enum(["bot", "in_person", "off"]),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: acct } = await context.supabase
+      .from("gmail_accounts")
+      .select("id")
+      .eq("id", data.accountId)
+      .maybeSingle();
+    if (!acct) throw new Error("Account not found");
+    if (data.mode === "bot") {
+      const { error } = await context.supabase
+        .from("meeting_autojoin_exclusions")
+        .delete()
+        .eq("user_id", context.userId)
+        .eq("calendar_event_id", data.calendarEventId);
+      if (error) throw new Error(error.message);
+    } else {
+      const { upsertEventExclusion } = await import("./meetings-autojoin.server");
+      const errorMessage = await upsertEventExclusion(
+        context.supabase,
+        {
+          userId: context.userId,
+          accountId: data.accountId,
+          calendarEventId: data.calendarEventId,
+        },
+        data.mode,
+      );
+      if (errorMessage) throw new Error(errorMessage);
+    }
+    return { mode: data.mode };
   });
 
 // A blocklist entry is either a full email (jane@lawfirm.com) or a bare

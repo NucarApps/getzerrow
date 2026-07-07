@@ -1,7 +1,9 @@
 // Calendar auto-join: scan upcoming primary-calendar events for accounts that
 // enabled auto-record, extract the meeting URL, and schedule a Recall bot to
 // join at start time. Deduped on (user_id, calendar_event_id). Server-only.
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import { getAccessToken } from "./google-oauth.server";
 import { createBot, detectPlatform } from "./recall.server";
 import { loadBotConfig } from "./meetings.server";
@@ -87,6 +89,9 @@ async function fetchUpcomingEvents(accountId: string): Promise<UpcomingEvent[]> 
   return fetchEventsInWindow(accountId, LOOKAHEAD_MINUTES);
 }
 
+/** How one upcoming meeting should be captured. */
+export type MeetingRecordMode = "bot" | "in_person" | "off";
+
 /** One upcoming calendar event surfaced in the settings notetaker list. */
 export type UpcomingCalendarEvent = {
   id: string;
@@ -95,6 +100,7 @@ export type UpcomingCalendarEvent = {
   hasMeetingLink: boolean;
   scheduled: boolean;
   excluded: boolean;
+  recordMode: MeetingRecordMode;
   blocked: boolean;
   blockedBy: string | null;
   declined: boolean;
@@ -124,7 +130,9 @@ export async function listUpcomingCalendarEventsForAccount(
       .in("calendar_event_id", eventIds),
     supabaseAdmin
       .from("meeting_autojoin_exclusions")
-      .select("calendar_event_id")
+      // `*` (not named columns) so the query still works while the `mode`
+      // column migration is rolling out — a missing mode reads as "off".
+      .select("*")
       .eq("user_id", userId)
       .in("calendar_event_id", eventIds),
   ]);
@@ -132,7 +140,10 @@ export async function listUpcomingCalendarEventsForAccount(
   const scheduledSet = new Set(
     (scheduledRows ?? []).map((r) => r.calendar_event_id).filter((id): id is string => !!id),
   );
-  const excludedSet = new Set((excludedRows ?? []).map((r) => r.calendar_event_id));
+  // An exclusion row keeps the bot out; its mode says why (off vs in-person).
+  const exclusionModes = new Map<string, string>(
+    (excludedRows ?? []).map((r) => [r.calendar_event_id, r.mode ?? "off"]),
+  );
 
   const blocklist = await loadBlocklist(userId);
   const hasBlocklist = blocklist.emails.size > 0 || blocklist.domains.size > 0;
@@ -146,13 +157,17 @@ export async function listUpcomingCalendarEventsForAccount(
           )
         : [];
       const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
+      const exclusionMode = exclusionModes.get(e.id as string) ?? null;
+      const recordMode: MeetingRecordMode =
+        exclusionMode === null ? "bot" : exclusionMode === "in_person" ? "in_person" : "off";
       return {
         id: e.id as string,
         title: e.summary ?? null,
         start: e.start?.dateTime ?? e.start?.date ?? null,
         hasMeetingLink: !!extractMeetingUrl(e),
         scheduled: scheduledSet.has(e.id as string),
-        excluded: excludedSet.has(e.id as string),
+        excluded: exclusionMode !== null,
+        recordMode,
         blocked: blockedBy !== null,
         blockedBy,
         declined: isDeclinedByUser(e),
@@ -161,6 +176,45 @@ export async function listUpcomingCalendarEventsForAccount(
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** True when the error means the `mode` column hasn't been migrated yet. */
+function isMissingModeColumn(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "PGRST204" ||
+    error.code === "42703" ||
+    /column.{0,24}mode|mode.{0,24}column/i.test(error.message ?? "")
+  );
+}
+
+/**
+ * Upsert one auto-join exclusion with its capture mode, on the caller's own
+ * RLS-scoped client. If the `mode` column migration hasn't been applied yet,
+ * fall back to a modeless upsert — the bot still stays out of the meeting;
+ * the worst case is the in-person intent isn't remembered until it lands.
+ * Returns null on success, or an error message.
+ */
+export async function upsertEventExclusion(
+  supabase: SupabaseClient<Database>,
+  entry: { userId: string; accountId: string; calendarEventId: string },
+  mode: "off" | "in_person",
+): Promise<string | null> {
+  const row = {
+    user_id: entry.userId,
+    gmail_account_id: entry.accountId,
+    calendar_event_id: entry.calendarEventId,
+  };
+  const { error } = await supabase
+    .from("meeting_autojoin_exclusions")
+    .upsert({ ...row, mode }, { onConflict: "user_id,calendar_event_id" });
+  if (!error) return null;
+  if (isMissingModeColumn(error)) {
+    const { error: retryError } = await supabase
+      .from("meeting_autojoin_exclusions")
+      .upsert(row, { onConflict: "user_id,calendar_event_id" });
+    return retryError ? retryError.message : null;
+  }
+  return error.message;
+}
 
 /** The caller's don't-auto-record list, split into exact emails and domains. */
 type Blocklist = { emails: Set<string>; domains: Set<string> };

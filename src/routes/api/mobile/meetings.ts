@@ -3,8 +3,10 @@
 //   { kind: "upcoming" }
 //     -> { ok, calendar_access, events: [...] }  (next 14 days, all inboxes)
 //   { kind: "set_exclusion", account_id, calendar_event_id, excluded }
-//     -> { ok }  (skip / re-include one event for auto-record)
-//   { kind: "in_person_create", title?, ext }
+//     -> { ok }  (legacy on/off switch — kept for older app builds)
+//   { kind: "set_mode", account_id, calendar_event_id, mode }
+//     -> { ok }  (three-way choice: "bot" | "in_person" | "off")
+//   { kind: "in_person_create", title?, ext, calendar_event_id?, account_id?, scheduled_start? }
 //     -> { ok, id, audio_path }  (meeting row + storage path to upload to)
 //   { kind: "in_person_transcribe", id, audio_path }
 //     -> { ok, status }  (record the upload, transcribe and summarize)
@@ -24,9 +26,23 @@ const bodySchema = z.discriminatedUnion("kind", [
     excluded: z.boolean(),
   }),
   z.object({
+    kind: z.literal("set_mode"),
+    account_id: z.string().uuid(),
+    calendar_event_id: z.string().min(1).max(1024),
+    mode: z.enum(["bot", "in_person", "off"]),
+  }),
+  z.object({
     kind: z.literal("in_person_create"),
     title: z.string().max(200).optional(),
     ext: z.enum(["webm", "m4a", "mp4", "ogg", "wav"]).default("m4a"),
+    // Optional link back to the calendar meeting this recording captures.
+    calendar_event_id: z.string().min(1).max(1024).optional(),
+    account_id: z.string().uuid().optional(),
+    scheduled_start: z
+      .string()
+      .max(64)
+      .refine((v) => !Number.isNaN(Date.parse(v)))
+      .optional(),
   }),
   z.object({
     kind: z.literal("in_person_transcribe"),
@@ -63,6 +79,7 @@ async function handleUpcoming({ supabase, userId }: Auth): Promise<Response> {
           has_meeting_link: e.hasMeetingLink,
           scheduled: e.scheduled,
           excluded: e.excluded,
+          record_mode: e.recordMode,
           blocked: e.blocked,
           blocked_by: e.blockedBy,
           account_id: acct.id,
@@ -93,15 +110,13 @@ async function handleSetExclusion(
   }
 
   if (body.excluded) {
-    const { error } = await supabase.from("meeting_autojoin_exclusions").upsert(
-      {
-        user_id: userId,
-        gmail_account_id: body.account_id,
-        calendar_event_id: body.calendar_event_id,
-      },
-      { onConflict: "user_id,calendar_event_id" },
+    const { upsertEventExclusion } = await import("@/lib/meetings-autojoin.server");
+    const errorMessage = await upsertEventExclusion(
+      supabase,
+      { userId, accountId: body.account_id, calendarEventId: body.calendar_event_id },
+      "off",
     );
-    if (error) return Response.json({ ok: false, error: error.message }, { status: 400 });
+    if (errorMessage) return Response.json({ ok: false, error: errorMessage }, { status: 400 });
   } else {
     const { error } = await supabase
       .from("meeting_autojoin_exclusions")
@@ -113,12 +128,58 @@ async function handleSetExclusion(
   return Response.json({ ok: true });
 }
 
+/** Three-way capture choice for one calendar event: bot, in-person, or off.
+ *  "bot" removes the exclusion row; the other two upsert it with the mode. */
+async function handleSetMode(
+  { supabase, userId }: Auth,
+  body: Extract<Body, { kind: "set_mode" }>,
+): Promise<Response> {
+  const { data: acct } = await supabase
+    .from("gmail_accounts")
+    .select("id")
+    .eq("id", body.account_id)
+    .maybeSingle();
+  if (!acct) {
+    return Response.json({ ok: false, error: "Account not found" }, { status: 404 });
+  }
+
+  if (body.mode === "bot") {
+    const { error } = await supabase
+      .from("meeting_autojoin_exclusions")
+      .delete()
+      .eq("user_id", userId)
+      .eq("calendar_event_id", body.calendar_event_id);
+    if (error) return Response.json({ ok: false, error: error.message }, { status: 400 });
+  } else {
+    const { upsertEventExclusion } = await import("@/lib/meetings-autojoin.server");
+    const errorMessage = await upsertEventExclusion(
+      supabase,
+      { userId, accountId: body.account_id, calendarEventId: body.calendar_event_id },
+      body.mode,
+    );
+    if (errorMessage) return Response.json({ ok: false, error: errorMessage }, { status: 400 });
+  }
+  return Response.json({ ok: true, mode: body.mode });
+}
+
 /** Create the meeting row for an in-person recording and hand back the
  *  storage path the phone should upload the audio file to. */
 async function handleInPersonCreate(
   { supabase, userId }: Auth,
   body: Extract<Body, { kind: "in_person_create" }>,
 ): Promise<Response> {
+  // If the recording is tied to a calendar event, confirm account ownership.
+  if (body.account_id) {
+    const { data: acct } = await supabase
+      .from("gmail_accounts")
+      .select("id")
+      .eq("id", body.account_id)
+      .maybeSingle();
+    if (!acct) {
+      return Response.json({ ok: false, error: "Account not found" }, { status: 404 });
+    }
+  }
+
   const { data: inserted, error } = await supabase
     .from("meetings")
     .insert({
@@ -129,6 +190,9 @@ async function handleInPersonCreate(
       status: "processing",
       title: body.title?.trim() || "In-person meeting",
       started_at: new Date().toISOString(),
+      gmail_account_id: body.account_id ?? null,
+      calendar_event_id: body.calendar_event_id ?? null,
+      scheduled_start: body.scheduled_start ? new Date(body.scheduled_start).toISOString() : null,
     })
     .select("id")
     .single();
@@ -196,6 +260,8 @@ export const Route = createFileRoute("/api/mobile/meetings")({
               return await handleUpcoming(auth);
             case "set_exclusion":
               return await handleSetExclusion(auth, body);
+            case "set_mode":
+              return await handleSetMode(auth, body);
             case "in_person_create":
               return await handleInPersonCreate(auth, body);
             case "in_person_transcribe":

@@ -1,10 +1,34 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CalendarClock, Video } from "lucide-react";
+import { CalendarClock, Mic, Video } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { listAllUpcomingCalendarEvents, setEventExclusion } from "@/lib/meetings.functions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { listAllUpcomingCalendarEvents, setEventRecordingMode } from "@/lib/meetings.functions";
+
+/** How one upcoming meeting should be captured. */
+type RecordMode = "bot" | "in_person" | "off";
+
+/** Everything the in-person recorder needs to capture a calendar meeting. */
+export type InPersonRecordPrefill = {
+  title: string;
+  calendarEventId: string;
+  accountId: string;
+  scheduledStart: string | null;
+};
+
+const MODE_LABEL: Record<RecordMode, string> = {
+  bot: "Send notetaker",
+  in_person: "Record in person",
+  off: "Don't record",
+};
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "No start time";
@@ -19,10 +43,14 @@ function formatWhen(iso: string | null): string {
   });
 }
 
-export function UpcomingMeetingsCard() {
+export function UpcomingMeetingsCard({
+  onRecordInPerson,
+}: {
+  onRecordInPerson: (prefill: InPersonRecordPrefill) => void;
+}) {
   const qc = useQueryClient();
   const listEvents = useServerFn(listAllUpcomingCalendarEvents);
-  const setExclusion = useServerFn(setEventExclusion);
+  const setMode = useServerFn(setEventRecordingMode);
 
   const { data, isLoading } = useQuery({
     queryKey: ["upcoming-calendar-events"],
@@ -30,8 +58,8 @@ export function UpcomingMeetingsCard() {
   });
 
   const mutation = useMutation({
-    mutationFn: (vars: { accountId: string; calendarEventId: string; excluded: boolean }) =>
-      setExclusion({ data: vars }),
+    mutationFn: (vars: { accountId: string; calendarEventId: string; mode: RecordMode }) =>
+      setMode({ data: vars }),
     onMutate: async (vars) => {
       await qc.cancelQueries({ queryKey: ["upcoming-calendar-events"] });
       const prev = qc.getQueryData(["upcoming-calendar-events"]);
@@ -40,7 +68,9 @@ export function UpcomingMeetingsCard() {
           ? {
               ...old,
               events: old.events.map((e) =>
-                e.id === vars.calendarEventId ? { ...e, excluded: vars.excluded } : e,
+                e.id === vars.calendarEventId && e.accountId === vars.accountId
+                  ? { ...e, recordMode: vars.mode, excluded: vars.mode !== "bot" }
+                  : e,
               ),
             }
           : old,
@@ -68,8 +98,8 @@ export function UpcomingMeetingsCard() {
         <div>
           <h2 className="font-display text-lg sm:text-2xl">Upcoming meetings</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Meetings with a Zoom, Meet, or Teams link coming up in the next 14 days. Turn the
-            notetaker off for any you'd rather keep private.
+            For each meeting, choose to send the notetaker, record in person yourself, or keep it
+            private and not record at all.
           </p>
         </div>
       </div>
@@ -89,9 +119,12 @@ export function UpcomingMeetingsCard() {
         ) : (
           <ul className="divide-y divide-border">
             {recordable.map((e) => {
-              const send = !e.excluded && !e.blocked;
+              const mode = (e.recordMode ?? (e.excluded ? "off" : "bot")) as RecordMode;
               return (
-                <li key={e.id} className="flex items-center justify-between gap-4 py-3 first:pt-0">
+                <li
+                  key={`${e.accountId}:${e.id}`}
+                  className="flex items-start justify-between gap-3 py-3 first:pt-0 sm:gap-4"
+                >
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
                       <Video className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -100,31 +133,67 @@ export function UpcomingMeetingsCard() {
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {formatWhen(e.start)}
                       {multipleAccounts && e.accountEmail && ` · ${e.accountEmail}`}
-                      {e.scheduled && !e.blocked && " · Notetaker scheduled"}
+                      {mode === "bot" && e.scheduled && !e.blocked && " · Notetaker scheduled"}
                     </p>
                     {e.blocked && (
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         Guest on your don't-record list — won't be recorded.
                       </p>
                     )}
+                    {!e.blocked && mode === "in_person" && (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-primary">
+                        <Mic className="h-3 w-3 shrink-0" />
+                        You'll record this one in person
+                      </p>
+                    )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="hidden text-xs text-muted-foreground sm:inline">
-                      {e.blocked ? "Blocked" : send ? "Send notetaker" : "Skipped"}
-                    </span>
-                    <Switch
-                      checked={send}
-                      disabled={mutation.isPending || e.blocked}
-                      onCheckedChange={(checked) => {
-                        if (e.blocked) return;
-                        mutation.mutate({
-                          accountId: e.accountId,
-                          calendarEventId: e.id,
-                          excluded: !checked,
-                        });
-                      }}
-                      aria-label={`Toggle notetaker for ${e.title || "this meeting"}`}
-                    />
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    {e.blocked ? (
+                      <span className="text-xs text-muted-foreground">Blocked</span>
+                    ) : (
+                      <>
+                        <Select
+                          value={mode}
+                          disabled={mutation.isPending}
+                          onValueChange={(next) => {
+                            if (next === mode) return;
+                            mutation.mutate({
+                              accountId: e.accountId,
+                              calendarEventId: e.id,
+                              mode: next as RecordMode,
+                            });
+                          }}
+                        >
+                          <SelectTrigger
+                            className="h-8 w-[168px] text-xs"
+                            aria-label={`How to capture ${e.title || "this meeting"}`}
+                          >
+                            <SelectValue>{MODE_LABEL[mode]}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent align="end">
+                            <SelectItem value="bot">Send notetaker</SelectItem>
+                            <SelectItem value="in_person">Record in person</SelectItem>
+                            <SelectItem value="off">Don't record</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {mode === "in_person" && (
+                          <Button
+                            size="sm"
+                            className="h-8 w-[168px]"
+                            onClick={() =>
+                              onRecordInPerson({
+                                title: e.title || "Untitled meeting",
+                                calendarEventId: e.id,
+                                accountId: e.accountId,
+                                scheduledStart: e.start,
+                              })
+                            }
+                          >
+                            <Mic className="mr-1.5 h-3.5 w-3.5" /> Record now
+                          </Button>
+                        )}
+                      </>
+                    )}
                   </div>
                 </li>
               );

@@ -58,7 +58,10 @@ import {
   Loader2,
   Pencil,
 } from "lucide-react";
-import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
+import {
+  UpcomingMeetingsCard,
+  type InPersonRecordPrefill,
+} from "@/components/meetings/UpcomingMeetingsCard";
 import { MeetingSettingsDrawer } from "@/components/meetings/MeetingSettingsDrawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -125,6 +128,10 @@ function MeetingsPage() {
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Set when the user taps "Record now" on an upcoming meeting — opens the
+  // in-person recorder with the meeting name pre-filled and the recording
+  // linked back to that calendar event.
+  const [inPersonPrefill, setInPersonPrefill] = useState<InPersonRecordPrefill | null>(null);
   const meetings = meetingsQ.data?.meetings ?? [];
 
   // Best-effort: pull live status for any non-terminal meetings so the list
@@ -162,7 +169,12 @@ function MeetingsPage() {
           </div>
           <div className="flex flex-row flex-wrap items-center gap-2">
             <InPersonRecordDialog
-              onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })}
+              onRecorded={() => {
+                qc.invalidateQueries({ queryKey: ["meetings"] });
+                qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
+              }}
+              prefill={inPersonPrefill}
+              onPrefillClear={() => setInPersonPrefill(null)}
             />
             {!isMobile && (
               <ScreenRecordDialog
@@ -222,7 +234,7 @@ function MeetingsPage() {
           </TabsContent>
 
           <TabsContent value="upcoming">
-            <UpcomingMeetingsCard />
+            <UpcomingMeetingsCard onRecordInPerson={setInPersonPrefill} />
           </TabsContent>
         </Tabs>
       </div>
@@ -345,7 +357,15 @@ function formatElapsed(seconds: number): string {
   return `${m}:${s}`;
 }
 
-function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
+function InPersonRecordDialog({
+  onRecorded,
+  prefill,
+  onPrefillClear,
+}: {
+  onRecorded: () => void;
+  prefill?: InPersonRecordPrefill | null;
+  onPrefillClear?: () => void;
+}) {
   const createMeeting = useServerFn(createInPersonMeeting);
   const transcribe = useServerFn(transcribeInPersonMeeting);
   const [open, setOpen] = useState(false);
@@ -354,6 +374,17 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
+
+  // A "Record now" tap on an upcoming meeting opens the recorder with the
+  // meeting's name pre-filled; the recording stays linked to that event.
+  useEffect(() => {
+    if (prefill) {
+      setTitle(prefill.title);
+      setError(null);
+      setBlocked(false);
+      setOpen(true);
+    }
+  }, [prefill]);
 
   // Capture raw PCM via Web Audio and encode a WAV on stop. This avoids iOS
   // Safari's fragmented MP4 (which fails to play back and makes the STT model
@@ -490,7 +521,13 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     setPhase("processing");
     try {
       const { id, audioPath } = await createMeeting({
-        data: { title: title.trim() || undefined, ext: "wav" },
+        data: {
+          title: title.trim() || undefined,
+          ext: "wav",
+          calendarEventId: prefill?.calendarEventId,
+          accountId: prefill?.accountId,
+          scheduledStart: prefill?.scheduledStart ?? undefined,
+        },
       });
       const { error: upErr } = await supabase.storage
         .from("meeting-recordings")
@@ -502,6 +539,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
       setTitle("");
       setOpen(false);
       resetState();
+      onPrefillClear?.();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not save the recording.");
       setPhase("idle");
@@ -510,7 +548,11 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
 
   function onOpenChange(next: boolean) {
     if (!next && (phase === "recording" || phase === "processing")) return;
-    if (!next) resetState();
+    if (!next) {
+      resetState();
+      setTitle("");
+      onPrefillClear?.();
+    }
     setOpen(next);
   }
 
