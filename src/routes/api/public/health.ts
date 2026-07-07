@@ -156,31 +156,28 @@ export const Route = createFileRoute("/api/public/health")({
         }
 
         // ─── Encryption-leak audit ────────────────────────────────────────
-        // Plaintext columns body_text/body_html/access_token/refresh_token
-        // should always be '' at rest — trigger + RPC enforce that. If any
-        // row holds non-empty plaintext, something bypassed encryption.
-        type LeakRow = {
-          emails_body_text_leaks: number;
-          emails_body_html_leaks: number;
-          oauth_access_token_leaks: number;
-          oauth_refresh_token_leaks: number;
-        };
-        let leaks: LeakRow | null = null;
+        // audit_encryption_leaks() (v3) returns one row of counters. Each is
+        // the number of rows where a write bypassed the sanctioned encrypt
+        // RPCs (empty-string ciphertext) or, for the search index, rows that
+        // still carry body-derived lexemes. Counters are summed generically
+        // so this check keeps working when the audit gains new columns.
+        let leaks: Record<string, number> | null = null;
         try {
           const { data: leakRows } = await (supabaseAdmin as unknown as ProbeRpc).rpc(
             "audit_encryption_leaks",
             {},
           );
           const row = Array.isArray(leakRows) ? leakRows[0] : leakRows;
-          if (row && typeof row === "object") leaks = row as LeakRow;
+          if (row && typeof row === "object") {
+            leaks = Object.fromEntries(
+              Object.entries(row as Record<string, unknown>).map(([k, v]) => [k, Number(v ?? 0)]),
+            );
+          }
         } catch {
           // RPC not deployed yet — treated as a missing function above.
         }
         const totalLeaks = leaks
-          ? Number(leaks.emails_body_text_leaks ?? 0) +
-            Number(leaks.emails_body_html_leaks ?? 0) +
-            Number(leaks.oauth_access_token_leaks ?? 0) +
-            Number(leaks.oauth_refresh_token_leaks ?? 0)
+          ? Object.values(leaks).reduce((sum, n) => sum + (Number.isFinite(n) ? n : 0), 0)
           : 0;
 
         const ok = missing.length === 0 && totalLeaks === 0;
