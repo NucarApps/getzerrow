@@ -47,6 +47,7 @@ import { Route as ApiMobilePushTestRouteImport } from './routes/api/mobile/push-
 import { Route as ApiMobileMeetingsRouteImport } from './routes/api/mobile/meetings'
 import { Route as ApiMobileMeetingSettingsRouteImport } from './routes/api/mobile/meeting-settings'
 import { Route as ApiMobileGmailConnectRouteImport } from './routes/api/mobile/gmail-connect'
+import { Route as ApiMobileContactsRouteImport } from './routes/api/mobile/contacts'
 import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
@@ -262,6 +263,11 @@ const ApiMobileGmailConnectRoute = ApiMobileGmailConnectRouteImport.update({
   path: '/api/mobile/gmail-connect',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMobileContactsRoute = ApiMobileContactsRouteImport.update({
+  id: '/api/mobile/contacts',
+  path: '/api/mobile/contacts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMobileCardRoute = ApiMobileCardRouteImport.update({
   id: '/api/mobile/card',
   path: '/api/mobile/card',
@@ -362,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
@@ -415,6 +422,7 @@ export interface FileRoutesByTo {
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
@@ -470,6 +478,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
@@ -525,6 +534,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/mobile/card'
+    | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
     | '/api/mobile/meeting-settings'
     | '/api/mobile/meetings'
@@ -578,6 +588,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/contacts/scan'
     | '/api/mobile/card'
+    | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
     | '/api/mobile/meeting-settings'
     | '/api/mobile/meetings'
@@ -632,6 +643,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
     | '/api/mobile/card'
+    | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
     | '/api/mobile/meeting-settings'
     | '/api/mobile/meetings'
@@ -678,6 +690,7 @@ export interface RootRouteChildren {
   CHandleRoute: typeof CHandleRoute
   GuidesGmailRemindersRoute: typeof GuidesGmailRemindersRoute
   ApiMobileCardRoute: typeof ApiMobileCardRoute
+  ApiMobileContactsRoute: typeof ApiMobileContactsRoute
   ApiMobileGmailConnectRoute: typeof ApiMobileGmailConnectRoute
   ApiMobileMeetingSettingsRoute: typeof ApiMobileMeetingSettingsRoute
   ApiMobileMeetingsRoute: typeof ApiMobileMeetingsRoute
@@ -979,6 +992,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMobileGmailConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mobile/contacts': {
+      id: '/api/mobile/contacts'
+      path: '/api/mobile/contacts'
+      fullPath: '/api/mobile/contacts'
+      preLoaderRoute: typeof ApiMobileContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mobile/card': {
       id: '/api/mobile/card'
       path: '/api/mobile/card'
@@ -1123,6 +1143,7 @@ const rootRouteChildren: RootRouteChildren = {
   CHandleRoute: CHandleRoute,
   GuidesGmailRemindersRoute: GuidesGmailRemindersRoute,
   ApiMobileCardRoute: ApiMobileCardRoute,
+  ApiMobileContactsRoute: ApiMobileContactsRoute,
   ApiMobileGmailConnectRoute: ApiMobileGmailConnectRoute,
   ApiMobileMeetingSettingsRoute: ApiMobileMeetingSettingsRoute,
   ApiMobileMeetingsRoute: ApiMobileMeetingsRoute,
