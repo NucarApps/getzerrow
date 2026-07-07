@@ -26,7 +26,9 @@ const TERMINAL_CODES = new Set(["done", "fatal", "call_ended", "recording_done"]
 const FAILED_CODES = new Set(["fatal", "call_not_started", "timeout"]);
 
 /** Map a Recall status code to our meeting_status enum. */
-export function mapStatus(code: string | null): "scheduled" | "joining" | "recording" | "done" | "failed" {
+export function mapStatus(
+  code: string | null,
+): "scheduled" | "joining" | "recording" | "done" | "failed" {
   if (!code) return "scheduled";
   if (FAILED_CODES.has(code)) return "failed";
   if (code === "done" || code === "recording_done" || code === "call_ended") return "done";
@@ -88,7 +90,6 @@ export async function generateMeetingTitle(sourceText: string): Promise<string |
     return null;
   }
 }
-
 
 export const DEFAULT_BOT_NAME = "Zerrow Notetaker";
 const AVATAR_BUCKET = "meeting-bot-avatars";
@@ -250,18 +251,19 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
           if (generated) update.title = generated;
         }
       }
-
     } catch (e) {
       logError("meeting_sync_transcript_failed", { meetingId: meeting.id }, e);
     }
   }
 
   if (status === "failed") {
-    update.error = bot.status_changes?.find((c) => FAILED_CODES.has(c.code))?.message ?? "Bot failed";
+    update.error =
+      bot.status_changes?.find((c) => FAILED_CODES.has(c.code))?.message ?? "Bot failed";
   }
 
   const { error } = await supabaseAdmin.from("meetings").update(update).eq("id", meeting.id);
-  if (error) logError("meeting_sync_update_failed", { meetingId: meeting.id, error: error.message });
+  if (error)
+    logError("meeting_sync_update_failed", { meetingId: meeting.id, error: error.message });
 
   if (status === "done") {
     await linkParticipantsToContacts(meeting.id, meeting.user_id);
@@ -333,16 +335,19 @@ async function signedStoredRecordingUrl(path: string): Promise<string | null> {
   return data?.signedUrl ?? null;
 }
 
-export async function resolvePlayableRecordingUrl(
-  meetingId: string,
-): Promise<PlayableRecording> {
+export async function resolvePlayableRecordingUrl(meetingId: string): Promise<PlayableRecording> {
   const { data: meeting } = await supabaseAdmin
     .from("meetings")
     .select("id, recall_bot_id, recording_url, audio_storage_path, video_storage_path")
     .eq("id", meetingId)
     .maybeSingle();
   if (!meeting) {
-    return { url: null, recallBotId: null, contentType: "video/mp4", filename: `recording-${meetingId}.mp4` };
+    return {
+      url: null,
+      recallBotId: null,
+      contentType: "video/mp4",
+      filename: `recording-${meetingId}.mp4`,
+    };
   }
   if (meeting.video_storage_path) {
     const ext = extensionFor(meeting.video_storage_path);
@@ -364,10 +369,20 @@ export async function resolvePlayableRecordingUrl(
   }
   const recallBotId = meeting.recall_bot_id ?? null;
   if (meeting.recording_url) {
-    return { url: meeting.recording_url, recallBotId, contentType: "video/mp4", filename: `recording-${meetingId}.mp4` };
+    return {
+      url: meeting.recording_url,
+      recallBotId,
+      contentType: "video/mp4",
+      filename: `recording-${meetingId}.mp4`,
+    };
   }
   if (!recallBotId) {
-    return { url: null, recallBotId: null, contentType: "video/mp4", filename: `recording-${meetingId}.mp4` };
+    return {
+      url: null,
+      recallBotId: null,
+      contentType: "video/mp4",
+      filename: `recording-${meetingId}.mp4`,
+    };
   }
   return {
     url: await mintFreshRecordingUrl(meeting.id, recallBotId),
@@ -409,9 +424,7 @@ export async function mintFreshRecordingUrl(
  * transcript/summary if they never landed. Does not change the meeting status.
  * Returns the fresh recording URL (or the stored one when Recall has none yet).
  */
-export async function refreshMeetingRecording(
-  meetingId: string,
-): Promise<{
+export async function refreshMeetingRecording(meetingId: string): Promise<{
   recordingUrl: string | null;
   hasRecording: boolean;
   hasTranscript: boolean;
@@ -547,7 +560,7 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
   }
 
   // Transcribe (multipart/form-data to the OpenAI-compatible endpoint).
-  let transcriptText = "";
+  let transcriptText: string;
   try {
     const mime = audioMimeFor(meeting.audio_storage_path);
     const form = new FormData();
@@ -581,7 +594,7 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
   const segments: TranscriptSegment[] = [{ speaker: null, text: transcriptText, start: 0 }];
 
   // Summarize with the default chat model, matching the "Key moments" style.
-  let summary: string | null = null;
+  let summary: string | null;
   try {
     const { generateText } = await import("ai");
     const { createLovableAiGatewayProvider } = await import("./ai-gateway");
@@ -619,4 +632,3 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
 
   return "done";
 }
-

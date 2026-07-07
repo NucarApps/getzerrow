@@ -211,8 +211,11 @@ export function MeetingBotCard() {
           <div className="flex items-center gap-4">
             <div className="flex h-[72px] w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
               {previewUrl ? (
-                // eslint-disable-next-line jsx-a11y/img-redundant-alt
-                <img src={previewUrl} alt="Bot picture preview" className="h-full w-full object-cover" />
+                <img
+                  src={previewUrl}
+                  alt="Bot picture preview"
+                  className="h-full w-full object-cover"
+                />
               ) : (
                 <Bot className="h-6 w-6 text-muted-foreground" />
               )}
@@ -247,8 +250,8 @@ export function MeetingBotCard() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Shown as the bot's video tile in the call (platforms have no bot profile photo).
-                JPG or PNG, auto-cropped to 16:9.
+                Shown as the bot's video tile in the call (platforms have no bot profile photo). JPG
+                or PNG, auto-cropped to 16:9.
               </p>
             </div>
           </div>

@@ -128,7 +128,7 @@ function evictOldest(): void {
   const keys = prefixedKeys();
   if (keys.length <= MAX_KEYS) return;
   const withAge = keys.map((k) => {
-    let at = 0;
+    let at: number;
     try {
       at = (JSON.parse(window.localStorage.getItem(k) || "{}") as { at?: number }).at ?? 0;
     } catch {

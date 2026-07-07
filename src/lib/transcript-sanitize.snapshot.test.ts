@@ -77,22 +77,31 @@ describe("transcript sanitizer — edge-case golden output", () => {
 
   it("leaves a 3-unit-total loop intact (guard requires more than 3 units)", () => {
     const input = REPEAT("Sorry, say that again. ", 3);
-    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Sorry, say that again. Sorry, say that again. Sorry, say that again."`);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(
+      `"Sorry, say that again. Sorry, say that again. Sorry, say that again."`,
+    );
   });
 
   it("keeps a block repeated only twice (below the loop threshold)", () => {
     const input = REPEAT("Sorry, say that again. ", 2);
-    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Sorry, say that again. Sorry, say that again."`);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(
+      `"Sorry, say that again. Sorry, say that again."`,
+    );
   });
 
   it("collapses a loop in the middle while preserving surrounding speech", () => {
-    const input = "Welcome everyone. " + REPEAT("Testing one two. ", 8) + "Let's get to the agenda.";
-    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Welcome everyone. Testing one two. Let's get to the agenda."`);
+    const input =
+      "Welcome everyone. " + REPEAT("Testing one two. ", 8) + "Let's get to the agenda.";
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(
+      `"Welcome everyone. Testing one two. Let's get to the agenda."`,
+    );
   });
 
   it("collapses two distinct back-to-back loops independently", () => {
     const input = REPEAT("Can you hear me? ", 6) + REPEAT("Is this thing on? ", 6);
-    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"Can you hear me? Is this thing on?"`);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(
+      `"Can you hear me? Is this thing on?"`,
+    );
   });
 
   it("collapses a two-sentence loop mixing exclamation and question marks", () => {
@@ -102,7 +111,9 @@ describe("transcript sanitizer — edge-case golden output", () => {
 
   it("leaves text with no sentence punctuation unchanged", () => {
     const input = "this has no punctuation and just keeps going without any stops at all";
-    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"this has no punctuation and just keeps going without any stops at all"`);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(
+      `"this has no punctuation and just keeps going without any stops at all"`,
+    );
   });
 
   it("collapses a single short word repeated many times", () => {
@@ -112,7 +123,9 @@ describe("transcript sanitizer — edge-case golden output", () => {
 
   it("collapses a six-unit block loop (max detectable block size)", () => {
     const input = REPEAT("One. Two. Three. Four. Five. Six. ", 5);
-    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(`"One. Two. Three. Four. Five. Six."`);
+    expect(collapseRunawayRepeats(input)).toMatchInlineSnapshot(
+      `"One. Two. Three. Four. Five. Six."`,
+    );
   });
 
   it("collapses a loop separated by newlines", () => {

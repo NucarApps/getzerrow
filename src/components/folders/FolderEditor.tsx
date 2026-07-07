@@ -971,8 +971,7 @@ export function FolderEditor({
             folder={local}
             hasIncludeRules={
               filters.some(
-                (f) =>
-                  f.op !== "not_contains" && f.op !== "not_equals" && f.op !== "domain_in",
+                (f) => f.op !== "not_contains" && f.op !== "not_equals" && f.op !== "domain_in",
               ) || !!local.filter_tree
             }
           />

@@ -351,7 +351,6 @@ function SettingsPage() {
             <DangerZone />
           </TabsContent>
 
-
           <TabsContent value="filters" className="space-y-4">
             <AccountPicker
               value={activeAccountId}

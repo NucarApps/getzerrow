@@ -299,11 +299,7 @@ function ActivityChart({
   );
 }
 
-function RetryHealthSection({
-  q,
-}: {
-  q: { data?: FolderRetryMetrics; isLoading: boolean };
-}) {
+function RetryHealthSection({ q }: { q: { data?: FolderRetryMetrics; isLoading: boolean } }) {
   const data = q.data;
   const totals = data?.totals ?? { retries: 0, failed: 0, folders_affected: 0 };
   const hasAlerts = (data?.recentAlerts.length ?? 0) > 0;
@@ -317,8 +313,8 @@ function RetryHealthSection({
         </h2>
       </div>
       <p className="mb-3 -mt-1 text-xs text-muted-foreground">
-        Retried example writes (last 7 days). A rising retry rate is the earliest sign of instability
-        — it surfaces before retries exhaust and learning stops.
+        Retried example writes (last 7 days). A rising retry rate is the earliest sign of
+        instability — it surfaces before retries exhaust and learning stops.
       </p>
 
       {/* Alert banner when a retry-rate alert has fired recently */}
@@ -402,7 +398,12 @@ function RetryHealthSection({
                     labelFormatter={(v) => new Date(v as string).toLocaleDateString()}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="retries" name="Retried" fill="hsl(var(--primary))" radius={[2, 2, 0, 0]} />
+                  <Bar
+                    dataKey="retries"
+                    name="Retried"
+                    fill="hsl(var(--primary))"
+                    radius={[2, 2, 0, 0]}
+                  />
                   <Bar
                     dataKey="failed"
                     name="Failed"
@@ -450,9 +451,7 @@ function RetryHealthSection({
                     <td className="px-2 py-1 text-foreground">{f.name}</td>
                     <td className="px-2 py-1 text-right">{f.retries}</td>
                     <td
-                      className={
-                        "px-2 py-1 text-right " + (f.failed > 0 ? "text-destructive" : "")
-                      }
+                      className={"px-2 py-1 text-right " + (f.failed > 0 ? "text-destructive" : "")}
                     >
                       {f.failed}
                     </td>
@@ -467,7 +466,6 @@ function RetryHealthSection({
     </section>
   );
 }
-
 
 function UserRow({ u }: { u: AdminUser }) {
   const accounts = u.gmail_accounts;

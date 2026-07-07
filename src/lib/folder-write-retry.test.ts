@@ -82,9 +82,7 @@ describe("resolveRetryConfig", () => {
 
   it("ignores invalid (non-integer / empty) values and uses defaults", () => {
     for (const bad of ["", "  ", "abc", "1.5", "NaN"]) {
-      expect(resolveRetryConfig({ FOLDER_WRITE_MAX_ATTEMPTS: bad })).toEqual(
-        DEFAULT_RETRY_CONFIG,
-      );
+      expect(resolveRetryConfig({ FOLDER_WRITE_MAX_ATTEMPTS: bad })).toEqual(DEFAULT_RETRY_CONFIG);
     }
   });
 });

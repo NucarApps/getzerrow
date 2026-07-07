@@ -9,11 +9,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { performMove } from "./move-email.server";
 import { getEmailsDecrypted } from "./sync/encrypted-reader";
-import {
-  aggregateDomainClusters,
-  extractDomain,
-  matchFolderByName,
-} from "./ai-assistant-context";
+import { aggregateDomainClusters, extractDomain, matchFolderByName } from "./ai-assistant-context";
 import {
   proposeAssistantChanges as proposeAi,
   type AssistantAction,

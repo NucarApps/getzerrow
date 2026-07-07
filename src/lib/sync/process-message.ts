@@ -259,7 +259,6 @@ async function maybeSurfaceRuleFiledEmail(
   return true;
 }
 
-
 export async function processGmailMessage(
   accountId: string,
   gmailId: string,
@@ -485,8 +484,7 @@ export async function processGmailMessage(
   // Fire-and-forget — never blocks or fails processing.
   const PUSH_MAX_AGE_MS = 60 * 60 * 1000; // 1h
   const receivedMs = parsed.received_at ? Date.parse(parsed.received_at) : NaN;
-  const isFreshForPush =
-    Number.isFinite(receivedMs) && Date.now() - receivedMs <= PUSH_MAX_AGE_MS;
+  const isFreshForPush = Number.isFinite(receivedMs) && Date.now() - receivedMs <= PUSH_MAX_AGE_MS;
   if (!isArchived && !opts.skipPush && isFreshForPush) {
     void notifyInboxMail(userId, {
       from_name: parsed.from_name,

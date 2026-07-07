@@ -40,7 +40,24 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Video, Plus, Trash2, ExternalLink, Users, FileText, RefreshCw, Download, AlertCircle, Mic, Square, Monitor, ChevronDown, Sparkles, Loader2, Pencil } from "lucide-react";
+import {
+  Video,
+  Plus,
+  Trash2,
+  ExternalLink,
+  Users,
+  FileText,
+  RefreshCw,
+  Download,
+  AlertCircle,
+  Mic,
+  Square,
+  Monitor,
+  ChevronDown,
+  Sparkles,
+  Loader2,
+  Pencil,
+} from "lucide-react";
 import { UpcomingMeetingsCard } from "@/components/meetings/UpcomingMeetingsCard";
 import { MeetingSettingsDrawer } from "@/components/meetings/MeetingSettingsDrawer";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -48,7 +65,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 
 const TERMINAL = new Set(["done", "failed"]);
-
 
 export const Route = createFileRoute("/_authenticated/meetings")({
   head: () => ({
@@ -131,7 +147,6 @@ function MeetingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-
       <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
         <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:mb-8">
           <div className="flex min-w-0 items-center gap-3">
@@ -146,15 +161,18 @@ function MeetingsPage() {
             </div>
           </div>
           <div className="flex flex-row flex-wrap items-center gap-2">
-            <InPersonRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+            <InPersonRecordDialog
+              onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })}
+            />
             {!isMobile && (
-              <ScreenRecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
+              <ScreenRecordDialog
+                onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })}
+              />
             )}
             <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
             <MeetingSettingsDrawer />
           </div>
         </header>
-
 
         <Tabs defaultValue="past">
           <TabsList className="mb-6">
@@ -169,8 +187,9 @@ function MeetingsPage() {
               <Card className="p-8 text-center">
                 <Video className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  No meetings yet. Paste a Zoom, Google Meet, or Teams link to record your first one, or
-                  turn on auto-record in Settings to capture calendar meetings automatically.
+                  No meetings yet. Paste a Zoom, Google Meet, or Teams link to record your first
+                  one, or turn on auto-record in Settings to capture calendar meetings
+                  automatically.
                 </p>
               </Card>
             ) : (
@@ -184,7 +203,9 @@ function MeetingsPage() {
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="truncate font-medium">{m.title || "Untitled meeting"}</span>
+                        <span className="truncate font-medium">
+                          {m.title || "Untitled meeting"}
+                        </span>
                         <StatusBadge status={m.status} />
                       </div>
                       <div className="mt-1 truncate text-xs text-muted-foreground">
@@ -205,7 +226,6 @@ function MeetingsPage() {
           </TabsContent>
         </Tabs>
       </div>
-
 
       <MeetingDetail id={selectedId} onClose={() => setSelectedId(null)} />
     </div>
@@ -258,16 +278,16 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm" className="sm:h-10 sm:px-4">
-          <Plus className="mr-1.5 h-4 w-4" /> Record<span className="hidden min-[380px]:inline">&nbsp;a meeting</span>
+          <Plus className="mr-1.5 h-4 w-4" /> Record
+          <span className="hidden min-[380px]:inline">&nbsp;a meeting</span>
         </Button>
-
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
           <DialogTitle>Record a meeting</DialogTitle>
           <DialogDescription>
-            Paste a Zoom, Google Meet, or Microsoft Teams link — or the whole invite. A notetaker bot
-            joins, records, and transcribes the call.
+            Paste a Zoom, Google Meet, or Microsoft Teams link — or the whole invite. A notetaker
+            bot joins, records, and transcribes the call.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -368,7 +388,6 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     streamRef.current = null;
   }
 
-
   function resetState() {
     cleanupStream();
     pcmRef.current = [];
@@ -387,8 +406,8 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
 
     const AudioCtx: typeof AudioContext | undefined =
       typeof window !== "undefined"
-        ? window.AudioContext ??
-          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        ? (window.AudioContext ??
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
         : undefined;
 
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !AudioCtx) {
@@ -489,7 +508,6 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     }
   }
 
-
   function onOpenChange(next: boolean) {
     if (!next && (phase === "recording" || phase === "processing")) return;
     if (!next) resetState();
@@ -499,12 +517,16 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="sm:h-10 sm:px-4" aria-label="Record in person">
+        <Button
+          variant="outline"
+          size="sm"
+          className="sm:h-10 sm:px-4"
+          aria-label="Record in person"
+        >
           <Mic className="h-4 w-4 min-[380px]:mr-1.5" />
           <span className="hidden min-[380px]:inline sm:hidden">In person</span>
           <span className="hidden sm:inline">Record in person</span>
         </Button>
-
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
@@ -562,11 +584,7 @@ function InPersonRecordDialog({ onRecorded }: { onRecorded: () => void }) {
                 <span>{error}</span>
               </p>
               {blocked && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.location.reload()}
-                >
+                <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
                   <RefreshCw className="mr-1.5 h-4 w-4" /> Reload page
                 </Button>
               )}
@@ -660,7 +678,7 @@ function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
     displayStreamRef.current = displayStream;
 
     // Best-effort microphone capture; a denied mic still records system audio.
-    let micStream: MediaStream | null = null;
+    let micStream: MediaStream | null;
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = micStream;
@@ -874,10 +892,6 @@ function ScreenRecordDialog({ onRecorded }: { onRecorded: () => void }) {
   );
 }
 
-
-
-
-
 type TranscriptSegment = { speaker: string | null; text: string; start: number | null };
 type RecordingDiagnostics = {
   hasRecording: boolean;
@@ -911,7 +925,6 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const [savingTitle, setSavingTitle] = useState(false);
   const [generatingTitle, setGeneratingTitle] = useState(false);
   const cancelTitleRef = useRef(false);
-
 
   const q = useQuery({
     queryKey: ["meeting", id],
@@ -1024,7 +1037,6 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     setRefreshing(false);
   }
 
-
   async function onDelete() {
     if (!id) return;
     setBusy(true);
@@ -1135,7 +1147,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                   size="icon"
                   className="h-8 w-8 shrink-0"
                   onClick={onGenerateTitle}
-                  disabled={generatingTitle || savingTitle || !(meeting.summary || transcript.length)}
+                  disabled={
+                    generatingTitle || savingTitle || !(meeting.summary || transcript.length)
+                  }
                   title={
                     meeting.summary || transcript.length
                       ? "Generate title from the meeting"
@@ -1228,10 +1242,8 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
-
                   </div>
                 )}
-
 
                 {meeting.status === "done" && (
                   <div className="text-sm sm:rounded-md sm:border sm:border-border sm:bg-muted/30 sm:p-3">
@@ -1239,7 +1251,12 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                       <div className="space-y-1 max-sm:hidden">
                         <p className="font-medium text-foreground">Recording status</p>
                         <p className="text-muted-foreground">
-                          Recording {hasRecording ? "found" : "not found yet"} · Transcript {diagnostics?.hasTranscript || transcript.length > 0 ? "found" : "not found yet"} · Summary {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
+                          Recording {hasRecording ? "found" : "not found yet"} · Transcript{" "}
+                          {diagnostics?.hasTranscript || transcript.length > 0
+                            ? "found"
+                            : "not found yet"}{" "}
+                          · Summary{" "}
+                          {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
                         </p>
                       </div>
                       <Button
@@ -1278,10 +1295,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent
-                  value="summary"
-                  className="mt-0 space-y-5 p-4 pt-4 sm:p-6"
-                >
+                <TabsContent value="summary" className="mt-0 space-y-5 p-4 pt-4 sm:p-6">
                   {!TERMINAL.has(meeting.status) ? (
                     <div className="flex flex-col gap-3 rounded-md bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-muted-foreground">
@@ -1295,7 +1309,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                         disabled={refreshing}
                         className="shrink-0"
                       >
-                        <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                        <RefreshCw
+                          className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                        />
                         {refreshing ? "Refreshing…" : "Refresh status"}
                       </Button>
                     </div>
@@ -1337,10 +1353,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                   )}
                 </TabsContent>
 
-                <TabsContent
-                  value="transcript"
-                  className="mt-0 p-4 pt-4 sm:p-6"
-                >
+                <TabsContent value="transcript" className="mt-0 p-4 pt-4 sm:p-6">
                   {transcript.length > 0 ? (
                     <div className="space-y-3 rounded-md border border-border p-3 sm:p-4">
                       {transcript.map((seg, i) => (

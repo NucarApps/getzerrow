@@ -49,7 +49,9 @@ export function aggregateDomainClusters(
       byDomain.set(domain, entry);
     }
     entry.count += 1;
-    const folderName = row.folder_id ? (folderNameById.get(row.folder_id) ?? INBOX_LABEL) : INBOX_LABEL;
+    const folderName = row.folder_id
+      ? (folderNameById.get(row.folder_id) ?? INBOX_LABEL)
+      : INBOX_LABEL;
     entry.folders.set(folderName, (entry.folders.get(folderName) ?? 0) + 1);
   }
 

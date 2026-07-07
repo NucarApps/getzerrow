@@ -21,10 +21,9 @@ export const Route = createFileRoute("/api/public/meeting-recording")({
         }
 
         // Resolve a playable URL cheaply (stored URL, no transcript work).
-        const { resolvePlayableRecordingUrl, mintFreshRecordingUrl } = await import(
-          "@/lib/meetings.server"
-        );
-        let recordingUrl: string | null = null;
+        const { resolvePlayableRecordingUrl, mintFreshRecordingUrl } =
+          await import("@/lib/meetings.server");
+        let recordingUrl: string | null;
         let recallBotId: string | null = null;
         let contentType = "video/mp4";
         let filename = `recording-${meetingId}.mp4`;

@@ -41,7 +41,10 @@ export function MeetingSettingsDrawer() {
       >
         <Settings className="h-4 w-4" />
       </Button>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+      >
         <SheetHeader className="space-y-1 border-b border-border p-4 pb-3 text-left sm:p-6 sm:pb-4">
           <SheetTitle className="text-base sm:text-lg">Meeting settings</SheetTitle>
           <SheetDescription>
@@ -63,11 +66,7 @@ export function MeetingSettingsDrawer() {
           <MeetingRecordBlocklistCard />
 
           {accounts.map((a) => (
-            <MeetingCalendarEventsCard
-              key={a.id}
-              accountId={a.id}
-              accountEmail={a.email_address}
-            />
+            <MeetingCalendarEventsCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
           ))}
         </div>
       </SheetContent>

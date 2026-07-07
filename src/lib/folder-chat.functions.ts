@@ -51,14 +51,7 @@ const actionInputSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("add_filter"),
     field: z.enum(["from", "domain", "subject"]),
-    op: z.enum([
-      "contains",
-      "equals",
-      "starts_with",
-      "not_contains",
-      "not_equals",
-      "domain_in",
-    ]),
+    op: z.enum(["contains", "equals", "starts_with", "not_contains", "not_equals", "domain_in"]),
     value: z.string().min(1).max(400),
     why: z.string().max(400).optional().default(""),
   }),
@@ -89,15 +82,14 @@ const FOLDER_SAMPLE_SIZE = 20;
 
 export const proposeFolderChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (d: { folder_id: string; user_message: string; history: FolderChatMessage[] }) =>
-      z
-        .object({
-          folder_id: z.string().uuid(),
-          user_message: z.string().min(1).max(2000),
-          history: z.array(chatMessageSchema).max(40),
-        })
-        .parse(d),
+  .inputValidator((d: { folder_id: string; user_message: string; history: FolderChatMessage[] }) =>
+    z
+      .object({
+        folder_id: z.string().uuid(),
+        user_message: z.string().min(1).max(2000),
+        history: z.array(chatMessageSchema).max(40),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }): Promise<FolderChatProposal> => {
     // 1. Verify the folder belongs to this user and load its columns.
@@ -308,7 +300,8 @@ function buildSettingsPatch(
   const patch: FolderUpdate = {};
   if (s.name !== undefined) patch.name = s.name.trim();
   if (s.color !== undefined) patch.color = s.color;
-  if (s.priority !== undefined) patch.priority = Math.max(0, Math.min(1000, Math.round(s.priority)));
+  if (s.priority !== undefined)
+    patch.priority = Math.max(0, Math.min(1000, Math.round(s.priority)));
   if (s.auto_archive !== undefined) patch.auto_archive = s.auto_archive;
   if (s.auto_mark_read !== undefined) patch.auto_mark_read = s.auto_mark_read;
   if (s.auto_star !== undefined) patch.auto_star = s.auto_star;

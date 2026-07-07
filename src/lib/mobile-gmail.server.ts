@@ -68,7 +68,8 @@ export async function connectGmailCore(
     emailAddress = await fetchUserEmail(accessToken);
   }
 
-  const ttl = typeof expiresIn === "number" && expiresIn > 0 ? Math.min(expiresIn, 60 * 60 * 24) : 3600;
+  const ttl =
+    typeof expiresIn === "number" && expiresIn > 0 ? Math.min(expiresIn, 60 * 60 * 24) : 3600;
   const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
   const { data: accountId, error } = await (supabaseAdmin as unknown as UpsertRpc).rpc(
@@ -99,7 +100,11 @@ export async function connectGmailCore(
         .eq("id", accountId);
     }
   } catch (e) {
-    logError("gmail.mobile_connect.ensure_watch_failed", { account_id: accountId, user_id: userId }, e);
+    logError(
+      "gmail.mobile_connect.ensure_watch_failed",
+      { account_id: accountId, user_id: userId },
+      e,
+    );
   }
 
   // Immediate light backfill so the inbox isn't empty, then a deeper background job.

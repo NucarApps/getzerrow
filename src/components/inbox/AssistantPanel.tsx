@@ -275,7 +275,9 @@ export function AssistantPanel({
                   <li>"My Invitations folder keeps getting real replies, not invites — fix it."</li>
                   <li>"Send anything from @acme.com to Clients, including existing mail."</li>
                   <li>"Newsletters keep landing in Receipts — add a domain filter to stop it."</li>
-                  <li>"Look at this folder and tighten the rule so it only catches the right mail."</li>
+                  <li>
+                    "Look at this folder and tighten the rule so it only catches the right mail."
+                  </li>
                 </ul>
               </div>
             )}

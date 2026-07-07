@@ -43,7 +43,6 @@ export type Folder = {
   surface_names: string | null;
 };
 
-
 export type OverrideException = {
   override_id: string;
   field: string;

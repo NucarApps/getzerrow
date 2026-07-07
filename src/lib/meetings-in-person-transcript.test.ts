@@ -90,7 +90,9 @@ describe("finalizeInPersonMeeting regression — iOS-style problematic recording
     state.updates = [];
     state.transcriptResponse = HALLUCINATED_TRANSCRIPT;
     state.sampleBytes = new Uint8Array(
-      readFileSync(fileURLToPath(new URL("./__fixtures__/ios-recording-sample.m4a", import.meta.url))),
+      readFileSync(
+        fileURLToPath(new URL("./__fixtures__/ios-recording-sample.m4a", import.meta.url)),
+      ),
     );
 
     vi.stubGlobal(
@@ -152,7 +154,11 @@ describe("finalizeInPersonMeeting regression — iOS-style problematic recording
 const FRAGMENTATION_FIXTURES: Array<{ name: string; file: string; fragments: number }> = [
   { name: "single fragment", file: "ios-recording-sample.m4a", fragments: 1 },
   { name: "two fragments (short clip)", file: "ios-recording-short.m4a", fragments: 2 },
-  { name: "three fragments (long frag duration)", file: "ios-recording-long-fragments.m4a", fragments: 3 },
+  {
+    name: "three fragments (long frag duration)",
+    file: "ios-recording-long-fragments.m4a",
+    fragments: 3,
+  },
   { name: "many small fragments", file: "ios-recording-many-fragments.m4a", fragments: 12 },
 ];
 
@@ -161,8 +167,14 @@ const FRAGMENTATION_FIXTURES: Array<{ name: string; file: string; fragments: num
 // three-sentence block. Each must be collapsed no matter the fixture.
 const RUNAWAY_PATTERNS: Array<{ name: string; text: string }> = [
   { name: "single-sentence loop", text: "Thank you. ".repeat(40).trim() },
-  { name: "two-sentence loop", text: "Why are we doing this later? Okay, hold on. ".repeat(24).trim() },
-  { name: "three-sentence block loop", text: "First point. Second point. Third point. ".repeat(16).trim() },
+  {
+    name: "two-sentence loop",
+    text: "Why are we doing this later? Okay, hold on. ".repeat(24).trim(),
+  },
+  {
+    name: "three-sentence block loop",
+    text: "First point. Second point. Third point. ".repeat(16).trim(),
+  },
 ];
 
 /** Read a fragmented-MP4 fixture and count its moof (fragment) boxes. */
@@ -173,8 +185,7 @@ function readFixture(file: string): { bytes: Uint8Array<ArrayBuffer>; fragments:
   let i = 0;
   let fragments = 0;
   while (i + 8 <= bytes.byteLength) {
-    const size =
-      (bytes[i] << 24) | (bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3];
+    const size = (bytes[i] << 24) | (bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3];
     const type = String.fromCharCode(bytes[i + 4], bytes[i + 5], bytes[i + 6], bytes[i + 7]);
     if (type === "moof") fragments += 1;
     if (size < 8) break;

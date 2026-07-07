@@ -186,14 +186,19 @@ export function classifyByRules(
   }
 
   const needs_ai =
-    !folder_id && !aiSkipped && folderList.length > 0 && aiCandidateFolders(parsed, context).length > 0;
+    !folder_id &&
+    !aiSkipped &&
+    folderList.length > 0 &&
+    aiCandidateFolders(parsed, context).length > 0;
 
   // A folder the rules routed into may carry a "surface to inbox" rule.
   // Only rule-based routing (label/filter/domain) triggers the surface
   // check — AI-classified mail runs its own pass.
   const routedFolder = folder_id ? folderList.find((f) => f.id === folder_id) : null;
   const needs_surface_check =
-    !!folder_id && !!routedFolder?.surface_ai_rule && routedFolder.surface_ai_rule.trim().length > 0;
+    !!folder_id &&
+    !!routedFolder?.surface_ai_rule &&
+    routedFolder.surface_ai_rule.trim().length > 0;
 
   return {
     folder_id,

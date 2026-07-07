@@ -71,9 +71,8 @@ export const Route = createFileRoute("/api/mobile/gmail-connect")({
         }
 
         try {
-          const { connectGmailCore, getCategorizationRules } = await import(
-            "@/lib/mobile-gmail.server"
-          );
+          const { connectGmailCore, getCategorizationRules } =
+            await import("@/lib/mobile-gmail.server");
           const { account_id, email_address } = await connectGmailCore(userId, body);
           const rules = await getCategorizationRules(userId);
           return Response.json({ ok: true, account_id, email_address, rules });

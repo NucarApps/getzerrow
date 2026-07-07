@@ -83,9 +83,7 @@ function describeSettings(s: SettingsPatch): string[] {
   if (s.forward_to !== undefined)
     parts.push(s.forward_to ? `Auto-forward to ${s.forward_to}` : "Stop auto-forwarding");
   if (s.snooze_hours !== undefined)
-    parts.push(
-      s.snooze_hours > 0 ? `Snooze on arrival for ${s.snooze_hours}h` : "Turn off snooze",
-    );
+    parts.push(s.snooze_hours > 0 ? `Snooze on arrival for ${s.snooze_hours}h` : "Turn off snooze");
   if (s.min_ai_confidence !== undefined)
     parts.push(`Set min AI confidence to ${Math.round(s.min_ai_confidence * 100)}%`);
   if (s.filter_logic !== undefined) parts.push(`Match ${s.filter_logic} filters`);
@@ -95,7 +93,10 @@ function describeSettings(s: SettingsPatch): string[] {
 function describeAction(action: Action): string {
   if (action.type === "add_filter") {
     if (action.op === "domain_in") {
-      return `Add allowlist: only mail from ${action.value.split(/[\s,;]+/).filter(Boolean).join(", ")}`;
+      return `Add allowlist: only mail from ${action.value
+        .split(/[\s,;]+/)
+        .filter(Boolean)
+        .join(", ")}`;
     }
     const opLabel =
       action.op === "not_contains"
@@ -180,7 +181,10 @@ export function FolderChatPanel({
           (t) =>
             t.kind === "user" || (t.kind === "assistant" && (t.content || t.clarifyingQuestion)),
         )
-        .map<{ role: "user" | "assistant"; content: string }>((t) =>
+        .map<{
+          role: "user" | "assistant";
+          content: string;
+        }>((t) =>
           t.kind === "user"
             ? { role: "user", content: t.content }
             : { role: "assistant", content: t.content || t.clarifyingQuestion },
@@ -214,7 +218,14 @@ export function FolderChatPanel({
       toast.error(m);
       setTurns((prev) => [
         ...prev,
-        { kind: "assistant", content: "", clarifyingQuestion: m, actions: [], selected: [], applied: false },
+        {
+          kind: "assistant",
+          content: "",
+          clarifyingQuestion: m,
+          actions: [],
+          selected: [],
+          applied: false,
+        },
       ]);
     } finally {
       setBusy(false);

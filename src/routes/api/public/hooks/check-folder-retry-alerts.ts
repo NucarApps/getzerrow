@@ -122,10 +122,7 @@ export const Route = createFileRoute("/api/public/hooks/check-folder-retry-alert
 
           // Best-effort retention: prune old retry rows so the log stays small.
           const retainBefore = new Date(now - RETAIN_DAYS * 86_400_000).toISOString();
-          await supabaseAdmin
-            .from("folder_write_retries")
-            .delete()
-            .lt("occurred_at", retainBefore);
+          await supabaseAdmin.from("folder_write_retries").delete().lt("occurred_at", retainBefore);
 
           logInfo("folder_retry_alert.checked", {
             run_id: runId,

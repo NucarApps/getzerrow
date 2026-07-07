@@ -45,7 +45,7 @@ export async function archiveEmailCore(userId: string, emailId: string) {
     await modifyMessage(email.gmail_account_id, email.gmail_message_id, [], ["INBOX"]);
   } catch (e) {
     logError("mobile.archive_failed", { email_id: emailId }, e);
-    throw new Error((e as Error)?.message || "Failed to archive in Gmail");
+    throw new Error((e as Error)?.message || "Failed to archive in Gmail", { cause: e });
   }
   const { data: row } = await supabaseAdmin
     .from("emails")

@@ -3,7 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useMissionTelemetry } from "@/components/landing/useMissionTelemetry";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
-
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
     const { data } = await supabase.auth.getSession();
@@ -147,9 +146,7 @@ function LandingPage() {
               See how it works
             </a>
           </div>
-          <div className="hero__fineprint">
-            Free to try · Works with your existing Gmail labels
-          </div>
+          <div className="hero__fineprint">Free to try · Works with your existing Gmail labels</div>
 
           {/* SINGLE DASHBOARD MOCKUP */}
           <div className="dash" aria-label="Zerrow sorting emails in real time">
@@ -277,9 +274,7 @@ function LandingPage() {
         <section className="section" id="how">
           <header className="sect-head">
             <div className="sect-kicker">How it works</div>
-            <h2 className="sect-title">
-              Three steps to inbox zero. Then it keeps itself there.
-            </h2>
+            <h2 className="sect-title">Three steps to inbox zero. Then it keeps itself there.</h2>
             <p className="sect-lede">
               Sign on, describe your folders, hand over the controls. Zerrow takes it from there.
             </p>
@@ -422,4 +417,3 @@ function LandingPage() {
     </>
   );
 }
-

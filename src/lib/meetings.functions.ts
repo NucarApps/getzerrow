@@ -79,7 +79,9 @@ export const recordFromLink = createServerFn({ method: "POST" })
       botId = bot.id;
     } catch (e) {
       logError("meeting_record_from_link_failed", { userId }, e);
-      throw new Error("Could not start the recording bot. Check the link and try again.");
+      throw new Error("Could not start the recording bot. Check the link and try again.", {
+        cause: e,
+      });
     }
 
     const { data: inserted, error } = await supabase
@@ -122,9 +124,7 @@ export const listMeetingsForContact = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { data: parts, error } = await context.supabase
       .from("meeting_participants")
-      .select(
-        "meeting_id, meetings!inner(id, title, status, scheduled_start, created_at, summary)",
-      )
+      .select("meeting_id, meetings!inner(id, title, status, scheduled_start, created_at, summary)")
       .eq("contact_id", data.contactId);
     if (error) throw new Error(error.message);
     type Row = {
@@ -141,8 +141,6 @@ export const listMeetingsForContact = createServerFn({ method: "GET" })
     meetings.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
     return { meetings };
   });
-
-
 
 /** Fetch one meeting with its participants. */
 export const getMeeting = createServerFn({ method: "GET" })
@@ -200,7 +198,9 @@ export const refreshRecording = createServerFn({ method: "POST" })
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
       .from("meetings")
-      .select("id, recall_bot_id, audio_storage_path, video_storage_path, transcript, summary, status")
+      .select(
+        "id, recall_bot_id, audio_storage_path, video_storage_path, transcript, summary, status",
+      )
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");
@@ -287,9 +287,7 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const audioPath = `${userId}/${inserted.id}.${data.ext}`;
-    const videoPath = data.withVideo
-      ? `${userId}/${inserted.id}.video.${data.videoExt}`
-      : null;
+    const videoPath = data.withVideo ? `${userId}/${inserted.id}.video.${data.videoExt}` : null;
     return { id: inserted.id, audioPath, videoPath };
   });
 
@@ -339,8 +337,6 @@ export const transcribeInPersonMeeting = createServerFn({ method: "POST" })
     return { status };
   });
 
-
-
 /** Delete a meeting and best-effort remove the bot from the call. */
 export const deleteMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -372,10 +368,7 @@ export const renameMeeting = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const title = data.title.trim() || null;
-    const { error } = await context.supabase
-      .from("meetings")
-      .update({ title })
-      .eq("id", data.id);
+    const { error } = await context.supabase.from("meetings").update({ title }).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { title };
   });
@@ -489,7 +482,11 @@ export const listUpcomingCalendarEvents = createServerFn({ method: "GET" })
       const events = await listUpcomingCalendarEventsForAccount(data.accountId, context.userId);
       return { calendarAccess: true, events, recordDeclined };
     } catch (e) {
-      logError("meeting_list_events_failed", { accountId: data.accountId, userId: context.userId }, e);
+      logError(
+        "meeting_list_events_failed",
+        { accountId: data.accountId, userId: context.userId },
+        e,
+      );
       return {
         calendarAccess: true,
         events: [] as UpcomingCalendarEvent[],
@@ -543,7 +540,6 @@ export const listAllUpcomingCalendarEvents = createServerFn({ method: "GET" })
     events.sort((a, b) => (a.start ?? "").localeCompare(b.start ?? ""));
     return { calendarAccess: true, events };
   });
-
 
 /** Exclude (or re-include) one calendar event from auto-record. */
 export const setEventExclusion = createServerFn({ method: "POST" })
@@ -624,10 +620,7 @@ export const addRecordBlocklistEntry = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
       .from("meeting_record_blocklist")
-      .upsert(
-        { user_id: context.userId, value: data.value },
-        { onConflict: "user_id,value" },
-      );
+      .upsert({ user_id: context.userId, value: data.value }, { onConflict: "user_id,value" });
     if (error) throw new Error(error.message);
     return { ok: true, value: data.value };
   });
@@ -645,8 +638,6 @@ export const removeRecordBlocklistEntry = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
-
-
 
 const DEFAULT_CHAT_MESSAGE =
   "Hi! I'm the Zerrow notetaker. I'm here to record and summarize this meeting.";

@@ -77,7 +77,8 @@ async function fetchEventsInWindow(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   });
-  if (!res.ok) throw new Error(`Calendar events ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok)
+    throw new Error(`Calendar events ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = (await res.json()) as { items?: UpcomingEvent[] };
   return body.items ?? [];
 }
@@ -275,7 +276,6 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
 
   let scheduled = 0;
   for (const account of accounts ?? []) {
-
     let events: UpcomingEvent[];
     try {
       events = await fetchUpcomingEvents(account.id);
@@ -294,10 +294,6 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       blocklist = await loadBlocklist(account.user_id);
       blocklistCache.set(account.user_id, blocklist);
     }
-
-
-
-
 
     for (const event of events) {
       if (!event.id) continue;
@@ -346,7 +342,12 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
         .filter((p) => p.email !== "" && p.email !== self && EMAIL_RE.test(p.email));
 
       // Skip auto-recording if anyone on the user's don't-record list is here.
-      if (hasBlockedAttendee(participants.map((p) => p.email), blocklist)) {
+      if (
+        hasBlockedAttendee(
+          participants.map((p) => p.email),
+          blocklist,
+        )
+      ) {
         logInfo("meeting_autojoin_skipped_blocklist", {
           runId,
           accountId: account.id,
@@ -354,8 +355,6 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
         });
         continue;
       }
-
-
 
       try {
         const bot = await createBot({
@@ -386,13 +385,17 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
 
         if (inserted && participants.length) {
           const dedup = [...new Map(participants.map((p) => [p.email, p])).values()];
-          await supabaseAdmin.from("meeting_participants").insert(
-            dedup.map((p) => ({ meeting_id: inserted.id, email: p.email, name: p.name })),
-          );
+          await supabaseAdmin
+            .from("meeting_participants")
+            .insert(dedup.map((p) => ({ meeting_id: inserted.id, email: p.email, name: p.name })));
         }
         scheduled++;
       } catch (e) {
-        logError("meeting_autojoin_create_failed", { runId, accountId: account.id, eventId: event.id }, e);
+        logError(
+          "meeting_autojoin_create_failed",
+          { runId, accountId: account.id, eventId: event.id },
+          e,
+        );
       }
     }
   }

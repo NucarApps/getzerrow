@@ -139,22 +139,28 @@ describe("parseMessage", () => {
   });
 
   it("has_calendar_invite is true for a text/calendar part", () => {
-    const p = parseMessage(msg({ headers: { From: "a@x.com" }, textBody: "body", calendarPart: true }));
+    const p = parseMessage(
+      msg({ headers: { From: "a@x.com" }, textBody: "body", calendarPart: true }),
+    );
     expect(p.has_calendar_invite).toBe(true);
   });
 
   it("has_calendar_invite is true for an .ics attachment", () => {
-    const p = parseMessage(msg({ headers: { From: "a@x.com" }, textBody: "body", icsAttachment: true }));
+    const p = parseMessage(
+      msg({ headers: { From: "a@x.com" }, textBody: "body", icsAttachment: true }),
+    );
     expect(p.has_calendar_invite).toBe(true);
   });
 
   it("has_calendar_invite is false for a plain reply with no calendar event", () => {
     const p = parseMessage(
-      msg({ headers: { From: "a@x.com", "In-Reply-To": "<orig@x.com>" }, textBody: "Sure, sounds good" }),
+      msg({
+        headers: { From: "a@x.com", "In-Reply-To": "<orig@x.com>" },
+        textBody: "Sure, sounds good",
+      }),
     );
     expect(p.has_calendar_invite).toBe(false);
   });
-
 
   it("sets is_read based on UNREAD label", () => {
     const unread = parseMessage(

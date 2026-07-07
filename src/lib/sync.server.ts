@@ -919,7 +919,6 @@ export async function runMessageJobs(
         return;
       }
 
-
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
       results.push({ id: job.id, ok: true });
     } catch (e: unknown) {

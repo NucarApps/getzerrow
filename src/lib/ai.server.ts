@@ -361,7 +361,6 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
   return { surface: false, reason: "" };
 }
 
-
 /**
  * Batch-classify multiple emails sharing the same folder set in a single
  * Gemini call. Returns one result per input email (in order). Used by the

@@ -22,10 +22,10 @@ const past = () => new Date(Date.now() - 24 * HOUR).toISOString();
 
 function email(over: Partial<ScopeEmail> = {}): ScopeEmail {
   return {
-    classified_by: "classified_by" in over ? over.classified_by ?? null : "ai",
+    classified_by: "classified_by" in over ? (over.classified_by ?? null) : "ai",
     snoozed_until: "snoozed_until" in over ? over.snoozed_until : null,
     is_archived: over.is_archived ?? false,
-    folder_id: "folder_id" in over ? over.folder_id ?? null : null,
+    folder_id: "folder_id" in over ? (over.folder_id ?? null) : null,
     raw_labels: "raw_labels" in over ? over.raw_labels : ["INBOX"],
     surfaced_to_inbox: over.surfaced_to_inbox ?? false,
   };
@@ -39,22 +39,18 @@ const FOLDERS: ScopeFolder[] = [
 
 describe("matchesSearchScope (whole-mailbox search)", () => {
   it("keeps an archived message so archived hits are never dropped", () => {
-    expect(
-      matchesSearchScope(email({ is_archived: true, raw_labels: [] })),
-    ).toBe(true);
+    expect(matchesSearchScope(email({ is_archived: true, raw_labels: [] }))).toBe(true);
   });
 
   it("keeps a folder-filed message even when its folder hides it from the inbox", () => {
-    expect(
-      matchesSearchScope(email({ folder_id: "f-hidden", raw_labels: ["Label_99"] })),
-    ).toBe(true);
+    expect(matchesSearchScope(email({ folder_id: "f-hidden", raw_labels: ["Label_99"] }))).toBe(
+      true,
+    );
   });
 
   it("keeps a replied-to / threaded message that has left the INBOX label", () => {
     expect(
-      matchesSearchScope(
-        email({ is_archived: true, raw_labels: ["SENT"], folder_id: "f-plain" }),
-      ),
+      matchesSearchScope(email({ is_archived: true, raw_labels: ["SENT"], folder_id: "f-plain" })),
     ).toBe(true);
   });
 
@@ -92,7 +88,9 @@ describe("matchesSearchScope (whole-mailbox search)", () => {
 
 describe("emailBelongsInScope (narrow per-view inbox scope)", () => {
   it("'all_mail' accepts everything, including in-progress and snoozed", () => {
-    expect(emailBelongsInScope(email({ classified_by: "pending" }), "all_mail", FOLDERS)).toBe(true);
+    expect(emailBelongsInScope(email({ classified_by: "pending" }), "all_mail", FOLDERS)).toBe(
+      true,
+    );
     expect(emailBelongsInScope(email({ snoozed_until: future() }), "all_mail", FOLDERS)).toBe(true);
     expect(emailBelongsInScope(email({ is_archived: true }), "all_mail", FOLDERS)).toBe(true);
   });
@@ -144,9 +142,13 @@ describe("emailBelongsInScope (narrow per-view inbox scope)", () => {
   });
 
   it("'no_rules' only accepts unfiled mail with no Label_* labels", () => {
-    expect(emailBelongsInScope(email({ folder_id: null, raw_labels: ["INBOX"] }), "no_rules", FOLDERS)).toBe(true);
+    expect(
+      emailBelongsInScope(email({ folder_id: null, raw_labels: ["INBOX"] }), "no_rules", FOLDERS),
+    ).toBe(true);
     expect(emailBelongsInScope(email({ folder_id: "f-plain" }), "no_rules", FOLDERS)).toBe(false);
-    expect(emailBelongsInScope(email({ folder_id: null, raw_labels: ["Label_1"] }), "no_rules", FOLDERS)).toBe(false);
+    expect(
+      emailBelongsInScope(email({ folder_id: null, raw_labels: ["Label_1"] }), "no_rules", FOLDERS),
+    ).toBe(false);
   });
 
   it("a specific folder id only accepts mail filed into that folder", () => {
@@ -155,8 +157,20 @@ describe("emailBelongsInScope (narrow per-view inbox scope)", () => {
   });
 
   it("drops in-progress and snoozed mail from every non-'all_mail' view", () => {
-    expect(emailBelongsInScope(email({ classified_by: "pending", folder_id: "f-plain" }), "f-plain", FOLDERS)).toBe(false);
-    expect(emailBelongsInScope(email({ snoozed_until: future(), folder_id: "f-plain" }), "f-plain", FOLDERS)).toBe(false);
+    expect(
+      emailBelongsInScope(
+        email({ classified_by: "pending", folder_id: "f-plain" }),
+        "f-plain",
+        FOLDERS,
+      ),
+    ).toBe(false);
+    expect(
+      emailBelongsInScope(
+        email({ snoozed_until: future(), folder_id: "f-plain" }),
+        "f-plain",
+        FOLDERS,
+      ),
+    ).toBe(false);
   });
 });
 

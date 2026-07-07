@@ -3,11 +3,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { authenticateRequest } from "@/lib/mobile-auth.server";
-import {
-  archiveEmailCore,
-  markEmailReadCore,
-  moveEmailCore,
-} from "@/lib/mobile-actions.server";
+import { archiveEmailCore, markEmailReadCore, moveEmailCore } from "@/lib/mobile-actions.server";
 
 const bodySchema = z.object({
   action: z.enum(["archive", "mark_read", "mark_unread", "move"]),

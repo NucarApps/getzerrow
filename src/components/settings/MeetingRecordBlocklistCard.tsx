@@ -62,10 +62,10 @@ export function MeetingRecordBlocklistCard() {
         <div>
           <h2 className="font-display text-2xl">Don't record these people</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Meetings that include anyone on this list won't be recorded — not automatically, and
-            not when you paste a link (as long as the meeting is on your calendar). Handy for calls
-            with your attorney or anyone you'd rather keep off the record. Add a full email address,
-            or a whole domain (for example, lawfirm.com) to skip everyone there.
+            Meetings that include anyone on this list won't be recorded — not automatically, and not
+            when you paste a link (as long as the meeting is on your calendar). Handy for calls with
+            your attorney or anyone you'd rather keep off the record. Add a full email address, or a
+            whole domain (for example, lawfirm.com) to skip everyone there.
           </p>
         </div>
       </div>

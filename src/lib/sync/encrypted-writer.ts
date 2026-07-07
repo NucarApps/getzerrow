@@ -14,7 +14,6 @@ import {
   sleep,
 } from "@/lib/folder-write-retry";
 
-
 /** Postgres SQLSTATE from a Supabase RPC error, if present (e.g. "42703"). */
 function pgErrorCode(err: unknown): string | undefined {
   const code = (err as { code?: unknown } | null)?.code;
@@ -257,7 +256,6 @@ export async function insertFolderExampleEncrypted(input: {
     }
   }
 
-
   if (error) {
     const error_code = pgErrorCode(error);
     logMetric("folder_example_write", { ...dims, outcome: "failure", error_code });
@@ -283,4 +281,3 @@ export async function insertFolderExampleEncrypted(input: {
   logMetric("folder_example_write", { ...dims, outcome: "success" });
   return { id: (data as string | null) ?? null, error: null };
 }
-

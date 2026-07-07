@@ -43,7 +43,10 @@ async function recallFetch<T>(
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new RecallApiError(`Recall API ${res.status} on ${path}: ${text.slice(0, 300)}`, res.status);
+    throw new RecallApiError(
+      `Recall API ${res.status} on ${path}: ${text.slice(0, 300)}`,
+      res.status,
+    );
   }
   return (text ? JSON.parse(text) : {}) as T;
 }
@@ -142,7 +145,6 @@ export async function createBot(input: CreateBotInput): Promise<RecallBot> {
   return recallFetch<RecallBot>("/bot", { method: "POST", body });
 }
 
-
 /** Fetch the current bot resource. */
 export async function getBot(botId: string): Promise<RecallBot> {
   return recallFetch<RecallBot>(`/bot/${botId}`);
@@ -220,7 +222,6 @@ export async function getTranscript(bot: RecallBot): Promise<TranscriptSegment[]
     })
     .filter((s) => s.text.length > 0);
 }
-
 
 /** Extract the mixed-video recording download URL from a bot, if ready. */
 export function extractRecordingUrl(bot: RecallBot): string | null {

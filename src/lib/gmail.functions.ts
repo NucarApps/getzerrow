@@ -1858,7 +1858,12 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
         .eq("id", email.id);
 
       try {
-        await modifyMessage(emailAccountId, emailMessageId, ["INBOX"], fromLabel ? [fromLabel] : []);
+        await modifyMessage(
+          emailAccountId,
+          emailMessageId,
+          ["INBOX"],
+          fromLabel ? [fromLabel] : [],
+        );
       } catch (e) {
         logError("gmail.reanalyze.inbox_restore_label_failed", { email_id: emailId }, e);
       }
@@ -3632,9 +3637,7 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
 
 export const listFolderEmailIds = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) =>
-    z.object({ folder_id: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     // Verify the folder belongs to the caller before listing its emails.
     const { data: folder, error: folderError } = await supabaseAdmin
@@ -3732,11 +3735,7 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
             }
           }
           routed++;
-        } else if (
-          !result.folder_id &&
-          email.folder_id &&
-          result.classified_by !== "ai_error"
-        ) {
+        } else if (!result.folder_id && email.folder_id && result.classified_by !== "ai_error") {
           // The email no longer belongs in its current folder — an always-inbox
           // override now wins, a deterministic exclude / allowlist rule vetoes
           // the folder, or the classifier no longer assigns any folder. Restore

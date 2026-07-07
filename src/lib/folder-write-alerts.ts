@@ -94,8 +94,7 @@ export function selectAlertsToFire(
   }
   return groups.filter(
     (g) =>
-      g.failure_count >= config.threshold &&
-      !suppressed.has(groupKey(g.error_code, g.folder_id)),
+      g.failure_count >= config.threshold && !suppressed.has(groupKey(g.error_code, g.folder_id)),
   );
 }
 

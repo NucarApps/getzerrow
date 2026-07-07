@@ -48,8 +48,7 @@ function AuthCallbackBridge() {
 
   useEffect(() => {
     const params = new URLSearchParams(
-      window.location.search.replace(/^\?/, "") ||
-        window.location.hash.replace(/^#/, ""),
+      window.location.search.replace(/^\?/, "") || window.location.hash.replace(/^#/, ""),
     );
     const oauthError = params.get("error_description") ?? params.get("error");
     if (oauthError) {

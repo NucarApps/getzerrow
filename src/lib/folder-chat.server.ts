@@ -41,14 +41,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("add_filter"),
     field: z.enum(["from", "domain", "subject"]),
-    op: z.enum([
-      "contains",
-      "equals",
-      "starts_with",
-      "not_contains",
-      "not_equals",
-      "domain_in",
-    ]),
+    op: z.enum(["contains", "equals", "starts_with", "not_contains", "not_equals", "domain_in"]),
     value: z.string().min(1).max(400),
     why: z.string().max(200).optional().default(""),
   }),
@@ -253,14 +246,7 @@ const TOOL_PARAMETERS_SCHEMA = {
           },
           op: {
             type: "string",
-            enum: [
-              "contains",
-              "equals",
-              "starts_with",
-              "not_contains",
-              "not_equals",
-              "domain_in",
-            ],
+            enum: ["contains", "equals", "starts_with", "not_contains", "not_equals", "domain_in"],
             description:
               "Required when type is add_filter. Use not_contains/not_equals to hard-exclude, or domain_in (with field 'domain' and a comma-separated allowlist) to restrict to specific domains.",
           },
