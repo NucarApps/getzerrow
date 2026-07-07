@@ -43,6 +43,7 @@ import {
   GmailApiError,
 } from "../gmail.server";
 import { withAccountLock } from "./account-lock";
+import { collectAddedMessages } from "./history-events";
 import { HISTORY_LABEL_FETCH_CONCURRENCY } from "./config";
 import { gmailHistoryIdGreater } from "./history-id";
 import { enqueueMessageJobs } from "./queue";
@@ -130,7 +131,11 @@ async function syncSinceHistoryLocked(
     const manualMoveEvents = new Map<string, Set<Folder>>();
 
     for (const h of hist.history || []) {
-      const added = h.messagesAdded?.map((x) => x.message) ?? h.messages ?? [];
+      // Only messagesAdded is authoritative "new mail" — label-only
+      // records also carry a generic `messages` list, and treating those
+      // as new mail made the labelOps skip below swallow archive events
+      // (see ./history-events.ts).
+      const added = collectAddedMessages(h);
       for (const m of added) {
         if (seenAdded.has(m.id)) continue;
         seenAdded.add(m.id);
@@ -223,6 +228,7 @@ async function syncSinceHistoryLocked(
           op.added,
           op.removed,
           labelToFolder,
+          account.user_id,
         );
       } catch (e) {
         console.error("applyLabelChange failed", e);
@@ -362,6 +368,7 @@ async function applyLabelChange(
   added: string[],
   removed: string[],
   labelToFolder?: Map<string, Folder>,
+  userId?: string,
 ) {
   const patch: { raw_labels?: string[]; is_archived?: boolean; is_read?: boolean } = {};
   if (currentLabels) patch.raw_labels = currentLabels;
@@ -369,13 +376,29 @@ async function applyLabelChange(
   if (added.includes("INBOX")) patch.is_archived = false;
   if (removed.includes("UNREAD")) patch.is_read = true;
   if (added.includes("UNREAD")) patch.is_read = false;
-  if (added.includes("TRASH")) {
+  // Trashed OR marked-as-spam in Gmail → drop the local row.
+  if (added.includes("TRASH") || added.includes("SPAM")) {
     await supabaseAdmin
       .from("emails")
       .delete()
       .eq("gmail_account_id", accountId)
       .eq("gmail_message_id", messageId);
     return;
+  }
+
+  // Restored from trash/spam → the local row was deleted when it was
+  // trashed, so an UPDATE would no-op. Re-ingest through the pipeline.
+  if (userId && (removed.includes("TRASH") || removed.includes("SPAM"))) {
+    const { data: existingRow } = await supabaseAdmin
+      .from("emails")
+      .select("id")
+      .eq("gmail_account_id", accountId)
+      .eq("gmail_message_id", messageId)
+      .maybeSingle();
+    if (!existingRow) {
+      await enqueueMessageJobs(accountId, userId, [messageId], 0);
+      return;
+    }
   }
 
   // A linked folder label was removed in Gmail → move the email back to

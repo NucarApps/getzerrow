@@ -24,6 +24,7 @@ import {
 import { classifyEmail, classifyEmailsBatch } from "./ai.server";
 import { logError } from "./log.server";
 import { computeLabelPatch } from "./sync/label-merge";
+import { collectAddedMessages } from "./sync/history-events";
 import {
   MAX_JOB_ATTEMPTS,
   RETRYABLE_FREE_ATTEMPTS,
@@ -537,14 +538,34 @@ async function applyLabelChange(
   added: string[],
   removed: string[],
   labelToFolder?: Map<string, { id: string; gmail_label_id: string | null }>,
+  userId?: string,
 ) {
-  if (added.includes("TRASH")) {
+  // Trashed OR marked-as-spam in Gmail → drop the local row. Both leave
+  // the message invisible in Gmail's inbox/all-mail, so keeping it in
+  // Zerrow just shows stale mail the user already dealt with.
+  if (added.includes("TRASH") || added.includes("SPAM")) {
     await supabaseAdmin
       .from("emails")
       .delete()
       .eq("gmail_account_id", accountId)
       .eq("gmail_message_id", messageId);
     return;
+  }
+
+  // Restored from trash/spam in Gmail → the local row was deleted when it
+  // was trashed, so a plain UPDATE would no-op. Re-ingest through the
+  // normal pipeline instead.
+  if (userId && (removed.includes("TRASH") || removed.includes("SPAM"))) {
+    const { data: existingRow } = await supabaseAdmin
+      .from("emails")
+      .select("id")
+      .eq("gmail_account_id", accountId)
+      .eq("gmail_message_id", messageId)
+      .maybeSingle();
+    if (!existingRow) {
+      await enqueueMessageJobs(accountId, userId, [messageId], 0);
+      return;
+    }
   }
   const patch: Record<string, unknown> = { ...computeLabelPatch(currentLabels, added, removed) };
 
@@ -1131,7 +1152,12 @@ async function syncSinceHistoryLocked(
       pages++;
       if (hist.historyId) lastHistoryId = hist.historyId;
       for (const h of hist.history || []) {
-        const added = h.messagesAdded?.map((x) => x.message) ?? h.messages ?? [];
+        // Only messagesAdded is authoritative "new mail". Label-only and
+        // delete-only records also carry a generic `messages` list; the
+        // old fallback dumped those ids into seenAdded, which made the
+        // labelOps skip below swallow archive/un-archive signals from
+        // Gmail (see ./sync/history-events.ts).
+        const added = collectAddedMessages(h);
         for (const m of added) {
           if (seenAdded.has(m.id)) continue;
           seenAdded.add(m.id);
@@ -1249,6 +1275,7 @@ async function syncSinceHistoryLocked(
           op.added,
           op.removed,
           labelToFolder,
+          account.user_id,
         );
       } catch (e) {
         logError(
