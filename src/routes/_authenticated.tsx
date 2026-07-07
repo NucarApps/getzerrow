@@ -21,7 +21,6 @@ import {
   Menu,
   BarChart3,
   Users,
-  
   Video,
   Shield,
 } from "lucide-react";
@@ -38,6 +37,7 @@ import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
+import { useContactsRealtime } from "@/lib/use-contacts-realtime";
 import { BackfillBanner } from "@/components/inbox/BackfillBanner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
@@ -53,6 +53,7 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthedLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   useEmailRealtime();
+  useContactsRealtime();
 
   return (
     <AccountSelectionProvider>

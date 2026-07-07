@@ -189,9 +189,6 @@ type Folder = {
   hide_from_inbox: boolean;
 };
 
-
-
-
 const PAGE_SIZE = 50;
 
 const withInbox = (labels: string[] | null | undefined): string[] =>
@@ -538,7 +535,6 @@ function InboxPage() {
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
   const parsedQuery = useMemo(() => parseSearchQuery(searchTerm), [searchTerm]);
-  
 
   // No entry pre-sync gate. The inbox renders immediately from the local DB
   // (the source of truth, kept current by the webhook + poll crons), and the
@@ -563,6 +559,11 @@ function InboxPage() {
         : `page:${page}:${cursor ?? "start"}`,
     ],
     enabled: !!accountId && (!isSearching || foldersQ.isSuccess),
+    // Self-heal: realtime is the fast path, but a dropped websocket or a
+    // dropped push must never strand a stale list. A cheap 30s re-check
+    // keeps the open inbox honest (off while searching — search re-runs on
+    // its own key changes; off in background tabs by default).
+    refetchInterval: isSearching ? false : 30_000,
     queryFn: async () => {
       const isNoRules = selectedFolder === "no_rules";
       const isAllMail = selectedFolder === "all_mail";
@@ -946,7 +947,6 @@ function InboxPage() {
     return pageRows;
   }, [pageRows]);
 
-
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
 
@@ -1051,9 +1051,7 @@ function InboxPage() {
   function goPrev() {
     if (page > 1) setPage((p) => p - 1);
   }
-  const canGoNext = isSearching
-    ? hasMoreSearch
-    : hasMoreLocal || canPullFromGmail;
+  const canGoNext = isSearching ? hasMoreSearch : hasMoreLocal || canPullFromGmail;
 
   const selectedListItem = filtered.find((e) => e.id === selectedId) ?? null;
 
@@ -1429,8 +1427,8 @@ function InboxPage() {
                   <>
                     <p className="text-sm">
                       Found {lastGmailResult!.found} match
-                      {lastGmailResult!.found === 1 ? "" : "es"} in Gmail, but they
-                      couldn't be loaded.
+                      {lastGmailResult!.found === 1 ? "" : "es"} in Gmail, but they couldn't be
+                      loaded.
                     </p>
                     <p className="text-xs">Try searching again in a moment.</p>
                   </>
@@ -1943,9 +1941,9 @@ function InboxPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Reanalyze {currentFolderObj?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Every email in this folder will be reclassified. Emails whose sender your folder
-              rules no longer allow will be moved to a better folder or back to the inbox. This may
-              take a moment for large folders.
+              Every email in this folder will be reclassified. Emails whose sender your folder rules
+              no longer allow will be moved to a better folder or back to the inbox. This may take a
+              moment for large folders.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1955,7 +1953,6 @@ function InboxPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-
   );
 }
 

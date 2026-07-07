@@ -3,7 +3,12 @@
 // row appearing in a folder=B list). The contract has to stay in sync with
 // the query keys inbox.tsx uses — these tests pin that contract.
 import { describe, it, expect } from "vitest";
-import { rowBelongsInList, applyPendingOpsToList, type EmailRow } from "./use-email-realtime";
+import {
+  rowBelongsInList,
+  applyPendingOpsToList,
+  isDamagedPayload,
+  type EmailRow,
+} from "./use-email-realtime";
 
 const ACC = "acc-1";
 
@@ -242,5 +247,37 @@ describe("applyPendingOpsToList — coalesced flush", () => {
     expect(next).toHaveLength(2);
     expect(next?.[0].id).toBe("b");
     expect(next?.[0].classified_by).toBe("ai");
+  });
+});
+
+// A damaged push (the realtime service strips oversized rows or attaches an
+// error notice) must be detected so the hook falls back to a re-fetch instead
+// of splicing a broken row — or worse, silently ignoring a real change.
+describe("isDamagedPayload", () => {
+  it("accepts clean INSERT/UPDATE payloads", () => {
+    expect(isDamagedPayload({ eventType: "INSERT", errors: null, new: row() })).toBe(false);
+    expect(isDamagedPayload({ eventType: "UPDATE", errors: [], new: row() })).toBe(false);
+  });
+
+  it("accepts a DELETE payload that only carries the primary key", () => {
+    expect(
+      isDamagedPayload({ eventType: "DELETE", errors: null, old: { id: "row-1" }, new: {} }),
+    ).toBe(false);
+  });
+
+  it("flags service errors even when a row is attached", () => {
+    expect(
+      isDamagedPayload({
+        eventType: "UPDATE",
+        errors: ["Error 413: Payload Too Large"],
+        new: row(),
+      }),
+    ).toBe(true);
+  });
+
+  it("flags payloads whose row is missing or lacks an id", () => {
+    expect(isDamagedPayload({ eventType: "INSERT", errors: null, new: {} })).toBe(true);
+    expect(isDamagedPayload({ eventType: "UPDATE", errors: null })).toBe(true);
+    expect(isDamagedPayload({ eventType: "DELETE", errors: null, old: {}, new: {} })).toBe(true);
   });
 });

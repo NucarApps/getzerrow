@@ -154,9 +154,7 @@ function matchesScope(row: EmailRow, scope: string): boolean {
     // A surfaced email is kept in the inbox even though its folder would
     // normally hide/archive it.
     if (row.surfaced_to_inbox === true) return inInbox;
-    return (
-      inInbox && row.folder?.auto_archive !== true && row.folder?.hide_from_inbox !== true
-    );
+    return inInbox && row.folder?.auto_archive !== true && row.folder?.hide_from_inbox !== true;
   }
   if (scope === "archived") return row.is_archived === true;
   if (scope === "no_rules") {
@@ -166,6 +164,31 @@ function matchesScope(row: EmailRow, scope: string): boolean {
   }
   // Any other string is treated as a folder UUID.
   return row.folder_id === scope;
+}
+
+/** Structural shape of a realtime postgres_changes event as delivered by
+ * supabase-js. Kept loose so the damaged-payload guard works across event
+ * types and client versions. */
+export type RealtimeEventLike = {
+  eventType?: string;
+  errors?: unknown;
+  new?: unknown;
+  old?: unknown;
+};
+
+/**
+ * True when a realtime push arrived unusable — the realtime service flagged
+ * an error (oversized rows get stripped or replaced with an error notice) or
+ * the row payload is missing its id. Subscribers must treat a damaged push
+ * as "something changed, re-fetch" instead of silently ignoring it.
+ * Exported for unit tests.
+ */
+export function isDamagedPayload(payload: RealtimeEventLike): boolean {
+  const errs = payload.errors;
+  if (Array.isArray(errs) ? errs.length > 0 : Boolean(errs)) return true;
+  const record = payload.eventType === "DELETE" ? payload.old : payload.new;
+  if (record == null || typeof record !== "object") return true;
+  return typeof (record as { id?: unknown }).id !== "string";
 }
 
 /**
@@ -299,6 +322,19 @@ export function useEmailRealtime() {
     // explicitly whenever an email row changes read/label/folder state.
     const bumpCounts = () => qc.invalidateQueries({ queryKey: ["folder-counts"] });
 
+    // A damaged push tells us SOMETHING changed without saying what (the
+    // realtime service strips oversized rows; RLS can withhold fields).
+    // Re-fetch the lists instead of ignoring it — throttled so an error
+    // burst costs one round-trip, not one per event.
+    let lastDamagedRefetchAt = 0;
+    function refetchFromDamagedPush() {
+      const now = Date.now();
+      if (now - lastDamagedRefetchAt < 5000) return;
+      lastDamagedRefetchAt = now;
+      qc.invalidateQueries({ queryKey: ["emails"] });
+      bumpCounts();
+    }
+
     function scheduleReconnect() {
       if (cancelled || reconnectTimer) return;
       const delays = [1000, 2000, 5000];
@@ -329,17 +365,35 @@ export function useEmailRealtime() {
         .on(
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "emails", filter: userFilter },
-          (payload) => applyInsert(payload.new as EmailRow),
+          (payload) => {
+            if (isDamagedPayload(payload)) {
+              refetchFromDamagedPush();
+              return;
+            }
+            applyInsert(payload.new as EmailRow);
+          },
         )
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "emails", filter: userFilter },
-          (payload) => applyUpdate(payload.new as EmailRow),
+          (payload) => {
+            if (isDamagedPayload(payload)) {
+              refetchFromDamagedPush();
+              return;
+            }
+            applyUpdate(payload.new as EmailRow);
+          },
         )
         .on(
           "postgres_changes",
           { event: "DELETE", schema: "public", table: "emails", filter: userFilter },
-          (payload) => applyDelete(payload.old as { id: string }),
+          (payload) => {
+            if (isDamagedPayload(payload)) {
+              refetchFromDamagedPush();
+              return;
+            }
+            applyDelete(payload.old as { id: string });
+          },
         )
         .on(
           "postgres_changes",
