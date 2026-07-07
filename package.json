@@ -82,7 +82,6 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@lovable.dev/vite-tanstack-config": "2.7.0",
-    "@types/dompurify": "^3.2.0",
     "@types/node": "^25.9.3",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.17",
@@ -105,6 +104,8 @@
   "overrides": {
     "ws": "^8.21.0",
     "undici": "^7.28.0",
-    "js-yaml": "^4.2.0"
+    "js-yaml": "^4.2.0",
+    "esbuild": "^0.28.1",
+    "@babel/core": "^7.29.6"
   }
 }
