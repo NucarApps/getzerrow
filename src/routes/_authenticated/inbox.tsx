@@ -23,6 +23,7 @@ import {
   reconcileInboxFromGmail,
   syncMyReadState,
   backgroundSync,
+  listGmailLabels,
 } from "@/lib/gmail.functions";
 import { BACKGROUND_SYNC_INTERVAL_MS } from "@/lib/sync/config";
 import { matchesSearchScope } from "@/lib/search-scope";
@@ -91,6 +92,7 @@ import {
   RotateCw,
   Reply,
   UserPlus,
+  Settings,
 } from "lucide-react";
 import { addContactFromEmail } from "@/lib/contacts.functions";
 import {
@@ -108,6 +110,8 @@ import { useAccountSelection } from "@/lib/account-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
+import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
+import type { Folder as FolderSettings, GLabel } from "@/components/folders/FolderEditor";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import { collectMatchingLeaves } from "@/lib/sync/filter-engine";
 import type { RuleNode } from "@/lib/sync/types";
@@ -433,7 +437,7 @@ function InboxPage() {
 
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
-  const { selected: selectedFolder } = useFolderSelection();
+  const { selected: selectedFolder, setSelected: setSelectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   // Debounced copy of `query` that drives all *data* fetching. The input stays
@@ -468,6 +472,34 @@ function InboxPage() {
     },
   });
 
+  // Full folder rows + Gmail labels feed the in-place folder settings editor
+  // (gear icon in the folder header). Query keys intentionally mirror the
+  // sidebar's so both share one cache entry — no duplicate fetches.
+  const listLabelsFn = useServerFn(listGmailLabels);
+  const fullFoldersQ = useQuery({
+    queryKey: ["folders-full", accountId],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("folders")
+        .select("*")
+        .eq("gmail_account_id", accountId!)
+        .order("name", { ascending: true });
+      return (data ?? []) as FolderSettings[];
+    },
+  });
+  const labelsQ = useQuery({
+    queryKey: ["gmail-labels", accountId],
+    enabled: !!accountId,
+    queryFn: async () => {
+      try {
+        return (await listLabelsFn({ data: { account_id: accountId! } })).labels as GLabel[];
+      } catch {
+        return [] as GLabel[];
+      }
+    },
+  });
+
   // Search data fetching keys off the debounced term so it's stable across
   // keystrokes; `searchTerm` is the single source of truth for "what are we
   // searching for right now".
@@ -480,6 +512,8 @@ function InboxPage() {
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assistantOpen, setAssistantOpen] = useState(false);
+  // Folder currently open in the settings sheet (gear icon in the header).
+  const [editingFolder, setEditingFolder] = useState<FolderSettings | null>(null);
   // True while the silent background catch-up is in flight — drives the subtle
   // "Syncing…" header hint (never blocks the list).
   const [bgSyncing, setBgSyncing] = useState(false);
@@ -950,6 +984,18 @@ function InboxPage() {
   const currentFolderObj = (foldersQ.data ?? []).find((f) => f.id === selectedFolder) ?? null;
   const canPullFromGmail = !!currentFolderObj?.gmail_label_id;
 
+  const openFolderSettings = () => {
+    if (!currentFolderObj) return;
+    const full = (fullFoldersQ.data ?? []).find((f) => f.id === currentFolderObj.id) ?? null;
+    if (full) {
+      setEditingFolder(full);
+      return;
+    }
+    // Full row not in cache yet (cold start) — kick a refetch so the next tap works.
+    void fullFoldersQ.refetch();
+    toast.message("Folder settings are still loading — try again in a second.");
+  };
+
   const runReanalyzeFolder = async () => {
     if (!currentFolderObj) return;
     const folderName = currentFolderObj.name;
@@ -1196,6 +1242,18 @@ function InboxPage() {
             )}
           </div>
           <div className="flex items-center gap-1">
+            {currentFolderObj && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={openFolderSettings}
+                title="Folder settings"
+                aria-label={`Edit ${currentFolderObj.name} settings`}
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            )}
             {currentFolderObj && (
               <Button
                 size="icon"
@@ -1952,6 +2010,15 @@ function InboxPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <EditFolderDialog
+        folder={editingFolder}
+        labels={labelsQ.data ?? []}
+        open={!!editingFolder}
+        onOpenChange={(v) => {
+          if (!v) setEditingFolder(null);
+        }}
+        onDeleted={() => setSelectedFolder("all")}
+      />
     </div>
   );
 }
