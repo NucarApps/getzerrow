@@ -3,7 +3,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createBot, leaveBot, detectPlatform } from "./recall.server";
+import { createBot, leaveBot, detectPlatform, type TranscriptSegment } from "./recall.server";
 import { logError } from "./log.server";
 
 const MEETING_URL_RE =
@@ -428,6 +428,45 @@ export const generateTitleForMeeting = createServerFn({ method: "POST" })
       .eq("id", data.id);
     if (updateError) throw new Error(updateError.message);
     return { title };
+  });
+
+/**
+ * Regenerate a meeting's AI breakdown from its stored transcript, on demand.
+ * Falls back to the compact extractive digest if the AI call fails.
+ */
+export const regenerateMeetingSummary = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: meeting, error } = await context.supabase
+      .from("meetings")
+      .select("id, transcript")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!meeting) throw new Error("Meeting not found");
+
+    const segments = Array.isArray(meeting.transcript)
+      ? (meeting.transcript as unknown as TranscriptSegment[])
+      : [];
+    if (!segments.length) {
+      throw new Error("No transcript yet — record the meeting first.");
+    }
+
+    const { generateMeetingBreakdown, transcriptSegmentsToText } = await import(
+      "./meetings.server"
+    );
+    const { summarizeTranscript } = await import("./recall.server");
+    const breakdown = await generateMeetingBreakdown(transcriptSegmentsToText(segments));
+    const summary = breakdown ?? summarizeTranscript(segments);
+    if (!summary) throw new Error("Couldn't generate a summary. Please try again.");
+
+    const { error: updateError } = await context.supabase
+      .from("meetings")
+      .update({ summary })
+      .eq("id", data.id);
+    if (updateError) throw new Error(updateError.message);
+    return { summary };
   });
 
 /** Toggle calendar auto-record for one connected account. */

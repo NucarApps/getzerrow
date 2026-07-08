@@ -9,6 +9,7 @@ import {
   deleteMeeting,
   renameMeeting,
   generateTitleForMeeting,
+  regenerateMeetingSummary,
   syncMeeting,
   refreshRecording,
   getRecordingStreamUrl,
@@ -951,8 +952,10 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const getStream = useServerFn(getRecordingStreamUrl);
   const rename = useServerFn(renameMeeting);
   const genTitle = useServerFn(generateTitleForMeeting);
+  const regenSummary = useServerFn(regenerateMeetingSummary);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [regeneratingSummary, setRegeneratingSummary] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState(false);
   const [diagnostics, setDiagnostics] = useState<RecordingDiagnostics | null>(null);
@@ -1079,6 +1082,21 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     }
     setRefreshing(false);
   }
+
+  async function onRegenerateSummary() {
+    if (!id) return;
+    setRegeneratingSummary(true);
+    try {
+      await regenSummary({ data: { id } });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      await qc.invalidateQueries({ queryKey: ["meetings"] });
+      toast.success("Summary updated");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not regenerate summary");
+    }
+    setRegeneratingSummary(false);
+  }
+
 
   async function onDelete() {
     if (!id) return;
@@ -1379,9 +1397,27 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                       )}
 
                       <section>
-                        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
-                          <FileText className="h-4 w-4" /> Summary
-                        </h3>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <h3 className="flex items-center gap-1.5 text-sm font-medium">
+                            <FileText className="h-4 w-4" /> Summary
+                          </h3>
+                          {transcript.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={onRegenerateSummary}
+                              disabled={regeneratingSummary}
+                              className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+                            >
+                              {regeneratingSummary ? (
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                              )}
+                              {regeneratingSummary ? "Regenerating…" : "Regenerate summary"}
+                            </Button>
+                          )}
+                        </div>
                         {meeting.summary ? (
                           <MeetingSummary markdown={meeting.summary} />
                         ) : (
