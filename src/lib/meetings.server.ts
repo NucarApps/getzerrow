@@ -518,15 +518,34 @@ export async function refreshMeetingRecording(meetingId: string): Promise<{
   let hasTranscript = !!meeting.transcript;
   let hasSummary = !!meeting.summary;
 
-  // Backfill transcript/summary only if they never landed.
-  if (!meeting.transcript || !meeting.summary) {
+  // Backfill transcript/summary if they never landed, and upgrade an old
+  // extractive digest (no "## Overview") to a real AI breakdown.
+  const needsBackfill = !meeting.transcript || !meeting.summary;
+  const needsSummaryUpgrade =
+    !!meeting.transcript && !!meeting.summary && !isBreakdownSummary(meeting.summary);
+  if (needsBackfill || needsSummaryUpgrade) {
     try {
       const segments = await getTranscript(bot);
       if (segments.length) {
-        update.transcript = segments as unknown as MeetingUpdate["transcript"];
-        update.summary = summarizeTranscript(segments);
-        hasTranscript = true;
-        hasSummary = !!update.summary;
+        if (!meeting.transcript) {
+          update.transcript = segments as unknown as MeetingUpdate["transcript"];
+          hasTranscript = true;
+        }
+        if (!meeting.summary) {
+          const breakdown = await generateMeetingBreakdown(transcriptSegmentsToText(segments));
+          const newSummary = breakdown ?? summarizeTranscript(segments);
+          if (newSummary) {
+            update.summary = newSummary;
+            hasSummary = true;
+          }
+        } else if (!isBreakdownSummary(meeting.summary)) {
+          // Only overwrite the old digest when the AI breakdown succeeds.
+          const breakdown = await generateMeetingBreakdown(transcriptSegmentsToText(segments));
+          if (breakdown) {
+            update.summary = breakdown;
+            hasSummary = true;
+          }
+        }
       }
     } catch (e) {
       logError("meeting_refresh_transcript_failed", { meetingId }, e);
