@@ -297,7 +297,8 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
       const segments = await getTranscript(bot);
       if (segments.length) {
         update.transcript = segments as unknown as MeetingUpdate["transcript"];
-        update.summary = summarizeTranscript(segments);
+        const breakdown = await generateMeetingBreakdown(transcriptSegmentsToText(segments));
+        update.summary = breakdown ?? summarizeTranscript(segments);
         if (needsAutoTitle(meeting.title)) {
           const generated = await generateMeetingTitle(
             update.summary || segments.map((s) => s.text).join(" "),
