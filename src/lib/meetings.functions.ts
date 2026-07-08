@@ -3,7 +3,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createBot, leaveBot, detectPlatform } from "./recall.server";
+import { createBot, leaveBot, detectPlatform, type TranscriptSegment } from "./recall.server";
 import { logError } from "./log.server";
 
 const MEETING_URL_RE =
