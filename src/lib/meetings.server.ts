@@ -91,6 +91,60 @@ export async function generateMeetingTitle(sourceText: string): Promise<string |
   }
 }
 
+/** System prompt for the AI-written meeting breakdown (markdown output). */
+const BREAKDOWN_SYSTEM_PROMPT =
+  "You analyze meeting transcripts and write detailed breakdowns in markdown. " +
+  "Use exactly these '## ' sections in this order: Overview, Topics discussed, Key decisions, Action items, Notable moments. " +
+  "Overview: 2-4 sentences on what the meeting was about and its outcome. " +
+  "Topics discussed: a '### ' subheading per topic followed by a detailed explanation of what was said, naming who said it whenever speaker names appear. " +
+  "Key decisions, Action items (with owners when clear), and Notable moments: '- ' bullets; if a section truly has nothing, use a single bullet '- None noted.' " +
+  "Start directly with '## Overview'. No preamble, no code fences.";
+
+/** True when a stored summary is a real AI breakdown (not the old digest). */
+export function isBreakdownSummary(summary: string | null | undefined): boolean {
+  return !!summary && summary.includes("## Overview");
+}
+
+/** Join transcript segments into speaker-prefixed lines for the AI breakdown. */
+export function transcriptSegmentsToText(segments: TranscriptSegment[]): string {
+  return segments
+    .map((s) => {
+      const text = s.text.trim();
+      return s.speaker ? `${s.speaker}: ${text}` : text;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Produce a detailed, AI-written markdown breakdown of a meeting from its
+ * speaker-prefixed transcript text. Best-effort: returns null on any failure
+ * (missing key, empty text, AI error) so callers can fall back to the compact
+ * extractive digest (summarizeTranscript).
+ */
+export async function generateMeetingBreakdown(transcriptText: string): Promise<string | null> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  const text = transcriptText.trim();
+  if (!apiKey || !text) return null;
+  try {
+    const { generateText } = await import("ai");
+    const { createLovableAiGatewayProvider } = await import("./ai-gateway");
+    const model = createLovableAiGatewayProvider(apiKey)(SUMMARY_MODEL);
+    const { text: raw } = await generateText({
+      model,
+      messages: [
+        { role: "system", content: BREAKDOWN_SYSTEM_PROMPT },
+        { role: "user", content: text.slice(0, 24000) },
+      ],
+    });
+    const cleaned = raw.trim();
+    return cleaned || null;
+  } catch (e) {
+    logError("meeting_breakdown_failed", {}, e);
+    return null;
+  }
+}
+
 export const DEFAULT_BOT_NAME = "Zerrow Notetaker";
 const AVATAR_BUCKET = "meeting-bot-avatars";
 
@@ -243,7 +297,8 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
       const segments = await getTranscript(bot);
       if (segments.length) {
         update.transcript = segments as unknown as MeetingUpdate["transcript"];
-        update.summary = summarizeTranscript(segments);
+        const breakdown = await generateMeetingBreakdown(transcriptSegmentsToText(segments));
+        update.summary = breakdown ?? summarizeTranscript(segments);
         if (needsAutoTitle(meeting.title)) {
           const generated = await generateMeetingTitle(
             update.summary || segments.map((s) => s.text).join(" "),
@@ -463,15 +518,34 @@ export async function refreshMeetingRecording(meetingId: string): Promise<{
   let hasTranscript = !!meeting.transcript;
   let hasSummary = !!meeting.summary;
 
-  // Backfill transcript/summary only if they never landed.
-  if (!meeting.transcript || !meeting.summary) {
+  // Backfill transcript/summary if they never landed, and upgrade an old
+  // extractive digest (no "## Overview") to a real AI breakdown.
+  const needsBackfill = !meeting.transcript || !meeting.summary;
+  const needsSummaryUpgrade =
+    !!meeting.transcript && !!meeting.summary && !isBreakdownSummary(meeting.summary);
+  if (needsBackfill || needsSummaryUpgrade) {
     try {
       const segments = await getTranscript(bot);
       if (segments.length) {
-        update.transcript = segments as unknown as MeetingUpdate["transcript"];
-        update.summary = summarizeTranscript(segments);
-        hasTranscript = true;
-        hasSummary = !!update.summary;
+        if (!meeting.transcript) {
+          update.transcript = segments as unknown as MeetingUpdate["transcript"];
+          hasTranscript = true;
+        }
+        if (!meeting.summary) {
+          const breakdown = await generateMeetingBreakdown(transcriptSegmentsToText(segments));
+          const newSummary = breakdown ?? summarizeTranscript(segments);
+          if (newSummary) {
+            update.summary = newSummary;
+            hasSummary = true;
+          }
+        } else if (!isBreakdownSummary(meeting.summary)) {
+          // Only overwrite the old digest when the AI breakdown succeeds.
+          const breakdown = await generateMeetingBreakdown(transcriptSegmentsToText(segments));
+          if (breakdown) {
+            update.summary = breakdown;
+            hasSummary = true;
+          }
+        }
       }
     } catch (e) {
       logError("meeting_refresh_transcript_failed", { meetingId }, e);
@@ -593,28 +667,9 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
   // Store the transcript in the same shape the detail view already renders.
   const segments: TranscriptSegment[] = [{ speaker: null, text: transcriptText, start: 0 }];
 
-  // Summarize with the default chat model, matching the "Key moments" style.
-  let summary: string | null;
-  try {
-    const { generateText } = await import("ai");
-    const { createLovableAiGatewayProvider } = await import("./ai-gateway");
-    const model = createLovableAiGatewayProvider(apiKey)(SUMMARY_MODEL);
-    const { text } = await generateText({
-      model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You summarize meeting transcripts. Reply with a heading line 'Key moments' followed by 3-6 concise bullet points starting with '• '. No preamble.",
-        },
-        { role: "user", content: transcriptText.slice(0, 24000) },
-      ],
-    });
-    summary = text.trim() || null;
-  } catch (e) {
-    logError("meeting_in_person_summary_failed", { meetingId }, e);
-    summary = summarizeTranscript(segments);
-  }
+  // Write a detailed AI breakdown; fall back to the compact digest on failure.
+  const breakdown = await generateMeetingBreakdown(transcriptText);
+  const summary: string | null = breakdown ?? summarizeTranscript(segments);
 
   const update: MeetingUpdate = {
     transcript: segments as unknown as MeetingUpdate["transcript"],
