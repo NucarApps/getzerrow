@@ -91,6 +91,60 @@ export async function generateMeetingTitle(sourceText: string): Promise<string |
   }
 }
 
+/** System prompt for the AI-written meeting breakdown (markdown output). */
+const BREAKDOWN_SYSTEM_PROMPT =
+  "You analyze meeting transcripts and write detailed breakdowns in markdown. " +
+  "Use exactly these '## ' sections in this order: Overview, Topics discussed, Key decisions, Action items, Notable moments. " +
+  "Overview: 2-4 sentences on what the meeting was about and its outcome. " +
+  "Topics discussed: a '### ' subheading per topic followed by a detailed explanation of what was said, naming who said it whenever speaker names appear. " +
+  "Key decisions, Action items (with owners when clear), and Notable moments: '- ' bullets; if a section truly has nothing, use a single bullet '- None noted.' " +
+  "Start directly with '## Overview'. No preamble, no code fences.";
+
+/** True when a stored summary is a real AI breakdown (not the old digest). */
+export function isBreakdownSummary(summary: string | null | undefined): boolean {
+  return !!summary && summary.includes("## Overview");
+}
+
+/** Join transcript segments into speaker-prefixed lines for the AI breakdown. */
+export function transcriptSegmentsToText(segments: TranscriptSegment[]): string {
+  return segments
+    .map((s) => {
+      const text = s.text.trim();
+      return s.speaker ? `${s.speaker}: ${text}` : text;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Produce a detailed, AI-written markdown breakdown of a meeting from its
+ * speaker-prefixed transcript text. Best-effort: returns null on any failure
+ * (missing key, empty text, AI error) so callers can fall back to the compact
+ * extractive digest (summarizeTranscript).
+ */
+export async function generateMeetingBreakdown(transcriptText: string): Promise<string | null> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  const text = transcriptText.trim();
+  if (!apiKey || !text) return null;
+  try {
+    const { generateText } = await import("ai");
+    const { createLovableAiGatewayProvider } = await import("./ai-gateway");
+    const model = createLovableAiGatewayProvider(apiKey)(SUMMARY_MODEL);
+    const { text: raw } = await generateText({
+      model,
+      messages: [
+        { role: "system", content: BREAKDOWN_SYSTEM_PROMPT },
+        { role: "user", content: text.slice(0, 24000) },
+      ],
+    });
+    const cleaned = raw.trim();
+    return cleaned || null;
+  } catch (e) {
+    logError("meeting_breakdown_failed", {}, e);
+    return null;
+  }
+}
+
 export const DEFAULT_BOT_NAME = "Zerrow Notetaker";
 const AVATAR_BUCKET = "meeting-bot-avatars";
 
