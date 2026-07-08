@@ -1083,6 +1083,21 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     setRefreshing(false);
   }
 
+  async function onRegenerateSummary() {
+    if (!id) return;
+    setRegeneratingSummary(true);
+    try {
+      await regenSummary({ data: { id } });
+      await qc.invalidateQueries({ queryKey: ["meeting", id] });
+      await qc.invalidateQueries({ queryKey: ["meetings"] });
+      toast.success("Summary updated");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not regenerate summary");
+    }
+    setRegeneratingSummary(false);
+  }
+
+
   async function onDelete() {
     if (!id) return;
     setBusy(true);
