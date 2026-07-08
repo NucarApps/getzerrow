@@ -667,28 +667,9 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
   // Store the transcript in the same shape the detail view already renders.
   const segments: TranscriptSegment[] = [{ speaker: null, text: transcriptText, start: 0 }];
 
-  // Summarize with the default chat model, matching the "Key moments" style.
-  let summary: string | null;
-  try {
-    const { generateText } = await import("ai");
-    const { createLovableAiGatewayProvider } = await import("./ai-gateway");
-    const model = createLovableAiGatewayProvider(apiKey)(SUMMARY_MODEL);
-    const { text } = await generateText({
-      model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You summarize meeting transcripts. Reply with a heading line 'Key moments' followed by 3-6 concise bullet points starting with '• '. No preamble.",
-        },
-        { role: "user", content: transcriptText.slice(0, 24000) },
-      ],
-    });
-    summary = text.trim() || null;
-  } catch (e) {
-    logError("meeting_in_person_summary_failed", { meetingId }, e);
-    summary = summarizeTranscript(segments);
-  }
+  // Write a detailed AI breakdown; fall back to the compact digest on failure.
+  const breakdown = await generateMeetingBreakdown(transcriptText);
+  const summary: string | null = breakdown ?? summarizeTranscript(segments);
 
   const update: MeetingUpdate = {
     transcript: segments as unknown as MeetingUpdate["transcript"],
