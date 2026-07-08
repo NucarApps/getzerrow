@@ -1382,9 +1382,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                           <FileText className="h-4 w-4" /> Summary
                         </h3>
                         {meeting.summary ? (
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                            {meeting.summary}
-                          </p>
+                          <MeetingSummary markdown={meeting.summary} />
                         ) : (
                           <p className="text-sm text-muted-foreground">
                             No summary yet. It appears here once the recording is processed.
