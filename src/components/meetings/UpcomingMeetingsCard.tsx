@@ -103,6 +103,7 @@ export function UpcomingMeetingsCard({
 
   const noCalendar = !!data && !data.calendarAccess;
   const events = data?.events ?? [];
+  const needsReconnect = data?.accountsNeedingReconnect ?? [];
   const recordable = events.filter((e) => e.hasMeetingLink);
   const multipleAccounts = new Set(recordable.map((e) => e.accountId)).size > 1;
 
