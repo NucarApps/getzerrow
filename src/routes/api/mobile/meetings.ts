@@ -96,6 +96,56 @@ async function handleUpcoming({ supabase, userId }: Auth): Promise<Response> {
   return Response.json({ ok: true, calendar_access: true, events });
 }
 
+/** Every calendar event from the past 7 days through the next 14 days across
+ *  each calendar-enabled inbox, annotated with its recording plan — the same
+ *  window the web meetings page shows. */
+async function handleCalendar({ supabase, userId }: Auth): Promise<Response> {
+  const { data: accounts } = await supabase
+    .from("gmail_accounts")
+    .select("id, email_address, calendar_access")
+    .eq("calendar_access", true);
+
+  if (!accounts || accounts.length === 0) {
+    return Response.json({ ok: true, calendar_access: false, events: [] });
+  }
+
+  const { listCalendarEventsWindow } = await import("@/lib/meetings-autojoin.server");
+  const events: Record<string, unknown>[] = [];
+  for (const acct of accounts) {
+    try {
+      const accountEvents = await listCalendarEventsWindow(acct.id, userId, 7, 14);
+      for (const e of accountEvents) {
+        events.push({
+          id: e.id,
+          title: e.title,
+          start: e.start,
+          end: e.end,
+          has_meeting_link: e.hasMeetingLink,
+          scheduled: e.scheduled,
+          excluded: e.excluded,
+          record_mode: e.recordMode,
+          blocked: e.blocked,
+          blocked_by: e.blockedBy,
+          declined: e.declined,
+          will_record: e.willRecord,
+          skip_reason: e.skipReason,
+          meeting_id: e.meetingId,
+          meeting_status: e.meetingStatus,
+          has_recording: e.hasRecording,
+          account_id: acct.id,
+          account_email: acct.email_address ?? null,
+        });
+      }
+    } catch (e) {
+      // One broken inbox shouldn't hide everyone else's calendar.
+      logError("mobile_meetings_calendar_failed", { accountId: acct.id, userId }, e);
+    }
+  }
+  events.sort((a, b) => String(a.start ?? "").localeCompare(String(b.start ?? "")));
+  return Response.json({ ok: true, calendar_access: true, events });
+}
+
+
 /** Exclude (or re-include) one calendar event from auto-record. */
 async function handleSetExclusion(
   { supabase, userId }: Auth,
