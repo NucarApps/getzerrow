@@ -1682,7 +1682,6 @@ export type Database = {
       }
       sync_state: {
         Row: {
-          id: number
           last_history_id: string | null
           last_poll_at: string | null
           updated_at: string
@@ -1690,7 +1689,6 @@ export type Database = {
           watch_expiration: string | null
         }
         Insert: {
-          id?: number
           last_history_id?: string | null
           last_poll_at?: string | null
           updated_at?: string
@@ -1698,7 +1696,6 @@ export type Database = {
           watch_expiration?: string | null
         }
         Update: {
-          id?: number
           last_history_id?: string | null
           last_poll_at?: string | null
           updated_at?: string
