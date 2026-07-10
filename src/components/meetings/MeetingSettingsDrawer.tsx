@@ -61,7 +61,10 @@ export function MeetingSettingsDrawer() {
           ))}
 
           {accounts.map((a) => (
-            <MeetingAutoRecordCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
+            <div key={a.id} className="space-y-6">
+              <MeetingAutoRecordCard accountId={a.id} accountEmail={a.email_address} />
+              <MeetingCalendarSelectCard accountId={a.id} accountEmail={a.email_address} />
+            </div>
           ))}
 
           <MeetingRecordBlocklistCard />
