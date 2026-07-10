@@ -580,16 +580,27 @@ export const listAccountCalendars = createServerFn({ method: "GET" })
     }
   });
 
-/** Turn recording on/off for one calendar under an account. */
-export const setCalendarEnabled = createServerFn({ method: "POST" })
+/**
+ * Persist the full per-calendar recording selection for one account. The UI
+ * always sends every calendar's current state, so the stored rows stay a
+ * complete, consistent snapshot (no implicit "primary on" gaps once rows
+ * exist). Upserts on (gmail_account_id, calendar_id).
+ */
+export const saveCalendarSelections = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
     z
       .object({
         accountId: z.string().uuid(),
-        calendarId: z.string().min(1),
-        calendarSummary: z.string().nullable().optional(),
-        enabled: z.boolean(),
+        calendars: z
+          .array(
+            z.object({
+              calendarId: z.string().min(1),
+              calendarSummary: z.string().nullable().optional(),
+              enabled: z.boolean(),
+            }),
+          )
+          .min(1),
       })
       .parse(input),
   )
@@ -602,19 +613,21 @@ export const setCalendarEnabled = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!acct) throw new Error("Account not found");
 
-    const { error } = await context.supabase.from("meeting_calendar_selections").upsert(
-      {
-        user_id: context.userId,
-        gmail_account_id: data.accountId,
-        calendar_id: data.calendarId,
-        calendar_summary: data.calendarSummary ?? null,
-        enabled: data.enabled,
-      },
-      { onConflict: "gmail_account_id,calendar_id" },
-    );
+    const rows = data.calendars.map((c) => ({
+      user_id: context.userId,
+      gmail_account_id: data.accountId,
+      calendar_id: c.calendarId,
+      calendar_summary: c.calendarSummary ?? null,
+      enabled: c.enabled,
+    }));
+    const { error } = await context.supabase
+      .from("meeting_calendar_selections")
+      .upsert(rows, { onConflict: "gmail_account_id,calendar_id" });
     if (error) throw new Error(error.message);
-    return { enabled: data.enabled };
+    return { saved: rows.length };
   });
+
+
 
 
 
