@@ -168,7 +168,7 @@ export function UpcomingMeetingsCard({
         ) : recordable.length === 0 ? (
           needsReconnect.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No upcoming meetings with a Zoom, Meet, or Teams link in the next 14 days.
+              No meetings on your calendar in the next 14 days.
             </p>
           ) : null
         ) : (
