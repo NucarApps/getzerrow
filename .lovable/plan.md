@@ -1,25 +1,27 @@
-# Gmail reconnect banner
+## Problem
 
-When any connected Gmail account's OAuth token has been revoked/expired (`needs_reconnect = true`), show a prominent banner at the top of every logged-in page prompting the user to reconnect. This mirrors the existing "Reconnect Gmail" action already living in Settings → Account health, but surfaces it globally so it's caught quickly (like Shawn Hanlon's inbox that silently stopped syncing for 23h).
+On the Meetings page, the Upcoming tab and the "Not recorded" rows in the Past tab show events from **all** inboxes that have calendar access — not just the inboxes where meeting recording is turned on. You have 3 inboxes with calendar access but only chris@nucar.com has auto-record enabled, so events from the other two still appear.
 
-## What the user sees
+The two server functions that feed these lists filter accounts by `calendar_access = true` only. They ignore the per-inbox `auto_record_meetings` flag (the "Auto-record meetings" toggle in Meeting settings).
 
-- A red/destructive banner pinned at the top of the app content, directly above the current `BackfillBanner`, on every authenticated page.
-- Copy names the affected inbox, e.g. *"Gmail disconnected for shawn@nucar.com — reconnect required to resume syncing."* If more than one account is affected, it summarizes (e.g. *"2 inboxes need reconnecting"*) and lists each with its own reconnect button.
-- A **Reconnect** button per affected account that kicks off the Google OAuth flow (same behavior as the Settings button). Clicking redirects to Google consent and returns to Settings on success.
-- The banner disappears automatically once the account is reconnected (the reconnect flag clears server-side, and the health query refetches).
-- Nothing shows when all accounts are healthy.
+## Fix
 
-## Technical details
+Scope both list queries to inboxes that have recording turned on, so events from inboxes where recording is off never appear on the Meetings page.
 
-- **New component** `src/components/inbox/ReconnectBanner.tsx`:
-  - Uses the existing `getAccountHealth` server function (via `useServerFn` + `useQuery`, key `["account-health"]`) which already returns `needsReconnect`, `email`, and `lastOauthError` per account. Reuse the same query key so it shares cache with the Settings health panel; poll on an interval (e.g. 60s) so a newly-broken account surfaces without a manual refresh.
-  - Filters to `accounts.filter(a => a.needsReconnect)`; renders nothing if empty.
-  - Reconnect button calls `startConnectGmail` (`useServerFn`) with `{ data: { login_hint: email } }` and sets `window.location.href = r.url`, identical to `AccountHealthPanel.handleReconnect`.
-  - Styled with existing destructive design tokens (border-destructive/40, bg-destructive/10, text-destructive) and lucide `AlertTriangle` / `RefreshCw` icons — consistent with the current reconnect block in `AccountHealthCard.tsx`. No hardcoded colors.
-  - Optional local dismiss state so the user can hide it for the session (still reappears on reload while unresolved). Keep it lightweight.
+### `src/lib/meetings.functions.ts`
 
-- **Wire into layout** `src/routes/_authenticated.tsx`:
-  - Render `<ReconnectBanner />` immediately above the existing `<BackfillBanner />` (line ~147), so it appears on inbox, contacts, meetings, reports, settings, and admin.
+1. **`listAllUpcomingCalendarEvents`** (feeds the Upcoming tab): change the accounts query to also require `auto_record_meetings = true`, i.e. add `.eq("auto_record_meetings", true)` alongside the existing `.eq("calendar_access", true)`.
 
-No backend, schema, or server-function changes are required — all needed data and the reconnect action already exist.
+2. **`listRecentUnrecordedEvents`** (feeds the "Not recorded" rows in the Past tab): apply the same `.eq("auto_record_meetings", true)` filter.
+
+No other logic changes are needed — the reconnect-prompt handling, per-event mode selection, and sorting all continue to work; they just operate on the reduced set of recording-enabled inboxes.
+
+## Result
+
+- Upcoming and Past tabs show meetings only from inboxes where auto-record is on (currently just chris@nucar.com).
+- Turning auto-record on for another inbox in Meeting settings makes its events appear; turning it off removes them.
+- The per-inbox Meeting settings cards are unaffected (they're still driven by explicit account selection).
+
+## Note / open question
+
+This ties "which inboxes' meetings I see" directly to the per-inbox auto-record toggle. If instead you'd want events to still be *visible* from all calendar-connected inboxes but only *auto-recorded* for enabled ones, that's a different behavior — let me know and I'll adjust. The plan above matches your stated expectation: only the inbox turned on for meetings should show events.

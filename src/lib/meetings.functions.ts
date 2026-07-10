@@ -696,7 +696,8 @@ export const listAllUpcomingCalendarEvents = createServerFn({ method: "GET" })
     const { data: accounts } = await context.supabase
       .from("gmail_accounts")
       .select("id, email_address, calendar_access, needs_reconnect")
-      .eq("calendar_access", true);
+      .eq("calendar_access", true)
+      .eq("auto_record_meetings", true);
 
     if (!accounts || accounts.length === 0) {
       return {
@@ -762,7 +763,8 @@ export const listRecentUnrecordedEvents = createServerFn({ method: "GET" })
     const { data: accounts } = await context.supabase
       .from("gmail_accounts")
       .select("id, email_address, calendar_access, needs_reconnect")
-      .eq("calendar_access", true);
+      .eq("calendar_access", true)
+      .eq("auto_record_meetings", true);
 
     if (!accounts || accounts.length === 0) {
       return { events: [] as RecentUnrecordedEvent[] };
