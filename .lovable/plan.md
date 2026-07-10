@@ -1,36 +1,56 @@
-# Fix: missing upcoming meetings when a calendar account needs reconnecting
+# Per-calendar recording selection
 
-## What's wrong
+## Goal
+Today each connected email has one on/off recording toggle, and Zerrow only ever reads that email's **primary** Google Calendar. This adds a second level: once recording is ON for an email, the user can pick **which calendars** under that email (e.g. a main work calendar and a personal calendar) are recorded and shown.
 
-The **Upcoming** tab reads your Google Calendar per connected account. When an account's Google connection has gone stale (its `needs_reconnect` flag is on — currently the case for `shawn@nucar.com`), the app still tries to read that calendar, the read fails, and the error is **caught and silently swallowed**. That account's meetings simply disappear from the list, and because at least one calendar is still "connected," the page shows a misleading "No upcoming meetings…" (or a partial list) with no explanation.
+Decided behavior:
+- When recording is turned on for an email, only the **primary** calendar is selected by default.
+- A calendar's selection controls **both** what shows in the meetings/upcoming lists **and** what the notetaker records. Unselected calendars are fully ignored.
 
-Result: a real meeting (your 9 AM today) that lives on a needs-reconnect account never shows up, and nothing tells you why.
+## What the user sees
+In Meeting settings, under each email that has recording turned on, a new "Calendars" section lists every calendar Google reports for that email, each with a toggle:
 
-This is not a Recall-vs-us data problem — we never fetch that calendar at all while the account is in the needs-reconnect state.
+```text
+Auto-record meetings            shawn@nucar.com        [ON]
+  Calendars to record
+   ▸ shawn@nucar.com (Main)                            [ON]
+   ▸ Personal                                          [OFF]
+   ▸ Team Holidays                                     [OFF]
+```
 
-## The fix
+Turning a calendar on/off immediately changes which meetings appear in Upcoming meetings and which the notetaker joins. When recording is off for the email, the calendar list is hidden/disabled.
 
-Make the failure visible and actionable instead of hidden.
+## How it works
 
-### 1. Report per-account status from the server (`src/lib/meetings.functions.ts`)
-- In `listAllUpcomingCalendarEvents`, distinguish a "needs reconnect" failure from a transient one when a per-account calendar read throws.
-- Import `NeedsReconnectError` from `google-oauth.server` and detect it (directly, or via the account's `needs_reconnect` flag which is already selected). 
-- Add the account's `needs_reconnect` flag to the `gmail_accounts` select.
-- Return an extra field alongside `events`, e.g. `accountsNeedingReconnect: { id, email }[]`, listing every calendar account that couldn't be read because it needs reconnecting. Keep `calendarAccess` and `events` unchanged so nothing else breaks.
+### 1. Store the selection (new table)
+New table `meeting_calendar_selections`:
+- `user_id`, `gmail_account_id`, `calendar_id` (Google calendar id), `calendar_summary` (display name cache), `enabled` (bool)
+- unique on `(gmail_account_id, calendar_id)`
+- RLS scoped to `auth.uid()`, plus `service_role` grant (cron/bot scheduler reads it).
 
-### 2. Surface it in the UI (`src/components/meetings/UpcomingMeetingsCard.tsx`)
-- When `accountsNeedingReconnect` is non-empty, render a clear, friendly banner above the list: e.g. "Reconnect shawn@nucar.com to see its meetings," with a button/link that points to the existing Settings reconnect flow for Gmail accounts.
-- Only show the plain "No upcoming meetings with a Zoom, Meet, or Teams link in the next 14 days." empty state when there are **no** accounts needing reconnect — otherwise the reconnect banner is the message.
-- If some accounts loaded and others need reconnect, show both the loaded meetings and the banner.
+Fallback rule: if an account has **no** rows yet, the app treats it as "primary calendar only" so existing users keep working unchanged. Rows get written the first time the user opens the calendar list or toggles a calendar.
 
-### 3. Reconnect entry point
-Reuse whatever the Settings page already uses to reconnect a Gmail/calendar account (the same OAuth authorize flow). The banner links there (deep-link to settings) rather than duplicating OAuth logic in this card.
+### 2. Read the list of calendars
+Add a server helper to fetch Google's `calendarList` for an account (same OAuth token/scope already used for calendar reads). A new authenticated server function `listAccountCalendars({ accountId })` returns each calendar (`id`, `summary`, `primary`) merged with its stored `enabled` state (primary defaults to on when nothing is stored).
 
-## Notes / out of scope
-- No database schema change is needed; `needs_reconnect` already exists on `gmail_accounts`.
-- Once `shawn@nucar.com` is reconnected, its calendar reads resume and the 9 AM meeting appears normally — the banner is what makes that obvious.
-- This does not change how meetings with no supported video link are filtered, or how secondary (non-primary) calendars are read; if a meeting is ever missing for those reasons, that's a separate follow-up we can tackle after confirming this fixes the reported case.
+A companion `setCalendarEnabled({ accountId, calendarId, calendarSummary, enabled })` upserts a row.
 
-## Technical detail
-- `listAllUpcomingCalendarEventsForAccount` currently throws on token failure; the outer loop catches into `meeting_list_all_events_failed`. We'll branch there: if the account row has `needs_reconnect` (or the thrown error is `NeedsReconnectError`), push it to `accountsNeedingReconnect` instead of only logging.
-- Type update: extend the query-return type used by `useQuery` in `UpcomingMeetingsCard` to include the new field.
+### 3. Record/list only selected calendars
+- Generalize `fetchEventsInWindow` in `src/lib/meetings-autojoin.server.ts` to take a `calendarId` (defaults to `primary`), and add a helper that resolves an account's selected calendar ids (stored enabled rows, or `["primary"]` fallback).
+- `listUpcomingCalendarEventsForAccount` and `listCalendarEventsWindow` fetch across all selected calendars and merge results (dedupe by event id).
+- `scheduleUpcomingMeetingBots` iterates each account's selected calendars instead of only primary. This is the one intentional change to bot scheduling — required so "which calendar I want to record" is honored. The rest of its logic (blocklist, declined, exclusions, dedupe on `calendar_event_id`) is unchanged.
+
+### 4. UI
+New `MeetingCalendarSelectCard` component rendered in `MeetingSettingsDrawer` (and any settings surface using these cards) directly under `MeetingAutoRecordCard`, per account:
+- Uses React Query + `useServerFn`, following the existing card patterns.
+- Lists calendars with shadcn `Switch` toggles, optimistic update, disabled when recording is off or calendar access is missing.
+- Invalidates the `calendar-events` / upcoming queries on change so lists refresh.
+
+## Technical notes
+- New endpoints are authenticated server functions in `src/lib/meetings.functions.ts` using `requireSupabaseAuth`; the scheduler reads selections via `supabaseAdmin` inside the existing server-only module.
+- No new OAuth scope needed — `calendarList.list` works with the calendar scope already granted.
+- Event ids are globally unique across a user's calendars, so `meetings.calendar_event_id` and `meeting_autojoin_exclusions` need no schema change.
+- Backwards compatible: accounts with no selection rows behave exactly as today (primary only).
+
+## Out of scope
+- No change to how a scheduled bot is created/configured (name, avatar, chat), the blocklist, declined handling, or the per-event skip toggles — those keep working as they do now.
