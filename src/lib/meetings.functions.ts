@@ -562,43 +562,69 @@ export type UpcomingCalendarEventWithAccount = UpcomingCalendarEvent & {
   accountEmail: string | null;
 };
 
+/** A calendar-enabled inbox whose events couldn't be read until it's reconnected. */
+export type CalendarAccountNeedingReconnect = {
+  id: string;
+  email: string | null;
+};
+
 /**
  * List upcoming calendar events (next 14 days) across all of the caller's
  * calendar-enabled inboxes, merged into one time-sorted list so the meetings
  * page can show what the notetaker will join. Per-account Google failures are
- * logged and skipped so one bad inbox doesn't break the whole list.
+ * logged and skipped so one bad inbox doesn't break the whole list; inboxes
+ * that need reconnecting are surfaced separately so the UI can prompt for it
+ * instead of silently dropping their meetings.
  */
 export const listAllUpcomingCalendarEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data: accounts } = await context.supabase
       .from("gmail_accounts")
-      .select("id, email_address, calendar_access")
+      .select("id, email_address, calendar_access, needs_reconnect")
       .eq("calendar_access", true);
 
     if (!accounts || accounts.length === 0) {
-      return { calendarAccess: false, events: [] as UpcomingCalendarEventWithAccount[] };
+      return {
+        calendarAccess: false,
+        events: [] as UpcomingCalendarEventWithAccount[],
+        accountsNeedingReconnect: [] as CalendarAccountNeedingReconnect[],
+      };
     }
 
+    const { NeedsReconnectError } = await import("./google-oauth.server");
     const { listUpcomingCalendarEventsForAccount } = await import("./meetings-autojoin.server");
     const events: UpcomingCalendarEventWithAccount[] = [];
+    const accountsNeedingReconnect: CalendarAccountNeedingReconnect[] = [];
     for (const acct of accounts) {
+      // Known-stale inbox: don't even try to read it — surface the reconnect
+      // prompt so its meetings don't just vanish from the list.
+      if (acct.needs_reconnect) {
+        accountsNeedingReconnect.push({ id: acct.id, email: acct.email_address ?? null });
+        continue;
+      }
       try {
         const accountEvents = await listUpcomingCalendarEventsForAccount(acct.id, context.userId);
         for (const e of accountEvents) {
           events.push({ ...e, accountId: acct.id, accountEmail: acct.email_address ?? null });
         }
       } catch (e) {
-        logError(
-          "meeting_list_all_events_failed",
-          { accountId: acct.id, userId: context.userId },
-          e,
-        );
+        // A dead OAuth grant surfaces as a reconnect prompt; anything else is
+        // a transient failure we just log and skip.
+        if (e instanceof NeedsReconnectError) {
+          accountsNeedingReconnect.push({ id: acct.id, email: acct.email_address ?? null });
+        } else {
+          logError(
+            "meeting_list_all_events_failed",
+            { accountId: acct.id, userId: context.userId },
+            e,
+          );
+        }
       }
     }
 
     events.sort((a, b) => (a.start ?? "").localeCompare(b.start ?? ""));
-    return { calendarAccess: true, events };
+    return { calendarAccess: true, events, accountsNeedingReconnect };
   });
 
 /** Exclude (or re-include) one calendar event from auto-record. */
