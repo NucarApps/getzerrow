@@ -1,43 +1,36 @@
-## Goal
+# Fix: missing upcoming meetings when a calendar account needs reconnecting
 
-Right now the notetaker sends a bot to every upcoming calendar event that has a meeting link, ignoring your RSVP. We'll make it respect your response status:
+## What's wrong
 
-- **Default:** skip meetings you've declined (or haven't accepted responses aside — only explicit "declined" is skipped, so tentative/no-response still records as today).
-- **New opt-in per inbox:** "Record meetings I've declined." When on, the notetaker joins declined meetings too — so it records even when you're not attending.
-- The upcoming-meetings list marks declined events so you can see them and understand what will/won't be recorded.
+The **Upcoming** tab reads your Google Calendar per connected account. When an account's Google connection has gone stale (its `needs_reconnect` flag is on — currently the case for `shawn@nucar.com`), the app still tries to read that calendar, the read fails, and the error is **caught and silently swallowed**. That account's meetings simply disappear from the list, and because at least one calendar is still "connected," the page shows a misleading "No upcoming meetings…" (or a partial list) with no explanation.
 
-## What changes
+Result: a real meeting (your 9 AM today) that lives on a needs-reconnect account never shows up, and nothing tells you why.
 
-### 1. Database
-Add one column to the Gmail account (inbox) record:
-- `record_declined_meetings` — boolean, defaults to off (`false`).
+This is not a Recall-vs-us data problem — we never fetch that calendar at all while the account is in the needs-reconnect state.
 
-### 2. Scheduler (backend auto-join logic)
-In the routine that schedules bots for upcoming meetings:
-- Read each attendee's RSVP status from the calendar event (Google returns your own status on the event's attendee entry marked `self`).
-- Add a helper that returns whether *you* declined the event.
-- When an event is declined by you **and** the inbox's `record_declined_meetings` is off → skip it (with a log line, same as the existing blocklist skip).
-- When the toggle is on → schedule the bot as normal.
-- Organizer-only events (where you aren't listed as an attendee) are treated as not declined, so nothing changes for those.
+## The fix
 
-### 3. Upcoming-meetings list (backend read)
-The function that lists the next 14 days of events per inbox will add a `declined` flag to each event, and the per-account list response will also report the inbox's current `record_declined_meetings` setting so the UI can show accurate "will record / skipped" state.
+Make the failure visible and actionable instead of hidden.
 
-### 4. Server functions
-- Extend the auto-record status function to also return `recordDeclined`.
-- Add a `setRecordDeclined` function to flip the new per-inbox toggle (auth-scoped, RLS-checked like the existing `setAutoRecord`).
+### 1. Report per-account status from the server (`src/lib/meetings.functions.ts`)
+- In `listAllUpcomingCalendarEvents`, distinguish a "needs reconnect" failure from a transient one when a per-account calendar read throws.
+- Import `NeedsReconnectError` from `google-oauth.server` and detect it (directly, or via the account's `needs_reconnect` flag which is already selected). 
+- Add the account's `needs_reconnect` flag to the `gmail_accounts` select.
+- Return an extra field alongside `events`, e.g. `accountsNeedingReconnect: { id, email }[]`, listing every calendar account that couldn't be read because it needs reconnecting. Keep `calendarAccess` and `events` unchanged so nothing else breaks.
 
-### 5. Settings UI
-- **Auto-record card:** add a second switch under the main auto-record toggle — "Record meetings I've declined" with a short helper line ("Send the notetaker even to meetings you've declined or aren't attending."). It's enabled only when auto-record is on and calendar access is granted; it defaults to off.
-- **Upcoming meetings card:** show a small "Declined" badge on declined events, and reflect whether each will be recorded based on the new setting (a declined event shows as skipped when the toggle is off, and as scheduled when it's on), while still respecting per-meeting exclusions and the don't-record blocklist.
+### 2. Surface it in the UI (`src/components/meetings/UpcomingMeetingsCard.tsx`)
+- When `accountsNeedingReconnect` is non-empty, render a clear, friendly banner above the list: e.g. "Reconnect shawn@nucar.com to see its meetings," with a button/link that points to the existing Settings reconnect flow for Gmail accounts.
+- Only show the plain "No upcoming meetings with a Zoom, Meet, or Teams link in the next 14 days." empty state when there are **no** accounts needing reconnect — otherwise the reconnect banner is the message.
+- If some accounts loaded and others need reconnect, show both the loaded meetings and the banner.
 
-## Notes
-- No change to how tentative or unanswered meetings are handled — only explicit declines are affected.
-- Fully backward compatible: existing inboxes get the toggle off, meaning declined meetings that used to be recorded will now be skipped by default (the requested behavior); users who want the old behavior flip the new switch on.
+### 3. Reconnect entry point
+Reuse whatever the Settings page already uses to reconnect a Gmail/calendar account (the same OAuth authorize flow). The banner links there (deep-link to settings) rather than duplicating OAuth logic in this card.
 
-### Technical details
-- Migration adds `record_declined_meetings boolean not null default false` to `public.gmail_accounts` (no new grants/policies needed — column on an existing table).
-- `src/lib/meetings-autojoin.server.ts`: add `responseStatus` to the attendee shape in `UpcomingEvent`; add `isDeclinedByUser(event)`; include `record_declined_meetings` in the account select inside `scheduleUpcomingMeetingBots` and skip declined events unless enabled; add `declined` to `UpcomingCalendarEvent` and populate it in `listUpcomingCalendarEventsForAccount`.
-- `src/lib/meetings.functions.ts`: return `recordDeclined` from `getAutoRecordStatus`; return `recordDeclined` alongside events from `listUpcomingCalendarEvents`; add `setRecordDeclined` server fn updating `gmail_accounts.record_declined_meetings`.
-- `src/components/settings/MeetingAutoRecordCard.tsx`: add the declined toggle wired to `setRecordDeclined` + `getAutoRecordStatus`.
-- `src/components/settings/MeetingCalendarEventsCard.tsx`: add declined badge and factor `declined` + `recordDeclined` into the send/skip display.
+## Notes / out of scope
+- No database schema change is needed; `needs_reconnect` already exists on `gmail_accounts`.
+- Once `shawn@nucar.com` is reconnected, its calendar reads resume and the 9 AM meeting appears normally — the banner is what makes that obvious.
+- This does not change how meetings with no supported video link are filtered, or how secondary (non-primary) calendars are read; if a meeting is ever missing for those reasons, that's a separate follow-up we can tackle after confirming this fixes the reported case.
+
+## Technical detail
+- `listAllUpcomingCalendarEventsForAccount` currently throws on token failure; the outer loop catches into `meeting_list_all_events_failed`. We'll branch there: if the account row has `needs_reconnect` (or the thrown error is `NeedsReconnectError`), push it to `accountsNeedingReconnect` instead of only logging.
+- Type update: extend the query-return type used by `useQuery` in `UpcomingMeetingsCard` to include the new field.
