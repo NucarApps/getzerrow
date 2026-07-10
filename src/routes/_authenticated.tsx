@@ -39,6 +39,7 @@ import type { Folder, GLabel } from "@/components/folders/FolderEditor";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
 import { useContactsRealtime } from "@/lib/use-contacts-realtime";
 import { BackfillBanner } from "@/components/inbox/BackfillBanner";
+import { ReconnectBanner } from "@/components/inbox/ReconnectBanner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -144,6 +145,7 @@ function AuthedLayoutInner({
             <AccountSwitcher accounts={accounts} loading={accountsQ.isLoading} compact />
           </div>
         </div>
+        <ReconnectBanner />
         <BackfillBanner />
         <div className="min-h-0 flex-1">
           <Outlet />
