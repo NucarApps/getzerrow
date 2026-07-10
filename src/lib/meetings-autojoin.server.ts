@@ -180,7 +180,143 @@ export async function listUpcomingCalendarEventsForAccount(
     });
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * One calendar event in a wider window (past + future), annotated with the
+ * linked meeting row (if any) and the resolved recording plan. Used by the
+ * mobile calendar list and the web "recently missed" merge.
+ */
+export type CalendarWindowEvent = UpcomingCalendarEvent & {
+  end: string | null;
+  meetingId: string | null;
+  meetingStatus: string | null;
+  hasRecording: boolean;
+  willRecord: boolean;
+  skipReason: string | null;
+};
+
+/**
+ * List an account's calendar events across a window that can reach into the
+ * past (`daysBack`) and the future (`daysAhead`), each annotated with its
+ * linked meeting row and a resolved recording plan (`willRecord` / `skipReason`).
+ * Modeled on {@link listUpcomingCalendarEventsForAccount}; read-only, so it
+ * never affects how {@link scheduleUpcomingMeetingBots} schedules bots.
+ */
+export async function listCalendarEventsWindow(
+  accountId: string,
+  userId: string,
+  daysBack: number,
+  daysAhead: number,
+): Promise<CalendarWindowEvent[]> {
+  const events = await fetchEventsInWindow(
+    accountId,
+    daysAhead * 24 * 60,
+    daysBack * 24 * 60,
+  );
+
+  const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
+  if (eventIds.length === 0) return [];
+
+  const [{ data: meetingRows }, { data: excludedRows }, { data: acct }] = await Promise.all([
+    supabaseAdmin
+      .from("meetings")
+      .select("id, calendar_event_id, status, recording_url")
+      .eq("user_id", userId)
+      .in("calendar_event_id", eventIds),
+    supabaseAdmin
+      .from("meeting_autojoin_exclusions")
+      // `*` (not named columns) so the query still works while the `mode`
+      // column migration is rolling out — a missing mode reads as "off".
+      .select("*")
+      .eq("user_id", userId)
+      .in("calendar_event_id", eventIds),
+    supabaseAdmin
+      .from("gmail_accounts")
+      .select("auto_record_meetings, record_declined_meetings")
+      .eq("id", accountId)
+      .maybeSingle(),
+  ]);
+
+  const meetingByEvent = new Map<
+    string,
+    { id: string; status: string | null; recordingUrl: string | null }
+  >();
+  for (const r of meetingRows ?? []) {
+    if (r.calendar_event_id) {
+      meetingByEvent.set(r.calendar_event_id, {
+        id: r.id,
+        status: r.status ?? null,
+        recordingUrl: r.recording_url ?? null,
+      });
+    }
+  }
+  const exclusionModes = new Map<string, string>(
+    (excludedRows ?? []).map((r) => [r.calendar_event_id, r.mode ?? "off"]),
+  );
+
+  const autoRecord = !!acct?.auto_record_meetings;
+  const recordDeclined = !!acct?.record_declined_meetings;
+
+  const blocklist = await loadBlocklist(userId);
+  const hasBlocklist = blocklist.emails.size > 0 || blocklist.domains.size > 0;
+
+  return events
+    .filter((e) => !!e.id)
+    .map((e) => {
+      const emails = hasBlocklist
+        ? [...(e.attendees ?? []).map((a) => a.email), e.organizer?.email].filter(
+            (addr): addr is string => !!addr,
+          )
+        : [];
+      const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
+      const exclusionMode = exclusionModes.get(e.id as string) ?? null;
+      const recordMode: MeetingRecordMode =
+        exclusionMode === null ? "bot" : exclusionMode === "in_person" ? "in_person" : "off";
+      const hasMeetingLink = !!extractMeetingUrl(e);
+      const blocked = blockedBy !== null;
+      const declined = isDeclinedByUser(e);
+      const meeting = meetingByEvent.get(e.id as string) ?? null;
+      const hasRecording =
+        typeof meeting?.recordingUrl === "string" && meeting.recordingUrl.length > 0;
+
+      const willRecord =
+        hasMeetingLink &&
+        !blocked &&
+        recordMode === "bot" &&
+        autoRecord &&
+        (recordDeclined || !declined);
+
+      let skipReason: string | null = null;
+      if (!willRecord) {
+        if (!hasMeetingLink) skipReason = "no_link";
+        else if (!autoRecord) skipReason = "auto_record_off";
+        else if (declined && !recordDeclined) skipReason = "declined";
+        else if (recordMode === "off") skipReason = "off";
+        else if (recordMode === "in_person") skipReason = "in_person";
+        else if (blocked) skipReason = "blocked";
+      }
+
+      return {
+        id: e.id as string,
+        title: e.summary ?? null,
+        start: e.start?.dateTime ?? e.start?.date ?? null,
+        end: e.end?.dateTime ?? e.end?.date ?? null,
+        hasMeetingLink,
+        scheduled: meeting !== null,
+        excluded: exclusionMode !== null,
+        recordMode,
+        blocked,
+        blockedBy,
+        declined,
+        meetingId: meeting?.id ?? null,
+        meetingStatus: meeting?.status ?? null,
+        hasRecording,
+        willRecord,
+        skipReason,
+      };
+    });
+}
+
+
 
 /** True when the error means the `mode` column hasn't been migrated yet. */
 function isMissingModeColumn(error: { code?: string; message?: string }): boolean {
