@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CalendarClock, Mic, Video } from "lucide-react";
+import { AlertTriangle, CalendarClock, Mic, RefreshCw, Video } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { startConnectGmail } from "@/lib/gmail.functions";
 import { listAllUpcomingCalendarEvents, setEventRecordingMode } from "@/lib/meetings.functions";
 
 /** How one upcoming meeting should be captured. */
