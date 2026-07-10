@@ -39,6 +39,7 @@ import type { Folder, GLabel } from "@/components/folders/FolderEditor";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
 import { useContactsRealtime } from "@/lib/use-contacts-realtime";
 import { BackfillBanner } from "@/components/inbox/BackfillBanner";
+import { ReconnectBanner } from "@/components/inbox/ReconnectBanner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
 export const Route = createFileRoute("/_authenticated")({
