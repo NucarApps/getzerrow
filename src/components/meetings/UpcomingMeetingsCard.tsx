@@ -104,7 +104,9 @@ export function UpcomingMeetingsCard({
   const noCalendar = !!data && !data.calendarAccess;
   const events = data?.events ?? [];
   const needsReconnect = data?.accountsNeedingReconnect ?? [];
-  const recordable = events.filter((e) => e.hasMeetingLink);
+  // Show every calendar meeting, even ones without a supported video link —
+  // those just can't be joined by the notetaker (shown with a muted note).
+  const recordable = events;
   const multipleAccounts = new Set(recordable.map((e) => e.accountId)).size > 1;
 
   return (
@@ -166,7 +168,7 @@ export function UpcomingMeetingsCard({
         ) : recordable.length === 0 ? (
           needsReconnect.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No upcoming meetings with a Zoom, Meet, or Teams link in the next 14 days.
+              No meetings on your calendar in the next 14 days.
             </p>
           ) : null
         ) : (
@@ -201,7 +203,11 @@ export function UpcomingMeetingsCard({
                     )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    {e.blocked ? (
+                    {!e.hasMeetingLink ? (
+                      <span className="max-w-[168px] text-right text-xs text-muted-foreground">
+                        No video link — the notetaker can't join
+                      </span>
+                    ) : e.blocked ? (
                       <span className="text-xs text-muted-foreground">Blocked</span>
                     ) : (
                       <>

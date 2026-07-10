@@ -16,6 +16,7 @@ import {
   extractMeetingUrl,
   createInPersonMeeting,
   transcribeInPersonMeeting,
+  listRecentUnrecordedEvents,
 } from "@/lib/meetings.functions";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
@@ -118,15 +119,32 @@ function formatWhen(iso: string | null): string {
   return new Date(iso).toLocaleString();
 }
 
+// Short, friendly reason a recent calendar meeting wasn't recorded.
+const SKIP_REASON_LABEL: Record<string, string> = {
+  no_link: "No video link",
+  auto_record_off: "Auto-record off",
+  declined: "Declined",
+  off: "Turned off",
+  in_person: "Recording in person",
+  blocked: "Blocked contact",
+};
+
+
 function MeetingsPage() {
   const qc = useQueryClient();
   const isMobile = useIsMobile();
   const list = useServerFn(listMeetings);
   const sync = useServerFn(syncMeeting);
+  const listRecentUnrecorded = useServerFn(listRecentUnrecordedEvents);
   const meetingsQ = useQuery({
     queryKey: ["meetings"],
     queryFn: () => list(),
     refetchInterval: 15000,
+  });
+  const recentUnrecordedQ = useQuery({
+    queryKey: ["recent-unrecorded-events"],
+    queryFn: () => listRecentUnrecorded(),
+    refetchInterval: 60000,
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -135,6 +153,30 @@ function MeetingsPage() {
   // linked back to that calendar event.
   const [inPersonPrefill, setInPersonPrefill] = useState<InPersonRecordPrefill | null>(null);
   const meetings = meetingsQ.data?.meetings ?? [];
+  const unrecorded = recentUnrecordedQ.data?.events ?? [];
+
+  // Merge recorded meetings with recent calendar meetings that were never
+  // recorded, newest first, so the past list shows everything that happened.
+  const pastRows = useMemo(() => {
+    type Row =
+      | { kind: "meeting"; sortKey: string; meeting: (typeof meetings)[number] }
+      | { kind: "unrecorded"; sortKey: string; event: (typeof unrecorded)[number] };
+    const rows: Row[] = [
+      ...meetings.map((m) => ({
+        kind: "meeting" as const,
+        sortKey: m.scheduled_start ?? m.created_at ?? "",
+        meeting: m,
+      })),
+      ...unrecorded.map((e) => ({
+        kind: "unrecorded" as const,
+        sortKey: e.start ?? "",
+        event: e,
+      })),
+    ];
+    rows.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
+    return rows;
+  }, [meetings, unrecorded]);
+
 
   // Best-effort: pull live status for any non-terminal meetings so the list
   // badges advance without opening each one, then refresh the list once.
@@ -197,7 +239,7 @@ function MeetingsPage() {
           <TabsContent value="past">
             {meetingsQ.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading meetings…</p>
-            ) : meetings.length === 0 ? (
+            ) : pastRows.length === 0 ? (
               <Card className="p-8 text-center">
                 <Video className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
@@ -208,32 +250,57 @@ function MeetingsPage() {
               </Card>
             ) : (
               <div className="space-y-2">
-                {meetings.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setSelectedId(m.id)}
-                    className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate font-medium">
-                          {m.title || "Untitled meeting"}
-                        </span>
-                        <StatusBadge status={m.status} />
+                {pastRows.map((row) =>
+                  row.kind === "meeting" ? (
+                    <button
+                      key={`m:${row.meeting.id}`}
+                      type="button"
+                      onClick={() => setSelectedId(row.meeting.id)}
+                      className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium">
+                            {row.meeting.title || "Untitled meeting"}
+                          </span>
+                          <StatusBadge status={row.meeting.status} />
+                        </div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          {row.meeting.platform ? `${row.meeting.platform.replace("_", " ")} · ` : ""}
+                          {row.meeting.source === "calendar" ? "From calendar · " : ""}
+                          {formatWhen(row.meeting.scheduled_start ?? row.meeting.created_at)}
+                        </div>
                       </div>
-                      <div className="mt-1 truncate text-xs text-muted-foreground">
-                        {m.platform ? `${m.platform.replace("_", " ")} · ` : ""}
-                        {m.source === "calendar" ? "From calendar · " : ""}
-                        {formatWhen(m.scheduled_start ?? m.created_at)}
+                      {row.meeting.summary && (
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                    </button>
+                  ) : (
+                    <div
+                      key={`u:${row.event.accountId}:${row.event.id}`}
+                      className="flex w-full items-center justify-between gap-3 rounded-md border border-dashed border-border bg-muted/20 p-4 text-left"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium text-muted-foreground">
+                            {row.event.title || "Untitled meeting"}
+                          </span>
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                            Not recorded
+                          </span>
+                        </div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          {SKIP_REASON_LABEL[row.event.skipReason ?? ""] ?? "Not recorded"} ·{" "}
+                          {formatWhen(row.event.start)}
+                        </div>
                       </div>
                     </div>
-                    {m.summary && <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />}
-                  </button>
-                ))}
+                  ),
+                )}
               </div>
             )}
           </TabsContent>
+
 
           <TabsContent value="upcoming">
             <UpcomingMeetingsCard onRecordInPerson={setInPersonPrefill} />
