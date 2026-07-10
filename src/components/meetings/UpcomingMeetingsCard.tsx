@@ -104,7 +104,9 @@ export function UpcomingMeetingsCard({
   const noCalendar = !!data && !data.calendarAccess;
   const events = data?.events ?? [];
   const needsReconnect = data?.accountsNeedingReconnect ?? [];
-  const recordable = events.filter((e) => e.hasMeetingLink);
+  // Show every calendar meeting, even ones without a supported video link —
+  // those just can't be joined by the notetaker (shown with a muted note).
+  const recordable = events;
   const multipleAccounts = new Set(recordable.map((e) => e.accountId)).size > 1;
 
   return (
