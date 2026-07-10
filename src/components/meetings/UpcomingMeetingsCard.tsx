@@ -203,7 +203,11 @@ export function UpcomingMeetingsCard({
                     )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    {e.blocked ? (
+                    {!e.hasMeetingLink ? (
+                      <span className="max-w-[168px] text-right text-xs text-muted-foreground">
+                        No video link — the notetaker can't join
+                      </span>
+                    ) : e.blocked ? (
                       <span className="text-xs text-muted-foreground">Blocked</span>
                     ) : (
                       <>
