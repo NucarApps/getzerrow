@@ -22,6 +22,7 @@ type UpcomingEvent = {
   location?: string;
   description?: string;
   start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
   conferenceData?: { entryPoints?: ConferenceEntryPoint[] };
   attendees?: Array<{
     email?: string;
