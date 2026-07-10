@@ -239,7 +239,7 @@ function MeetingsPage() {
           <TabsContent value="past">
             {meetingsQ.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading meetings…</p>
-            ) : meetings.length === 0 ? (
+            ) : pastRows.length === 0 ? (
               <Card className="p-8 text-center">
                 <Video className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
@@ -250,32 +250,57 @@ function MeetingsPage() {
               </Card>
             ) : (
               <div className="space-y-2">
-                {meetings.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setSelectedId(m.id)}
-                    className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate font-medium">
-                          {m.title || "Untitled meeting"}
-                        </span>
-                        <StatusBadge status={m.status} />
+                {pastRows.map((row) =>
+                  row.kind === "meeting" ? (
+                    <button
+                      key={`m:${row.meeting.id}`}
+                      type="button"
+                      onClick={() => setSelectedId(row.meeting.id)}
+                      className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium">
+                            {row.meeting.title || "Untitled meeting"}
+                          </span>
+                          <StatusBadge status={row.meeting.status} />
+                        </div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          {row.meeting.platform ? `${row.meeting.platform.replace("_", " ")} · ` : ""}
+                          {row.meeting.source === "calendar" ? "From calendar · " : ""}
+                          {formatWhen(row.meeting.scheduled_start ?? row.meeting.created_at)}
+                        </div>
                       </div>
-                      <div className="mt-1 truncate text-xs text-muted-foreground">
-                        {m.platform ? `${m.platform.replace("_", " ")} · ` : ""}
-                        {m.source === "calendar" ? "From calendar · " : ""}
-                        {formatWhen(m.scheduled_start ?? m.created_at)}
+                      {row.meeting.summary && (
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                    </button>
+                  ) : (
+                    <div
+                      key={`u:${row.event.accountId}:${row.event.id}`}
+                      className="flex w-full items-center justify-between gap-3 rounded-md border border-dashed border-border bg-muted/20 p-4 text-left"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium text-muted-foreground">
+                            {row.event.title || "Untitled meeting"}
+                          </span>
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                            Not recorded
+                          </span>
+                        </div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          {SKIP_REASON_LABEL[row.event.skipReason ?? ""] ?? "Not recorded"} ·{" "}
+                          {formatWhen(row.event.start)}
+                        </div>
                       </div>
                     </div>
-                    {m.summary && <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />}
-                  </button>
-                ))}
+                  ),
+                )}
               </div>
             )}
           </TabsContent>
+
 
           <TabsContent value="upcoming">
             <UpcomingMeetingsCard onRecordInPerson={setInPersonPrefill} />
