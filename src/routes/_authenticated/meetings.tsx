@@ -119,6 +119,17 @@ function formatWhen(iso: string | null): string {
   return new Date(iso).toLocaleString();
 }
 
+// Short, friendly reason a recent calendar meeting wasn't recorded.
+const SKIP_REASON_LABEL: Record<string, string> = {
+  no_link: "No video link",
+  auto_record_off: "Auto-record off",
+  declined: "Declined",
+  off: "Turned off",
+  in_person: "Recording in person",
+  blocked: "Blocked contact",
+};
+
+
 function MeetingsPage() {
   const qc = useQueryClient();
   const isMobile = useIsMobile();
