@@ -62,10 +62,14 @@ export function extractMeetingUrl(event: UpcomingEvent): string | null {
 async function fetchEventsInWindow(
   accountId: string,
   minutesAhead: number,
+  minutesBack = 0,
 ): Promise<UpcomingEvent[]> {
   const token = await getAccessToken(accountId);
   const now = new Date();
-  const timeMin = now.toISOString();
+  // minutesBack lets a caller widen the window into the past (e.g. the
+  // "recently missed" list). Defaults to 0 so the bot scheduler keeps
+  // starting exactly at `now`.
+  const timeMin = new Date(now.getTime() - minutesBack * 60_000).toISOString();
   const timeMax = new Date(now.getTime() + minutesAhead * 60_000).toISOString();
   const params = new URLSearchParams({
     timeMin,
