@@ -145,6 +145,7 @@ function AuthedLayoutInner({
             <AccountSwitcher accounts={accounts} loading={accountsQ.isLoading} compact />
           </div>
         </div>
+        <ReconnectBanner />
         <BackfillBanner />
         <div className="min-h-0 flex-1">
           <Outlet />
