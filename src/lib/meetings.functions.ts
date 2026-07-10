@@ -517,6 +517,120 @@ export const getAutoRecordStatus = createServerFn({ method: "GET" })
     };
   });
 
+/** One calendar under an account, with its current recording selection. */
+export type AccountCalendar = {
+  id: string;
+  summary: string | null;
+  primary: boolean;
+  enabled: boolean;
+};
+
+/**
+ * List every Google calendar under one account, merged with the stored
+ * per-calendar recording selection. When nothing is stored yet, the primary
+ * calendar defaults to on and all others off (backwards compatible).
+ */
+export const listAccountCalendars = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: acct } = await context.supabase
+      .from("gmail_accounts")
+      .select("calendar_access")
+      .eq("id", data.accountId)
+      .maybeSingle();
+    if (!acct) throw new Error("Account not found");
+    if (!acct.calendar_access) {
+      return { calendarAccess: false, calendars: [] as AccountCalendar[] };
+    }
+
+    const { data: selections } = await context.supabase
+      .from("meeting_calendar_selections")
+      .select("calendar_id, enabled")
+      .eq("gmail_account_id", data.accountId);
+    const hasSelections = !!selections && selections.length > 0;
+    const enabledById = new Map<string, boolean>(
+      (selections ?? []).map((r) => [r.calendar_id, r.enabled]),
+    );
+
+    const { listGoogleCalendars } = await import("./meetings-autojoin.server");
+    try {
+      const calendars = await listGoogleCalendars(data.accountId);
+      return {
+        calendarAccess: true,
+        calendars: calendars.map((c) => ({
+          id: c.id,
+          summary: c.summary,
+          primary: c.primary,
+          // No stored rows yet → primary on by default, others off.
+          enabled: hasSelections ? (enabledById.get(c.id) ?? false) : c.primary,
+        })),
+      };
+    } catch (e) {
+      logError(
+        "meeting_list_calendars_failed",
+        { accountId: data.accountId, userId: context.userId },
+        e,
+      );
+      return {
+        calendarAccess: true,
+        calendars: [] as AccountCalendar[],
+        error: "Couldn't load your calendars right now.",
+      };
+    }
+  });
+
+/**
+ * Persist the full per-calendar recording selection for one account. The UI
+ * always sends every calendar's current state, so the stored rows stay a
+ * complete, consistent snapshot (no implicit "primary on" gaps once rows
+ * exist). Upserts on (gmail_account_id, calendar_id).
+ */
+export const saveCalendarSelections = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        accountId: z.string().uuid(),
+        calendars: z
+          .array(
+            z.object({
+              calendarId: z.string().min(1),
+              calendarSummary: z.string().nullable().optional(),
+              enabled: z.boolean(),
+            }),
+          )
+          .min(1),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    // Confirm the account belongs to the caller (RLS-scoped read).
+    const { data: acct } = await context.supabase
+      .from("gmail_accounts")
+      .select("id")
+      .eq("id", data.accountId)
+      .maybeSingle();
+    if (!acct) throw new Error("Account not found");
+
+    const rows = data.calendars.map((c) => ({
+      user_id: context.userId,
+      gmail_account_id: data.accountId,
+      calendar_id: c.calendarId,
+      calendar_summary: c.calendarSummary ?? null,
+      enabled: c.enabled,
+    }));
+    const { error } = await context.supabase
+      .from("meeting_calendar_selections")
+      .upsert(rows, { onConflict: "gmail_account_id,calendar_id" });
+    if (error) throw new Error(error.message);
+    return { saved: rows.length };
+  });
+
+
+
+
+
 type UpcomingCalendarEvent = import("./meetings-autojoin.server").UpcomingCalendarEvent;
 
 /**

@@ -1296,6 +1296,47 @@ export type Database = {
         }
         Relationships: []
       }
+      meeting_calendar_selections: {
+        Row: {
+          calendar_id: string
+          calendar_summary: string | null
+          created_at: string
+          enabled: boolean
+          gmail_account_id: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          calendar_id: string
+          calendar_summary?: string | null
+          created_at?: string
+          enabled?: boolean
+          gmail_account_id: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          calendar_id?: string
+          calendar_summary?: string | null
+          created_at?: string
+          enabled?: boolean
+          gmail_account_id?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_calendar_selections_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_participants: {
         Row: {
           contact_id: string | null

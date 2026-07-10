@@ -13,6 +13,7 @@ import {
 import { listMyGmailAccounts } from "@/lib/gmail.functions";
 import { CalendarGuardCard } from "@/components/settings/CalendarGuardCard";
 import { MeetingAutoRecordCard } from "@/components/settings/MeetingAutoRecordCard";
+import { MeetingCalendarSelectCard } from "@/components/settings/MeetingCalendarSelectCard";
 import { MeetingCalendarEventsCard } from "@/components/settings/MeetingCalendarEventsCard";
 import { MeetingBotCard } from "@/components/settings/MeetingBotCard";
 import { MeetingRecordBlocklistCard } from "@/components/settings/MeetingRecordBlocklistCard";
@@ -60,7 +61,10 @@ export function MeetingSettingsDrawer() {
           ))}
 
           {accounts.map((a) => (
-            <MeetingAutoRecordCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
+            <div key={a.id} className="space-y-6">
+              <MeetingAutoRecordCard accountId={a.id} accountEmail={a.email_address} />
+              <MeetingCalendarSelectCard accountId={a.id} accountEmail={a.email_address} />
+            </div>
           ))}
 
           <MeetingRecordBlocklistCard />
