@@ -135,10 +135,16 @@ function MeetingsPage() {
   const isMobile = useIsMobile();
   const list = useServerFn(listMeetings);
   const sync = useServerFn(syncMeeting);
+  const listRecentUnrecorded = useServerFn(listRecentUnrecordedEvents);
   const meetingsQ = useQuery({
     queryKey: ["meetings"],
     queryFn: () => list(),
     refetchInterval: 15000,
+  });
+  const recentUnrecordedQ = useQuery({
+    queryKey: ["recent-unrecorded-events"],
+    queryFn: () => listRecentUnrecorded(),
+    refetchInterval: 60000,
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -147,6 +153,30 @@ function MeetingsPage() {
   // linked back to that calendar event.
   const [inPersonPrefill, setInPersonPrefill] = useState<InPersonRecordPrefill | null>(null);
   const meetings = meetingsQ.data?.meetings ?? [];
+  const unrecorded = recentUnrecordedQ.data?.events ?? [];
+
+  // Merge recorded meetings with recent calendar meetings that were never
+  // recorded, newest first, so the past list shows everything that happened.
+  const pastRows = useMemo(() => {
+    type Row =
+      | { kind: "meeting"; sortKey: string; meeting: (typeof meetings)[number] }
+      | { kind: "unrecorded"; sortKey: string; event: (typeof unrecorded)[number] };
+    const rows: Row[] = [
+      ...meetings.map((m) => ({
+        kind: "meeting" as const,
+        sortKey: m.scheduled_start ?? m.created_at ?? "",
+        meeting: m,
+      })),
+      ...unrecorded.map((e) => ({
+        kind: "unrecorded" as const,
+        sortKey: e.start ?? "",
+        event: e,
+      })),
+    ];
+    rows.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
+    return rows;
+  }, [meetings, unrecorded]);
+
 
   // Best-effort: pull live status for any non-terminal meetings so the list
   // badges advance without opening each one, then refresh the list once.
