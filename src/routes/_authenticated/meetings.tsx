@@ -16,6 +16,7 @@ import {
   extractMeetingUrl,
   createInPersonMeeting,
   transcribeInPersonMeeting,
+  listRecentUnrecordedEvents,
 } from "@/lib/meetings.functions";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
