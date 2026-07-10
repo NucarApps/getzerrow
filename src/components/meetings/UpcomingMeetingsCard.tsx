@@ -121,6 +121,41 @@ export function UpcomingMeetingsCard({
       </div>
 
       <div className="p-4 md:p-6">
+        {needsReconnect.length > 0 && (
+          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-3 text-xs">
+            <div className="flex items-start gap-2 text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">
+                  {needsReconnect.length === 1
+                    ? "An inbox needs reconnecting"
+                    : "Some inboxes need reconnecting"}
+                </div>
+                <div className="mt-0.5 text-destructive/80">
+                  We can't read the calendar for{" "}
+                  {needsReconnect.map((a) => a.email ?? "an inbox").join(", ")}, so its meetings
+                  aren't shown here. Reconnect to see them.
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {needsReconnect.map((a) => (
+                    <Button
+                      key={a.id}
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleReconnect(a.id, a.email)}
+                      disabled={reconnectBusy === a.id}
+                    >
+                      <RefreshCw className="mr-1.5 h-3 w-3" />
+                      {reconnectBusy === a.id
+                        ? "Redirecting…"
+                        : `Reconnect ${a.email ?? "inbox"}`}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {noCalendar ? (
           <p className="text-sm text-muted-foreground">
             Calendar access hasn't been granted yet. Connect Google with calendar access in Settings
@@ -129,9 +164,11 @@ export function UpcomingMeetingsCard({
         ) : isLoading ? (
           <p className="text-sm text-muted-foreground">Loading your upcoming meetings…</p>
         ) : recordable.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No upcoming meetings with a Zoom, Meet, or Teams link in the next 14 days.
-          </p>
+          needsReconnect.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No upcoming meetings with a Zoom, Meet, or Teams link in the next 14 days.
+            </p>
+          ) : null
         ) : (
           <ul className="divide-y divide-border">
             {recordable.map((e) => {
