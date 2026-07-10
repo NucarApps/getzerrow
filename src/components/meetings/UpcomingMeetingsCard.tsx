@@ -53,11 +53,24 @@ export function UpcomingMeetingsCard({
   const qc = useQueryClient();
   const listEvents = useServerFn(listAllUpcomingCalendarEvents);
   const setMode = useServerFn(setEventRecordingMode);
+  const startConnect = useServerFn(startConnectGmail);
+  const [reconnectBusy, setReconnectBusy] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["upcoming-calendar-events"],
     queryFn: () => listEvents(),
   });
+
+  async function handleReconnect(accountId: string, email: string | null) {
+    setReconnectBusy(accountId);
+    try {
+      const r = await startConnect({ data: email ? { login_hint: email } : {} });
+      window.location.href = r.url;
+    } catch (e) {
+      toast.error((e as Error).message);
+      setReconnectBusy(null);
+    }
+  }
 
   const mutation = useMutation({
     mutationFn: (vars: { accountId: string; calendarEventId: string; mode: RecordMode }) =>
