@@ -316,6 +316,7 @@ export async function listCalendarEventsWindow(
     });
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 
 /** True when the error means the `mode` column hasn't been migrated yet. */
