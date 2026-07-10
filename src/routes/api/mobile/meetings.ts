@@ -309,6 +309,8 @@ export const Route = createFileRoute("/api/mobile/meetings")({
           switch (body.kind) {
             case "upcoming":
               return await handleUpcoming(auth);
+            case "calendar":
+              return await handleCalendar(auth);
             case "set_exclusion":
               return await handleSetExclusion(auth, body);
             case "set_mode":
