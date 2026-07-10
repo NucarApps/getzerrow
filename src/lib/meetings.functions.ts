@@ -627,6 +627,61 @@ export const listAllUpcomingCalendarEvents = createServerFn({ method: "GET" })
     return { calendarAccess: true, events, accountsNeedingReconnect };
   });
 
+type CalendarWindowEvent = import("./meetings-autojoin.server").CalendarWindowEvent;
+
+/** A recent calendar event (last 7 days) with no meeting row, annotated with
+ *  the inbox it came from so the meetings page can show why it wasn't recorded. */
+export type RecentUnrecordedEvent = CalendarWindowEvent & {
+  accountId: string;
+  accountEmail: string | null;
+};
+
+/**
+ * List the caller's calendar events from the last 7 days that never got a
+ * meeting row (across all calendar-enabled inboxes), so the meetings page can
+ * surface meetings that happened but weren't recorded, with the reason. Purely
+ * read-only — it never changes how the bot scheduler works.
+ */
+export const listRecentUnrecordedEvents = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: accounts } = await context.supabase
+      .from("gmail_accounts")
+      .select("id, email_address, calendar_access, needs_reconnect")
+      .eq("calendar_access", true);
+
+    if (!accounts || accounts.length === 0) {
+      return { events: [] as RecentUnrecordedEvent[] };
+    }
+
+    const { NeedsReconnectError } = await import("./google-oauth.server");
+    const { listCalendarEventsWindow } = await import("./meetings-autojoin.server");
+    const events: RecentUnrecordedEvent[] = [];
+    for (const acct of accounts) {
+      if (acct.needs_reconnect) continue;
+      try {
+        const accountEvents = await listCalendarEventsWindow(acct.id, context.userId, 7, 0);
+        for (const e of accountEvents) {
+          // Only events that never produced a meeting row — recorded ones
+          // already show up in the past meetings list.
+          if (e.meetingId) continue;
+          events.push({ ...e, accountId: acct.id, accountEmail: acct.email_address ?? null });
+        }
+      } catch (e) {
+        if (!(e instanceof NeedsReconnectError)) {
+          logError(
+            "meeting_list_recent_unrecorded_failed",
+            { accountId: acct.id, userId: context.userId },
+            e,
+          );
+        }
+      }
+    }
+
+    events.sort((a, b) => (a.start ?? "").localeCompare(b.start ?? ""));
+    return { events };
+  });
+
 /** Exclude (or re-include) one calendar event from auto-record. */
 export const setEventExclusion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
