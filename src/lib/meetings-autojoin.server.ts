@@ -59,18 +59,28 @@ export function extractMeetingUrl(event: UpcomingEvent): string | null {
   return null;
 }
 
-async function fetchEventsInWindow(
-  accountId: string,
-  minutesAhead: number,
-  minutesBack = 0,
+/**
+ * Resolve which Google calendars an account should record/list from. Reads the
+ * user's stored per-calendar selection; when no rows exist yet the account
+ * falls back to the primary calendar only (backwards compatible). When rows
+ * exist but none are enabled, returns an empty list (record nothing).
+ */
+export async function resolveSelectedCalendarIds(accountId: string): Promise<string[]> {
+  const { data } = await supabaseAdmin
+    .from("meeting_calendar_selections")
+    .select("calendar_id, enabled")
+    .eq("gmail_account_id", accountId);
+  if (!data || data.length === 0) return ["primary"];
+  return data.filter((r) => r.enabled).map((r) => r.calendar_id);
+}
+
+/** Fetch events from a single calendar within a time window. */
+async function fetchCalendarEvents(
+  token: string,
+  calendarId: string,
+  timeMin: string,
+  timeMax: string,
 ): Promise<UpcomingEvent[]> {
-  const token = await getAccessToken(accountId);
-  const now = new Date();
-  // minutesBack lets a caller widen the window into the past (e.g. the
-  // "recently missed" list). Defaults to 0 so the bot scheduler keeps
-  // starting exactly at `now`.
-  const timeMin = new Date(now.getTime() - minutesBack * 60_000).toISOString();
-  const timeMax = new Date(now.getTime() + minutesAhead * 60_000).toISOString();
   const params = new URLSearchParams({
     timeMin,
     timeMax,
@@ -80,18 +90,87 @@ async function fetchEventsInWindow(
     showDeleted: "false",
     conferenceDataVersion: "1",
   });
-  const res = await fetch(`${CALENDAR_BASE}/calendars/primary/events?${params.toString()}`, {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-  });
+  const res = await fetch(
+    `${CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
+    {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    },
+  );
   if (!res.ok)
     throw new Error(`Calendar events ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = (await res.json()) as { items?: UpcomingEvent[] };
   return body.items ?? [];
 }
 
+/**
+ * Fetch events across all of the account's selected calendars within a window,
+ * merged and deduped by event id. Reads the per-calendar selection (primary
+ * only when nothing is stored).
+ */
+async function fetchEventsInWindow(
+  accountId: string,
+  minutesAhead: number,
+  minutesBack = 0,
+): Promise<UpcomingEvent[]> {
+  const calendarIds = await resolveSelectedCalendarIds(accountId);
+  if (calendarIds.length === 0) return [];
+  const token = await getAccessToken(accountId);
+  const now = new Date();
+  // minutesBack lets a caller widen the window into the past (e.g. the
+  // "recently missed" list). Defaults to 0 so the bot scheduler keeps
+  // starting exactly at `now`.
+  const timeMin = new Date(now.getTime() - minutesBack * 60_000).toISOString();
+  const timeMax = new Date(now.getTime() + minutesAhead * 60_000).toISOString();
+
+  const byId = new Map<string, UpcomingEvent>();
+  for (const calendarId of calendarIds) {
+    let items: UpcomingEvent[];
+    try {
+      items = await fetchCalendarEvents(token, calendarId, timeMin, timeMax);
+    } catch (e) {
+      // A single bad calendar (e.g. removed) shouldn't drop the others.
+      logError("meeting_calendar_fetch_failed", { accountId, calendarId }, e);
+      continue;
+    }
+    for (const ev of items) {
+      if (ev.id) byId.set(ev.id, ev);
+    }
+  }
+  return [...byId.values()];
+}
+
 async function fetchUpcomingEvents(accountId: string): Promise<UpcomingEvent[]> {
   return fetchEventsInWindow(accountId, LOOKAHEAD_MINUTES);
+}
+
+/** One Google calendar as returned by the calendarList API. */
+export type GoogleCalendarListEntry = {
+  id: string;
+  summary: string | null;
+  primary: boolean;
+};
+
+/** List every calendar Google reports for an account (calendarList.list). */
+export async function listGoogleCalendars(accountId: string): Promise<GoogleCalendarListEntry[]> {
+  const token = await getAccessToken(accountId);
+  const params = new URLSearchParams({ maxResults: "250", showHidden: "false" });
+  const res = await fetch(`${CALENDAR_BASE}/users/me/calendarList?${params.toString()}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  });
+  if (!res.ok)
+    throw new Error(`Calendar list ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const body = (await res.json()) as {
+    items?: Array<{ id?: string; summary?: string; summaryOverride?: string; primary?: boolean }>;
+  };
+  return (body.items ?? [])
+    .filter((c): c is { id: string } & typeof c => !!c.id)
+    .map((c) => ({
+      id: c.id,
+      summary: c.summaryOverride ?? c.summary ?? null,
+      primary: !!c.primary,
+    }));
 }
 
 /** How one upcoming meeting should be captured. */
