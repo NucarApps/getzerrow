@@ -19,6 +19,7 @@ import { logError } from "@/lib/log.server";
 
 const bodySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("upcoming") }),
+  z.object({ kind: z.literal("calendar") }),
   z.object({
     kind: z.literal("set_exclusion"),
     account_id: z.string().uuid(),
