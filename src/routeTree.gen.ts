@@ -17,6 +17,7 @@ import { Route as AuthCallbackRouteImport } from './routes/auth-callback'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GuidesGmailRemindersRouteImport } from './routes/guides.gmail-reminders'
+import { Route as GuidesAiSortingAgentRouteImport } from './routes/guides.ai-sorting-agent'
 import { Route as CHandleRouteImport } from './routes/c.$handle'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
@@ -100,6 +101,11 @@ const IndexRoute = IndexRouteImport.update({
 const GuidesGmailRemindersRoute = GuidesGmailRemindersRouteImport.update({
   id: '/guides/gmail-reminders',
   path: '/guides/gmail-reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesAiSortingAgentRoute = GuidesAiSortingAgentRouteImport.update({
+  id: '/guides/ai-sorting-agent',
+  path: '/guides/ai-sorting-agent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CHandleRoute = CHandleRouteImport.update({
@@ -364,6 +370,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
@@ -418,6 +425,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
@@ -474,6 +482,7 @@ export interface FileRoutesById {
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
@@ -530,6 +539,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/c/$handle'
+    | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
@@ -584,6 +594,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/c/$handle'
+    | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
@@ -639,6 +650,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reports'
     | '/_authenticated/settings'
     | '/c/$handle'
+    | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
@@ -688,6 +700,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   DotwellKnownAppleAppSiteAssociationRoute: typeof DotwellKnownAppleAppSiteAssociationRoute
   CHandleRoute: typeof CHandleRoute
+  GuidesAiSortingAgentRoute: typeof GuidesAiSortingAgentRoute
   GuidesGmailRemindersRoute: typeof GuidesGmailRemindersRoute
   ApiMobileCardRoute: typeof ApiMobileCardRoute
   ApiMobileContactsRoute: typeof ApiMobileContactsRoute
@@ -780,6 +793,13 @@ declare module '@tanstack/react-router' {
       path: '/guides/gmail-reminders'
       fullPath: '/guides/gmail-reminders'
       preLoaderRoute: typeof GuidesGmailRemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/ai-sorting-agent': {
+      id: '/guides/ai-sorting-agent'
+      path: '/guides/ai-sorting-agent'
+      fullPath: '/guides/ai-sorting-agent'
+      preLoaderRoute: typeof GuidesAiSortingAgentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$handle': {
@@ -1141,6 +1161,7 @@ const rootRouteChildren: RootRouteChildren = {
   DotwellKnownAppleAppSiteAssociationRoute:
     DotwellKnownAppleAppSiteAssociationRoute,
   CHandleRoute: CHandleRoute,
+  GuidesAiSortingAgentRoute: GuidesAiSortingAgentRoute,
   GuidesGmailRemindersRoute: GuidesGmailRemindersRoute,
   ApiMobileCardRoute: ApiMobileCardRoute,
   ApiMobileContactsRoute: ApiMobileContactsRoute,
@@ -1184,13 +1205,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
