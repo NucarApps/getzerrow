@@ -7,6 +7,9 @@ Disallow: /contacts
 Disallow: /reports
 Disallow: /my-card
 Disallow: /admin
+Disallow: /folders
+Disallow: /meetings
+Disallow: /auth-callback
 Disallow: /api/
 
 Sitemap: https://getzerrow.com/sitemap.xml
