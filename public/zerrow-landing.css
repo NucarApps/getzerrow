@@ -376,7 +376,7 @@ main,
   background: rgba(255, 107, 61, 0.06);
 }
 .dash__row:not(.dash__row--active) {
-  opacity: 0.62;
+  opacity: 0.88;
 }
 .dash__folder {
   grid-area: folder;
