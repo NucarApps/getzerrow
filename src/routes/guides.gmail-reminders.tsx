@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 const TITLE = "How to set up Gmail reminders and follow-ups (2026 guide)";
 const DESCRIPTION =
-  "A practical guide to setting up Gmail reminders and follow-ups — from native nudges and snooze to automating AI email follow-ups with Zerrow's folders and classification.";
+  "Set up Gmail reminders and follow-ups using native nudges, snooze, and Zerrow's AI-powered folders to automate your inbox workflow.";
 const URL = "https://getzerrow.com/guides/gmail-reminders";
 
 export const Route = createFileRoute("/guides/gmail-reminders")({
