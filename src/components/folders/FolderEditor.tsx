@@ -134,13 +134,16 @@ export function FolderEditor({
   const applyBehaviorFn = useServerFn(applyFolderBehaviorRetroactive);
   const setAutoRelearnFn = useServerFn(setFolderAutoRelearn);
   const generateRuleFn = useServerFn(generateFolderAiRule);
+  const generateFromLabelFn = useServerFn(generateFolderAiRuleFromLabel);
   const [local, setLocal] = useState(folder);
+  const [tab, setTab] = useState("settings");
   const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);
   const [syncingLabel, setSyncingLabel] = useState(false);
   const [purpose, setPurpose] = useState("");
   const [generatingRule, setGeneratingRule] = useState(false);
+  const [draftingFromLabel, setDraftingFromLabel] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
