@@ -537,6 +537,38 @@ export const applyFolderChanges = createServerFn({ method: "POST" })
       }
     }
 
+    // Record the persistent applied-changes log on the originating assistant
+    // message (merge with any previously applied indexes), best-effort.
+    const anyApplied = results.some((r) => r.ok);
+    if (data.message_id && data.applied_indexes && data.applied_indexes.length > 0 && anyApplied) {
+      try {
+        const { data: msgRow } = await supabaseAdmin
+          .from("folder_chat_messages")
+          .select("id, applied_action_indexes")
+          .eq("id", data.message_id)
+          .eq("folder_id", data.folder_id)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (msgRow) {
+          const existing = Array.isArray(msgRow.applied_action_indexes)
+            ? (msgRow.applied_action_indexes as number[])
+            : [];
+          const merged = Array.from(new Set([...existing, ...data.applied_indexes])).sort(
+            (a, b) => a - b,
+          );
+          await supabaseAdmin
+            .from("folder_chat_messages")
+            .update({ applied_action_indexes: merged })
+            .eq("id", data.message_id);
+        }
+      } catch (err: unknown) {
+        console.error(
+          "record applied indexes failed",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+
     return { results };
   });
 
