@@ -327,10 +327,17 @@ export function FolderChatPanel({
     <div className="flex h-[28rem] flex-col overflow-hidden rounded-md border border-border">
       <ScrollArea className="min-h-0 flex-1">
         <div ref={scrollRef} className="space-y-4 px-3 py-4">
-          {turns.length === 0 && (
+          {hydrating && (
+            <div className="flex items-center gap-2 px-1 py-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading conversation…
+            </div>
+          )}
+
+          {!hydrating && turns.length === 0 && (
             <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-4 text-xs text-muted-foreground">
               Describe what you want to change in this folder. I'll suggest changes — nothing is
-              saved until you approve.
+              saved until you approve. I remember our past chats, what we've applied, and this
+              folder's current rules and emails.
               <ul className="mt-2 list-disc space-y-1 pl-4">
                 <li>"Auto-archive everything here and hide it from my inbox."</li>
                 <li>"Rename this to Receipts and make the color green."</li>
