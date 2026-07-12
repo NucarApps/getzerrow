@@ -40,6 +40,7 @@ import {
   suggestRuleUpdates,
   suggestFolderFromEmails,
   generateAiRuleFromPurpose,
+  generateAiRuleFromLabelSamples,
 } from "./ai.server";
 import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "./summaries.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
