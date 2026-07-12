@@ -600,12 +600,12 @@ function InboxPage() {
   // query-key segments below. Used as a 0ms placeholder on a cold reload so the
   // inbox *structure* paints instantly while content hydrates from the DB read.
   const metaKey =
-    accountId && !isSearching ? metaKeyFor(accountId, selectedFolder, page, cursor) : null;
+    accountId && !isSearching ? metaKeyFor(accountId, effectiveFolder, page, cursor) : null;
   const emailsQ = useQuery<Email[]>({
     queryKey: [
       "emails",
       accountId,
-      selectedFolder,
+      effectiveFolder,
       isSearching
         ? `search:${searchTerm.toLowerCase()}:p${page}`
         : `page:${page}:${cursor ?? "start"}`,
