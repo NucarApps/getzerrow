@@ -59,6 +59,7 @@ type ChatTurn =
       selected: boolean[];
       applied: boolean;
       appliedAt?: string;
+      messageId?: string;
     };
 
 const BOOL_LABELS: Record<string, string> = {
