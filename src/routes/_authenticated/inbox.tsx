@@ -617,8 +617,8 @@ function InboxPage() {
     // its own key changes; off in background tabs by default).
     refetchInterval: isSearching ? false : 30_000,
     queryFn: async () => {
-      const isNoRules = selectedFolder === "no_rules";
-      const isAllMail = selectedFolder === "all_mail";
+      const isNoRules = effectiveFolder === "no_rules";
+      const isAllMail = effectiveFolder === "all_mail";
       const folderRows = foldersQ.data ?? [];
       if (isSearching) {
         // Single server-side path for both free-text and `from:` / `to:`
