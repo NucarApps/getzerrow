@@ -24,6 +24,7 @@ import {
   syncMyReadState,
   backgroundSync,
   listGmailLabels,
+  listMyGmailAccounts,
 } from "@/lib/gmail.functions";
 import { BACKGROUND_SYNC_INTERVAL_MS } from "@/lib/sync/config";
 import { matchesSearchScope } from "@/lib/search-scope";
@@ -456,8 +457,20 @@ function InboxPage() {
     currentFolderId: string | null;
   }>(null);
 
-  const { activeAccountId } = useAccountSelection();
-  const accountId = activeAccountId;
+  const { activeAccountId, setActiveAccountId } = useAccountSelection();
+  const listAccountsFn = useServerFn(listMyGmailAccounts);
+  const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccountsFn() });
+  const accounts = useMemo(() => accountsQ.data?.accounts ?? [], [accountsQ.data?.accounts]);
+  const accountId =
+    activeAccountId && accounts.some((account) => account.id === activeAccountId)
+      ? activeAccountId
+      : (accounts[0]?.id ?? null);
+
+  useEffect(() => {
+    if (!accountId || accountId === activeAccountId) return;
+    setActiveAccountId(accountId);
+    setSelectedFolder("all");
+  }, [accountId, activeAccountId, setActiveAccountId, setSelectedFolder]);
 
   const foldersQ = useQuery({
     queryKey: ["folders", accountId],
@@ -545,7 +558,7 @@ function InboxPage() {
     setDebouncedQuery("");
     setLastGmailResult(null);
     setGmailHitIds({ query: "", ids: new Set() });
-  }, [selectedFolder]);
+  }, [selectedFolder, accountId]);
   // A new/changed search restarts at page 1 so the offset window is correct.
   useEffect(() => {
     setPage(1);
