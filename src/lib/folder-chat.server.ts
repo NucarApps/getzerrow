@@ -118,6 +118,8 @@ function buildPrompt(args: {
   userMessage: string;
   folder: FolderChatContext;
   sample: FolderChatSampleEmail[];
+  memorySummary?: string;
+  appliedLog?: string[];
   extraReminder?: string;
 }) {
   const f = args.folder;
