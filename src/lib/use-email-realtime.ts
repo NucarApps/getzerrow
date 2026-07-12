@@ -221,6 +221,14 @@ export function useEmailRealtime() {
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
+    // Liveness watchdog: a websocket can silently stop delivering while the
+    // channel still reports "joined" (a zombie socket after sleep/network
+    // flaps). We track the last time we saw ANY realtime traffic and poll
+    // the channel state; if it's no longer joined, we rebuild it proactively
+    // instead of waiting for the 30s background sync.
+    let watchdogTimer: ReturnType<typeof setInterval> | null = null;
+    let lastEventAt = Date.now();
+    const REALTIME_WATCHDOG_INTERVAL_MS = 15_000;
 
     type CachedList = EmailRow[] | { rows: EmailRow[] };
     type FolderRow = {
