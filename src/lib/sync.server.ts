@@ -63,7 +63,11 @@ import {
   type ActionFolder as _ActionFolder,
   type ProcessTimings as _ProcessTimings,
 } from "./sync/process-message";
-import { JOB_WORKER_CONCURRENCY, LIVE_BATCH_AI_THRESHOLD } from "./sync/config";
+import {
+  JOB_WORKER_CONCURRENCY,
+  LIVE_BATCH_AI_THRESHOLD,
+  WEBHOOK_DEFERRED_AI_REQUEUE_MS,
+} from "./sync/config";
 
 // Re-export for backward compatibility with existing imports.
 export const withAccountLock = _withAccountLock;
