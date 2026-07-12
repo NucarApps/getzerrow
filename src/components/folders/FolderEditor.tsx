@@ -701,7 +701,38 @@ export function FolderEditor({
               value={local.ai_rule ?? ""}
               onChange={(e) => setLocal({ ...local, ai_rule: e.target.value })}
             />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={draftFromLabel}
+                disabled={draftingFromLabel || !folder.gmail_label_id}
+                title={
+                  folder.gmail_label_id
+                    ? "Let AI read this label's emails and draft the instructions"
+                    : "Link a Gmail label and save first"
+                }
+              >
+                {draftingFromLabel ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Drafting…
+                  </>
+                ) : (
+                  <>
+                    <Tag className="mr-1.5 h-3.5 w-3.5" /> Draft from label
+                  </>
+                )}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setTab("chat")}>
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Write with AI chat
+              </Button>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Draft from the linked label's emails, or open the AI chat to write and refine these
+              instructions in conversation.
+            </p>
           </div>
+
 
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
