@@ -202,6 +202,21 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     },
   });
 
+  // Reconcile the selected folder with the current account's folder list.
+  // `selected` is stored globally (not per account), so after the active
+  // account is auto-switched (invalid stored id, fresh load, cross-tab) a
+  // folder id from the *other* account can linger — the inbox then queries a
+  // folder that holds none of this account's mail and shows empty. If the
+  // selection is a folder id that doesn't exist for this account (and isn't
+  // one of the special views), fall back to the Inbox view.
+  const SPECIAL_VIEWS = ["all", "all_mail", "no_rules"];
+  useEffect(() => {
+    if (!accountId || !foldersQ.isSuccess) return;
+    if (SPECIAL_VIEWS.includes(selected)) return;
+    const folders = foldersQ.data ?? [];
+    if (!folders.some((f) => f.id === selected)) setSelected("all");
+  }, [accountId, foldersQ.isSuccess, foldersQ.data, selected, setSelected]);
+
   const labelsQ = useQuery({
     queryKey: ["gmail-labels", accountId],
     enabled: !!accountId,
