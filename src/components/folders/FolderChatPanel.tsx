@@ -162,10 +162,12 @@ export function FolderChatPanel({
   const qc = useQueryClient();
   const proposeFn = useServerFn(proposeFolderChanges);
   const applyFn = useServerFn(applyFolderChanges);
+  const getHistoryFn = useServerFn(getFolderChatHistory);
 
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [hydrating, setHydrating] = useState(true);
   const [applyingIndex, setApplyingIndex] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -179,23 +181,50 @@ export function FolderChatPanel({
     inputRef.current?.focus();
   }, []);
 
-  const history = useMemo(
-    () =>
-      turns
-        .filter(
-          (t) =>
-            t.kind === "user" || (t.kind === "assistant" && (t.content || t.clarifyingQuestion)),
-        )
-        .map<{
-          role: "user" | "assistant";
-          content: string;
-        }>((t) =>
-          t.kind === "user"
-            ? { role: "user", content: t.content }
-            : { role: "assistant", content: t.content || t.clarifyingQuestion },
-        ),
-    [turns],
-  );
+  // Rehydrate the persisted conversation for this folder on mount / folder change.
+  useEffect(() => {
+    let cancelled = false;
+    setHydrating(true);
+    setTurns([]);
+    (async () => {
+      try {
+        const res = (await getHistoryFn({ data: { folder_id: folder.id } })) as {
+          messages: Array<{
+            id: string;
+            role: "user" | "assistant";
+            content: string;
+            actions: Action[] | null;
+            applied_action_indexes: number[];
+          }>;
+        };
+        if (cancelled) return;
+        const restored: ChatTurn[] = res.messages.map((m) => {
+          if (m.role === "user") return { kind: "user", content: m.content };
+          const actions = m.actions ?? [];
+          const appliedSet = new Set(m.applied_action_indexes ?? []);
+          const wasApplied = actions.length === 0 || appliedSet.size > 0;
+          return {
+            kind: "assistant",
+            content: m.content,
+            clarifyingQuestion: "",
+            actions,
+            selected: actions.map((_, i) => !appliedSet.has(i)),
+            applied: wasApplied,
+            appliedAt: appliedSet.size > 0 ? "restored" : undefined,
+            messageId: m.id,
+          };
+        });
+        setTurns(restored);
+      } catch {
+        if (!cancelled) setTurns([]);
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [folder.id, getHistoryFn]);
 
   const send = async () => {
     const msg = input.trim();
@@ -205,8 +234,8 @@ export function FolderChatPanel({
     setTurns((prev) => [...prev, { kind: "user", content: msg }]);
     try {
       const proposal = (await proposeFn({
-        data: { folder_id: folder.id, user_message: msg, history },
-      })) as Proposal;
+        data: { folder_id: folder.id, user_message: msg },
+      })) as Proposal & { message_id: string | null };
       setTurns((prev) => [
         ...prev,
         {
@@ -216,6 +245,7 @@ export function FolderChatPanel({
           actions: proposal.actions,
           selected: proposal.actions.map(() => true),
           applied: false,
+          messageId: proposal.message_id ?? undefined,
         },
       ]);
     } catch (err: unknown) {
@@ -241,14 +271,22 @@ export function FolderChatPanel({
   const applyTurn = async (turnIndex: number) => {
     const turn = turns[turnIndex];
     if (!turn || turn.kind !== "assistant" || applyingIndex !== null) return;
-    const chosen = turn.actions.filter((_, i) => turn.selected[i]);
+    const appliedIndexes = turn.actions.map((_, i) => i).filter((i) => turn.selected[i]);
+    const chosen = appliedIndexes.map((i) => turn.actions[i]);
     if (chosen.length === 0) {
       toast.message("Nothing selected to apply.");
       return;
     }
     setApplyingIndex(turnIndex);
     try {
-      const res = (await applyFn({ data: { folder_id: folder.id, actions: chosen } })) as {
+      const res = (await applyFn({
+        data: {
+          folder_id: folder.id,
+          actions: chosen,
+          message_id: turn.messageId,
+          applied_indexes: appliedIndexes,
+        },
+      })) as {
         results: Array<{ ok: boolean; error?: string }>;
       };
       const okCount = res.results.filter((r) => r.ok).length;
