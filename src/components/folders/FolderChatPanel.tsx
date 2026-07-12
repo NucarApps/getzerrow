@@ -1,7 +1,7 @@
 // Folder-scoped AI chat. The user describes what they want; the AI proposes
 // concrete changes to THIS folder's settings, rules, and filters. Nothing is
 // written until the user reviews each change and approves it.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
