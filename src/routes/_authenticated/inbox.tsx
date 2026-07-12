@@ -675,14 +675,14 @@ function InboxPage() {
         ? "all_mail"
         : isNoRules
           ? "no_rules"
-          : selectedFolder === "all"
+          : effectiveFolder === "all"
             ? "all"
             : "folder";
       const r = await fetchInboxList({
         data: {
           account_id: accountId!,
           scope,
-          folder_id: scope === "folder" ? selectedFolder : null,
+          folder_id: scope === "folder" ? effectiveFolder : null,
           cursor,
           limit: PAGE_SIZE + 1,
         },
