@@ -522,6 +522,10 @@ export function useEmailRealtime() {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+      if (watchdogTimer) {
+        clearInterval(watchdogTimer);
+        watchdogTimer = null;
+      }
       teardown();
       authSub.subscription.unsubscribe();
       document.removeEventListener("visibilitychange", onVisible);
