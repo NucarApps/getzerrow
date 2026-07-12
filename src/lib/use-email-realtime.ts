@@ -380,7 +380,18 @@ export function useEmailRealtime() {
       if (cancelled || reconnectTimer) return;
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       const state = channel?.state;
-      if (!channel || (state !== "joined" && state !== "joining")) {
+      const channelDead = !channel || (state !== "joined" && state !== "joining");
+      // The underlying phoenix socket can drop without our channel status
+      // callback firing (a zombie). If it reports disconnected while we've
+      // seen no realtime traffic recently, treat the channel as stale too.
+      let socketDead = false;
+      try {
+        const idleMs = Date.now() - lastEventAt;
+        socketDead = idleMs > REALTIME_WATCHDOG_INTERVAL_MS && !supabase.realtime.isConnected();
+      } catch {
+        // isConnected may not exist on older clients; ignore.
+      }
+      if (channelDead || socketDead) {
         teardown();
         connect();
       }
