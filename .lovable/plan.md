@@ -1,70 +1,52 @@
-# Instant mail, guaranteed — no refresh
+# Fix: Zerrow inbox shows empty even though mail is present
 
-## What I found (diagnosis)
+## What I confirmed from your data
 
-The instant path already exists and works:
+- **Ingestion is healthy.** Your accounts are actively receiving mail (hundreds of messages in the last 2 days). This is not a Gmail→Zerrow delivery problem.
+- **`chris@nucar.com` has exactly two emails** that are unarchived, INBOX-labeled, and unfiled — matching the two you see in Gmail. These satisfy the server-side inbox query, so the server *would* return them.
+- Yet you reported that account's Zerrow inbox is **completely empty**. That points to a client-side selection bug, not the database or the pipeline.
+
+## Root cause
+
+The app remembers two things in the browser between visits:
+
+- the **active account** (`zerrow.activeAccountId`)
+- the **selected folder/view** (`zerrow.selectedFolder`) — and this is stored **globally, not per account**
+
+When the app loads, `src/routes/_authenticated.tsx` reconciles the active account: if the stored account is missing or invalid, it silently falls back to the first account. **But it never re-validates the selected folder.** The folder is only reset to "Inbox" when you *manually* pick an account from the switcher dropdown.
+
+So this happens:
 
 ```text
-Gmail  →  Pub/Sub push  →  /api/public/gmail-webhook
-       →  syncSinceHistory (history diff → enqueue message_jobs)
-       →  inline drain: getMessage → rules-classify → INSERT emails row  ← realtime fires here
-       →  Postgres realtime → use-email-realtime.ts splices row into open inbox (no refetch)
-       →  (AI classify runs AFTER the insert, only settles the folder)
+1. You were viewing a specific FOLDER under account A.
+   selectedFolder = <folder-uuid belonging to account A>
+2. Later the app auto-switches the active account to account B
+   (chris@nucar.com) — e.g. stored account invalid, fresh load, cross-tab.
+3. selectedFolder still = <account A's folder-uuid>.
+4. The inbox queries scope="folder" with that uuid against account B.
+   Account B has no emails in that folder → the list comes back EMPTY.
 ```
 
-Live telemetry (last 48h):
-- **push → visible: p50 2.6s, p95 7.3s** — new mail appears within a few seconds, no refresh. The row is inserted *before* AI runs, so AI latency never blocks visibility.
-- **push → ack: p50 4.1s, p95 8.7s** — dangerously close to Pub/Sub's ~10s redelivery cliff; 8 duplicate deliveries already recorded. Cause: the webhook holds the HTTP response open while it inline-drains *and runs AI* (up to 18s budget) before acking.
-- Pub/Sub still authenticates via the legacy `?token=` secret (3,048 events), not OIDC.
-- Two connected accounts are `needs_reconnect=true` (dead OAuth) → they receive **no pushes at all** until reconnected.
+The inbox looks empty even though "Inbox" for that account has two emails, because the app is actually querying a stale folder that doesn't belong to the current account. Each of your accounts has its own folder set (e.g. `chris@nucar.com` has Customers, Factory, Orders, etc.), so a folder id from one account never matches another.
 
-So it isn't broken — but three links can silently turn "instant" into "only after the 30s background sync / manual refresh." This plan fixes the latency risk and closes the silent-failure gaps.
+## The fix
 
-## Weak links → fixes
+Reconcile the selected folder the same way the active account is already reconciled, so a stale/foreign folder can never strand the inbox.
 
-### 1. Webhook acks too slowly (redelivery risk)
+1. **`src/routes/_authenticated.tsx`** — in the existing reconcile effect (the one that falls back to `accounts[0]`), after the account's folder list loads, check whether `selectedFolder` is a real folder for the current account. If it's a folder UUID that isn't in this account's folders (and isn't one of the special views `all` / `all_mail` / `no_rules`), reset it to `"all"`. This mirrors the manual-switch behavior for the auto-switch path.
 
-The inline drain runs the *full* per-message job, including inline AI classification, before returning `200`. The `emails` row is already visible after the insert (~1-2s in), so holding the ack for AI buys nothing for visibility and pushes p95 ack to 8.7s.
+2. **`src/routes/_authenticated/inbox.tsx`** — add the same guard at the point where the query scope is derived, so that if `selectedFolder` is a UUID not present in the inbox page's own loaded folders, it treats the scope as `"all"` (and clears the stale value). This avoids a brief empty flash during the load-order race before the layout effect runs, and makes the inbox self-correct even if it mounts first.
 
-**Fix:** give the webhook drain an "insert-and-ack" mode that defers the AI step.
-- Add an optional `deferAi` flag threaded from `runMessageJobs` → `processGmailMessage` (`src/lib/sync.server.ts`, `src/lib/sync/process-message.ts`). When set, rule-matched mail still lands final in one insert; AI-bound mail inserts as `pending_ai` and the function returns immediately **without** calling `classifyByAi`.
-- The webhook (`src/routes/api/public/gmail-webhook.ts`) calls the drain with `deferAi: true`; the existing `gmail-process-live-5s` cron (already running every 5s, no deferAi) finishes the AI pass and fires the settling realtime UPDATE within ~5s.
-- Lower `WEBHOOK_INLINE_DRAIN_BUDGET_MS` from 7s to ~3s (`src/lib/sync/config.ts`).
-
-Result: push → ack drops to ~2-3s (well under the deadline, redeliveries stop); push → visible stays ~2.6s; AI settles the folder a few seconds later — the "appears instantly, then settles" behavior already accepted.
-
-### 2. A stalled realtime socket only self-heals after 30s
-
-`use-email-realtime.ts` already re-auths on token refresh, reconnects on `CHANNEL_ERROR/TIMED_OUT/CLOSED`, and catches up on tab-visibility. The gap: a socket that reports `SUBSCRIBED` but silently stops delivering (zombie websocket) is only rescued by the 30s background sync — new mail then waits up to 30s.
-
-**Fix:** add a lightweight liveness watchdog in `src/lib/use-email-realtime.ts`.
-- Track `lastRealtimeEventAt` (updated on every insert/update/delete) and the last SUBSCRIBED time.
-- The inbox already runs a 30s background sync; when that sync pulls in `emails` rows **newer** than `lastRealtimeEventAt` (i.e. realtime missed them), force `teardown()` + `connect()` to rebuild the channel.
-- Add a periodic 15s check: if `SUBSCRIBED` but no events for a while, send a channel presence/ping and reconnect on failure.
-
-Result: a dead socket is detected and rebuilt in ~15s instead of silently degrading; combined with the existing background sync, the worst case is bounded and the common case stays instant.
-
-### 3. A dead push channel is silent
-
-Watch renewal is well covered (renew cron at :11/:41, opportunistic top-up on push, poll-2m silence re-arm). The remaining silent case is `needs_reconnect=true` — no push will ever arrive for that account, but the user may not notice.
-
-**Fix:** verify `src/components/inbox/ReconnectBanner.tsx` renders whenever the selected account has `needs_reconnect=true`, with copy that explains instant delivery is paused until they reconnect. Wire it to the account list if not already surfaced. (Presentation-only; no pipeline change.)
+Both components already load the account's folders and share the same folder-selection context, so resetting in one place propagates to the other. No backend, schema, or sync changes are needed.
 
 ## Verification
 
-- Drive the preview with an authenticated session (Playwright), keep the inbox open, send a live test email to a connected account, and confirm the row appears with **no refresh**; capture a screenshot before/after.
-- Re-run the push→ack and push→visible latency queries (`pubsub_events.latency_ms`, `emails.published_at_ms` vs `created_at`) and confirm ack p95 drops below ~4s and visible p50 stays ≈2.6s.
-- Run existing unit tests (`realtime-belongs.test.ts`, sync tests) and add a test for the `deferAi` insert path and the watchdog reconnect trigger.
-- Confirm the reconnect banner shows for a `needs_reconnect` account.
+- Reproduce in the live app: set `zerrow.selectedFolder` to a folder id from a different account, load the inbox for `chris@nucar.com`, and confirm the two emails now appear (previously empty).
+- Confirm that legitimately selecting a real folder for the current account still filters correctly.
+- Confirm switching accounts via the dropdown still resets to Inbox.
+- Run the existing test suite to ensure no regressions.
 
-## Out of scope
+## Notes / out of scope
 
-- Migrating the Pub/Sub subscription from legacy `?token=` to OIDC (a Google-side subscription config change, not app code) — noted as a follow-up; the webhook already accepts OIDC bearer tokens.
-- Changing the AI model, classification logic, or folder side-effects.
-- Reconnecting the two dead-OAuth accounts (user action).
-
-## Technical notes
-
-- `deferAi` only skips the post-insert `classifyByAi` call in `process-message.ts`; the row insert, rules classification, and `pending_ai` marking are unchanged, so the server RPC gates (`get_emails_list_decrypted`, `get_folder_unread_counts`) and `matchesScope` already surface these rows correctly.
-- The 5s live cron (`gmail-process-live-5s`) claims `priority=0` jobs via `claim_message_jobs` (FOR UPDATE SKIP LOCKED, 60s lease), so a webhook that acks before AI leaves the job safely claimable — no double-processing.
-- Watchdog teardown/reconnect reuses the existing `teardown()`/`connect()` closures; no new channel-management surface.
+- Two of your other connected accounts (`shawn@nucar.com`, `terrabyte081632@gmail.com`) show `needs_reconnect` from expired Google credentials — they won't receive new mail until reconnected. That's separate from this inbox-display bug and not addressed here.
+- This does not change how aggressively mail is auto-filed into folders; it only fixes the empty-inbox display caused by the stale folder selection.
