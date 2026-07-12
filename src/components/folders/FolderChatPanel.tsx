@@ -10,7 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { proposeFolderChanges, applyFolderChanges } from "@/lib/folder-chat.functions";
+import {
+  proposeFolderChanges,
+  applyFolderChanges,
+  getFolderChatHistory,
+} from "@/lib/folder-chat.functions";
 import type { Folder } from "./FolderEditor";
 
 type SettingsPatch = {
