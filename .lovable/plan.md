@@ -1,52 +1,38 @@
-# Fix: Zerrow inbox shows empty even though mail is present
+# Clean up folder setup: rules first, AI second, better AI helpers
 
-## What I confirmed from your data
+Reorganize the folder Settings tab into two clear sections, make the existing AI chat easy to reach from the instructions field, and add a one-click way for AI to draft the folder instructions from the emails already under the linked Gmail label.
 
-- **Ingestion is healthy.** Your accounts are actively receiving mail (hundreds of messages in the last 2 days). This is not a Gmail→Zerrow delivery problem.
-- **`chris@nucar.com` has exactly two emails** that are unarchived, INBOX-labeled, and unfiled — matching the two you see in Gmail. These satisfy the server-side inbox query, so the server *would* return them.
-- Yet you reported that account's Zerrow inbox is **completely empty**. That points to a client-side selection bug, not the database or the pipeline.
+## 1. Reorder Settings into two sections
 
-## Root cause
+In `src/components/folders/FolderEditor.tsx` (Settings tab), regroup the existing controls under two labeled sections — no behavior changes, just order and headings:
 
-The app remembers two things in the browser between visits:
+- **Rules** (top): the deterministic **Filters** block (field/op/value list, allowlist/exclude rows, Match any/all, "Use rule groups…", and the add-filter row). This is the block currently near the bottom of the tab.
+- **AI** (below): everything else, kept in its current internal order — Gmail label link, AI rule field, learned profile / learn-from-label, summaries, surface-to-inbox, the behavior toggles grid (auto-archive, mark-read, star, hide, rules only, beat inbox, cold email), and forward / snooze / min-confidence.
 
-- the **active account** (`zerrow.activeAccountId`)
-- the **selected folder/view** (`zerrow.selectedFolder`) — and this is stored **globally, not per account**
+Each section gets a small heading (e.g. an uppercase label with a Filter icon for Rules and a Sparkles icon for AI) so the split reads clearly. The Save/Cancel bar, History tab, Chat tab, and Scan section stay as they are.
 
-When the app loads, `src/routes/_authenticated.tsx` reconciles the active account: if the stored account is missing or invalid, it silently falls back to the first account. **But it never re-validates the selected folder.** The folder is only reset to "Inbox" when you *manually* pick an account from the switcher dropdown.
+## 2. Make the AI chat discoverable from the instructions field
 
-So this happens:
+The full **Chat** tab (`FolderChatPanel`) already drafts and applies rule/setting changes, so we reuse it rather than adding a second chat.
 
-```text
-1. You were viewing a specific FOLDER under account A.
-   selectedFolder = <folder-uuid belonging to account A>
-2. Later the app auto-switches the active account to account B
-   (chris@nucar.com) — e.g. stored account invalid, fresh load, cross-tab.
-3. selectedFolder still = <account A's folder-uuid>.
-4. The inbox queries scope="folder" with that uuid against account B.
-   Account B has no emails in that folder → the list comes back EMPTY.
-```
+- Convert the `Tabs` to a controlled component (add a `tab` state, pass `value`/`onValueChange`).
+- Next to the "AI rule (natural language)" field, add a small **"Write with AI chat"** button that switches to the Chat tab. A one-line hint tells the user the chat can draft and refine these instructions.
 
-The inbox looks empty even though "Inbox" for that account has two emails, because the app is actually querying a stale folder that doesn't belong to the current account. Each of your accounts has its own folder set (e.g. `chris@nucar.com` has Customers, Factory, Orders, etc.), so a folder id from one account never matches another.
+## 3. Let AI draft instructions from the linked label's emails
 
-## The fix
+Add a new **"Draft from label"** action beside the AI rule field. It samples the emails under this folder's linked Gmail label and asks AI to write the instructions, then drops the draft into the AI rule field for review (nothing saves until the user hits Save — same pattern as the existing "Generate rule").
 
-Reconcile the selected folder the same way the active account is already reconciled, so a stale/foreign folder can never strand the inbox.
+- **Server helper** (`src/lib/ai.server.ts`): new `generateAiRuleFromLabelSamples({ folderName, samples })` that takes sender/subject/snippet samples and returns a concise 1–2 sentence rule (mirrors the existing `generateAiRuleFromPurpose` prompt/cleanup).
+- **Server function** (`src/lib/gmail.functions.ts`): new `generateFolderAiRuleFromLabel` (auth middleware, `{ folder_id }` input). It verifies folder ownership, requires a linked `gmail_label_id`, samples up to ~40 messages from that label via the existing `listMessages` + `getMessageMetadata` + `parseMessage` helpers, and calls the new AI helper. Returns `{ rule }`.
+- **UI** (`FolderEditor.tsx`): wire a `useServerFn` call; the button is disabled without a linked label and shows a loading state; on success it sets `local.ai_rule` and toasts "Draft ready — review, then save." Reuse the existing 429/402 error handling from `generateRule`.
 
-1. **`src/routes/_authenticated.tsx`** — in the existing reconcile effect (the one that falls back to `accounts[0]`), after the account's folder list loads, check whether `selectedFolder` is a real folder for the current account. If it's a folder UUID that isn't in this account's folders (and isn't one of the special views `all` / `all_mail` / `no_rules`), reset it to `"all"`. This mirrors the manual-switch behavior for the auto-switch path.
+## Technical notes
 
-2. **`src/routes/_authenticated/inbox.tsx`** — add the same guard at the point where the query scope is derived, so that if `selectedFolder` is a UUID not present in the inbox page's own loaded folders, it treats the scope as `"all"` (and clears the stale value). This avoids a brief empty flash during the load-order race before the layout effect runs, and makes the inbox self-correct even if it mounts first.
-
-Both components already load the account's folders and share the same folder-selection context, so resetting in one place propagates to the other. No backend, schema, or sync changes are needed.
+- No schema or migration changes. `ai_rule` already exists on `folders`.
+- The label-sampling function follows project rules: it runs server-side through `requireSupabaseAuth`, verifies ownership, and reuses existing Gmail helpers (no new token handling).
+- The filter engine and side-effect logic are untouched — this is purely a Settings-tab reorganization plus two additive AI entry points.
 
 ## Verification
 
-- Reproduce in the live app: set `zerrow.selectedFolder` to a folder id from a different account, load the inbox for `chris@nucar.com`, and confirm the two emails now appear (previously empty).
-- Confirm that legitimately selecting a real folder for the current account still filters correctly.
-- Confirm switching accounts via the dropdown still resets to Inbox.
-- Run the existing test suite to ensure no regressions.
-
-## Notes / out of scope
-
-- Two of your other connected accounts (`shawn@nucar.com`, `terrabyte081632@gmail.com`) show `needs_reconnect` from expired Google credentials — they won't receive new mail until reconnected. That's separate from this inbox-display bug and not addressed here.
-- This does not change how aggressively mail is auto-filed into folders; it only fixes the empty-inbox display caused by the stale folder selection.
+- Typecheck/build.
+- In the live app: open a folder's Settings tab, confirm Rules (filters) render first and all AI controls below; confirm "Write with AI chat" switches to the Chat tab; on a folder with a linked Gmail label, confirm "Draft from label" fills the AI rule field and Save persists it.
