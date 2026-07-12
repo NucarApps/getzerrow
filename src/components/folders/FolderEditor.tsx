@@ -21,6 +21,7 @@ import {
   setFolderAutoRelearn,
   scanGmailForFolder,
   generateFolderAiRule,
+  generateFolderAiRuleFromLabel,
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
