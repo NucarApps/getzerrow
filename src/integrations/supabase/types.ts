@@ -619,6 +619,82 @@ export type Database = {
           },
         ]
       }
+      folder_chat_messages: {
+        Row: {
+          actions: Json | null
+          applied_action_indexes: Json
+          content: string
+          created_at: string
+          folder_id: string
+          id: string
+          role: string
+          summarized: boolean
+          user_id: string
+        }
+        Insert: {
+          actions?: Json | null
+          applied_action_indexes?: Json
+          content?: string
+          created_at?: string
+          folder_id: string
+          id?: string
+          role: string
+          summarized?: boolean
+          user_id: string
+        }
+        Update: {
+          actions?: Json | null
+          applied_action_indexes?: Json
+          content?: string
+          created_at?: string
+          folder_id?: string
+          id?: string
+          role?: string
+          summarized?: boolean
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_chat_messages_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      folder_chat_state: {
+        Row: {
+          folder_id: string
+          summarized_through: string | null
+          summary: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          folder_id: string
+          summarized_through?: string | null
+          summary?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          folder_id?: string
+          summarized_through?: string | null
+          summary?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_chat_state_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: true
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       folder_examples: {
         Row: {
           created_at: string
