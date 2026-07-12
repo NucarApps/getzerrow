@@ -112,18 +112,22 @@ const actionInputSchema = z.discriminatedUnion("type", [
 // Recent emails sampled from the folder so the AI can see patterns.
 const FOLDER_SAMPLE_SIZE = 20;
 
+export type ProposeResult = FolderChatProposal & { message_id: string | null };
+
 export const proposeFolderChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; user_message: string; history: FolderChatMessage[] }) =>
+  .inputValidator((d: { folder_id: string; user_message: string; history?: FolderChatMessage[] }) =>
     z
       .object({
         folder_id: z.string().uuid(),
         user_message: z.string().min(1).max(2000),
-        history: z.array(chatMessageSchema).max(40),
+        // Retained for backward compatibility but ignored: history now comes
+        // from the persisted per-folder chat log.
+        history: z.array(chatMessageSchema).max(40).optional(),
       })
       .parse(d),
   )
-  .handler(async ({ data, context }): Promise<FolderChatProposal> => {
+  .handler(async ({ data, context }): Promise<ProposeResult> => {
     // 1. Verify the folder belongs to this user and load its columns.
     const { data: folderRow } = await supabaseAdmin
       .from("folders")
@@ -195,13 +199,213 @@ export const proposeFolderChanges = createServerFn({ method: "POST" })
       });
     }
 
-    return proposeFolderChatChanges({
-      history: data.history,
+    // 4. Load persisted memory: rolling summary + recent stored turns + the log
+    //    of changes already applied. This is what makes the chat "remember".
+    const { data: stateRow } = await supabaseAdmin
+      .from("folder_chat_state")
+      .select("summary")
+      .eq("folder_id", data.folder_id)
+      .maybeSingle();
+    const memorySummary = stateRow?.summary ?? "";
+
+    const { data: recentRows } = await supabaseAdmin
+      .from("folder_chat_messages")
+      .select("role, content, actions, applied_action_indexes")
+      .eq("folder_id", data.folder_id)
+      .order("created_at", { ascending: false })
+      .limit(RECENT_TURNS);
+    const recent = (recentRows ?? []).slice().reverse();
+
+    const history: FolderChatMessage[] = recent
+      .filter((m) => (m.content ?? "").trim().length > 0)
+      .map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      }));
+
+    const appliedLog: string[] = [];
+    for (const m of recent) {
+      if (m.role !== "assistant" || !Array.isArray(m.actions)) continue;
+      const indexes = Array.isArray(m.applied_action_indexes)
+        ? (m.applied_action_indexes as number[])
+        : [];
+      for (const idx of indexes) {
+        const action = (m.actions as unknown[])[idx];
+        const parsed = actionInputSchema.safeParse(action);
+        if (parsed.success) appliedLog.push(describeAppliedAction(parsed.data));
+      }
+    }
+
+    // 5. Persist the incoming user message before calling the model.
+    await supabaseAdmin.from("folder_chat_messages").insert({
+      folder_id: data.folder_id,
+      user_id: context.userId,
+      role: "user",
+      content: data.user_message,
+    });
+
+    // 6. Ask the model, feeding it the live folder context + persisted memory.
+    const proposal = await proposeFolderChatChanges({
+      history,
       userMessage: data.user_message,
       folder,
       sample,
+      memorySummary,
+      appliedLog,
     });
+
+    // 7. Persist the assistant reply (with its proposed actions).
+    const assistantContent = proposal.reply || proposal.clarifying_question || "";
+    const { data: assistantRow } = await supabaseAdmin
+      .from("folder_chat_messages")
+      .insert({
+        folder_id: data.folder_id,
+        user_id: context.userId,
+        role: "assistant",
+        content: assistantContent,
+        actions: proposal.actions.length > 0 ? proposal.actions : null,
+      })
+      .select("id")
+      .maybeSingle();
+
+    // 8. Fold older turns into the rolling summary when history grows long.
+    await maybeSummarize(data.folder_id, context.userId, folder.name, memorySummary);
+
+    return { ...proposal, message_id: assistantRow?.id ?? null };
   });
+
+// Best-effort rolling summarization. When too many unsummarized turns pile up,
+// condense the oldest into the folder's memory summary and mark them summarized
+// so future prompts only replay the recent window verbatim.
+async function maybeSummarize(
+  folderId: string,
+  userId: string,
+  folderName: string,
+  previousSummary: string,
+): Promise<void> {
+  try {
+    const { count } = await supabaseAdmin
+      .from("folder_chat_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("folder_id", folderId)
+      .eq("summarized", false);
+    if (!count || count <= SUMMARIZE_THRESHOLD) return;
+
+    const toFold = count - KEEP_AFTER_SUMMARY;
+    if (toFold <= 0) return;
+
+    const { data: oldRows } = await supabaseAdmin
+      .from("folder_chat_messages")
+      .select("id, role, content")
+      .eq("folder_id", folderId)
+      .eq("summarized", false)
+      .order("created_at", { ascending: true })
+      .limit(toFold);
+    const olds = oldRows ?? [];
+    if (olds.length === 0) return;
+
+    const turns: FolderChatMessage[] = olds
+      .filter((m) => (m.content ?? "").trim().length > 0)
+      .map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      }));
+
+    const nextSummary = await summarizeFolderChat({
+      folderName,
+      previousSummary,
+      turns,
+    });
+
+    await supabaseAdmin
+      .from("folder_chat_state")
+      .upsert(
+        { folder_id: folderId, user_id: userId, summary: nextSummary, summarized_through: new Date().toISOString() },
+        { onConflict: "folder_id" },
+      );
+
+    await supabaseAdmin
+      .from("folder_chat_messages")
+      .update({ summarized: true })
+      .in(
+        "id",
+        olds.map((m) => m.id),
+      );
+  } catch (err: unknown) {
+    console.error("maybeSummarize failed", err instanceof Error ? err.message : String(err));
+  }
+}
+
+// Load the persisted chat history + memory summary so the UI can rehydrate.
+export type StoredChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  actions: FolderChatAction[] | null;
+  applied_action_indexes: number[];
+  created_at: string;
+};
+
+export const getFolderChatHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) =>
+    z.object({ folder_id: z.string().uuid() }).parse(d),
+  )
+  .handler(
+    async ({
+      data,
+      context,
+    }): Promise<{ messages: StoredChatMessage[]; summary: string }> => {
+      const { data: folderRow } = await supabaseAdmin
+        .from("folders")
+        .select("id, user_id")
+        .eq("id", data.folder_id)
+        .maybeSingle();
+      if (!folderRow || folderRow.user_id !== context.userId) {
+        throw new Error("Folder not found");
+      }
+
+      const { data: rows } = await supabaseAdmin
+        .from("folder_chat_messages")
+        .select("id, role, content, actions, applied_action_indexes, created_at")
+        .eq("folder_id", data.folder_id)
+        .order("created_at", { ascending: false })
+        .limit(HISTORY_DISPLAY_LIMIT);
+
+      const messages: StoredChatMessage[] = (rows ?? [])
+        .slice()
+        .reverse()
+        .map((m) => {
+          const rawActions = Array.isArray(m.actions) ? (m.actions as unknown[]) : null;
+          const actions = rawActions
+            ? rawActions
+                .map((a) => actionInputSchema.safeParse(a))
+                .filter((p): p is { success: true; data: FolderChatAction } => p.success)
+                .map((p) => p.data)
+            : null;
+          return {
+            id: m.id,
+            role: m.role === "assistant" ? "assistant" : "user",
+            content: m.content,
+            actions,
+            applied_action_indexes: Array.isArray(m.applied_action_indexes)
+              ? (m.applied_action_indexes as number[])
+              : [],
+            created_at: m.created_at,
+          };
+        });
+
+      const { data: stateRow } = await supabaseAdmin
+        .from("folder_chat_state")
+        .select("summary")
+        .eq("folder_id", data.folder_id)
+        .maybeSingle();
+
+      return { messages, summary: stateRow?.summary ?? "" };
+    },
+  );
+
+
 
 type ApplyResultItem = {
   action: FolderChatAction;
