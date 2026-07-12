@@ -455,7 +455,7 @@ export function FolderEditor({
         </DropdownMenu>
       </div>
 
-      <Tabs defaultValue="settings" className="mt-4">
+      <Tabs value={tab} onValueChange={setTab} className="mt-4">
         <TabsList>
           <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="history">
