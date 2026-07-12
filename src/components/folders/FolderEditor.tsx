@@ -397,6 +397,29 @@ export function FolderEditor({
     }
   }
 
+  async function draftFromLabel() {
+    if (!folder.gmail_label_id) {
+      toast.error("Link a Gmail label first, then save.");
+      return;
+    }
+    setDraftingFromLabel(true);
+    try {
+      const r = await generateFromLabelFn({ data: { folder_id: folder.id } });
+      setLocal((prev) => ({ ...prev, ai_rule: r.rule }));
+      toast.success("Draft ready — review, then save.");
+    } catch (e: unknown) {
+      const err = e as { status?: unknown; message?: unknown; cause?: { status?: unknown } };
+      const status = err?.status ?? err?.cause?.status;
+      if (status === 429) toast.error("Rate limit reached. Try again in a moment.");
+      else if (status === 402) toast.error("Out of AI credits. Add credits to keep generating.");
+      else toast.error(typeof err?.message === "string" ? err.message : "Failed to draft rule");
+    } finally {
+      setDraftingFromLabel(false);
+    }
+  }
+
+
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
