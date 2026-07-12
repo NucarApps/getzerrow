@@ -461,6 +461,7 @@ function InboxPage() {
   const listAccountsFn = useServerFn(listMyGmailAccounts);
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccountsFn() });
   const accounts = useMemo(() => accountsQ.data?.accounts ?? [], [accountsQ.data?.accounts]);
+  const hasConnectedAccounts = accounts.length > 0;
   const accountId =
     activeAccountId && accounts.some((account) => account.id === activeAccountId)
       ? activeAccountId
@@ -1254,7 +1255,7 @@ function InboxPage() {
   // (no in-memory rows and no metadata-cache placeholder). It shows a brief
   // skeleton and never waits on Gmail. An in-flight background sync is signalled
   // only by the subtle header pulse.
-  const coldLoading = emailsQ.isLoading && rawEmails.length === 0;
+  const coldLoading = (accountsQ.isLoading && !accountId) || (emailsQ.isLoading && rawEmails.length === 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
@@ -1470,7 +1471,7 @@ function InboxPage() {
               ))}
             </div>
           )}
-          {!emailsQ.isLoading && filtered.length === 0 && (
+          {!coldLoading && !emailsQ.isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-muted-foreground">
               <img
                 src={cobwebInbox}
@@ -1532,7 +1533,13 @@ function InboxPage() {
               ) : (
                 <>
                   <p className="text-sm">Nothing here yet.</p>
-                  <p className="text-xs">Hit refresh, or connect Gmail in Settings.</p>
+                  <p className="text-xs">
+                    {hasConnectedAccounts
+                      ? "Hit refresh, or check All mail."
+                      : accountsQ.isError
+                        ? "Reload Gmail accounts, then refresh."
+                        : "Connect Gmail in Settings."}
+                  </p>
                 </>
               )}
             </div>
