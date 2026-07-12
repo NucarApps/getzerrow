@@ -472,6 +472,24 @@ function InboxPage() {
     },
   });
 
+  // Guard against a stale folder selection. `selectedFolder` is stored
+  // globally (not per account), so after the active account changes a folder
+  // id from the *other* account can linger — scope="folder" would then query a
+  // folder that holds none of this account's mail and the inbox shows empty.
+  // Once this account's folders load, if the selection is a folder id that
+  // doesn't exist here (and isn't a special view), treat it as the Inbox view
+  // for the query and clear the stale value.
+  const isSpecialView =
+    selectedFolder === "all" || selectedFolder === "all_mail" || selectedFolder === "no_rules";
+  const isStaleFolder =
+    !isSpecialView && foldersQ.isSuccess && !(foldersQ.data ?? []).some((f) => f.id === selectedFolder);
+  const effectiveFolder = isStaleFolder ? "all" : selectedFolder;
+  useEffect(() => {
+    if (isStaleFolder) setSelectedFolder("all");
+  }, [isStaleFolder, setSelectedFolder]);
+
+
+
   // Full folder rows + Gmail labels feed the in-place folder settings editor
   // (gear icon in the folder header). Query keys intentionally mirror the
   // sidebar's so both share one cache entry — no duplicate fetches.
