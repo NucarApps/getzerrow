@@ -218,6 +218,22 @@ export class NeedsReconnectError extends Error {
   }
 }
 
+/**
+ * Thrown when Google rejects the app's own OAuth client credentials
+ * (`invalid_client` / `unauthorized_client`). This is a server-side config
+ * problem (missing/stale/rotated GOOGLE_OAUTH_CLIENT_SECRET), not a per-user
+ * grant failure — the account is NOT flagged needs_reconnect, so it recovers
+ * automatically once the deployment secret is corrected.
+ */
+export class AppCredentialError extends Error {
+  accountId: string;
+  constructor(accountId: string, reason: string) {
+    super(`Google rejected app OAuth credentials: ${reason}`);
+    this.name = "AppCredentialError";
+    this.accountId = accountId;
+  }
+}
+
 /** Returns a fresh access token for the given gmail account, refreshing if
  * needed. Tokens are stored encrypted at rest via pgcrypto pgp_sym_*; the
  * key is held server-side (EMAIL_ENC_KEY) and passed per-call. Existing
