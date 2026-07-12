@@ -72,9 +72,19 @@ function AuthedLayoutInner({
   mobileOpen: boolean;
   setMobileOpen: (v: boolean) => void;
 }) {
+  const { activeAccountId, setActiveAccountId } = useAccountSelection();
+  const { setSelected } = useFolderSelection();
   const listAccounts = useServerFn(listMyGmailAccounts);
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
   const accounts = accountsQ.data?.accounts ?? [];
+
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    const activeExists = activeAccountId && accounts.some((account) => account.id === activeAccountId);
+    if (activeExists) return;
+    setActiveAccountId(accounts[0].id);
+    setSelected("all");
+  }, [accounts, activeAccountId, setActiveAccountId, setSelected]);
 
   return (
     <div className="relative flex h-[100dvh] overflow-hidden bg-background text-foreground">
@@ -142,7 +152,12 @@ function AuthedLayoutInner({
           </button>
           <img src={zerrowLogo} alt="Zerrow" className="h-12 w-auto" />
           <div className="ml-auto min-w-0 max-w-[60%]">
-            <AccountSwitcher accounts={accounts} loading={accountsQ.isLoading} compact />
+            <AccountSwitcher
+              accounts={accounts}
+              loading={accountsQ.isLoading}
+              failed={accountsQ.isError}
+              compact
+            />
           </div>
         </div>
         <ReconnectBanner />
@@ -285,6 +300,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         <AccountSwitcher
           accounts={accounts}
           loading={accountsQ.isLoading}
+          failed={accountsQ.isError}
           onNavigate={onNavigate}
         />
       </div>
