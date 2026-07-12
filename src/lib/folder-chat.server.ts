@@ -159,7 +159,19 @@ function buildPrompt(args: {
     ? args.history.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n")
     : "(no prior turns)";
 
+  const memoryBlock =
+    args.memorySummary && args.memorySummary.trim()
+      ? args.memorySummary.trim()
+      : "(no earlier summarized history)";
+
+  const appliedBlock =
+    args.appliedLog && args.appliedLog.length
+      ? args.appliedLog.map((a) => `    - ${a}`).join("\n")
+      : "    (no changes applied yet)";
+
   return `You are an assistant that edits the settings of ONE email folder in the user's inbox app. The user describes what they want, and you propose concrete changes to THIS folder only. You DO NOT execute changes — the user approves them in the UI.
+
+You have persistent memory of this folder's chat. Always take the memory summary, the log of already-applied changes, and the current folder settings into account so you never re-propose something that is already in place, and so you stay consistent with earlier decisions.
 
 Folder "${f.name}" (id ${f.id}) — current settings:
 ${settingsBlock}
@@ -169,7 +181,13 @@ ${filterBlock}
 Recent emails currently in this folder (to help you diagnose misfiling):
 ${sampleBlock}
 
-Prior conversation:
+Memory summary of earlier conversation (older turns, condensed):
+${memoryBlock}
+
+Changes already applied to this folder in past turns:
+${appliedBlock}
+
+Recent conversation (most recent turns, verbatim):
 ${historyBlock}
 
 User's new message:
