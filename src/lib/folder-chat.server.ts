@@ -118,6 +118,8 @@ function buildPrompt(args: {
   userMessage: string;
   folder: FolderChatContext;
   sample: FolderChatSampleEmail[];
+  memorySummary?: string;
+  appliedLog?: string[];
   extraReminder?: string;
 }) {
   const f = args.folder;
@@ -157,7 +159,19 @@ function buildPrompt(args: {
     ? args.history.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n")
     : "(no prior turns)";
 
+  const memoryBlock =
+    args.memorySummary && args.memorySummary.trim()
+      ? args.memorySummary.trim()
+      : "(no earlier summarized history)";
+
+  const appliedBlock =
+    args.appliedLog && args.appliedLog.length
+      ? args.appliedLog.map((a) => `    - ${a}`).join("\n")
+      : "    (no changes applied yet)";
+
   return `You are an assistant that edits the settings of ONE email folder in the user's inbox app. The user describes what they want, and you propose concrete changes to THIS folder only. You DO NOT execute changes — the user approves them in the UI.
+
+You have persistent memory of this folder's chat. Always take the memory summary, the log of already-applied changes, and the current folder settings into account so you never re-propose something that is already in place, and so you stay consistent with earlier decisions.
 
 Folder "${f.name}" (id ${f.id}) — current settings:
 ${settingsBlock}
@@ -167,7 +181,13 @@ ${filterBlock}
 Recent emails currently in this folder (to help you diagnose misfiling):
 ${sampleBlock}
 
-Prior conversation:
+Memory summary of earlier conversation (older turns, condensed):
+${memoryBlock}
+
+Changes already applied to this folder in past turns:
+${appliedBlock}
+
+Recent conversation (most recent turns, verbatim):
 ${historyBlock}
 
 User's new message:
@@ -365,6 +385,8 @@ export async function proposeFolderChatChanges(args: {
   userMessage: string;
   folder: FolderChatContext;
   sample: FolderChatSampleEmail[];
+  memorySummary?: string;
+  appliedLog?: string[];
 }): Promise<FolderChatProposal> {
   try {
     return await callModel(buildPrompt(args));
@@ -399,5 +421,50 @@ export async function proposeFolderChatChanges(args: {
       question = "Too many requests right now — please try again in a moment.";
     }
     return { reply: "", clarifying_question: question, actions: [] };
+  }
+}
+
+// Condense older chat turns (plus any prior summary) into an updated rolling
+// memory summary. Best-effort: on any failure we return the previous summary so
+// callers can keep going without losing existing memory.
+export async function summarizeFolderChat(args: {
+  folderName: string;
+  previousSummary: string;
+  turns: FolderChatMessage[];
+}): Promise<string> {
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) return args.previousSummary;
+  if (args.turns.length === 0) return args.previousSummary;
+
+  const transcript = args.turns.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
+  const prompt = `You maintain a compact running memory of a chat between a user and an assistant that edits the settings of the email folder "${args.folderName}".
+
+Existing memory summary (may be empty):
+${args.previousSummary?.trim() ? args.previousSummary.trim() : "(none yet)"}
+
+New conversation turns to fold into the memory:
+${transcript}
+
+Write an updated memory summary that MERGES the existing summary with the new turns. Preserve durable facts the assistant should remember in future turns: what the user wants this folder to do, decisions made, changes that were applied, preferences, and anything explicitly rejected. Drop small talk and superseded details. Be concise (at most ~200 words) and write it as plain notes, not a dialogue. Output ONLY the updated summary text.`;
+
+  try {
+    const resp = await fetch(GATEWAY_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: DEFAULT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!resp.ok) return args.previousSummary;
+    const json = (await resp.json()) as GatewayResponse;
+    const text = (json.choices?.[0]?.message?.content ?? "").trim();
+    return text || args.previousSummary;
+  } catch (err: unknown) {
+    console.error("summarizeFolderChat failed", err instanceof Error ? err.message : String(err));
+    return args.previousSummary;
   }
 }
