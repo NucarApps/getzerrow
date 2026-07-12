@@ -895,3 +895,49 @@ Write a single, clear rule (1-2 sentences, plain text, no markdown, no quotes, n
   if (!cleaned) throw new Error("AI returned an empty rule. Try rephrasing the purpose.");
   return cleaned.slice(0, 600);
 }
+
+// Turn a sample of emails already filed under a Gmail label into a concise,
+// classifier-friendly AI rule. Used by the folder editor's "draft from label"
+// helper. Returns a short rule string.
+export async function generateAiRuleFromLabelSamples(opts: {
+  folderName?: string;
+  samples: Array<{ from: string; subject: string; snippet: string }>;
+}): Promise<string> {
+  const samples = opts.samples.filter((s) => s.from || s.subject || s.snippet).slice(0, 40);
+  if (samples.length === 0) {
+    throw new Error("No emails found under this label to learn from.");
+  }
+
+  const sampleText = samples
+    .map((s, i) => {
+      const parts = [
+        `From: ${s.from || "(unknown)"}`,
+        s.subject ? `Subject: ${s.subject}` : "",
+        s.snippet ? `Snippet: ${s.snippet.slice(0, 200)}` : "",
+      ].filter(Boolean);
+      return `${i + 1}. ${parts.join(" | ")}`;
+    })
+    .join("\n");
+
+  const prompt = `You write concise classification rules that an email assistant uses to decide whether an incoming email belongs in a specific folder.
+
+${opts.folderName ? `Folder name: "${opts.folderName}"\n` : ""}Here is a sample of emails the user has already filed into this folder:
+${sampleText}
+
+Infer what these emails have in common and write a single, clear rule (1-2 sentences, plain text, no markdown, no quotes, no preamble) describing the kinds of emails that belong in this folder. Be specific about senders, domains, topics, and signals you observe. Do not add anything beyond the rule itself.`;
+
+  const { text } = await generateText({
+    model: getModel("google/gemini-2.5-flash"),
+    prompt,
+  });
+
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:\w+)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .replace(/^["']|["']$/g, "")
+    .trim();
+
+  if (!cleaned) throw new Error("AI returned an empty rule. Try again.");
+  return cleaned.slice(0, 600);
+}
