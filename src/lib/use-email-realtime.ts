@@ -314,6 +314,7 @@ export function useEmailRealtime() {
     }
 
     function applyInsert(row: EmailRow) {
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "insert", row: withCachedFolder(row) });
       scheduleFlush();
     }
@@ -321,11 +322,13 @@ export function useEmailRealtime() {
     function applyUpdate(row: EmailRow) {
       // An update supersedes a pending insert (the row already exists in
       // the DB; we want the latest version).
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "update", row: withCachedFolder(row) });
       scheduleFlush();
     }
 
     function applyDelete(row: { id: string }) {
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "delete", row });
       scheduleFlush();
     }
