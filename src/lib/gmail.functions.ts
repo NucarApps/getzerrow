@@ -104,13 +104,6 @@ type GmailAccountStatusRow = {
   needs_reconnect: boolean | null;
   refresh_token_present: boolean;
 };
-type GmailAccountStatusRpc = {
-  rpc: (
-    fn: "list_my_gmail_accounts_with_status",
-    args: Record<string, never>,
-  ) => Promise<{ data: GmailAccountStatusRow[] | null; error: { message: string } | null }>;
-};
-
 export const listMyGmailAccounts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
