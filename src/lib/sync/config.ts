@@ -45,9 +45,19 @@ export const REARM_COOLDOWN_MS = 30 * 60 * 1000; // 30min
 // ─── Webhook ─────────────────────────────────────────────────────────────
 
 /** Time budget for the inline post-webhook drain. Pub/Sub considers a
- * push delivered if we ack within ~10s; spending up to 7s here cuts
- * push → visible latency without risking redelivery. */
-export const WEBHOOK_INLINE_DRAIN_BUDGET_MS = 7_000;
+ * push delivered if we ack within ~10s. The webhook drains with
+ * `deferAiToCron` so it only inserts rows (fires realtime instantly) and
+ * hands the AI classification step off to the 5s live cron — that keeps
+ * the ack well under the deadline, so the budget only needs to cover a
+ * couple of insert rounds. */
+export const WEBHOOK_INLINE_DRAIN_BUDGET_MS = 4_000;
+
+/** When the webhook drain defers a message's AI step to the cron, the
+ * job is requeued this far in the future. Long enough that the webhook's
+ * own remaining drain rounds won't re-claim it (avoiding a re-fetch
+ * loop), short enough that the next `gmail-process-live-5s` cron tick
+ * finishes the AI pass within a few seconds. */
+export const WEBHOOK_DEFERRED_AI_REQUEUE_MS = 1_500;
 
 // ─── History sync ────────────────────────────────────────────────────────
 

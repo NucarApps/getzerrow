@@ -63,7 +63,11 @@ import {
   type ActionFolder as _ActionFolder,
   type ProcessTimings as _ProcessTimings,
 } from "./sync/process-message";
-import { JOB_WORKER_CONCURRENCY, LIVE_BATCH_AI_THRESHOLD } from "./sync/config";
+import {
+  JOB_WORKER_CONCURRENCY,
+  LIVE_BATCH_AI_THRESHOLD,
+  WEBHOOK_DEFERRED_AI_REQUEUE_MS,
+} from "./sync/config";
 
 // Re-export for backward compatibility with existing imports.
 export const withAccountLock = _withAccountLock;
@@ -662,7 +666,7 @@ export async function enqueueMessageJobs(
 export async function runMessageJobs(
   limit = 100,
   concurrency = JOB_WORKER_CONCURRENCY,
-  opts: { priority?: number } = {},
+  opts: { priority?: number; deferAiToCron?: boolean } = {},
 ) {
   const STUCK_MS = 35 * 1000; // jobs in 'running' for >35s are presumed dead (worker timeout is 25s)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
@@ -892,12 +896,18 @@ export async function runMessageJobs(
   // behavior. The batched second pass below applies folder side-effects.
   const liveBurst = claimed.length >= LIVE_BATCH_AI_THRESHOLD;
 
+  // Webhook drain mode: insert rows now (fires realtime instantly) and hand
+  // the AI step to the 5s live cron instead of running it inside the push
+  // request. Keeps push → ack well under Pub/Sub's ~10s redelivery deadline.
+  const deferAiToCron = opts.deferAiToCron === true;
+
   const processOne = async (job: ClaimedJob) => {
     const ctx = contextByAccount.get(job.gmail_account_id);
     // Backfill jobs (priority>=10) always defer AI to the batched pass; live
     // mail defers only during a burst so big bursts batch instead of doing
-    // one slow inline AI call per message.
-    const deferAi = job.priority >= 10 || liveBurst;
+    // one slow inline AI call per message. The webhook drain (deferAiToCron)
+    // always defers so the ack isn't blocked on AI.
+    const deferAi = deferAiToCron || job.priority >= 10 || liveBurst;
     const timings: ProcessTimings = { fetch: 0, ai: 0, db: 0 };
     try {
       const result = (await Promise.race([
@@ -920,12 +930,7 @@ export async function runMessageJobs(
         ),
       ])) as Awaited<ReturnType<typeof processGmailMessage>>;
 
-      // Queue for batched AI only when the message actually needs the AI
-      // pass (needs_ai === true). Using needs_ai instead of `!folder_id`
-      // avoids re-classifying excluded/blocklisted rows (folder_id null but
-      // FINAL) and overwriting the user's decision.
-      if (
-        deferAi &&
+      const needsAiPass =
         result &&
         "email_id" in result &&
         result.email_id &&
@@ -933,8 +938,30 @@ export async function runMessageJobs(
         result.needs_ai === true &&
         result.parsed &&
         ctx &&
-        ctx.folders.length > 0
-      ) {
+        ctx.folders.length > 0;
+
+      // Webhook drain: the row is inserted and visible; requeue the job so
+      // the live cron finishes the AI classification out-of-band. A short
+      // future next_run_at stops the webhook's own remaining rounds from
+      // re-claiming it (which would re-fetch in a loop).
+      if (deferAiToCron && needsAiPass) {
+        await supabaseAdmin
+          .from("message_jobs")
+          .update({
+            status: "pending",
+            locked_at: null,
+            next_run_at: new Date(Date.now() + WEBHOOK_DEFERRED_AI_REQUEUE_MS).toISOString(),
+          })
+          .eq("id", job.id);
+        results.push({ id: job.id, ok: true });
+        return;
+      }
+
+      // Queue for batched AI only when the message actually needs the AI
+      // pass (needs_ai === true). Using needs_ai instead of `!folder_id`
+      // avoids re-classifying excluded/blocklisted rows (folder_id null but
+      // FINAL) and overwriting the user's decision.
+      if (deferAi && needsAiPass) {
         pendingAi.push({ job, emailRowId: result.email_id, parsed: result.parsed });
         // Don't delete the job row yet — finalize after batch AI completes.
         return;

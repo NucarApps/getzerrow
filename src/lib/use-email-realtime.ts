@@ -221,6 +221,14 @@ export function useEmailRealtime() {
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
+    // Liveness watchdog: a websocket can silently stop delivering while the
+    // channel still reports "joined" (a zombie socket after sleep/network
+    // flaps). We track the last time we saw ANY realtime traffic and poll
+    // the channel state; if it's no longer joined, we rebuild it proactively
+    // instead of waiting for the 30s background sync.
+    let watchdogTimer: ReturnType<typeof setInterval> | null = null;
+    let lastEventAt = Date.now();
+    const REALTIME_WATCHDOG_INTERVAL_MS = 15_000;
 
     type CachedList = EmailRow[] | { rows: EmailRow[] };
     type FolderRow = {
@@ -306,6 +314,7 @@ export function useEmailRealtime() {
     }
 
     function applyInsert(row: EmailRow) {
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "insert", row: withCachedFolder(row) });
       scheduleFlush();
     }
@@ -313,11 +322,13 @@ export function useEmailRealtime() {
     function applyUpdate(row: EmailRow) {
       // An update supersedes a pending insert (the row already exists in
       // the DB; we want the latest version).
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "update", row: withCachedFolder(row) });
       scheduleFlush();
     }
 
     function applyDelete(row: { id: string }) {
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "delete", row });
       scheduleFlush();
     }
@@ -358,6 +369,40 @@ export function useEmailRealtime() {
         connect();
       }, delay);
     }
+
+    // Watchdog: while the tab is visible, verify the channel is still
+    // actually joined. A zombie socket (joined but not delivering) or one
+    // that dropped without firing our status callback gets torn down and
+    // rebuilt here, tightening the worst case from the 30s background sync
+    // to ~15s. Skipped while hidden (realtime is expected idle) and while a
+    // reconnect is already scheduled.
+    function checkRealtimeLiveness() {
+      if (cancelled || reconnectTimer) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      const state = channel?.state;
+      const channelDead = !channel || (state !== "joined" && state !== "joining");
+      // The underlying phoenix socket can drop without our channel status
+      // callback firing (a zombie). If it reports disconnected while we've
+      // seen no realtime traffic recently, treat the channel as stale too.
+      let socketDead = false;
+      try {
+        const idleMs = Date.now() - lastEventAt;
+        socketDead = idleMs > REALTIME_WATCHDOG_INTERVAL_MS && !supabase.realtime.isConnected();
+      } catch {
+        // isConnected may not exist on older clients; ignore.
+      }
+      if (channelDead || socketDead) {
+        teardown();
+        connect();
+      }
+    }
+
+    function startWatchdog() {
+      if (watchdogTimer) return;
+      watchdogTimer = setInterval(checkRealtimeLiveness, REALTIME_WATCHDOG_INTERVAL_MS);
+    }
+
+
 
     async function connect() {
       const { data } = await supabase.auth.getSession();
@@ -415,6 +460,8 @@ export function useEmailRealtime() {
         .subscribe((status) => {
           if (status === "SUBSCRIBED") {
             reconnectAttempt = 0;
+            lastEventAt = Date.now();
+            startWatchdog();
             // Catch up on anything missed while disconnected.
             qc.invalidateQueries({ queryKey: ["emails"] });
             qc.invalidateQueries({ queryKey: ["folders"] });
@@ -459,6 +506,9 @@ export function useEmailRealtime() {
 
     const onVisible = () => {
       if (document.visibilityState === "visible") {
+        // Rebuild the channel first if it went stale while hidden, then
+        // catch up on anything realtime missed during the gap.
+        checkRealtimeLiveness();
         qc.invalidateQueries({ queryKey: ["emails"] });
         qc.invalidateQueries({ queryKey: ["folders"] });
         bumpCounts();
@@ -471,6 +521,10 @@ export function useEmailRealtime() {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
+      }
+      if (watchdogTimer) {
+        clearInterval(watchdogTimer);
+        watchdogTimer = null;
       }
       teardown();
       authSub.subscription.unsubscribe();

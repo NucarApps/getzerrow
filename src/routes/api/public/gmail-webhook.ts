@@ -28,7 +28,13 @@ async function drainWithBudget(budgetMs: number): Promise<{ rounds: number; proc
   let processed = 0;
   let emptyRounds = 0;
   while (Date.now() < deadline) {
-    const r = await runMessageJobs(50, JOB_WORKER_CONCURRENCY, { priority: 0 });
+    // deferAiToCron: only insert rows here (fires realtime instantly) and
+    // hand the AI classification step to the 5s live cron, so the push ack
+    // isn't blocked on AI and stays well under Pub/Sub's ~10s deadline.
+    const r = await runMessageJobs(50, JOB_WORKER_CONCURRENCY, {
+      priority: 0,
+      deferAiToCron: true,
+    });
     rounds++;
     processed += r.processed ?? 0;
     if ((r.processed ?? 0) === 0) {
