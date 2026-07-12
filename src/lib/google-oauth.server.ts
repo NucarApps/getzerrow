@@ -163,8 +163,9 @@ function requireEncKey(): string {
 /**
  * Mark the account as needing a reconnect so callers stop retrying a broken
  * OAuth pair and the UI can surface a clear "Reconnect Gmail" banner.
- * Distinguished from transient failures (5xx, network) — only `invalid_grant`
- * / `invalid_client` / missing-token errors should flip this flag.
+ * Distinguished from transient failures (5xx, network) and app-wide credential
+ * misconfig — only a dead user grant (`invalid_grant` / `invalid_token` /
+ * missing token) should flip this flag.
  */
 async function markNeedsReconnect(accountId: string, reason: string): Promise<void> {
   try {
@@ -180,10 +181,32 @@ async function markNeedsReconnect(accountId: string, reason: string): Promise<vo
   }
 }
 
-/** True when Google rejected a refresh because the grant itself is dead. */
+/**
+ * True when Google rejected the refresh because the *user's grant* is dead
+ * (revoked / expired refresh token). This is per-account and permanent —
+ * only the user reconnecting can fix it.
+ *
+ * NOTE: `invalid_client` / `unauthorized_client` are deliberately excluded.
+ * Those mean the app's own OAuth client_id/secret is wrong or missing — a
+ * server-side config problem that affects every account under this client.
+ * Flagging the user's account needs_reconnect for that would (a) permanently
+ * disable a healthy account and (b) be unfixable via reconnect while the
+ * secret is wrong. Those are surfaced as app-credential errors instead.
+ */
 function isPermanentOauthFailure(err: unknown): boolean {
   const msg = (err as Error)?.message ?? String(err);
-  return /invalid_grant|invalid_client|unauthorized_client|invalid_token/i.test(msg);
+  return /invalid_grant|invalid_token/i.test(msg);
+}
+
+/**
+ * True when Google rejected the request because the app's OAuth client
+ * credentials are invalid/missing (`invalid_client`, `unauthorized_client`).
+ * This is a deployment-config issue (stale/rotated GOOGLE_OAUTH_CLIENT_SECRET),
+ * not a per-user problem — do NOT flip needs_reconnect; retry once fixed.
+ */
+function isAppCredentialFailure(err: unknown): boolean {
+  const msg = (err as Error)?.message ?? String(err);
+  return /invalid_client|unauthorized_client/i.test(msg);
 }
 
 export class NeedsReconnectError extends Error {
