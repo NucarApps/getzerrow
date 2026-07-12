@@ -23,11 +23,12 @@ export type SwitcherAccount = {
 type Props = {
   accounts: SwitcherAccount[];
   loading?: boolean;
+  failed?: boolean;
   compact?: boolean;
   onNavigate?: () => void;
 };
 
-export function AccountSwitcher({ accounts, loading, compact, onNavigate }: Props) {
+export function AccountSwitcher({ accounts, loading, failed, compact, onNavigate }: Props) {
   const { activeAccountId, setActiveAccountId } = useAccountSelection();
   const { setSelected } = useFolderSelection();
   const navigate = useNavigate();
@@ -54,6 +55,19 @@ export function AccountSwitcher({ accounts, loading, compact, onNavigate }: Prop
       goSettings();
     }
   };
+
+  if (failed && accounts.length === 0) {
+    return (
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className={`flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/30 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-sidebar-accent/60 ${compact ? "h-9" : ""}`}
+      >
+        <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+        <span className="truncate">Reload Gmail accounts</span>
+      </button>
+    );
+  }
 
   if (!loading && accounts.length === 0) {
     return (

@@ -100,6 +100,8 @@ type GmailAccountStatusRow = {
   watch_expiration: string | null;
   last_poll_at: string | null;
   created_at: string;
+  refresh_token_enc: string | null;
+  needs_reconnect: boolean | null;
   refresh_token_present: boolean;
 };
 type GmailAccountStatusRpc = {
@@ -112,15 +114,19 @@ type GmailAccountStatusRpc = {
 export const listMyGmailAccounts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    // Use the authenticated client so the SECURITY DEFINER RPC sees the
-    // current user's auth.uid() — supabaseAdmin would run as service role
-    // and return an empty set.
-    const { data, error } = await (context.supabase as unknown as GmailAccountStatusRpc).rpc(
-      "list_my_gmail_accounts_with_status",
-      {},
-    );
+    // Use the already-validated user id from middleware instead of relying on
+    // PostgREST auth.uid() inside the RPC. That keeps account loading stable
+    // across preview/live server-function auth contexts while only returning
+    // safe account metadata to the browser.
+    const { data, error } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select(
+        "id,email_address,history_id,watch_expiration,last_poll_at,created_at,refresh_token_enc,needs_reconnect",
+      )
+      .eq("user_id", context.userId)
+      .order("created_at", { ascending: true });
     if (error) throw new Error(`Failed to load Gmail accounts: ${error.message}`);
-    const rows = data ?? [];
+    const rows = (data ?? []) as GmailAccountStatusRow[];
     return {
       accounts: rows.map((r) => ({
         id: r.id,
@@ -129,7 +135,7 @@ export const listMyGmailAccounts = createServerFn({ method: "GET" })
         watch_expiration: r.watch_expiration,
         last_poll_at: r.last_poll_at,
         created_at: r.created_at,
-        needs_reauth: !r.refresh_token_present,
+        needs_reauth: r.needs_reconnect === true || r.refresh_token_enc === null,
       })),
     };
   });
