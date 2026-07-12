@@ -415,13 +415,24 @@ type ApplyResultItem = {
 
 export const applyFolderChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; actions: FolderChatAction[] }) =>
-    z
-      .object({
-        folder_id: z.string().uuid(),
-        actions: z.array(actionInputSchema).min(1).max(20),
-      })
-      .parse(d),
+  .inputValidator(
+    (d: {
+      folder_id: string;
+      actions: FolderChatAction[];
+      message_id?: string;
+      applied_indexes?: number[];
+    }) =>
+      z
+        .object({
+          folder_id: z.string().uuid(),
+          actions: z.array(actionInputSchema).min(1).max(20),
+          // Optional: the assistant message these actions came from, plus which
+          // of that message's action indexes were approved. Used to record the
+          // persistent "changes already applied" memory.
+          message_id: z.string().uuid().optional(),
+          applied_indexes: z.array(z.number().int().min(0).max(19)).max(20).optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ results: ApplyResultItem[] }> => {
     const userId = context.userId;
