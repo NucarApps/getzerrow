@@ -39,8 +39,8 @@ export function ReconnectBanner() {
         <div className="min-w-0 flex-1">
           <div className="font-medium text-destructive">
             {affected.length === 1
-              ? `Gmail disconnected for ${affected[0].email} — reconnect required to resume syncing.`
-              : `${affected.length} inboxes need reconnecting to resume syncing.`}
+              ? `Gmail disconnected for ${affected[0].email} — new mail won't arrive live until you reconnect.`
+              : `${affected.length} inboxes disconnected — new mail won't arrive live until you reconnect.`}
           </div>
           <div className="mt-2 flex flex-col gap-2">
             {affected.map((a) => (
