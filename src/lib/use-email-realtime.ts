@@ -20,16 +20,22 @@ export type EmailRow = {
   [key: string]: unknown;
 };
 
-// Mail still being classified/filed by the backend (rules pending or AI
-// pending). It must never flash into the Inbox / No-rules / folder views —
-// it only appears once its final classification settles. The "All mail"
-// diagnostic scope still shows it.
-const IN_PROGRESS_CLASSIFICATIONS = new Set(["pending", "pending_ai"]);
+// Mail still being classified/filed by the backend.
+//   'pending'    — the row is still being repaired/populated (missing
+//                  body/headers); never surface it in any settled view.
+//   'pending_ai' — the row is fully parsed and only waiting on the AI
+//                  step. It IS surfaced in the Inbox ('all') so new mail
+//                  appears instantly, then settles into its folder once
+//                  AI finishes. It stays hidden from No-rules / folder
+//                  views (those only show settled mail). Kept in sync
+//                  with the server RPC get_emails_list_decrypted.
+// The "All mail" diagnostic scope shows everything regardless.
+function isFullyPending(row: EmailRow): boolean {
+  return row.classified_by === "pending";
+}
 
-function isInProgress(row: EmailRow): boolean {
-  return (
-    typeof row.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(row.classified_by)
-  );
+function isPendingAi(row: EmailRow): boolean {
+  return row.classified_by === "pending_ai";
 }
 
 /**
