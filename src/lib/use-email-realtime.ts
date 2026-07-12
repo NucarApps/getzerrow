@@ -506,6 +506,9 @@ export function useEmailRealtime() {
 
     const onVisible = () => {
       if (document.visibilityState === "visible") {
+        // Rebuild the channel first if it went stale while hidden, then
+        // catch up on anything realtime missed during the gap.
+        checkRealtimeLiveness();
         qc.invalidateQueries({ queryKey: ["emails"] });
         qc.invalidateQueries({ queryKey: ["folders"] });
         bumpCounts();
