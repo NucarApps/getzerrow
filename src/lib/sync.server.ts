@@ -662,7 +662,7 @@ export async function enqueueMessageJobs(
 export async function runMessageJobs(
   limit = 100,
   concurrency = JOB_WORKER_CONCURRENCY,
-  opts: { priority?: number } = {},
+  opts: { priority?: number; deferAiToCron?: boolean } = {},
 ) {
   const STUCK_MS = 35 * 1000; // jobs in 'running' for >35s are presumed dead (worker timeout is 25s)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
