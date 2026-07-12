@@ -467,7 +467,174 @@ export function FolderEditor({
         </TabsList>
 
         <TabsContent value="settings" className="mt-4">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
+            <FilterIcon className="h-3.5 w-3.5" /> Rules
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Deterministic conditions are checked first. Anything they don't match can still be
+            sorted by AI below.
+          </p>
+
+          <div className="mt-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Filters
+              </Label>
+              <div className="flex items-center gap-2">
+                {!local.filter_tree && (
+                  <div className="inline-flex rounded-md border border-border text-xs overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setLocal({ ...local, filter_logic: "any" })}
+                      className={`px-2.5 py-1 ${(local.filter_logic ?? "any") === "any" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
+                      title="Match if ANY include rule passes (OR)"
+                    >
+                      Match any
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLocal({ ...local, filter_logic: "all" })}
+                      className={`px-2.5 py-1 border-l border-border ${local.filter_logic === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
+                      title="Match only if ALL include rules pass (AND)"
+                    >
+                      Match all
+                    </button>
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  variant={local.filter_tree ? "secondary" : "ghost"}
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    if (local.filter_tree) {
+                      if (
+                        !confirm(
+                          "Switch back to the simple rule list? Your rule group will be discarded.",
+                        )
+                      )
+                        return;
+                      setLocal({ ...local, filter_tree: null });
+                    } else {
+                      setLocal({
+                        ...local,
+                        filter_tree: {
+                          type: "group",
+                          op: local.filter_logic === "all" ? "and" : "or",
+                          children: [],
+                        },
+                      });
+                    }
+                  }}
+                >
+                  {local.filter_tree ? "Use simple list" : "Use rule groups…"}
+                </Button>
+              </div>
+            </div>
+
+            {local.filter_tree ? (
+              <div className="mt-3">
+                <RuleGroupEditor
+                  node={local.filter_tree}
+                  onChange={(n) => setLocal({ ...local, filter_tree: n })}
+                  isRoot
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Rule groups override the simple list. Exclude rules still always block.
+                </p>
+              </div>
+            ) : null}
+
+            <div className="mt-2 space-y-1.5">
+              {filters.map((f) => {
+                const isExclude =
+                  f.op === "not_contains" || f.op === "not_equals" || f.op === "domain_in";
+                return (
+                  <div
+                    key={f.id}
+                    className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${
+                      isExclude ? "border-destructive/40 bg-destructive/5" : "border-border"
+                    }`}
+                  >
+                    {isExclude && (
+                      <span className="rounded-sm bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-destructive">
+                        {f.op === "domain_in" ? "Allowlist" : "Exclude"}
+                      </span>
+                    )}
+                    <span className="text-muted-foreground">{f.field}</span>
+                    <span className={isExclude ? "text-destructive" : "text-muted-foreground"}>
+                      {f.op === "domain_in" ? "is one of" : f.op}
+                    </span>
+                    <span className="flex-1 min-w-0 break-all font-mono text-xs">{f.value}</span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 shrink-0"
+                      aria-label="Remove filter"
+                      onClick={() => removeFilter(f.id)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                );
+              })}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select value={newF.field} onValueChange={(v) => setNewF({ ...newF, field: v })}>
+                  <SelectTrigger className="w-full sm:w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="from">from</SelectItem>
+                    <SelectItem value="to">to</SelectItem>
+                    <SelectItem value="cc">cc</SelectItem>
+                    <SelectItem value="subject">subject</SelectItem>
+                    <SelectItem value="body">body</SelectItem>
+                    <SelectItem value="domain">domain</SelectItem>
+                    <SelectItem value="list_id">list-id (newsletter)</SelectItem>
+                    <SelectItem value="is_reply">is reply</SelectItem>
+                    <SelectItem value="has_attachment">has attachment</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
+                  <SelectTrigger className="w-full sm:w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="contains">contains</SelectItem>
+                    <SelectItem value="equals">equals</SelectItem>
+                    <SelectItem value="starts_with">starts with</SelectItem>
+                    <SelectItem value="ends_with">ends with</SelectItem>
+                    <SelectItem value="not_contains">does not contain</SelectItem>
+                    <SelectItem value="not_equals">does not equal</SelectItem>
+                    <SelectItem value="domain_in">domain is one of (allowlist)</SelectItem>
+                    <SelectItem value="regex">regex</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  className="flex-1 min-w-0"
+                  placeholder="value"
+                  value={newF.value}
+                  onChange={(e) => setNewF({ ...newF, value: e.target.value })}
+                />
+                <Button size="sm" className="w-full sm:w-auto" onClick={addFilter}>
+                  Add
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Exclude rules keep matching emails in your inbox even if a domain or other rule
+                would route them here.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-8 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
+            <Sparkles className="h-3.5 w-3.5" /> AI
+          </div>
+          <p className="mb-3 mt-1 text-xs text-muted-foreground">
+            When no rule matches, AI uses these instructions and settings to sort the email.
+          </p>
+
           <div className="grid grid-cols-[auto_1fr] items-center gap-2">
+
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">
               <Link2 className="mr-1 inline h-3 w-3" />
               Gmail label
