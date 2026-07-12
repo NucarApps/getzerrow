@@ -385,6 +385,8 @@ export async function proposeFolderChatChanges(args: {
   userMessage: string;
   folder: FolderChatContext;
   sample: FolderChatSampleEmail[];
+  memorySummary?: string;
+  appliedLog?: string[];
 }): Promise<FolderChatProposal> {
   try {
     return await callModel(buildPrompt(args));
