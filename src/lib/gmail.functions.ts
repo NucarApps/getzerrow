@@ -353,6 +353,54 @@ export const generateFolderAiRule = createServerFn({ method: "POST" })
     return { rule };
   });
 
+export const generateFolderAiRuleFromLabel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id, name, gmail_label_id, gmail_account_id")
+      .eq("id", data.folder_id)
+      .maybeSingle();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Folder not found");
+    if (!folder.gmail_label_id) throw new Error("Link a Gmail label first, then save.");
+
+    const MAX_SAMPLES = 40;
+    const list = await listMessages(folder.gmail_account_id, {
+      maxResults: MAX_SAMPLES,
+      labelIds: [folder.gmail_label_id],
+    });
+    const ids = (list.messages ?? []).map((m) => m.id).slice(0, MAX_SAMPLES);
+    if (ids.length === 0) {
+      throw new Error("No emails found under this label to learn from.");
+    }
+
+    const samples: Array<{ from: string; subject: string; snippet: string }> = [];
+    const CONCURRENCY = 10;
+    async function fetchOne(id: string) {
+      try {
+        const raw = await getMessageMetadata(folder!.gmail_account_id, id);
+        const p = parseMessage(raw);
+        samples.push({
+          from: `${p.from_name ?? ""} ${p.from_addr ?? ""}`.trim(),
+          subject: p.subject ?? "",
+          snippet: p.snippet ?? "",
+        });
+      } catch {
+        // Skip messages we can't read; the sample doesn't need to be complete.
+      }
+    }
+    for (let i = 0; i < ids.length; i += CONCURRENCY) {
+      await Promise.all(ids.slice(i, i + CONCURRENCY).map(fetchOne));
+    }
+
+    const rule = await generateAiRuleFromLabelSamples({
+      folderName: folder.name,
+      samples,
+    });
+    return { rule };
+  });
+
 export const createGmailLabel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; name: string; parent_label_id?: string }) =>
