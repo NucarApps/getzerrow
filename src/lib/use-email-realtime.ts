@@ -370,6 +370,29 @@ export function useEmailRealtime() {
       }, delay);
     }
 
+    // Watchdog: while the tab is visible, verify the channel is still
+    // actually joined. A zombie socket (joined but not delivering) or one
+    // that dropped without firing our status callback gets torn down and
+    // rebuilt here, tightening the worst case from the 30s background sync
+    // to ~15s. Skipped while hidden (realtime is expected idle) and while a
+    // reconnect is already scheduled.
+    function checkRealtimeLiveness() {
+      if (cancelled || reconnectTimer) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      const state = channel?.state;
+      if (!channel || (state !== "joined" && state !== "joining")) {
+        teardown();
+        connect();
+      }
+    }
+
+    function startWatchdog() {
+      if (watchdogTimer) return;
+      watchdogTimer = setInterval(checkRealtimeLiveness, REALTIME_WATCHDOG_INTERVAL_MS);
+    }
+
+
+
     async function connect() {
       const { data } = await supabase.auth.getSession();
       const session = data.session;
