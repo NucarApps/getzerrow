@@ -140,22 +140,40 @@ describe("rowBelongsInList", () => {
   });
 });
 
-// Classification insert shapes. Mail still being sorted (classified_by
-// 'pending' / 'pending_ai') must NEVER flash into a settled view (Inbox /
-// No-rules / folder) — it only appears once its final classification lands.
+// Classification insert shapes.
+//   'pending'    — the row is still being repaired/populated; it must NEVER
+//                  flash into any settled view.
+//   'pending_ai' — fully parsed, only waiting on the AI step; it IS surfaced
+//                  in the Inbox immediately (so new mail appears instantly),
+//                  then settles into its folder once AI lands. It stays
+//                  hidden from No-rules / folder views.
 // The rules-final row goes straight to its folder; 'all_mail' shows
 // everything including in-progress mail (diagnostic view).
 describe("rowBelongsInList — classification insert shapes", () => {
   // Real inbox query keys are ["emails", accountId, scope, pageKey].
   const key = (scope: string) => ["emails", ACC, scope, "page:1:start"];
 
-  it("a pending_ai row is hidden from every settled view until classification settles", () => {
+  it("a pending_ai row shows in the inbox immediately but stays out of no-rules/folder views", () => {
     const pending = row({ folder_id: null, is_archived: false, classified_by: "pending_ai" });
-    expect(rowBelongsInList(pending, key("all"))).toBe(false);
+    // Surfaced in the inbox the moment it arrives (INBOX label + not archived).
+    expect(rowBelongsInList(pending, key("all"))).toBe(true);
+    // ...but still hidden from the settled No-rules / folder views.
     expect(rowBelongsInList(pending, key("no_rules"))).toBe(false);
     expect(rowBelongsInList(pending, key("f-work"))).toBe(false);
-    // ...but the diagnostic All-mail scope still surfaces it.
+    // The diagnostic All-mail scope also surfaces it.
     expect(rowBelongsInList(pending, key("all_mail"))).toBe(true);
+  });
+
+  it("a pending_ai row that is not in the inbox (archived / no INBOX label) is not surfaced", () => {
+    expect(
+      rowBelongsInList(
+        row({ raw_labels: ["INBOX"], is_archived: true, classified_by: "pending_ai" }),
+        key("all"),
+      ),
+    ).toBe(false);
+    expect(
+      rowBelongsInList(row({ raw_labels: [], classified_by: "pending_ai" }), key("all")),
+    ).toBe(false);
   });
 
   it("a pending row is hidden from the inbox until classification settles", () => {

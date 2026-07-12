@@ -20,16 +20,22 @@ export type EmailRow = {
   [key: string]: unknown;
 };
 
-// Mail still being classified/filed by the backend (rules pending or AI
-// pending). It must never flash into the Inbox / No-rules / folder views —
-// it only appears once its final classification settles. The "All mail"
-// diagnostic scope still shows it.
-const IN_PROGRESS_CLASSIFICATIONS = new Set(["pending", "pending_ai"]);
+// Mail still being classified/filed by the backend.
+//   'pending'    — the row is still being repaired/populated (missing
+//                  body/headers); never surface it in any settled view.
+//   'pending_ai' — the row is fully parsed and only waiting on the AI
+//                  step. It IS surfaced in the Inbox ('all') so new mail
+//                  appears instantly, then settles into its folder once
+//                  AI finishes. It stays hidden from No-rules / folder
+//                  views (those only show settled mail). Kept in sync
+//                  with the server RPC get_emails_list_decrypted.
+// The "All mail" diagnostic scope shows everything regardless.
+function isFullyPending(row: EmailRow): boolean {
+  return row.classified_by === "pending";
+}
 
-function isInProgress(row: EmailRow): boolean {
-  return (
-    typeof row.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(row.classified_by)
-  );
+function isPendingAi(row: EmailRow): boolean {
+  return row.classified_by === "pending_ai";
 }
 
 /**
@@ -145,17 +151,23 @@ export function applyPendingOpsToList(
 
 function matchesScope(row: EmailRow, scope: string): boolean {
   if (scope === "all_mail") return true;
-  // Everything below is a "settled" view — never surface mail that is still
-  // being classified/filed. It enters its real destination once done.
-  if (isInProgress(row)) return false;
+  // 'pending' rows are still being repaired/populated: never surface them
+  // in a settled view.
+  if (isFullyPending(row)) return false;
   if (scope === "all" || scope === "inbox") {
     const inInbox =
       row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
+    // AI-pending mail is surfaced in the inbox immediately (gated only on
+    // the INBOX label), then settles into its folder once AI finishes.
+    if (isPendingAi(row)) return inInbox;
     // A surfaced email is kept in the inbox even though its folder would
     // normally hide/archive it.
     if (row.surfaced_to_inbox === true) return inInbox;
     return inInbox && row.folder?.auto_archive !== true && row.folder?.hide_from_inbox !== true;
   }
+  // Beyond the inbox, AI-pending mail is not yet settled: keep it hidden
+  // from archived / no-rules / folder views until classification lands.
+  if (isPendingAi(row)) return false;
   if (scope === "archived") return row.is_archived === true;
   if (scope === "no_rules") {
     if (row.folder_id !== null) return false;
