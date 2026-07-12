@@ -449,6 +449,8 @@ export function useEmailRealtime() {
         .subscribe((status) => {
           if (status === "SUBSCRIBED") {
             reconnectAttempt = 0;
+            lastEventAt = Date.now();
+            startWatchdog();
             // Catch up on anything missed while disconnected.
             qc.invalidateQueries({ queryKey: ["emails"] });
             qc.invalidateQueries({ queryKey: ["folders"] });
