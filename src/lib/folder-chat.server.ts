@@ -423,3 +423,48 @@ export async function proposeFolderChatChanges(args: {
     return { reply: "", clarifying_question: question, actions: [] };
   }
 }
+
+// Condense older chat turns (plus any prior summary) into an updated rolling
+// memory summary. Best-effort: on any failure we return the previous summary so
+// callers can keep going without losing existing memory.
+export async function summarizeFolderChat(args: {
+  folderName: string;
+  previousSummary: string;
+  turns: FolderChatMessage[];
+}): Promise<string> {
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) return args.previousSummary;
+  if (args.turns.length === 0) return args.previousSummary;
+
+  const transcript = args.turns.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
+  const prompt = `You maintain a compact running memory of a chat between a user and an assistant that edits the settings of the email folder "${args.folderName}".
+
+Existing memory summary (may be empty):
+${args.previousSummary?.trim() ? args.previousSummary.trim() : "(none yet)"}
+
+New conversation turns to fold into the memory:
+${transcript}
+
+Write an updated memory summary that MERGES the existing summary with the new turns. Preserve durable facts the assistant should remember in future turns: what the user wants this folder to do, decisions made, changes that were applied, preferences, and anything explicitly rejected. Drop small talk and superseded details. Be concise (at most ~200 words) and write it as plain notes, not a dialogue. Output ONLY the updated summary text.`;
+
+  try {
+    const resp = await fetch(GATEWAY_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: DEFAULT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!resp.ok) return args.previousSummary;
+    const json = (await resp.json()) as GatewayResponse;
+    const text = (json.choices?.[0]?.message?.content ?? "").trim();
+    return text || args.previousSummary;
+  } catch (err: unknown) {
+    console.error("summarizeFolderChat failed", err instanceof Error ? err.message : String(err));
+    return args.previousSummary;
+  }
+}
