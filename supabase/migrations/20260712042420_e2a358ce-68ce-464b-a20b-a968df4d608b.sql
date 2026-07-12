@@ -1,0 +1,119 @@
+CREATE OR REPLACE FUNCTION public.get_emails_list_decrypted(p_account_id uuid, p_user_id uuid, p_scope text, p_folder_id uuid, p_cursor timestamp with time zone, p_limit integer, p_key text)
+ RETURNS TABLE(id uuid, from_addr text, from_name text, subject text, snippet text, to_addrs text, ai_summary text, classification_reason text, received_at timestamp with time zone, is_read boolean, is_archived boolean, folder_id uuid, ai_confidence real, thread_id text, classified_by text, matched_filter_ids uuid[], matched_folder_ids uuid[], has_attachment boolean, processed_at timestamp with time zone, raw_labels text[], snoozed_until timestamp with time zone, gmail_message_id text, surfaced_to_inbox boolean)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'private', 'extensions'
+AS $function$
+  SELECT
+    e.id,
+    e.from_addr,
+    private.decrypt_text(e.from_name_enc, p_key),
+    private.decrypt_text(e.subject_enc, p_key),
+    private.decrypt_text(e.snippet_enc, p_key),
+    private.decrypt_text(e.to_addrs_enc, p_key),
+    private.decrypt_text(e.ai_summary_enc, p_key),
+    private.decrypt_text(e.classification_reason_enc, p_key),
+    e.received_at, e.is_read, e.is_archived, e.folder_id, e.ai_confidence,
+    e.thread_id, e.classified_by, e.matched_filter_ids, e.matched_folder_ids,
+    e.has_attachment, e.processed_at, e.raw_labels, e.snoozed_until, e.gmail_message_id,
+    e.surfaced_to_inbox
+  FROM public.emails e
+  LEFT JOIN public.folders f
+    ON f.id = e.folder_id
+   AND f.user_id = e.user_id
+   AND f.gmail_account_id = e.gmail_account_id
+  WHERE e.gmail_account_id = p_account_id
+    AND e.user_id = p_user_id
+    AND (p_cursor IS NULL OR e.received_at < p_cursor)
+    AND (
+      p_scope = 'all_mail'
+      OR (
+        (e.snoozed_until IS NULL OR e.snoozed_until <= now())
+        -- 'pending' rows are still being repaired/populated: never surface.
+        -- 'pending_ai' rows are fully parsed and only waiting on the AI step:
+        -- surfaced in the inbox ('all') branch below so new mail appears
+        -- instantly, then settles into its folder once AI finishes.
+        AND (e.classified_by IS NULL OR e.classified_by <> 'pending')
+        AND (
+          (
+            p_scope = 'all'
+            AND e.raw_labels @> ARRAY['INBOX']
+            AND e.is_archived = false
+            AND (
+              e.surfaced_to_inbox = true
+              OR (
+                COALESCE(f.auto_archive, false) = false
+                AND COALESCE(f.hide_from_inbox, false) = false
+              )
+            )
+          )
+          OR (p_scope = 'no_rules' AND e.folder_id IS NULL
+              AND (e.classified_by IS NULL OR e.classified_by <> 'pending_ai')
+              AND NOT EXISTS (
+                SELECT 1 FROM unnest(COALESCE(e.raw_labels, '{}')) l WHERE l LIKE 'Label\_%'
+              ))
+          OR (p_scope = 'folder' AND e.folder_id = p_folder_id)
+        )
+      )
+    )
+  ORDER BY e.received_at DESC NULLS LAST
+  LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 50), 500));
+$function$;
+
+CREATE OR REPLACE FUNCTION public.get_folder_unread_counts(p_account_id uuid)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  WITH scoped AS (
+    SELECT
+      e.folder_id,
+      e.is_read,
+      e.raw_labels,
+      e.classified_by,
+      e.snoozed_until,
+      COALESCE(f.auto_archive, false) AS folder_auto_archive,
+      COALESCE(f.hide_from_inbox, false) AS folder_hide_from_inbox
+      FROM public.emails e
+      LEFT JOIN public.folders f
+        ON f.id = e.folder_id
+       AND f.user_id = e.user_id
+       AND f.gmail_account_id = e.gmail_account_id
+     WHERE e.gmail_account_id = p_account_id
+       AND e.user_id = auth.uid()
+  ),
+  per_folder AS (
+    SELECT folder_id, COUNT(*) AS n
+      FROM scoped
+     WHERE folder_id IS NOT NULL AND is_read = false
+     GROUP BY folder_id
+  ),
+  no_rules AS (
+    SELECT COUNT(*) AS n
+      FROM scoped
+     WHERE folder_id IS NULL
+       AND (snoozed_until IS NULL OR snoozed_until <= now())
+       AND (classified_by IS NULL OR classified_by NOT IN ('pending', 'pending_ai'))
+       AND NOT EXISTS (
+         SELECT 1 FROM unnest(COALESCE(raw_labels, '{}')) l WHERE l LIKE 'Label\_%'
+       )
+  ),
+  total AS (
+    SELECT COUNT(*) AS n
+      FROM scoped
+     WHERE is_read = false
+       AND (snoozed_until IS NULL OR snoozed_until <= now())
+       -- Count pending_ai (waiting on AI) as inbox unread so the badge
+       -- matches the list; 'pending' (incomplete rows) stay excluded.
+       AND (classified_by IS NULL OR classified_by <> 'pending')
+       AND raw_labels @> ARRAY['INBOX']
+       AND folder_auto_archive = false
+       AND folder_hide_from_inbox = false
+  )
+  SELECT jsonb_build_object(
+    'byFolder', COALESCE((SELECT jsonb_object_agg(folder_id::text, n) FROM per_folder), '{}'::jsonb),
+    'no_rules', COALESCE((SELECT n FROM no_rules), 0),
+    'total',    COALESCE((SELECT n FROM total), 0)
+  );
+$function$;
