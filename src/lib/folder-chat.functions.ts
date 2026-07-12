@@ -13,6 +13,7 @@ import type { Database } from "@/integrations/supabase/types";
 type FolderUpdate = Database["public"]["Tables"]["folders"]["Update"];
 import {
   proposeFolderChatChanges,
+  summarizeFolderChat,
   type FolderChatAction,
   type FolderChatContext,
   type FolderChatMessage,
@@ -20,10 +21,41 @@ import {
   type FolderChatSampleEmail,
 } from "./folder-chat.server";
 
+// How many of the most recent stored turns are replayed to the model verbatim.
+const RECENT_TURNS = 12;
+// When more than this many unsummarized turns accumulate, fold the oldest into
+// the rolling memory summary.
+const SUMMARIZE_THRESHOLD = 24;
+// How many turns to keep unsummarized after a summarization pass.
+const KEEP_AFTER_SUMMARY = 8;
+// Cap on how many stored messages we return for UI rehydration.
+const HISTORY_DISPLAY_LIMIT = 200;
+
 const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1).max(4000),
 });
+
+// A one-line, human-readable description of an applied action, used to feed the
+// "changes already applied" memory back to the model.
+function describeAppliedAction(action: FolderChatAction): string {
+  switch (action.type) {
+    case "add_filter":
+      return `Added filter: ${action.field} ${action.op} "${action.value}"`;
+    case "remove_filter":
+      return "Removed a filter";
+    case "update_folder_rule":
+      return `Set AI rule to "${action.ai_rule}"`;
+    case "update_folder_profile":
+      return "Rewrote the learned profile";
+    case "update_folder_settings": {
+      const keys = Object.keys(action.settings);
+      return `Updated settings: ${keys.join(", ")}`;
+    }
+    default:
+      return "Applied a change";
+  }
+}
 
 const settingsPatchSchema = z
   .object({
