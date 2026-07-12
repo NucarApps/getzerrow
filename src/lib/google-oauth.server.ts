@@ -282,6 +282,16 @@ export async function getAccessToken(accountId: string): Promise<string> {
     try {
       refreshed = await refreshAccessToken(acc.refresh_token!);
     } catch (e) {
+      if (isAppCredentialFailure(e)) {
+        // App-wide credential/config problem — do NOT flag the account.
+        // Log loudly so the deployment secret can be fixed; the account
+        // recovers on its own once GOOGLE_OAUTH_CLIENT_SECRET is corrected.
+        console.error("google-oauth.app_credential_invalid", {
+          account_id: accountId,
+          err: (e as Error)?.message?.slice(0, 300),
+        });
+        throw new AppCredentialError(accountId, (e as Error).message.slice(0, 300));
+      }
       if (isPermanentOauthFailure(e)) {
         const reason = `Google rejected the refresh token: ${(e as Error).message.slice(0, 300)}`;
         await markNeedsReconnect(accountId, reason);
