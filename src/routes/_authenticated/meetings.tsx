@@ -70,6 +70,7 @@ import {
   Sparkles,
   Loader2,
   Pencil,
+  Settings,
 } from "lucide-react";
 import {
   UpcomingMeetingsCard,
