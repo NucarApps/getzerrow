@@ -189,6 +189,46 @@ export const syncMeeting = createServerFn({ method: "POST" })
   });
 
 /**
+ * Force a stuck recording to end: remove the notetaker bot from the call and
+ * immediately pull the finalized state from Recall. Used when a meeting is
+ * stuck in a non-terminal status because Recall never sent a "call ended"
+ * signal. No-op for meetings that are already terminal or have no bot.
+ */
+export const stopMeeting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    // Ownership is enforced by RLS on the per-user client.
+    const { data: meeting } = await context.supabase
+      .from("meetings")
+      .select("id, user_id, recall_bot_id, status, title")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!meeting) throw new Error("Meeting not found");
+    if (meeting.status === "done" || meeting.status === "failed") {
+      return { status: meeting.status };
+    }
+    if (!meeting.recall_bot_id) {
+      throw new Error("This recording can't be stopped remotely.");
+    }
+
+    // Best-effort: force the bot out of the call. leaveBot swallows 400/404
+    // ("already gone"), so a bot that already left won't block finalizing.
+    try {
+      await leaveBot(meeting.recall_bot_id);
+    } catch (e) {
+      logError("meeting_stop_leave_failed", { userId: context.userId, id: data.id }, e);
+    }
+
+    // Dynamic import keeps the service-role module out of the client bundle.
+    const { syncMeetingFromRecall } = await import("./meetings.server");
+    const status = await syncMeetingFromRecall(meeting);
+    return { status };
+  });
+
+
+
+/**
  * For a finished meeting, fetch a fresh signed recording URL from Recall (the
  * stored one expires) and backfill the transcript/summary if they never
  * arrived. Returns the fresh recording URL to play.
