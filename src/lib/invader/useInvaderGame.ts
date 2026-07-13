@@ -926,9 +926,9 @@ export function useInvaderGame(): UseInvaderGameResult {
         const dir = Math.random() < 0.5 ? 1 : -1;
         ufoRef.current = {
           id: newId(idRef),
-          x: dir === 1 ? -4 : 104,
+          x: dir === 1 ? -4 : FIELD_W + 4,
           y: 7,
-          vx: dir * 28,
+          vx: dir * 44,
           value: 100 + Math.floor(Math.random() * 3) * 100,
         };
         sfx.ufo();
