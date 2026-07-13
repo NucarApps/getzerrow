@@ -317,14 +317,26 @@ export function FolderChatPanel({
     }
   };
 
-  const discardTurn = (turnIndex: number) => {
+  const discardTurn = async (turnIndex: number) => {
+    const turn = turns[turnIndex];
+    if (!turn || turn.kind !== "assistant") return;
+    // Optimistically mark the turn resolved (keep actions so it reads "Dismissed").
     setTurns((prev) =>
       prev.map((t, i) =>
         i === turnIndex && t.kind === "assistant"
-          ? { ...t, actions: [], selected: [], applied: true }
+          ? { ...t, applied: true, appliedAt: undefined }
           : t,
       ),
     );
+    // Persist the rejection so it doesn't reappear after reload.
+    if (turn.messageId) {
+      try {
+        await discardFn({ data: { folder_id: folder.id, message_id: turn.messageId } });
+      } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : "Couldn't discard changes";
+        toast.error(m);
+      }
+    }
   };
 
   return (
