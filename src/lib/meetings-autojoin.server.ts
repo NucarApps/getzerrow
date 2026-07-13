@@ -296,8 +296,15 @@ export async function listUpcomingCalendarEventsForAccount(
         : [];
       const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
       const exclusionMode = exclusionModes.get(e.id as string) ?? null;
+      // A skipped color acts as a default "don't record" when the user hasn't
+      // set an explicit per-event choice.
+      const colorSkipped = exclusionMode === null && isColorSkipped(e, prefs);
       const recordMode: MeetingRecordMode =
-        exclusionMode === null ? "bot" : exclusionMode === "in_person" ? "in_person" : "off";
+        exclusionMode === "in_person"
+          ? "in_person"
+          : exclusionMode === "off" || colorSkipped
+            ? "off"
+            : "bot";
       return {
         id: e.id as string,
         title: e.summary ?? null,
