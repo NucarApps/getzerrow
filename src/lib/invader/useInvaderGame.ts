@@ -40,6 +40,7 @@ import {
   hashString,
   hitBunker,
   pickPowerupKind,
+  initialFormationX,
   spawnBoss,
   spawnBunkers,
   spawnWave,
