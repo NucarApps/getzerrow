@@ -204,6 +204,18 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
         <rect x={view.minX} y={view.minY} width={view.vbW} height={view.vbH} fill="url(#nebulaB)" />
         <rect x={view.minX} y={view.minY} width={view.vbW} height={view.vbH} fill="url(#nebulaC)" />
 
+        {/* Parallax starfield — slow horizontal drift + gentle twinkle */}
+        <g>
+          {STARS.map((st, i) => {
+            const drift = ((now / 1000) * (st.depth * 0.15)) % (FIELD_W + 180);
+            let sx = st.x - drift;
+            if (sx < -90) sx += FIELD_W + 180;
+            const tw = st.base * (0.7 + 0.3 * Math.sin(now / 700 + i));
+            return <circle key={`star-${i}`} cx={sx} cy={st.y} r={st.r} fill="#dfe7ff" opacity={tw} />;
+          })}
+        </g>
+
+
         {/* Subtle depth grid toward the horizon */}
         <g stroke="#7cc4ff" strokeOpacity="0.05" strokeWidth="0.15">
           {Array.from({ length: 9 }).map((_, i) => {
