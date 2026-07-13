@@ -831,10 +831,10 @@ export function useInvaderGame(): UseInvaderGameResult {
           setLevel(nextLvl);
           if (nextLvl >= 10) unlock("inbox_zero");
           enemiesRef.current = spawnWave(nextLvl, rngRef.current);
-          formationXRef.current = 10;
+          formationXRef.current = initialFormationX(enemiesRef.current);
           formationYRef.current = FORMATION_TOP;
           marchDirRef.current = 1;
-          marchSpeedRef.current = Math.min(30, 6 + nextLvl * 1.8);
+          marchSpeedRef.current = Math.min(48, 9 + nextLvl * 2.7);
           tookHitThisWaveRef.current = false;
         }
       }
