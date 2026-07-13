@@ -175,6 +175,8 @@ export function MeetingBotCard() {
           botName: botName.trim(),
           chatMessage,
           chatResendOnJoin: resend,
+          autoLeaveEnabled,
+          autoLeaveMinutes,
         },
       });
       qc.invalidateQueries({ queryKey: ["meeting-bot-settings"] });
