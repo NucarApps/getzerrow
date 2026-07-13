@@ -996,7 +996,9 @@ export const getMeetingBotSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("meeting_bot_settings")
-      .select("bot_name, chat_message, chat_resend_on_join, avatar_updated_at")
+      .select(
+        "bot_name, chat_message, chat_resend_on_join, avatar_updated_at, auto_leave_enabled, auto_leave_minutes",
+      )
       .eq("user_id", context.userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -1005,6 +1007,8 @@ export const getMeetingBotSettings = createServerFn({ method: "GET" })
       chatMessage: data?.chat_message ?? DEFAULT_CHAT_MESSAGE,
       chatResendOnJoin: data?.chat_resend_on_join ?? true,
       hasAvatar: !!data?.avatar_updated_at,
+      autoLeaveEnabled: data?.auto_leave_enabled ?? true,
+      autoLeaveMinutes: data?.auto_leave_minutes ?? 30,
     };
   });
 
