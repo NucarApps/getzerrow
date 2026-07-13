@@ -1452,18 +1452,30 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                         Recording in progress — the transcript and summary appear here once the
                         meeting ends.
                       </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onRefresh}
-                        disabled={refreshing}
-                        className="shrink-0"
-                      >
-                        <RefreshCw
-                          className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                        />
-                        {refreshing ? "Refreshing…" : "Refresh status"}
-                      </Button>
+                      <div className="flex shrink-0 gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onRefresh}
+                          disabled={refreshing}
+                        >
+                          <RefreshCw
+                            className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                          />
+                          {refreshing ? "Refreshing…" : "Refresh status"}
+                        </Button>
+                        {meeting.recall_bot_id && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setConfirmStopOpen(true)}
+                            disabled={stopping}
+                          >
+                            <Square className={`mr-1.5 h-4 w-4 ${stopping ? "animate-pulse" : ""}`} />
+                            {stopping ? "Stopping…" : "Stop recording"}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <>
