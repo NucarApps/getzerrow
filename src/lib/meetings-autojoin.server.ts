@@ -347,11 +347,11 @@ export async function listCalendarEventsWindow(
   daysBack: number,
   daysAhead: number,
 ): Promise<CalendarWindowEvent[]> {
-  const events = await fetchEventsInWindow(
-    accountId,
-    daysAhead * 24 * 60,
-    daysBack * 24 * 60,
-  );
+  const prefs = await loadEventFilterPrefs(userId);
+  const events = (
+    await fetchEventsInWindow(accountId, daysAhead * 24 * 60, daysBack * 24 * 60)
+  ).filter((e) => !isHiddenEventType(e, prefs));
+
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
   if (eventIds.length === 0) return [];
