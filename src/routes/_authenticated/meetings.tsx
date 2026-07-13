@@ -11,6 +11,7 @@ import {
   generateTitleForMeeting,
   regenerateMeetingSummary,
   syncMeeting,
+  stopMeeting,
   refreshRecording,
   getRecordingStreamUrl,
   extractMeetingUrl,
