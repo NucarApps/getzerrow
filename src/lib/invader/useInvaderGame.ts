@@ -725,7 +725,7 @@ export function useInvaderGame(): UseInvaderGameResult {
       if (keysRef.current.left) px -= PLAYER_SPEED * dts;
       if (keysRef.current.right) px += PLAYER_SPEED * dts;
       if (px < 6) px = 6;
-      if (px > 94) px = 94;
+      if (px > FIELD_W - 6) px = FIELD_W - 6;
       playerXRef.current = px;
 
       // Player firing
