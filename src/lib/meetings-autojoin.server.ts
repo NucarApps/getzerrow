@@ -617,6 +617,7 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
 
   // Cache each user's blocklist once per run (a user can have multiple accounts).
   const blocklistCache = new Map<string, Blocklist>();
+  const prefsCache = new Map<string, EventFilterPrefs>();
 
   let scheduled = 0;
   for (const account of accounts ?? []) {
