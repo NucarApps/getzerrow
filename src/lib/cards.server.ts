@@ -174,6 +174,165 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// ---------------------------------------------------------------------------
+// Branded card email (HTML). Everything is table-based with inline styles so it
+// renders in Gmail / Apple Mail / Outlook. Glyphs are numeric HTML entities so
+// the transmitted body stays ASCII (the MIME part is declared 7bit).
+// ---------------------------------------------------------------------------
+
+type EmailTheme = { from: string; to: string; accent: string; accentText: string };
+
+/** Concrete hex mirror of CARD_THEMES (Tailwind classes can't be used in email). */
+const THEME_EMAIL_COLORS: Record<string, EmailTheme> = {
+  default: { from: "#6366f1", to: "#818cf8", accent: "#4f46e5", accentText: "#ffffff" },
+  sunset: { from: "#f97316", to: "#9333ea", accent: "#f97316", accentText: "#ffffff" },
+  ocean: { from: "#06b6d4", to: "#4338ca", accent: "#2563eb", accentText: "#ffffff" },
+  forest: { from: "#10b981", to: "#0f766e", accent: "#059669", accentText: "#ffffff" },
+  noir: { from: "#3f3f46", to: "#000000", accent: "#18181b", accentText: "#ffffff" },
+  rose: { from: "#fb7185", to: "#c026d3", accent: "#f43f5e", accentText: "#ffffff" },
+  amber: { from: "#fbbf24", to: "#ef4444", accent: "#f59e0b", accentText: "#111111" },
+  mono: { from: "#d4d4d4", to: "#a3a3a3", accent: "#111111", accentText: "#ffffff" },
+};
+
+function getEmailTheme(id?: string | null): EmailTheme {
+  return THEME_EMAIL_COLORS[id ?? "default"] ?? THEME_EMAIL_COLORS.default;
+}
+
+function getInitials(name?: string | null, fallback?: string | null): string {
+  const src = (name || fallback || "?").trim();
+  const parts = src.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+const FONT_STACK =
+  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+function cardRow(glyph: string, valueHtml: string): string {
+  return `<tr>
+    <td width="26" style="width:26px;padding:6px 0;vertical-align:top;font-size:15px;line-height:20px;color:#6b7280">${glyph}</td>
+    <td style="padding:6px 0;vertical-align:top;font-size:14px;line-height:20px;color:#111827">${valueHtml}</td>
+  </tr>`;
+}
+
+type CardEmailInput = {
+  card: {
+    name: string | null;
+    title: string | null;
+    company: string | null;
+    email: string | null;
+    phone: string | null;
+    website: string | null;
+    linkedin?: string | null;
+    twitter?: string | null;
+    tagline?: string | null;
+    avatar_url?: string | null;
+    theme?: string | null;
+  };
+  /** Paragraph shown above the card (greeting / note). Plain text; newlines become <br>. */
+  intro?: string | null;
+  /** Prominent themed button, e.g. "View / save my card". Omit for none. */
+  cta?: { url: string; label: string } | null;
+  /** Small grey line about the .vcf attachment. */
+  attachmentNote: string;
+  /** Quiet footer line, e.g. "Sent with Zerrow". */
+  footerNote: string;
+  /** Optional address, rendered as its own row. */
+  addressLines?: string[];
+};
+
+/** Render the shared branded card-email HTML used by both send paths. */
+function renderCardEmailHtml(opts: CardEmailInput): string {
+  const { card } = opts;
+  const theme = getEmailTheme(card.theme);
+  const displayName = card.name || card.email || "Contact";
+  const subtitle =
+    card.title && card.company
+      ? `${card.title} &middot; ${card.company}`
+      : card.title || card.company || "";
+
+  const avatar = card.avatar_url
+    ? `<img src="${escapeHtml(card.avatar_url)}" width="88" height="88" alt="${escapeHtml(displayName)}" style="display:block;width:88px;height:88px;border-radius:50%;border:4px solid #ffffff;object-fit:cover" />`
+    : `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-radius:50%;border:4px solid #ffffff;background-color:${theme.accent}"><tr><td align="center" valign="middle" width="88" height="88" style="width:88px;height:88px;font-family:${FONT_STACK};font-size:30px;font-weight:700;color:${theme.accentText}">${escapeHtml(getInitials(card.name, card.email))}</td></tr></table>`;
+
+  const rows: string[] = [];
+  if (card.email)
+    rows.push(
+      cardRow(
+        "&#9993;",
+        `<a href="mailto:${escapeHtml(card.email)}" style="color:#111827;text-decoration:none">${escapeHtml(card.email)}</a>`,
+      ),
+    );
+  if (card.phone)
+    rows.push(
+      cardRow(
+        "&#128222;",
+        `<a href="tel:${escapeHtml(card.phone.replace(/[^\d+]/g, ""))}" style="color:#111827;text-decoration:none">${escapeHtml(card.phone)}</a>`,
+      ),
+    );
+  if (card.website)
+    rows.push(
+      cardRow(
+        "&#127760;",
+        `<a href="${escapeHtml(card.website)}" style="color:${theme.accent};text-decoration:none">${escapeHtml(card.website)}</a>`,
+      ),
+    );
+  if (card.linkedin)
+    rows.push(
+      cardRow(
+        "&#128279;",
+        `<a href="${escapeHtml(card.linkedin)}" style="color:${theme.accent};text-decoration:none">LinkedIn</a>`,
+      ),
+    );
+  if (card.twitter)
+    rows.push(
+      cardRow(
+        "&#128038;",
+        `<a href="${escapeHtml(card.twitter)}" style="color:${theme.accent};text-decoration:none">Twitter / X</a>`,
+      ),
+    );
+  if (opts.addressLines && opts.addressLines.length > 0)
+    rows.push(cardRow("&#128205;", escapeHtml(opts.addressLines.join(", "))));
+
+  const cta = opts.cta
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px auto 0"><tr><td align="center" bgcolor="${theme.accent}" style="border-radius:10px"><a href="${escapeHtml(opts.cta.url)}" style="display:inline-block;padding:12px 28px;font-family:${FONT_STACK};font-size:15px;font-weight:600;color:${theme.accentText};text-decoration:none;border-radius:10px">${escapeHtml(opts.cta.label)}</a></td></tr></table>`
+    : "";
+
+  const introHtml = opts.intro?.trim()
+    ? `<tr><td style="padding:0 4px 20px;font-family:${FONT_STACK};font-size:15px;line-height:22px;color:#374151">${escapeHtml(opts.intro.trim()).replace(/\n/g, "<br>")}</td></tr>`
+    : "";
+
+  return `<div style="margin:0;padding:0;background-color:#f3f4f6">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6">
+    <tr><td align="center" style="padding:32px 16px">
+      <table role="presentation" width="440" cellpadding="0" cellspacing="0" border="0" style="width:440px;max-width:440px;font-family:${FONT_STACK}">
+        ${introHtml}
+        <tr><td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb">
+            <tr><td height="96" bgcolor="${theme.from}" style="height:96px;background-color:${theme.from};background-image:linear-gradient(135deg,${theme.from},${theme.to})">&nbsp;</td></tr>
+            <tr><td align="center" style="padding:0 24px 24px">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:-52px"><tr><td align="center">${avatar}</td></tr></table>
+              <p style="margin:16px 0 0;font-size:22px;line-height:26px;font-weight:700;color:#111827">${escapeHtml(displayName)}</p>
+              ${subtitle ? `<p style="margin:4px 0 0;font-size:14px;line-height:20px;color:#6b7280">${subtitle}</p>` : ""}
+              ${card.tagline ? `<p style="margin:12px 0 0;font-size:14px;line-height:20px;font-style:italic;color:#4b5563">&ldquo;${escapeHtml(card.tagline)}&rdquo;</p>` : ""}
+              ${rows.length > 0 ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0 0;text-align:left">${rows.join("")}</table>` : ""}
+              ${cta}
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td align="center" style="padding:16px 8px 0">
+          <p style="margin:0;font-size:12px;line-height:18px;color:#9ca3af">${escapeHtml(opts.attachmentNote)}</p>
+          <p style="margin:8px 0 0;font-size:11px;line-height:16px;color:#c4c4c4">${escapeHtml(opts.footerNote)}</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</div>`;
+}
+
+
+
 export type ContactShareData = {
   name: string | null;
   title: string | null;
