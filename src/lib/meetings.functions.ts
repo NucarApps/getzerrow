@@ -1025,6 +1025,8 @@ export const updateMeetingBotSettings = createServerFn({ method: "POST" })
         botName: z.string().trim().min(1).max(100),
         chatMessage: z.string().max(1000),
         chatResendOnJoin: z.boolean(),
+        autoLeaveEnabled: z.boolean(),
+        autoLeaveMinutes: z.number().int().min(5).max(240),
         // "set" when a new picture was just uploaded, "clear" to remove it,
         // omitted to leave the existing picture untouched.
         avatar: z.enum(["set", "clear"]).optional(),
@@ -1037,12 +1039,16 @@ export const updateMeetingBotSettings = createServerFn({ method: "POST" })
       bot_name: string;
       chat_message: string;
       chat_resend_on_join: boolean;
+      auto_leave_enabled: boolean;
+      auto_leave_minutes: number;
       avatar_updated_at?: string | null;
     } = {
       user_id: context.userId,
       bot_name: data.botName.trim(),
       chat_message: data.chatMessage.trim(),
       chat_resend_on_join: data.chatResendOnJoin,
+      auto_leave_enabled: data.autoLeaveEnabled,
+      auto_leave_minutes: data.autoLeaveMinutes,
     };
     if (data.avatar === "set") patch.avatar_updated_at = new Date().toISOString();
     if (data.avatar === "clear") {
