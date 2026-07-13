@@ -86,7 +86,6 @@ export function TrackingStandby() {
         .invuln { animation: invuln .12s linear infinite; }
       `}</style>
 
-
       <GameHUD
         level={state.level}
         score={state.score}

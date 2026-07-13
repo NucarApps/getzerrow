@@ -87,8 +87,6 @@ const STARS: Star[] = (() => {
   return out;
 })();
 
-
-
 function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovingHint }: Props) {
   // Force re-render on each engine frame via a subscription rather than a
   // parent re-render. Cheap counter, batched by React.
@@ -193,13 +191,7 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
         </defs>
 
         {/* ---- Background: fills the whole (possibly extended) viewBox ---- */}
-        <rect
-          x={view.minX}
-          y={view.minY}
-          width={view.vbW}
-          height={view.vbH}
-          fill="#02030a"
-        />
+        <rect x={view.minX} y={view.minY} width={view.vbW} height={view.vbH} fill="#02030a" />
         <rect x={view.minX} y={view.minY} width={view.vbW} height={view.vbH} fill="url(#nebulaA)" />
         <rect x={view.minX} y={view.minY} width={view.vbW} height={view.vbH} fill="url(#nebulaB)" />
         <rect x={view.minX} y={view.minY} width={view.vbW} height={view.vbH} fill="url(#nebulaC)" />
@@ -211,10 +203,11 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
             let sx = st.x - drift;
             if (sx < -90) sx += FIELD_W + 180;
             const tw = st.base * (0.7 + 0.3 * Math.sin(now / 700 + i));
-            return <circle key={`star-${i}`} cx={sx} cy={st.y} r={st.r} fill="#dfe7ff" opacity={tw} />;
+            return (
+              <circle key={`star-${i}`} cx={sx} cy={st.y} r={st.r} fill="#dfe7ff" opacity={tw} />
+            );
           })}
         </g>
-
 
         {/* Subtle depth grid toward the horizon */}
         <g stroke="#7cc4ff" strokeOpacity="0.05" strokeWidth="0.15">
@@ -364,8 +357,18 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
                 strokeLinejoin="round"
               />
               {/* antenna glints */}
-              <circle cx={-ENEMY_HALF_W + 0.5} cy={-ENEMY_HALF_H - 0.35} r="0.28" fill={colors.stamp} />
-              <circle cx={ENEMY_HALF_W - 0.5} cy={-ENEMY_HALF_H - 0.35} r="0.28" fill={colors.stamp} />
+              <circle
+                cx={-ENEMY_HALF_W + 0.5}
+                cy={-ENEMY_HALF_H - 0.35}
+                r="0.28"
+                fill={colors.stamp}
+              />
+              <circle
+                cx={ENEMY_HALF_W - 0.5}
+                cy={-ENEMY_HALF_H - 0.35}
+                r="0.28"
+                fill={colors.stamp}
+              />
               {/* address line */}
               <line
                 x1={-ENEMY_HALF_W + 0.6}
