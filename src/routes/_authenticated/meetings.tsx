@@ -1179,7 +1179,25 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
       onClose();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not delete meeting");
+  }
+
+  async function onStop() {
+    if (!id) return;
+    setStopping(true);
+    try {
+      await stop({ data: { id } });
+      toast.success("Recording stopped — finalizing…");
+      qc.invalidateQueries({ queryKey: ["meeting", id] });
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not stop the recording");
+    } finally {
+      setStopping(false);
+      setConfirmStopOpen(false);
     }
+  }
+
+
     setBusy(false);
   }
 
