@@ -303,7 +303,42 @@ export function MeetingBotCard() {
           />
         </div>
 
+        <div className="space-y-3 rounded-md border p-3">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Automatically leave empty meetings</p>
+              <p className="text-xs text-muted-foreground">
+                End the recording when everyone but the bot has left, so meetings don't stay stuck
+                recording.
+              </p>
+            </div>
+            <Switch
+              checked={autoLeaveEnabled}
+              onCheckedChange={setAutoLeaveEnabled}
+              aria-label="Automatically leave empty meetings"
+            />
+          </div>
+          {autoLeaveEnabled && (
+            <div className="flex items-center gap-2">
+              <Label htmlFor="auto-leave-minutes" className="text-sm font-normal">
+                Leave after
+              </Label>
+              <Input
+                id="auto-leave-minutes"
+                type="number"
+                min={5}
+                max={240}
+                value={autoLeaveMinutes}
+                onChange={(e) => setAutoLeaveMinutes(Number(e.target.value))}
+                className="w-20"
+              />
+              <span className="text-sm text-muted-foreground">minutes with no one else present</span>
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-end">
+
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             Save changes
