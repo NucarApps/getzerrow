@@ -754,7 +754,7 @@ export function useInvaderGame(): UseInvaderGameResult {
           const b = arr[i];
           b.x += (b.vx ?? 0) * dts;
           b.y -= BULLET_SPEED * dts;
-          if (b.y > -2 && b.x > -2 && b.x < 102) arr[w++] = b;
+          if (b.y > -2 && b.x > -2 && b.x < FIELD_W + 2) arr[w++] = b;
         }
         arr.length = w;
         if (arr.length > MAX_PLAYER_BULLETS) arr.splice(0, arr.length - MAX_PLAYER_BULLETS);
