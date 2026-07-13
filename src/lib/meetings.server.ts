@@ -147,6 +147,8 @@ export async function generateMeetingBreakdown(transcriptText: string): Promise<
 
 export const DEFAULT_BOT_NAME = "Zerrow Notetaker";
 const AVATAR_BUCKET = "meeting-bot-avatars";
+export const DEFAULT_AUTO_LEAVE_ENABLED = true;
+export const DEFAULT_AUTO_LEAVE_MINUTES = 30;
 
 /** Resolved notetaker bot customization for a given user. */
 export type BotConfig = {
@@ -154,6 +156,9 @@ export type BotConfig = {
   chatMessage: string | null;
   chatResendOnJoin: boolean;
   imageB64: string | null;
+  /** When true, the bot auto-leaves empty meetings after `autoLeaveMinutes`. */
+  autoLeaveEnabled: boolean;
+  autoLeaveMinutes: number;
 };
 
 /**
@@ -170,17 +175,23 @@ export async function loadBotConfig(userId: string): Promise<BotConfig> {
     chatMessage: null,
     chatResendOnJoin: true,
     imageB64: null,
+    autoLeaveEnabled: DEFAULT_AUTO_LEAVE_ENABLED,
+    autoLeaveMinutes: DEFAULT_AUTO_LEAVE_MINUTES,
   };
   try {
     const { data: row } = await supabaseAdmin
       .from("meeting_bot_settings")
-      .select("bot_name, chat_message, chat_resend_on_join, avatar_updated_at")
+      .select(
+        "bot_name, chat_message, chat_resend_on_join, avatar_updated_at, auto_leave_enabled, auto_leave_minutes",
+      )
       .eq("user_id", userId)
       .maybeSingle();
 
     const botName = row?.bot_name?.trim() || DEFAULT_BOT_NAME;
     const chatMessage = row?.chat_message?.trim() ? row.chat_message.trim() : null;
     const chatResendOnJoin = row?.chat_resend_on_join ?? true;
+    const autoLeaveEnabled = row?.auto_leave_enabled ?? DEFAULT_AUTO_LEAVE_ENABLED;
+    const autoLeaveMinutes = row?.auto_leave_minutes ?? DEFAULT_AUTO_LEAVE_MINUTES;
 
     let imageB64: string | null = null;
     if (row?.avatar_updated_at) {
@@ -197,7 +208,7 @@ export async function loadBotConfig(userId: string): Promise<BotConfig> {
       }
     }
 
-    return { botName, chatMessage, chatResendOnJoin, imageB64 };
+    return { botName, chatMessage, chatResendOnJoin, imageB64, autoLeaveEnabled, autoLeaveMinutes };
   } catch (e) {
     logError("meeting_bot_config_load_failed", { userId }, e);
     return fallback;

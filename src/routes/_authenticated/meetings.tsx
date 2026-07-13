@@ -11,6 +11,7 @@ import {
   generateTitleForMeeting,
   regenerateMeetingSummary,
   syncMeeting,
+  stopMeeting,
   refreshRecording,
   getRecordingStreamUrl,
   extractMeetingUrl,
@@ -24,6 +25,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -1015,12 +1026,15 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   const getFn = useServerFn(getMeeting);
   const del = useServerFn(deleteMeeting);
   const sync = useServerFn(syncMeeting);
+  const stop = useServerFn(stopMeeting);
   const refreshRec = useServerFn(refreshRecording);
   const getStream = useServerFn(getRecordingStreamUrl);
   const rename = useServerFn(renameMeeting);
   const genTitle = useServerFn(generateTitleForMeeting);
   const regenSummary = useServerFn(regenerateMeetingSummary);
   const [busy, setBusy] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [confirmStopOpen, setConfirmStopOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
@@ -1178,6 +1192,23 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     }
     setBusy(false);
   }
+
+  async function onStop() {
+    if (!id) return;
+    setStopping(true);
+    try {
+      await stop({ data: { id } });
+      toast.success("Recording stopped — finalizing…");
+      qc.invalidateQueries({ queryKey: ["meeting", id] });
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not stop the recording");
+    } finally {
+      setStopping(false);
+      setConfirmStopOpen(false);
+    }
+  }
+
 
   function startEditTitle() {
     if (!meeting) return;
@@ -1430,18 +1461,53 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                         Recording in progress — the transcript and summary appear here once the
                         meeting ends.
                       </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onRefresh}
-                        disabled={refreshing}
-                        className="shrink-0"
-                      >
-                        <RefreshCw
-                          className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                        />
-                        {refreshing ? "Refreshing…" : "Refresh status"}
-                      </Button>
+                      <div className="flex shrink-0 gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onRefresh}
+                          disabled={refreshing}
+                        >
+                          <RefreshCw
+                            className={`mr-1.5 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                          />
+                          {refreshing ? "Refreshing…" : "Refresh status"}
+                        </Button>
+                        {meeting.recall_bot_id && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setConfirmStopOpen(true)}
+                            disabled={stopping}
+                          >
+                            <Square className={`mr-1.5 h-4 w-4 ${stopping ? "animate-pulse" : ""}`} />
+                            {stopping ? "Stopping…" : "Stop recording"}
+                          </Button>
+                        )}
+                      </div>
+                      <AlertDialog open={confirmStopOpen} onOpenChange={setConfirmStopOpen}>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Stop this recording?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              The notetaker bot will leave the meeting and we'll finalize the
+                              recording, transcript, and summary. This can't be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel disabled={stopping}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={(e) => {
+                                e.preventDefault();
+                                void onStop();
+                              }}
+                              disabled={stopping}
+                            >
+                              {stopping ? "Stopping…" : "Stop recording"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   ) : (
                     <>

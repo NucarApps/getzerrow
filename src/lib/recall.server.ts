@@ -104,6 +104,16 @@ type CreateBotInput = {
   chatResendOnJoin?: boolean;
   /** Base64-encoded JPEG shown as the bot's video tile in the call. */
   imageB64?: string | null;
+  /**
+   * Seconds Recall waits after everyone but the bot has left before the bot
+   * leaves on its own. Omit to keep Recall's default behavior.
+   */
+  everyoneLeftTimeoutSec?: number | null;
+  /**
+   * Seconds Recall waits while in the call but not recording (e.g. stuck in a
+   * waiting room / empty call) before leaving. Omit to keep the default.
+   */
+  inCallNotRecordingTimeoutSec?: number | null;
 };
 
 /**
@@ -140,6 +150,26 @@ export async function createBot(input: CreateBotInput): Promise<RecallBot> {
       in_call_recording: image,
       in_call_not_recording: image,
     };
+  }
+
+  const automaticLeave: Record<string, unknown> = {};
+  if (typeof input.everyoneLeftTimeoutSec === "number" && input.everyoneLeftTimeoutSec > 0) {
+    // Recall expects an object here: leave `timeout` seconds after the last
+    // human leaves, with no additional activation delay.
+    automaticLeave.everyone_left_timeout = {
+      timeout: Math.round(input.everyoneLeftTimeoutSec),
+      activate_after: 0,
+    };
+  }
+  if (
+    typeof input.inCallNotRecordingTimeoutSec === "number" &&
+    input.inCallNotRecordingTimeoutSec > 0
+  ) {
+    // This one is a plain number of seconds.
+    automaticLeave.in_call_not_recording_timeout = Math.round(input.inCallNotRecordingTimeoutSec);
+  }
+  if (Object.keys(automaticLeave).length > 0) {
+    body.automatic_leave = automaticLeave;
   }
 
   return recallFetch<RecallBot>("/bot", { method: "POST", body });

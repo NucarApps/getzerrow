@@ -1,62 +1,64 @@
-# Zerrow — Technical Features PDF
+# Stop stuck meetings: manual button + auto force-leave
 
-A branded, in-depth technical reference PDF documenting every feature area of Zerrow: what it does, how it works under the hood, and the key data/pipeline concepts. Audience: internal / technical team.
+## Problem
+A bot-recorded meeting can get stuck showing "Recording in progress" long after it actually ended, because Recall never sent the "call ended" signal. Today the only actions are Refresh (re-polls the same stuck state) and Delete (throws the meeting away). There's no way to force the bot out and finalize the recording.
 
-## Deliverable
+## Goal
+1. A manual **Stop recording** control that force-leaves the bot and finalizes the meeting on demand.
+2. An automatic safety net: Recall leaves on its own when no humans remain, plus a cron backstop that force-leaves bots stuck past a configurable timeout. **Default: enabled, 30 minutes.**
 
-A single multi-page PDF written to `/mnt/documents/zerrow-features.pdf` (with a `<presentation-artifact>` preview), plus QA render images verified before delivery.
+---
 
-## Approach
+## Part A — Manual "Stop recording"
 
-1. **Inventory features from source** (read-only) to keep the doc accurate — sync pipeline, folders/filters, AI classification, inbox overrides, contacts/cards, meetings, reports, folder chat, Gmail integration, security/encryption.
-2. **Generate the PDF programmatically** (Python + reportlab) with a branded Zerrow layout, cover page, table of contents, and per-feature sections.
-3. **QA pass**: render every page to images, inspect for overflow/overlap/clipping, fix, re-verify.
+### Server function `stopMeeting` (`src/lib/meetings.functions.ts`)
+- Auth-scoped (`requireSupabaseAuth`), input `{ id: uuid }`.
+- Load the meeting via the RLS client (`id, recall_bot_id, status`). RLS enforces ownership.
+- If already terminal (`done`/`failed`) or no `recall_bot_id`, return current status (no-op).
+- Dynamically `import("./recall.server")` and call `leaveBot(recall_bot_id)` best-effort (it already swallows 400/404).
+- Set status to `processing`/`recording`→ then run `syncMeetingFromRecall(meeting)` (dynamic import of `./meetings.server`) to immediately pull the finalized recording/transcript/summary.
+- Return the resolved status. Keeps all service-role/Recall code server-only via dynamic imports.
 
-## Branding
+### UI (`src/routes/_authenticated/meetings.tsx`)
+- Add `stopMeeting` via `useServerFn`, plus a `stopping` state and confirmation dialog.
+- In the "Recording in progress" block (~line 1425), add a destructive **Stop recording** button next to **Refresh status**, shown only for bot meetings (`meeting.recall_bot_id` / `meeting.meeting_url` present). In-person/local recordings don't get it.
+- On confirm: call `stopMeeting({ data: { id } })`, then re-fetch the meeting so the sheet flips to the finalized view.
+- Also surface a compact **Stop** action on non-terminal past-meeting rows for quick access.
 
-- Pull Zerrow's real brand cues from the codebase (`src/styles.css` tokens, `public/zerrow-landing.css`, logo/assets) so colors and type match the app.
-- Cover page with logo/wordmark, document title, "Internal Technical Reference", date.
-- Consistent header/footer (Zerrow • Features Reference • page numbers), section dividers, and a restrained accent color from the brand palette.
+---
 
-## Document structure
+## Part B — Auto force-leave (opt-in, on by default)
 
-```text
-1. Cover
-2. Table of contents
-3. Product overview & architecture
-   - Stack (TanStack Start / Cloudflare Workers / Lovable Cloud)
-   - High-level data flow diagram (Gmail push -> pipeline -> folders -> UI)
-4. Gmail integration & sync pipeline
-   - OAuth (encrypted tokens), push/Pub-Sub, poll + reconcile fallbacks
-   - message_jobs queue, claim RPCs, DLQ, backfill, watch renewal
-5. Folders & deterministic filters
-   - Filter tree (AND/OR field/op/value), domain_in / not_contains
-   - Side-effects: auto_archive, auto_mark_read, hide_from_inbox, forward_to, snooze
-6. AI classification & folder learning
-   - Lovable AI Gateway, learned profiles, surface-to-inbox rules, reclassify
-7. Inbox & overrides
-   - Always-inbox rules, inbox meta, realtime updates
-8. Folder chat assistant
-   - Proposed actions, durable per-folder memory, summarization
-9. Contacts & cards (CRM)
-   - Contact derivation, company grouping, My Card, public /c/$handle
-10. Meetings
-    - Calendar guard, auto-record, meeting bots, summaries, blocklists
-11. Reports & analytics
-    - Inbox report metrics, domain/sender clusters, histograms
-12. Security & data handling
-    - RLS scoping, pgcrypto token encryption, /api/public secret verification
-13. Appendix: glossary of domain terms
-```
+### DB migration — add two columns to `public.meeting_bot_settings`
+- `auto_leave_enabled boolean NOT NULL DEFAULT true`
+- `auto_leave_minutes integer NOT NULL DEFAULT 30`
+- (Existing rows pick up defaults; grants/RLS already exist on the table.)
 
-Each feature section covers: purpose, how it works (technical detail), key tables/RPCs/files involved, and notable edge cases.
+### Recall bot config (`src/lib/recall.server.ts`)
+- Extend `CreateBotInput` with `everyoneLeftTimeoutSec?` and `inCallNotRecordingTimeoutSec?`.
+- When provided, add to the bot body:
+  ```
+  automatic_leave: {
+    everyone_left_timeout: <sec>,
+    in_call_not_recording_timeout: <sec>,
+  }
+  ```
+  so Recall itself ends the recording when no humans remain for the configured window.
+
+### Bot config plumbing (`src/lib/meetings.server.ts`)
+- Extend `BotConfig` + `loadBotConfig` to read `auto_leave_enabled, auto_leave_minutes` (fallback: enabled, 30).
+- In `recordFromLink` (and any calendar auto-join path that calls `createBot`), pass the timeout seconds when `auto_leave_enabled` is true.
+
+### Settings UI (`src/components/settings/MeetingBotCard.tsx`)
+- Add a **Automatically leave empty meetings** switch (default on) and a minutes input (default 30, min 5), wired into the existing save flow.
+- Update `getMeetingBotSettings` / `updateMeetingBotSettings` (`src/lib/meetings.functions.ts`) to read/write the two new fields (validate minutes 5–240).
+
+### Cron backstop (`src/routes/api/public/hooks/reconcile-meetings.ts`)
+- For meetings still in `joining`/`recording` whose `started_at` (fallback `scheduled_start`/`created_at`) is older than the user's `auto_leave_minutes` + a small grace margin, call `leaveBot` before `syncMeetingFromRecall`. This guarantees the timeout is honored even if Recall's own detection misses. Uses `supabaseAdmin` + `loadBotConfig(user_id)` — already the unauthenticated cron context.
+
+---
 
 ## Technical notes
-
-- Build with `reportlab` (Platypus) for reliable multi-page flow, TOC, tables, and page templates; register a Unicode TTF for clean typography.
-- ASCII/box diagrams rendered as styled flowables for the architecture and pipeline flows.
-- No app code is modified — this is a generated document only.
-
-## QA
-
-Convert PDF to images at 150 DPI, inspect each page for overflow, overlap, clipped text, contrast, and ordering; iterate until clean. Report what was verified.
+- No changes to the encryption/token path or filter engine.
+- `leaveBot` and `syncMeetingFromRecall` stay behind dynamic `import()` in `*.functions.ts` so service-role code never enters the client bundle.
+- Recording finalization reuses the existing `syncMeetingFromRecall` pipeline, so transcript/summary/recording population is unchanged.

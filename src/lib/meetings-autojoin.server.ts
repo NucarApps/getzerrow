@@ -639,6 +639,10 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
           chatMessage: botCfg.chatMessage,
           chatResendOnJoin: botCfg.chatResendOnJoin,
           imageB64: botCfg.imageB64,
+          everyoneLeftTimeoutSec: botCfg.autoLeaveEnabled ? botCfg.autoLeaveMinutes * 60 : null,
+          inCallNotRecordingTimeoutSec: botCfg.autoLeaveEnabled
+            ? botCfg.autoLeaveMinutes * 60
+            : null,
         });
         const { data: inserted, error } = await supabaseAdmin
           .from("meetings")

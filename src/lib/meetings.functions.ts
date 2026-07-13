@@ -75,6 +75,8 @@ export const recordFromLink = createServerFn({ method: "POST" })
         chatMessage: cfg.chatMessage,
         chatResendOnJoin: cfg.chatResendOnJoin,
         imageB64: cfg.imageB64,
+        everyoneLeftTimeoutSec: cfg.autoLeaveEnabled ? cfg.autoLeaveMinutes * 60 : null,
+        inCallNotRecordingTimeoutSec: cfg.autoLeaveEnabled ? cfg.autoLeaveMinutes * 60 : null,
       });
       botId = bot.id;
     } catch (e) {
@@ -185,6 +187,46 @@ export const syncMeeting = createServerFn({ method: "POST" })
     const status = await syncMeetingFromRecall(meeting);
     return { status };
   });
+
+/**
+ * Force a stuck recording to end: remove the notetaker bot from the call and
+ * immediately pull the finalized state from Recall. Used when a meeting is
+ * stuck in a non-terminal status because Recall never sent a "call ended"
+ * signal. No-op for meetings that are already terminal or have no bot.
+ */
+export const stopMeeting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    // Ownership is enforced by RLS on the per-user client.
+    const { data: meeting } = await context.supabase
+      .from("meetings")
+      .select("id, user_id, recall_bot_id, status, title")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!meeting) throw new Error("Meeting not found");
+    if (meeting.status === "done" || meeting.status === "failed") {
+      return { status: meeting.status };
+    }
+    if (!meeting.recall_bot_id) {
+      throw new Error("This recording can't be stopped remotely.");
+    }
+
+    // Best-effort: force the bot out of the call. leaveBot swallows 400/404
+    // ("already gone"), so a bot that already left won't block finalizing.
+    try {
+      await leaveBot(meeting.recall_bot_id);
+    } catch (e) {
+      logError("meeting_stop_leave_failed", { userId: context.userId, id: data.id }, e);
+    }
+
+    // Dynamic import keeps the service-role module out of the client bundle.
+    const { syncMeetingFromRecall } = await import("./meetings.server");
+    const status = await syncMeetingFromRecall(meeting);
+    return { status };
+  });
+
+
 
 /**
  * For a finished meeting, fetch a fresh signed recording URL from Recall (the
@@ -954,7 +996,9 @@ export const getMeetingBotSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("meeting_bot_settings")
-      .select("bot_name, chat_message, chat_resend_on_join, avatar_updated_at")
+      .select(
+        "bot_name, chat_message, chat_resend_on_join, avatar_updated_at, auto_leave_enabled, auto_leave_minutes",
+      )
       .eq("user_id", context.userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -963,6 +1007,8 @@ export const getMeetingBotSettings = createServerFn({ method: "GET" })
       chatMessage: data?.chat_message ?? DEFAULT_CHAT_MESSAGE,
       chatResendOnJoin: data?.chat_resend_on_join ?? true,
       hasAvatar: !!data?.avatar_updated_at,
+      autoLeaveEnabled: data?.auto_leave_enabled ?? true,
+      autoLeaveMinutes: data?.auto_leave_minutes ?? 30,
     };
   });
 
@@ -979,6 +1025,8 @@ export const updateMeetingBotSettings = createServerFn({ method: "POST" })
         botName: z.string().trim().min(1).max(100),
         chatMessage: z.string().max(1000),
         chatResendOnJoin: z.boolean(),
+        autoLeaveEnabled: z.boolean(),
+        autoLeaveMinutes: z.number().int().min(5).max(240),
         // "set" when a new picture was just uploaded, "clear" to remove it,
         // omitted to leave the existing picture untouched.
         avatar: z.enum(["set", "clear"]).optional(),
@@ -991,12 +1039,16 @@ export const updateMeetingBotSettings = createServerFn({ method: "POST" })
       bot_name: string;
       chat_message: string;
       chat_resend_on_join: boolean;
+      auto_leave_enabled: boolean;
+      auto_leave_minutes: number;
       avatar_updated_at?: string | null;
     } = {
       user_id: context.userId,
       bot_name: data.botName.trim(),
       chat_message: data.chatMessage.trim(),
       chat_resend_on_join: data.chatResendOnJoin,
+      auto_leave_enabled: data.autoLeaveEnabled,
+      auto_leave_minutes: data.autoLeaveMinutes,
     };
     if (data.avatar === "set") patch.avatar_updated_at = new Date().toISOString();
     if (data.avatar === "clear") {

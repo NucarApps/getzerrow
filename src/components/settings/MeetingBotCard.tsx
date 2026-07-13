@@ -60,6 +60,8 @@ export function MeetingBotCard() {
   const [botName, setBotName] = useState("");
   const [chatMessage, setChatMessage] = useState("");
   const [resend, setResend] = useState(true);
+  const [autoLeaveEnabled, setAutoLeaveEnabled] = useState(true);
+  const [autoLeaveMinutes, setAutoLeaveMinutes] = useState(30);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -70,6 +72,8 @@ export function MeetingBotCard() {
     setBotName(settings.botName);
     setChatMessage(settings.chatMessage);
     setResend(settings.chatResendOnJoin);
+    setAutoLeaveEnabled(settings.autoLeaveEnabled);
+    setAutoLeaveMinutes(settings.autoLeaveMinutes);
     setHasAvatar(settings.hasAvatar);
   }, [settings]);
 
@@ -119,6 +123,8 @@ export function MeetingBotCard() {
           botName: botName.trim() || "Zerrow Notetaker",
           chatMessage,
           chatResendOnJoin: resend,
+          autoLeaveEnabled,
+          autoLeaveMinutes,
           avatar: "set",
         },
       });
@@ -141,6 +147,8 @@ export function MeetingBotCard() {
           botName: botName.trim() || "Zerrow Notetaker",
           chatMessage,
           chatResendOnJoin: resend,
+          autoLeaveEnabled,
+          autoLeaveMinutes,
           avatar: "clear",
         },
       });
@@ -160,6 +168,8 @@ export function MeetingBotCard() {
       toast.error("Give the bot a name.");
       return;
     }
+    const minutes = Math.min(240, Math.max(5, Math.round(autoLeaveMinutes || 30)));
+    if (minutes !== autoLeaveMinutes) setAutoLeaveMinutes(minutes);
     setSaving(true);
     try {
       await saveSettings({
@@ -167,6 +177,8 @@ export function MeetingBotCard() {
           botName: botName.trim(),
           chatMessage,
           chatResendOnJoin: resend,
+          autoLeaveEnabled,
+          autoLeaveMinutes: minutes,
         },
       });
       qc.invalidateQueries({ queryKey: ["meeting-bot-settings"] });
@@ -293,7 +305,42 @@ export function MeetingBotCard() {
           />
         </div>
 
+        <div className="space-y-3 rounded-md border p-3">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Automatically leave empty meetings</p>
+              <p className="text-xs text-muted-foreground">
+                End the recording when everyone but the bot has left, so meetings don't stay stuck
+                recording.
+              </p>
+            </div>
+            <Switch
+              checked={autoLeaveEnabled}
+              onCheckedChange={setAutoLeaveEnabled}
+              aria-label="Automatically leave empty meetings"
+            />
+          </div>
+          {autoLeaveEnabled && (
+            <div className="flex items-center gap-2">
+              <Label htmlFor="auto-leave-minutes" className="text-sm font-normal">
+                Leave after
+              </Label>
+              <Input
+                id="auto-leave-minutes"
+                type="number"
+                min={5}
+                max={240}
+                value={autoLeaveMinutes}
+                onChange={(e) => setAutoLeaveMinutes(Number(e.target.value))}
+                className="w-20"
+              />
+              <span className="text-sm text-muted-foreground">minutes with no one else present</span>
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-end">
+
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             Save changes
