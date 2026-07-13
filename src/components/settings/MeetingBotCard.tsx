@@ -60,6 +60,8 @@ export function MeetingBotCard() {
   const [botName, setBotName] = useState("");
   const [chatMessage, setChatMessage] = useState("");
   const [resend, setResend] = useState(true);
+  const [autoLeaveEnabled, setAutoLeaveEnabled] = useState(true);
+  const [autoLeaveMinutes, setAutoLeaveMinutes] = useState(30);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -70,6 +72,8 @@ export function MeetingBotCard() {
     setBotName(settings.botName);
     setChatMessage(settings.chatMessage);
     setResend(settings.chatResendOnJoin);
+    setAutoLeaveEnabled(settings.autoLeaveEnabled);
+    setAutoLeaveMinutes(settings.autoLeaveMinutes);
     setHasAvatar(settings.hasAvatar);
   }, [settings]);
 
