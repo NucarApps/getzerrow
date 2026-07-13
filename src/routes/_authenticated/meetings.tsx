@@ -76,7 +76,6 @@ import {
   UpcomingMeetingsCard,
   type InPersonRecordPrefill,
 } from "@/components/meetings/UpcomingMeetingsCard";
-import { MeetingSettingsDrawer } from "@/components/meetings/MeetingSettingsDrawer";
 import { MeetingSummary } from "@/components/meetings/meeting-summary";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
