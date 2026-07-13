@@ -241,7 +241,7 @@ function MeetingsPage() {
           </div>
         </header>
 
-        <Tabs defaultValue="past">
+        <Tabs defaultValue="upcoming">
           <TabsList className="mb-6">
             <TabsTrigger value="past">Past meetings</TabsTrigger>
             <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
