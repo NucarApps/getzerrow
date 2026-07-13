@@ -393,11 +393,11 @@ export function useInvaderGame(): UseInvaderGameResult {
     particlesRef.current = [];
     powerupsRef.current = [];
     floatsRef.current = [];
-    formationXRef.current = 10;
+    formationXRef.current = initialFormationX(enemiesRef.current);
     formationYRef.current = FORMATION_TOP;
     marchDirRef.current = 1;
-    marchSpeedRef.current = 6;
-    playerXRef.current = 50;
+    marchSpeedRef.current = 9;
+    playerXRef.current = FIELD_CX;
     playerCooldownRef.current = 0;
     invulnUntilRef.current = 0;
     shieldUntilRef.current = 0;
