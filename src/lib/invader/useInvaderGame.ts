@@ -872,14 +872,14 @@ export function useInvaderGame(): UseInvaderGameResult {
           let nextX =
             formationXRef.current + dir * marchSpeedRef.current * dts * slowMul * diff.speedMul;
           const nextBounds = formationBounds(enemiesRef.current, nextX, formationYRef.current);
-          if (nextBounds.minX - ENEMY_HALF_W < 2 || nextBounds.maxX + ENEMY_HALF_W > 98) {
+          if (nextBounds.minX - ENEMY_HALF_W < 2 || nextBounds.maxX + ENEMY_HALF_W > FIELD_W - 2) {
             marchDirRef.current = dir === 1 ? -1 : 1;
             formationYRef.current += 3 + Math.min(lvl, 5);
-            marchSpeedRef.current = Math.min(30, marchSpeedRef.current * 1.12);
+            marchSpeedRef.current = Math.min(48, marchSpeedRef.current * 1.12);
             if (nextBounds.minX - ENEMY_HALF_W < 2)
               nextX = formationXRef.current + (2 + ENEMY_HALF_W - nextBounds.minX);
-            if (nextBounds.maxX + ENEMY_HALF_W > 98)
-              nextX = formationXRef.current - (nextBounds.maxX - (98 - ENEMY_HALF_W));
+            if (nextBounds.maxX + ENEMY_HALF_W > FIELD_W - 2)
+              nextX = formationXRef.current - (nextBounds.maxX - (FIELD_W - 2 - ENEMY_HALF_W));
           }
           formationXRef.current = nextX;
         }
