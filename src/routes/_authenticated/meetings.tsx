@@ -237,7 +237,18 @@ function MeetingsPage() {
               />
             )}
             <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
-            <MeetingSettingsDrawer />
+            <Button
+              variant="outline"
+              size="icon"
+              asChild
+              aria-label="Meeting settings"
+              title="Meeting settings"
+              className="h-8 w-8 sm:h-10 sm:w-10"
+            >
+              <Link to="/settings/meetings-recording">
+                <Settings className="h-4 w-4" />
+              </Link>
+            </Button>
           </div>
         </header>
 
