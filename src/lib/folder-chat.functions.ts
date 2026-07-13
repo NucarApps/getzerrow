@@ -210,7 +210,7 @@ export const proposeFolderChanges = createServerFn({ method: "POST" })
 
     const { data: recentRows } = await supabaseAdmin
       .from("folder_chat_messages")
-      .select("role, content, actions, applied_action_indexes")
+      .select("role, content, actions, applied_action_indexes, discarded")
       .eq("folder_id", data.folder_id)
       .order("created_at", { ascending: false })
       .limit(RECENT_TURNS);
@@ -224,15 +224,26 @@ export const proposeFolderChanges = createServerFn({ method: "POST" })
       }));
 
     const appliedLog: string[] = [];
+    const rejectedLog: string[] = [];
     for (const m of recent) {
       if (m.role !== "assistant" || !Array.isArray(m.actions)) continue;
+      const rawActions = m.actions as unknown[];
       const indexes = Array.isArray(m.applied_action_indexes)
         ? (m.applied_action_indexes as number[])
         : [];
       for (const idx of indexes) {
-        const action = (m.actions as unknown[])[idx];
-        const parsed = actionInputSchema.safeParse(action);
+        const parsed = actionInputSchema.safeParse(rawActions[idx]);
         if (parsed.success) appliedLog.push(describeAppliedAction(parsed.data));
+      }
+      // A discarded assistant turn means the user rejected every action it
+      // proposed that was not applied. Record those so the model won't re-suggest them.
+      if (m.discarded) {
+        const appliedSet = new Set(indexes);
+        rawActions.forEach((raw, idx) => {
+          if (appliedSet.has(idx)) return;
+          const parsed = actionInputSchema.safeParse(raw);
+          if (parsed.success) rejectedLog.push(describeAppliedAction(parsed.data));
+        });
       }
     }
 
