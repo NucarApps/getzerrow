@@ -355,6 +355,7 @@ export type StoredChatMessage = {
   content: string;
   actions: FolderChatAction[] | null;
   applied_action_indexes: number[];
+  discarded: boolean;
   created_at: string;
 };
 
