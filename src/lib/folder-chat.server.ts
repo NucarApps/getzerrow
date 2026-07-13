@@ -193,6 +193,9 @@ ${memoryBlock}
 Changes already applied to this folder in past turns:
 ${appliedBlock}
 
+Changes the user explicitly REJECTED in past turns (do NOT propose these again unless the user clearly asks for them anew):
+${rejectedBlock}
+
 Recent conversation (most recent turns, verbatim):
 ${historyBlock}
 
