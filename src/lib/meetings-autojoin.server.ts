@@ -409,8 +409,15 @@ export async function listCalendarEventsWindow(
         : [];
       const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
       const exclusionMode = exclusionModes.get(e.id as string) ?? null;
+      // A skipped color acts as a default "don't record" when there's no
+      // explicit per-event choice.
+      const colorSkipped = exclusionMode === null && isColorSkipped(e, prefs);
       const recordMode: MeetingRecordMode =
-        exclusionMode === null ? "bot" : exclusionMode === "in_person" ? "in_person" : "off";
+        exclusionMode === "in_person"
+          ? "in_person"
+          : exclusionMode === "off" || colorSkipped
+            ? "off"
+            : "bot";
       const hasMeetingLink = !!extractMeetingUrl(e);
       const blocked = blockedBy !== null;
       const declined = isDeclinedByUser(e);
@@ -430,6 +437,7 @@ export async function listCalendarEventsWindow(
         if (!hasMeetingLink) skipReason = "no_link";
         else if (!autoRecord) skipReason = "auto_record_off";
         else if (declined && !recordDeclined) skipReason = "declined";
+        else if (colorSkipped) skipReason = "color";
         else if (recordMode === "off") skipReason = "off";
         else if (recordMode === "in_person") skipReason = "in_person";
         else if (blocked) skipReason = "blocked";
