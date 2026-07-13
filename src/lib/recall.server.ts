@@ -152,14 +152,20 @@ export async function createBot(input: CreateBotInput): Promise<RecallBot> {
     };
   }
 
-  const automaticLeave: Record<string, number> = {};
+  const automaticLeave: Record<string, unknown> = {};
   if (typeof input.everyoneLeftTimeoutSec === "number" && input.everyoneLeftTimeoutSec > 0) {
-    automaticLeave.everyone_left_timeout = Math.round(input.everyoneLeftTimeoutSec);
+    // Recall expects an object here: leave `timeout` seconds after the last
+    // human leaves, with no additional activation delay.
+    automaticLeave.everyone_left_timeout = {
+      timeout: Math.round(input.everyoneLeftTimeoutSec),
+      activate_after: 0,
+    };
   }
   if (
     typeof input.inCallNotRecordingTimeoutSec === "number" &&
     input.inCallNotRecordingTimeoutSec > 0
   ) {
+    // This one is a plain number of seconds.
     automaticLeave.in_call_not_recording_timeout = Math.round(input.inCallNotRecordingTimeoutSec);
   }
   if (Object.keys(automaticLeave).length > 0) {
