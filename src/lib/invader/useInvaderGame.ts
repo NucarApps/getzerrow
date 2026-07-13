@@ -245,7 +245,7 @@ export function useInvaderGame(): UseInvaderGameResult {
   const [newAchievements, setNewAchievements] = useState<AchievementKey[]>([]);
 
   // ---------- Per-frame refs ----------
-  const playerXRef = useRef(50);
+  const playerXRef = useRef(FIELD_CX);
   const playerCooldownRef = useRef(0);
   const invulnUntilRef = useRef(0);
   const shieldUntilRef = useRef(0);
