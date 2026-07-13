@@ -1189,6 +1189,8 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
       onClose();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not delete meeting");
+    }
+    setBusy(false);
   }
 
   async function onStop() {
@@ -1207,9 +1209,6 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     }
   }
 
-
-    setBusy(false);
-  }
 
   function startEditTitle() {
     if (!meeting) return;
