@@ -1486,6 +1486,29 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                           </Button>
                         )}
                       </div>
+                      <AlertDialog open={confirmStopOpen} onOpenChange={setConfirmStopOpen}>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Stop this recording?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              The notetaker bot will leave the meeting and we'll finalize the
+                              recording, transcript, and summary. This can't be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel disabled={stopping}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={(e) => {
+                                e.preventDefault();
+                                void onStop();
+                              }}
+                              disabled={stopping}
+                            >
+                              {stopping ? "Stopping…" : "Stop recording"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   ) : (
                     <>
