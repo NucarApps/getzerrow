@@ -52,6 +52,7 @@ import { Route as ApiMobileGmailConnectRouteImport } from './routes/api/mobile/g
 import { Route as ApiMobileContactsRouteImport } from './routes/api/mobile/contacts'
 import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as AuthenticatedSettingsInboxRouteImport } from './routes/_authenticated/settings.inbox'
+import { Route as AuthenticatedSettingsActivityRouteImport } from './routes/_authenticated/settings.activity'
 import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_authenticated/settings.accounts'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
@@ -294,6 +295,12 @@ const AuthenticatedSettingsInboxRoute =
     path: '/inbox',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsActivityRoute =
+  AuthenticatedSettingsActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsAccountsRoute =
   AuthenticatedSettingsAccountsRouteImport.update({
     id: '/accounts',
@@ -396,6 +403,7 @@ export interface FileRoutesByFullPath {
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
@@ -453,6 +461,7 @@ export interface FileRoutesByTo {
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
@@ -513,6 +522,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/_authenticated/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/_authenticated/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/_authenticated/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
@@ -573,6 +583,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/contacts/scan'
     | '/settings/accounts'
+    | '/settings/activity'
     | '/settings/inbox'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
@@ -630,6 +641,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/contacts/scan'
     | '/settings/accounts'
+    | '/settings/activity'
     | '/settings/inbox'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
@@ -689,6 +701,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
     | '/_authenticated/settings/accounts'
+    | '/_authenticated/settings/activity'
     | '/_authenticated/settings/inbox'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
@@ -1077,6 +1090,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsInboxRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/activity': {
+      id: '/_authenticated/settings/activity'
+      path: '/activity'
+      fullPath: '/settings/activity'
+      preLoaderRoute: typeof AuthenticatedSettingsActivityRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/accounts': {
       id: '/_authenticated/settings/accounts'
       path: '/accounts'
@@ -1180,12 +1200,14 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsAccountsRoute: typeof AuthenticatedSettingsAccountsRoute
+  AuthenticatedSettingsActivityRoute: typeof AuthenticatedSettingsActivityRoute
   AuthenticatedSettingsInboxRoute: typeof AuthenticatedSettingsInboxRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
 }
 
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsAccountsRoute: AuthenticatedSettingsAccountsRoute,
+  AuthenticatedSettingsActivityRoute: AuthenticatedSettingsActivityRoute,
   AuthenticatedSettingsInboxRoute: AuthenticatedSettingsInboxRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
 }
