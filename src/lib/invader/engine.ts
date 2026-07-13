@@ -218,14 +218,22 @@ export function spawnWave(level: number, rand: Rng): Enemy[] {
   return enemies;
 }
 
+// Centered horizontal origin for a freshly-spawned wave, so the formation
+// sits in the middle of the widescreen field regardless of column count.
+export function initialFormationX(enemies: Enemy[]): number {
+  let maxCol = 0;
+  for (const e of enemies) if (e.col > maxCol) maxCol = e.col;
+  return FIELD_CX - (maxCol * COL_GAP) / 2;
+}
+
 export function spawnBoss(level: number): Boss {
   const tier = Math.floor(level / BOSS_LEVEL_INTERVAL);
   const hp = 25 + tier * 15;
-  return { id: 1, x: 50, y: 18, vx: 18, hp, maxHp: hp, fireCooldown: 800 };
+  return { id: 1, x: FIELD_CX, y: 18, vx: 28, hp, maxHp: hp, fireCooldown: 800 };
 }
 
 export function spawnBunkers(): Bunker[] {
-  const xs = [20, 50, 80];
+  const xs = [FIELD_W * 0.16, FIELD_W * 0.38, FIELD_W * 0.62, FIELD_W * 0.84];
   return xs.map((x, i) => {
     const cells: boolean[][] = [];
     for (let r = 0; r < BUNKER_ROWS; r++) {
