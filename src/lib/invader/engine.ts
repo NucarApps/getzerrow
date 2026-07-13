@@ -60,8 +60,11 @@ export type FloatText = {
 
 // ---------------- Constants ----------------
 export const FIELD_H = 100;
+// Widescreen play field. World is FIELD_W (x) by FIELD_H (y).
+export const FIELD_W = 160;
+export const FIELD_CX = FIELD_W / 2;
 export const PLAYER_Y = 90;
-export const PLAYER_SPEED = 58;
+export const PLAYER_SPEED = 88;
 export const BULLET_SPEED = 110;
 export const ENEMY_BULLET_BASE = 38;
 export const BURST_MS = 600;
