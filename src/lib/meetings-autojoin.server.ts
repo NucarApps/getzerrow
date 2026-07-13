@@ -640,10 +640,21 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       blocklistCache.set(account.user_id, blocklist);
     }
 
+    // Load the user's event-type/color capture preferences (cached per user).
+    let prefs = prefsCache.get(account.user_id);
+    if (!prefs) {
+      prefs = await loadEventFilterPrefs(account.user_id);
+      prefsCache.set(account.user_id, prefs);
+    }
+
     for (const event of events) {
       if (!event.id) continue;
+      // Never auto-join non-meeting entries (out-of-office, working location,
+      // focus time, birthdays) or events tagged a color the user opted out of.
+      if (isHiddenEventType(event, prefs) || isColorSkipped(event, prefs)) continue;
       const meetingUrl = extractMeetingUrl(event);
       if (!meetingUrl) continue;
+
 
       // Skip if we already scheduled/handled this calendar event.
       const { data: existing } = await supabaseAdmin
