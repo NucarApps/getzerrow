@@ -95,19 +95,13 @@ View / save my card: ${args.publicUrl}
 
 (.vcf attached — open it on your phone to add me to contacts.)`;
 
-  const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#111;line-height:1.5">
-    <p>${greeting.replace(/\n/g, "<br>")}</p>
-    <table style="border-collapse:collapse;margin:16px 0">
-      ${args.card.name ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Name</td><td style="padding:2px 8px"><strong>${escapeHtml(args.card.name)}</strong></td></tr>` : ""}
-      ${args.card.title ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Title</td><td style="padding:2px 8px">${escapeHtml(args.card.title)}</td></tr>` : ""}
-      ${args.card.company ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Company</td><td style="padding:2px 8px">${escapeHtml(args.card.company)}</td></tr>` : ""}
-      ${args.card.phone ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Phone</td><td style="padding:2px 8px">${escapeHtml(args.card.phone)}</td></tr>` : ""}
-      ${args.card.email ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Email</td><td style="padding:2px 8px">${escapeHtml(args.card.email)}</td></tr>` : ""}
-      ${args.card.website ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Website</td><td style="padding:2px 8px"><a href="${escapeHtml(args.card.website)}">${escapeHtml(args.card.website)}</a></td></tr>` : ""}
-    </table>
-    <p><a href="${escapeHtml(args.publicUrl)}" style="display:inline-block;background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">View / save my card</a></p>
-    <p style="color:#888;font-size:12px">A .vcf file is attached — open it on your phone to add me to contacts.</p>
-  </div>`;
+  const htmlBody = renderCardEmailHtml({
+    card: args.card,
+    intro: greeting,
+    cta: { url: args.publicUrl, label: "View / save my card" },
+    attachmentNote: "A .vcf file is attached - open it on your phone to add me to contacts.",
+    footerNote: "Sent with Zerrow",
+  });
 
   const boundaryAlt = `alt_${Math.random().toString(36).slice(2)}`;
   const boundaryMixed = `mix_${Math.random().toString(36).slice(2)}`;
