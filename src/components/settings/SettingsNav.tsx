@@ -36,19 +36,23 @@ const ALL_ITEMS = GROUPS.flatMap((g) => g.items);
 
 export function SettingsNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
 
   return (
     <>
       {/* Mobile: single select */}
       <div className="md:hidden">
-        <Select value={pathname} onValueChange={() => undefined}>
+        <Select
+          value={pathname}
+          onValueChange={(to) => navigate({ to })}
+        >
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {ALL_ITEMS.map((item) => (
-              <SelectItem key={item.to} value={item.to} asChild>
-                <Link to={item.to}>{item.label}</Link>
+              <SelectItem key={item.to} value={item.to}>
+                {item.label}
               </SelectItem>
             ))}
           </SelectContent>
