@@ -380,7 +380,7 @@ export const getFolderChatHistory = createServerFn({ method: "POST" })
 
       const { data: rows } = await supabaseAdmin
         .from("folder_chat_messages")
-        .select("id, role, content, actions, applied_action_indexes, created_at")
+        .select("id, role, content, actions, applied_action_indexes, discarded, created_at")
         .eq("folder_id", data.folder_id)
         .order("created_at", { ascending: false })
         .limit(HISTORY_DISPLAY_LIMIT);
@@ -404,6 +404,7 @@ export const getFolderChatHistory = createServerFn({ method: "POST" })
             applied_action_indexes: Array.isArray(m.applied_action_indexes)
               ? (m.applied_action_indexes as number[])
               : [],
+            discarded: m.discarded === true,
             created_at: m.created_at,
           };
         });
