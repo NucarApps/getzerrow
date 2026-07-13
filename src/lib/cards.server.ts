@@ -237,7 +237,7 @@ type CardEmailInput = {
 };
 
 /** Render the shared branded card-email HTML used by both send paths. */
-function renderCardEmailHtml(opts: CardEmailInput): string {
+export function renderCardEmailHtml(opts: CardEmailInput): string {
   const { card } = opts;
   const theme = getEmailTheme(card.theme);
   const displayName = card.name || card.email || "Contact";
