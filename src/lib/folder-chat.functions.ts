@@ -263,6 +263,7 @@ export const proposeFolderChanges = createServerFn({ method: "POST" })
       sample,
       memorySummary,
       appliedLog,
+      rejectedLog,
     });
 
     // 7. Persist the assistant reply (with its proposed actions).
