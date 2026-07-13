@@ -269,7 +269,7 @@ export function useInvaderGame(): UseInvaderGameResult {
   const powerupsRef = useRef<Powerup[]>([]);
   const floatsRef = useRef<FloatText[]>([]);
 
-  const formationXRef = useRef(10);
+  const formationXRef = useRef(FIELD_CX);
   const formationYRef = useRef(FORMATION_TOP);
   const marchDirRef = useRef<1 | -1>(1);
   const marchSpeedRef = useRef(6);
