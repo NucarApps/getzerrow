@@ -1354,6 +1354,8 @@ export type Database = {
           chat_message: string
           chat_resend_on_join: boolean
           created_at: string
+          event_color_skip: string[]
+          hidden_event_types: string[]
           updated_at: string
           user_id: string
         }
@@ -1365,6 +1367,8 @@ export type Database = {
           chat_message?: string
           chat_resend_on_join?: boolean
           created_at?: string
+          event_color_skip?: string[]
+          hidden_event_types?: string[]
           updated_at?: string
           user_id: string
         }
@@ -1376,6 +1380,8 @@ export type Database = {
           chat_message?: string
           chat_resend_on_join?: boolean
           created_at?: string
+          event_color_skip?: string[]
+          hidden_event_types?: string[]
           updated_at?: string
           user_id?: string
         }

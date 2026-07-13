@@ -21,6 +21,13 @@ type UpcomingEvent = {
   hangoutLink?: string;
   location?: string;
   description?: string;
+  // Google's category for the entry. "default" is a normal meeting; other
+  // values (outOfOffice, workingLocation, focusTime, birthday, fromGmail)
+  // are not real meetings and can be hidden from the list.
+  eventType?: string;
+  // The event's color, if the user tagged one. 1-11 map to Google's palette;
+  // undefined means the calendar's default color.
+  colorId?: string;
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   conferenceData?: { entryPoints?: ConferenceEntryPoint[] };
@@ -32,6 +39,49 @@ type UpcomingEvent = {
   }>;
   organizer?: { email?: string; displayName?: string; self?: boolean };
 };
+
+/** Per-user preferences for which calendar entries the notetaker shows/records. */
+export type EventFilterPrefs = {
+  /** Google eventType values hidden from the list and never recorded. */
+  hiddenEventTypes: Set<string>;
+  /** Google colorId values the notetaker should not auto-join. */
+  colorSkip: Set<string>;
+};
+
+const DEFAULT_HIDDEN_EVENT_TYPES = ["outOfOffice", "workingLocation", "focusTime", "birthday"];
+
+/**
+ * Load the user's event-type/color capture preferences. Never throws: on any
+ * failure it falls back to hiding the standard non-meeting entry types and
+ * skipping no colors, so listing and auto-join keep working.
+ */
+export async function loadEventFilterPrefs(userId: string): Promise<EventFilterPrefs> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("meeting_bot_settings")
+      .select("hidden_event_types, event_color_skip")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return {
+      hiddenEventTypes: new Set(data?.hidden_event_types ?? DEFAULT_HIDDEN_EVENT_TYPES),
+      colorSkip: new Set(data?.event_color_skip ?? []),
+    };
+  } catch (e) {
+    logError("meeting_event_filter_prefs_load_failed", { userId }, e);
+    return { hiddenEventTypes: new Set(DEFAULT_HIDDEN_EVENT_TYPES), colorSkip: new Set() };
+  }
+}
+
+/** True when an event is a non-meeting entry the user chose to hide. */
+export function isHiddenEventType(event: UpcomingEvent, prefs: EventFilterPrefs): boolean {
+  const t = event.eventType ?? "default";
+  return t !== "default" && prefs.hiddenEventTypes.has(t);
+}
+
+/** True when the notetaker should skip an event because of its color tag. */
+export function isColorSkipped(event: UpcomingEvent, prefs: EventFilterPrefs): boolean {
+  return !!event.colorId && prefs.colorSkip.has(event.colorId);
+}
 
 /**
  * True when the account owner has explicitly declined the event. Google returns
@@ -201,10 +251,14 @@ export async function listUpcomingCalendarEventsForAccount(
   accountId: string,
   userId: string,
 ): Promise<UpcomingCalendarEvent[]> {
-  const events = await fetchEventsInWindow(accountId, LIST_LOOKAHEAD_MINUTES);
+  const prefs = await loadEventFilterPrefs(userId);
+  const events = (await fetchEventsInWindow(accountId, LIST_LOOKAHEAD_MINUTES)).filter(
+    (e) => !isHiddenEventType(e, prefs),
+  );
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
   if (eventIds.length === 0) return [];
+
 
   const [{ data: scheduledRows }, { data: excludedRows }] = await Promise.all([
     supabaseAdmin
@@ -242,8 +296,15 @@ export async function listUpcomingCalendarEventsForAccount(
         : [];
       const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
       const exclusionMode = exclusionModes.get(e.id as string) ?? null;
+      // A skipped color acts as a default "don't record" when the user hasn't
+      // set an explicit per-event choice.
+      const colorSkipped = exclusionMode === null && isColorSkipped(e, prefs);
       const recordMode: MeetingRecordMode =
-        exclusionMode === null ? "bot" : exclusionMode === "in_person" ? "in_person" : "off";
+        exclusionMode === "in_person"
+          ? "in_person"
+          : exclusionMode === "off" || colorSkipped
+            ? "off"
+            : "bot";
       return {
         id: e.id as string,
         title: e.summary ?? null,
@@ -286,11 +347,11 @@ export async function listCalendarEventsWindow(
   daysBack: number,
   daysAhead: number,
 ): Promise<CalendarWindowEvent[]> {
-  const events = await fetchEventsInWindow(
-    accountId,
-    daysAhead * 24 * 60,
-    daysBack * 24 * 60,
-  );
+  const prefs = await loadEventFilterPrefs(userId);
+  const events = (
+    await fetchEventsInWindow(accountId, daysAhead * 24 * 60, daysBack * 24 * 60)
+  ).filter((e) => !isHiddenEventType(e, prefs));
+
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
   if (eventIds.length === 0) return [];
@@ -348,8 +409,15 @@ export async function listCalendarEventsWindow(
         : [];
       const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
       const exclusionMode = exclusionModes.get(e.id as string) ?? null;
+      // A skipped color acts as a default "don't record" when there's no
+      // explicit per-event choice.
+      const colorSkipped = exclusionMode === null && isColorSkipped(e, prefs);
       const recordMode: MeetingRecordMode =
-        exclusionMode === null ? "bot" : exclusionMode === "in_person" ? "in_person" : "off";
+        exclusionMode === "in_person"
+          ? "in_person"
+          : exclusionMode === "off" || colorSkipped
+            ? "off"
+            : "bot";
       const hasMeetingLink = !!extractMeetingUrl(e);
       const blocked = blockedBy !== null;
       const declined = isDeclinedByUser(e);
@@ -369,6 +437,7 @@ export async function listCalendarEventsWindow(
         if (!hasMeetingLink) skipReason = "no_link";
         else if (!autoRecord) skipReason = "auto_record_off";
         else if (declined && !recordDeclined) skipReason = "declined";
+        else if (colorSkipped) skipReason = "color";
         else if (recordMode === "off") skipReason = "off";
         else if (recordMode === "in_person") skipReason = "in_person";
         else if (blocked) skipReason = "blocked";
@@ -548,6 +617,7 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
 
   // Cache each user's blocklist once per run (a user can have multiple accounts).
   const blocklistCache = new Map<string, Blocklist>();
+  const prefsCache = new Map<string, EventFilterPrefs>();
 
   let scheduled = 0;
   for (const account of accounts ?? []) {
@@ -570,10 +640,21 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       blocklistCache.set(account.user_id, blocklist);
     }
 
+    // Load the user's event-type/color capture preferences (cached per user).
+    let prefs = prefsCache.get(account.user_id);
+    if (!prefs) {
+      prefs = await loadEventFilterPrefs(account.user_id);
+      prefsCache.set(account.user_id, prefs);
+    }
+
     for (const event of events) {
       if (!event.id) continue;
+      // Never auto-join non-meeting entries (out-of-office, working location,
+      // focus time, birthdays) or events tagged a color the user opted out of.
+      if (isHiddenEventType(event, prefs) || isColorSkipped(event, prefs)) continue;
       const meetingUrl = extractMeetingUrl(event);
       if (!meetingUrl) continue;
+
 
       // Skip if we already scheduled/handled this calendar event.
       const { data: existing } = await supabaseAdmin

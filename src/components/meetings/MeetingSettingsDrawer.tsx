@@ -15,6 +15,7 @@ import { CalendarGuardCard } from "@/components/settings/CalendarGuardCard";
 import { MeetingAutoRecordCard } from "@/components/settings/MeetingAutoRecordCard";
 import { MeetingCalendarSelectCard } from "@/components/settings/MeetingCalendarSelectCard";
 import { MeetingCalendarEventsCard } from "@/components/settings/MeetingCalendarEventsCard";
+import { MeetingEventFilterCard } from "@/components/settings/MeetingEventFilterCard";
 import { MeetingBotCard } from "@/components/settings/MeetingBotCard";
 import { MeetingRecordBlocklistCard } from "@/components/settings/MeetingRecordBlocklistCard";
 
@@ -67,7 +68,10 @@ export function MeetingSettingsDrawer() {
             </div>
           ))}
 
+          <MeetingEventFilterCard />
+
           <MeetingRecordBlocklistCard />
+
 
           {accounts.map((a) => (
             <MeetingCalendarEventsCard key={a.id} accountId={a.id} accountEmail={a.email_address} />

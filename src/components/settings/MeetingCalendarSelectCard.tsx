@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
-  getAutoRecordStatus,
   listAccountCalendars,
   saveCalendarSelections,
   type AccountCalendar,
@@ -15,23 +14,15 @@ type Props = { accountId: string | null; accountEmail: string | null };
 
 export function MeetingCalendarSelectCard({ accountId, accountEmail }: Props) {
   const qc = useQueryClient();
-  const getStatus = useServerFn(getAutoRecordStatus);
   const listCalendars = useServerFn(listAccountCalendars);
   const saveSelections = useServerFn(saveCalendarSelections);
-
-  const { data: status } = useQuery({
-    queryKey: ["auto-record", accountId],
-    queryFn: () => getStatus({ data: { accountId: accountId! } }),
-    enabled: !!accountId,
-  });
-
-  const recordingOn = !!status?.enabled;
 
   const { data, isLoading } = useQuery({
     queryKey: ["account-calendars", accountId],
     queryFn: () => listCalendars({ data: { accountId: accountId! } }),
-    enabled: !!accountId && recordingOn,
+    enabled: !!accountId,
   });
+
 
   const mutation = useMutation({
     mutationFn: (calendars: AccountCalendar[]) =>
@@ -60,10 +51,12 @@ export function MeetingCalendarSelectCard({ accountId, accountEmail }: Props) {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["account-calendars", accountId] });
       qc.invalidateQueries({ queryKey: ["calendar-events", accountId] });
+      qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
     },
   });
 
-  if (!accountId || !recordingOn) return null;
+  if (!accountId) return null;
+
 
   const calendars = data?.calendars ?? [];
   const noCalendar = !!data && !data.calendarAccess;
@@ -78,15 +71,16 @@ export function MeetingCalendarSelectCard({ accountId, accountEmail }: Props) {
       <div className="flex items-start gap-3 border-b bg-muted/20 p-4 md:p-6">
         <CalendarRange className="mt-0.5 h-5 w-5 text-muted-foreground" />
         <div>
-          <h2 className="font-display text-2xl">Calendars to record</h2>
+          <h2 className="font-display text-2xl">Calendars to show</h2>
           {accountEmail && (
             <p className="mt-0.5 text-sm font-medium text-foreground">{accountEmail}</p>
           )}
           <p className="mt-1 text-sm text-muted-foreground">
-            Choose which calendars under this inbox the notetaker watches. Meetings on unselected
-            calendars are hidden and never recorded.
+            Choose which calendars under this inbox appear in your upcoming meetings. Meetings on
+            unselected calendars are hidden and never recorded.
           </p>
         </div>
+
       </div>
 
       <div className="p-4 md:p-6">
