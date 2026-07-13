@@ -261,7 +261,7 @@ export async function listUpcomingCalendarEventsForAccount(
 ): Promise<UpcomingCalendarEvent[]> {
   const prefs = await loadEventFilterPrefs(userId);
   const events = (await fetchEventsInWindow(accountId, LIST_LOOKAHEAD_MINUTES)).filter(
-    (e) => !isHiddenEventType(e, prefs),
+    (e) => !isHiddenEventType(e, prefs) && !isAllDayEvent(e) && !isColorSkipped(e, prefs),
   );
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
