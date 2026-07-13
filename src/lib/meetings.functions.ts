@@ -1064,3 +1064,52 @@ export const updateMeetingBotSettings = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// Google's five special event categories. "default" (a normal meeting) is
+// always shown/recordable and never appears in this list.
+const SPECIAL_EVENT_TYPES = ["outOfOffice", "workingLocation", "focusTime", "birthday"] as const;
+const DEFAULT_HIDDEN_TYPES = [...SPECIAL_EVENT_TYPES];
+// Google Calendar's 11 event color IDs.
+const EVENT_COLOR_IDS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"] as const;
+
+/** Get the caller's event-type/color capture preferences for the meetings list. */
+export const getMeetingEventPrefs = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("meeting_bot_settings")
+      .select("hidden_event_types, event_color_skip")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return {
+      hiddenEventTypes: data?.hidden_event_types ?? DEFAULT_HIDDEN_TYPES,
+      colorSkip: data?.event_color_skip ?? [],
+    };
+  });
+
+/** Save the caller's event-type/color capture preferences. */
+export const updateMeetingEventPrefs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        hiddenEventTypes: z.array(z.enum(SPECIAL_EVENT_TYPES)),
+        colorSkip: z.array(z.enum(EVENT_COLOR_IDS)),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    // Dedupe so the stored arrays stay tidy.
+    const hidden = [...new Set(data.hiddenEventTypes)];
+    const colors = [...new Set(data.colorSkip)];
+    const { error } = await context.supabase
+      .from("meeting_bot_settings")
+      .upsert(
+        { user_id: context.userId, hidden_event_types: hidden, event_color_skip: colors },
+        { onConflict: "user_id" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
