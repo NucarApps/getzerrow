@@ -136,7 +136,8 @@ export function FolderEditor({
   const generateRuleFn = useServerFn(generateFolderAiRule);
   const generateFromLabelFn = useServerFn(generateFolderAiRuleFromLabel);
   const [local, setLocal] = useState(folder);
-  const [tab, setTab] = useState("settings");
+  const [tab, setTab] = useState("rules");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [newF, setNewF] = useState({ field: "from", op: "contains", value: "" });
   const [learning, setLearning] = useState(false);

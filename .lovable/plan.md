@@ -1,66 +1,54 @@
-# Fix the game + level up the graphics
+## Goal
 
-## The real bug (why bullets vanish at the edges)
+Make the folder editor's cluttered single "Settings" tab cleaner by splitting it into focused sub-tabs and moving rarely-used power settings behind an "Advanced" disclosure — no functionality removed.
 
-When we widened the field from 100 to 160 units, one line in the game loop was
-missed. In `src/lib/invader/useInvaderGame.ts` (player-bullet travel), bullets
-are deleted the instant `b.x >= 102` — the old field's right edge. So any shot
-you fire while the ship is past the center-right is culled on the same frame and
-never appears. That's exactly the "bullets only in the middle" symptom.
+## Current problem
 
-**Fix:** cull against the real field width (`FIELD_W`) instead of the hardcoded
-`102`, so bullets live across the entire widened field.
+Everything lives in one long-scroll `Settings` tab inside `FolderEditor.tsx`: filters + rule groups, Gmail label, AI purpose/rule, learned profile, suggested domains, summaries, a 7-toggle behavior grid, surface-to-inbox, and forward/snooze/confidence inputs — all stacked together. It's hard to scan and find anything.
 
-## Fill edge-to-edge
+## New structure
 
-Today the play surface keeps its aspect ratio and centers, leaving gaps on a
-wide screen. You chose full edge-to-edge fill.
+The folder name / color / priority header and the shared **Save changes** bar stay at the top/bottom (unchanged). The current three top-level tabs (`Settings`, `History`, `Chat`) become five focused tabs:
 
-- Make the SVG viewBox track the container's real aspect ratio (measure the
-  container, keep the world width at `FIELD_W`, extend the vertical view to
-  match) so the field paints corner-to-corner with no bars and no distortion.
-- Anchor the player lane and bunkers to the bottom of the visible area so
-  nothing important gets pushed off-screen at wide/short sizes.
-- Extend the starfield and background wash to cover the full surface.
+```text
+[ Rules ] [ AI ] [ Automation ] [ History ] [ Chat ]
+```
 
-## Better graphics (all four directions you picked)
+**Rules** — deterministic matching
+- Filters list + add-filter row
+- Match any / Match all toggle and rule-groups switch
+- Suggested domains chips (they add deterministic domain filters, so they belong here)
 
-**Richer glow & lighting**
-- Stronger, layered glow filters on the ship, bullets, enemies, boss and UFO.
-- Brighter bloom cores on explosions; add a soft additive light around the
-  player ship and active shield.
-- Punchier accent colors per enemy type with subtle inner gradients.
+**AI** — how AI sorts and learns
+- Gmail label link
+- Describe purpose → Generate rule
+- AI rule (natural language) + Draft from label / Write with chat
+- Learned profile + Learn/Re-learn/Sync + Keep learning automatically
+- Summaries panel
+- "Rules only (skip AI)" toggle
 
-**More detailed sprites**
-- Redesign enemies from flat rectangles into layered "envelope" bodies with a
-  gradient face, seal/stamp detail, antenna glints and a colored rim light.
-- Give the player ship a soft engine plume and cockpit glow; boss gets plating,
-  eye glow and a cleaner health bar; UFO gets a domed canopy with light beam.
+**Automation** — what happens to matched mail
+- Common toggles up front: Auto-archive, Auto mark-read, Auto-star, Hide from inbox
+- Collapsible **Advanced** section (collapsed by default) holding the power settings:
+  - Beat "Always send to inbox" rules
+  - Cold email folder
+  - Surface to inbox (AI) rule + names/aliases
+  - Auto-forward to
+  - Snooze on arrival (hours)
+  - Min AI confidence (%)
+  - Scan Gmail section
 
-**Livelier background**
-- Deeper multi-layer parallax starfield (3 depths, varied brightness/drift).
-- Slow-drifting nebula gradients + a very subtle horizon grid for depth,
-  tuned low-opacity so it never competes with gameplay.
+**History** and **Chat** — unchanged.
 
-**Juicier effects**
-- Muzzle flash on fire, bullet trails, richer hit sparks and debris on kills.
-- Snappier screen shake with easing, brief flash on player hit, and a small
-  scale-pop on explosions.
-- Respect reduced-motion (the game already checks it) — heavy effects scale
-  down when that's on.
+## Technical details
 
-## Files touched
-- `src/lib/invader/useInvaderGame.ts` — bullet cull bound fix; any bottom-anchor
-  math for player/bunkers.
-- `src/components/inbox/invader/GameField.tsx` — glow filters, redesigned
-  sprites, effects, responsive viewBox.
-- `src/components/inbox/TrackingStandby.tsx` — full-bleed layout + upgraded
-  background/starfield.
+- All edits are confined to `src/components/folders/FolderEditor.tsx` (presentation only). No server functions, DB columns, or business logic change.
+- The existing `local` state and `dirty`/`save()` flow stay as-is. Because settings now span multiple sub-tabs, the dirty **Save changes / Cancel** bar moves out of the tab content to render below the `<Tabs>` block so it's visible regardless of which sub-tab is active.
+- Existing helper components (`SummariesPanel`, `ScanGmailSection`, `HistoryPanel`, `FolderChatPanel`, `RuleGroupEditor`) are reused unchanged — only their placement moves into the new tabs.
+- Add a lightweight collapsible for the Advanced group using the existing shadcn `Collapsible` (or a simple `useState` + `ChevronDown`, matching patterns already in the file).
+- Tab state (`tab`) default becomes `"rules"`; internal `setTab("chat")` calls (e.g. the "Write with AI chat" button) keep working with the new value.
+- Keep all copy in sentence case and existing tooltips/help text intact.
 
-## Verification
-- `tsgo` typecheck.
-- Playwright at a wide viewport: start the game, move the ship to the far right,
-  fire, and confirm bullets render and hit at the right edge; capture a
-  screenshot to review the new visuals edge-to-edge.
+## Out of scope
 
-No engine rules, scoring, or backend logic change — this is spatial + visual.
+No changes to `AddFolderDialog.tsx`, no changes to what any setting does, and no options removed — only regrouped and de-emphasized.
