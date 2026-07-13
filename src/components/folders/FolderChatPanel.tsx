@@ -14,6 +14,7 @@ import {
   proposeFolderChanges,
   applyFolderChanges,
   getFolderChatHistory,
+  discardFolderChanges,
 } from "@/lib/folder-chat.functions";
 import type { Folder } from "./FolderEditor";
 
