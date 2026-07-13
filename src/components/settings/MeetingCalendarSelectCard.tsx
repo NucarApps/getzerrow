@@ -51,10 +51,12 @@ export function MeetingCalendarSelectCard({ accountId, accountEmail }: Props) {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["account-calendars", accountId] });
       qc.invalidateQueries({ queryKey: ["calendar-events", accountId] });
+      qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
     },
   });
 
-  if (!accountId || !recordingOn) return null;
+  if (!accountId) return null;
+
 
   const calendars = data?.calendars ?? [];
   const noCalendar = !!data && !data.calendarAccess;
