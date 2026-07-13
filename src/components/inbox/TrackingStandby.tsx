@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getInvaderStats, submitInvaderScore, type InvaderStats } from "@/lib/invader.functions";
@@ -8,6 +8,35 @@ import { GameField } from "@/components/inbox/invader/GameField";
 import { GameHUD } from "@/components/inbox/invader/GameHUD";
 import { GameOverlay } from "@/components/inbox/invader/GameOverlay";
 
+// Refined, subtle starfield behind the game. Two parallax layers of small,
+// low-opacity dots that drift slowly — clean, minimal, no telemetry chrome.
+const STARS_BACK = [
+  { l: "6%", t: "12%" },
+  { l: "18%", t: "34%" },
+  { l: "29%", t: "8%" },
+  { l: "41%", t: "24%" },
+  { l: "53%", t: "14%" },
+  { l: "64%", t: "38%" },
+  { l: "72%", t: "18%" },
+  { l: "83%", t: "30%" },
+  { l: "91%", t: "10%" },
+  { l: "12%", t: "56%" },
+  { l: "37%", t: "62%" },
+  { l: "58%", t: "52%" },
+  { l: "78%", t: "60%" },
+  { l: "95%", t: "48%" },
+];
+const STARS_FRONT = [
+  { l: "10%", t: "22%" },
+  { l: "25%", t: "48%" },
+  { l: "48%", t: "36%" },
+  { l: "61%", t: "20%" },
+  { l: "70%", t: "50%" },
+  { l: "88%", t: "40%" },
+  { l: "33%", t: "16%" },
+  { l: "82%", t: "24%" },
+];
+
 /**
  * Inbox empty state — Space Invaders mini-game.
  * Player ship defends against incoming "email" enemies (newsletter / urgent /
@@ -15,36 +44,6 @@ import { GameOverlay } from "@/components/inbox/invader/GameOverlay";
  * combo multiplier, screen shake, daily challenges, and achievements.
  */
 export function TrackingStandby() {
-  // ---- Background telemetry HUD (decorative) ----
-  const epoch = useRef(Date.now());
-  const apogeeRef = useRef(0);
-  const [t, setT] = useState({ downrange: 0, apogee: 0, pitch: 90, alt: 0, vel: 0 });
-  useEffect(() => {
-    const LIFT_DURATION = 22;
-    const tick = () => {
-      const launchT = (Date.now() - epoch.current) / 1000;
-      let alt: number;
-      let vel: number;
-      if (launchT < LIFT_DURATION) {
-        const f = launchT / LIFT_DURATION;
-        alt = +(120 * Math.pow(f, 1.8)).toFixed(1);
-        vel = Math.round(2400 * Math.pow(f, 1.4));
-      } else {
-        alt = +(t.alt + Math.random() * 0.12).toFixed(1);
-        vel = t.vel + Math.floor((Math.random() - 0.5) * 2);
-      }
-      if (alt > apogeeRef.current) apogeeRef.current = alt;
-      const sinceLift = Math.max(0, launchT - LIFT_DURATION);
-      const downrange = Math.max(0, Math.round((vel * sinceLift) / 1000));
-      const pitch = Math.max(25, 90 - Math.min(65, sinceLift * 1.2));
-      setT({ downrange, apogee: apogeeRef.current, pitch, alt, vel });
-    };
-    tick();
-    const id = window.setInterval(tick, 600);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // ---- Game ----
   const {
     state,
@@ -114,75 +113,38 @@ export function TrackingStandby() {
         .thruster { transform-origin:center top; animation: thruster .12s linear infinite; }
         @keyframes invuln { 0%,100%{opacity:.25} 50%{opacity:1} }
         .invuln { animation: invuln .12s linear infinite; }
-        @keyframes powerup-bob { 0%,100%{transform:translateY(-.4px)} 50%{transform:translateY(.4px)} }
-        .powerup { animation: powerup-bob 1.1s ease-in-out infinite; }
-        @keyframes star-drift { from{transform:translateY(0)} to{transform:translateY(8px)} }
-        .star-layer { animation: star-drift 6s linear infinite alternate; }
+        @keyframes zerrow-star-drift { from{transform:translateY(-6px)} to{transform:translateY(6px)} }
+        .zerrow-stars-back { animation: zerrow-star-drift 14s ease-in-out infinite alternate; }
+        .zerrow-stars-front { animation: zerrow-star-drift 9s ease-in-out infinite alternate; }
+        .zerrow-star { position:absolute; border-radius:9999px; background:#dfe7ff; }
       `}</style>
 
-      {/* Tracking HUD frame */}
+      {/* Clean space backdrop: subtle radial vignette + parallax starfield */}
       <div
-        className="launchpad__viewport is-tracking"
-        style={{ position: "absolute", inset: 0, minHeight: 0 }}
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(120% 90% at 50% 8%, rgba(255,138,61,0.05), transparent 55%), radial-gradient(120% 120% at 50% 120%, rgba(124,196,255,0.04), transparent 60%)",
+        }}
+        aria-hidden="true"
       >
-        <div className="tracking" aria-hidden="true" style={{ opacity: 1 }}>
-          <div className="tracking__sky star-layer">
-            <i style={{ left: "8%", top: "18%" }}></i>
-            <i style={{ left: "22%", top: "42%" }}></i>
-            <i style={{ left: "34%", top: "12%" }}></i>
-            <i style={{ left: "47%", top: "28%" }}></i>
-            <i style={{ left: "58%", top: "8%" }}></i>
-            <i style={{ left: "66%", top: "36%" }}></i>
-            <i style={{ left: "74%", top: "20%" }}></i>
-            <i style={{ left: "86%", top: "32%" }}></i>
-            <i style={{ left: "92%", top: "14%" }}></i>
-            <i style={{ left: "14%", top: "60%" }}></i>
-          </div>
-          <div className="tracking__hud tracking__hud--tl">
-            <span className="tracking__dot"></span>
-            TRACKING · DOWNRANGE
-          </div>
-          <div className="tracking__hud tracking__hud--br">
-            <div className="tele-row">
-              <span className="k">Downrange</span>
-              <span className="v orange">{t.downrange.toLocaleString("en-US")} km</span>
-            </div>
-            <div className="tele-row">
-              <span className="k">Apogee</span>
-              <span className="v">{t.apogee.toFixed(1)} km</span>
-            </div>
-          </div>
-          <div className="tracking__hud tracking__hud--tr">
-            <div className="attitude">
-              <svg viewBox="0 0 40 40" className="attitude__ring">
-                <circle
-                  cx="20"
-                  cy="20"
-                  r="17"
-                  fill="none"
-                  stroke="rgba(255,138,61,.35)"
-                  strokeWidth="1"
-                />
-                <line
-                  x1="3"
-                  y1="20"
-                  x2="37"
-                  y2="20"
-                  stroke="rgba(255,138,61,.25)"
-                  strokeWidth="1"
-                  strokeDasharray="2 2"
-                />
-              </svg>
-              <div
-                className="attitude__needle"
-                style={{ transform: `translate(-50%, -100%) rotate(${90 - t.pitch}deg)` }}
-              ></div>
-            </div>
-            <div className="tele-row">
-              <span className="k">Pitch</span>
-              <span className="v orange">{t.pitch.toFixed(0)}°</span>
-            </div>
-          </div>
+        <div className="zerrow-stars-back absolute inset-0">
+          {STARS_BACK.map((s, i) => (
+            <span
+              key={`sb-${i}`}
+              className="zerrow-star"
+              style={{ left: s.l, top: s.t, width: 1.5, height: 1.5, opacity: 0.35 }}
+            />
+          ))}
+        </div>
+        <div className="zerrow-stars-front absolute inset-0">
+          {STARS_FRONT.map((s, i) => (
+            <span
+              key={`sf-${i}`}
+              className="zerrow-star"
+              style={{ left: s.l, top: s.t, width: 2, height: 2, opacity: 0.55 }}
+            />
+          ))}
         </div>
       </div>
 
@@ -211,7 +173,7 @@ export function TrackingStandby() {
         </button>
       )}
 
-      {/* Centered, constrained gameplay area */}
+      {/* Full-bleed gameplay area */}
       <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
         <GameField
           getLive={getLive}
