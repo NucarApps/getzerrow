@@ -196,6 +196,7 @@ export function FolderChatPanel({
             content: string;
             actions: Action[] | null;
             applied_action_indexes: number[];
+            discarded: boolean;
           }>;
         };
         if (cancelled) return;
@@ -203,7 +204,8 @@ export function FolderChatPanel({
           if (m.role === "user") return { kind: "user", content: m.content };
           const actions = m.actions ?? [];
           const appliedSet = new Set(m.applied_action_indexes ?? []);
-          const wasApplied = actions.length === 0 || appliedSet.size > 0;
+          // A discarded turn is resolved: never re-offer its actions as actionable.
+          const wasApplied = m.discarded || actions.length === 0 || appliedSet.size > 0;
           return {
             kind: "assistant",
             content: m.content,
