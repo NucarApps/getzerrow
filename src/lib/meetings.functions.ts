@@ -75,6 +75,8 @@ export const recordFromLink = createServerFn({ method: "POST" })
         chatMessage: cfg.chatMessage,
         chatResendOnJoin: cfg.chatResendOnJoin,
         imageB64: cfg.imageB64,
+        everyoneLeftTimeoutSec: cfg.autoLeaveEnabled ? cfg.autoLeaveMinutes * 60 : null,
+        inCallNotRecordingTimeoutSec: cfg.autoLeaveEnabled ? cfg.autoLeaveMinutes * 60 : null,
       });
       botId = bot.id;
     } catch (e) {
