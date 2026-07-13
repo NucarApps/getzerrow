@@ -123,6 +123,8 @@ export function MeetingBotCard() {
           botName: botName.trim() || "Zerrow Notetaker",
           chatMessage,
           chatResendOnJoin: resend,
+          autoLeaveEnabled,
+          autoLeaveMinutes,
           avatar: "set",
         },
       });
