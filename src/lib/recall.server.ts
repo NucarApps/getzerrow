@@ -104,6 +104,16 @@ type CreateBotInput = {
   chatResendOnJoin?: boolean;
   /** Base64-encoded JPEG shown as the bot's video tile in the call. */
   imageB64?: string | null;
+  /**
+   * Seconds Recall waits after everyone but the bot has left before the bot
+   * leaves on its own. Omit to keep Recall's default behavior.
+   */
+  everyoneLeftTimeoutSec?: number | null;
+  /**
+   * Seconds Recall waits while in the call but not recording (e.g. stuck in a
+   * waiting room / empty call) before leaving. Omit to keep the default.
+   */
+  inCallNotRecordingTimeoutSec?: number | null;
 };
 
 /**
