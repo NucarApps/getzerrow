@@ -21,6 +21,13 @@ type UpcomingEvent = {
   hangoutLink?: string;
   location?: string;
   description?: string;
+  // Google's category for the entry. "default" is a normal meeting; other
+  // values (outOfOffice, workingLocation, focusTime, birthday, fromGmail)
+  // are not real meetings and can be hidden from the list.
+  eventType?: string;
+  // The event's color, if the user tagged one. 1-11 map to Google's palette;
+  // undefined means the calendar's default color.
+  colorId?: string;
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   conferenceData?: { entryPoints?: ConferenceEntryPoint[] };
@@ -32,6 +39,49 @@ type UpcomingEvent = {
   }>;
   organizer?: { email?: string; displayName?: string; self?: boolean };
 };
+
+/** Per-user preferences for which calendar entries the notetaker shows/records. */
+export type EventFilterPrefs = {
+  /** Google eventType values hidden from the list and never recorded. */
+  hiddenEventTypes: Set<string>;
+  /** Google colorId values the notetaker should not auto-join. */
+  colorSkip: Set<string>;
+};
+
+const DEFAULT_HIDDEN_EVENT_TYPES = ["outOfOffice", "workingLocation", "focusTime", "birthday"];
+
+/**
+ * Load the user's event-type/color capture preferences. Never throws: on any
+ * failure it falls back to hiding the standard non-meeting entry types and
+ * skipping no colors, so listing and auto-join keep working.
+ */
+export async function loadEventFilterPrefs(userId: string): Promise<EventFilterPrefs> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("meeting_bot_settings")
+      .select("hidden_event_types, event_color_skip")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return {
+      hiddenEventTypes: new Set(data?.hidden_event_types ?? DEFAULT_HIDDEN_EVENT_TYPES),
+      colorSkip: new Set(data?.event_color_skip ?? []),
+    };
+  } catch (e) {
+    logError("meeting_event_filter_prefs_load_failed", { userId }, e);
+    return { hiddenEventTypes: new Set(DEFAULT_HIDDEN_EVENT_TYPES), colorSkip: new Set() };
+  }
+}
+
+/** True when an event is a non-meeting entry the user chose to hide. */
+export function isHiddenEventType(event: UpcomingEvent, prefs: EventFilterPrefs): boolean {
+  const t = event.eventType ?? "default";
+  return t !== "default" && prefs.hiddenEventTypes.has(t);
+}
+
+/** True when the notetaker should skip an event because of its color tag. */
+export function isColorSkipped(event: UpcomingEvent, prefs: EventFilterPrefs): boolean {
+  return !!event.colorId && prefs.colorSkip.has(event.colorId);
+}
 
 /**
  * True when the account owner has explicitly declined the event. Google returns
