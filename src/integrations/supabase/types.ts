@@ -1344,6 +1344,8 @@ export type Database = {
       }
       meeting_bot_settings: {
         Row: {
+          auto_leave_enabled: boolean
+          auto_leave_minutes: number
           avatar_updated_at: string | null
           bot_name: string
           chat_message: string
@@ -1353,6 +1355,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          auto_leave_enabled?: boolean
+          auto_leave_minutes?: number
           avatar_updated_at?: string | null
           bot_name?: string
           chat_message?: string
@@ -1362,6 +1366,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          auto_leave_enabled?: boolean
+          auto_leave_minutes?: number
           avatar_updated_at?: string | null
           bot_name?: string
           chat_message?: string
