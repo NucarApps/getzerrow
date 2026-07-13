@@ -419,6 +419,39 @@ export const getFolderChatHistory = createServerFn({ method: "POST" })
     },
   );
 
+// Persist a user's rejection of a proposed assistant turn. Marks the message as
+// discarded so its unapplied actions won't reappear as actionable after reload,
+// and so the model is told not to re-suggest them.
+export const discardFolderChanges = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string; message_id: string }) =>
+    z
+      .object({ folder_id: z.string().uuid(), message_id: z.string().uuid() })
+      .parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean }> => {
+    const { data: folderRow } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id")
+      .eq("id", data.folder_id)
+      .maybeSingle();
+    if (!folderRow || folderRow.user_id !== context.userId) {
+      throw new Error("Folder not found");
+    }
+
+    const { error } = await supabaseAdmin
+      .from("folder_chat_messages")
+      .update({ discarded: true })
+      .eq("id", data.message_id)
+      .eq("folder_id", data.folder_id)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+
+
+
 
 
 type ApplyResultItem = {
