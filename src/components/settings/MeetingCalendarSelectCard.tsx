@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
-  getAutoRecordStatus,
   listAccountCalendars,
   saveCalendarSelections,
   type AccountCalendar,
@@ -15,23 +14,15 @@ type Props = { accountId: string | null; accountEmail: string | null };
 
 export function MeetingCalendarSelectCard({ accountId, accountEmail }: Props) {
   const qc = useQueryClient();
-  const getStatus = useServerFn(getAutoRecordStatus);
   const listCalendars = useServerFn(listAccountCalendars);
   const saveSelections = useServerFn(saveCalendarSelections);
-
-  const { data: status } = useQuery({
-    queryKey: ["auto-record", accountId],
-    queryFn: () => getStatus({ data: { accountId: accountId! } }),
-    enabled: !!accountId,
-  });
-
-  const recordingOn = !!status?.enabled;
 
   const { data, isLoading } = useQuery({
     queryKey: ["account-calendars", accountId],
     queryFn: () => listCalendars({ data: { accountId: accountId! } }),
-    enabled: !!accountId && recordingOn,
+    enabled: !!accountId,
   });
+
 
   const mutation = useMutation({
     mutationFn: (calendars: AccountCalendar[]) =>
