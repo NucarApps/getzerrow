@@ -18,6 +18,9 @@ export type CardData = {
   region?: string | null;
   postal_code?: string | null;
   country?: string | null;
+  avatar_url?: string | null;
+  cover_url?: string | null;
+  theme?: string | null;
 };
 
 function esc(s: string | null | undefined): string {
