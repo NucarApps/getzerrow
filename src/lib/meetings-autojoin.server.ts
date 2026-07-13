@@ -84,6 +84,14 @@ export function isColorSkipped(event: UpcomingEvent, prefs: EventFilterPrefs): b
 }
 
 /**
+ * True when an event is all-day. Google returns `start.date` (no time) for
+ * all-day entries and `start.dateTime` for timed meetings.
+ */
+export function isAllDayEvent(event: UpcomingEvent): boolean {
+  return !event.start?.dateTime;
+}
+
+/**
  * True when the account owner has explicitly declined the event. Google returns
  * the owner's RSVP on the attendee entry marked `self`. Events where the owner
  * isn't listed as an attendee (e.g. they're only the organizer) count as not
@@ -253,7 +261,7 @@ export async function listUpcomingCalendarEventsForAccount(
 ): Promise<UpcomingCalendarEvent[]> {
   const prefs = await loadEventFilterPrefs(userId);
   const events = (await fetchEventsInWindow(accountId, LIST_LOOKAHEAD_MINUTES)).filter(
-    (e) => !isHiddenEventType(e, prefs),
+    (e) => !isHiddenEventType(e, prefs) && !isAllDayEvent(e) && !isColorSkipped(e, prefs),
   );
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
@@ -350,7 +358,7 @@ export async function listCalendarEventsWindow(
   const prefs = await loadEventFilterPrefs(userId);
   const events = (
     await fetchEventsInWindow(accountId, daysAhead * 24 * 60, daysBack * 24 * 60)
-  ).filter((e) => !isHiddenEventType(e, prefs));
+  ).filter((e) => !isHiddenEventType(e, prefs) && !isAllDayEvent(e) && !isColorSkipped(e, prefs));
 
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);

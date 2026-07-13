@@ -123,9 +123,9 @@ export function MeetingEventFilterCard() {
         </div>
 
         <div>
-          <p className="text-sm font-medium text-foreground">Record by event color</p>
+          <p className="text-sm font-medium text-foreground">Hide by event color</p>
           <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
-            Turn a color off and the notetaker won't auto-join meetings you've tagged that color.
+            Turn a color off and those events are hidden from your upcoming list and never recorded.
           </p>
           <ul className="divide-y divide-border">
             {EVENT_COLORS.map((c) => (
