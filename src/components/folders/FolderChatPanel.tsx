@@ -435,7 +435,7 @@ export function FolderChatPanel({
                           size="sm"
                           variant="ghost"
                           className="h-7"
-                          onClick={() => discardTurn(i)}
+                          onClick={() => void discardTurn(i)}
                           disabled={applyingIndex !== null}
                         >
                           <X className="mr-1 h-3.5 w-3.5" />
