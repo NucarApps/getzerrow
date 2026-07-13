@@ -84,6 +84,14 @@ export function isColorSkipped(event: UpcomingEvent, prefs: EventFilterPrefs): b
 }
 
 /**
+ * True when an event is all-day. Google returns `start.date` (no time) for
+ * all-day entries and `start.dateTime` for timed meetings.
+ */
+export function isAllDayEvent(event: UpcomingEvent): boolean {
+  return !event.start?.dateTime;
+}
+
+/**
  * True when the account owner has explicitly declined the event. Google returns
  * the owner's RSVP on the attendee entry marked `self`. Events where the owner
  * isn't listed as an attendee (e.g. they're only the organizer) count as not
