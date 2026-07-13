@@ -416,28 +416,24 @@ ${sigLines}
 
 — Shared from Zerrow`;
 
-  const addressRow =
-    addressLines.length > 0
-      ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px;vertical-align:top">Address</td><td style="padding:2px 8px;white-space:pre-line">${escapeHtml(addressLines.join("\n"))}</td></tr>`
-      : "";
+  const intro = `${args.note?.trim() ? `${args.note.trim()}\n\n` : ""}I'm sharing ${displayName}'s contact info with you.`;
 
-  const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#111;line-height:1.5">
-    ${args.note?.trim() ? `<p style="white-space:pre-wrap">${escapeHtml(args.note.trim())}</p>` : ""}
-    <p>I'm sharing <strong>${escapeHtml(displayName)}</strong>'s contact info with you.</p>
-    <table style="border-collapse:collapse;margin:16px 0">
-      ${c.name ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Name</td><td style="padding:2px 8px"><strong>${escapeHtml(c.name)}</strong></td></tr>` : ""}
-      ${c.title ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Title</td><td style="padding:2px 8px">${escapeHtml(c.title)}</td></tr>` : ""}
-      ${c.company ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Company</td><td style="padding:2px 8px">${escapeHtml(c.company)}</td></tr>` : ""}
-      ${c.phone ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Phone</td><td style="padding:2px 8px">${escapeHtml(c.phone)}</td></tr>` : ""}
-      ${c.email ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Email</td><td style="padding:2px 8px"><a href="mailto:${escapeHtml(c.email)}">${escapeHtml(c.email)}</a></td></tr>` : ""}
-      ${c.website ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Website</td><td style="padding:2px 8px"><a href="${escapeHtml(c.website)}">${escapeHtml(c.website)}</a></td></tr>` : ""}
-      ${c.linkedin ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">LinkedIn</td><td style="padding:2px 8px"><a href="${escapeHtml(c.linkedin)}">${escapeHtml(c.linkedin)}</a></td></tr>` : ""}
-      ${c.twitter ? `<tr><td style="padding:2px 8px;color:#666;font-size:12px">Twitter / X</td><td style="padding:2px 8px"><a href="${escapeHtml(c.twitter)}">${escapeHtml(c.twitter)}</a></td></tr>` : ""}
-      ${addressRow}
-    </table>
-    <p style="color:#888;font-size:12px">A .vcf file is attached — open it on your phone to add them to contacts.</p>
-    <p style="color:#aaa;font-size:11px">Shared from Zerrow</p>
-  </div>`;
+  const htmlBody = renderCardEmailHtml({
+    card: {
+      name: c.name,
+      title: c.title,
+      company: c.company,
+      email: c.email,
+      phone: c.phone,
+      website: c.website,
+      linkedin: c.linkedin,
+      twitter: c.twitter,
+    },
+    intro,
+    attachmentNote: "A .vcf file is attached - open it on your phone to add them to contacts.",
+    footerNote: "Shared with Zerrow",
+    addressLines,
+  });
 
   const boundaryAlt = `alt_${Math.random().toString(36).slice(2)}`;
   const boundaryMixed = `mix_${Math.random().toString(36).slice(2)}`;
