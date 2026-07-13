@@ -742,6 +742,8 @@ export function useInvaderGame(): UseInvaderGameResult {
         } else {
           bulletsRef.current.push({ id: newId(idRef), x: px, y: y0, vx: 0, pierce });
         }
+        // Muzzle flash — a few short-lived sparks at the barrel.
+        emitParticles(particlesRef.current, idRef, px, y0, "#ffe0b0", 3, 10, 140);
         playerCooldownRef.current = cooldown;
         sfx.pew();
       }
@@ -754,7 +756,7 @@ export function useInvaderGame(): UseInvaderGameResult {
           const b = arr[i];
           b.x += (b.vx ?? 0) * dts;
           b.y -= BULLET_SPEED * dts;
-          if (b.y > -2 && b.x > -2 && b.x < 102) arr[w++] = b;
+          if (b.y > -2 && b.x > -2 && b.x < FIELD_W + 2) arr[w++] = b;
         }
         arr.length = w;
         if (arr.length > MAX_PLAYER_BULLETS) arr.splice(0, arr.length - MAX_PLAYER_BULLETS);

@@ -1,70 +1,66 @@
-# Widen the inbox game & refine its look
+# Fix the game + level up the graphics
 
-Make the Space-Invaders empty-state game (`TrackingStandby`) full-bleed widescreen, drop the muddy brown "tracking" arc backdrop, and give the sprites/effects a refined, minimal polish that matches Zerrow's UI. Gameplay balance is retuned to fit the wider field.
+## The real bug (why bullets vanish at the edges)
 
-## What changes for you
+When we widened the field from 100 to 160 units, one line in the game loop was
+missed. In `src/lib/invader/useInvaderGame.ts` (player-bullet travel), bullets
+are deleted the instant `b.x >= 102` — the old field's right edge. So any shot
+you fire while the ship is past the center-right is culled on the same frame and
+never appears. That's exactly the "bullets only in the middle" symptom.
 
-- The game fills the whole inbox area edge-to-edge instead of a narrow ~900px 4:3 box in the middle.
-- The brown semicircle arc and the Downrange / Apogee / Pitch telemetry readouts are removed. Behind the game is a clean dark space background with a subtle, slow-drifting starfield.
-- Enemies (envelopes), bullets, bunkers, explosions, and the player ship get a cleaner look with soft glow, smoother particles, and crisper shapes — polished but understated.
-- The ship moves across a wider lane, enemy formations spread wider, and bunkers/UFO/boss/spawns are repositioned so the wider field plays well.
+**Fix:** cull against the real field width (`FIELD_W`) instead of the hardcoded
+`102`, so bullets live across the entire widened field.
 
-## The widescreen field
+## Fill edge-to-edge
 
-Today the world is a fixed 100×100 coordinate space rendered in a `max-w-[900px]`, 4:3 box, so on wide screens it letterboxes into a narrow square. The fix introduces a wider world (160×100, i.e. 16:10) and remaps every hard-coded horizontal number to it, then lets the container fill the available space.
+Today the play surface keeps its aspect ratio and centers, leaving gaps on a
+wide screen. You chose full edge-to-edge fill.
 
-```text
-Before:  [   ████ 4:3 900px ████   ]   <- narrow, centered, brown arc behind
-After:   [████████ 16:10 full-bleed ████████]  <- edge to edge, clean bg
-```
+- Make the SVG viewBox track the container's real aspect ratio (measure the
+  container, keep the world width at `FIELD_W`, extend the vertical view to
+  match) so the field paints corner-to-corner with no bars and no distortion.
+- Anchor the player lane and bunkers to the bottom of the visible area so
+  nothing important gets pushed off-screen at wide/short sizes.
+- Extend the starfield and background wash to cover the full surface.
 
-## Backdrop
+## Better graphics (all four directions you picked)
 
-- Remove the decorative `.tracking` block (arc + telemetry HUD) from `TrackingStandby.tsx` and the telemetry ticker `useEffect` that only fed it.
-- Replace with a clean dark background plus a refined, subtle starfield layer (small, low-opacity, slow parallax drift).
+**Richer glow & lighting**
+- Stronger, layered glow filters on the ship, bullets, enemies, boss and UFO.
+- Brighter bloom cores on explosions; add a soft additive light around the
+  player ship and active shield.
+- Punchier accent colors per enemy type with subtle inner gradients.
 
-## Refined visuals & effects
+**More detailed sprites**
+- Redesign enemies from flat rectangles into layered "envelope" bodies with a
+  gradient face, seal/stamp detail, antenna glints and a colored rim light.
+- Give the player ship a soft engine plume and cockpit glow; boss gets plating,
+  eye glow and a cleaner health bar; UFO gets a domed canopy with light beam.
 
-- Add reusable SVG filters (soft outer glow / faint bloom) and use design tokens where possible instead of scattered hex values.
-- Enemies: consistent, cleaner envelope glyph per kind with a subtle colored glow; keep the urgent "!" and phishing zig-zag.
-- Bullets: thin glowing rounded shots with a faint trail; enemy bullets get a matching soft glow.
-- Bunkers: rounded, refined blocks that read clearly on the dark bg.
-- Explosions: smoother expanding ring with eased fade + a few spark particles instead of the current stiff 6-dot ring.
-- Player ship: subtle glow, refined thruster, cleaner shield ring.
-- Floating score text and power-ups: lighter, more legible styling.
+**Livelier background**
+- Deeper multi-layer parallax starfield (3 depths, varied brightness/drift).
+- Slow-drifting nebula gradients + a very subtle horizon grid for depth,
+  tuned low-opacity so it never competes with gameplay.
 
-## Gameplay tuning for the wider field
+**Juicier effects**
+- Muzzle flash on fire, bullet trails, richer hit sparks and debris on kills.
+- Snappier screen shake with easing, brief flash on player hit, and a small
+  scale-pop on explosions.
+- Respect reduced-motion (the game already checks it) — heavy effects scale
+  down when that's on.
 
-Spacing, speeds, and spawn ranges are scaled to the 160-wide world so it feels balanced rather than empty: ship speed and clamp bounds, enemy column spacing, formation start/bounce bounds, bunker positions (spread across the width, likely one extra bunker), UFO travel path, boss start/patrol, and power-up drift stay within the new bounds.
+## Files touched
+- `src/lib/invader/useInvaderGame.ts` — bullet cull bound fix; any bottom-anchor
+  math for player/bunkers.
+- `src/components/inbox/invader/GameField.tsx` — glow filters, redesigned
+  sprites, effects, responsive viewBox.
+- `src/components/inbox/TrackingStandby.tsx` — full-bleed layout + upgraded
+  background/starfield.
 
----
+## Verification
+- `tsgo` typecheck.
+- Playwright at a wide viewport: start the game, move the ship to the far right,
+  fire, and confirm bullets render and hit at the right edge; capture a
+  screenshot to review the new visuals edge-to-edge.
 
-## Technical details
-
-**`src/lib/invader/engine.ts`**
-- Add `FIELD_W = 160`, `FIELD_CX = 80` (keep `FIELD_H = 100`).
-- `spawnBoss`: `x: 50` → `FIELD_CX`.
-- `spawnBunkers`: replace `xs = [20,50,80]` with a wider spread (e.g. 4 bunkers at ~`[26,60,100,134]`) proportional to `FIELD_W`.
-- Widen `COL_GAP` slightly and/or keep, so formations use more of the width.
-- Leave `formationBounds`, `hitBunker`, scoring pure logic intact (they already derive from constants).
-
-**`src/lib/invader/useInvaderGame.ts`**
-- `playerXRef` start `50` → `FIELD_CX`; player clamp `px > 94` → `FIELD_W - 6`, and the lower `px < 6` bound stays.
-- `formationXRef` start/reset `10` → a centered origin derived from `FIELD_W` and current cols.
-- Formation bounce bounds (`2` and `98`) → `2` and `FIELD_W - 2`.
-- UFO spawn x / travel and any `50`/`100` horizontal literals → `FIELD_CX` / `FIELD_W`.
-- Return values unchanged in shape.
-
-**`src/components/inbox/invader/GameField.tsx`**
-- `viewBox="0 0 100 100"` → `0 0 ${FIELD_W} 100`; horizon line/rect width `100` → `FIELD_W`.
-- Container: drop `max-w-[900px]` + `aspectRatio:"4 / 3"`; use full width/height with `aspectRatio: "16 / 10"` (or `FIELD_W/100`) so it fills the inbox area with no letterbox; ship stretch compensation stays and self-normalizes.
-- Add `<defs>` glow filters; restyle enemies, bullets, bunkers, bursts, particles, ship, powerups, floats per the refined-minimal direction.
-
-**`src/components/inbox/TrackingStandby.tsx`**
-- Remove the `.tracking` JSX backdrop block and the telemetry `useEffect`/state; keep the game, HUD, overlay, pause and touch controls.
-- Add a lightweight refined starfield background.
-
-**Verification**
-- `tsgo` typecheck, then drive the running preview with Playwright at a wide viewport to confirm full-bleed layout, no brown arc, and that the ship/enemies/bunkers stay within bounds; capture a screenshot to confirm the refined look.
-
-No backend, data, or gameplay-logic-rule changes beyond spatial tuning; filter engine and score submission are untouched.
+No engine rules, scoring, or backend logic change — this is spatial + visual.

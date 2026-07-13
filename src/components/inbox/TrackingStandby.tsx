@@ -8,35 +8,6 @@ import { GameField } from "@/components/inbox/invader/GameField";
 import { GameHUD } from "@/components/inbox/invader/GameHUD";
 import { GameOverlay } from "@/components/inbox/invader/GameOverlay";
 
-// Refined, subtle starfield behind the game. Two parallax layers of small,
-// low-opacity dots that drift slowly — clean, minimal, no telemetry chrome.
-const STARS_BACK = [
-  { l: "6%", t: "12%" },
-  { l: "18%", t: "34%" },
-  { l: "29%", t: "8%" },
-  { l: "41%", t: "24%" },
-  { l: "53%", t: "14%" },
-  { l: "64%", t: "38%" },
-  { l: "72%", t: "18%" },
-  { l: "83%", t: "30%" },
-  { l: "91%", t: "10%" },
-  { l: "12%", t: "56%" },
-  { l: "37%", t: "62%" },
-  { l: "58%", t: "52%" },
-  { l: "78%", t: "60%" },
-  { l: "95%", t: "48%" },
-];
-const STARS_FRONT = [
-  { l: "10%", t: "22%" },
-  { l: "25%", t: "48%" },
-  { l: "48%", t: "36%" },
-  { l: "61%", t: "20%" },
-  { l: "70%", t: "50%" },
-  { l: "88%", t: "40%" },
-  { l: "33%", t: "16%" },
-  { l: "82%", t: "24%" },
-];
-
 /**
  * Inbox empty state — Space Invaders mini-game.
  * Player ship defends against incoming "email" enemies (newsletter / urgent /
@@ -113,40 +84,7 @@ export function TrackingStandby() {
         .thruster { transform-origin:center top; animation: thruster .12s linear infinite; }
         @keyframes invuln { 0%,100%{opacity:.25} 50%{opacity:1} }
         .invuln { animation: invuln .12s linear infinite; }
-        @keyframes zerrow-star-drift { from{transform:translateY(-6px)} to{transform:translateY(6px)} }
-        .zerrow-stars-back { animation: zerrow-star-drift 14s ease-in-out infinite alternate; }
-        .zerrow-stars-front { animation: zerrow-star-drift 9s ease-in-out infinite alternate; }
-        .zerrow-star { position:absolute; border-radius:9999px; background:#dfe7ff; }
       `}</style>
-
-      {/* Clean space backdrop: subtle radial vignette + parallax starfield */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(120% 90% at 50% 8%, rgba(255,138,61,0.05), transparent 55%), radial-gradient(120% 120% at 50% 120%, rgba(124,196,255,0.04), transparent 60%)",
-        }}
-        aria-hidden="true"
-      >
-        <div className="zerrow-stars-back absolute inset-0">
-          {STARS_BACK.map((s, i) => (
-            <span
-              key={`sb-${i}`}
-              className="zerrow-star"
-              style={{ left: s.l, top: s.t, width: 1.5, height: 1.5, opacity: 0.35 }}
-            />
-          ))}
-        </div>
-        <div className="zerrow-stars-front absolute inset-0">
-          {STARS_FRONT.map((s, i) => (
-            <span
-              key={`sf-${i}`}
-              className="zerrow-star"
-              style={{ left: s.l, top: s.t, width: 2, height: 2, opacity: 0.55 }}
-            />
-          ))}
-        </div>
-      </div>
 
       <GameHUD
         level={state.level}
