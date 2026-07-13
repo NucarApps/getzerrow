@@ -54,6 +54,41 @@ function computeViewBox(w: number, h: number) {
   return { minX: 0, minY: FIELD_H - vbH, vbW, vbH };
 }
 
+// Deterministic multi-layer starfield spread across the widest plausible
+// viewBox. Three depths: far (dim, tiny), mid, near (bright, larger). Drawn
+// inside the SVG so it stays world-aligned and fills the extended background.
+type Star = { x: number; y: number; r: number; base: number; depth: number };
+const STARS: Star[] = (() => {
+  let s = 0x9e3779b9;
+  const rand = () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const out: Star[] = [];
+  const layers = [
+    { count: 70, r: 0.18, base: 0.3, depth: 3 },
+    { count: 45, r: 0.28, base: 0.5, depth: 6 },
+    { count: 24, r: 0.42, base: 0.75, depth: 10 },
+  ];
+  for (const l of layers) {
+    for (let i = 0; i < l.count; i++) {
+      out.push({
+        x: -90 + rand() * (FIELD_W + 180),
+        y: -50 + rand() * (FIELD_H + 50),
+        r: l.r,
+        base: l.base,
+        depth: l.depth,
+      });
+    }
+  }
+  return out;
+})();
+
+
+
 function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovingHint }: Props) {
   // Force re-render on each engine frame via a subscription rather than a
   // parent re-render. Cheap counter, batched by React.
