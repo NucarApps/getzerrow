@@ -84,40 +84,8 @@ export function TrackingStandby() {
         .thruster { transform-origin:center top; animation: thruster .12s linear infinite; }
         @keyframes invuln { 0%,100%{opacity:.25} 50%{opacity:1} }
         .invuln { animation: invuln .12s linear infinite; }
-        @keyframes zerrow-star-drift { from{transform:translateY(-6px)} to{transform:translateY(6px)} }
-        .zerrow-stars-back { animation: zerrow-star-drift 14s ease-in-out infinite alternate; }
-        .zerrow-stars-front { animation: zerrow-star-drift 9s ease-in-out infinite alternate; }
-        .zerrow-star { position:absolute; border-radius:9999px; background:#dfe7ff; }
       `}</style>
 
-      {/* Clean space backdrop: subtle radial vignette + parallax starfield */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(120% 90% at 50% 8%, rgba(255,138,61,0.05), transparent 55%), radial-gradient(120% 120% at 50% 120%, rgba(124,196,255,0.04), transparent 60%)",
-        }}
-        aria-hidden="true"
-      >
-        <div className="zerrow-stars-back absolute inset-0">
-          {STARS_BACK.map((s, i) => (
-            <span
-              key={`sb-${i}`}
-              className="zerrow-star"
-              style={{ left: s.l, top: s.t, width: 1.5, height: 1.5, opacity: 0.35 }}
-            />
-          ))}
-        </div>
-        <div className="zerrow-stars-front absolute inset-0">
-          {STARS_FRONT.map((s, i) => (
-            <span
-              key={`sf-${i}`}
-              className="zerrow-star"
-              style={{ left: s.l, top: s.t, width: 2, height: 2, opacity: 0.55 }}
-            />
-          ))}
-        </div>
-      </div>
 
       <GameHUD
         level={state.level}
