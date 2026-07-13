@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -70,12 +70,12 @@ import {
   Sparkles,
   Loader2,
   Pencil,
+  Settings,
 } from "lucide-react";
 import {
   UpcomingMeetingsCard,
   type InPersonRecordPrefill,
 } from "@/components/meetings/UpcomingMeetingsCard";
-import { MeetingSettingsDrawer } from "@/components/meetings/MeetingSettingsDrawer";
 import { MeetingSummary } from "@/components/meetings/meeting-summary";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -237,7 +237,18 @@ function MeetingsPage() {
               />
             )}
             <RecordDialog onRecorded={() => qc.invalidateQueries({ queryKey: ["meetings"] })} />
-            <MeetingSettingsDrawer />
+            <Button
+              variant="outline"
+              size="icon"
+              asChild
+              aria-label="Meeting settings"
+              title="Meeting settings"
+              className="h-8 w-8 sm:h-10 sm:w-10"
+            >
+              <Link to="/settings/meetings-recording">
+                <Settings className="h-4 w-4" />
+              </Link>
+            </Button>
           </div>
         </header>
 

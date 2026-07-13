@@ -27,6 +27,7 @@ import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as DotwellKnownAppleAppSiteAssociationRouteImport } from './routes/[.]well-known.apple-app-site-association'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings.index'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
 import { Route as ApiPublicRecallWebhookRouteImport } from './routes/api/public/recall-webhook'
 import { Route as ApiPublicMeetingRecordingRouteImport } from './routes/api/public/meeting-recording'
@@ -50,6 +51,12 @@ import { Route as ApiMobileMeetingSettingsRouteImport } from './routes/api/mobil
 import { Route as ApiMobileGmailConnectRouteImport } from './routes/api/mobile/gmail-connect'
 import { Route as ApiMobileContactsRouteImport } from './routes/api/mobile/contacts'
 import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
+import { Route as AuthenticatedSettingsMeetingsRecordingRouteImport } from './routes/_authenticated/settings.meetings-recording'
+import { Route as AuthenticatedSettingsMeetingsCalendarRouteImport } from './routes/_authenticated/settings.meetings-calendar'
+import { Route as AuthenticatedSettingsInboxRouteImport } from './routes/_authenticated/settings.inbox'
+import { Route as AuthenticatedSettingsActivityRouteImport } from './routes/_authenticated/settings.activity'
+import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_authenticated/settings.accounts'
+import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings.account'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
@@ -153,6 +160,12 @@ const DotwellKnownAppleAppSiteAssociationRoute =
     id: '/.well-known/apple-app-site-association',
     path: '/.well-known/apple-app-site-association',
     getParentRoute: () => rootRouteImport,
+  } as any)
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
 const AuthenticatedContactsIndexRoute =
   AuthenticatedContactsIndexRouteImport.update({
@@ -279,6 +292,42 @@ const ApiMobileCardRoute = ApiMobileCardRouteImport.update({
   path: '/api/mobile/card',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSettingsMeetingsRecordingRoute =
+  AuthenticatedSettingsMeetingsRecordingRouteImport.update({
+    id: '/meetings-recording',
+    path: '/meetings-recording',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsMeetingsCalendarRoute =
+  AuthenticatedSettingsMeetingsCalendarRouteImport.update({
+    id: '/meetings-calendar',
+    path: '/meetings-calendar',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsInboxRoute =
+  AuthenticatedSettingsInboxRouteImport.update({
+    id: '/inbox',
+    path: '/inbox',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsActivityRoute =
+  AuthenticatedSettingsActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsAccountsRoute =
+  AuthenticatedSettingsAccountsRouteImport.update({
+    id: '/accounts',
+    path: '/accounts',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsAccountRoute =
+  AuthenticatedSettingsAccountRouteImport.update({
+    id: '/account',
+    path: '/account',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedContactsScanRoute =
   AuthenticatedContactsScanRouteImport.update({
     id: '/contacts/scan',
@@ -368,12 +417,18 @@ export interface FileRoutesByFullPath {
   '/meetings': typeof AuthenticatedMeetingsRoute
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
-  '/settings': typeof AuthenticatedSettingsRoute
+  '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
+  '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
+  '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
@@ -397,6 +452,7 @@ export interface FileRoutesByFullPath {
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
@@ -423,12 +479,17 @@ export interface FileRoutesByTo {
   '/meetings': typeof AuthenticatedMeetingsRoute
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
-  '/settings': typeof AuthenticatedSettingsRoute
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
+  '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
+  '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
@@ -452,6 +513,7 @@ export interface FileRoutesByTo {
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
+  '/settings': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
@@ -480,12 +542,18 @@ export interface FileRoutesById {
   '/_authenticated/meetings': typeof AuthenticatedMeetingsRoute
   '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
-  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/_authenticated/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/_authenticated/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/_authenticated/settings/inbox': typeof AuthenticatedSettingsInboxRoute
+  '/_authenticated/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
+  '/_authenticated/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
@@ -509,6 +577,7 @@ export interface FileRoutesById {
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
@@ -543,6 +612,12 @@ export interface FileRouteTypes {
     | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
+    | '/settings/account'
+    | '/settings/accounts'
+    | '/settings/activity'
+    | '/settings/inbox'
+    | '/settings/meetings-calendar'
+    | '/settings/meetings-recording'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
@@ -566,6 +641,7 @@ export interface FileRouteTypes {
     | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/contacts/'
+    | '/settings/'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/hooks/check-folder-retry-alerts'
@@ -592,12 +668,17 @@ export interface FileRouteTypes {
     | '/meetings'
     | '/my-card'
     | '/reports'
-    | '/settings'
     | '/c/$handle'
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
+    | '/settings/account'
+    | '/settings/accounts'
+    | '/settings/activity'
+    | '/settings/inbox'
+    | '/settings/meetings-calendar'
+    | '/settings/meetings-recording'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
@@ -621,6 +702,7 @@ export interface FileRouteTypes {
     | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/contacts'
+    | '/settings'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/hooks/check-folder-retry-alerts'
@@ -654,6 +736,12 @@ export interface FileRouteTypes {
     | '/guides/gmail-reminders'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
+    | '/_authenticated/settings/account'
+    | '/_authenticated/settings/accounts'
+    | '/_authenticated/settings/activity'
+    | '/_authenticated/settings/inbox'
+    | '/_authenticated/settings/meetings-calendar'
+    | '/_authenticated/settings/meetings-recording'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
@@ -677,6 +765,7 @@ export interface FileRouteTypes {
     | '/api/public/meeting-recording'
     | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
+    | '/_authenticated/settings/'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/hooks/check-folder-retry-alerts'
@@ -865,6 +954,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DotwellKnownAppleAppSiteAssociationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/contacts/': {
       id: '/_authenticated/contacts/'
       path: '/contacts'
@@ -1026,6 +1122,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMobileCardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/settings/meetings-recording': {
+      id: '/_authenticated/settings/meetings-recording'
+      path: '/meetings-recording'
+      fullPath: '/settings/meetings-recording'
+      preLoaderRoute: typeof AuthenticatedSettingsMeetingsRecordingRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/meetings-calendar': {
+      id: '/_authenticated/settings/meetings-calendar'
+      path: '/meetings-calendar'
+      fullPath: '/settings/meetings-calendar'
+      preLoaderRoute: typeof AuthenticatedSettingsMeetingsCalendarRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/inbox': {
+      id: '/_authenticated/settings/inbox'
+      path: '/inbox'
+      fullPath: '/settings/inbox'
+      preLoaderRoute: typeof AuthenticatedSettingsInboxRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/activity': {
+      id: '/_authenticated/settings/activity'
+      path: '/activity'
+      fullPath: '/settings/activity'
+      preLoaderRoute: typeof AuthenticatedSettingsActivityRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/accounts': {
+      id: '/_authenticated/settings/accounts'
+      path: '/accounts'
+      fullPath: '/settings/accounts'
+      preLoaderRoute: typeof AuthenticatedSettingsAccountsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/account': {
+      id: '/_authenticated/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/contacts/scan': {
       id: '/_authenticated/contacts/scan'
       path: '/contacts/scan'
@@ -1120,6 +1258,33 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedSettingsRouteChildren {
+  AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
+  AuthenticatedSettingsAccountsRoute: typeof AuthenticatedSettingsAccountsRoute
+  AuthenticatedSettingsActivityRoute: typeof AuthenticatedSettingsActivityRoute
+  AuthenticatedSettingsInboxRoute: typeof AuthenticatedSettingsInboxRoute
+  AuthenticatedSettingsMeetingsCalendarRoute: typeof AuthenticatedSettingsMeetingsCalendarRoute
+  AuthenticatedSettingsMeetingsRecordingRoute: typeof AuthenticatedSettingsMeetingsRecordingRoute
+  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
+}
+
+const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
+  AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
+  AuthenticatedSettingsAccountsRoute: AuthenticatedSettingsAccountsRoute,
+  AuthenticatedSettingsActivityRoute: AuthenticatedSettingsActivityRoute,
+  AuthenticatedSettingsInboxRoute: AuthenticatedSettingsInboxRoute,
+  AuthenticatedSettingsMeetingsCalendarRoute:
+    AuthenticatedSettingsMeetingsCalendarRoute,
+  AuthenticatedSettingsMeetingsRecordingRoute:
+    AuthenticatedSettingsMeetingsRecordingRoute,
+  AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
+}
+
+const AuthenticatedSettingsRouteWithChildren =
+  AuthenticatedSettingsRoute._addFileChildren(
+    AuthenticatedSettingsRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedFoldersRoute: typeof AuthenticatedFoldersRoute
@@ -1127,7 +1292,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedMeetingsRoute: typeof AuthenticatedMeetingsRoute
   AuthenticatedMyCardRoute: typeof AuthenticatedMyCardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
@@ -1140,7 +1305,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMeetingsRoute: AuthenticatedMeetingsRoute,
   AuthenticatedMyCardRoute: AuthenticatedMyCardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
-  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
