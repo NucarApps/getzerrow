@@ -164,6 +164,7 @@ export function FolderChatPanel({
   const proposeFn = useServerFn(proposeFolderChanges);
   const applyFn = useServerFn(applyFolderChanges);
   const getHistoryFn = useServerFn(getFolderChatHistory);
+  const discardFn = useServerFn(discardFolderChanges);
 
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
