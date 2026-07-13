@@ -767,12 +767,12 @@ export function useInvaderGame(): UseInvaderGameResult {
       if (bossRef.current) {
         const boss = bossRef.current;
         boss.x += boss.vx * dts * slowMul * diff.speedMul;
-        if (boss.x < 10) {
-          boss.x = 10;
+        if (boss.x < 16) {
+          boss.x = 16;
           boss.vx = Math.abs(boss.vx);
         }
-        if (boss.x > 90) {
-          boss.x = 90;
+        if (boss.x > FIELD_W - 16) {
+          boss.x = FIELD_W - 16;
           boss.vx = -Math.abs(boss.vx);
         }
         boss.fireCooldown -= dt;
