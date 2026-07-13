@@ -14,6 +14,7 @@ import {
   proposeFolderChanges,
   applyFolderChanges,
   getFolderChatHistory,
+  discardFolderChanges,
 } from "@/lib/folder-chat.functions";
 import type { Folder } from "./FolderEditor";
 
@@ -163,6 +164,7 @@ export function FolderChatPanel({
   const proposeFn = useServerFn(proposeFolderChanges);
   const applyFn = useServerFn(applyFolderChanges);
   const getHistoryFn = useServerFn(getFolderChatHistory);
+  const discardFn = useServerFn(discardFolderChanges);
 
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
@@ -195,6 +197,7 @@ export function FolderChatPanel({
             content: string;
             actions: Action[] | null;
             applied_action_indexes: number[];
+            discarded: boolean;
           }>;
         };
         if (cancelled) return;
@@ -202,7 +205,8 @@ export function FolderChatPanel({
           if (m.role === "user") return { kind: "user", content: m.content };
           const actions = m.actions ?? [];
           const appliedSet = new Set(m.applied_action_indexes ?? []);
-          const wasApplied = actions.length === 0 || appliedSet.size > 0;
+          // A discarded turn is resolved: never re-offer its actions as actionable.
+          const wasApplied = m.discarded || actions.length === 0 || appliedSet.size > 0;
           return {
             kind: "assistant",
             content: m.content,
@@ -313,14 +317,26 @@ export function FolderChatPanel({
     }
   };
 
-  const discardTurn = (turnIndex: number) => {
+  const discardTurn = async (turnIndex: number) => {
+    const turn = turns[turnIndex];
+    if (!turn || turn.kind !== "assistant") return;
+    // Optimistically mark the turn resolved (keep actions so it reads "Dismissed").
     setTurns((prev) =>
       prev.map((t, i) =>
         i === turnIndex && t.kind === "assistant"
-          ? { ...t, actions: [], selected: [], applied: true }
+          ? { ...t, applied: true, appliedAt: undefined }
           : t,
       ),
     );
+    // Persist the rejection so it doesn't reappear after reload.
+    if (turn.messageId) {
+      try {
+        await discardFn({ data: { folder_id: folder.id, message_id: turn.messageId } });
+      } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : "Couldn't discard changes";
+        toast.error(m);
+      }
+    }
   };
 
   return (
@@ -419,7 +435,7 @@ export function FolderChatPanel({
                           size="sm"
                           variant="ghost"
                           className="h-7"
-                          onClick={() => discardTurn(i)}
+                          onClick={() => void discardTurn(i)}
                           disabled={applyingIndex !== null}
                         >
                           <X className="mr-1 h-3.5 w-3.5" />

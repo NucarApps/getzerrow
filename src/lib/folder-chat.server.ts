@@ -120,6 +120,7 @@ function buildPrompt(args: {
   sample: FolderChatSampleEmail[];
   memorySummary?: string;
   appliedLog?: string[];
+  rejectedLog?: string[];
   extraReminder?: string;
 }) {
   const f = args.folder;
@@ -169,6 +170,11 @@ function buildPrompt(args: {
       ? args.appliedLog.map((a) => `    - ${a}`).join("\n")
       : "    (no changes applied yet)";
 
+  const rejectedBlock =
+    args.rejectedLog && args.rejectedLog.length
+      ? args.rejectedLog.map((a) => `    - ${a}`).join("\n")
+      : "    (nothing rejected yet)";
+
   return `You are an assistant that edits the settings of ONE email folder in the user's inbox app. The user describes what they want, and you propose concrete changes to THIS folder only. You DO NOT execute changes — the user approves them in the UI.
 
 You have persistent memory of this folder's chat. Always take the memory summary, the log of already-applied changes, and the current folder settings into account so you never re-propose something that is already in place, and so you stay consistent with earlier decisions.
@@ -186,6 +192,9 @@ ${memoryBlock}
 
 Changes already applied to this folder in past turns:
 ${appliedBlock}
+
+Changes the user explicitly REJECTED in past turns (do NOT propose these again unless the user clearly asks for them anew):
+${rejectedBlock}
 
 Recent conversation (most recent turns, verbatim):
 ${historyBlock}
@@ -387,6 +396,7 @@ export async function proposeFolderChatChanges(args: {
   sample: FolderChatSampleEmail[];
   memorySummary?: string;
   appliedLog?: string[];
+  rejectedLog?: string[];
 }): Promise<FolderChatProposal> {
   try {
     return await callModel(buildPrompt(args));

@@ -210,7 +210,7 @@ export const proposeFolderChanges = createServerFn({ method: "POST" })
 
     const { data: recentRows } = await supabaseAdmin
       .from("folder_chat_messages")
-      .select("role, content, actions, applied_action_indexes")
+      .select("role, content, actions, applied_action_indexes, discarded")
       .eq("folder_id", data.folder_id)
       .order("created_at", { ascending: false })
       .limit(RECENT_TURNS);
@@ -224,15 +224,26 @@ export const proposeFolderChanges = createServerFn({ method: "POST" })
       }));
 
     const appliedLog: string[] = [];
+    const rejectedLog: string[] = [];
     for (const m of recent) {
       if (m.role !== "assistant" || !Array.isArray(m.actions)) continue;
+      const rawActions = m.actions as unknown[];
       const indexes = Array.isArray(m.applied_action_indexes)
         ? (m.applied_action_indexes as number[])
         : [];
       for (const idx of indexes) {
-        const action = (m.actions as unknown[])[idx];
-        const parsed = actionInputSchema.safeParse(action);
+        const parsed = actionInputSchema.safeParse(rawActions[idx]);
         if (parsed.success) appliedLog.push(describeAppliedAction(parsed.data));
+      }
+      // A discarded assistant turn means the user rejected every action it
+      // proposed that was not applied. Record those so the model won't re-suggest them.
+      if (m.discarded) {
+        const appliedSet = new Set(indexes);
+        rawActions.forEach((raw, idx) => {
+          if (appliedSet.has(idx)) return;
+          const parsed = actionInputSchema.safeParse(raw);
+          if (parsed.success) rejectedLog.push(describeAppliedAction(parsed.data));
+        });
       }
     }
 
@@ -252,6 +263,7 @@ export const proposeFolderChanges = createServerFn({ method: "POST" })
       sample,
       memorySummary,
       appliedLog,
+      rejectedLog,
     });
 
     // 7. Persist the assistant reply (with its proposed actions).
@@ -343,6 +355,7 @@ export type StoredChatMessage = {
   content: string;
   actions: FolderChatAction[] | null;
   applied_action_indexes: number[];
+  discarded: boolean;
   created_at: string;
 };
 
@@ -367,7 +380,7 @@ export const getFolderChatHistory = createServerFn({ method: "POST" })
 
       const { data: rows } = await supabaseAdmin
         .from("folder_chat_messages")
-        .select("id, role, content, actions, applied_action_indexes, created_at")
+        .select("id, role, content, actions, applied_action_indexes, discarded, created_at")
         .eq("folder_id", data.folder_id)
         .order("created_at", { ascending: false })
         .limit(HISTORY_DISPLAY_LIMIT);
@@ -391,6 +404,7 @@ export const getFolderChatHistory = createServerFn({ method: "POST" })
             applied_action_indexes: Array.isArray(m.applied_action_indexes)
               ? (m.applied_action_indexes as number[])
               : [],
+            discarded: m.discarded === true,
             created_at: m.created_at,
           };
         });
@@ -404,6 +418,39 @@ export const getFolderChatHistory = createServerFn({ method: "POST" })
       return { messages, summary: stateRow?.summary ?? "" };
     },
   );
+
+// Persist a user's rejection of a proposed assistant turn. Marks the message as
+// discarded so its unapplied actions won't reappear as actionable after reload,
+// and so the model is told not to re-suggest them.
+export const discardFolderChanges = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string; message_id: string }) =>
+    z
+      .object({ folder_id: z.string().uuid(), message_id: z.string().uuid() })
+      .parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean }> => {
+    const { data: folderRow } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id")
+      .eq("id", data.folder_id)
+      .maybeSingle();
+    if (!folderRow || folderRow.user_id !== context.userId) {
+      throw new Error("Folder not found");
+    }
+
+    const { error } = await supabaseAdmin
+      .from("folder_chat_messages")
+      .update({ discarded: true })
+      .eq("id", data.message_id)
+      .eq("folder_id", data.folder_id)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+
+
 
 
 
