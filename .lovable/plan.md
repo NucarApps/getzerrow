@@ -1,58 +1,58 @@
-## Goal
+# Reorganize settings into one grouped Settings hub
 
-Replace the plain text-table card emails with a polished, branded "card" layout that mirrors the public card page (`/c/$handle`) — so what lands in someone's inbox looks like a real digital business card instead of a bare list.
+Turn `/settings` into a single hub with a left-hand grouped nav, and pull the meeting settings out of the crowded drawer into that hub. Fix the per-account card repetition by adding one account switcher per section instead of stacking a card per connected mailbox.
 
-## What it looks like today
-
-`src/lib/cards.server.ts` builds two emails (`sendCardEmail`, `sendContactShareEmail`) as a small `<table>` of grey labels + values and a black button. No header, no avatar, no branding — this is the screenshot.
-
-## New design (email-safe HTML)
-
-A centered ~440px card, built with nested `<table>` layout and fully inline styles (required for Gmail/Outlook/Apple Mail — no external CSS, no fl,ex/grid):
+## Target structure
 
 ```text
-┌────────────────────────────────┐
-│   ▓▓ colored gradient header ▓▓ │   ← theme color band
-│           ( ●  avatar )         │   ← photo, or initials circle
-├────────────────────────────────┤
-│        Chris Dagesse            │   ← name (large)
-│        CEO · Nucar              │   ← title · company
-│        "tagline in italics"     │   ← if present
-│                                 │
-│   ✉  chris@nucar.com            │   ← icon rows (emoji glyphs)
-│   ☎  781-514-7000               │
-│   🌐 www.nucar.com              │
-│                                 │
-│   [   View / save my card   ]   │   ← prominent themed CTA button
-│                                 │
-│   A .vcf is attached — open on  │
-│   your phone to add me.         │
-│   ── Sent with Zerrow ──        │   ← subtle footer
-└────────────────────────────────┘
+Settings
+├─ EMAIL
+│   ├─ Accounts          connected Gmail accounts, sync/backfill
+│   ├─ Inbox filters     always-inbox overrides
+│   └─ Activity          account health, push activity, processing jobs
+├─ MEETINGS
+│   ├─ Recording         notetaker bot, auto-record, record blocklist
+│   └─ Calendar          calendar guard, calendar selection, event filters, upcoming events
+└─ ACCOUNT
+    └─ General           delete account (danger zone)
 ```
 
-Details:
-- **Header band**: solid theme color (with a CSS gradient layered on top for clients that support it; solid `bgcolor` fallback for Outlook). Colors come from a small hex map keyed off the card's `theme` field.
-- **Avatar**: uses `avatar_url` when set (`my_cards.select("*")` already returns it — I'll extend the `CardData` type to include `avatar_url`, `cover_url`, `theme`); otherwise an initials circle in the theme color.
-- **Contact rows**: name, title·company, phone, email (mailto link), website, LinkedIn, Twitter, address — each with a leading emoji glyph (✉ ☎ 🌐 🔗 📍) so it reads as a card, not a spreadsheet. Rows only render when the field exists (same conditional pattern as now).
-- **CTA button**: bulletproof table-cell button (VML-free, rounded, theme accent color) linking to the public card URL.
-- **Footer**: quiet "Sent with Zerrow" line.
-- **Plain-text part** stays as-is (fallback for text-only clients).
+A left rail (on desktop) / top select (on mobile) with the three group headings replaces the current flat 3-tab row. Each item is its own route so it's deep-linkable and each panel loads only its own cards.
 
-## Scope
+## Navigation & account handling
 
-- Rewrite the `htmlBody` in both `sendCardEmail` and `sendContactShareEmail`, sharing a helper (e.g. `renderCardEmailHtml`) so both stay consistent.
-- Extend the `CardData` type with optional `avatar_url` / `cover_url` / `theme`; the share path passes what it has (no avatar → initials).
-- Add a `THEME_EMAIL_COLORS` hex map mirroring `CARD_THEMES` (Tailwind classes can't be used in email).
-- No changes to MIME assembly, the .vcf attachment, subjects, or send logic.
+- One `Settings` entry in the sidebar (unchanged). It lands on Email › Accounts by default.
+- On the Meetings page, the crowded settings drawer (gear icon) is replaced by a "Meeting settings" button that navigates to Settings › Meetings › Recording. The `MeetingSettingsDrawer` component is retired.
+- **Per-account repetition fix:** Meeting sections that were rendered once per connected mailbox (auto-record, calendar guard, calendar selection, upcoming events) now show a single account switcher at the top of the section, and only the selected account's cards below it. Reuses the existing `AccountPicker` + shared `useAccountSelection` state (already used by the Email tabs), so the chosen mailbox stays consistent as you move between sections.
+
+## Route files (under `src/routes/_authenticated/`)
+
+- `settings.tsx` → convert to a **layout**: page title + grouped settings nav + `<Outlet />`. No content of its own.
+- `settings.index.tsx` → redirect to `/settings/accounts`.
+- `settings.accounts.tsx` → Email › Accounts (moves the "Connected Gmail accounts" card + backfill/sync UI out of today's `settings.tsx`).
+- `settings.inbox.tsx` → Email › Inbox filters (`InboxOverrides` + account picker).
+- `settings.activity.tsx` → Email › Activity (`AccountHealthPanel`, `PubsubActivity`, `ProcessingJobs` + account picker).
+- `settings.meetings-recording.tsx` → Meetings › Recording (`MeetingBotCard`, `MeetingAutoRecordCard`, `MeetingRecordBlocklistCard`).
+- `settings.meetings-calendar.tsx` → Meetings › Calendar (`CalendarGuardCard`, `MeetingCalendarSelectCard`, `MeetingEventFilterCard`, `MeetingCalendarEventsCard`).
+- `settings.account.tsx` → Account › General (the existing `DangerZone`).
+
+All existing setting card components are reused as-is — this is a re-layout, not a rewrite of their logic. Each route keeps `robots: noindex` and gets a section-specific title (e.g. "Meeting recording — Settings — Zerrow").
+
+## New shared component
+
+- `src/components/settings/SettingsNav.tsx` — the grouped nav rail (Email / Meetings / Account headings with items), highlighting the active route via `useRouterState`. Collapses to a `Select` on mobile.
+
+## Meetings page change
+
+- `src/routes/_authenticated/meetings.tsx` — swap `<MeetingSettingsDrawer />` for a `Link`/button to `/settings/meetings-recording`. Remove the now-unused drawer import.
 
 ## Technical notes
 
-- All styling inline; layout via `<table role="presentation">`; no `<style>` blocks, fl,ex, or grid.
-- Widths in px with `max-width`; images with explicit `width`/`alt`; `border:0` on links.
-- Header gradient via inline `background-image` with a solid `background-color`/`bgcolor` fallback so Outlook still shows the band.
-- Emoji glyphs (not SVG/icon fonts) so the "icons" render everywhere without remote images.
+- Flat dot-named route files; each `createFileRoute("/_authenticated/settings/<name>")` string matches its filename.
+- `settings.tsx` becomes a layout whose component returns the nav + `<Outlet />`; the old page body is distributed into the new leaf routes.
+- No server-function, schema, or business-logic changes — purely presentation/organization, consistent with the current cards and `useAccountSelection`.
+- `MeetingSettingsDrawer.tsx` is deleted after its cards are rehomed.
 
-## Verify
+## Out of scope
 
-Render both templates to a static `.html` file in the sandbox and open a screenshot to confirm layout, then typecheck. (No DB or MIME changes to test beyond that.)
+Folder rules stay edited in the inbox (via `EditFolderDialog`) since they're per-folder and contextual; I can add a "Manage folders" shortcut from Settings › Email later if you want it centralized too.
