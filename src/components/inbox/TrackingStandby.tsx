@@ -8,35 +8,6 @@ import { GameField } from "@/components/inbox/invader/GameField";
 import { GameHUD } from "@/components/inbox/invader/GameHUD";
 import { GameOverlay } from "@/components/inbox/invader/GameOverlay";
 
-// Refined, subtle starfield behind the game. Two parallax layers of small,
-// low-opacity dots that drift slowly — clean, minimal, no telemetry chrome.
-const STARS_BACK = [
-  { l: "6%", t: "12%" },
-  { l: "18%", t: "34%" },
-  { l: "29%", t: "8%" },
-  { l: "41%", t: "24%" },
-  { l: "53%", t: "14%" },
-  { l: "64%", t: "38%" },
-  { l: "72%", t: "18%" },
-  { l: "83%", t: "30%" },
-  { l: "91%", t: "10%" },
-  { l: "12%", t: "56%" },
-  { l: "37%", t: "62%" },
-  { l: "58%", t: "52%" },
-  { l: "78%", t: "60%" },
-  { l: "95%", t: "48%" },
-];
-const STARS_FRONT = [
-  { l: "10%", t: "22%" },
-  { l: "25%", t: "48%" },
-  { l: "48%", t: "36%" },
-  { l: "61%", t: "20%" },
-  { l: "70%", t: "50%" },
-  { l: "88%", t: "40%" },
-  { l: "33%", t: "16%" },
-  { l: "82%", t: "24%" },
-];
-
 /**
  * Inbox empty state — Space Invaders mini-game.
  * Player ship defends against incoming "email" enemies (newsletter / urgent /
