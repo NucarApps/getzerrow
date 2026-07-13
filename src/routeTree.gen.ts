@@ -54,6 +54,7 @@ import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as AuthenticatedSettingsInboxRouteImport } from './routes/_authenticated/settings.inbox'
 import { Route as AuthenticatedSettingsActivityRouteImport } from './routes/_authenticated/settings.activity'
 import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_authenticated/settings.accounts'
+import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings.account'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
@@ -307,6 +308,12 @@ const AuthenticatedSettingsAccountsRoute =
     path: '/accounts',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsAccountRoute =
+  AuthenticatedSettingsAccountRouteImport.update({
+    id: '/account',
+    path: '/account',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedContactsScanRoute =
   AuthenticatedContactsScanRouteImport.update({
     id: '/contacts/scan',
@@ -402,6 +409,7 @@ export interface FileRoutesByFullPath {
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
@@ -460,6 +468,7 @@ export interface FileRoutesByTo {
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
@@ -521,6 +530,7 @@ export interface FileRoutesById {
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/_authenticated/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/_authenticated/settings/inbox': typeof AuthenticatedSettingsInboxRoute
@@ -582,6 +592,7 @@ export interface FileRouteTypes {
     | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
+    | '/settings/account'
     | '/settings/accounts'
     | '/settings/activity'
     | '/settings/inbox'
@@ -640,6 +651,7 @@ export interface FileRouteTypes {
     | '/guides/gmail-reminders'
     | '/contacts/$id'
     | '/contacts/scan'
+    | '/settings/account'
     | '/settings/accounts'
     | '/settings/activity'
     | '/settings/inbox'
@@ -700,6 +712,7 @@ export interface FileRouteTypes {
     | '/guides/gmail-reminders'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/scan'
+    | '/_authenticated/settings/account'
     | '/_authenticated/settings/accounts'
     | '/_authenticated/settings/activity'
     | '/_authenticated/settings/inbox'
@@ -1104,6 +1117,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsAccountsRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/account': {
+      id: '/_authenticated/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/contacts/scan': {
       id: '/_authenticated/contacts/scan'
       path: '/contacts/scan'
@@ -1199,6 +1219,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedSettingsRouteChildren {
+  AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
   AuthenticatedSettingsAccountsRoute: typeof AuthenticatedSettingsAccountsRoute
   AuthenticatedSettingsActivityRoute: typeof AuthenticatedSettingsActivityRoute
   AuthenticatedSettingsInboxRoute: typeof AuthenticatedSettingsInboxRoute
@@ -1206,6 +1227,7 @@ interface AuthenticatedSettingsRouteChildren {
 }
 
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
+  AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
   AuthenticatedSettingsAccountsRoute: AuthenticatedSettingsAccountsRoute,
   AuthenticatedSettingsActivityRoute: AuthenticatedSettingsActivityRoute,
   AuthenticatedSettingsInboxRoute: AuthenticatedSettingsInboxRoute,
