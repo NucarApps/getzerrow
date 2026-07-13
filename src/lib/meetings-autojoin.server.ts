@@ -251,10 +251,14 @@ export async function listUpcomingCalendarEventsForAccount(
   accountId: string,
   userId: string,
 ): Promise<UpcomingCalendarEvent[]> {
-  const events = await fetchEventsInWindow(accountId, LIST_LOOKAHEAD_MINUTES);
+  const prefs = await loadEventFilterPrefs(userId);
+  const events = (await fetchEventsInWindow(accountId, LIST_LOOKAHEAD_MINUTES)).filter(
+    (e) => !isHiddenEventType(e, prefs),
+  );
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
   if (eventIds.length === 0) return [];
+
 
   const [{ data: scheduledRows }, { data: excludedRows }] = await Promise.all([
     supabaseAdmin
