@@ -458,7 +458,15 @@ export function FolderEditor({
 
       <Tabs value={tab} onValueChange={setTab} className="mt-4">
         <TabsList>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="rules">
+            <FilterIcon className="mr-1.5 h-3.5 w-3.5" /> Rules
+          </TabsTrigger>
+          <TabsTrigger value="ai">
+            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> AI
+          </TabsTrigger>
+          <TabsTrigger value="automation">
+            <Inbox className="mr-1.5 h-3.5 w-3.5" /> Automation
+          </TabsTrigger>
           <TabsTrigger value="history">
             <History className="mr-1.5 h-3.5 w-3.5" /> History
           </TabsTrigger>
@@ -467,13 +475,13 @@ export function FolderEditor({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="settings" className="mt-4">
+        <TabsContent value="rules" className="mt-4">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
             <FilterIcon className="h-3.5 w-3.5" /> Rules
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Deterministic conditions are checked first. Anything they don't match can still be
-            sorted by AI below.
+            sorted by AI on the AI tab.
           </p>
 
           <div className="mt-3">
@@ -626,8 +634,10 @@ export function FolderEditor({
               </p>
             </div>
           </div>
+        </TabsContent>
 
-          <div className="mt-8 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
+        <TabsContent value="ai" className="mt-4">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
             <Sparkles className="h-3.5 w-3.5" /> AI
           </div>
           <p className="mb-3 mt-1 text-xs text-muted-foreground">
@@ -635,7 +645,6 @@ export function FolderEditor({
           </p>
 
           <div className="grid grid-cols-[auto_1fr] items-center gap-2">
-
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">
               <Link2 className="mr-1 inline h-3 w-3" />
               Gmail label
@@ -733,7 +742,6 @@ export function FolderEditor({
               instructions in conversation.
             </p>
           </div>
-
 
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -873,7 +881,32 @@ export function FolderEditor({
 
           <SummariesPanel folderId={folder.id} />
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <label
+            className="mt-4 flex items-center justify-between rounded-md border border-border p-3 text-sm"
+            title="Only use the rules — never let AI assign emails to this folder"
+          >
+            <div>
+              Rules only
+              <span className="ml-2 text-xs text-muted-foreground">
+                (skip AI fallback for this folder)
+              </span>
+            </div>
+            <Switch
+              checked={local.skip_ai ?? false}
+              onCheckedChange={(v) => toggleBehavior("skip_ai", v, null)}
+            />
+          </label>
+        </TabsContent>
+
+        <TabsContent value="automation" className="mt-4">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
+            <Inbox className="h-3.5 w-3.5" /> Automation
+          </div>
+          <p className="mb-3 mt-1 text-xs text-muted-foreground">
+            Choose what happens to mail once it lands in this folder.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
             <label className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
               Auto-archive
               <Switch
@@ -908,161 +941,156 @@ export function FolderEditor({
                 onCheckedChange={(v) => toggleBehavior("hide_from_inbox", v, "archive")}
               />
             </label>
-            <label
-              className="col-span-2 flex items-center justify-between rounded-md border border-border p-3 text-sm"
-              title="Only use the rules below — never let AI assign emails to this folder"
-            >
-              <div>
-                Rules only
-                <span className="ml-2 text-xs text-muted-foreground">
-                  (skip AI fallback for this folder)
-                </span>
-              </div>
-              <Switch
-                checked={local.skip_ai ?? false}
-                onCheckedChange={(v) => toggleBehavior("skip_ai", v, null)}
-              />
-            </label>
-            <label
-              className="col-span-2 flex items-start justify-between gap-3 rounded-md border border-border p-3 text-sm"
-              title="When this folder's filters match, route the email here even if the sender is on your Always-send-to-inbox list"
-            >
-              <div className="min-w-0">
-                Beat "Always send to inbox" rules
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  When this folder's filters match, route here even if the sender is on your inbox
-                  list.
-                </p>
-              </div>
-              <Switch
-                checked={local.overrides_inbox_override ?? false}
-                onCheckedChange={(v) => toggleBehavior("overrides_inbox_override", v, null)}
-              />
-            </label>
-            <label
-              className="col-span-2 flex items-start justify-between gap-3 rounded-md border border-border p-3 text-sm"
-              title="When the calendar guard is on, people you've met in Google Calendar are never filed into this folder"
-            >
-              <div className="min-w-0">
-                Cold email folder
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  With the calendar guard on, people you've met in Google Calendar are kept in the
-                  inbox instead of landing here.
-                </p>
-              </div>
-              <Switch
-                checked={local.is_cold_email ?? false}
-                onCheckedChange={(v) => toggleBehavior("is_cold_email", v, null)}
-              />
-            </label>
           </div>
 
-          <div className="mt-4 rounded-md border border-border p-3">
-            <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
-              <Inbox className="h-3 w-3" /> Surface to inbox (AI)
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Rules file mail here as usual, but let AI keep the ones meant for you visible in the
-              inbox (still filed in this folder). Leave blank to turn off.
-            </p>
-            <Textarea
-              className="mt-2"
-              rows={2}
-              placeholder="e.g. Keep it in my inbox when it's addressed specifically to me and mentions my name, or needs a personal reply."
-              value={local.surface_ai_rule ?? ""}
-              onChange={(e) => setLocal({ ...local, surface_ai_rule: e.target.value })}
-            />
-            <Label className="mt-3 block text-xs uppercase tracking-wider text-muted-foreground">
-              Names / aliases (optional)
-            </Label>
-            <Input
-              className="mt-1.5"
-              placeholder="e.g. Jane Doe, JD, jane"
-              value={local.surface_names ?? ""}
-              onChange={(e) => setLocal({ ...local, surface_names: e.target.value })}
-            />
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              Matched alongside your connected Gmail address to recognize mail addressed to you.
-            </p>
+          <div className="mt-6">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+              aria-expanded={showAdvanced}
+            >
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
+              />
+              Advanced
+            </button>
+
+            {showAdvanced && (
+              <div className="mt-3 space-y-3">
+                <label
+                  className="flex items-start justify-between gap-3 rounded-md border border-border p-3 text-sm"
+                  title="When this folder's filters match, route the email here even if the sender is on your Always-send-to-inbox list"
+                >
+                  <div className="min-w-0">
+                    Beat "Always send to inbox" rules
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      When this folder's filters match, route here even if the sender is on your
+                      inbox list.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={local.overrides_inbox_override ?? false}
+                    onCheckedChange={(v) => toggleBehavior("overrides_inbox_override", v, null)}
+                  />
+                </label>
+                <label
+                  className="flex items-start justify-between gap-3 rounded-md border border-border p-3 text-sm"
+                  title="When the calendar guard is on, people you've met in Google Calendar are never filed into this folder"
+                >
+                  <div className="min-w-0">
+                    Cold email folder
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      With the calendar guard on, people you've met in Google Calendar are kept in
+                      the inbox instead of landing here.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={local.is_cold_email ?? false}
+                    onCheckedChange={(v) => toggleBehavior("is_cold_email", v, null)}
+                  />
+                </label>
+
+                <div className="rounded-md border border-border p-3">
+                  <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
+                    <Inbox className="h-3 w-3" /> Surface to inbox (AI)
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Rules file mail here as usual, but let AI keep the ones meant for you visible in
+                    the inbox (still filed in this folder). Leave blank to turn off.
+                  </p>
+                  <Textarea
+                    className="mt-2"
+                    rows={2}
+                    placeholder="e.g. Keep it in my inbox when it's addressed specifically to me and mentions my name, or needs a personal reply."
+                    value={local.surface_ai_rule ?? ""}
+                    onChange={(e) => setLocal({ ...local, surface_ai_rule: e.target.value })}
+                  />
+                  <Label className="mt-3 block text-xs uppercase tracking-wider text-muted-foreground">
+                    Names / aliases (optional)
+                  </Label>
+                  <Input
+                    className="mt-1.5"
+                    placeholder="e.g. Jane Doe, JD, jane"
+                    value={local.surface_names ?? ""}
+                    onChange={(e) => setLocal({ ...local, surface_names: e.target.value })}
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Matched alongside your connected Gmail address to recognize mail addressed to
+                    you.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-md border border-border p-3 text-sm">
+                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Auto-forward to
+                    </Label>
+                    <Input
+                      className="mt-1.5 h-8"
+                      type="email"
+                      placeholder="someone@example.com"
+                      value={local.forward_to ?? ""}
+                      onChange={(e) => setLocal({ ...local, forward_to: e.target.value })}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Forwards each matching email once, on arrival.
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-border p-3 text-sm">
+                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Snooze on arrival (hours)
+                    </Label>
+                    <Input
+                      className="mt-1.5 h-8"
+                      type="number"
+                      min={0}
+                      max={720}
+                      value={local.snooze_hours ?? 0}
+                      onChange={(e) =>
+                        setLocal({ ...local, snooze_hours: parseInt(e.target.value) || 0 })
+                      }
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Hides matched emails until the snooze expires.
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-border p-3 text-sm">
+                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Min AI confidence (%)
+                    </Label>
+                    <Input
+                      className="mt-1.5 h-8"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={Math.round((local.min_ai_confidence ?? 0) * 100)}
+                      onChange={(e) =>
+                        setLocal({
+                          ...local,
+                          min_ai_confidence: (parseInt(e.target.value) || 0) / 100,
+                        })
+                      }
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Reject AI assignment below this confidence.
+                    </p>
+                  </div>
+                </div>
+
+                <ScanGmailSection
+                  folder={local}
+                  hasIncludeRules={
+                    filters.some(
+                      (f) =>
+                        f.op !== "not_contains" && f.op !== "not_equals" && f.op !== "domain_in",
+                    ) || !!local.filter_tree
+                  }
+                />
+              </div>
+            )}
           </div>
-
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-md border border-border p-3 text-sm">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                Auto-forward to
-              </Label>
-              <Input
-                className="mt-1.5 h-8"
-                type="email"
-                placeholder="someone@example.com"
-                value={local.forward_to ?? ""}
-                onChange={(e) => setLocal({ ...local, forward_to: e.target.value })}
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Forwards each matching email once, on arrival.
-              </p>
-            </div>
-            <div className="rounded-md border border-border p-3 text-sm">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                Snooze on arrival (hours)
-              </Label>
-              <Input
-                className="mt-1.5 h-8"
-                type="number"
-                min={0}
-                max={720}
-                value={local.snooze_hours ?? 0}
-                onChange={(e) =>
-                  setLocal({ ...local, snooze_hours: parseInt(e.target.value) || 0 })
-                }
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Hides matched emails until the snooze expires.
-              </p>
-            </div>
-            <div className="rounded-md border border-border p-3 text-sm">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                Min AI confidence (%)
-              </Label>
-              <Input
-                className="mt-1.5 h-8"
-                type="number"
-                min={0}
-                max={100}
-                step={5}
-                value={Math.round((local.min_ai_confidence ?? 0) * 100)}
-                onChange={(e) =>
-                  setLocal({ ...local, min_ai_confidence: (parseInt(e.target.value) || 0) / 100 })
-                }
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Reject AI assignment below this confidence.
-              </p>
-            </div>
-          </div>
-
-
-
-
-          <ScanGmailSection
-            folder={local}
-            hasIncludeRules={
-              filters.some(
-                (f) => f.op !== "not_contains" && f.op !== "not_equals" && f.op !== "domain_in",
-              ) || !!local.filter_tree
-            }
-          />
-
-          {dirty && (
-            <div className="mt-4 flex justify-end gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setLocal(folder)}>
-                Cancel
-              </Button>
-              <Button size="sm" onClick={save}>
-                Save changes
-              </Button>
-            </div>
-          )}
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
@@ -1082,6 +1110,17 @@ export function FolderEditor({
           />
         </TabsContent>
       </Tabs>
+
+      {dirty && (
+        <div className="mt-4 flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setLocal(folder)}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={save}>
+            Save changes
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
