@@ -120,6 +120,7 @@ function buildPrompt(args: {
   sample: FolderChatSampleEmail[];
   memorySummary?: string;
   appliedLog?: string[];
+  rejectedLog?: string[];
   extraReminder?: string;
 }) {
   const f = args.folder;
