@@ -68,7 +68,10 @@ export function MeetingSettingsDrawer() {
             </div>
           ))}
 
+          <MeetingEventFilterCard />
+
           <MeetingRecordBlocklistCard />
+
 
           {accounts.map((a) => (
             <MeetingCalendarEventsCard key={a.id} accountId={a.id} accountEmail={a.email_address} />
