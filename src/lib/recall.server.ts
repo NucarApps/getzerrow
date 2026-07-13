@@ -152,6 +152,20 @@ export async function createBot(input: CreateBotInput): Promise<RecallBot> {
     };
   }
 
+  const automaticLeave: Record<string, number> = {};
+  if (typeof input.everyoneLeftTimeoutSec === "number" && input.everyoneLeftTimeoutSec > 0) {
+    automaticLeave.everyone_left_timeout = Math.round(input.everyoneLeftTimeoutSec);
+  }
+  if (
+    typeof input.inCallNotRecordingTimeoutSec === "number" &&
+    input.inCallNotRecordingTimeoutSec > 0
+  ) {
+    automaticLeave.in_call_not_recording_timeout = Math.round(input.inCallNotRecordingTimeoutSec);
+  }
+  if (Object.keys(automaticLeave).length > 0) {
+    body.automatic_leave = automaticLeave;
+  }
+
   return recallFetch<RecallBot>("/bot", { method: "POST", body });
 }
 
