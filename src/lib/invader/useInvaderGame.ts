@@ -742,6 +742,8 @@ export function useInvaderGame(): UseInvaderGameResult {
         } else {
           bulletsRef.current.push({ id: newId(idRef), x: px, y: y0, vx: 0, pierce });
         }
+        // Muzzle flash — a few short-lived sparks at the barrel.
+        emitParticles(particlesRef.current, idRef, px, y0, "#ffe0b0", 3, 10, 140);
         playerCooldownRef.current = cooldown;
         sfx.pew();
       }
