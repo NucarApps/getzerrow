@@ -625,6 +625,7 @@ export type Database = {
           applied_action_indexes: Json
           content: string
           created_at: string
+          discarded: boolean
           folder_id: string
           id: string
           role: string
@@ -636,6 +637,7 @@ export type Database = {
           applied_action_indexes?: Json
           content?: string
           created_at?: string
+          discarded?: boolean
           folder_id: string
           id?: string
           role: string
@@ -647,6 +649,7 @@ export type Database = {
           applied_action_indexes?: Json
           content?: string
           created_at?: string
+          discarded?: boolean
           folder_id?: string
           id?: string
           role?: string
