@@ -936,7 +936,7 @@ export function useInvaderGame(): UseInvaderGameResult {
       if (ufoRef.current) {
         const u = ufoRef.current;
         u.x += u.vx * dts;
-        if (u.x < -8 || u.x > 108) {
+        if (u.x < -8 || u.x > FIELD_W + 8) {
           ufoRef.current = null;
           nextUfoAtRef.current =
             now + UFO_MIN_INTERVAL_MS + Math.random() * (UFO_MAX_INTERVAL_MS - UFO_MIN_INTERVAL_MS);
