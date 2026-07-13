@@ -168,6 +168,8 @@ export function MeetingBotCard() {
       toast.error("Give the bot a name.");
       return;
     }
+    const minutes = Math.min(240, Math.max(5, Math.round(autoLeaveMinutes || 30)));
+    if (minutes !== autoLeaveMinutes) setAutoLeaveMinutes(minutes);
     setSaving(true);
     try {
       await saveSettings({
@@ -176,7 +178,7 @@ export function MeetingBotCard() {
           chatMessage,
           chatResendOnJoin: resend,
           autoLeaveEnabled,
-          autoLeaveMinutes,
+          autoLeaveMinutes: minutes,
         },
       });
       qc.invalidateQueries({ queryKey: ["meeting-bot-settings"] });
