@@ -438,6 +438,7 @@ function InboxPage() {
 
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
+  const markReadFnList = useServerFn(markEmailRead);
   const { selected: selectedFolder, setSelected: setSelectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
