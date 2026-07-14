@@ -124,10 +124,6 @@ export const saveCalendarSelections = createServerFn({ method: "POST" })
     return { saved: rows.length };
   });
 
-
-
-
-
 type UpcomingCalendarEvent = import("../meetings-autojoin.server").UpcomingCalendarEvent;
 
 /**

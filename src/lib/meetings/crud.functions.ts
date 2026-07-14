@@ -166,9 +166,8 @@ export const regenerateMeetingSummary = createServerFn({ method: "POST" })
       throw new Error("No transcript yet — record the meeting first.");
     }
 
-    const { generateMeetingBreakdown, transcriptSegmentsToText } = await import(
-      "../meetings.server"
-    );
+    const { generateMeetingBreakdown, transcriptSegmentsToText } =
+      await import("../meetings.server");
     const { summarizeTranscript } = await import("../recall.server");
     const breakdown = await generateMeetingBreakdown(transcriptSegmentsToText(segments));
     const summary = breakdown ?? summarizeTranscript(segments);
@@ -181,4 +180,3 @@ export const regenerateMeetingSummary = createServerFn({ method: "POST" })
     if (updateError) throw new Error(updateError.message);
     return { summary };
   });
-

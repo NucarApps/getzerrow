@@ -147,8 +147,6 @@ export const stopMeeting = createServerFn({ method: "POST" })
     return { status };
   });
 
-
-
 /**
  * For a finished meeting, fetch a fresh signed recording URL from Recall (the
  * stored one expires) and backfill the transcript/summary if they never
