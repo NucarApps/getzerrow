@@ -60,4 +60,15 @@ describe("isAuthorizedCron", () => {
     const res = unauthorizedResponse();
     expect(res.status).toBe(401);
   });
+
+  it("rejects the Supabase publishable/anon key (regression: must never be an admin gate)", () => {
+    // The publishable key is shipped in the client bundle and provides no
+    // access control. Passing it as a Bearer or x-cron-secret to a cron
+    // endpoint like /api/public/gmail-dlq-replay MUST be rejected — only
+    // operators holding CRON_SECRET may trigger DLQ replays.
+    const anonKey =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aWxjaW5sbmF1anh5a3NmamluIiwicm9sZSI6ImFub24ifQ.fake-sig";
+    expect(isAuthorizedCron(reqWith({ authorization: `Bearer ${anonKey}` }))).toBe(false);
+    expect(isAuthorizedCron(reqWith({ "x-cron-secret": anonKey }))).toBe(false);
+  });
 });
