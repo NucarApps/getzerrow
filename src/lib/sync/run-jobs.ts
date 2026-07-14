@@ -498,6 +498,12 @@ export async function runMessageJobs(
       if (!byAccount.has(p.job.gmail_account_id)) byAccount.set(p.job.gmail_account_id, []);
       byAccount.get(p.job.gmail_account_id)!.push(p);
     }
+    logInfo("queue.batch_ai.start", {
+      run_id: runId,
+      pending: pendingAi.length,
+      accounts: byAccount.size,
+      batch_size: BATCH_SIZE,
+    });
     await Promise.all(
       Array.from(byAccount.entries()).map(async ([aid, items]) => {
         const ctx = contextByAccount.get(aid);
