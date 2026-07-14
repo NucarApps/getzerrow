@@ -62,6 +62,7 @@ function securityHeaders(): Record<string, string> {
     "x-frame-options": "DENY",
     "referrer-policy": "strict-origin-when-cross-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "cross-origin-resource-policy": "same-origin",
   };
 }
 
