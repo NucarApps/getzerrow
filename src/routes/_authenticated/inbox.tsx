@@ -126,7 +126,11 @@ import {
   withoutInbox,
   parseSearchQuery,
 } from "@/lib/email-text";
-import { EmailBodyFrame, EmailBodyInline, hasVisibleHtml } from "@/components/emails/email-body-frame";
+import {
+  EmailBodyFrame,
+  EmailBodyInline,
+  hasVisibleHtml,
+} from "@/components/emails/email-body-frame";
 import { SwipeRow } from "@/components/emails/swipe-row";
 import { TriggeredBy } from "@/components/emails/triggered-by";
 
@@ -136,8 +140,6 @@ export const Route = createFileRoute("/_authenticated/inbox")({
     links: [{ rel: "stylesheet", href: "/zerrow-landing.css" }],
   }),
 });
-
-
 
 type Email = {
   id: string;
@@ -181,10 +183,6 @@ type Folder = {
 };
 
 const PAGE_SIZE = 50;
-
-
-
-
 
 function InboxPage() {
   const qc = useQueryClient();
@@ -2621,4 +2619,3 @@ function ClassifiedChip({ by }: { by: string | null }) {
     </span>
   );
 }
-

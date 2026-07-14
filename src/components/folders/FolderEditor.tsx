@@ -61,7 +61,6 @@ import { ScanGmailSection } from "./editor/folder-scan-gmail-section";
 import type { Folder, Filter, GLabel } from "./editor/types";
 export type { RuleNode, Folder, Filter, GLabel } from "./editor/types";
 
-
 export function FolderEditor({
   folder,
   labels,
@@ -368,8 +367,6 @@ export function FolderEditor({
     }
   }
 
-
-
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -594,7 +591,6 @@ export function FolderEditor({
           </p>
 
           <FolderHealthCard folderId={folder.id} />
-
 
           <div className="grid grid-cols-[auto_1fr] items-center gap-2">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">
