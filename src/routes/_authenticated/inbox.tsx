@@ -1253,6 +1253,38 @@ function InboxPage() {
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
+  // Run an action over every selected email, then report a single summary and
+  // refresh the list once. Individual failures are counted, not fatal.
+  const runBulk = async (
+    verb: string,
+    action: (id: string) => Promise<unknown>,
+    { optimisticRemove = false }: { optimisticRemove?: boolean } = {},
+  ) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    if (optimisticRemove) {
+      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+        prev?.filter((x) => !selectedIds.has(x.id)),
+      );
+    }
+    try {
+      const results = await Promise.allSettled(ids.map((id) => action(id)));
+      const failed = results.filter((r) => r.status === "rejected").length;
+      const ok = ids.length - failed;
+      if (failed === 0) toast.success(`${verb} ${ok} email${ok === 1 ? "" : "s"}`);
+      else toast.warning(`${verb} ${ok}, ${failed} failed`);
+      setSelectedIds(new Set());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Couldn't ${verb.toLowerCase()}`);
+    } finally {
+      setBulkBusy(false);
+      qc.invalidateQueries({ queryKey: ["emails"] });
+    }
+  };
+
+
+
   // The only blocking state is a genuine cold DB read with nothing to paint yet
   // (no in-memory rows and no metadata-cache placeholder). It shows a brief
   // skeleton and never waits on Gmail. An in-flight background sync is signalled
