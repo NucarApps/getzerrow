@@ -323,3 +323,168 @@ export const getFolderRetryMetrics = createServerFn({ method: "GET" })
       recentAlerts,
     };
   });
+
+// ─── Sync job metrics (queue counts, latency, retries, failures) ────────────
+
+export type SyncJobStatusCount = { status: string; count: number };
+
+export type SyncJobDlqRow = {
+  id: string;
+  gmail_message_id: string;
+  from_addr: string | null;
+  subject: string | null;
+  attempt: number;
+  last_error: string | null;
+  updated_at: string;
+};
+
+export type SyncJobMetrics = {
+  // Current queue state (message_jobs rows in flight).
+  counts: {
+    pending: number;
+    running: number;
+    dlq: number;
+    total: number;
+  };
+  // Retry pressure: jobs that have failed at least once and are still queued.
+  retries: {
+    with_attempts: number;
+    max_attempt: number;
+    avg_attempt: number;
+  };
+  // Backlog age — oldest pending row waiting to be claimed.
+  oldest_pending_at: string | null;
+  oldest_pending_age_seconds: number | null;
+  // Throughput proxy — completed jobs are deleted, so successful ingest is
+  // best measured against emails.created_at over the same window.
+  throughput_last_24h: number;
+  // Push-to-visible latency (Pub/Sub publish → DB row) over the last 24h.
+  latency_ms: {
+    count: number;
+    p50: number | null;
+    p95: number | null;
+    p99: number | null;
+  };
+  // Recent DLQ entries — surface the tail so failures are actionable.
+  recent_dlq: SyncJobDlqRow[];
+};
+
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  const idx = Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)));
+  return sorted[idx];
+}
+
+export const getSyncJobMetrics = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<SyncJobMetrics> => {
+    assertAdmin(context.claims);
+
+    const since24h = new Date(Date.now() - 86_400_000).toISOString();
+
+    const [pendingHead, runningHead, dlqHead, retriesRes, oldestRes, throughputHead, latencyRes, dlqRowsRes] =
+      await Promise.all([
+        supabaseAdmin
+          .from("message_jobs")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending"),
+        supabaseAdmin
+          .from("message_jobs")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "running"),
+        supabaseAdmin
+          .from("message_jobs")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "dlq"),
+        supabaseAdmin
+          .from("message_jobs")
+          .select("attempt")
+          .gte("attempt", 1)
+          .neq("status", "dlq")
+          .limit(10000),
+        supabaseAdmin
+          .from("message_jobs")
+          .select("next_run_at")
+          .eq("status", "pending")
+          .order("next_run_at", { ascending: true })
+          .limit(1),
+        supabaseAdmin
+          .from("emails")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", since24h),
+        supabaseAdmin
+          .from("emails")
+          .select("created_at, published_at_ms")
+          .gte("created_at", since24h)
+          .not("published_at_ms", "is", null)
+          .limit(20000),
+        supabaseAdmin
+          .from("message_jobs")
+          .select("id, gmail_message_id, from_addr, subject, attempt, last_error, updated_at")
+          .eq("status", "dlq")
+          .order("updated_at", { ascending: false })
+          .limit(20),
+      ]);
+
+    if (pendingHead.error) throw new Error(pendingHead.error.message);
+    if (runningHead.error) throw new Error(runningHead.error.message);
+    if (dlqHead.error) throw new Error(dlqHead.error.message);
+    if (retriesRes.error) throw new Error(retriesRes.error.message);
+    if (oldestRes.error) throw new Error(oldestRes.error.message);
+    if (throughputHead.error) throw new Error(throughputHead.error.message);
+    if (latencyRes.error) throw new Error(latencyRes.error.message);
+    if (dlqRowsRes.error) throw new Error(dlqRowsRes.error.message);
+
+    const pending = pendingHead.count ?? 0;
+    const running = runningHead.count ?? 0;
+    const dlq = dlqHead.count ?? 0;
+
+    const attempts = (retriesRes.data ?? []).map((r) => Number(r.attempt) || 0);
+    const withAttempts = attempts.length;
+    const maxAttempt = attempts.reduce((m, a) => (a > m ? a : m), 0);
+    const avgAttempt =
+      withAttempts === 0 ? 0 : attempts.reduce((s, a) => s + a, 0) / withAttempts;
+
+    const oldest = oldestRes.data?.[0]?.next_run_at ?? null;
+    const oldestAgeSec = oldest
+      ? Math.max(0, Math.round((Date.now() - new Date(oldest).getTime()) / 1000))
+      : null;
+
+    // Bound latencies to sane values (0..1h) to match get_sync_latency_stats.
+    const latencies: number[] = [];
+    for (const row of latencyRes.data ?? []) {
+      const publishedMs = Number(row.published_at_ms);
+      if (!Number.isFinite(publishedMs) || publishedMs <= 0) continue;
+      const createdMs = new Date(row.created_at).getTime();
+      const lat = createdMs - publishedMs;
+      if (lat >= 0 && lat < 3_600_000) latencies.push(lat);
+    }
+    latencies.sort((a, b) => a - b);
+
+    return {
+      counts: { pending, running, dlq, total: pending + running + dlq },
+      retries: {
+        with_attempts: withAttempts,
+        max_attempt: maxAttempt,
+        avg_attempt: Math.round(avgAttempt * 100) / 100,
+      },
+      oldest_pending_at: oldest,
+      oldest_pending_age_seconds: oldestAgeSec,
+      throughput_last_24h: throughputHead.count ?? 0,
+      latency_ms: {
+        count: latencies.length,
+        p50: percentile(latencies, 0.5),
+        p95: percentile(latencies, 0.95),
+        p99: percentile(latencies, 0.99),
+      },
+      recent_dlq: (dlqRowsRes.data ?? []).map((r) => ({
+        id: r.id,
+        gmail_message_id: r.gmail_message_id,
+        from_addr: r.from_addr ?? null,
+        subject: r.subject ?? null,
+        attempt: Number(r.attempt) || 0,
+        last_error: r.last_error ?? null,
+        updated_at: r.updated_at,
+      })),
+    };
+  });
