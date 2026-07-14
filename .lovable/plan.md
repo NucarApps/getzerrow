@@ -1,51 +1,59 @@
-# Cleanup + capability + accuracy plan
+# Split the two monolith files
 
-You asked for three things at once — less clutter, more capability, fewer mistakes. Several features I'd normally suggest already exist, so this plan only fills the real gaps. It's phased so you can approve/ship one slice at a time.
+`inbox.tsx` (3,096 lines) and `FolderEditor.tsx` (2,236 lines) are the last piece of the earlier cleanup we deferred. This is a **pure extraction refactor** — no behavior, styling, or data-flow changes. Every extracted piece keeps its current props and logic; we only move code into smaller files and import it back.
 
-## What already exists (won't rebuild)
-- **"Why was this filed here?"** — the reading pane already has a collapsible showing the classification reason + an AI-confidence bar.
-- **Multi-select** in the inbox already supports **Re-classify** and **Suggest folder → create**.
-- Emails already store `classification_reason`, `ai_confidence`, `classified_by`, `matched_filter_ids`, `matched_folder_ids`.
-- Folder learning (examples, learned profile, auto-relearn cron, manual-move counter) is in place.
+## Goal
 
----
+- Cut each monolith down to a readable core (target ~900–1,100 lines each).
+- Make each tab / panel independently editable without scrolling a 3,000-line file.
+- Zero user-visible change — verified by typecheck, lint, tests, and a browser smoke test of the inbox and folder editor.
 
-## Phase 1 — More capability: finish bulk actions (small)
-The selection bar only re-classifies or suggests a folder. Add the everyday bulk actions on the same "N selected" bar:
-- **Archive**, **Mark read / unread**, **Move to folder** (reuse existing folder picker), and **Move to inbox**.
-- Wire to existing server fns (`archiveEmail`, `markEmailRead`, `moveEmailToFolder`, `moveEmailToInbox`) run over the selected ids with a single toast summary and one query invalidation.
+## FolderEditor.tsx — extract self-contained helpers
 
-Frontend-only; no new server logic.
+These are already top-level functions taking props, with no closure over the editor's internals. Move each into its own file under a new `src/components/folders/editor/` directory:
 
-## Phase 2 — Fewer mistakes: folder health panel (medium)
-Give each folder a lightweight accuracy/health view so misfiling is visible and fixable.
-- New server fn `getFolderHealth({ folder_id })` returning: total filed, count by `classified_by` (rules vs AI vs manual), avg/low AI confidence count, recent manual corrections (from folder examples / manual moves), and learning status (examples count, last relearn, emails-since-learn).
-- Surface it in `FolderEditor` as a small **Health** section on the AI tab (or a compact card): "X filed · Y by AI · Z low-confidence · last learned 2d ago", with a "Relearn now" button (already exists server-side).
-- Optional: a low-confidence quick-list linking back to those emails for one-click re-file.
+```text
+src/components/folders/editor/
+  folder-history-panel.tsx   <- HistoryPanel + ReasonBlock + matchFilter + RulePatchCard + getReasonMeta + relativeTime
+  folder-summaries-panel.tsx <- SummariesPanel + pad2
+  folder-schedule-form.tsx   <- ScheduleForm
+  folder-rule-group-editor.tsx <- RuleGroupEditor
+  folder-scan-gmail-section.tsx <- ScanGmailSection
+```
 
-This turns the data we already capture into something actionable, which is the main lever for fewer mistakes.
+`FolderEditor.tsx` keeps the core component (header, tab wiring, mutation handlers) and imports these five back. Shared types (`Filter`, `HistoryEmail`, etc.) move to a small `src/components/folders/editor/types.ts` if they're referenced across files. This alone drops `FolderEditor.tsx` to roughly ~900 lines.
 
-## Phase 3 — Less clutter: targeted refactors (medium)
-No behavior changes — just make the giant files maintainable.
-- **Settings boilerplate**: 4 settings routes repeat `AccountPicker` + `useState(scopedEmail)`. Extract a `useScopedAccount()` hook (or a `<ScopedAccountSettings>` wrapper) and reuse across `settings.inbox`, `settings.activity`, `settings.meetings-calendar`, `settings.meetings-recording`.
-- **inbox.tsx is 2,959 lines**: extract self-contained pieces into `src/components/inbox/`: the email list column, the reading pane (`EmailDetail`), the selection/bulk bar, and the "suggest folder" dialog. Keep state ownership in the route; pass props.
-- **FolderEditor.tsx is 2,232 lines**: split each sub-tab (Rules, AI, Automation) into its own file under `src/components/folders/editor/`, keeping the shared `local` state + save bar in the parent.
+Optional second pass (only if the core is still unwieldy): lift each `TabsContent` body (Rules / AI / Automation) into `rules-tab.tsx`, `ai-tab.tsx`, `automation-tab.tsx`, receiving the `local`/`dirty`/`save`/handlers as props. History and Chat tabs already delegate to external components.
 
-Each extraction is mechanical and verifiable by an unchanged UI.
+## inbox.tsx — extract render-only + leaf components
 
----
+`InboxPage` holds the state (queries, `selectedIds`, pagination, realtime effects) and that stays put. We extract the presentational and leaf pieces that already stand alone:
 
-## Suggested order
-1. Phase 1 (fast visible win).
-2. Phase 2 (accuracy — the highest-value item).
-3. Phase 3 (refactors — do incrementally, one file at a time to keep diffs reviewable).
+```text
+src/components/emails/
+  email-body-frame.tsx    <- EmailBodyFrame + EmailBodyInline + hasVisibleHtml
+  swipe-row.tsx           <- SwipeRow
+  triggered-by.tsx        <- TriggeredBy + the "Why this folder?" reason rendering block
+src/lib/
+  email-text.ts           <- decodeEntities + NAMED_ENTITIES + errMsg + parseSearchQuery + withInbox/withoutInbox helpers (pure utils)
+```
 
-## Technical notes
-- Phase 1 & 3 are presentation-only. Phase 2 adds one read-only `createServerFn` in a `*.functions.ts` module, RLS-scoped to `auth.uid()` via `requireSupabaseAuth` — no schema changes needed (aggregates existing columns/tables).
-- Refactors preserve existing `local`/`dirty`/`save()` flow and all query keys; no server or business-logic edits.
+The email-row JSX is currently inline inside `InboxPage`'s map and closes over a lot of handlers; extracting a full `EmailRow` is higher-risk, so it's **out of scope for this pass** unless the core file is still too large afterward. This keeps the refactor low-risk while still moving ~600–800 lines out.
+
+## Constraints / safety
+
+- No logic changes: cut-and-paste bodies verbatim, fix imports only.
+- Follow workspace conventions: kebab-case filenames, named exports (no default exports), PascalCase components.
+- Do the two files in separate edit batches so a failure in one doesn't obscure the other.
+
+## Verification
+
+1. `tsgo` typecheck clean.
+2. Lint clean, no unused imports left behind in the source files.
+3. Run the existing test suite.
+4. Browser smoke test via Playwright: open `/inbox` (list renders, select an email, open "Why this folder?", multi-select bar appears) and open a folder in the editor (each tab renders). Screenshot both.
 
 ## Out of scope
-- No changes to the sync pipeline, filter engine, or AI classification behavior.
-- No new tables or migrations.
 
-Want me to start with Phase 1, or fold Phases 1+2 into the first build?
+- Full `EmailRow` extraction from the inbox map.
+- Any change to server functions, queries, schema, styling, or the `useScopedAccount` work already shipped.
