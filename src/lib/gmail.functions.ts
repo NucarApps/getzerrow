@@ -69,39 +69,6 @@ import {
 } from "./sync/encrypted-writer";
 import { getEmailsDecrypted } from "./sync/encrypted-reader";
 
-async function getOwnedAccount(userId: string, accountId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("gmail_accounts")
-    .select("id, user_id")
-    .eq("id", accountId)
-    .single();
-  if (error || !data) throw new Error("Gmail account not found");
-  if (data.user_id !== userId) throw new Error("Not authorized for this account");
-  return data;
-}
-
-async function getEmailAccount(userId: string, emailId: string) {
-  // Decrypts body_text + subject + from_name via the SECURITY DEFINER
-  // get_emails_decrypted RPC. supabaseAdmin bypasses RLS; we enforce
-  // user_id below.
-  const { rows, error } = await getEmailsDecrypted([emailId]);
-  if (error) throw new Error(error);
-  const data = rows[0];
-  if (!data) throw new Error("Email not found");
-  if (data.user_id !== userId) throw new Error("Not authorized");
-  if (!data.gmail_message_id || !data.gmail_account_id)
-    throw new Error("Email is missing Gmail identifiers");
-  return {
-    gmail_message_id: data.gmail_message_id,
-    gmail_account_id: data.gmail_account_id,
-    user_id: data.user_id,
-    thread_id: data.thread_id,
-    from_addr: data.from_addr,
-    subject: data.subject,
-    body_text: data.body_text,
-    from_name: data.from_name,
-  };
-}
 
 type GmailAccountStatusRow = {
   id: string;
