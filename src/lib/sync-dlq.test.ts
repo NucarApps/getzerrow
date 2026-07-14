@@ -30,6 +30,11 @@ describe("isTransientDlqError", () => {
     expect(isTransientDlqError("fetch failed")).toBe(true);
   });
 
+  it("matches stuck-worker-timeout DLQ entries so the reclaim backlog drains", () => {
+    expect(isTransientDlqError("stuck (worker timeout — exceeded max attempts)")).toBe(true);
+  });
+
+
   it("matches Google 'unavailable' responses regardless of case", () => {
     expect(isTransientDlqError("Service Unavailable")).toBe(true);
     expect(isTransientDlqError("service unavailable")).toBe(true);

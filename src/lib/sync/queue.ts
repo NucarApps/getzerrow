@@ -296,7 +296,7 @@ async function reclaimStuckJobs(stuckMs: number) {
   const stuckCutoff = new Date(Date.now() - stuckMs).toISOString();
   const { data: stuck } = await supabaseAdmin
     .from("message_jobs")
-    .select("id, attempt, last_error")
+    .select("id, attempt, last_error, gmail_account_id, gmail_message_id")
     .eq("status", "running")
     .lt("locked_at", stuckCutoff);
   for (const s of stuck ?? []) {
@@ -304,6 +304,17 @@ async function reclaimStuckJobs(stuckMs: number) {
       typeof s.last_error === "string" && s.last_error.startsWith("stuck (worker timeout)");
     const nextAttempt = wasReclaimed ? (s.attempt ?? 0) + 1 : (s.attempt ?? 0);
     if (nextAttempt >= MAX_JOB_ATTEMPTS) {
+      // Populate from/subject so the operator DLQ table isn't all "—".
+      let from_addr: string | null = null;
+      let subject: string | null = null;
+      try {
+        const meta = await getMessageMetadata(s.gmail_account_id, s.gmail_message_id);
+        const p = parseMessage(meta);
+        from_addr = p.from_addr ?? null;
+        subject = p.subject ?? null;
+      } catch {
+        /* best-effort */
+      }
       await supabaseAdmin
         .from("message_jobs")
         .update({
@@ -311,6 +322,8 @@ async function reclaimStuckJobs(stuckMs: number) {
           attempt: nextAttempt,
           last_error: "stuck (worker timeout — exceeded max attempts)",
           locked_at: null,
+          from_addr,
+          subject,
         })
         .eq("id", s.id);
     } else {
@@ -327,6 +340,7 @@ async function reclaimStuckJobs(stuckMs: number) {
     }
   }
 }
+
 
 async function handleError(job: ClaimedJob, e: unknown, results: ProcessResult[]): Promise<void> {
   const msg = (e as Error)?.message ?? String(e);
