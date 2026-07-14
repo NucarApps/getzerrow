@@ -69,7 +69,6 @@ import {
 } from "./sync/encrypted-writer";
 import { getEmailsDecrypted } from "./sync/encrypted-reader";
 
-
 type GmailAccountStatusRow = {
   id: string;
   email_address: string;
@@ -770,7 +769,6 @@ export const cancelDeepBackfill = createServerFn({ method: "POST" })
     return cancelBackfillJob(data.job_id, context.userId);
   });
 
-
 export const triggerSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string }) =>
@@ -1415,7 +1413,6 @@ export const applyRecategorization = createServerFn({ method: "POST" })
 
 // ============ Folder summary schedules ============
 
-
 export const listFolderSummaries = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
@@ -1584,7 +1581,6 @@ export const runFolderSummaryInline = createServerFn({ method: "POST" })
   });
 
 // ============ Per-email move + similar ============
-
 
 export const moveEmailToFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
