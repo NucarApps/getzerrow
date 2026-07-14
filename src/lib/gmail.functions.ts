@@ -1585,17 +1585,6 @@ export const runFolderSummaryInline = createServerFn({ method: "POST" })
 
 // ============ Per-email move + similar ============
 
-function extractDomain(addr: string | null): string | null {
-  if (!addr) return null;
-  const at = addr.lastIndexOf("@");
-  if (at < 0) return null;
-  return addr
-    .slice(at + 1)
-    .toLowerCase()
-    .replace(/[>\s]+$/g, "");
-}
-
-import { performMove } from "./move-email.server";
 
 export const moveEmailToFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
