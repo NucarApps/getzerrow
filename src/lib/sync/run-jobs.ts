@@ -297,6 +297,17 @@ export async function runMessageJobs(
           subject,
         })
         .eq("id", job.id);
+      logInfo("queue.job.dlq", {
+        run_id: runId,
+        job_id: job.id,
+        account_id: job.gmail_account_id,
+        gmail_message_id: job.gmail_message_id,
+        priority: job.priority,
+        attempt: nextAttempt,
+        gmail_status: status ?? null,
+        terminal,
+        error: msg.slice(0, 300),
+      });
       results.push({ id: job.id, ok: false, dlq: true, error: msg });
     } else {
       const backoffSeconds = computeBackoffSeconds({
@@ -316,6 +327,19 @@ export async function runMessageJobs(
           next_run_at: new Date(Date.now() + backoffSeconds * 1000).toISOString(),
         })
         .eq("id", job.id);
+      logInfo("queue.job.requeue", {
+        run_id: runId,
+        job_id: job.id,
+        account_id: job.gmail_account_id,
+        gmail_message_id: job.gmail_message_id,
+        priority: job.priority,
+        attempt: nextAttempt,
+        backoff_seconds: backoffSeconds,
+        gmail_status: status ?? null,
+        retryable,
+        quota_exceeded: isQuotaExceeded,
+        error: msg.slice(0, 300),
+      });
       results.push({ id: job.id, ok: false, retryable, error: msg });
     }
 
