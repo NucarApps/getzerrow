@@ -1415,33 +1415,6 @@ export const applyRecategorization = createServerFn({ method: "POST" })
 
 // ============ Folder summary schedules ============
 
-const ianaTz = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[A-Za-z0-9_+\-/]+$/);
-
-async function getOwnedFolder(userId: string, folderId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("folders")
-    .select("id, user_id, gmail_account_id")
-    .eq("id", folderId)
-    .single();
-  if (error || !data) throw new Error("Folder not found");
-  if (data.user_id !== userId) throw new Error("Not authorized");
-  return data;
-}
-
-async function getOwnedSchedule(userId: string, id: string) {
-  const { data, error } = await supabaseAdmin
-    .from("folder_summary_schedules")
-    .select("id, user_id, folder_id, hour, minute, timezone, enabled")
-    .eq("id", id)
-    .single();
-  if (error || !data) throw new Error("Schedule not found");
-  if (data.user_id !== userId) throw new Error("Not authorized");
-  return data;
-}
 
 export const listFolderSummaries = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
