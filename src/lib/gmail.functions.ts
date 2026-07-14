@@ -1159,6 +1159,133 @@ export const listFolderHistory = createServerFn({ method: "POST" })
     };
   });
 
+// Accuracy/health snapshot for a single folder: how mail landed here (rules
+// vs AI vs manual), low-confidence volume, and learning status. Read-only,
+// aggregated from existing columns — no schema changes.
+export const getFolderHealth = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) =>
+    z.object({ folder_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select(
+        "id, user_id, emails_since_learn, last_learned_at, learned_profile, relearn_threshold, auto_relearn",
+      )
+      .eq("id", data.folder_id)
+      .single();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
+
+    const { count: total } = await supabaseAdmin
+      .from("emails")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("folder_id", data.folder_id);
+
+    // Sample the most recent rows for the breakdown so this stays bounded on
+    // large folders.
+    const { data: rows } = await supabaseAdmin
+      .from("emails")
+      .select("classified_by, ai_confidence")
+      .eq("user_id", context.userId)
+      .eq("folder_id", data.folder_id)
+      .order("received_at", { ascending: false })
+      .limit(1000);
+
+    const sample = rows ?? [];
+    let byRules = 0;
+    let byAi = 0;
+    let byManual = 0;
+    let other = 0;
+    let lowConfidence = 0;
+    let confSum = 0;
+    let confCount = 0;
+    for (const r of sample) {
+      const cb = r.classified_by ?? "";
+      if (cb === "manual_move" || cb === "manual_inbox") {
+        byManual++;
+      } else if (cb.startsWith("ai")) {
+        byAi++;
+        if (typeof r.ai_confidence === "number") {
+          confSum += r.ai_confidence;
+          confCount++;
+        }
+        if (
+          cb === "ai_low_confidence" ||
+          (typeof r.ai_confidence === "number" && r.ai_confidence < 0.6)
+        ) {
+          lowConfidence++;
+        }
+      } else if (
+        cb === "filter" ||
+        cb === "domain_rule" ||
+        cb === "override" ||
+        cb === "label"
+      ) {
+        byRules++;
+      } else {
+        other++;
+      }
+    }
+
+    const { count: exampleCount } = await supabaseAdmin
+      .from("folder_examples")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("folder_id", data.folder_id);
+
+    const { data: recentEx } = await supabaseAdmin
+      .from("folder_examples")
+      .select("created_at")
+      .eq("user_id", context.userId)
+      .eq("folder_id", data.folder_id)
+      .eq("source", "manual_move")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    return {
+      total: total ?? 0,
+      sampled: sample.length,
+      byRules,
+      byAi,
+      byManual,
+      other,
+      lowConfidence,
+      avgConfidence: confCount > 0 ? confSum / confCount : null,
+      learning: {
+        examples: exampleCount ?? 0,
+        recentCorrections: (recentEx ?? []).length,
+        lastCorrectionAt: (recentEx ?? [])[0]?.created_at ?? null,
+        lastLearnedAt: folder.last_learned_at,
+        hasProfile: !!folder.learned_profile,
+        emailsSinceLearn: folder.emails_since_learn,
+        relearnThreshold: folder.relearn_threshold,
+        autoRelearn: folder.auto_relearn,
+      },
+    };
+  });
+
+// Rebuild a folder's learned profile on demand from its collected examples.
+export const relearnFolderNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id: string }) =>
+    z.object({ folder_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: folder } = await supabaseAdmin
+      .from("folders")
+      .select("id, user_id")
+      .eq("id", data.folder_id)
+      .single();
+    if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
+    const { regenerateFolderProfile } = await import("./sync/folder-learn");
+    const profile = await regenerateFolderProfile(data.folder_id);
+    return { ok: true, hasProfile: !!profile };
+  });
+
+
+
 export const suggestRecategorization = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_id: string; to_folder_id: string }) =>
