@@ -1698,13 +1698,13 @@ function InboxPage() {
               });
             };
 
-            const RowTag = isNoRules ? "div" : "button";
+            const selectionMode = isNoRules || selectedIds.size > 0;
             const rowInner = (
               <ContextMenu>
                 <ContextMenuTrigger asChild>
-                  <RowTag
-                    role={isNoRules ? "button" : undefined}
-                    tabIndex={isNoRules ? 0 : undefined}
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       if (isNoRules) {
                         toggleCheck();
@@ -1712,19 +1712,24 @@ function InboxPage() {
                       }
                       setSelectedId(e.id);
                     }}
-                    className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault();
+                        if (isNoRules) toggleCheck();
+                        else setSelectedId(e.id);
+                      }
+                    }}
+                    className={`group relative block w-full pl-9 pr-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
                   >
-                    {isNoRules && (
-                      <div
-                        className="absolute left-3 top-1/2 -translate-y-1/2"
-                        onClick={(ev) => ev.stopPropagation()}
-                      >
-                        <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
-                      </div>
-                    )}
-                    {!e.is_read && !isNoRules && (
+                    <div
+                      className={`absolute left-3 top-1/2 -translate-y-1/2 transition-opacity ${isChecked || selectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
+                    </div>
+                    {!e.is_read && !isChecked && !selectionMode && (
                       <span
-                        className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary"
+                        className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary group-hover:opacity-0"
                         aria-hidden
                       />
                     )}
