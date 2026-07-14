@@ -544,6 +544,19 @@ export async function runMessageJobs(
                   void bumpEmailsSinceLearn(r.folder_id);
                 }
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                logInfo("queue.job.complete", {
+                  run_id: runId,
+                  job_id: c.job.id,
+                  account_id: c.job.gmail_account_id,
+                  gmail_message_id: c.job.gmail_message_id,
+                  user_id: c.job.user_id,
+                  priority: c.job.priority,
+                  attempt: c.job.attempt,
+                  path: "batch_ai",
+                  ai_folder_id: r?.folder_id ?? null,
+                  ai_confidence: r?.confidence ?? 0,
+                  passed_confidence: passes === true,
+                });
                 results.push({ id: c.job.id, ok: true });
               }),
             );
@@ -551,7 +564,7 @@ export async function runMessageJobs(
             // Batch failed — fall back to per-message classify so the queue still drains.
             logError(
               "sync.batch_ai_classify_failed",
-              { account_id: aid, chunk_size: chunk.length },
+              { run_id: runId, account_id: aid, chunk_size: chunk.length },
               e,
             );
             await Promise.all(
