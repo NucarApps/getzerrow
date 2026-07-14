@@ -2420,7 +2420,6 @@ function Reader({
           filters={folderRulesQ.data?.filters ?? []}
         />
 
-
         <div className="mt-4">
           {email.body_html && hasVisibleHtml(email.body_html) ? (
             isMobile ? (

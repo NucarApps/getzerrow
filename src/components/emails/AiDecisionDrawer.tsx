@@ -42,7 +42,11 @@ const methodMeta: Record<string, { label: string; Icon: typeof Bot; cls: string 
   domain_rule: { label: "Classified by a domain rule", Icon: FilterIcon, cls: "text-foreground" },
   gmail_label: { label: "Mapped from a Gmail label", Icon: Tag, cls: "text-foreground" },
   manual_move: { label: "Moved manually", Icon: Hand, cls: "text-foreground" },
-  excluded: { label: "Kept in inbox by an exclude rule", Icon: HelpCircle, cls: "text-destructive" },
+  excluded: {
+    label: "Kept in inbox by an exclude rule",
+    Icon: HelpCircle,
+    cls: "text-destructive",
+  },
   global_exclude: {
     label: "Kept in inbox by your inbox list",
     Icon: HelpCircle,
@@ -188,7 +192,9 @@ export function AiDecisionDrawer({
                   </span>
                 ))}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Winner chosen by folder priority.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Winner chosen by folder priority.
+              </p>
             </div>
           )}
 
@@ -196,8 +202,8 @@ export function AiDecisionDrawer({
           {email.processed_at && email.received_at && (
             <div className="flex items-center gap-1.5 border-t border-border pt-3 text-xs text-muted-foreground">
               <Clock className="h-3.5 w-3.5 shrink-0" />
-              Sorted {syncDelayLabel(email.processed_at, email.received_at)} after Gmail received it ·{" "}
-              {new Date(email.processed_at).toLocaleString()}
+              Sorted {syncDelayLabel(email.processed_at, email.received_at)} after Gmail received it
+              · {new Date(email.processed_at).toLocaleString()}
             </div>
           )}
         </div>
