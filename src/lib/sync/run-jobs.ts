@@ -150,7 +150,7 @@ export async function runMessageJobs(
   if (claimErr) {
     logError(
       "sync.claim_message_jobs_rpc_failed",
-      { limit, priority: opts.priority ?? null },
+      { run_id: runId, limit, priority: opts.priority ?? null },
       claimErr,
     );
     return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0, error: claimErr.message };
@@ -168,6 +168,14 @@ export async function runMessageJobs(
   if (claimed.length === 0) {
     return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0 };
   }
+  logInfo("queue.claim", {
+    run_id: runId,
+    claimed: claimed.length,
+    limit,
+    priority: opts.priority ?? null,
+    defer_ai_to_cron: opts.deferAiToCron === true,
+    accounts: Array.from(new Set(claimed.map((j) => j.gmail_account_id))).length,
+  });
 
   // ─── Prefetch per-account context once for the whole batch.
   const accountIds = Array.from(new Set(claimed.map((j) => j.gmail_account_id)));
