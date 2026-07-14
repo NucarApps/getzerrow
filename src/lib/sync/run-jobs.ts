@@ -571,6 +571,25 @@ export async function runMessageJobs(
                   : null;
                 const threshold = candidate?.min_ai_confidence ?? 0;
                 const passes = r?.folder_id && (r.confidence ?? 0) >= threshold;
+                // Re-check immediately before apply: the batch LLM call above
+                // takes seconds, and the user may have manually filed this
+                // email in that window. If so, respect the user's decision
+                // and skip apply/persist/bump entirely — but still delete
+                // the job so the queue drains.
+                if (!(await isEmailPendingClassification(c.emailRowId))) {
+                  await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.skip_duplicate", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    email_id: c.emailRowId,
+                    path: "batch_ai",
+                    reason: "user_moved_during_batch",
+                  });
+                  results.push({ id: c.job.id, ok: true });
+                  return;
+                }
                 if (passes && r?.folder_id) {
                   const folder = resolveActionFolderFromContext(ctx, r.folder_id);
                   await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
@@ -604,6 +623,7 @@ export async function runMessageJobs(
                   ai_confidence: r?.confidence ?? 0,
                   passed_confidence: passes === true,
                 });
+
                 results.push({ id: c.job.id, ok: true });
               }),
             );
@@ -633,10 +653,27 @@ export async function runMessageJobs(
                 }
                 try {
                   const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
+                  // Re-check before apply — classifyEmail can take seconds
+                  // and the user may have filed the message in the meantime.
+                  if (!(await isEmailPendingClassification(c.emailRowId))) {
+                    await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                    logInfo("queue.job.skip_duplicate", {
+                      run_id: runId,
+                      job_id: c.job.id,
+                      account_id: c.job.gmail_account_id,
+                      gmail_message_id: c.job.gmail_message_id,
+                      email_id: c.emailRowId,
+                      path: "batch_ai_fallback",
+                      reason: "user_moved_during_fallback_classify",
+                    });
+                    results.push({ id: c.job.id, ok: true });
+                    return;
+                  }
                   if (single.folder_id) {
                     const folder = resolveActionFolderFromContext(ctx, single.folder_id);
                     await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
                   }
+
                   await updateEmailEncrypted({
                     email_id: c.emailRowId,
                     folder_id: single.folder_id,
