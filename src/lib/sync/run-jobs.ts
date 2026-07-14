@@ -19,7 +19,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessageMetadata, parseMessage, GmailApiError } from "../gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "../ai.server";
-import { logError } from "../log.server";
+import { logError, logInfo, newRunId } from "../log.server";
 import { MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS, computeBackoffSeconds } from "./backoff";
 import { type AccountContext, loadAccountContext } from "./account-context";
 import { classifyParsedEmail } from "./classify";
@@ -85,8 +85,11 @@ async function applyClassifiedFolderActions(
 export async function runMessageJobs(
   limit = 100,
   concurrency = JOB_WORKER_CONCURRENCY,
-  opts: { priority?: number; deferAiToCron?: boolean } = {},
+  opts: { priority?: number; deferAiToCron?: boolean; runId?: string } = {},
 ) {
+  // A single drainer invocation gets one run_id; every log line it emits
+  // includes it so `run_id=…` in the log aggregator reconstructs one tick.
+  const runId = opts.runId ?? newRunId();
   const STUCK_MS = 35 * 1000; // jobs in 'running' for >35s are presumed dead (worker timeout is 25s)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
 
@@ -113,6 +116,12 @@ export async function runMessageJobs(
           locked_at: null,
         })
         .eq("id", s.id);
+      logInfo("queue.reclaim.dlq", {
+        run_id: runId,
+        job_id: s.id,
+        attempt: nextAttempt,
+        reason: "stuck_exceeded_max_attempts",
+      });
     } else {
       await supabaseAdmin
         .from("message_jobs")
@@ -124,6 +133,12 @@ export async function runMessageJobs(
           next_run_at: new Date().toISOString(),
         })
         .eq("id", s.id);
+      logInfo("queue.reclaim.requeued", {
+        run_id: runId,
+        job_id: s.id,
+        attempt: nextAttempt,
+        burned_attempt: wasReclaimed,
+      });
     }
   }
 
@@ -135,7 +150,7 @@ export async function runMessageJobs(
   if (claimErr) {
     logError(
       "sync.claim_message_jobs_rpc_failed",
-      { limit, priority: opts.priority ?? null },
+      { run_id: runId, limit, priority: opts.priority ?? null },
       claimErr,
     );
     return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0, error: claimErr.message };
@@ -153,6 +168,14 @@ export async function runMessageJobs(
   if (claimed.length === 0) {
     return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0 };
   }
+  logInfo("queue.claim", {
+    run_id: runId,
+    claimed: claimed.length,
+    limit,
+    priority: opts.priority ?? null,
+    defer_ai_to_cron: opts.deferAiToCron === true,
+    accounts: Array.from(new Set(claimed.map((j) => j.gmail_account_id))).length,
+  });
 
   // ─── Prefetch per-account context once for the whole batch.
   const accountIds = Array.from(new Set(claimed.map((j) => j.gmail_account_id)));
@@ -274,6 +297,17 @@ export async function runMessageJobs(
           subject,
         })
         .eq("id", job.id);
+      logInfo("queue.job.dlq", {
+        run_id: runId,
+        job_id: job.id,
+        account_id: job.gmail_account_id,
+        gmail_message_id: job.gmail_message_id,
+        priority: job.priority,
+        attempt: nextAttempt,
+        gmail_status: status ?? null,
+        terminal,
+        error: msg.slice(0, 300),
+      });
       results.push({ id: job.id, ok: false, dlq: true, error: msg });
     } else {
       const backoffSeconds = computeBackoffSeconds({
@@ -293,6 +327,19 @@ export async function runMessageJobs(
           next_run_at: new Date(Date.now() + backoffSeconds * 1000).toISOString(),
         })
         .eq("id", job.id);
+      logInfo("queue.job.requeue", {
+        run_id: runId,
+        job_id: job.id,
+        account_id: job.gmail_account_id,
+        gmail_message_id: job.gmail_message_id,
+        priority: job.priority,
+        attempt: nextAttempt,
+        backoff_seconds: backoffSeconds,
+        gmail_status: status ?? null,
+        retryable,
+        quota_exceeded: isQuotaExceeded,
+        error: msg.slice(0, 300),
+      });
       results.push({ id: job.id, ok: false, retryable, error: msg });
     }
 
@@ -328,6 +375,22 @@ export async function runMessageJobs(
     // always defers so the ack isn't blocked on AI.
     const deferAi = deferAiToCron || job.priority >= 10 || liveBurst;
     const timings: ProcessTimings = { fetch: 0, ai: 0, db: 0 };
+    const startedAt = Date.now();
+    // Correlation dimensions common to every log line for this job.
+    const jobFields = {
+      run_id: runId,
+      job_id: job.id,
+      account_id: job.gmail_account_id,
+      gmail_message_id: job.gmail_message_id,
+      user_id: job.user_id,
+      priority: job.priority,
+      attempt: job.attempt,
+    };
+    logInfo("queue.job.start", {
+      ...jobFields,
+      defer_ai: deferAi,
+      lease_ms: JOB_TIMEOUT_MS,
+    });
     try {
       const result = (await Promise.race([
         processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id, {
@@ -372,6 +435,13 @@ export async function runMessageJobs(
             next_run_at: new Date(Date.now() + WEBHOOK_DEFERRED_AI_REQUEUE_MS).toISOString(),
           })
           .eq("id", job.id);
+        logInfo("queue.job.deferred_ai_requeue", {
+          ...jobFields,
+          duration_ms: Date.now() - startedAt,
+          requeue_delay_ms: WEBHOOK_DEFERRED_AI_REQUEUE_MS,
+          fetch_ms: Math.round(timings.fetch),
+          db_ms: Math.round(timings.db),
+        });
         results.push({ id: job.id, ok: true });
         return;
       }
@@ -383,10 +453,25 @@ export async function runMessageJobs(
       if (deferAi && needsAiPass) {
         pendingAi.push({ job, emailRowId: result.email_id, parsed: result.parsed });
         // Don't delete the job row yet — finalize after batch AI completes.
+        logInfo("queue.job.queued_for_batch_ai", {
+          ...jobFields,
+          duration_ms: Date.now() - startedAt,
+          email_id: result.email_id,
+          fetch_ms: Math.round(timings.fetch),
+          db_ms: Math.round(timings.db),
+        });
         return;
       }
 
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
+      logInfo("queue.job.complete", {
+        ...jobFields,
+        duration_ms: Date.now() - startedAt,
+        fetch_ms: Math.round(timings.fetch),
+        ai_ms: Math.round(timings.ai),
+        db_ms: Math.round(timings.db),
+        path: "inline",
+      });
       results.push({ id: job.id, ok: true });
     } catch (e: unknown) {
       await handleError(job, e);
@@ -413,6 +498,12 @@ export async function runMessageJobs(
       if (!byAccount.has(p.job.gmail_account_id)) byAccount.set(p.job.gmail_account_id, []);
       byAccount.get(p.job.gmail_account_id)!.push(p);
     }
+    logInfo("queue.batch_ai.start", {
+      run_id: runId,
+      pending: pendingAi.length,
+      accounts: byAccount.size,
+      batch_size: BATCH_SIZE,
+    });
     await Promise.all(
       Array.from(byAccount.entries()).map(async ([aid, items]) => {
         const ctx = contextByAccount.get(aid);
@@ -453,6 +544,19 @@ export async function runMessageJobs(
                   void bumpEmailsSinceLearn(r.folder_id);
                 }
                 await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                logInfo("queue.job.complete", {
+                  run_id: runId,
+                  job_id: c.job.id,
+                  account_id: c.job.gmail_account_id,
+                  gmail_message_id: c.job.gmail_message_id,
+                  user_id: c.job.user_id,
+                  priority: c.job.priority,
+                  attempt: c.job.attempt,
+                  path: "batch_ai",
+                  ai_folder_id: r?.folder_id ?? null,
+                  ai_confidence: r?.confidence ?? 0,
+                  passed_confidence: passes === true,
+                });
                 results.push({ id: c.job.id, ok: true });
               }),
             );
@@ -460,7 +564,7 @@ export async function runMessageJobs(
             // Batch failed — fall back to per-message classify so the queue still drains.
             logError(
               "sync.batch_ai_classify_failed",
-              { account_id: aid, chunk_size: chunk.length },
+              { run_id: runId, account_id: aid, chunk_size: chunk.length },
               e,
             );
             await Promise.all(
@@ -483,6 +587,18 @@ export async function runMessageJobs(
                     void bumpEmailsSinceLearn(single.folder_id);
                   }
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.complete", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    user_id: c.job.user_id,
+                    priority: c.job.priority,
+                    attempt: c.job.attempt,
+                    path: "batch_ai_fallback_single",
+                    ai_folder_id: single.folder_id ?? null,
+                    ai_confidence: single.confidence,
+                  });
                   results.push({ id: c.job.id, ok: true });
                 } catch (innerErr: unknown) {
                   const innerMsg = innerErr instanceof Error ? innerErr.message : "unknown";
@@ -492,6 +608,17 @@ export async function runMessageJobs(
                     classification_reason: `AI classifier failed: ${innerMsg.slice(0, 200)}`,
                   });
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.complete", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    user_id: c.job.user_id,
+                    priority: c.job.priority,
+                    attempt: c.job.attempt,
+                    path: "batch_ai_fallback_unclassified",
+                    error: innerMsg.slice(0, 300),
+                  });
                   results.push({ id: c.job.id, ok: true });
                 }
               }),
@@ -502,11 +629,19 @@ export async function runMessageJobs(
     );
   }
 
-  return {
+  const summary = {
     processed: results.length,
     ok: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok && !r.dlq).length,
     dlq: results.filter((r) => r.dlq).length,
     retryable: results.filter((r) => r.retryable).length,
   };
+  logInfo("queue.drain.summary", {
+    run_id: runId,
+    priority: opts.priority ?? null,
+    defer_ai_to_cron: opts.deferAiToCron === true,
+    ...summary,
+  });
+  return summary;
 }
+

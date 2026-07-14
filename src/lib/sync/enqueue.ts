@@ -3,7 +3,12 @@
 // primitives without pulling in the full sync graph.
 //
 // Job priority: 0 = live (push/poll), 10 = backfill.
+//
+// Every enqueue/retry emits a structured log line so a single email
+// can be traced across enqueue → claim → run → complete/DLQ using
+// (gmail_account_id, gmail_message_id) or job_id.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { logInfo, logError } from "../log.server";
 
 export async function enqueueMessageJob(
   accountId: string,
@@ -49,11 +54,35 @@ export async function enqueueMessageJobs(
   }));
   // Supabase caps a single upsert at ~1000 rows; we chunk just to be safe.
   for (let i = 0; i < rows.length; i += 500) {
-    await supabaseAdmin.from("message_jobs").upsert(rows.slice(i, i + 500), {
+    const chunk = rows.slice(i, i + 500);
+    const { error } = await supabaseAdmin.from("message_jobs").upsert(chunk, {
       onConflict: "gmail_account_id,gmail_message_id",
       ignoreDuplicates: true,
     });
+    if (error) {
+      logError(
+        "queue.enqueue.failed",
+        {
+          account_id: accountId,
+          user_id: userId,
+          priority,
+          chunk_size: chunk.length,
+          total: gmailMessageIds.length,
+        },
+        error,
+      );
+      throw error;
+    }
   }
+  logInfo("queue.enqueue", {
+    account_id: accountId,
+    user_id: userId,
+    priority,
+    count: gmailMessageIds.length,
+    published_at_ms: publishedAtMs,
+    // First few ids only — bounded cardinality, still lets you grep one message.
+    sample_message_ids: gmailMessageIds.slice(0, 5),
+  });
 }
 
 /** Operator-triggered retry: reset a job back to the head of the queue.
@@ -68,4 +97,5 @@ export async function retryMessageJob(jobId: string) {
       next_run_at: new Date().toISOString(),
     })
     .eq("id", jobId);
+  logInfo("queue.retry", { job_id: jobId, source: "manual" });
 }
