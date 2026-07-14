@@ -9,8 +9,8 @@ import {
   extractDomain,
   drainCatchupRounds,
   ianaTz,
-} from "./gmail-helpers.server";
-import { performMove } from "./move-email.server";
+} from "../gmail-helpers.server";
+import { performMove } from "../move-email.server";
 import {
   backfillRecent,
   backfillWindow,
@@ -27,8 +27,8 @@ import {
   invalidateAccountContextForUser,
   bulkCatchupClaim,
   syncReadState,
-} from "./sync.server";
-import { CATCHUP_MAX_ROUNDS, CATCHUP_TOTAL_BUDGET_MS } from "./sync/config";
+} from "../sync.server";
+import { CATCHUP_MAX_ROUNDS, CATCHUP_TOTAL_BUDGET_MS } from "../sync/config";
 import {
   listLabels,
   createLabel,
@@ -44,30 +44,30 @@ import {
   getMessageLabels,
   getThread,
   parseMessage,
-} from "./gmail.server";
+} from "../gmail.server";
 import {
   suggestReply,
   suggestRuleUpdates,
   suggestFolderFromEmails,
   generateAiRuleFromPurpose,
   generateAiRuleFromLabelSamples,
-} from "./ai.server";
-import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "./summaries.server";
+} from "../ai.server";
+import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "../summaries.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { signState, buildAuthorizeUrl, getRedirectUri } from "./google-oauth.server";
+import { signState, buildAuthorizeUrl, getRedirectUri } from "../google-oauth.server";
 import { getRequestHost } from "@tanstack/react-start/server";
-import { logError, logAudit } from "./log.server";
-import { removeLabelsFromCurrent } from "./sync/label-merge";
-import { buildGmailQueries } from "./sync/gmail-query-builder";
-import { matchByFilters, emailVetoedForFolder } from "./sync/filter-engine";
-import type { Folder, Filter, RuleNode } from "./sync/types";
+import { logError, logAudit } from "../log.server";
+import { removeLabelsFromCurrent } from "../sync/label-merge";
+import { buildGmailQueries } from "../sync/gmail-query-builder";
+import { matchByFilters, emailVetoedForFolder } from "../sync/filter-engine";
+import type { Folder, Filter, RuleNode } from "../sync/types";
 import {
   upsertEmailEncrypted,
   updateEmailEncrypted,
   setReplyDraftEncrypted,
   insertFolderExampleEncrypted,
-} from "./sync/encrypted-writer";
-import { getEmailsDecrypted } from "./sync/encrypted-reader";
+} from "../sync/encrypted-writer";
+import { getEmailsDecrypted } from "../sync/encrypted-reader";
 export const triggerBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { account_id: string; count?: number }) =>
