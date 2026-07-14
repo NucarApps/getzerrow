@@ -616,6 +616,21 @@ export async function runMessageJobs(
             );
             await Promise.all(
               chunk.map(async (c) => {
+                // Same idempotency gate as the batch success path.
+                if (!(await isEmailPendingClassification(c.emailRowId))) {
+                  await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.skip_duplicate", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    email_id: c.emailRowId,
+                    path: "batch_ai_fallback",
+                    reason: "already_classified_or_manually_moved",
+                  });
+                  results.push({ id: c.job.id, ok: true });
+                  return;
+                }
                 try {
                   const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
                   if (single.folder_id) {
