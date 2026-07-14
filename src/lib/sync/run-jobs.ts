@@ -116,6 +116,12 @@ export async function runMessageJobs(
           locked_at: null,
         })
         .eq("id", s.id);
+      logInfo("queue.reclaim.dlq", {
+        run_id: runId,
+        job_id: s.id,
+        attempt: nextAttempt,
+        reason: "stuck_exceeded_max_attempts",
+      });
     } else {
       await supabaseAdmin
         .from("message_jobs")
@@ -127,6 +133,12 @@ export async function runMessageJobs(
           next_run_at: new Date().toISOString(),
         })
         .eq("id", s.id);
+      logInfo("queue.reclaim.requeued", {
+        run_id: runId,
+        job_id: s.id,
+        attempt: nextAttempt,
+        burned_attempt: wasReclaimed,
+      });
     }
   }
 
