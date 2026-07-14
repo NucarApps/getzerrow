@@ -85,8 +85,11 @@ async function applyClassifiedFolderActions(
 export async function runMessageJobs(
   limit = 100,
   concurrency = JOB_WORKER_CONCURRENCY,
-  opts: { priority?: number; deferAiToCron?: boolean } = {},
+  opts: { priority?: number; deferAiToCron?: boolean; runId?: string } = {},
 ) {
+  // A single drainer invocation gets one run_id; every log line it emits
+  // includes it so `run_id=…` in the log aggregator reconstructs one tick.
+  const runId = opts.runId ?? newRunId();
   const STUCK_MS = 35 * 1000; // jobs in 'running' for >35s are presumed dead (worker timeout is 25s)
   const JOB_TIMEOUT_MS = 25 * 1000; // hard timeout for processGmailMessage
 
