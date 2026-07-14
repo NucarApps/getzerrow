@@ -113,6 +113,13 @@ function AdminPage() {
     refetchInterval: 60_000,
   });
 
+  const syncFn = useServerFn(getSyncJobMetrics);
+  const syncQ = useQuery({
+    queryKey: ["admin-sync-job-metrics"],
+    queryFn: () => syncFn(),
+    refetchInterval: 15_000,
+  });
+
   const totals = useMemo(() => {
     const users = usersQ.data?.users ?? [];
     let emails = 0;
