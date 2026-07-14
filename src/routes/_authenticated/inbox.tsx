@@ -438,6 +438,7 @@ function InboxPage() {
 
   const archFnList = useServerFn(archiveEmail);
   const trashFnList = useServerFn(trashEmail);
+  const markReadFnList = useServerFn(markEmailRead);
   const { selected: selectedFolder, setSelected: setSelectedFolder } = useFolderSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -496,13 +497,13 @@ function InboxPage() {
   const isSpecialView =
     selectedFolder === "all" || selectedFolder === "all_mail" || selectedFolder === "no_rules";
   const isStaleFolder =
-    !isSpecialView && foldersQ.isSuccess && !(foldersQ.data ?? []).some((f) => f.id === selectedFolder);
+    !isSpecialView &&
+    foldersQ.isSuccess &&
+    !(foldersQ.data ?? []).some((f) => f.id === selectedFolder);
   const effectiveFolder = isStaleFolder ? "all" : selectedFolder;
   useEffect(() => {
     if (isStaleFolder) setSelectedFolder("all");
   }, [isStaleFolder, setSelectedFolder]);
-
-
 
   // Full folder rows + Gmail labels feed the in-place folder settings editor
   // (gear icon in the folder header). Query keys intentionally mirror the
@@ -583,6 +584,7 @@ function InboxPage() {
   }>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [reclassifyBusy, setReclassifyBusy] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [reanalyzeFolderBusy, setReanalyzeFolderBusy] = useState(false);
   const [confirmReanalyzeFolder, setConfirmReanalyzeFolder] = useState(false);
 
@@ -1251,11 +1253,42 @@ function InboxPage() {
 
   const headerLabel = labelForFolder(selectedFolder, foldersQ.data ?? []);
 
+  // Run an action over every selected email, then report a single summary and
+  // refresh the list once. Individual failures are counted, not fatal.
+  const runBulk = async (
+    verb: string,
+    action: (id: string) => Promise<unknown>,
+    { optimisticRemove = false }: { optimisticRemove?: boolean } = {},
+  ) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    if (optimisticRemove) {
+      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+        prev?.filter((x) => !selectedIds.has(x.id)),
+      );
+    }
+    try {
+      const results = await Promise.allSettled(ids.map((id) => action(id)));
+      const failed = results.filter((r) => r.status === "rejected").length;
+      const ok = ids.length - failed;
+      if (failed === 0) toast.success(`${verb} ${ok} email${ok === 1 ? "" : "s"}`);
+      else toast.warning(`${verb} ${ok}, ${failed} failed`);
+      setSelectedIds(new Set());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Couldn't ${verb.toLowerCase()}`);
+    } finally {
+      setBulkBusy(false);
+      qc.invalidateQueries({ queryKey: ["emails"] });
+    }
+  };
+
   // The only blocking state is a genuine cold DB read with nothing to paint yet
   // (no in-memory rows and no metadata-cache placeholder). It shows a brief
   // skeleton and never waits on Gmail. An in-flight background sync is signalled
   // only by the subtle header pulse.
-  const coldLoading = (accountsQ.isLoading && !accountId) || (emailsQ.isLoading && rawEmails.length === 0);
+  const coldLoading =
+    (accountsQ.isLoading && !accountId) || (emailsQ.isLoading && rawEmails.length === 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
@@ -1353,7 +1386,7 @@ function InboxPage() {
             </div>
           )}
         </div>
-        {isNoRules && (
+        {(isNoRules || selectedIds.size > 0) && (
           <div className="shrink-0 border-b border-border bg-muted/30 px-3 py-2">
             {selectedIds.size === 0 ? (
               <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -1374,72 +1407,171 @@ function InboxPage() {
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground hover:underline"
+                    onClick={() => setSelectedIds(new Set(filtered.map((e) => e.id)))}
+                    disabled={filtered.length === 0}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground hover:underline"
                     onClick={() => setSelectedIds(new Set())}
                   >
                     Clear
                   </button>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7"
-                    disabled={reclassifyBusy}
-                    onClick={async () => {
-                      const ids = Array.from(selectedIds);
-                      setReclassifyBusy(true);
-                      try {
-                        const r = await reclassifyFn({ data: { email_ids: ids } });
-                        toast.success(
-                          `Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`,
-                        );
-                        setSelectedIds(new Set());
-                        qc.invalidateQueries({ queryKey: ["emails"] });
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Re-classify failed");
-                      } finally {
-                        setReclassifyBusy(false);
-                      }
-                    }}
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulk("Archived", (id) => archFnList({ data: { id } }), {
+                        optimisticRemove: true,
+                      })
+                    }
                   >
-                    <RotateCw
-                      className={`mr-1.5 h-3.5 w-3.5 ${reclassifyBusy ? "animate-spin" : ""}`}
-                    />
-                    Re-classify
+                    <Archive className="mr-1.5 h-3.5 w-3.5" />
+                    Archive
                   </Button>
                   <Button
                     size="sm"
+                    variant="outline"
                     className="h-7"
-                    disabled={suggestBusy}
-                    onClick={async () => {
-                      const ids = Array.from(selectedIds);
-                      setSuggestBusy(true);
-                      try {
-                        const s = await suggestFolderFn({ data: { email_ids: ids } });
-                        setSuggestion({
-                          name: s.name,
-                          color: s.color,
-                          ai_rule: s.ai_rule,
-                          filter_field: s.filter_field || null,
-                          filter_op: s.filter_op || null,
-                          filter_value: s.filter_value || "",
-                          why: s.why,
-                          email_ids: ids,
-                        });
-                      } catch (err) {
-                        toast.error(
-                          err instanceof Error ? err.message : "Couldn't suggest a folder",
-                        );
-                      } finally {
-                        setSuggestBusy(false);
-                      }
-                    }}
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulk("Marked read", (id) => markReadFnList({ data: { id, read: true } }))
+                    }
                   >
-                    <Sparkles
-                      className={`mr-1.5 h-3.5 w-3.5 ${suggestBusy ? "animate-pulse" : ""}`}
-                    />
-                    Suggest folder
+                    <MailOpen className="mr-1.5 h-3.5 w-3.5" />
+                    Read
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulk("Marked unread", (id) =>
+                        markReadFnList({ data: { id, read: false } }),
+                      )
+                    }
+                  >
+                    <Mail className="mr-1.5 h-3.5 w-3.5" />
+                    Unread
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulk("Moved to inbox", (id) => moveInboxFn({ data: { email_id: id } }), {
+                        optimisticRemove: false,
+                      })
+                    }
+                  >
+                    <Inbox className="mr-1.5 h-3.5 w-3.5" />
+                    To inbox
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7" disabled={bulkBusy}>
+                        <FolderInput className="mr-1.5 h-3.5 w-3.5" />
+                        Move to
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="max-h-72 w-56 overflow-y-auto">
+                      <DropdownMenuLabel>Move to folder</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {(foldersQ.data ?? []).length === 0 && (
+                        <DropdownMenuItem disabled>No folders yet</DropdownMenuItem>
+                      )}
+                      {(foldersQ.data ?? []).map((f) => (
+                        <DropdownMenuItem
+                          key={f.id}
+                          onSelect={() =>
+                            runBulk(
+                              `Moved to ${f.name} ·`,
+                              (id) => moveFolderFn({ data: { email_id: id, to_folder_id: f.id } }),
+                              { optimisticRemove: true },
+                            )
+                          }
+                        >
+                          <span
+                            className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                            style={{ background: f.color }}
+                          />
+                          <span className="truncate">{f.name}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {isNoRules && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7"
+                        disabled={reclassifyBusy}
+                        onClick={async () => {
+                          const ids = Array.from(selectedIds);
+                          setReclassifyBusy(true);
+                          try {
+                            const r = await reclassifyFn({ data: { email_ids: ids } });
+                            toast.success(
+                              `Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`,
+                            );
+                            setSelectedIds(new Set());
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : "Re-classify failed");
+                          } finally {
+                            setReclassifyBusy(false);
+                          }
+                        }}
+                      >
+                        <RotateCw
+                          className={`mr-1.5 h-3.5 w-3.5 ${reclassifyBusy ? "animate-spin" : ""}`}
+                        />
+                        Re-classify
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-7"
+                        disabled={suggestBusy}
+                        onClick={async () => {
+                          const ids = Array.from(selectedIds);
+                          setSuggestBusy(true);
+                          try {
+                            const s = await suggestFolderFn({ data: { email_ids: ids } });
+                            setSuggestion({
+                              name: s.name,
+                              color: s.color,
+                              ai_rule: s.ai_rule,
+                              filter_field: s.filter_field || null,
+                              filter_op: s.filter_op || null,
+                              filter_value: s.filter_value || "",
+                              why: s.why,
+                              email_ids: ids,
+                            });
+                          } catch (err) {
+                            toast.error(
+                              err instanceof Error ? err.message : "Couldn't suggest a folder",
+                            );
+                          } finally {
+                            setSuggestBusy(false);
+                          }
+                        }}
+                      >
+                        <Sparkles
+                          className={`mr-1.5 h-3.5 w-3.5 ${suggestBusy ? "animate-pulse" : ""}`}
+                        />
+                        Suggest folder
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -1565,13 +1697,13 @@ function InboxPage() {
               });
             };
 
-            const RowTag = isNoRules ? "div" : "button";
+            const selectionMode = isNoRules || selectedIds.size > 0;
             const rowInner = (
               <ContextMenu>
                 <ContextMenuTrigger asChild>
-                  <RowTag
-                    role={isNoRules ? "button" : undefined}
-                    tabIndex={isNoRules ? 0 : undefined}
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       if (isNoRules) {
                         toggleCheck();
@@ -1579,19 +1711,24 @@ function InboxPage() {
                       }
                       setSelectedId(e.id);
                     }}
-                    className={`relative block w-full ${isNoRules ? "pl-9 pr-4" : "px-4"} py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault();
+                        if (isNoRules) toggleCheck();
+                        else setSelectedId(e.id);
+                      }
+                    }}
+                    className={`group relative block w-full pl-9 pr-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
                   >
-                    {isNoRules && (
-                      <div
-                        className="absolute left-3 top-1/2 -translate-y-1/2"
-                        onClick={(ev) => ev.stopPropagation()}
-                      >
-                        <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
-                      </div>
-                    )}
-                    {!e.is_read && !isNoRules && (
+                    <div
+                      className={`absolute left-3 top-1/2 -translate-y-1/2 transition-opacity ${isChecked || selectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
+                    </div>
+                    {!e.is_read && !isChecked && !selectionMode && (
                       <span
-                        className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary"
+                        className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary group-hover:opacity-0"
                         aria-hidden
                       />
                     )}
@@ -1644,7 +1781,7 @@ function InboxPage() {
                         {decodeEntities(e.snippet)}
                       </div>
                     )}
-                  </RowTag>
+                  </div>
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-64">
                   {(e.is_archived || e.folder_id || !(e.raw_labels ?? []).includes("INBOX")) && (

@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { AccountPicker } from "@/components/settings/AccountPicker";
 import { CalendarGuardCard } from "@/components/settings/CalendarGuardCard";
 import { MeetingCalendarSelectCard } from "@/components/settings/MeetingCalendarSelectCard";
 import { MeetingEventFilterCard } from "@/components/settings/MeetingEventFilterCard";
 import { MeetingCalendarEventsCard } from "@/components/settings/MeetingCalendarEventsCard";
-import { useAccountSelection } from "@/lib/account-selection";
+import { useScopedAccount } from "@/lib/use-scoped-account";
 
 export const Route = createFileRoute("/_authenticated/settings/meetings-calendar")({
   head: () => ({
@@ -18,19 +17,11 @@ export const Route = createFileRoute("/_authenticated/settings/meetings-calendar
 });
 
 function MeetingCalendarSettings() {
-  const { activeAccountId, setActiveAccountId } = useAccountSelection();
-  const [scopedEmail, setScopedEmail] = useState<string | null>(null);
+  const { activeAccountId, scopedEmail, onAccountChange } = useScopedAccount();
 
   return (
     <div className="space-y-6">
-      <AccountPicker
-        value={activeAccountId}
-        onChange={(id, email) => {
-          setActiveAccountId(id);
-          setScopedEmail(email);
-        }}
-        label="Calendar"
-      />
+      <AccountPicker value={activeAccountId} onChange={onAccountChange} label="Calendar" />
 
       {activeAccountId && scopedEmail && (
         <>

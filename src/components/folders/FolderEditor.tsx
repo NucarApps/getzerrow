@@ -67,6 +67,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { FolderChatPanel } from "./FolderChatPanel";
+import { FolderHealthCard } from "./FolderHealthCard";
 
 export type RuleNode =
   | { type: "group"; op: "and" | "or"; children: RuleNode[] }
@@ -643,6 +644,9 @@ export function FolderEditor({
           <p className="mb-3 mt-1 text-xs text-muted-foreground">
             When no rule matches, AI uses these instructions and settings to sort the email.
           </p>
+
+          <FolderHealthCard folderId={folder.id} />
+
 
           <div className="grid grid-cols-[auto_1fr] items-center gap-2">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">
