@@ -1,36 +1,35 @@
-## Security report — proposed fixes
+# Plan: Add Cloudflare Turnstile to auth forms
 
-Three findings (0 critical, 0 high, 2 medium, 1 low). Here's how I'd address each:
+Addresses medium-severity finding: no CAPTCHA on Supabase auth endpoints. Turnstile is free, invisible/managed, and fits the Cloudflare stack.
 
-### 1. Low — Missing `Cross-Origin-Resource-Policy` header ✅ straightforward
-Add `Cross-Origin-Resource-Policy: same-origin` to the `securityHeaders()` block in `src/server.ts` (same place that already sets CSP, HSTS, XFO, etc.). Applies to every response via the existing `withSecurityHeaders` wrapper. No app behavior change — the app doesn't serve resources cross-origin (logos are proxied through `/api/public/logo`).
+## What you'll need to do (one-time, in dashboards)
 
-### 2. Medium — Weak rate limiting on Supabase password reset ⚠️ out of scope for code
-The scanner hit Supabase's built-in password-reset endpoint (`/auth/v1/recover`) and observed 30 requests before throttling. On Lovable Cloud we don't control Supabase's auth rate-limit dials — there's no dashboard access. The realistic mitigations are:
-- Enable CAPTCHA on the auth forms (finding #3 below) — Supabase then requires a token per request, which is the intended defense for this exact CWE.
-- Otherwise: accept the finding. I'll note it in `@security-memory` if you want.
+1. **Create a Turnstile site** at Cloudflare dashboard → Turnstile → Add site.
+   - Domains: `getzerrow.com`, `www.getzerrow.com`, `getzerrow.lovable.app`, `localhost`.
+   - Widget mode: **Managed** (recommended — invisible when possible).
+   - Copy the **Site key** (public) and **Secret key** (private).
+2. **Enable CAPTCHA in Backend → Auth settings**: set provider = Turnstile, paste the **Secret key**, save. This makes Supabase Auth require and verify a Turnstile token on sign-in / sign-up / recover.
+3. Provide the **Site key** to me via `VITE_TURNSTILE_SITE_KEY` (public, safe in codebase — I'll add it to `.env` and `.env.example`).
 
-I do **not** recommend building an app-layer rate limiter in front of Supabase auth — the scanner is testing Supabase directly, not our routes, so it wouldn't change the result.
+## What I'll build
 
-### 3. Medium — No CAPTCHA on auth forms ❌ needs your decisions before I build
-This is a real, meaningful fix but it's not a one-liner and needs choices from you:
+1. Install `@marsidev/react-turnstile`.
+2. Add `VITE_TURNSTILE_SITE_KEY` to `.env.example` (and `.env` with the value you give me).
+3. Create `src/components/auth/TurnstileWidget.tsx` — thin wrapper that renders the widget in managed mode, forwards the token via `onSuccess`, and exposes a reset handle for use after failed submits.
+4. Update the auth form(s) — locate the current sign-in / sign-up / forgot-password components (likely under `src/routes/auth*` or `src/components/auth/`) and:
+   - Render `<TurnstileWidget>` above the submit button.
+   - Track `captchaToken` in local state; disable submit until present.
+   - Pass `options: { captchaToken }` to `supabase.auth.signInWithPassword`, `signUp`, and `resetPasswordForEmail`.
+   - On error, reset the widget so the user gets a fresh token.
+5. Leave Google OAuth (`lovable.auth.signInWithOAuth`) untouched — Turnstile only guards email/password + recover.
+6. Verify: build passes, both forms render the widget locally, and a submit without a token is blocked.
 
-- **Provider**: Cloudflare Turnstile (free, fits the CF stack, invisible/managed challenge) or hCaptcha. I'd recommend Turnstile.
-- **Site key + secret**: you'd need to create the site in the provider dashboard, then paste the site key (public, goes in `.env` as `VITE_TURNSTILE_SITE_KEY`) and configure the secret in Supabase Auth → Settings → CAPTCHA. On Lovable Cloud the Supabase-side toggle is done via the Backend view.
-- **Where to gate**: `/auth` (email sign-in + sign-up) and the password-reset form. Google OAuth via the Lovable broker is unaffected.
-- **Package**: `@marsidev/react-turnstile` (or `@hcaptcha/react-hcaptcha`).
+## Follow-up on other findings
 
-If you want this fix, I'd:
-1. Add `VITE_TURNSTILE_SITE_KEY` to `.env.example` and wire it through.
-2. Install `@marsidev/react-turnstile`.
-3. Render `<Turnstile>` on the email sign-in, sign-up, and reset-password forms in `src/routes/login.tsx` / `auth-callback.tsx` / wherever the reset form lives; pass the token via `options: { captchaToken }` to `supabase.auth.signInWithPassword`, `signUp`, and `resetPasswordForEmail`.
-4. Ask you to enable CAPTCHA + paste the provider secret in the Supabase Auth settings (Backend view) — I can't do that step.
+- **Low — COOP/CORP header**: already shipped in previous turn (`src/server.ts`). Marking that finding as fixed.
+- **Medium — weak rate limit on password reset**: this Turnstile rollout is the intended defense (a token is required per request). Once shipped, mark that finding as fixed too and note the rationale in `@security-memory`.
 
-### What I'll do now if you approve
-- Ship fix #1 (CORP header) immediately.
-- For #3, confirm: **Turnstile or hCaptcha?** And are you OK creating the provider site + adding the secret in the Backend view? Once you confirm I'll implement all frontend wiring in one pass.
-- For #2, leave as-is unless you want it recorded in security memory.
+## Out of scope
 
-### Files touched
-- `src/server.ts` — one new header line.
-- (Pending your call) `src/routes/login.tsx` + any reset-password surface, `.env.example`, `package.json`.
+- Changing Supabase's built-in auth rate-limit dials (not accessible on Lovable Cloud).
+- Adding Turnstile to non-auth forms (contact card, etc.) — can be a follow-up.
