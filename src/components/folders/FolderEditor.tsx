@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -11,15 +11,8 @@ import {
   listFolderHistory,
   suggestRecategorization,
   applyRecategorization,
-  listFolderSummaries,
-  createFolderSummary,
-  updateFolderSummary,
-  deleteFolderSummary,
-  runFolderSummaryNow,
-  getFolderSummaryJob,
   applyFolderBehaviorRetroactive,
   setFolderAutoRelearn,
-  scanGmailForFolder,
   generateFolderAiRule,
   generateFolderAiRuleFromLabel,
 } from "@/lib/gmail.functions";
@@ -37,7 +30,6 @@ import {
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus,
   Trash2,
@@ -47,13 +39,7 @@ import {
   ArrowRight,
   History,
   Loader2,
-  MoveRight,
-  Clock,
-  Play,
-  Pencil,
   ChevronDown,
-  Bot,
-  Hand,
   Filter as FilterIcon,
   Tag,
   Inbox,
@@ -68,51 +54,13 @@ import {
 import { toast } from "sonner";
 import { FolderChatPanel } from "./FolderChatPanel";
 import { FolderHealthCard } from "./FolderHealthCard";
+import { HistoryPanel } from "./editor/folder-history-panel";
+import { SummariesPanel } from "./editor/folder-summaries-panel";
+import { RuleGroupEditor } from "./editor/folder-rule-group-editor";
+import { ScanGmailSection } from "./editor/folder-scan-gmail-section";
+import type { Folder, Filter, GLabel } from "./editor/types";
+export type { RuleNode, Folder, Filter, GLabel } from "./editor/types";
 
-export type RuleNode =
-  | { type: "group"; op: "and" | "or"; children: RuleNode[] }
-  | { type: "cond"; field: string; op: string; value: string };
-
-export type Folder = {
-  id: string;
-  name: string;
-  color: string;
-  gmail_label_id: string | null;
-  ai_rule: string | null;
-  learned_profile: string | null;
-  last_learned_at: string | null;
-  auto_archive: boolean;
-  auto_mark_read: boolean;
-  priority: number;
-  gmail_account_id: string;
-  filter_logic?: "any" | "all";
-  auto_star?: boolean;
-  hide_from_inbox?: boolean;
-  skip_ai?: boolean;
-  filter_tree?: RuleNode | null;
-  forward_to?: string | null;
-  min_ai_confidence?: number;
-  snooze_hours?: number;
-  overrides_inbox_override?: boolean;
-  is_cold_email?: boolean;
-  surface_ai_rule?: string | null;
-  surface_names?: string | null;
-  auto_relearn?: boolean;
-  relearn_threshold?: number;
-  emails_since_learn?: number;
-};
-export type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
-export type GLabel = { id: string; name: string; type: string };
-
-const reasonLabel: Record<string, string> = {
-  gmail_label: "Gmail label",
-  filter: "Filter match",
-  domain_rule: "Domain rule",
-  manual_move: "Moved manually",
-  ai: "AI",
-  surfaced_to_inbox: "Surfaced",
-  none: "Unclassified",
-};
 
 export function FolderEditor({
   folder,
