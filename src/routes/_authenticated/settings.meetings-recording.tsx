@@ -1,10 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { AccountPicker } from "@/components/settings/AccountPicker";
 import { MeetingBotCard } from "@/components/settings/MeetingBotCard";
 import { MeetingAutoRecordCard } from "@/components/settings/MeetingAutoRecordCard";
 import { MeetingRecordBlocklistCard } from "@/components/settings/MeetingRecordBlocklistCard";
-import { useAccountSelection } from "@/lib/account-selection";
+import { useScopedAccount } from "@/lib/use-scoped-account";
 
 export const Route = createFileRoute("/_authenticated/settings/meetings-recording")({
   head: () => ({
@@ -17,21 +16,13 @@ export const Route = createFileRoute("/_authenticated/settings/meetings-recordin
 });
 
 function MeetingRecordingSettings() {
-  const { activeAccountId, setActiveAccountId } = useAccountSelection();
-  const [scopedEmail, setScopedEmail] = useState<string | null>(null);
+  const { activeAccountId, scopedEmail, onAccountChange } = useScopedAccount();
 
   return (
     <div className="space-y-6">
       <MeetingBotCard />
 
-      <AccountPicker
-        value={activeAccountId}
-        onChange={(id, email) => {
-          setActiveAccountId(id);
-          setScopedEmail(email);
-        }}
-        label="Calendar"
-      />
+      <AccountPicker value={activeAccountId} onChange={onAccountChange} label="Calendar" />
 
       {activeAccountId && scopedEmail && (
         <MeetingAutoRecordCard accountId={activeAccountId} accountEmail={scopedEmail} />
