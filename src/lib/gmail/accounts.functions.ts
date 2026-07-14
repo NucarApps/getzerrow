@@ -239,7 +239,7 @@ export const disconnectGmailAccount = createServerFn({ method: "POST" })
     // Best-effort: revoke the Google OAuth grant so the refresh token is dead
     // server-side at Google before we drop our encrypted copy.
     try {
-      const { revokeGoogleOAuthForAccount } = await import("./google-oauth.server");
+      const { revokeGoogleOAuthForAccount } = await import("../google-oauth.server");
       await revokeGoogleOAuthForAccount(data.account_id);
     } catch (e) {
       logError(

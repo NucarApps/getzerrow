@@ -244,7 +244,7 @@ export const relearnFolderNow = createServerFn({ method: "POST" })
       .eq("id", data.folder_id)
       .single();
     if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
-    const { regenerateFolderProfile } = await import("./sync/folder-learn");
+    const { regenerateFolderProfile } = await import("../sync/folder-learn");
     const profile = await regenerateFolderProfile(data.folder_id);
     return { ok: true, hasProfile: !!profile };
   });

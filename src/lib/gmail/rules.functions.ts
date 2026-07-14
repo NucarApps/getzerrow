@@ -664,7 +664,7 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
     z.object({ email_ids: z.array(z.string().uuid()).min(1).max(50) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { classifyParsedEmail } = await import("./sync.server");
+    const { classifyParsedEmail } = await import("../sync.server");
     const { rows } = await getEmailsDecrypted(data.email_ids);
     if (rows.length === 0) return { routed: 0, unchanged: 0, failed: 0 };
 

@@ -241,7 +241,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email_id: string }) => z.object({ email_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { classifyParsedEmail, loadAccountContext } = await import("./sync.server");
+    const { classifyParsedEmail, loadAccountContext } = await import("../sync.server");
     const { rows } = await getEmailsDecrypted([data.email_id]);
     const email = rows[0];
     if (!email || email.user_id !== context.userId) throw new Error("Email not found");
@@ -276,7 +276,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
     let summary = result.ai_summary || "";
     if (!summary) {
       try {
-        const { summarizeEmail } = await import("./ai.server");
+        const { summarizeEmail } = await import("../ai.server");
         summary = await summarizeEmail({
           from_name: parsed.from_name,
           from_addr: parsed.from_addr,
