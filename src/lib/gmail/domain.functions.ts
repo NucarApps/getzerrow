@@ -281,4 +281,3 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
 
     return { moved: ids.length };
   });
-

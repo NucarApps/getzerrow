@@ -463,4 +463,3 @@ export const applyFolderLabelToLocal = createServerFn({ method: "POST" })
     }
     return { total: todo.length, synced, failed };
   });
-
