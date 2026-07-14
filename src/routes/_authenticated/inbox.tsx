@@ -132,7 +132,7 @@ import {
   hasVisibleHtml,
 } from "@/components/emails/email-body-frame";
 import { SwipeRow } from "@/components/emails/swipe-row";
-import { TriggeredBy } from "@/components/emails/triggered-by";
+import { AiDecisionDrawer } from "@/components/emails/AiDecisionDrawer";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   component: InboxPage,
