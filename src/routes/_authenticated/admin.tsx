@@ -560,3 +560,175 @@ function UserRow({ u }: { u: AdminUser }) {
     </tr>
   );
 }
+
+function fmtDuration(seconds: number | null): string {
+  if (seconds === null) return "—";
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${Math.round(seconds / 360) / 10}h`;
+}
+
+function fmtMs(ms: number | null): string {
+  if (ms === null) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function truncate(s: string | null, n: number): string {
+  if (!s) return "—";
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+function SyncMetricsSection({
+  q,
+}: {
+  q: { data?: SyncJobMetrics; isLoading: boolean; refetch: () => void; isFetching: boolean };
+}) {
+  const data = q.data;
+  const counts = data?.counts ?? { pending: 0, running: 0, dlq: 0, total: 0 };
+  const retries = data?.retries ?? { with_attempts: 0, max_attempt: 0, avg_attempt: 0 };
+  const latency = data?.latency_ms ?? { count: 0, p50: null, p95: null, p99: null };
+  const oldestSec = data?.oldest_pending_age_seconds ?? null;
+  const throughput = data?.throughput_last_24h ?? 0;
+  const dlqRows = data?.recent_dlq ?? [];
+
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex items-center gap-2">
+        <Activity className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          Sync queue
+        </h2>
+        <button
+          type="button"
+          onClick={() => q.refetch()}
+          className="ml-auto inline-flex items-center gap-1 rounded border border-border bg-card/40 px-2 py-1 text-xs text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
+          disabled={q.isFetching}
+        >
+          <RefreshCw className={"h-3 w-3 " + (q.isFetching ? "animate-spin" : "")} />
+          Refresh
+        </button>
+      </div>
+      <p className="mb-3 -mt-1 text-xs text-muted-foreground">
+        Live message_jobs state plus 24-hour ingest throughput and Pub/Sub → visible latency.
+      </p>
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={<Clock className="h-4 w-4" />}
+          label="Pending"
+          value={counts.pending}
+          loading={q.isLoading}
+        />
+        <StatCard
+          icon={<Activity className="h-4 w-4" />}
+          label="Running"
+          value={counts.running}
+          loading={q.isLoading}
+        />
+        <StatCard
+          icon={<XCircle className="h-4 w-4" />}
+          label="Dead-letter"
+          value={counts.dlq}
+          loading={q.isLoading}
+        />
+        <StatCard
+          icon={<Inbox className="h-4 w-4" />}
+          label="Ingested (24h)"
+          value={throughput}
+          loading={q.isLoading}
+        />
+      </div>
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricTile label="Oldest pending" value={fmtDuration(oldestSec)} loading={q.isLoading} />
+        <MetricTile
+          label="Retrying jobs"
+          value={`${retries.with_attempts} · max ${retries.max_attempt}`}
+          loading={q.isLoading}
+          hint={`avg attempt ${retries.avg_attempt.toFixed(2)}`}
+        />
+        <MetricTile
+          label="Latency p50 / p95"
+          value={`${fmtMs(latency.p50)} · ${fmtMs(latency.p95)}`}
+          loading={q.isLoading}
+          hint={`p99 ${fmtMs(latency.p99)} · n=${latency.count}`}
+        />
+        <MetricTile
+          label="Total in-flight"
+          value={counts.total.toLocaleString()}
+          loading={q.isLoading}
+        />
+      </div>
+
+      <div className="rounded-md border border-border bg-card/40 p-4">
+        <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+          <XCircle className="h-3.5 w-3.5" />
+          Recent dead-letter jobs
+        </div>
+        <div className="max-h-64 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-2 py-1 text-left">When</th>
+                <th className="px-2 py-1 text-left">From</th>
+                <th className="px-2 py-1 text-left">Subject</th>
+                <th className="px-2 py-1 text-right">Attempts</th>
+                <th className="px-2 py-1 text-left">Last error</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {q.isLoading && (
+                <tr>
+                  <td colSpan={5} className="px-2 py-6 text-center text-muted-foreground">
+                    Loading…
+                  </td>
+                </tr>
+              )}
+              {!q.isLoading && dlqRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-2 py-6 text-center text-muted-foreground">
+                    No jobs in the dead-letter queue.
+                  </td>
+                </tr>
+              )}
+              {dlqRows.map((r) => (
+                <tr key={r.id} className="align-top hover:bg-accent/30">
+                  <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
+                    {fmtDateTime(r.updated_at)}
+                  </td>
+                  <td className="px-2 py-1 text-foreground">{truncate(r.from_addr, 32)}</td>
+                  <td className="px-2 py-1 text-foreground">{truncate(r.subject, 48)}</td>
+                  <td className="px-2 py-1 text-right tabular-nums">{r.attempt}</td>
+                  <td className="px-2 py-1 font-mono text-xs text-destructive">
+                    {truncate(r.last_error, 96)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  loading,
+  hint,
+}: {
+  label: string;
+  value: string;
+  loading: boolean;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card/40 p-4">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-1 font-display text-lg text-foreground">{loading ? "…" : value}</div>
+      {hint && <div className="mt-0.5 text-[11px] text-muted-foreground">{hint}</div>}
+    </div>
+  );
+}
