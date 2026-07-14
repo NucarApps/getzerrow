@@ -1,25 +1,32 @@
-# Fix the CAPTCHA finding without a Supabase dashboard
+## Problem
 
-You're on Lovable Cloud, so auth settings live in the **Backend** panel (the Cloud UI), not a Supabase dashboard. Since the app only uses Google OAuth, we don't need CAPTCHA at all — we just need to close the unused email/password + `/recover` surface the scanner flagged.
+The DLQ is full of rows with `stuck (worker timeout — exceeded max attempts)` — messages whose worker died mid-processing (Cloudflare 25s wall-time), got reclaimed, died again, and were parked. None have a `from_addr` / `subject` because the DLQ metadata fetch only runs in `handleError`, not in `reclaimStuckJobs`.
 
-## Recommended: disable the Email auth provider
+Two things to do:
 
-The scanner hit `/auth/v1/recover`. That endpoint only exists because the Email provider is enabled. Disabling it removes the attack surface entirely — no CAPTCHA needed, no code changes.
+1. **Drain the current backlog** — auto-replay these `stuck` DLQ rows. `isTransientDlqError` in `src/lib/sync/dlq.ts` doesn't currently match `stuck (worker timeout…)`, so `replayTransientDlq` skips them. Add a pattern for it. One manual tick of `/api/public/gmail-dlq-replay` then flushes the backlog back to `pending` with fresh attempts and jittered `next_run_at`.
 
-Steps you do in the app:
-1. Open **Backend** (button in the Lovable sidebar / top bar).
-2. Go to **Users → Auth Settings → Providers**.
-3. Turn **Email** off. Leave **Google** on.
-4. Save.
+2. **Stop the bleed** — the reason jobs time out repeatedly is the 25s hard cap in `runMessageJobs` racing Gmail fetch + AI + DB. For the stuck-reclaim path specifically, make the second failure land in DLQ with metadata (from/subject) so operators can actually see what's stuck, and lower the reclaim's attempt bump so a single transient stall doesn't burn the whole budget.
 
-Result: `/signup`, `/token?grant_type=password`, and `/recover` all stop accepting requests. The medium "no CAPTCHA on auth" and "weak rate limit on password reset" findings both go away.
+## Changes
 
-## What I'll do after you confirm it's off
+**`src/lib/sync/dlq.ts`**
+- Add `/stuck \(worker timeout/i` (and a matching test case) to `TRANSIENT_DLQ_PATTERNS` so `replayTransientDlq` picks these up.
 
-1. Verify Google sign-in still works in preview.
-2. Mark the CAPTCHA and password-reset rate-limit findings resolved in `@security-memory` with the rationale "Email provider disabled — only Google OAuth is used."
-3. Delete `.lovable/plan.md` (the old Turnstile plan) since it's no longer relevant.
+**`src/lib/sync/queue.ts` — `reclaimStuckJobs`**
+- On the DLQ branch (second stuck in a row), best-effort fetch `from_addr` / `subject` via `getMessageMetadata` + `parseMessage` (same shape as `handleError`) so the operator DLQ table isn't all `—`.
+- Keep the free-first-reclaim behavior; only the DLQ transition changes.
 
-## If you'd rather keep Email enabled
+**One-off drain**
+- After deploy, hit `/api/public/gmail-dlq-replay` once (existing endpoint, `CRON_SECRET`-gated) to flush the backlog. No new endpoint needed.
 
-Tell me and I'll instead walk you through enabling Turnstile in **Backend → Users → Auth Settings → Bot & Abuse Protection** (you'd create a Turnstile site at Cloudflare, paste the **Secret key** into that panel — no code changes needed either way, since the app never calls the email/password endpoints).
+## Out of scope
+
+- Not changing `JOB_TIMEOUT_MS` or `MAX_JOB_ATTEMPTS` — the timeout matches Worker wall-time and lowering attempts would DLQ faster, not less. If genuine slow-Gmail/slow-AI is the root cause we'd tackle that separately (batch size, prefetch, model choice) once the replayed jobs show whether they still time out.
+- Not touching `claim_message_jobs` RPC or the queue worker pool.
+
+## Acceptance
+
+- Unit test in `src/lib/sync-dlq.test.ts` asserts `isTransientDlqError("stuck (worker timeout — exceeded max attempts)")` is true.
+- Manual dlq-replay tick moves the screenshotted rows out of `dlq` back to `pending`.
+- New `stuck→dlq` rows created after the change show `from_addr` / `subject` in the operator UI.
