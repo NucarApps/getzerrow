@@ -21,10 +21,7 @@ import { getMessageMetadata, parseMessage, GmailApiError } from "../gmail.server
 import { classifyEmail, classifyEmailsBatch } from "../ai.server";
 import { logError } from "../log.server";
 import { MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS, computeBackoffSeconds } from "./backoff";
-import {
-  type AccountContext,
-  loadAccountContext,
-} from "./account-context";
+import { type AccountContext, loadAccountContext } from "./account-context";
 import { classifyParsedEmail } from "./classify";
 import { updateEmailEncrypted } from "./encrypted-writer";
 import { bumpEmailsSinceLearn } from "./folder-learn";
