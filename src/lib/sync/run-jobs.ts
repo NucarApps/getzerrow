@@ -375,6 +375,22 @@ export async function runMessageJobs(
     // always defers so the ack isn't blocked on AI.
     const deferAi = deferAiToCron || job.priority >= 10 || liveBurst;
     const timings: ProcessTimings = { fetch: 0, ai: 0, db: 0 };
+    const startedAt = Date.now();
+    // Correlation dimensions common to every log line for this job.
+    const jobFields = {
+      run_id: runId,
+      job_id: job.id,
+      account_id: job.gmail_account_id,
+      gmail_message_id: job.gmail_message_id,
+      user_id: job.user_id,
+      priority: job.priority,
+      attempt: job.attempt,
+    };
+    logInfo("queue.job.start", {
+      ...jobFields,
+      defer_ai: deferAi,
+      lease_ms: JOB_TIMEOUT_MS,
+    });
     try {
       const result = (await Promise.race([
         processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id, {
@@ -419,6 +435,13 @@ export async function runMessageJobs(
             next_run_at: new Date(Date.now() + WEBHOOK_DEFERRED_AI_REQUEUE_MS).toISOString(),
           })
           .eq("id", job.id);
+        logInfo("queue.job.deferred_ai_requeue", {
+          ...jobFields,
+          duration_ms: Date.now() - startedAt,
+          requeue_delay_ms: WEBHOOK_DEFERRED_AI_REQUEUE_MS,
+          fetch_ms: Math.round(timings.fetch),
+          db_ms: Math.round(timings.db),
+        });
         results.push({ id: job.id, ok: true });
         return;
       }
@@ -430,10 +453,25 @@ export async function runMessageJobs(
       if (deferAi && needsAiPass) {
         pendingAi.push({ job, emailRowId: result.email_id, parsed: result.parsed });
         // Don't delete the job row yet — finalize after batch AI completes.
+        logInfo("queue.job.queued_for_batch_ai", {
+          ...jobFields,
+          duration_ms: Date.now() - startedAt,
+          email_id: result.email_id,
+          fetch_ms: Math.round(timings.fetch),
+          db_ms: Math.round(timings.db),
+        });
         return;
       }
 
       await supabaseAdmin.from("message_jobs").delete().eq("id", job.id);
+      logInfo("queue.job.complete", {
+        ...jobFields,
+        duration_ms: Date.now() - startedAt,
+        fetch_ms: Math.round(timings.fetch),
+        ai_ms: Math.round(timings.ai),
+        db_ms: Math.round(timings.db),
+        path: "inline",
+      });
       results.push({ id: job.id, ok: true });
     } catch (e: unknown) {
       await handleError(job, e);
