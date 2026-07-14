@@ -82,6 +82,35 @@ async function applyClassifiedFolderActions(
   );
 }
 
+/** Idempotency gate for the batch-AI second pass.
+ *
+ * Returns true only when the email row is still awaiting classification
+ * AND has no folder assignment. After a successful classify+apply, a row
+ * transitions to a terminal `classified_by` (`ai`, `ai_low_confidence`,
+ * `ai_error`, `unclassified`, `rules`) and/or gets a `folder_id` — in
+ * either case the batch pass must not re-apply folder actions, must not
+ * overwrite the row, and must not re-bump the learn counter. This guard
+ * protects against:
+ *   • worker A finishing apply+persist then crashing before the job DELETE
+ *     (stuck-job reclaim later hands the same message to worker B)
+ *   • Pub/Sub redelivery re-enqueueing a message already handled by an
+ *     earlier live-cron tick
+ *   • the user manually moving an email between enqueue and batch pass
+ *
+ * The check is a single SELECT; concurrent processing of the same job is
+ * already blocked by `claim_message_jobs` (SKIP LOCKED + 60s lease), so we
+ * don't need a compare-and-swap here. */
+async function isEmailPendingClassification(emailRowId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from("emails")
+    .select("classified_by, folder_id")
+    .eq("id", emailRowId)
+    .maybeSingle();
+  if (!data) return false;
+  const stillPending = data.classified_by === "pending" || data.classified_by === "pending_ai";
+  return stillPending && !data.folder_id;
+}
+
 export async function runMessageJobs(
   limit = 100,
   concurrency = JOB_WORKER_CONCURRENCY,
@@ -518,6 +547,24 @@ export async function runMessageJobs(
             await Promise.all(
               chunk.map(async (c, idx) => {
                 const r = out[idx];
+                // Idempotency gate: skip apply/persist/bump if this row was
+                // already classified (retry after partial success, stuck-job
+                // reclaim, or the user manually filed it between enqueue and
+                // this pass). Still delete the job so the queue drains.
+                if (!(await isEmailPendingClassification(c.emailRowId))) {
+                  await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.skip_duplicate", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    email_id: c.emailRowId,
+                    path: "batch_ai",
+                    reason: "already_classified_or_manually_moved",
+                  });
+                  results.push({ id: c.job.id, ok: true });
+                  return;
+                }
                 // Honor each folder's min_ai_confidence — match live behavior.
                 const candidate = r?.folder_id
                   ? ctx.folders.find((f) => f.id === r.folder_id)
@@ -569,6 +616,21 @@ export async function runMessageJobs(
             );
             await Promise.all(
               chunk.map(async (c) => {
+                // Same idempotency gate as the batch success path.
+                if (!(await isEmailPendingClassification(c.emailRowId))) {
+                  await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.skip_duplicate", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    email_id: c.emailRowId,
+                    path: "batch_ai_fallback",
+                    reason: "already_classified_or_manually_moved",
+                  });
+                  results.push({ id: c.job.id, ok: true });
+                  return;
+                }
                 try {
                   const single = await classifyEmail(c.parsed, ctx.enrichedFolders);
                   if (single.folder_id) {
