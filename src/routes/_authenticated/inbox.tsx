@@ -1782,7 +1782,7 @@ function InboxPage() {
                         {decodeEntities(e.snippet)}
                       </div>
                     )}
-                  </RowTag>
+                  </div>
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-64">
                   {(e.is_archived || e.folder_id || !(e.raw_labels ?? []).includes("INBOX")) && (
