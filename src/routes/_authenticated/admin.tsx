@@ -190,7 +190,7 @@ function AdminPage() {
           />
         </section>
 
-        {/* Folder learning health (retry-rate instability) */}
+        {/* Sync queue health */}
         <SyncMetricsSection q={syncQ} />
 
         {/* Folder learning health (retry-rate instability) */}
