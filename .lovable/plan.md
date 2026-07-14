@@ -1,54 +1,51 @@
-## Goal
+# Cleanup + capability + accuracy plan
 
-Make the folder editor's cluttered single "Settings" tab cleaner by splitting it into focused sub-tabs and moving rarely-used power settings behind an "Advanced" disclosure — no functionality removed.
+You asked for three things at once — less clutter, more capability, fewer mistakes. Several features I'd normally suggest already exist, so this plan only fills the real gaps. It's phased so you can approve/ship one slice at a time.
 
-## Current problem
+## What already exists (won't rebuild)
+- **"Why was this filed here?"** — the reading pane already has a collapsible showing the classification reason + an AI-confidence bar.
+- **Multi-select** in the inbox already supports **Re-classify** and **Suggest folder → create**.
+- Emails already store `classification_reason`, `ai_confidence`, `classified_by`, `matched_filter_ids`, `matched_folder_ids`.
+- Folder learning (examples, learned profile, auto-relearn cron, manual-move counter) is in place.
 
-Everything lives in one long-scroll `Settings` tab inside `FolderEditor.tsx`: filters + rule groups, Gmail label, AI purpose/rule, learned profile, suggested domains, summaries, a 7-toggle behavior grid, surface-to-inbox, and forward/snooze/confidence inputs — all stacked together. It's hard to scan and find anything.
+---
 
-## New structure
+## Phase 1 — More capability: finish bulk actions (small)
+The selection bar only re-classifies or suggests a folder. Add the everyday bulk actions on the same "N selected" bar:
+- **Archive**, **Mark read / unread**, **Move to folder** (reuse existing folder picker), and **Move to inbox**.
+- Wire to existing server fns (`archiveEmail`, `markEmailRead`, `moveEmailToFolder`, `moveEmailToInbox`) run over the selected ids with a single toast summary and one query invalidation.
 
-The folder name / color / priority header and the shared **Save changes** bar stay at the top/bottom (unchanged). The current three top-level tabs (`Settings`, `History`, `Chat`) become five focused tabs:
+Frontend-only; no new server logic.
 
-```text
-[ Rules ] [ AI ] [ Automation ] [ History ] [ Chat ]
-```
+## Phase 2 — Fewer mistakes: folder health panel (medium)
+Give each folder a lightweight accuracy/health view so misfiling is visible and fixable.
+- New server fn `getFolderHealth({ folder_id })` returning: total filed, count by `classified_by` (rules vs AI vs manual), avg/low AI confidence count, recent manual corrections (from folder examples / manual moves), and learning status (examples count, last relearn, emails-since-learn).
+- Surface it in `FolderEditor` as a small **Health** section on the AI tab (or a compact card): "X filed · Y by AI · Z low-confidence · last learned 2d ago", with a "Relearn now" button (already exists server-side).
+- Optional: a low-confidence quick-list linking back to those emails for one-click re-file.
 
-**Rules** — deterministic matching
-- Filters list + add-filter row
-- Match any / Match all toggle and rule-groups switch
-- Suggested domains chips (they add deterministic domain filters, so they belong here)
+This turns the data we already capture into something actionable, which is the main lever for fewer mistakes.
 
-**AI** — how AI sorts and learns
-- Gmail label link
-- Describe purpose → Generate rule
-- AI rule (natural language) + Draft from label / Write with chat
-- Learned profile + Learn/Re-learn/Sync + Keep learning automatically
-- Summaries panel
-- "Rules only (skip AI)" toggle
+## Phase 3 — Less clutter: targeted refactors (medium)
+No behavior changes — just make the giant files maintainable.
+- **Settings boilerplate**: 4 settings routes repeat `AccountPicker` + `useState(scopedEmail)`. Extract a `useScopedAccount()` hook (or a `<ScopedAccountSettings>` wrapper) and reuse across `settings.inbox`, `settings.activity`, `settings.meetings-calendar`, `settings.meetings-recording`.
+- **inbox.tsx is 2,959 lines**: extract self-contained pieces into `src/components/inbox/`: the email list column, the reading pane (`EmailDetail`), the selection/bulk bar, and the "suggest folder" dialog. Keep state ownership in the route; pass props.
+- **FolderEditor.tsx is 2,232 lines**: split each sub-tab (Rules, AI, Automation) into its own file under `src/components/folders/editor/`, keeping the shared `local` state + save bar in the parent.
 
-**Automation** — what happens to matched mail
-- Common toggles up front: Auto-archive, Auto mark-read, Auto-star, Hide from inbox
-- Collapsible **Advanced** section (collapsed by default) holding the power settings:
-  - Beat "Always send to inbox" rules
-  - Cold email folder
-  - Surface to inbox (AI) rule + names/aliases
-  - Auto-forward to
-  - Snooze on arrival (hours)
-  - Min AI confidence (%)
-  - Scan Gmail section
+Each extraction is mechanical and verifiable by an unchanged UI.
 
-**History** and **Chat** — unchanged.
+---
 
-## Technical details
+## Suggested order
+1. Phase 1 (fast visible win).
+2. Phase 2 (accuracy — the highest-value item).
+3. Phase 3 (refactors — do incrementally, one file at a time to keep diffs reviewable).
 
-- All edits are confined to `src/components/folders/FolderEditor.tsx` (presentation only). No server functions, DB columns, or business logic change.
-- The existing `local` state and `dirty`/`save()` flow stay as-is. Because settings now span multiple sub-tabs, the dirty **Save changes / Cancel** bar moves out of the tab content to render below the `<Tabs>` block so it's visible regardless of which sub-tab is active.
-- Existing helper components (`SummariesPanel`, `ScanGmailSection`, `HistoryPanel`, `FolderChatPanel`, `RuleGroupEditor`) are reused unchanged — only their placement moves into the new tabs.
-- Add a lightweight collapsible for the Advanced group using the existing shadcn `Collapsible` (or a simple `useState` + `ChevronDown`, matching patterns already in the file).
-- Tab state (`tab`) default becomes `"rules"`; internal `setTab("chat")` calls (e.g. the "Write with AI chat" button) keep working with the new value.
-- Keep all copy in sentence case and existing tooltips/help text intact.
+## Technical notes
+- Phase 1 & 3 are presentation-only. Phase 2 adds one read-only `createServerFn` in a `*.functions.ts` module, RLS-scoped to `auth.uid()` via `requireSupabaseAuth` — no schema changes needed (aggregates existing columns/tables).
+- Refactors preserve existing `local`/`dirty`/`save()` flow and all query keys; no server or business-logic edits.
 
 ## Out of scope
+- No changes to the sync pipeline, filter engine, or AI classification behavior.
+- No new tables or migrations.
 
-No changes to `AddFolderDialog.tsx`, no changes to what any setting does, and no options removed — only regrouped and de-emphasized.
+Want me to start with Phase 1, or fold Phases 1+2 into the first build?
