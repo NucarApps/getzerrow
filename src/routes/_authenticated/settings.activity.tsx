@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { AccountPicker } from "@/components/settings/AccountPicker";
 import { AccountHealthPanel } from "@/components/settings/AccountHealthCard";
 import { PubsubActivity } from "@/components/settings/PubsubActivity";
 import { ProcessingJobs } from "@/components/settings/ProcessingJobs";
-import { useAccountSelection } from "@/lib/account-selection";
+import { useScopedAccount } from "@/lib/use-scoped-account";
 
 export const Route = createFileRoute("/_authenticated/settings/activity")({
   head: () => ({
@@ -18,19 +17,11 @@ export const Route = createFileRoute("/_authenticated/settings/activity")({
 });
 
 function ActivitySettings() {
-  const { activeAccountId, setActiveAccountId } = useAccountSelection();
-  const [scopedEmail, setScopedEmail] = useState<string | null>(null);
+  const { activeAccountId, scopedEmail, onAccountChange } = useScopedAccount();
 
   return (
     <div className="space-y-6">
-      <AccountPicker
-        value={activeAccountId}
-        onChange={(id, email) => {
-          setActiveAccountId(id);
-          setScopedEmail(email);
-        }}
-        label="Inbox"
-      />
+      <AccountPicker value={activeAccountId} onChange={onAccountChange} label="Inbox" />
       <Card className="overflow-hidden p-0">
         <div className="border-b bg-muted/20 p-4 md:p-6">
           <h2 className="font-display text-2xl">Account health</h2>
