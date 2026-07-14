@@ -636,4 +636,12 @@ export async function runMessageJobs(
     dlq: results.filter((r) => r.dlq).length,
     retryable: results.filter((r) => r.retryable).length,
   };
+  logInfo("queue.drain.summary", {
+    run_id: runId,
+    priority: opts.priority ?? null,
+    defer_ai_to_cron: opts.deferAiToCron === true,
+    ...summary,
+  });
+  return summary;
 }
+
