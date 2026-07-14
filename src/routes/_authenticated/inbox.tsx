@@ -114,13 +114,21 @@ import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder as FolderSettings, GLabel } from "@/components/folders/FolderEditor";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
-import { collectMatchingLeaves } from "@/lib/sync/filter-engine";
 import type { RuleNode } from "@/lib/sync/types";
 import { TrackingStandby } from "@/components/inbox/TrackingStandby";
 import { AssistantPanel } from "@/components/inbox/AssistantPanel";
 import { PullToRefresh } from "@/components/inbox/PullToRefresh";
 import { useIsMobile } from "@/hooks/use-mobile";
-import DOMPurify from "dompurify";
+import {
+  decodeEntities,
+  errMsg,
+  withInbox,
+  withoutInbox,
+  parseSearchQuery,
+} from "@/lib/email-text";
+import { EmailBodyFrame, EmailBodyInline, hasVisibleHtml } from "@/components/emails/email-body-frame";
+import { SwipeRow } from "@/components/emails/swipe-row";
+import { TriggeredBy } from "@/components/emails/triggered-by";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   component: InboxPage,
