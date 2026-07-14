@@ -70,7 +70,7 @@ import {
   ContextMenuSeparator,
   ContextMenuLabel,
 } from "@/components/ui/context-menu";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+
 import {
   Sparkles,
   Archive,
@@ -132,7 +132,7 @@ import {
   hasVisibleHtml,
 } from "@/components/emails/email-body-frame";
 import { SwipeRow } from "@/components/emails/swipe-row";
-import { TriggeredBy } from "@/components/emails/triggered-by";
+import { AiDecisionDrawer } from "@/components/emails/AiDecisionDrawer";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   component: InboxPage,
@@ -2374,114 +2374,51 @@ function Reader({
           </div>
         )}
 
-        <Collapsible open={whyOpen} onOpenChange={setWhyOpen} className="mt-1.5">
-          <CollapsibleTrigger asChild>
-            <button className="flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1 text-left text-sm hover:bg-accent/40">
-              <span className="flex min-w-0 flex-1 items-center gap-2">
-                <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {(() => {
-                  const currentFolder = email.folder_id
-                    ? folders.find((f) => f.id === email.folder_id)
-                    : null;
-                  if (currentFolder) {
-                    return (
-                      <>
-                        <span className="hidden shrink-0 text-muted-foreground sm:inline">In</span>
-                        <span
-                          className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
-                          title={currentFolder.name}
-                        >
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-full"
-                            style={{ background: currentFolder.color }}
-                          />
-                          <span className="truncate">{currentFolder.name}</span>
-                        </span>
-                      </>
-                    );
-                  }
-                  return <span className="truncate text-muted-foreground">Why this folder?</span>;
-                })()}
-                <ClassifiedChip by={email.classified_by} />
-              </span>
-              <ChevronDown
-                className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${whyOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 space-y-3 rounded-md border border-border bg-card/30 p-3 text-sm">
-            <TriggeredBy
-              classifiedBy={email.classified_by}
-              reason={email.classification_reason}
-              folder={folderRulesQ.data?.folder ?? null}
-              filters={folderRulesQ.data?.filters ?? []}
-              email={email}
-            />
+        <button
+          onClick={() => setWhyOpen(true)}
+          className="mt-1.5 flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1 text-left text-sm hover:bg-accent/40"
+        >
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             {(() => {
-              const winnerId = email.folder_id;
-              const others = (email.matched_folder_ids ?? [])
-                .filter((id) => id !== winnerId)
-                .map((id) => folders.find((f) => f.id === id))
-                .filter((f): f is Folder => !!f);
-              if (others.length === 0) return null;
-              return (
-                <div>
-                  <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
-                    Also matched
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {others.map((f) => (
+              const currentFolder = email.folder_id
+                ? folders.find((f) => f.id === email.folder_id)
+                : null;
+              if (currentFolder) {
+                return (
+                  <>
+                    <span className="hidden shrink-0 text-muted-foreground sm:inline">In</span>
+                    <span
+                      className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
+                      title={currentFolder.name}
+                    >
                       <span
-                        key={f.id}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
-                        title={`${f.name} rules also matched — lost on priority`}
-                      >
-                        <span className="h-2 w-2 rounded-full" style={{ background: f.color }} />
-                        <span className="truncate max-w-[10rem]">{f.name}</span>
-                      </span>
-                    ))}
-                    <span className="text-xs text-muted-foreground self-center">
-                      · winner chosen by priority
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: currentFolder.color }}
+                      />
+                      <span className="truncate">{currentFolder.name}</span>
                     </span>
-                  </div>
-                </div>
-              );
+                  </>
+                );
+              }
+              return <span className="truncate text-muted-foreground">Why this folder?</span>;
             })()}
-            {email.classified_by === "ai" && email.ai_confidence != null && (
-              <div>
-                <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
-                  AI confidence
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full bg-primary"
-                    style={{ width: `${Math.round(email.ai_confidence * 100)}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            {email.processed_at && email.received_at && (
-              <div className="text-xs text-muted-foreground">
-                Synced{" "}
-                {(() => {
-                  const delta = Math.max(
-                    0,
-                    Math.round(
-                      (new Date(email.processed_at).getTime() -
-                        new Date(email.received_at).getTime()) /
-                        1000,
-                    ),
-                  );
-                  if (delta < 90) return `${delta}s`;
-                  if (delta < 3600) return `${Math.round(delta / 60)} min`;
-                  return `${Math.round(delta / 3600)}h`;
-                })()}{" "}
-                after Gmail received it
-                {email.processed_at && <> · {new Date(email.processed_at).toLocaleString()}</>}
-              </div>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
+            <ClassifiedChip by={email.classified_by} />
+          </span>
+          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+            AI decision
+            <ChevronLeft className="h-3.5 w-3.5 rotate-180" />
+          </span>
+        </button>
+
+        <AiDecisionDrawer
+          open={whyOpen}
+          onOpenChange={setWhyOpen}
+          email={email}
+          folders={folders}
+          folderRule={folderRulesQ.data?.folder ?? null}
+          filters={folderRulesQ.data?.filters ?? []}
+        />
 
         <div className="mt-4">
           {email.body_html && hasVisibleHtml(email.body_html) ? (
