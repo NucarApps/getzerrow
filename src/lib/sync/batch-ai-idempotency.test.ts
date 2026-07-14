@@ -65,6 +65,9 @@ async function flushMicrotasks() {
 function emailsSelectBuilder() {
   let idFilter: string | null = null;
   const chain = {
+    select() {
+      return chain;
+    },
     eq(col: string, val: string) {
       if (col === "id") idFilter = val;
       return chain;
@@ -75,7 +78,7 @@ function emailsSelectBuilder() {
       return { data: row, error: null };
     },
     limit() {
-      return chain;
+      return Promise.resolve({ data: [], error: null });
     },
   };
   return chain;
