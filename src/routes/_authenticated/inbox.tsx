@@ -584,6 +584,7 @@ function InboxPage() {
   }>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [reclassifyBusy, setReclassifyBusy] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [reanalyzeFolderBusy, setReanalyzeFolderBusy] = useState(false);
   const [confirmReanalyzeFolder, setConfirmReanalyzeFolder] = useState(false);
 
