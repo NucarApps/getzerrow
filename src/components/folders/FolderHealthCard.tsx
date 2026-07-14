@@ -98,11 +98,7 @@ export function FolderHealthCard({ folderId }: Props) {
               value={String(h.byRules)}
             />
             <Stat icon={<Bot className="h-3 w-3" />} label="By AI" value={String(h.byAi)} />
-            <Stat
-              icon={<Hand className="h-3 w-3" />}
-              label="Manual"
-              value={String(h.byManual)}
-            />
+            <Stat icon={<Hand className="h-3 w-3" />} label="Manual" value={String(h.byManual)} />
             <Stat
               icon={<Activity className="h-3 w-3" />}
               label="Low confidence"

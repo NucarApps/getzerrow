@@ -8,10 +8,7 @@ import { useScopedAccount } from "@/lib/use-scoped-account";
 
 export const Route = createFileRoute("/_authenticated/settings/activity")({
   head: () => ({
-    meta: [
-      { title: "Activity — Settings — Zerrow" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "Activity — Settings — Zerrow" }, { name: "robots", content: "noindex" }],
   }),
   component: ActivitySettings,
 });

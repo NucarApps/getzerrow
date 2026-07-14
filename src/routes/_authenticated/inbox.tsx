@@ -497,13 +497,13 @@ function InboxPage() {
   const isSpecialView =
     selectedFolder === "all" || selectedFolder === "all_mail" || selectedFolder === "no_rules";
   const isStaleFolder =
-    !isSpecialView && foldersQ.isSuccess && !(foldersQ.data ?? []).some((f) => f.id === selectedFolder);
+    !isSpecialView &&
+    foldersQ.isSuccess &&
+    !(foldersQ.data ?? []).some((f) => f.id === selectedFolder);
   const effectiveFolder = isStaleFolder ? "all" : selectedFolder;
   useEffect(() => {
     if (isStaleFolder) setSelectedFolder("all");
   }, [isStaleFolder, setSelectedFolder]);
-
-
 
   // Full folder rows + Gmail labels feed the in-place folder settings editor
   // (gear icon in the folder header). Query keys intentionally mirror the
@@ -1283,13 +1283,12 @@ function InboxPage() {
     }
   };
 
-
-
   // The only blocking state is a genuine cold DB read with nothing to paint yet
   // (no in-memory rows and no metadata-cache placeholder). It shows a brief
   // skeleton and never waits on Gmail. An in-flight background sync is signalled
   // only by the subtle header pulse.
-  const coldLoading = (accountsQ.isLoading && !accountId) || (emailsQ.isLoading && rawEmails.length === 0);
+  const coldLoading =
+    (accountsQ.isLoading && !accountId) || (emailsQ.isLoading && rawEmails.length === 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">

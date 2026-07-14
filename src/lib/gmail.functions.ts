@@ -1164,9 +1164,7 @@ export const listFolderHistory = createServerFn({ method: "POST" })
 // aggregated from existing columns — no schema changes.
 export const getFolderHealth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) =>
-    z.object({ folder_id: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
       .from("folders")
@@ -1217,12 +1215,7 @@ export const getFolderHealth = createServerFn({ method: "POST" })
         ) {
           lowConfidence++;
         }
-      } else if (
-        cb === "filter" ||
-        cb === "domain_rule" ||
-        cb === "override" ||
-        cb === "label"
-      ) {
+      } else if (cb === "filter" || cb === "domain_rule" || cb === "override" || cb === "label") {
         byRules++;
       } else {
         other++;
@@ -1269,9 +1262,7 @@ export const getFolderHealth = createServerFn({ method: "POST" })
 // Rebuild a folder's learned profile on demand from its collected examples.
 export const relearnFolderNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) =>
-    z.object({ folder_id: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
       .from("folders")
@@ -1283,8 +1274,6 @@ export const relearnFolderNow = createServerFn({ method: "POST" })
     const profile = await regenerateFolderProfile(data.folder_id);
     return { ok: true, hasProfile: !!profile };
   });
-
-
 
 export const suggestRecategorization = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
