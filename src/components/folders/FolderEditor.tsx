@@ -644,6 +644,9 @@ export function FolderEditor({
             When no rule matches, AI uses these instructions and settings to sort the email.
           </p>
 
+          <FolderHealthCard folderId={folder.id} />
+
+
           <div className="grid grid-cols-[auto_1fr] items-center gap-2">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">
               <Link2 className="mr-1 inline h-3 w-3" />
