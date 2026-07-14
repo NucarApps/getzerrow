@@ -3,8 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, RefreshCw, X, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { getAccountHealth } from "@/lib/account-health.functions";
-import { runAccountDiagnostic } from "@/lib/account-health.functions";
+import { getAccountHealth, runAccountDiagnostic } from "@/lib/account-health.functions";
 import { startConnectGmail } from "@/lib/gmail.functions";
 
 // A watch that expired (or was never armed) means Gmail push has stopped, so
