@@ -587,6 +587,18 @@ export async function runMessageJobs(
                     void bumpEmailsSinceLearn(single.folder_id);
                   }
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.complete", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    user_id: c.job.user_id,
+                    priority: c.job.priority,
+                    attempt: c.job.attempt,
+                    path: "batch_ai_fallback_single",
+                    ai_folder_id: single.folder_id ?? null,
+                    ai_confidence: single.confidence,
+                  });
                   results.push({ id: c.job.id, ok: true });
                 } catch (innerErr: unknown) {
                   const innerMsg = innerErr instanceof Error ? innerErr.message : "unknown";
@@ -596,6 +608,17 @@ export async function runMessageJobs(
                     classification_reason: `AI classifier failed: ${innerMsg.slice(0, 200)}`,
                   });
                   await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.complete", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    user_id: c.job.user_id,
+                    priority: c.job.priority,
+                    attempt: c.job.attempt,
+                    path: "batch_ai_fallback_unclassified",
+                    error: innerMsg.slice(0, 300),
+                  });
                   results.push({ id: c.job.id, ok: true });
                 }
               }),
@@ -606,7 +629,7 @@ export async function runMessageJobs(
     );
   }
 
-  return {
+  const summary = {
     processed: results.length,
     ok: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok && !r.dlq).length,
