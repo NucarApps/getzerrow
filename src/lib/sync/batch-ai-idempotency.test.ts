@@ -352,30 +352,33 @@ describe("batch-AI second pass idempotency", () => {
     expect(batchCalls).toEqual([2]);
   });
 
-  it("in-batch duplicate delivery — same email row in two jobs applies once", async () => {
-    // Two jobs, same target email row. First one to persist flips the row
-    // to classified; the second sees it and skips.
+  it("user manually filed the email between enqueue and batch pass — gate skips", async () => {
+    // The UNIQUE (gmail_account_id, gmail_message_id) index on message_jobs
+    // prevents same-tick duplicate delivery, so the interesting concurrent
+    // case is a user move landing on the row after enqueue but before this
+    // tick's batch pass: folder_id is set even though classified_by is
+    // still 'pending_ai'. The gate must respect the user's decision.
     seedJob({
       jobId: "job-1",
       gmailMessageId: "msg-1",
-      emailRowId: "email-DUP",
-      emailState: { id: "email-DUP", classified_by: "pending_ai", folder_id: null },
+      emailRowId: "email-fresh",
+      emailState: { id: "email-fresh", classified_by: "pending_ai", folder_id: null },
     });
     seedJob({
       jobId: "job-2",
       gmailMessageId: "msg-2",
-      emailRowId: "email-DUP",
-      emailState: { id: "email-DUP", classified_by: "pending_ai", folder_id: null },
+      emailRowId: "email-moved",
+      emailState: { id: "email-moved", classified_by: "pending_ai", folder_id: "folder-B" },
     });
 
     await runMessageJobs(10, 2);
     await flushMicrotasks();
 
-    // The gate + emails-row state-flip in updateEmailEncrypted collaborate
-    // to serialize apply: exactly one folder action, one persist, one bump.
     expect(applyCalls).toHaveLength(1);
+    expect(applyCalls[0].emailRowId).toBe("email-fresh");
     expect(bumpCalls).toEqual(["folder-A"]);
     expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].email_id).toBe("email-fresh");
     expect(new Set(jobDeletes)).toEqual(new Set(["job-1", "job-2"]));
   });
 
