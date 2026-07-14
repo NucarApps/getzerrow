@@ -547,6 +547,24 @@ export async function runMessageJobs(
             await Promise.all(
               chunk.map(async (c, idx) => {
                 const r = out[idx];
+                // Idempotency gate: skip apply/persist/bump if this row was
+                // already classified (retry after partial success, stuck-job
+                // reclaim, or the user manually filed it between enqueue and
+                // this pass). Still delete the job so the queue drains.
+                if (!(await isEmailPendingClassification(c.emailRowId))) {
+                  await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
+                  logInfo("queue.job.skip_duplicate", {
+                    run_id: runId,
+                    job_id: c.job.id,
+                    account_id: c.job.gmail_account_id,
+                    gmail_message_id: c.job.gmail_message_id,
+                    email_id: c.emailRowId,
+                    path: "batch_ai",
+                    reason: "already_classified_or_manually_moved",
+                  });
+                  results.push({ id: c.job.id, ok: true });
+                  return;
+                }
                 // Honor each folder's min_ai_confidence — match live behavior.
                 const candidate = r?.folder_id
                   ? ctx.folders.find((f) => f.id === r.folder_id)
