@@ -770,57 +770,6 @@ export const cancelDeepBackfill = createServerFn({ method: "POST" })
     return cancelBackfillJob(data.job_id, context.userId);
   });
 
-// Aggregated result of running several catch-up rounds in one sync.
-type CatchupRound = Awaited<ReturnType<typeof bulkCatchupClaim>>;
-type DrainResult = {
-  scanned: number;
-  inserted: number;
-  ai_pending: number;
-  fetch_failed: number;
-  overflowed: boolean;
-  rounds: number;
-};
-
-// Drain the message-job queue in bounded rounds so a backlog lands at
-// once instead of trickling via the 5s cron lane. Stops when a round
-// claims nothing, the queue is no longer overflowing, the round cap is
-// hit, or the wall-clock budget is exceeded (keeps the request under the
-// Safari "Load failed" wall). Anything left falls back to the cron lane.
-async function drainCatchupRounds(
-  accountId: string,
-  userId: string,
-  logKey: string,
-): Promise<DrainResult> {
-  const agg: DrainResult = {
-    scanned: 0,
-    inserted: 0,
-    ai_pending: 0,
-    fetch_failed: 0,
-    overflowed: false,
-    rounds: 0,
-  };
-  const startedAt = Date.now();
-  for (let i = 0; i < CATCHUP_MAX_ROUNDS; i++) {
-    let round: CatchupRound;
-    try {
-      round = await bulkCatchupClaim(accountId, userId);
-    } catch (e) {
-      logError(logKey, { account_id: accountId, user_id: userId }, e);
-      break;
-    }
-    agg.rounds += 1;
-    agg.scanned += round.scanned;
-    agg.inserted += round.inserted;
-    agg.ai_pending += round.ai_pending;
-    agg.fetch_failed += round.fetch_failed;
-    agg.overflowed = round.overflowed;
-    // Nothing left to claim, or queue drained — stop.
-    if (round.scanned === 0 || !round.overflowed) break;
-    // Respect the wall-clock budget before starting another round.
-    if (Date.now() - startedAt > CATCHUP_TOTAL_BUDGET_MS) break;
-  }
-  return agg;
-}
 
 export const triggerSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
