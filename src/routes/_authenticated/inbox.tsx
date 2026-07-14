@@ -1387,7 +1387,7 @@ function InboxPage() {
             </div>
           )}
         </div>
-        {isNoRules && (
+        {(isNoRules || selectedIds.size > 0) && (
           <div className="shrink-0 border-b border-border bg-muted/30 px-3 py-2">
             {selectedIds.size === 0 ? (
               <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -1408,72 +1408,171 @@ function InboxPage() {
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground hover:underline"
+                    onClick={() => setSelectedIds(new Set(filtered.map((e) => e.id)))}
+                    disabled={filtered.length === 0}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground hover:underline"
                     onClick={() => setSelectedIds(new Set())}
                   >
                     Clear
                   </button>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7"
-                    disabled={reclassifyBusy}
-                    onClick={async () => {
-                      const ids = Array.from(selectedIds);
-                      setReclassifyBusy(true);
-                      try {
-                        const r = await reclassifyFn({ data: { email_ids: ids } });
-                        toast.success(
-                          `Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`,
-                        );
-                        setSelectedIds(new Set());
-                        qc.invalidateQueries({ queryKey: ["emails"] });
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Re-classify failed");
-                      } finally {
-                        setReclassifyBusy(false);
-                      }
-                    }}
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulk("Archived", (id) => archFnList({ data: { id } }), {
+                        optimisticRemove: true,
+                      })
+                    }
                   >
-                    <RotateCw
-                      className={`mr-1.5 h-3.5 w-3.5 ${reclassifyBusy ? "animate-spin" : ""}`}
-                    />
-                    Re-classify
+                    <Archive className="mr-1.5 h-3.5 w-3.5" />
+                    Archive
                   </Button>
                   <Button
                     size="sm"
+                    variant="outline"
                     className="h-7"
-                    disabled={suggestBusy}
-                    onClick={async () => {
-                      const ids = Array.from(selectedIds);
-                      setSuggestBusy(true);
-                      try {
-                        const s = await suggestFolderFn({ data: { email_ids: ids } });
-                        setSuggestion({
-                          name: s.name,
-                          color: s.color,
-                          ai_rule: s.ai_rule,
-                          filter_field: s.filter_field || null,
-                          filter_op: s.filter_op || null,
-                          filter_value: s.filter_value || "",
-                          why: s.why,
-                          email_ids: ids,
-                        });
-                      } catch (err) {
-                        toast.error(
-                          err instanceof Error ? err.message : "Couldn't suggest a folder",
-                        );
-                      } finally {
-                        setSuggestBusy(false);
-                      }
-                    }}
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulk("Marked read", (id) => markReadFnList({ data: { id, read: true } }))
+                    }
                   >
-                    <Sparkles
-                      className={`mr-1.5 h-3.5 w-3.5 ${suggestBusy ? "animate-pulse" : ""}`}
-                    />
-                    Suggest folder
+                    <MailOpen className="mr-1.5 h-3.5 w-3.5" />
+                    Read
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulk("Marked unread", (id) =>
+                        markReadFnList({ data: { id, read: false } }),
+                      )
+                    }
+                  >
+                    <Mail className="mr-1.5 h-3.5 w-3.5" />
+                    Unread
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulk("Moved to inbox", (id) => moveInboxFn({ data: { email_id: id } }), {
+                        optimisticRemove: false,
+                      })
+                    }
+                  >
+                    <Inbox className="mr-1.5 h-3.5 w-3.5" />
+                    To inbox
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7" disabled={bulkBusy}>
+                        <FolderInput className="mr-1.5 h-3.5 w-3.5" />
+                        Move to
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="max-h-72 w-56 overflow-y-auto">
+                      <DropdownMenuLabel>Move to folder</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {(foldersQ.data ?? []).length === 0 && (
+                        <DropdownMenuItem disabled>No folders yet</DropdownMenuItem>
+                      )}
+                      {(foldersQ.data ?? []).map((f) => (
+                        <DropdownMenuItem
+                          key={f.id}
+                          onSelect={() =>
+                            runBulk(
+                              `Moved to ${f.name} ·`,
+                              (id) => moveFolderFn({ data: { email_id: id, to_folder_id: f.id } }),
+                              { optimisticRemove: true },
+                            )
+                          }
+                        >
+                          <span
+                            className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                            style={{ background: f.color }}
+                          />
+                          <span className="truncate">{f.name}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {isNoRules && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7"
+                        disabled={reclassifyBusy}
+                        onClick={async () => {
+                          const ids = Array.from(selectedIds);
+                          setReclassifyBusy(true);
+                          try {
+                            const r = await reclassifyFn({ data: { email_ids: ids } });
+                            toast.success(
+                              `Re-classified · ${r?.routed ?? 0} routed, ${r?.unchanged ?? 0} unchanged${r?.failed ? `, ${r.failed} failed` : ""}`,
+                            );
+                            setSelectedIds(new Set());
+                            qc.invalidateQueries({ queryKey: ["emails"] });
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : "Re-classify failed");
+                          } finally {
+                            setReclassifyBusy(false);
+                          }
+                        }}
+                      >
+                        <RotateCw
+                          className={`mr-1.5 h-3.5 w-3.5 ${reclassifyBusy ? "animate-spin" : ""}`}
+                        />
+                        Re-classify
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-7"
+                        disabled={suggestBusy}
+                        onClick={async () => {
+                          const ids = Array.from(selectedIds);
+                          setSuggestBusy(true);
+                          try {
+                            const s = await suggestFolderFn({ data: { email_ids: ids } });
+                            setSuggestion({
+                              name: s.name,
+                              color: s.color,
+                              ai_rule: s.ai_rule,
+                              filter_field: s.filter_field || null,
+                              filter_op: s.filter_op || null,
+                              filter_value: s.filter_value || "",
+                              why: s.why,
+                              email_ids: ids,
+                            });
+                          } catch (err) {
+                            toast.error(
+                              err instanceof Error ? err.message : "Couldn't suggest a folder",
+                            );
+                          } finally {
+                            setSuggestBusy(false);
+                          }
+                        }}
+                      >
+                        <Sparkles
+                          className={`mr-1.5 h-3.5 w-3.5 ${suggestBusy ? "animate-pulse" : ""}`}
+                        />
+                        Suggest folder
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
