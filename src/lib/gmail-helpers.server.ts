@@ -1,8 +1,17 @@
 // Shared server-only helpers used by gmail.functions.ts and its
-// sibling files (gmail-diagnostics.functions.ts). RLS doesn't apply
-// to supabaseAdmin (service role); each helper enforces user_id ownership.
+// sibling files (gmail-diagnostics.functions.ts, and any future split
+// files under src/lib/gmail/). RLS doesn't apply to supabaseAdmin
+// (service role); each helper enforces user_id ownership.
+//
+// Anything that lives in more than one `.functions.ts` module — or that
+// a `createServerFn` handler needs to call — belongs here so the
+// `?tss-serverfn-split` transform never has to hoist sibling helpers.
+import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEmailsDecrypted } from "@/lib/sync/encrypted-reader";
+import { bulkCatchupClaim } from "./sync.server";
+import { CATCHUP_MAX_ROUNDS, CATCHUP_TOTAL_BUDGET_MS } from "./sync/config";
+import { logError } from "./log.server";
 
 export async function getOwnedAccount(userId: string, accountId: string) {
   const { data, error } = await supabaseAdmin
@@ -38,4 +47,95 @@ export async function getEmailAccount(userId: string, emailId: string) {
     body_text: dec?.body_text ?? null,
     from_name: dec?.from_name ?? null,
   };
+}
+
+export async function getOwnedFolder(userId: string, folderId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("folders")
+    .select("id, user_id, gmail_account_id")
+    .eq("id", folderId)
+    .single();
+  if (error || !data) throw new Error("Folder not found");
+  if (data.user_id !== userId) throw new Error("Not authorized");
+  return data;
+}
+
+export async function getOwnedSchedule(userId: string, id: string) {
+  const { data, error } = await supabaseAdmin
+    .from("folder_summary_schedules")
+    .select("id, user_id, folder_id, hour, minute, timezone, enabled")
+    .eq("id", id)
+    .single();
+  if (error || !data) throw new Error("Schedule not found");
+  if (data.user_id !== userId) throw new Error("Not authorized");
+  return data;
+}
+
+export function extractDomain(addr: string | null): string | null {
+  if (!addr) return null;
+  const at = addr.lastIndexOf("@");
+  if (at < 0) return null;
+  return addr
+    .slice(at + 1)
+    .toLowerCase()
+    .replace(/[>\s]+$/g, "");
+}
+
+// IANA timezone identifier validator used by folder-summary schedules.
+export const ianaTz = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9_+\-/]+$/);
+
+// Aggregated result of running several bulk catch-up rounds during a sync.
+type CatchupRound = Awaited<ReturnType<typeof bulkCatchupClaim>>;
+export type DrainResult = {
+  scanned: number;
+  inserted: number;
+  ai_pending: number;
+  fetch_failed: number;
+  overflowed: boolean;
+  rounds: number;
+};
+
+// Drain the message-job queue in bounded rounds so a backlog lands at once
+// instead of trickling via the 5s cron lane. Stops when a round claims
+// nothing, the queue is no longer overflowing, the round cap is hit, or
+// the wall-clock budget is exceeded (keeps the request under the Safari
+// "Load failed" wall). Anything left falls back to the cron lane.
+export async function drainCatchupRounds(
+  accountId: string,
+  userId: string,
+  logKey: string,
+): Promise<DrainResult> {
+  const agg: DrainResult = {
+    scanned: 0,
+    inserted: 0,
+    ai_pending: 0,
+    fetch_failed: 0,
+    overflowed: false,
+    rounds: 0,
+  };
+  const startedAt = Date.now();
+  for (let i = 0; i < CATCHUP_MAX_ROUNDS; i++) {
+    let round: CatchupRound;
+    try {
+      round = await bulkCatchupClaim(accountId, userId);
+    } catch (e) {
+      logError(logKey, { account_id: accountId, user_id: userId }, e);
+      break;
+    }
+    agg.rounds += 1;
+    agg.scanned += round.scanned;
+    agg.inserted += round.inserted;
+    agg.ai_pending += round.ai_pending;
+    agg.fetch_failed += round.fetch_failed;
+    agg.overflowed = round.overflowed;
+    // Nothing left to claim, or queue drained — stop.
+    if (round.scanned === 0 || !round.overflowed) break;
+    // Respect the wall-clock budget before starting another round.
+    if (Date.now() - startedAt > CATCHUP_TOTAL_BUDGET_MS) break;
+  }
+  return agg;
 }
