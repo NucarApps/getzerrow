@@ -216,7 +216,7 @@ function MeetingsPage() {
       qc.invalidateQueries({ queryKey: ["meetings"] });
       qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
     },
-    onError: (err) => {
+    onError: (err: unknown) => {
       toast.error(err instanceof Error ? err.message : "Couldn't resend the notetaker.");
     },
   });
