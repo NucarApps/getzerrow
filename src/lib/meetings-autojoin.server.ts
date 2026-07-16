@@ -316,10 +316,10 @@ export async function listUpcomingCalendarEventsForAccount(
   if (eventIds.length === 0) return [];
 
 
-  const [{ data: scheduledRows }, { data: excludedRows }] = await Promise.all([
+  const [{ data: meetingRows }, { data: excludedRows }] = await Promise.all([
     supabaseAdmin
       .from("meetings")
-      .select("calendar_event_id")
+      .select("id, calendar_event_id, status, recording_url, recall_bot_id, meeting_url")
       .eq("user_id", userId)
       .in("calendar_event_id", eventIds),
     supabaseAdmin
@@ -331,9 +331,27 @@ export async function listUpcomingCalendarEventsForAccount(
       .in("calendar_event_id", eventIds),
   ]);
 
-  const scheduledSet = new Set(
-    (scheduledRows ?? []).map((r) => r.calendar_event_id).filter((id): id is string => !!id),
-  );
+  const meetingByEvent = new Map<
+    string,
+    {
+      id: string;
+      status: string | null;
+      recordingUrl: string | null;
+      recallBotId: string | null;
+      meetingUrl: string | null;
+    }
+  >();
+  for (const r of meetingRows ?? []) {
+    if (r.calendar_event_id) {
+      meetingByEvent.set(r.calendar_event_id, {
+        id: r.id,
+        status: r.status ?? null,
+        recordingUrl: r.recording_url ?? null,
+        recallBotId: r.recall_bot_id ?? null,
+        meetingUrl: r.meeting_url ?? null,
+      });
+    }
+  }
   // An exclusion row keeps the bot out; its mode says why (off vs in-person).
   const exclusionModes = new Map<string, string>(
     (excludedRows ?? []).map((r) => [r.calendar_event_id, r.mode ?? "off"]),
