@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   listMeetings,
@@ -18,6 +18,7 @@ import {
   createInPersonMeeting,
   transcribeInPersonMeeting,
   listRecentUnrecordedEvents,
+  resendMeetingBot,
 } from "@/lib/meetings.functions";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
@@ -146,6 +147,7 @@ function MeetingsPage() {
   const isMobile = useIsMobile();
   const list = useServerFn(listMeetings);
   const sync = useServerFn(syncMeeting);
+  const resendBot = useServerFn(resendMeetingBot);
   const listRecentUnrecorded = useServerFn(listRecentUnrecordedEvents);
   const meetingsQ = useQuery({
     queryKey: ["meetings"],
@@ -206,6 +208,19 @@ function MeetingsPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetings.map((m) => `${m.id}:${m.status}`).join(",")]);
+
+  const resendMutation = useMutation({
+    mutationFn: (meetingId: string) => resendBot({ data: { id: meetingId } }),
+    onSuccess: () => {
+      toast.success("Notetaker on its way");
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+      qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Couldn't resend the notetaker.");
+    },
+  });
+
 
   return (
     <div className="h-full overflow-y-auto">
@@ -274,11 +289,18 @@ function MeetingsPage() {
               <div className="space-y-2">
                 {pastRows.map((row) =>
                   row.kind === "meeting" ? (
-                    <button
+                    <div
                       key={`m:${row.meeting.id}`}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelectedId(row.meeting.id)}
-                      className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40"
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          setSelectedId(row.meeting.id);
+                        }
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -292,11 +314,38 @@ function MeetingsPage() {
                           {row.meeting.source === "calendar" ? "From calendar · " : ""}
                           {formatWhen(row.meeting.scheduled_start ?? row.meeting.created_at)}
                         </div>
+                        {row.meeting.canResendBot && (
+                          <p className="mt-1 text-xs text-destructive">
+                            Notetaker didn't join — try again.
+                          </p>
+                        )}
                       </div>
-                      {row.meeting.summary && (
-                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                    </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {row.meeting.canResendBot && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              resendMutation.isPending &&
+                              resendMutation.variables === row.meeting.id
+                            }
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              resendMutation.mutate(row.meeting.id);
+                            }}
+                          >
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                            {resendMutation.isPending &&
+                            resendMutation.variables === row.meeting.id
+                              ? "Sending…"
+                              : "Resend notetaker"}
+                          </Button>
+                        )}
+                        {row.meeting.summary && (
+                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
                   ) : (
                     <div
                       key={`u:${row.event.accountId}:${row.event.id}`}

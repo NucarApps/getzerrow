@@ -13,7 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { startConnectGmail } from "@/lib/gmail.functions";
-import { listAllUpcomingCalendarEvents, setEventRecordingMode } from "@/lib/meetings.functions";
+import {
+  listAllUpcomingCalendarEvents,
+  resendMeetingBot,
+  setEventRecordingMode,
+} from "@/lib/meetings.functions";
 
 /** How one upcoming meeting should be captured. */
 type RecordMode = "bot" | "in_person" | "off";
@@ -54,6 +58,7 @@ export function UpcomingMeetingsCard({
   const listEvents = useServerFn(listAllUpcomingCalendarEvents);
   const setMode = useServerFn(setEventRecordingMode);
   const startConnect = useServerFn(startConnectGmail);
+  const resendBot = useServerFn(resendMeetingBot);
   const [reconnectBusy, setReconnectBusy] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -98,6 +103,18 @@ export function UpcomingMeetingsCard({
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
+    },
+  });
+
+  const resendMutation = useMutation({
+    mutationFn: (meetingId: string) => resendBot({ data: { id: meetingId } }),
+    onSuccess: () => {
+      toast.success("Notetaker on its way");
+      qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Couldn't resend the notetaker.");
     },
   });
 
@@ -201,6 +218,11 @@ export function UpcomingMeetingsCard({
                         You'll record this one in person
                       </p>
                     )}
+                    {e.canResendBot && (
+                      <p className="mt-0.5 text-xs text-destructive">
+                        Notetaker didn't join — try again.
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
                     {!e.hasMeetingLink ? (
@@ -249,6 +271,24 @@ export function UpcomingMeetingsCard({
                             }
                           >
                             <Mic className="mr-1.5 h-3.5 w-3.5" /> Record now
+                          </Button>
+                        )}
+                        {e.canResendBot && e.meetingId && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 w-[168px]"
+                            disabled={
+                              resendMutation.isPending &&
+                              resendMutation.variables === e.meetingId
+                            }
+                            onClick={() => resendMutation.mutate(e.meetingId as string)}
+                          >
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                            {resendMutation.isPending &&
+                            resendMutation.variables === e.meetingId
+                              ? "Sending…"
+                              : "Resend notetaker"}
                           </Button>
                         )}
                       </>

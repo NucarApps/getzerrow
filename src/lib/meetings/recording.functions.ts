@@ -148,6 +148,79 @@ export const stopMeeting = createServerFn({ method: "POST" })
   });
 
 /**
+ * Re-send a Recall notetaker for a meeting whose previous bot failed to join
+ * or is stuck without a recording. Best-effort leaves the old bot, then
+ * creates a fresh one with the caller's saved bot config. When the meeting is
+ * still in the future the new bot is scheduled to join at start; when it's
+ * already past start (recent no-show) the bot joins immediately.
+ */
+export const resendMeetingBot = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    // Ownership is enforced by RLS on the per-user client.
+    const { data: meeting } = await context.supabase
+      .from("meetings")
+      .select(
+        "id, recall_bot_id, meeting_url, status, recording_url, scheduled_start, title",
+      )
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!meeting) throw new Error("Meeting not found");
+    if (!meeting.meeting_url) {
+      throw new Error("This meeting has no video link to send a notetaker to.");
+    }
+    if (meeting.recording_url) {
+      throw new Error("This meeting already has a recording.");
+    }
+    const now = Date.now();
+    const startMs = meeting.scheduled_start ? Date.parse(meeting.scheduled_start) : NaN;
+    if (Number.isFinite(startMs) && now - startMs > 2 * 60 * 60_000) {
+      throw new Error("Too late to send the notetaker — this meeting is over.");
+    }
+
+    // Best-effort: kick the previous bot out of the call so two bots don't
+    // race for a seat. leaveBot already swallows 400/404 ("already gone").
+    if (meeting.recall_bot_id) {
+      try {
+        await leaveBot(meeting.recall_bot_id);
+      } catch (e) {
+        logError("meeting_resend_leave_failed", { userId: context.userId, id: data.id }, e);
+      }
+    }
+
+    const { loadBotConfig } = await import("../meetings.server");
+    const cfg = await loadBotConfig(context.userId);
+    const joinInFuture = Number.isFinite(startMs) && startMs > now;
+    let botId: string;
+    try {
+      const bot = await createBot({
+        meetingUrl: meeting.meeting_url,
+        botName: cfg.botName,
+        joinAt: joinInFuture ? meeting.scheduled_start : null,
+        chatMessage: cfg.chatMessage,
+        chatResendOnJoin: cfg.chatResendOnJoin,
+        imageB64: cfg.imageB64,
+        everyoneLeftTimeoutSec: cfg.autoLeaveEnabled ? cfg.autoLeaveMinutes * 60 : null,
+        inCallNotRecordingTimeoutSec: cfg.autoLeaveEnabled ? cfg.autoLeaveMinutes * 60 : null,
+      });
+      botId = bot.id;
+    } catch (e) {
+      logError("meeting_resend_create_failed", { userId: context.userId, id: data.id }, e);
+      throw new Error("Couldn't reach the meeting service. Try again in a moment.", { cause: e });
+    }
+
+    const nextStatus = joinInFuture ? "scheduled" : "joining";
+    const { error: updErr } = await context.supabase
+      .from("meetings")
+      .update({ recall_bot_id: botId, status: nextStatus })
+      .eq("id", data.id);
+    if (updErr) throw new Error(updErr.message);
+
+    return { status: nextStatus, recallBotId: botId };
+  });
+
+/**
  * For a finished meeting, fetch a fresh signed recording URL from Recall (the
  * stored one expires) and backfill the transcript/summary if they never
  * arrived. Returns the fresh recording URL to play.

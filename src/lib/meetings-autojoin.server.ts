@@ -246,7 +246,55 @@ export type UpcomingCalendarEvent = {
   blocked: boolean;
   blockedBy: string | null;
   declined: boolean;
+  /** Linked meeting row id, when a bot was already dispatched for this event. */
+  meetingId: string | null;
+  /** Current status of the linked meeting row, if any. */
+  meetingStatus: string | null;
+  /** True when the linked meeting already produced a recording. */
+  hasRecording: boolean;
+  /** True when the notetaker didn't join and the user can send a fresh bot. */
+  canResendBot: boolean;
 };
+
+/** Grace period after start before an unfinished "scheduled/joining" meeting
+ *  counts as a no-show and the resend button appears. */
+const RESEND_START_GRACE_MS = 5 * 60_000;
+/** How long after the scheduled start we still let the user resend a bot.
+ *  Past this, the meeting is assumed over and the button disappears. */
+const RESEND_MAX_LATE_MS = 2 * 60 * 60_000;
+
+/**
+ * True when the notetaker never captured the meeting and the user can
+ * usefully send a fresh bot. Covers `failed`, and non-terminal states
+ * (`scheduled` / `joining`) once the start time has slipped past the grace
+ * period. Excludes meetings that already produced a recording or that are
+ * more than two hours past their scheduled start.
+ */
+export function computeCanResendBot(input: {
+  recallBotId: string | null;
+  meetingUrl: string | null;
+  status: string | null;
+  recordingUrl: string | null;
+  scheduledStart: string | null;
+  now?: Date;
+}): boolean {
+  if (!input.recallBotId || !input.meetingUrl) return false;
+  if (input.recordingUrl) return false;
+  const status = input.status ?? "";
+  if (!["scheduled", "joining", "failed"].includes(status)) return false;
+  const now = input.now ?? new Date();
+  const startMs = input.scheduledStart ? new Date(input.scheduledStart).getTime() : NaN;
+  if (Number.isFinite(startMs)) {
+    const delta = now.getTime() - startMs;
+    // Too long after start: the meeting is over, resending is pointless.
+    if (delta > RESEND_MAX_LATE_MS) return false;
+    // Before/near start, only surface it for the explicit "failed" state —
+    // a bot still in `scheduled`/`joining` may yet succeed.
+    if (delta < RESEND_START_GRACE_MS && status !== "failed") return false;
+  }
+  return true;
+}
+
 
 const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
 
@@ -268,10 +316,10 @@ export async function listUpcomingCalendarEventsForAccount(
   if (eventIds.length === 0) return [];
 
 
-  const [{ data: scheduledRows }, { data: excludedRows }] = await Promise.all([
+  const [{ data: meetingRows }, { data: excludedRows }] = await Promise.all([
     supabaseAdmin
       .from("meetings")
-      .select("calendar_event_id")
+      .select("id, calendar_event_id, status, recording_url, recall_bot_id, meeting_url")
       .eq("user_id", userId)
       .in("calendar_event_id", eventIds),
     supabaseAdmin
@@ -283,9 +331,27 @@ export async function listUpcomingCalendarEventsForAccount(
       .in("calendar_event_id", eventIds),
   ]);
 
-  const scheduledSet = new Set(
-    (scheduledRows ?? []).map((r) => r.calendar_event_id).filter((id): id is string => !!id),
-  );
+  const meetingByEvent = new Map<
+    string,
+    {
+      id: string;
+      status: string | null;
+      recordingUrl: string | null;
+      recallBotId: string | null;
+      meetingUrl: string | null;
+    }
+  >();
+  for (const r of meetingRows ?? []) {
+    if (r.calendar_event_id) {
+      meetingByEvent.set(r.calendar_event_id, {
+        id: r.id,
+        status: r.status ?? null,
+        recordingUrl: r.recording_url ?? null,
+        recallBotId: r.recall_bot_id ?? null,
+        meetingUrl: r.meeting_url ?? null,
+      });
+    }
+  }
   // An exclusion row keeps the bot out; its mode says why (off vs in-person).
   const exclusionModes = new Map<string, string>(
     (excludedRows ?? []).map((r) => [r.calendar_event_id, r.mode ?? "off"]),
@@ -313,17 +379,31 @@ export async function listUpcomingCalendarEventsForAccount(
           : exclusionMode === "off" || colorSkipped
             ? "off"
             : "bot";
+      const meeting = meetingByEvent.get(e.id as string) ?? null;
+      const start = e.start?.dateTime ?? e.start?.date ?? null;
+      const hasRecording =
+        typeof meeting?.recordingUrl === "string" && meeting.recordingUrl.length > 0;
       return {
         id: e.id as string,
         title: e.summary ?? null,
-        start: e.start?.dateTime ?? e.start?.date ?? null,
+        start,
         hasMeetingLink: !!extractMeetingUrl(e),
-        scheduled: scheduledSet.has(e.id as string),
+        scheduled: meeting !== null,
         excluded: exclusionMode !== null,
         recordMode,
         blocked: blockedBy !== null,
         blockedBy,
         declined: isDeclinedByUser(e),
+        meetingId: meeting?.id ?? null,
+        meetingStatus: meeting?.status ?? null,
+        hasRecording,
+        canResendBot: computeCanResendBot({
+          recallBotId: meeting?.recallBotId ?? null,
+          meetingUrl: meeting?.meetingUrl ?? null,
+          status: meeting?.status ?? null,
+          recordingUrl: meeting?.recordingUrl ?? null,
+          scheduledStart: start,
+        }),
       };
     });
 }
@@ -367,7 +447,7 @@ export async function listCalendarEventsWindow(
   const [{ data: meetingRows }, { data: excludedRows }, { data: acct }] = await Promise.all([
     supabaseAdmin
       .from("meetings")
-      .select("id, calendar_event_id, status, recording_url")
+      .select("id, calendar_event_id, status, recording_url, recall_bot_id, meeting_url")
       .eq("user_id", userId)
       .in("calendar_event_id", eventIds),
     supabaseAdmin
@@ -386,7 +466,13 @@ export async function listCalendarEventsWindow(
 
   const meetingByEvent = new Map<
     string,
-    { id: string; status: string | null; recordingUrl: string | null }
+    {
+      id: string;
+      status: string | null;
+      recordingUrl: string | null;
+      recallBotId: string | null;
+      meetingUrl: string | null;
+    }
   >();
   for (const r of meetingRows ?? []) {
     if (r.calendar_event_id) {
@@ -394,6 +480,8 @@ export async function listCalendarEventsWindow(
         id: r.id,
         status: r.status ?? null,
         recordingUrl: r.recording_url ?? null,
+        recallBotId: r.recall_bot_id ?? null,
+        meetingUrl: r.meeting_url ?? null,
       });
     }
   }
@@ -451,10 +539,11 @@ export async function listCalendarEventsWindow(
         else if (blocked) skipReason = "blocked";
       }
 
+      const start = e.start?.dateTime ?? e.start?.date ?? null;
       return {
         id: e.id as string,
         title: e.summary ?? null,
-        start: e.start?.dateTime ?? e.start?.date ?? null,
+        start,
         end: e.end?.dateTime ?? e.end?.date ?? null,
         hasMeetingLink,
         scheduled: meeting !== null,
@@ -468,6 +557,13 @@ export async function listCalendarEventsWindow(
         hasRecording,
         willRecord,
         skipReason,
+        canResendBot: computeCanResendBot({
+          recallBotId: meeting?.recallBotId ?? null,
+          meetingUrl: meeting?.meetingUrl ?? null,
+          status: meeting?.status ?? null,
+          recordingUrl: meeting?.recordingUrl ?? null,
+          scheduledStart: start,
+        }),
       };
     });
 }

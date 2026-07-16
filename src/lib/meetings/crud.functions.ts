@@ -20,12 +20,23 @@ export const listMeetings = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("meetings")
       .select(
-        "id, title, meeting_url, platform, status, source, scheduled_start, started_at, ended_at, recording_url, summary, created_at",
+        "id, title, meeting_url, platform, status, source, scheduled_start, started_at, ended_at, recording_url, summary, recall_bot_id, created_at",
       )
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw new Error(error.message);
-    return { meetings: data ?? [] };
+    const { computeCanResendBot } = await import("../meetings-autojoin.server");
+    const meetings = (data ?? []).map((m) => ({
+      ...m,
+      canResendBot: computeCanResendBot({
+        recallBotId: m.recall_bot_id,
+        meetingUrl: m.meeting_url,
+        status: m.status,
+        recordingUrl: m.recording_url,
+        scheduledStart: m.scheduled_start,
+      }),
+    }));
+    return { meetings };
   });
 
 /** List meetings a given contact participated in. */
