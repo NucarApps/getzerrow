@@ -539,10 +539,11 @@ export async function listCalendarEventsWindow(
         else if (blocked) skipReason = "blocked";
       }
 
+      const start = e.start?.dateTime ?? e.start?.date ?? null;
       return {
         id: e.id as string,
         title: e.summary ?? null,
-        start: e.start?.dateTime ?? e.start?.date ?? null,
+        start,
         end: e.end?.dateTime ?? e.end?.date ?? null,
         hasMeetingLink,
         scheduled: meeting !== null,
@@ -556,6 +557,13 @@ export async function listCalendarEventsWindow(
         hasRecording,
         willRecord,
         skipReason,
+        canResendBot: computeCanResendBot({
+          recallBotId: meeting?.recallBotId ?? null,
+          meetingUrl: meeting?.meetingUrl ?? null,
+          status: meeting?.status ?? null,
+          recordingUrl: meeting?.recordingUrl ?? null,
+          scheduledStart: start,
+        }),
       };
     });
 }
