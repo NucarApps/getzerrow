@@ -246,7 +246,55 @@ export type UpcomingCalendarEvent = {
   blocked: boolean;
   blockedBy: string | null;
   declined: boolean;
+  /** Linked meeting row id, when a bot was already dispatched for this event. */
+  meetingId: string | null;
+  /** Current status of the linked meeting row, if any. */
+  meetingStatus: string | null;
+  /** True when the linked meeting already produced a recording. */
+  hasRecording: boolean;
+  /** True when the notetaker didn't join and the user can send a fresh bot. */
+  canResendBot: boolean;
 };
+
+/** Grace period after start before an unfinished "scheduled/joining" meeting
+ *  counts as a no-show and the resend button appears. */
+const RESEND_START_GRACE_MS = 5 * 60_000;
+/** How long after the scheduled start we still let the user resend a bot.
+ *  Past this, the meeting is assumed over and the button disappears. */
+const RESEND_MAX_LATE_MS = 2 * 60 * 60_000;
+
+/**
+ * True when the notetaker never captured the meeting and the user can
+ * usefully send a fresh bot. Covers `failed`, and non-terminal states
+ * (`scheduled` / `joining`) once the start time has slipped past the grace
+ * period. Excludes meetings that already produced a recording or that are
+ * more than two hours past their scheduled start.
+ */
+export function computeCanResendBot(input: {
+  recallBotId: string | null;
+  meetingUrl: string | null;
+  status: string | null;
+  recordingUrl: string | null;
+  scheduledStart: string | null;
+  now?: Date;
+}): boolean {
+  if (!input.recallBotId || !input.meetingUrl) return false;
+  if (input.recordingUrl) return false;
+  const status = input.status ?? "";
+  if (!["scheduled", "joining", "failed"].includes(status)) return false;
+  const now = input.now ?? new Date();
+  const startMs = input.scheduledStart ? new Date(input.scheduledStart).getTime() : NaN;
+  if (Number.isFinite(startMs)) {
+    const delta = now.getTime() - startMs;
+    // Too long after start: the meeting is over, resending is pointless.
+    if (delta > RESEND_MAX_LATE_MS) return false;
+    // Before/near start, only surface it for the explicit "failed" state —
+    // a bot still in `scheduled`/`joining` may yet succeed.
+    if (delta < RESEND_START_GRACE_MS && status !== "failed") return false;
+  }
+  return true;
+}
+
 
 const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
 
