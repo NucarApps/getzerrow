@@ -58,6 +58,7 @@ export function UpcomingMeetingsCard({
   const listEvents = useServerFn(listAllUpcomingCalendarEvents);
   const setMode = useServerFn(setEventRecordingMode);
   const startConnect = useServerFn(startConnectGmail);
+  const resendBot = useServerFn(resendMeetingBot);
   const [reconnectBusy, setReconnectBusy] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
