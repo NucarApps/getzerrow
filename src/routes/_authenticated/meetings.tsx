@@ -289,11 +289,18 @@ function MeetingsPage() {
               <div className="space-y-2">
                 {pastRows.map((row) =>
                   row.kind === "meeting" ? (
-                    <button
+                    <div
                       key={`m:${row.meeting.id}`}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelectedId(row.meeting.id)}
-                      className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40"
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          setSelectedId(row.meeting.id);
+                        }
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -307,11 +314,38 @@ function MeetingsPage() {
                           {row.meeting.source === "calendar" ? "From calendar · " : ""}
                           {formatWhen(row.meeting.scheduled_start ?? row.meeting.created_at)}
                         </div>
+                        {row.meeting.canResendBot && (
+                          <p className="mt-1 text-xs text-destructive">
+                            Notetaker didn't join — try again.
+                          </p>
+                        )}
                       </div>
-                      {row.meeting.summary && (
-                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                    </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {row.meeting.canResendBot && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              resendMutation.isPending &&
+                              resendMutation.variables === row.meeting.id
+                            }
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              resendMutation.mutate(row.meeting.id);
+                            }}
+                          >
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                            {resendMutation.isPending &&
+                            resendMutation.variables === row.meeting.id
+                              ? "Sending…"
+                              : "Resend notetaker"}
+                          </Button>
+                        )}
+                        {row.meeting.summary && (
+                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
                   ) : (
                     <div
                       key={`u:${row.event.accountId}:${row.event.id}`}
