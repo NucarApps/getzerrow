@@ -218,6 +218,11 @@ export function UpcomingMeetingsCard({
                         You'll record this one in person
                       </p>
                     )}
+                    {e.canResendBot && (
+                      <p className="mt-0.5 text-xs text-destructive">
+                        Notetaker didn't join — try again.
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
                     {!e.hasMeetingLink ? (
