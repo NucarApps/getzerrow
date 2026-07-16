@@ -379,17 +379,31 @@ export async function listUpcomingCalendarEventsForAccount(
           : exclusionMode === "off" || colorSkipped
             ? "off"
             : "bot";
+      const meeting = meetingByEvent.get(e.id as string) ?? null;
+      const start = e.start?.dateTime ?? e.start?.date ?? null;
+      const hasRecording =
+        typeof meeting?.recordingUrl === "string" && meeting.recordingUrl.length > 0;
       return {
         id: e.id as string,
         title: e.summary ?? null,
-        start: e.start?.dateTime ?? e.start?.date ?? null,
+        start,
         hasMeetingLink: !!extractMeetingUrl(e),
-        scheduled: scheduledSet.has(e.id as string),
+        scheduled: meeting !== null,
         excluded: exclusionMode !== null,
         recordMode,
         blocked: blockedBy !== null,
         blockedBy,
         declined: isDeclinedByUser(e),
+        meetingId: meeting?.id ?? null,
+        meetingStatus: meeting?.status ?? null,
+        hasRecording,
+        canResendBot: computeCanResendBot({
+          recallBotId: meeting?.recallBotId ?? null,
+          meetingUrl: meeting?.meetingUrl ?? null,
+          status: meeting?.status ?? null,
+          recordingUrl: meeting?.recordingUrl ?? null,
+          scheduledStart: start,
+        }),
       };
     });
 }
