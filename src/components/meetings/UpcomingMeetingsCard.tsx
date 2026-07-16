@@ -13,7 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { startConnectGmail } from "@/lib/gmail.functions";
-import { listAllUpcomingCalendarEvents, setEventRecordingMode } from "@/lib/meetings.functions";
+import {
+  listAllUpcomingCalendarEvents,
+  resendMeetingBot,
+  setEventRecordingMode,
+} from "@/lib/meetings.functions";
 
 /** How one upcoming meeting should be captured. */
 type RecordMode = "bot" | "in_person" | "off";
