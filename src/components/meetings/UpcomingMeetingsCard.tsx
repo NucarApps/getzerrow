@@ -273,6 +273,24 @@ export function UpcomingMeetingsCard({
                             <Mic className="mr-1.5 h-3.5 w-3.5" /> Record now
                           </Button>
                         )}
+                        {e.canResendBot && e.meetingId && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 w-[168px]"
+                            disabled={
+                              resendMutation.isPending &&
+                              resendMutation.variables === e.meetingId
+                            }
+                            onClick={() => resendMutation.mutate(e.meetingId as string)}
+                          >
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                            {resendMutation.isPending &&
+                            resendMutation.variables === e.meetingId
+                              ? "Sending…"
+                              : "Resend notetaker"}
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
