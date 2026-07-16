@@ -106,6 +106,18 @@ export function UpcomingMeetingsCard({
     },
   });
 
+  const resendMutation = useMutation({
+    mutationFn: (meetingId: string) => resendBot({ data: { id: meetingId } }),
+    onSuccess: () => {
+      toast.success("Notetaker on its way");
+      qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Couldn't resend the notetaker.");
+    },
+  });
+
   const noCalendar = !!data && !data.calendarAccess;
   const events = data?.events ?? [];
   const needsReconnect = data?.accountsNeedingReconnect ?? [];
