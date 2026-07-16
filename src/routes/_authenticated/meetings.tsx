@@ -209,6 +209,19 @@ function MeetingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetings.map((m) => `${m.id}:${m.status}`).join(",")]);
 
+  const resendMutation = useMutation({
+    mutationFn: (meetingId: string) => resendBot({ data: { id: meetingId } }),
+    onSuccess: () => {
+      toast.success("Notetaker on its way");
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+      qc.invalidateQueries({ queryKey: ["upcoming-calendar-events"] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Couldn't resend the notetaker.");
+    },
+  });
+
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
