@@ -147,6 +147,7 @@ function MeetingsPage() {
   const isMobile = useIsMobile();
   const list = useServerFn(listMeetings);
   const sync = useServerFn(syncMeeting);
+  const resendBot = useServerFn(resendMeetingBot);
   const listRecentUnrecorded = useServerFn(listRecentUnrecordedEvents);
   const meetingsQ = useQuery({
     queryKey: ["meetings"],
