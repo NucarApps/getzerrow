@@ -14,6 +14,8 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     handlePropfind,
     handleReport,
     handleGet,
+    handlePut,
+    handleDelete,
   } = await import("@/lib/carddav/handlers.server");
 
   const path = params._splat ?? "";
@@ -33,9 +35,15 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
   if (method === "GET" || method === "HEAD") {
     return handleGet(auth.userId, auth.email, path, method);
   }
+  if (method === "PUT") {
+    return handlePut(request, auth.userId, auth.email, path);
+  }
+  if (method === "DELETE") {
+    return handleDelete(request, auth.userId, path);
+  }
   return new Response("Method Not Allowed", {
     status: 405,
-    headers: { Allow: "OPTIONS, GET, HEAD, PROPFIND, REPORT" },
+    headers: { Allow: "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, REPORT" },
   });
 }
 
