@@ -322,6 +322,7 @@ export type Database = {
           folder_id: string | null
           id: string
           name: string
+          parent_group_id: string | null
           updated_at: string
           user_id: string
         }
@@ -332,6 +333,7 @@ export type Database = {
           folder_id?: string | null
           id?: string
           name: string
+          parent_group_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -342,6 +344,7 @@ export type Database = {
           folder_id?: string | null
           id?: string
           name?: string
+          parent_group_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -351,6 +354,13 @@ export type Database = {
             columns: ["folder_id"]
             isOneToOne: false
             referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_groups_parent_group_id_fkey"
+            columns: ["parent_group_id"]
+            isOneToOne: false
+            referencedRelation: "contact_groups"
             referencedColumns: ["id"]
           },
         ]
