@@ -235,6 +235,7 @@ async function applyTombstones(ids: Ids, progress?: ProgressReporter): Promise<n
         e,
       );
     }
+    await progress?.increment(1);
   }
   return applied;
 }
