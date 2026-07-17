@@ -754,6 +754,7 @@ function ContactsPage() {
 
       <GroupEditorDialog
         state={groupDialog}
+        allGroups={gq.data?.groups ?? []}
         onClose={() => setGroupDialog(null)}
         onChanged={() => qc.invalidateQueries({ queryKey: ["contact-groups"] })}
       />
