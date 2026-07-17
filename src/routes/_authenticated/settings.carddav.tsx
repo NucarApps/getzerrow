@@ -231,6 +231,35 @@ function CardDavSettings() {
           </ul>
         )}
       </Card>
+
+      <Card className="space-y-3 p-5">
+        <div>
+          <p className="font-medium">Group names on iPhone</p>
+          <p className="text-sm text-muted-foreground">
+            iOS Contacts only shows a flat list of groups, so nested Zerrow
+            groups (like Factory → Toyota) need a display style. Changing this
+            triggers a group-name refresh on next sync — no need to remove
+            the account.
+          </p>
+        </div>
+        <div className="max-w-sm">
+          <Label className="mb-1 block text-sm">Display format</Label>
+          <Select
+            value={settingsQuery.data?.group_name_style ?? "path_slash"}
+            onValueChange={(v) => settingsMut.mutate(v as GroupNameStyle)}
+            disabled={settingsQuery.isLoading || settingsMut.isPending}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="leaf">Leaf name only — "Toyota"</SelectItem>
+              <SelectItem value="path_slash">Parent / Child — "Factory / Toyota"</SelectItem>
+              <SelectItem value="path_dash">Parent - Child — "Factory - Toyota"</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </Card>
     </div>
   );
 }
