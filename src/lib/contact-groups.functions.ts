@@ -58,11 +58,24 @@ export const listContactGroups = createServerFn({ method: "GET" })
 
 export const createContactGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { name: string; color?: string }) =>
-    z.object({ name: z.string().min(1).max(60), color: COLOR.optional() }).parse(d),
+  .inputValidator((d: { name: string; color?: string; parent_group_id?: string | null }) =>
+    z
+      .object({
+        name: z.string().min(1).max(60),
+        color: COLOR.optional(),
+        parent_group_id: z.string().uuid().nullable().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // Validate parent depth (max MAX_DEPTH levels: root=1..MAX_DEPTH).
+    if (data.parent_group_id) {
+      const depth = await parentChainDepth(supabase, data.parent_group_id);
+      if (depth + 1 > MAX_DEPTH) {
+        throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
+      }
+    }
     // Generate a stable CardDAV UID up-front so a group created in the
     // web app is immediately visible/syncable to iPhones on next PROPFIND.
     const uid =
@@ -76,6 +89,7 @@ export const createContactGroup = createServerFn({ method: "POST" })
         name: data.name.trim(),
         color: data.color ?? "#6366f1",
         carddav_uid: uid,
+        parent_group_id: data.parent_group_id ?? null,
       })
       .select(GROUP_SELECT)
       .single();
@@ -85,18 +99,43 @@ export const createContactGroup = createServerFn({ method: "POST" })
 
 export const updateContactGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; name?: string; color?: string }) =>
-    z
-      .object({
-        id: z.string().uuid(),
-        name: z.string().min(1).max(60).optional(),
-        color: COLOR.optional(),
-      })
-      .parse(d),
+  .inputValidator(
+    (d: { id: string; name?: string; color?: string; parent_group_id?: string | null }) =>
+      z
+        .object({
+          id: z.string().uuid(),
+          name: z.string().min(1).max(60).optional(),
+          color: COLOR.optional(),
+          parent_group_id: z.string().uuid().nullable().optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { id, ...patch } = data;
+    const { id, parent_group_id, ...rest } = data;
+    // Cycle + depth guard when reparenting.
+    if (parent_group_id !== undefined && parent_group_id !== null) {
+      if (parent_group_id === id) throw new Error("A group can't be its own parent");
+      // Walk the proposed parent's ancestry: if `id` appears, it's a cycle.
+      let cursor: string | null = parent_group_id;
+      let hops = 0;
+      while (cursor && hops < 32) {
+        if (cursor === id) throw new Error("That would create a cycle");
+        const { data: p } = await supabase
+          .from("contact_groups")
+          .select("parent_group_id")
+          .eq("id", cursor)
+          .maybeSingle();
+        cursor = (p?.parent_group_id ?? null) as string | null;
+        hops++;
+      }
+      const depth = await parentChainDepth(supabase, parent_group_id);
+      if (depth + 1 > MAX_DEPTH) {
+        throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
+      }
+    }
+    const patch: Record<string, unknown> = { ...rest };
+    if (parent_group_id !== undefined) patch.parent_group_id = parent_group_id;
     const { data: row, error } = await supabase
       .from("contact_groups")
       .update(patch)
@@ -116,6 +155,26 @@ export const deleteContactGroup = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/** Depth of the chain rooted at the given group (1 = the group itself, no
+ * parent). Bounded loop stops runaway data from freezing the request. */
+async function parentChainDepth(
+  supabase: { from: (t: string) => { select: (s: string) => { eq: (c: string, v: string) => { maybeSingle: () => Promise<{ data: { parent_group_id: string | null } | null }> } } } },
+  startId: string,
+): Promise<number> {
+  let cursor: string | null = startId;
+  let depth = 0;
+  while (cursor && depth < 32) {
+    depth++;
+    const { data: row } = await supabase
+      .from("contact_groups")
+      .select("parent_group_id")
+      .eq("id", cursor)
+      .maybeSingle();
+    cursor = (row?.parent_group_id ?? null) as string | null;
+  }
+  return depth;
+}
 
 /** Replace the set of groups a contact belongs to. */
 export const setContactGroups = createServerFn({ method: "POST" })
