@@ -161,22 +161,31 @@ export const deleteContactGroup = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/** Depth of the chain rooted at the given group (1 = the group itself, no
- * parent). Bounded loop stops runaway data from freezing the request. */
-async function parentChainDepth(
+/** Load every group's `parent_group_id` for the user into a map so we can
+ * walk ancestry in memory instead of round-tripping per hop. Group counts
+ * are tiny per user, so this is cheap. */
+async function loadParentMap(
   supabase: DB,
-  startId: string,
-): Promise<number> {
+  userId: string,
+): Promise<{ parents: Map<string, string | null> }> {
+  const { data, error } = await supabase
+    .from("contact_groups")
+    .select("id,parent_group_id")
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  const parents = new Map<string, string | null>();
+  for (const r of data ?? []) parents.set(r.id, r.parent_group_id ?? null);
+  return { parents };
+}
+
+/** Depth of the chain rooted at `startId`. 1 = the group itself has no
+ * parent. Bounded loop stops runaway data from freezing the request. */
+function chainDepth(parents: Map<string, string | null>, startId: string): number {
   let cursor: string | null = startId;
   let depth = 0;
   while (cursor && depth < 32) {
     depth++;
-    const { data: row } = await supabase
-      .from("contact_groups")
-      .select("parent_group_id")
-      .eq("id", cursor)
-      .maybeSingle();
-    cursor = (row?.parent_group_id ?? null) as string | null;
+    cursor = parents.get(cursor) ?? null;
   }
   return depth;
 }
