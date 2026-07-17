@@ -33,7 +33,7 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     return handleReport(request, auth.userId, auth.email);
   }
   if (method === "GET" || method === "HEAD") {
-    return handleGet(auth.userId, auth.email, path, method);
+    return handleGet(request, auth.userId, auth.email, path, method);
   }
   if (method === "PUT") {
     return handlePut(request, auth.userId, auth.email, path);

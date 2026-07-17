@@ -22,9 +22,11 @@ import {
   MULTISTATUS_CLOSE,
   MULTISTATUS_OPEN,
   parseMultigetHrefs,
+  parseSyncCollection,
   responseBlock,
   xmlEscape,
 } from "./xml";
+
 
 const BASE = "/api/public/carddav";
 
@@ -46,29 +48,104 @@ function groupHref(email: string, groupId: string): string {
 // edits and stay stable otherwise.
 async function computeBookCTag(userId: string): Promise<string> {
   // Include contact_groups.updated_at so group renames / membership changes
-  // invalidate iOS's cached copy.
-  const { data: cLatest } = await supabaseAdmin
-    .from("contacts")
-    .select("updated_at")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  const { data: gLatest } = await supabaseAdmin
-    .from("contact_groups")
-    .select("updated_at")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(1);
+  // invalidate iOS's cached copy. Include tombstone max seq so hard deletes
+  // also bump the CTag.
+  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("contacts")
+        .select("updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("contact_groups")
+        .select("updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("carddav_tombstones")
+        .select("sync_seq")
+        .eq("user_id", userId)
+        .order("sync_seq", { ascending: false })
+        .limit(1),
+    ]);
   const latest = [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
     .filter((v): v is string => !!v)
     .sort()
     .pop() ?? "1970-01-01T00:00:00Z";
+  const tombSeq = (tLatest?.[0] as { sync_seq: number } | undefined)?.sync_seq ?? 0;
   const [{ count: cCount }, { count: gCount }] = await Promise.all([
     supabaseAdmin.from("contacts").select("id", { count: "exact", head: true }).eq("user_id", userId),
     supabaseAdmin.from("contact_groups").select("id", { count: "exact", head: true }).eq("user_id", userId),
   ]);
-  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}"`;
+  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}"`;
 }
+
+const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
+
+type SyncState = { updatedSince: string; seqSince: number };
+
+function buildSyncToken(userId: string, updatedAtIso: string, seq: number): string {
+  const ms = new Date(updatedAtIso).getTime();
+  return `${SYNC_TOKEN_PREFIX}${userId}:${ms}:${seq}`;
+}
+
+function parseSyncToken(userId: string, token: string): SyncState | null {
+  if (!token || !token.startsWith(SYNC_TOKEN_PREFIX)) return null;
+  const rest = token.slice(SYNC_TOKEN_PREFIX.length);
+  const [uid, msStr, seqStr] = rest.split(":");
+  if (uid !== userId) return null;
+  const ms = Number.parseInt(msStr ?? "", 10);
+  const seq = Number.parseInt(seqStr ?? "", 10);
+  if (!Number.isFinite(ms) || !Number.isFinite(seq)) return null;
+  return { updatedSince: new Date(ms).toISOString(), seqSince: seq };
+}
+
+async function currentSyncSnapshot(userId: string): Promise<{ updatedAt: string; seq: number }> {
+  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("contacts")
+        .select("updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("contact_groups")
+        .select("updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("carddav_tombstones")
+        .select("sync_seq")
+        .eq("user_id", userId)
+        .order("sync_seq", { ascending: false })
+        .limit(1),
+    ]);
+  const updatedAt = [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
+    .filter((v): v is string => !!v)
+    .sort()
+    .pop() ?? "1970-01-01T00:00:00Z";
+  const seq = (tLatest?.[0] as { sync_seq: number } | undefined)?.sync_seq ?? 0;
+  return { updatedAt, seq };
+}
+
+async function insertTombstone(
+  userId: string,
+  resourceType: "contact" | "group",
+  resourceId: string,
+): Promise<void> {
+  await supabaseAdmin
+    .from("carddav_tombstones")
+    .upsert(
+      { user_id: userId, resource_type: resourceType, resource_id: resourceId, deleted_at: new Date().toISOString() },
+      { onConflict: "user_id,resource_type,resource_id" },
+    );
+}
+
 
 async function listContactRows(userId: string): Promise<Array<{ id: string; updated_at: string }>> {
   const { data } = await supabaseAdmin
@@ -178,14 +255,23 @@ function propfindPrincipal(email: string, depth: string): Response {
 async function propfindAddressbook(userId: string, email: string, depth: string): Promise<Response> {
   const book = addressbookHref(email);
   const ctag = await computeBookCTag(userId);
+  const snap = await currentSyncSnapshot(userId);
+  const syncToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
 
   const bookProps =
     `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>` +
     `<D:displayname>Zerrow Contacts</D:displayname>` +
     `<CS:getctag>${xmlEscape(ctag)}</CS:getctag>` +
+    `<D:sync-token>${xmlEscape(syncToken)}</D:sync-token>` +
+    `<D:supported-report-set>` +
+    `<D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>` +
+    `<D:supported-report><D:report><C:addressbook-multiget/></D:report></D:supported-report>` +
+    `<D:supported-report><D:report><C:addressbook-query/></D:report></D:supported-report>` +
+    `</D:supported-report-set>` +
     `<C:supported-address-data>` +
     `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
     `</C:supported-address-data>`;
+
 
   let body = MULTISTATUS_OPEN + responseBlock(book, bookProps);
 
@@ -301,6 +387,100 @@ async function buildGroupResponse(
   return responseBlock(groupHref(email, group.id), props);
 }
 
+const TOMBSTONE_PRUNE_DAYS = 90;
+
+async function handleSyncCollection(
+  raw: string,
+  userId: string,
+  email: string,
+): Promise<Response> {
+  const { syncToken, syncLevel, limit } = parseSyncCollection(raw);
+  const includeVcard = raw.toLowerCase().includes("address-data");
+
+  if (syncLevel !== "1" && syncLevel !== "infinite") {
+    return new Response(
+      '<?xml version="1.0" encoding="utf-8"?>\n' +
+        '<D:error xmlns:D="DAV:"><D:valid-sync-token/></D:error>',
+      { status: 400, headers: { "Content-Type": 'application/xml; charset="utf-8"' } },
+    );
+  }
+
+  const snap = await currentSyncSnapshot(userId);
+
+  // Empty token = initial sync: return everything currently present.
+  let since: SyncState = { updatedSince: "1970-01-01T00:00:00Z", seqSince: 0 };
+  if (syncToken) {
+    const parsed = parseSyncToken(userId, syncToken);
+    if (!parsed) {
+      return new Response(
+        '<?xml version="1.0" encoding="utf-8"?>\n' +
+          '<D:error xmlns:D="DAV:"><D:valid-sync-token/></D:error>',
+        { status: 403, headers: { "Content-Type": 'application/xml; charset="utf-8"' } },
+      );
+    }
+    // Reject tokens older than our tombstone horizon — the RFC-defined
+    // fallback is a full resync via addressbook-multiget.
+    const horizonMs = Date.now() - TOMBSTONE_PRUNE_DAYS * 24 * 60 * 60 * 1000;
+    if (new Date(parsed.updatedSince).getTime() < horizonMs) {
+      return new Response(
+        '<?xml version="1.0" encoding="utf-8"?>\n' +
+          '<D:error xmlns:D="DAV:"><D:valid-sync-token/></D:error>',
+        { status: 403, headers: { "Content-Type": 'application/xml; charset="utf-8"' } },
+      );
+    }
+    since = parsed;
+  }
+
+  const [{ data: cRows }, { data: gRows }, { data: tRows }] = await Promise.all([
+    supabaseAdmin
+      .from("contacts")
+      .select("id,updated_at")
+      .eq("user_id", userId)
+      .gt("updated_at", since.updatedSince)
+      .order("updated_at", { ascending: true })
+      .limit(limit ?? 5000),
+    supabaseAdmin
+      .from("contact_groups")
+      .select("id,updated_at")
+      .eq("user_id", userId)
+      .gt("updated_at", since.updatedSince)
+      .order("updated_at", { ascending: true })
+      .limit(limit ?? 1000),
+    supabaseAdmin
+      .from("carddav_tombstones")
+      .select("resource_type,resource_id,sync_seq")
+      .eq("user_id", userId)
+      .gt("sync_seq", since.seqSince)
+      .order("sync_seq", { ascending: true })
+      .limit(limit ?? 5000),
+  ]);
+
+  let body = MULTISTATUS_OPEN;
+
+  for (const row of (cRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
+    body += await buildContactResponse(userId, email, row.id, includeVcard);
+  }
+  for (const row of (gRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
+    body += await buildGroupResponse(userId, email, row.id, includeVcard);
+  }
+  for (const t of (tRows as Array<{ resource_type: string; resource_id: string }> | null) ?? []) {
+    const href =
+      t.resource_type === "group"
+        ? groupHref(email, t.resource_id)
+        : contactHref(email, t.resource_id);
+    body +=
+      `<D:response>` +
+      `<D:href>${href}</D:href>` +
+      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
+      `</D:response>`;
+  }
+
+  const newToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
+  body += `<D:sync-token>${xmlEscape(newToken)}</D:sync-token>`;
+  body += MULTISTATUS_CLOSE;
+  return davResponse(body);
+}
+
 export async function handleReport(
   request: Request,
   userId: string,
@@ -309,6 +489,11 @@ export async function handleReport(
   const raw = await request.text();
   const lower = raw.toLowerCase();
   const includeVcard = lower.includes("address-data");
+
+  if (lower.includes("sync-collection")) {
+    return handleSyncCollection(raw, userId, email);
+  }
+
 
 
   const contactIds: string[] = [];
@@ -362,12 +547,24 @@ export async function handleReport(
 // -----------------------------------------------------------------------------
 // GET / HEAD on a single .vcf
 
+function matchesIfNoneMatch(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  const norm = (v: string) => v.trim().replace(/^W\//i, "");
+  const wanted = norm(etag);
+  return header
+    .split(",")
+    .map((v) => norm(v))
+    .some((v) => v === "*" || v === wanted);
+}
+
 export async function handleGet(
+  request: Request,
   userId: string,
   email: string,
   path: string,
   method: "GET" | "HEAD",
 ): Promise<Response> {
+  const ifNoneMatch = request.headers.get("if-none-match");
   const gm = path.match(/group-([0-9a-f-]{36})\.vcf$/i);
   if (gm) {
     const groupId = gm[1];
@@ -378,6 +575,10 @@ export async function handleGet(
       .eq("user_id", userId)
       .maybeSingle();
     if (!group) return new Response("Not found", { status: 404 });
+    const etag = groupETag(group.id, group.updated_at);
+    if (matchesIfNoneMatch(ifNoneMatch, etag)) {
+      return new Response(null, { status: 304, headers: { ETag: etag } });
+    }
     const members = await fetchGroupMembers(group.id);
     const vcard = buildGroupVCard({
       uid: group.carddav_uid ?? `group-${group.id}`,
@@ -389,7 +590,7 @@ export async function handleGet(
       status: 200,
       headers: {
         "Content-Type": 'text/vcard; charset="utf-8"',
-        ETag: groupETag(group.id, group.updated_at),
+        ETag: etag,
         "Cache-Control": "no-cache",
       },
     });
@@ -407,6 +608,11 @@ export async function handleGet(
     .maybeSingle();
   if (!owner) return new Response("Not found", { status: 404 });
 
+  const etag = contactETag(owner.id, owner.updated_at as string);
+  if (matchesIfNoneMatch(ifNoneMatch, etag)) {
+    return new Response(null, { status: 304, headers: { ETag: etag } });
+  }
+
   const { row } = await getContactDecrypted(contactId);
   if (!row) return new Response("Not found", { status: 404 });
   const [phones, categories] = await Promise.all([
@@ -414,7 +620,6 @@ export async function handleGet(
     fetchCategoriesForContact(userId, contactId),
   ]);
   const vcard = contactToVCard(row, phones, categories);
-  const etag = contactETag(row.id, row.updated_at);
 
   return new Response(method === "HEAD" ? null : vcard, {
     status: 200,
@@ -425,6 +630,7 @@ export async function handleGet(
     },
   });
 }
+
 
 // -----------------------------------------------------------------------------
 // PUT / DELETE (two-way sync)
@@ -771,6 +977,7 @@ export async function handleDelete(
       .eq("id", groupId)
       .eq("user_id", userId);
     if (error) return new Response(error.message, { status: 500 });
+    await insertTombstone(userId, "group", groupId);
     return new Response(null, { status: 204 });
   }
 
@@ -807,6 +1014,8 @@ export async function handleDelete(
     .eq("id", contactId)
     .eq("user_id", userId);
   if (error) return new Response(error.message, { status: 500 });
+  await insertTombstone(userId, "contact", contactId);
 
   return new Response(null, { status: 204 });
 }
+
