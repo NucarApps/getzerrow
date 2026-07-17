@@ -255,14 +255,23 @@ function propfindPrincipal(email: string, depth: string): Response {
 async function propfindAddressbook(userId: string, email: string, depth: string): Promise<Response> {
   const book = addressbookHref(email);
   const ctag = await computeBookCTag(userId);
+  const snap = await currentSyncSnapshot(userId);
+  const syncToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
 
   const bookProps =
     `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>` +
     `<D:displayname>Zerrow Contacts</D:displayname>` +
     `<CS:getctag>${xmlEscape(ctag)}</CS:getctag>` +
+    `<D:sync-token>${xmlEscape(syncToken)}</D:sync-token>` +
+    `<D:supported-report-set>` +
+    `<D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>` +
+    `<D:supported-report><D:report><C:addressbook-multiget/></D:report></D:supported-report>` +
+    `<D:supported-report><D:report><C:addressbook-query/></D:report></D:supported-report>` +
+    `</D:supported-report-set>` +
     `<C:supported-address-data>` +
     `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
     `</C:supported-address-data>`;
+
 
   let body = MULTISTATUS_OPEN + responseBlock(book, bookProps);
 
