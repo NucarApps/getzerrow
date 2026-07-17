@@ -247,6 +247,55 @@ export const addContactsToGroup = createServerFn({ method: "POST" })
     return { added: rows.length };
   });
 
+/** Add many contacts to many groups in one batch (idempotent). Used by the
+ * bulk multi-select "Add to group…" action on the contacts list. */
+export const addContactsToGroups = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { groupIds: string[]; contactIds: string[] }) =>
+    z
+      .object({
+        groupIds: z.array(z.string().uuid()).min(1).max(50),
+        contactIds: z.array(z.string().uuid()).min(1).max(1000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const rows: { group_id: string; contact_id: string; user_id: string }[] = [];
+    for (const gid of data.groupIds) {
+      for (const cid of data.contactIds) {
+        rows.push({ group_id: gid, contact_id: cid, user_id: userId });
+      }
+    }
+    const { error } = await supabase
+      .from("contact_group_members")
+      .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
+    if (error) throw new Error(error.message);
+    return { added: rows.length };
+  });
+
+/** Remove many contacts from one group (idempotent). */
+export const removeContactsFromGroup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { groupId: string; contactIds: string[] }) =>
+    z
+      .object({
+        groupId: z.string().uuid(),
+        contactIds: z.array(z.string().uuid()).min(1).max(1000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase
+      .from("contact_group_members")
+      .delete()
+      .eq("group_id", data.groupId)
+      .in("contact_id", data.contactIds);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 /** Link (or unlink) a contact group to a folder. When linked, emails from
  * any member of the group are auto-filed to the folder via a
  * `sender_in_group` folder_filters row. Unlinking removes that row. */
