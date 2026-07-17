@@ -90,6 +90,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     (state?.sync_mode as SyncMode | undefined) ??
     (state?.enabled ? "two_way" : "off");
   const enabled = mode !== "off";
+  const intervalMinutes = (state?.sync_interval_minutes as number | undefined) ?? 15;
   const scopeGranted = statusQ.data?.scope_granted ?? null;
   const rawLastError = statusQ.data?.state?.last_error ?? null;
   const lastError =
@@ -103,6 +104,16 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     mutationFn: (next: SyncMode) =>
       setMode({ data: { accountId: account.id, mode: next } }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const intervalMut = useMutation({
+    mutationFn: (mins: 5 | 15 | 60) =>
+      setInterval({ data: { accountId: account.id, intervalMinutes: mins } }),
+    onSuccess: () => {
+      toast.success("Background sync frequency updated");
       qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
     },
     onError: (e: Error) => toast.error(e.message),
