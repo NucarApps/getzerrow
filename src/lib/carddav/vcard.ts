@@ -127,6 +127,16 @@ export function contactToVCard(
 
   if (contact.notes) out.push(line("NOTE", esc(contact.notes)));
 
+  // CATEGORIES: comma-separated group names iOS displays on the contact and
+  // uses to build its Groups. We escape each name and join with unescaped
+  // commas per RFC 2426.
+  if (categories.length > 0) {
+    const cats = categories
+      .filter((c) => c && c.trim().length > 0)
+      .map((c) => esc(c.trim()));
+    if (cats.length > 0) out.push(line("CATEGORIES", cats.join(",")));
+  }
+
   // REV drives iOS's "last modified" and pairs with ETag for change detection.
   const rev = new Date(contact.updated_at).toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
   out.push(line("REV", rev));
