@@ -149,8 +149,10 @@ export async function pullFromGoogle(
     updated: 0,
     skipped_no_email: 0,
     merged_duplicate_email: 0,
+    merged_by_phone: 0,
     failed: 0,
   };
+
   await applyPersonChanges(ids, peopleResult.persons, peopleResult.deletions, breakdown, progress);
 
   logInfo("google_contacts.pull.done", {
