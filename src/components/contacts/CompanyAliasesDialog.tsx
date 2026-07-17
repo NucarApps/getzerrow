@@ -286,7 +286,8 @@ export function CompanyAliasesDialog({
 
   const groups = groupsQ.data?.groups ?? [];
   const tagsDirty =
-    [...selectedGroupIds].sort().join(",") !== savedGroupIds.slice().sort().join(",");
+    [...selectedGroupIds].sort().join(",") !== initialSelection.slice().sort().join(",");
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
