@@ -299,13 +299,14 @@ export const removeContactsFromGroup = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     const { error } = await supabase
       .from("contact_group_members")
       .delete()
       .eq("group_id", data.groupId)
       .in("contact_id", data.contactIds);
     if (error) throw new Error(error.message);
+    await reconcileIfAuto(supabase, userId, data.groupId);
     return { ok: true };
   });
 
