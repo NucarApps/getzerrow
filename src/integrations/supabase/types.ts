@@ -1313,6 +1313,205 @@ export type Database = {
         }
         Relationships: []
       }
+      google_contact_links: {
+        Row: {
+          contact_id: string
+          created_at: string
+          etag: string | null
+          gmail_account_id: string
+          id: string
+          last_synced_at: string
+          resource_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          etag?: string | null
+          gmail_account_id: string
+          id?: string
+          last_synced_at?: string
+          resource_name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          etag?: string | null
+          gmail_account_id?: string
+          id?: string
+          last_synced_at?: string
+          resource_name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_contact_links_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_contact_links_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_contact_tombstones: {
+        Row: {
+          created_at: string
+          gmail_account_id: string
+          id: string
+          kind: string
+          resource_name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          gmail_account_id: string
+          id?: string
+          kind: string
+          resource_name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          gmail_account_id?: string
+          id?: string
+          kind?: string
+          resource_name?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_contact_tombstones_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_group_links: {
+        Row: {
+          contact_group_id: string
+          created_at: string
+          etag: string | null
+          gmail_account_id: string
+          id: string
+          last_synced_at: string
+          resource_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contact_group_id: string
+          created_at?: string
+          etag?: string | null
+          gmail_account_id: string
+          id?: string
+          last_synced_at?: string
+          resource_name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contact_group_id?: string
+          created_at?: string
+          etag?: string | null
+          gmail_account_id?: string
+          id?: string
+          last_synced_at?: string
+          resource_name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_group_links_contact_group_id_fkey"
+            columns: ["contact_group_id"]
+            isOneToOne: false
+            referencedRelation: "contact_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_group_links_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_sync_state: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          gmail_account_id: string
+          groups_sync_token: string | null
+          id: string
+          last_error: string | null
+          last_full_sync_at: string | null
+          last_incremental_at: string | null
+          last_pull_count: number
+          last_push_count: number
+          locked_at: string | null
+          pending_bump: boolean
+          people_sync_token: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          gmail_account_id: string
+          groups_sync_token?: string | null
+          id?: string
+          last_error?: string | null
+          last_full_sync_at?: string | null
+          last_incremental_at?: string | null
+          last_pull_count?: number
+          last_push_count?: number
+          locked_at?: string | null
+          pending_bump?: boolean
+          people_sync_token?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          gmail_account_id?: string
+          groups_sync_token?: string | null
+          id?: string
+          last_error?: string | null
+          last_full_sync_at?: string | null
+          last_incremental_at?: string | null
+          last_pull_count?: number
+          last_push_count?: number
+          locked_at?: string | null
+          pending_bump?: boolean
+          people_sync_token?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_sync_state_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: true
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inbox_override_exceptions: {
         Row: {
           created_at: string

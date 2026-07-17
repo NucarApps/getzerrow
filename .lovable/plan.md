@@ -1,99 +1,64 @@
-## Goal
+## Google Contacts two-way sync (People API)
 
-Reduce full iOS Contacts resyncs by (a) letting iOS ask "what changed since last time?" via RFC 6578 `sync-collection` and (b) keeping our ETag/CTag/If-None-Match semantics strict enough that iOS trusts its cache between polls.
+Sync every Zerrow contact with the user's Google Contacts account, and map Zerrow contact groups ↔ Google contact labels — two-way, per user.
 
-## Current state (verified)
+Google no longer supports CardDAV, so this goes through the **Google People API** using the same OAuth connection each user already has for Gmail. We just add one extra scope; no new connector, no separate sign-in.
 
-- `computeBookCTag` moves on any contact/group `updated_at` bump and on row-count changes — good CTag.
-- ETag per contact/group is stable and used by PUT/DELETE via `If-Match` / `If-None-Match: *`.
-- PROPFIND on the addressbook returns one `<response>` per contact + per group with ETag → iOS still has to `addressbook-multiget` everything on any CTag change.
-- No RFC 6578 support: neither `<D:sync-token>` nor `sync-collection` in `supported-report-set` is advertised, so iOS never issues an incremental REPORT.
-- Hard deletes: `handleDelete` removes contacts/groups outright, so a sync-token approach has nowhere to learn what disappeared.
-- GET/HEAD does not honor `If-None-Match`, so a device that already has the current ETag still gets the full vCard body.
+### 1. Extend Gmail OAuth with the Contacts scope
 
-## Changes
+- Add `https://www.googleapis.com/auth/contacts` to `GMAIL_SCOPES` in `src/lib/google-oauth.server.ts` and to the login prompt list in `src/routes/login.tsx`.
+- Existing users get a one-click "Reconnect Google to enable contact sync" banner (reuses the same reconnect flow already used for Calendar). Until they accept, the People API paths short-circuit — Gmail keeps working untouched.
 
-### 1. Tombstone table for deletions
+### 2. Schema — track sync state, not shape
 
-New table `carddav_tombstones` so incremental sync can report removed resources:
+New migration adds mapping + tombstone tables, mirroring the CardDAV pattern:
 
-```text
-carddav_tombstones
-  user_id uuid
-  resource_type text  -- 'contact' | 'group'
-  resource_id  uuid
-  deleted_at   timestamptz default now()
-  sync_seq     bigserial   -- monotonic ordering for sync tokens
-  PRIMARY KEY (user_id, resource_type, resource_id)
-```
+- `google_contact_links` — `(user_id, gmail_account_id, contact_id)` ↔ `resource_name` (`people/c123`) + `etag` + `last_synced_at`. Unique on both `(contact_id)` and `(resource_name)`.
+- `google_group_links` — `(user_id, gmail_account_id, contact_group_id)` ↔ `resource_name` (`contactGroups/xyz`) + `etag`.
+- `google_sync_state` — per `(user_id, gmail_account_id)` cursor: `people_sync_token`, `groups_sync_token`, `last_full_sync_at`, `last_incremental_at`, `last_error`.
+- `google_contact_tombstones` — records local hard-deletes so the next push can DELETE upstream (parallel to `carddav_tombstones`).
 
-RLS: `auth.uid() = user_id`. GRANTs to `authenticated` + `service_role`. No `anon`.
+All tables: RLS scoped to `auth.uid()`, `GRANT` to `authenticated` + `service_role`, `updated_at` triggers.
 
-Insert a tombstone whenever `handleDelete` removes a contact or a group (both paths already exist in `handlers.server.ts`). Old rows are pruned by a small cron (keep 90 days); a client that hasn't synced in longer gets a `valid-sync-token` failure and falls back to full sync — the RFC-defined behavior.
+### 3. New module: `src/lib/google-contacts/`
 
-### 2. sync-token model
+Pure-logic pieces stay separate from HTTP:
 
-A sync-token encodes "server state at time T for user U". We use:
+- `people-client.server.ts` — thin fetch wrappers around People API endpoints we need: `people.connections.list` (with `syncToken`), `people.createContact`, `people.updateContact` (requires `updatePersonFields` + `etag`), `people.deleteContact`, `contactGroups.list`, `contactGroups.create/update/delete`, `contactGroups/{id}/members:modify`. Uses existing Gmail token refresh (`getGmailAccessToken`).
+- `mapper.ts` — pure functions `contactToPerson()` / `personToContact()` and `groupToLabel()` / `labelToGroup()`. Handles name splitting, phone/email normalization, and the encrypted-fields boundary (notes/address/primary phone go through `setContactEncryptedFields`, everything else is plaintext columns).
+- `pull.server.ts` — incremental pull using `syncToken`. First run does full sync (no token), stores returned `nextSyncToken`. Applies remote changes to local Zerrow rows via existing `contacts` / `contact_phones` / `contact_group_members` writers. Handles Google's `410 EXPIRED_SYNC_TOKEN` by falling back to a full resync.
+- `push.server.ts` — walks local changes since `last_incremental_at`: creates/updates people whose `google_contact_links` row is missing or stale, deletes people listed in `google_contact_tombstones`, syncs group membership diffs via `contactGroups/members:modify`.
+- `reconcile.server.ts` — the orchestrator: `runGoogleContactsSync(userId, accountId)` = pull → push → clear tombstones → bump cursor. All-or-nothing per account, wrapped in structured logs matching the sync/log pattern (`run_id`, `account_id`, phases: `pull`, `push`, counts, errors).
 
-```text
-sync-token = "urn:zerrow:carddav:<user_id>:<max_seq>"
-```
+### 4. Conflict handling (two-way)
 
-`<max_seq>` = greatest of the newest `contacts.updated_at` epoch-ms, `contact_groups.updated_at` epoch-ms, and `carddav_tombstones.sync_seq` for the user. Encoding as a single opaque string is what RFC 6578 requires; iOS treats it as opaque.
+- **Field conflicts**: last-write-wins on the modified field, compared via `updated_at` on our side vs People `metadata.sources[].updateTime` on Google's. Never overwrite the encrypted `notes` field unless Google's `biographies[0]` actually differs from decrypted local (avoids re-encrypting a no-op every sync).
+- **Deletes**: local delete → tombstone → push DELETE. Remote delete arrives as a `deleted: true` connection in the sync feed → soft-remove locally (respects existing contact-deletion semantics).
+- **Group membership**: diff `contact_group_members` vs Google's `memberships[]`, apply the delta with a single `members:modify` per group per run.
+- **Race with CardDAV**: both writers use the same `contacts` primitives, so an iPhone edit → CardDAV writer → next Google push carries it upstream. No coordination needed.
 
-### 3. Advertise sync support
+### 5. Scheduling & entry points
 
-In `propfindAddressbook` add to the addressbook props:
+- `src/routes/api/public/hooks/google-contacts-sync.ts` — CRON_SECRET-gated tick, every 15 min via pg_cron. Iterates accounts whose `last_incremental_at` is stale, calls `runGoogleContactsSync`, budget-capped like other cron ticks.
+- Server fn `syncGoogleContactsNow` (`requireSupabaseAuth`) for a manual "Sync now" button.
+- Realtime nudge: when the user creates/edits a contact or group in the app, enqueue a lightweight `google_contact_sync_pending` flag on `google_sync_state` so the next tick prioritizes that account (no per-write API call — avoids rate-limit fragility).
 
-- `<D:sync-token>...current token...</D:sync-token>`
-- `<D:supported-report-set><D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>...(existing addressbook-multiget + addressbook-query)</D:supported-report-set>`
+### 6. Settings UI: `src/routes/_authenticated/settings.google-contacts.tsx`
 
-In `handleOptions` extend DAV header: `DAV: 1, 3, addressbook, extended-mkcol` and keep `Allow` as-is.
-
-### 4. sync-collection REPORT
-
-In `handleReport`, before the existing multiget branch, detect `<D:sync-collection>` and handle it:
-
-- Parse `<D:sync-token>` (empty string / missing → treat as "initial sync": return every current resource).
-- Parse `<D:sync-level>` (`1` supported; anything else → 403 `<D:number-of-matches-within-limits/>` per RFC — we'll respond `400` with the standard precondition XML).
-- Parse optional `<D:limit><D:nresults>N</D:nresults></D:limit>`.
-- Query:
-  - `contacts` where `updated_at > since` for user
-  - `contact_groups` where `updated_at > since` for user
-  - `carddav_tombstones` where `sync_seq > since_seq` for user
-- Return one `<D:response>` per changed contact/group with ETag (+ address-data if requested) and one `<D:response>` per tombstone with `<D:status>HTTP/1.1 404 Not Found</D:status>`.
-- Trailer: `<D:sync-token>NEW_TOKEN</D:sync-token>` reflecting the max seq covered by the response (respect `limit` by clamping and setting the token to the last emitted row — subsequent syncs will pick up the rest).
-- If the incoming token references a `since_seq` older than the oldest surviving tombstone (pruned), respond `403` with `<D:error><D:valid-sync-token/></D:error>` so iOS gracefully falls back to a full sync.
-
-### 5. If-None-Match → 304 on GET/HEAD
-
-`handleGet` (both group and contact branches) reads `If-None-Match`, computes the current ETag first, and if they match responds `304 Not Modified` with just the `ETag` header (no body). This saves the vCard payload on every reconciliation poll where nothing changed for that item.
-
-### 6. Keep CTag consistent with deletions
-
-Extend `computeBookCTag` to include `max(sync_seq)` from `carddav_tombstones` so a delete moves the CTag even when no other row changed. Format stays the same opaque quoted string.
+- Connection status per Gmail account: scope granted?, last sync, next sync, counts (contacts up, contacts down, groups synced), last error.
+- Buttons: "Reconnect Google" (only if scope missing), "Sync now", "Disable sync" (stops cron, doesn't delete data), "Force full resync" (nulls `people_sync_token`).
+- Add a link in the Contacts page header pointing here, next to the existing CardDAV link.
 
 ### 7. Tests
 
-Add `src/lib/carddav/sync.test.ts`:
+- `mapper.test.ts` — round-trip Zerrow contact ↔ People resource, and group ↔ label, with edge cases (unicode names, multi-value phones/emails, empty groups).
+- `pull.test.ts` (unit, mocked client) — sync-token happy path, `410 EXPIRED_SYNC_TOKEN` → full resync fallback, deleted-connection handling.
+- `push.test.ts` (unit, mocked client) — create/update/delete diff, membership `members:modify` diffing, tombstone cleanup only on success.
+- `reconcile.test.ts` — one integration test that runs pull then push against a mocked People API and asserts final DB state + cursor bump.
 
-- Initial `sync-collection` with empty token returns all rows + a fresh token.
-- After creating/updating a contact, second `sync-collection` with the previous token returns only that contact and a new token.
-- After deleting a contact, second `sync-collection` returns a `404` tombstone entry.
-- `If-None-Match` on GET with the current ETag returns 304 and no body.
-- Stale token (older than pruned tombstone horizon) returns 403 `valid-sync-token`.
+### Technical notes
 
-## Non-goals
-
-- No addressbook-query filter grammar changes — iOS uses sync-collection once advertised.
-- No CalDAV, no schedule-tag, no calendar collections.
-- Group-membership–only edits already move `contact_groups.updated_at` via existing triggers, so no extra plumbing there.
-
-## Files touched
-
-- New: `supabase` migration for `carddav_tombstones` + prune function.
-- Edit: `src/lib/carddav/handlers.server.ts` (PROPFIND advertisement, sync-collection branch in `handleReport`, tombstone inserts in `handleDelete`, 304 in `handleGet`, CTag update).
-- Edit: `src/lib/carddav/xml.ts` (small helper to parse `<D:sync-token>` / `<D:sync-level>` / `<D:limit>`).
-- Edit: `src/routes/api/public/carddav/$.ts` — no route changes, `REPORT` already dispatches.
-- New: `src/lib/carddav/sync.test.ts`.
-- Edit: `src/routes/_authenticated/settings.carddav.tsx` — one-line note that iOS now uses incremental sync.
+- People API rate limit is 90 req/min per user; batch where possible (`batchGet`, `members:modify`), otherwise pace with the same request budget helper used by the Gmail sync.
+- `updatePerson` requires listing every field being changed in `updatePersonFields` and passing the current `etag` — we always pull first, then push, so we always have the fresh etag. If we get `FAILED_PRECONDITION` (etag mismatch) we skip that record and let the next pull reconcile.
+- Encrypted fields on our side (notes, address, primary phone) must be decrypted with `EMAIL_ENC_KEY` inside the server fn before mapping — never emit ciphertext to Google.
+- Everything runs server-side. No People API keys or tokens ever reach the browser.
