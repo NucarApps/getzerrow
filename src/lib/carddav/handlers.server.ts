@@ -609,14 +609,20 @@ export async function handlePut(
   email: string,
   path: string,
 ): Promise<Response> {
+  const body = await request.text();
+  const parsed = parseVCard(body);
+  if (!parsed) return new Response("Unparseable vCard", { status: 400 });
+
+  // Group vCards (Apple X-ADDRESSBOOKSERVER-KIND:group or the group- URL
+  // prefix) route to the group upsert path.
+  if (extractGroupId(path) || parsed.isGroup) {
+    return handleGroupPut(request, userId, email, path, parsed);
+  }
+
   const contactId = extractContactId(path);
   if (!contactId || !UUID_RE.test(contactId)) {
     return new Response("Bad Request", { status: 400 });
   }
-
-  const body = await request.text();
-  const parsed = parseVCard(body);
-  if (!parsed) return new Response("Unparseable vCard", { status: 400 });
 
   const { data: existing } = await supabaseAdmin
     .from("contacts")
