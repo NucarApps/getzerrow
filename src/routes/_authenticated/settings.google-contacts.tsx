@@ -54,8 +54,16 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const statusQ = useQuery({
     queryKey: ["google-contacts-status", account.id],
     queryFn: () => getStatus({ data: { accountId: account.id } }),
-    refetchInterval: 15_000,
+    // Poll fast while a run is in flight so the progress bar animates;
+    // fall back to a slow poll otherwise.
+    refetchInterval: (q) => (q.state.data?.state?.locked_at ? 1_000 : 15_000),
   });
+
+  const state = statusQ.data?.state;
+  const isRunning = !!state?.locked_at;
+  const step = state?.progress_step ?? null;
+  const processed = state?.progress_processed ?? 0;
+  const total = state?.progress_total ?? 0;
 
   const enabled = statusQ.data?.state?.enabled ?? false;
   const scopeGranted = statusQ.data?.scope_granted ?? null;
