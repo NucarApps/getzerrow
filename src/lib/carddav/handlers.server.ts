@@ -547,12 +547,24 @@ export async function handleReport(
 // -----------------------------------------------------------------------------
 // GET / HEAD on a single .vcf
 
+function matchesIfNoneMatch(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  const norm = (v: string) => v.trim().replace(/^W\//i, "");
+  const wanted = norm(etag);
+  return header
+    .split(",")
+    .map((v) => norm(v))
+    .some((v) => v === "*" || v === wanted);
+}
+
 export async function handleGet(
+  request: Request,
   userId: string,
   email: string,
   path: string,
   method: "GET" | "HEAD",
 ): Promise<Response> {
+  const ifNoneMatch = request.headers.get("if-none-match");
   const gm = path.match(/group-([0-9a-f-]{36})\.vcf$/i);
   if (gm) {
     const groupId = gm[1];
@@ -563,6 +575,10 @@ export async function handleGet(
       .eq("user_id", userId)
       .maybeSingle();
     if (!group) return new Response("Not found", { status: 404 });
+    const etag = groupETag(group.id, group.updated_at);
+    if (matchesIfNoneMatch(ifNoneMatch, etag)) {
+      return new Response(null, { status: 304, headers: { ETag: etag } });
+    }
     const members = await fetchGroupMembers(group.id);
     const vcard = buildGroupVCard({
       uid: group.carddav_uid ?? `group-${group.id}`,
@@ -574,7 +590,7 @@ export async function handleGet(
       status: 200,
       headers: {
         "Content-Type": 'text/vcard; charset="utf-8"',
-        ETag: groupETag(group.id, group.updated_at),
+        ETag: etag,
         "Cache-Control": "no-cache",
       },
     });
@@ -592,6 +608,11 @@ export async function handleGet(
     .maybeSingle();
   if (!owner) return new Response("Not found", { status: 404 });
 
+  const etag = contactETag(owner.id, owner.updated_at as string);
+  if (matchesIfNoneMatch(ifNoneMatch, etag)) {
+    return new Response(null, { status: 304, headers: { ETag: etag } });
+  }
+
   const { row } = await getContactDecrypted(contactId);
   if (!row) return new Response("Not found", { status: 404 });
   const [phones, categories] = await Promise.all([
@@ -599,7 +620,6 @@ export async function handleGet(
     fetchCategoriesForContact(userId, contactId),
   ]);
   const vcard = contactToVCard(row, phones, categories);
-  const etag = contactETag(row.id, row.updated_at);
 
   return new Response(method === "HEAD" ? null : vcard, {
     status: 200,
@@ -610,6 +630,7 @@ export async function handleGet(
     },
   });
 }
+
 
 // -----------------------------------------------------------------------------
 // PUT / DELETE (two-way sync)
