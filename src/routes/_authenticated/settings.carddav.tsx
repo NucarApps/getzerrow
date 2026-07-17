@@ -54,6 +54,7 @@ function CardDavSettings() {
   const revoke = useServerFn(revokeCardDavToken);
   const getSettings = useServerFn(getCardDavSettings);
   const updateSettings = useServerFn(updateCardDavSettings);
+  const forceResync = useServerFn(forceCarddavResync);
   const [label, setLabel] = useState("iPhone");
   const [freshToken, setFreshToken] = useState<string | null>(null);
 
@@ -68,6 +69,14 @@ function CardDavSettings() {
       toast.success("iPhone will refresh group names on next sync");
       qc.invalidateQueries({ queryKey: ["carddav-settings"] });
     },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const resyncMut = useMutation({
+    mutationFn: () => forceResync(),
+    onSuccess: () =>
+      toast.success(
+        "Address book tag bumped — iPhone will pull a fresh copy on next sync",
+      ),
     onError: (e: Error) => toast.error(e.message),
   });
 
