@@ -38,6 +38,8 @@ export async function runGoogleContactsSync(
     }
   }
   await updateSyncState(state.id, { locked_at: now.toISOString() });
+  const progress = createProgressReporter(state.id);
+  await progress.set("starting", 0, 0);
 
   // Always release the lease, even if the pull/push block throws in a place
   // that skips the catch (e.g. a synchronous error inside a helper, or a
@@ -62,8 +64,9 @@ export async function runGoogleContactsSync(
       return result;
     }
 
-    const pull = await pullFromGoogle(ids);
-    const push = await pushToGoogle(ids);
+    const pull = await pullFromGoogle(ids, progress);
+    const push = await pushToGoogle(ids, progress);
+    await progress.set("finalizing", 0, 0);
 
     await updateSyncState(state.id, {
       people_sync_token: pull.peopleSyncToken ?? state.people_sync_token,
