@@ -110,8 +110,10 @@ export type PullBreakdown = {
   updated: number;
   skipped_no_email: number;
   merged_duplicate_email: number;
+  merged_by_phone: number;
   failed: number;
 };
+
 
 /** Apply pulled people/groups to local Zerrow state. Returns the count applied. */
 export async function pullFromGoogle(
