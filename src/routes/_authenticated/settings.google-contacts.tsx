@@ -318,9 +318,10 @@ function GoogleContactsSettings() {
       <Card className="p-4 md:p-6">
         <h2 className="font-display text-2xl">Google contacts sync</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Two-way sync with Google Contacts. Changes made in Zerrow push to Google, and
-          changes made in Google Contacts (including on your phone) pull back into Zerrow.
-          Contact groups map to Google labels, and deletions propagate both ways.
+          Start with <strong>Pull only</strong> to import your Google contacts and
+          groups into Zerrow so you can merge duplicates and clean things up. When
+          you're ready, switch to <strong>Two-way</strong> to also push local
+          changes, adds, and deletes back to Google.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
           The background sync runs every 15 minutes. Use "Sync now" for an immediate run.
