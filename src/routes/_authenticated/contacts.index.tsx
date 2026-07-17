@@ -812,7 +812,9 @@ function ContactsPage() {
         aliases={aliasDialog ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
         contactIds={aliasDialog?.contactIds ?? []}
       />
-    </div>
+     </div>
+      <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
+    </>
   );
 }
 
