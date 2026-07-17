@@ -280,6 +280,51 @@ function ModeOption({
   );
 }
 
+type SyncStateShape = {
+  last_pull_count?: number | null;
+  last_push_count?: number | null;
+  last_pull_created?: number | null;
+  last_pull_updated?: number | null;
+  last_pull_skipped_no_email?: number | null;
+  last_pull_merged?: number | null;
+  last_pull_failed?: number | null;
+};
+
+function PullBreakdown({ state }: { state: SyncStateShape }) {
+  const created = state.last_pull_created ?? 0;
+  const updated = state.last_pull_updated ?? 0;
+  const skipped = state.last_pull_skipped_no_email ?? 0;
+  const merged = state.last_pull_merged ?? 0;
+  const failed = state.last_pull_failed ?? 0;
+  const imported = created + updated;
+  const pushed = state.last_push_count ?? 0;
+  const hasBreakdown = created + updated + skipped + merged + failed > 0;
+
+  if (!hasBreakdown) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Pulled {state.last_pull_count ?? 0} · Pushed {pushed}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+      <p>
+        Imported {imported}
+        {pushed > 0 ? ` · Pushed ${pushed}` : ""}
+      </p>
+      {skipped > 0 && (
+        <p title="Google contacts without an email address aren't stored in Zerrow yet.">
+          Skipped (no email): {skipped}
+        </p>
+      )}
+      {merged > 0 && <p>Merged into existing: {merged}</p>}
+      {failed > 0 && <p className="text-destructive">Failed: {failed}</p>}
+    </div>
+  );
+}
+
 function stepLabel(step: string | null): string {
   switch (step) {
     case "starting":
