@@ -30,6 +30,7 @@ import {
   createContactGroup,
   updateContactGroup,
   deleteContactGroup,
+  linkContactGroupToFolder,
 } from "@/lib/contact-groups.functions";
 import { toast } from "sonner";
 import {
