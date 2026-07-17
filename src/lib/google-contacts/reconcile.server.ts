@@ -67,7 +67,9 @@ export async function runGoogleContactsSync(
     }
 
     const pull = await pullFromGoogle(ids, progress);
-    const push = await pushToGoogle(ids, progress);
+    const push = pullOnly
+      ? { contactsPushed: 0, groupsPushed: 0 }
+      : await pushToGoogle(ids, progress);
     await progress.set("finalizing", 0, 0);
 
     await updateSyncState(state.id, {
