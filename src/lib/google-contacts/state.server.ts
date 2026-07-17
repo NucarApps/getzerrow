@@ -27,6 +27,7 @@ export type SyncState = {
   last_pull_skipped_no_email: number;
   last_pull_merged: number;
   last_pull_failed: number;
+  sync_interval_minutes: number;
 };
 
 export async function loadSyncState(
