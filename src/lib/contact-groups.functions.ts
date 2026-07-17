@@ -116,25 +116,21 @@ export const updateContactGroup = createServerFn({ method: "POST" })
         .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     const { id, parent_group_id, ...rest } = data;
     // Cycle + depth guard when reparenting.
     if (parent_group_id !== undefined && parent_group_id !== null) {
       if (parent_group_id === id) throw new Error("A group can't be its own parent");
+      const { parents } = await loadParentMap(supabase, userId);
       // Walk the proposed parent's ancestry: if `id` appears, it's a cycle.
       let cursor: string | null = parent_group_id;
       let hops = 0;
       while (cursor && hops < 32) {
         if (cursor === id) throw new Error("That would create a cycle");
-        const { data: p } = await supabase
-          .from("contact_groups")
-          .select("parent_group_id")
-          .eq("id", cursor)
-          .maybeSingle();
-        cursor = (p?.parent_group_id ?? null) as string | null;
+        cursor = parents.get(cursor) ?? null;
         hops++;
       }
-      const depth = await parentChainDepth(supabase, parent_group_id);
+      const depth = chainDepth(parents, parent_group_id);
       if (depth + 1 > MAX_DEPTH) {
         throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
       }
