@@ -22,7 +22,9 @@ export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
         // where the OAuth grant is still alive.
         const { data: rows, error } = await supabaseAdmin
           .from("google_sync_state")
-          .select("user_id, gmail_account_id, enabled")
+          .select(
+            "user_id, gmail_account_id, enabled, sync_interval_minutes, last_incremental_at, locked_at",
+          )
           .eq("enabled", true);
         if (error) {
           logError("google_contacts_cron.load_failed", { runId }, error);
@@ -34,9 +36,24 @@ export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
 
         let ok = 0;
         let failed = 0;
+        let skipped = 0;
         const errors: Array<{ accountId: string; error: string }> = [];
+        const nowMs = Date.now();
 
         for (const row of rows ?? []) {
+          const intervalMin = (row.sync_interval_minutes as number | null) ?? 15;
+          const lastMs = row.last_incremental_at
+            ? new Date(row.last_incremental_at as string).getTime()
+            : 0;
+          // Skip accounts not yet due — respects per-account cadence. Grace of
+          // 30s prevents drift from making a due tick miss.
+          if (
+            lastMs > 0 &&
+            nowMs - lastMs < intervalMin * 60_000 - 30_000
+          ) {
+            skipped += 1;
+            continue;
+          }
           try {
             const res = await runGoogleContactsSync(
               row.user_id as string,
@@ -67,9 +84,18 @@ export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
           total: rows?.length ?? 0,
           ok,
           failed,
+          skipped,
         });
         return new Response(
-          JSON.stringify({ ok: true, runId, total: rows?.length ?? 0, ranOk: ok, failed, errors }),
+          JSON.stringify({
+            ok: true,
+            runId,
+            total: rows?.length ?? 0,
+            ranOk: ok,
+            failed,
+            skipped,
+            errors,
+          }),
           { headers: { "content-type": "application/json" } },
         );
       },

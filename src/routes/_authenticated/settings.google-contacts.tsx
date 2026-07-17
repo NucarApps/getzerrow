@@ -25,7 +25,15 @@ import {
   syncGoogleContactsNow,
   getGoogleContactsSyncStatus,
   setGoogleContactsSyncMode,
+  setGoogleContactsSyncInterval,
 } from "@/lib/google-contacts.functions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type SyncMode = "off" | "pull_only" | "two_way";
 
@@ -61,6 +69,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const getStatus = useServerFn(getGoogleContactsSyncStatus);
   const syncNow = useServerFn(syncGoogleContactsNow);
   const setMode = useServerFn(setGoogleContactsSyncMode);
+  const setInterval = useServerFn(setGoogleContactsSyncInterval);
   const connect = useServerFn(startConnectGmail);
   const [reconnecting, setReconnecting] = useState(false);
   const [confirmUpgrade, setConfirmUpgrade] = useState(false);
@@ -81,6 +90,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     (state?.sync_mode as SyncMode | undefined) ??
     (state?.enabled ? "two_way" : "off");
   const enabled = mode !== "off";
+  const intervalMinutes = (state?.sync_interval_minutes as number | undefined) ?? 15;
   const scopeGranted = statusQ.data?.scope_granted ?? null;
   const rawLastError = statusQ.data?.state?.last_error ?? null;
   const lastError =
@@ -94,6 +104,16 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     mutationFn: (next: SyncMode) =>
       setMode({ data: { accountId: account.id, mode: next } }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const intervalMut = useMutation({
+    mutationFn: (mins: 5 | 15 | 60) =>
+      setInterval({ data: { accountId: account.id, intervalMinutes: mins } }),
+    onSuccess: () => {
+      toast.success("Background sync frequency updated");
       qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -204,6 +224,34 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
             description="Pull from Google and push local changes, adds, and deletes back to Google."
           />
         </RadioGroup>
+
+        {enabled && (
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Background sync frequency</p>
+              <p className="text-xs text-muted-foreground">
+                How often we check Google for changes when you're not using
+                "Sync now".
+              </p>
+            </div>
+            <Select
+              value={String(intervalMinutes)}
+              onValueChange={(v) =>
+                intervalMut.mutate(Number(v) as 5 | 15 | 60)
+              }
+              disabled={intervalMut.isPending || needsReconnect}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">Every 5 min</SelectItem>
+                <SelectItem value="15">Every 15 min</SelectItem>
+                <SelectItem value="60">Every hour</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {isRunning && (
@@ -364,7 +412,9 @@ function GoogleContactsSettings() {
           changes, adds, and deletes back to Google.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
-          The background sync runs every 15 minutes. Use "Sync now" for an immediate run.
+          The background sync runs automatically. Pick a cadence per account
+          below (every 5 min, 15 min, or hour), or hit "Sync now" for an
+          immediate run.
         </p>
       </Card>
 

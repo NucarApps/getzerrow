@@ -79,6 +79,29 @@ export const setGoogleContactsSyncMode = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+const SYNC_INTERVALS = [5, 15, 60] as const;
+type SyncInterval = (typeof SYNC_INTERVALS)[number];
+
+export const setGoogleContactsSyncInterval = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { accountId: string; intervalMinutes: SyncInterval }) =>
+    z
+      .object({
+        accountId: z.string().uuid(),
+        intervalMinutes: z.union([z.literal(5), z.literal(15), z.literal(60)]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwnsAccount(context.userId, data.accountId);
+    const { ensureSyncState, updateSyncState } = await import(
+      "@/lib/google-contacts/state.server"
+    );
+    const state = await ensureSyncState(context.userId, data.accountId);
+    await updateSyncState(state.id, { sync_interval_minutes: data.intervalMinutes });
+    return { ok: true };
+  });
+
 /** @deprecated Prefer setGoogleContactsSyncMode. Retained for older callers. */
 export const setGoogleContactsSyncEnabled = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
