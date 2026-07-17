@@ -943,6 +943,9 @@ function GroupEditorDialog({
   const del = useServerFn(deleteContactGroup);
   const linkFolder = useServerFn(linkContactGroupToFolder);
   const listFolders = useServerFn(listFoldersForPicker);
+  const setAutoFn = useServerFn(setAutoCompanySubgroups);
+  const rescanAutoFn = useServerFn(reconcileAutoCompanySubgroups);
+  const pruneAutoFn = useServerFn(pruneAutoCompanySubgroups);
 
   const foldersQ = useQuery({
     queryKey: ["folders-picker"],
