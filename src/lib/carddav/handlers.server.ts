@@ -737,6 +737,43 @@ export async function handleDelete(
   userId: string,
   path: string,
 ): Promise<Response> {
+  const groupId = extractGroupId(path);
+  if (groupId) {
+    const { data: existing } = await supabaseAdmin
+      .from("contact_groups")
+      .select("id,updated_at")
+      .eq("id", groupId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!existing) return new Response(null, { status: 404 });
+    const ifMatch = request.headers.get("if-match");
+    if (ifMatch) {
+      const current = groupETag(existing.id, existing.updated_at as string);
+      const norm = (v: string) => v.trim().replace(/^W\//i, "");
+      if (norm(ifMatch) !== norm(current)) return preconditionFailed();
+    }
+    // Membership rows and any sender_in_group folder_filter cascade
+    // via ON DELETE (folder_filters clean-up is handled by app-side link
+    // UI; a hard group delete just drops rules that referenced it).
+    await supabaseAdmin
+      .from("contact_group_members")
+      .delete()
+      .eq("group_id", groupId)
+      .eq("user_id", userId);
+    await supabaseAdmin
+      .from("folder_filters")
+      .delete()
+      .eq("op", "sender_in_group")
+      .eq("value", groupId);
+    const { error } = await supabaseAdmin
+      .from("contact_groups")
+      .delete()
+      .eq("id", groupId)
+      .eq("user_id", userId);
+    if (error) return new Response(error.message, { status: 500 });
+    return new Response(null, { status: 204 });
+  }
+
   const contactId = extractContactId(path);
   if (!contactId || !UUID_RE.test(contactId)) {
     return new Response("Bad Request", { status: 400 });
