@@ -1,96 +1,53 @@
-# "Hey Zerrow" in-meeting Q&A (chat reply, current meeting only)
+# Tasks feature
 
-Interactive assistant that listens for a wake phrase during a Recall.ai-recorded meeting and posts an AI answer in the meeting chat, using only the live transcript of the current call.
+A single place for your to-dos — added manually, extracted automatically from meeting transcripts and emails, and checked off (or auto-suggested done) as you send follow-ups.
 
-## How it works
+## Scope (from your answers)
+- **Ownership**: only tasks *you* committed to or are asked to do. Action items assigned to others are ignored.
+- **Email sources**: incoming requests directed at you + your outgoing commitments ("I'll send it Monday").
+- **Completion**: AI scans Sent, flags likely-done tasks with a "looks done — confirm?" chip. You approve or dismiss.
+- **UI**: a dedicated `/tasks` page in the nav + inline widgets on the inbox reading pane and the meeting detail view.
 
-```text
-Recall bot (already in call)
-   │  real-time transcript + chat events (webhook)
-   ▼
-/api/public/recall-realtime  ── verifies shared secret
-   │
-   ├─ appends transcript to per-bot rolling buffer
-   ├─ detects wake trigger:
-   │     • voice: "hey zerrow …"        (transcript.data)
-   │     • chat: "@zerrow …" / "hey zerrow …"  (chat.message events)
-   │
-   ▼
-askZerrowInMeeting(botId, question)
-   │  Lovable AI Gateway (google/gemini-3.5-flash)
-   │  system prompt + last ~15 min of transcript as context
-   ▼
-Recall "Send Chat Message" API → answer appears in meeting chat
-   │
-   ▼
-meeting_qa row (audit + optional UI later)
-```
+## Data model (one migration)
 
-## Changes
+New tables (all RLS-scoped to `auth.uid()`, with grants to `authenticated` + `service_role`):
 
-### 1. Recall bot config (`src/lib/recall.server.ts`)
-- On `createRecallBot`, subscribe to real-time events by adding:
-  - `realtime_endpoints: [{ type: "webhook", url: <public webhook>, events: ["transcript.data", "chat_messages.data", "participant_events.chat_message_sent"] }]`
-  - `chat: { host_only: false }` if not already enabled, so the bot can send chat.
-- Add `sendBotChatMessage(botId, text)` calling `POST /api/v1/bot/{id}/send_chat_message/` with `{ to: "everyone", message }`.
-- URL includes a per-project shared secret query token (`?t=<RECALL_REALTIME_TOKEN>`) since Recall webhooks don't sign real-time endpoints.
+- `tasks` — `id`, `user_id`, `title`, `notes`, `status` (`open` | `done` | `dismissed`), `due_at`, `source` (`manual` | `meeting` | `email`), `source_meeting_id` (fk `meetings`), `source_email_id` (fk `emails`), `completed_at`, `dismissed_at`, `created_at`, `updated_at`.
+- `task_completion_suggestions` — `id`, `task_id`, `sent_email_id` (fk `emails`), `confidence` (`high`/`med`/`low`), `reasoning` (short AI explanation), `status` (`pending` | `confirmed` | `dismissed`), `created_at`. Unique on `(task_id, sent_email_id)` to avoid duplicates.
+- `task_extraction_runs` — `id`, `user_id`, `source_type` (`meeting`/`email_in`/`email_out`/`sent_scan`), `source_id`, `ran_at`. Idempotency guard so we don't re-scan the same meeting/email.
 
-### 2. New webhook route: `src/routes/api/public/recall-realtime.ts`
-- Verify `?t=` matches `RECALL_REALTIME_TOKEN` (generated secret).
-- Handle event shapes:
-  - `transcript.data` → append `{words, speaker, ts}` to `bot_transcript_buffer` (in-DB rolling window, trimmed to last 30 min or 8k tokens).
-  - `chat_messages.data` → inspect message text.
-- Wake-phrase matcher: regex `/(?:^|\s)(?:@zerrow|hey\s+zerrow)[,:\s]+(.+)/i`; ignore messages authored by the bot itself; debounce 3s per bot to avoid duplicate triggers when both voice + chat fire.
-- Enqueue answer job (inline for MVP — the LLM call takes 1-3s, well under the 25s Worker limit).
+## Extraction pipeline
 
-### 3. Answering logic: `src/lib/meetings/hey-zerrow.server.ts`
-- `askZerrowInMeeting({ botId, question })`:
-  - Load bot row → owning `user_id` + `meeting_id`.
-  - Read last ~15 min of the rolling transcript buffer for that bot.
-  - Call Lovable AI (`google/gemini-3.5-flash`) via `createLovableAiGatewayProvider` + `generateText`. Prompt: "You are Zerrow, an assistant listening to this meeting. Answer briefly (≤ 60 words) using ONLY the transcript. If the transcript doesn't contain the answer, say so."
-  - Post via `sendBotChatMessage(botId, "Zerrow: " + answer)`.
-  - Insert into `meeting_qa` (bot_id, meeting_id, user_id, trigger_source: 'voice'|'chat', question, answer, latency_ms).
-  - Graceful failure: post `"Zerrow: I couldn't answer that — try again."` on error.
+All extraction runs server-side via Lovable AI (`google/gemini-3.5-flash`), never from the client.
 
-### 4. Database migration
-```sql
-CREATE TABLE public.meeting_transcript_buffer (
-  bot_id text PRIMARY KEY,
-  meeting_id uuid REFERENCES public.meetings(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL,
-  segments jsonb NOT NULL DEFAULT '[]'::jsonb,   -- rolling window
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE TABLE public.meeting_qa (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  bot_id text NOT NULL,
-  meeting_id uuid REFERENCES public.meetings(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL,
-  trigger_source text NOT NULL CHECK (trigger_source IN ('voice','chat')),
-  question text NOT NULL,
-  answer text,
-  latency_ms integer,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-GRANT SELECT ON public.meeting_qa TO authenticated;
-GRANT ALL ON public.meeting_qa, public.meeting_transcript_buffer TO service_role;
-ALTER TABLE public.meeting_qa ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.meeting_transcript_buffer ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "own qa" ON public.meeting_qa FOR SELECT TO authenticated USING (user_id = auth.uid());
--- transcript buffer is service_role only (webhook-managed); no authenticated policy needed
-```
+1. **Meetings** — new server fn `extractTasksFromMeeting(meetingId)`. Triggered when a meeting transcript finalizes (hook into the existing recording-complete path). Prompt gives the AI the transcript + the user's display name/email and asks only for tasks *the user* took on. Each extracted task inserts a `tasks` row with `source='meeting'`, `source_meeting_id`, and a snippet in `notes`.
+2. **Incoming email** — extend the existing per-message classify pass in `src/lib/sync/run-jobs.ts`. After folder classification, if the email is addressed to the user and asks for an action, enqueue a lightweight follow-up job that runs `extractTasksFromEmail(emailId, 'incoming')`. Keeps the hot classify path unchanged.
+3. **Outgoing commitments** — a new sent-mail hook (already have Sent processing) runs `extractTasksFromEmail(emailId, 'outgoing')` which looks for first-person commitments and inserts tasks with `source='email'`.
+4. **Completion detection** — new cron every 10 min: `scanSentForTaskCompletion` walks recent sent emails, matches against open tasks by recipient + semantic similarity, and writes `task_completion_suggestions` rows (no auto-complete). UI surfaces these as confirm chips.
 
-### 5. Secrets
-- `RECALL_REALTIME_TOKEN` — generated via `generate_secret` (32 chars). Used to authenticate real-time webhook.
-- `LOVABLE_API_KEY` — already set.
-- Webhook URL uses stable `project--{id}.lovable.app/api/public/recall-realtime?t=<token>`.
+All AI calls include a JSON-schema `Output` so we get typed results; extraction is skipped if the model returns confidence below a threshold.
 
-### 6. Not in this pass
-- Voice reply into the call (would need Recall Output Audio + TTS).
-- Cross-meeting RAG (emails/contacts).
-- UI to browse Q&A history — data captured now, surface later.
+## UI
 
-## Risks / notes
-- Recall real-time webhooks fire frequently; the buffer table gets one UPDATE per transcript chunk (~1/sec per active speaker). Trim inline to cap row size.
-- Wake-phrase false positives on voice ("Hey, zero…") — mitigated by requiring a follow-up question of ≥3 words and a 3s debounce.
-- Bot must have chat send permission on the platform (Zoom host-only chat can block it — surface a hint in the meeting UI if `send_chat_message` returns 4xx).
+- **`/tasks` route** under `_authenticated/`: filter by status (open/done/dismissed), source (manual/meeting/email), and due date. Each row shows title, source badge with a link ("From meeting: Q3 review" → `/meetings/$id`, "From email: …" → opens inbox drawer), and a checkbox. Confirm-done suggestions render as an amber chip with Accept / Not done buttons.
+- **Inline widget on inbox reading pane** (`src/routes/_authenticated/inbox.tsx`): "Open tasks from this thread" list; if the current email spawned a task, show it with a checkbox.
+- **Inline widget on meeting detail** (`src/routes/_authenticated/meetings.$id.tsx` or equivalent): "Your action items" list extracted from that meeting, each with a checkbox and link back to the transcript segment.
+- **Nav**: add a "Tasks" link with an open-count badge.
+
+## Server functions (new)
+
+Located under `src/lib/tasks/*.functions.ts` + `src/lib/tasks/*.server.ts` helpers, following the same barrel pattern used for `gmail`/`meetings`/`contacts`:
+
+- `listTasks`, `createTask`, `updateTask` (title/notes/due/status), `completeTask`, `dismissTask`, `reopenTask`.
+- `extractTasksFromMeeting`, `extractTasksFromEmail` (both authenticated; use `requireSupabaseAuth`).
+- `listCompletionSuggestions`, `confirmCompletionSuggestion`, `dismissCompletionSuggestion`.
+- `scanSentForTaskCompletion` (called by a public cron route in `src/routes/api/public/tasks-completion-scan.ts` guarded by `CRON_SECRET`).
+
+## Out of scope for v1
+
+- Reminders / push notifications on due dates.
+- Assigning tasks to other people or sharing task lists.
+- Recurring tasks.
+- Calendar-event creation from tasks.
+
+Happy to add any of these as follow-ups once v1 lands.
