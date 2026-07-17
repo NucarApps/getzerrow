@@ -17,6 +17,7 @@ import {
 import {
   getCardDavSettings,
   updateCardDavSettings,
+  forceCarddavResync,
   type GroupNameStyle,
 } from "@/lib/carddav/settings.functions";
 import {
@@ -53,6 +54,7 @@ function CardDavSettings() {
   const revoke = useServerFn(revokeCardDavToken);
   const getSettings = useServerFn(getCardDavSettings);
   const updateSettings = useServerFn(updateCardDavSettings);
+  const forceResync = useServerFn(forceCarddavResync);
   const [label, setLabel] = useState("iPhone");
   const [freshToken, setFreshToken] = useState<string | null>(null);
 
@@ -67,6 +69,14 @@ function CardDavSettings() {
       toast.success("iPhone will refresh group names on next sync");
       qc.invalidateQueries({ queryKey: ["carddav-settings"] });
     },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const resyncMut = useMutation({
+    mutationFn: () => forceResync(),
+    onSuccess: () =>
+      toast.success(
+        "Address book tag bumped — iPhone will pull a fresh copy on next sync",
+      ),
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -258,6 +268,23 @@ function CardDavSettings() {
               <SelectItem value="path_dash">Parent - Child — "Factory - Toyota"</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="border-t pt-4">
+          <p className="text-sm font-medium">Force iPhone resync</p>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Bumps the address-book tag so your iPhone pulls a fresh copy on
+            its next sync (usually within 15 min, or immediately if you open
+            Contacts and pull to refresh). Use this after group changes that
+            aren't showing up.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => resyncMut.mutate()}
+            disabled={resyncMut.isPending}
+          >
+            {resyncMut.isPending ? "Bumping…" : "Force iPhone resync"}
+          </Button>
         </div>
       </Card>
     </div>

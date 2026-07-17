@@ -39,3 +39,28 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/** Bump the resync nonce so the address-book CTag changes. iOS will pull a
+ * fresh copy on its next sync tick (or immediately if the user opens
+ * Contacts / pulls to refresh). Does not push to the phone. */
+export const forceCarddavResync = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: existing } = await supabase
+      .from("carddav_settings")
+      .select("resync_nonce")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const current =
+      (existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0;
+    const next = current + 1;
+    const { error } = await supabase
+      .from("carddav_settings")
+      .upsert(
+        { user_id: userId, resync_nonce: next },
+        { onConflict: "user_id" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true, resync_nonce: next };
+  });
