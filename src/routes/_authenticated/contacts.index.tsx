@@ -15,7 +15,9 @@ import {
   Check,
   Building2,
   CalendarClock,
+  Sparkles,
 } from "lucide-react";
+import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
