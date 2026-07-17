@@ -958,6 +958,8 @@ function GroupEditorDialog({
   const [color, setColor] = useState(GROUP_COLORS[0]);
   const [folderId, setFolderId] = useState<string>("");
   const [parentId, setParentId] = useState<string>("");
+  const [autoSubgroups, setAutoSubgroups] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -967,11 +969,13 @@ function GroupEditorDialog({
       setColor(state.group.color);
       setFolderId(state.group.folder_id ?? "");
       setParentId(state.group.parent_group_id ?? "");
+      setAutoSubgroups(!!state.group.auto_company_subgroups);
     } else {
       setName("");
       setColor(GROUP_COLORS[0]);
       setFolderId("");
       setParentId("");
+      setAutoSubgroups(false);
     }
   }, [state]);
 
