@@ -17,6 +17,10 @@ export type SyncState = {
   last_push_count: number;
   pending_bump: boolean;
   locked_at: string | null;
+  progress_step: string | null;
+  progress_processed: number;
+  progress_total: number;
+  progress_updated_at: string | null;
 };
 
 export async function loadSyncState(
