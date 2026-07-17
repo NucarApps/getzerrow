@@ -342,13 +342,13 @@ export function parseVCard(text: string): ParsedVCard | null {
         const num = v.trim();
         if (!num) break;
         const types = p.params.TYPE ?? [];
-        // Primary can arrive as `TYPE=pref`, `PREF=1`, or bare `PREF`.
-        const prefParam = (p.params.PREF ?? []).map((x) => x.trim());
+        // Primary can arrive three ways:
+        //   TEL;TYPE=pref:...    -> in TYPE array (parseLine uppercases)
+        //   TEL;PREF=1:...       -> params.PREF = ["1"]
+        //   TEL;PREF:...         -> bare param — parseLine routes to TYPE
+        const prefVals = (p.params.PREF ?? []).map((x) => x.trim());
         const isPref =
-          types.includes("PREF") ||
-          prefParam.length === 0 && (p.params.PREF ?? []).length > 0
-            ? true
-            : prefParam.some((x) => x === "1" || x === "");
+          types.includes("PREF") || prefVals.some((x) => x === "1" || x === "");
         out.phones.push({ label: phoneLabelFromTypes(types), number: num, is_primary: isPref });
         break;
       }
