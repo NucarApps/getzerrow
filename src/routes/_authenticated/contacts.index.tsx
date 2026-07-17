@@ -509,7 +509,50 @@ function ContactsPage() {
                 <Building2 className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">By company</span>
               </Button>
+              <Button
+                variant={selectionMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
+                title="Select multiple"
+                aria-pressed={selectionMode}
+                className="shrink-0 px-2 sm:px-3"
+              >
+                <Check className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">
+                  {selectionMode ? "Done" : "Select"}
+                </span>
+              </Button>
             </div>
+
+            {selectionMode && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-accent/30 px-3 py-2 text-sm">
+                <span className="font-medium">{selectedIds.size} selected</span>
+                <button
+                  type="button"
+                  onClick={selectAllVisible}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Select all visible ({filtered.length})
+                </button>
+                {selectedIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearSelection}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Clear
+                  </button>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <GroupPickerPopover
+                    disabled={selectedIds.size === 0}
+                    groupTree={groupTree}
+                    onApply={bulkAssignGroups}
+                  />
+                </div>
+              </div>
+            )}
+
 
             {q.isLoading ? (
               <div className="grid gap-2">
