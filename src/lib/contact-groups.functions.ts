@@ -75,7 +75,8 @@ export const createContactGroup = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     // Validate parent depth (max MAX_DEPTH levels: root=1..MAX_DEPTH).
     if (data.parent_group_id) {
-      const depth = await parentChainDepth(supabase, data.parent_group_id);
+      const { parents } = await loadParentMap(supabase, userId);
+      const depth = chainDepth(parents, data.parent_group_id);
       if (depth + 1 > MAX_DEPTH) {
         throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
       }
