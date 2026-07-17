@@ -22,7 +22,9 @@ export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
         // where the OAuth grant is still alive.
         const { data: rows, error } = await supabaseAdmin
           .from("google_sync_state")
-          .select("user_id, gmail_account_id, enabled")
+          .select(
+            "user_id, gmail_account_id, enabled, sync_interval_minutes, last_incremental_at, locked_at",
+          )
           .eq("enabled", true);
         if (error) {
           logError("google_contacts_cron.load_failed", { runId }, error);
