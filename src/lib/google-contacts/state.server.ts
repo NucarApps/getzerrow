@@ -22,6 +22,11 @@ export type SyncState = {
   progress_processed: number;
   progress_total: number;
   progress_updated_at: string | null;
+  last_pull_created: number;
+  last_pull_updated: number;
+  last_pull_skipped_no_email: number;
+  last_pull_merged: number;
+  last_pull_failed: number;
 };
 
 export async function loadSyncState(
