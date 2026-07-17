@@ -231,6 +231,41 @@ function ContactsPage() {
     return n;
   }, [q.data, contactGroupMap]);
 
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function handleRowClick(id: string) {
+    if (selectionMode) toggleSelect(id);
+    else setDrawerId(id);
+  }
+  function selectAllVisible() {
+    setSelectedIds(new Set(filtered.map((c) => c.id)));
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    clearSelection();
+  }
+  async function bulkAssignGroups(groupIds: string[]) {
+    if (!groupIds.length || selectedIds.size === 0) return;
+    try {
+      await bulkAddToGroups({
+        data: { groupIds, contactIds: Array.from(selectedIds) },
+      });
+      toast.success(`Added ${selectedIds.size} contact${selectedIds.size === 1 ? "" : "s"}`);
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      exitSelectionMode();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  }
   type Contact = (typeof filtered)[number];
   type Bucket = {
     key: string;
