@@ -938,10 +938,20 @@ function GroupEditorDialog({
     setSaving(true);
     try {
       let gid: string | null = editGroup?.id ?? null;
+      const nextParentId = parentId || null;
       if (editGroup) {
-        await update({ data: { id: editGroup.id, name: name.trim(), color } });
+        await update({
+          data: {
+            id: editGroup.id,
+            name: name.trim(),
+            color,
+            parent_group_id: nextParentId,
+          },
+        });
       } else {
-        const created = await create({ data: { name: name.trim(), color } });
+        const created = await create({
+          data: { name: name.trim(), color, parent_group_id: nextParentId },
+        });
         gid = (created as { group?: { id: string } })?.group?.id ?? null;
       }
       // Sync folder link (create/remove the sender_in_group filter row).
