@@ -35,6 +35,12 @@ import {
   linkContactGroupToFolder,
   addContactsToGroups,
 } from "@/lib/contact-groups.functions";
+import {
+  setAutoCompanySubgroups,
+  reconcileAutoCompanySubgroups,
+  pruneAutoCompanySubgroups,
+} from "@/lib/contacts/auto-company-subgroups.functions";
+import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
