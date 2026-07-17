@@ -378,12 +378,12 @@ function ContactsPage() {
               count={ungroupedCount}
               onClick={() => setFilter("ungrouped")}
             />
-            {(gq.data?.groups ?? []).map((g) => (
+            {groupTree.map(({ group: g, depth }) => (
               <GroupPill
                 key={g.id}
                 active={filter === g.id}
                 color={g.color}
-                label={g.name}
+                label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
                 count={g.count}
                 onClick={() => setFilter(g.id)}
                 onEdit={() => setGroupDialog({ mode: "edit", group: g })}
