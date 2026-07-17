@@ -57,6 +57,10 @@ export type EmailForFilter = {
   subject: string;
   body_text: string;
   has_attachment: boolean;
+  /** IDs of contact_groups the sender belongs to for this user. Populated
+   * at classify time from AccountContext. Empty/absent for messages
+   * whose sender isn't a saved contact. */
+  sender_group_ids?: string[];
 };
 
 export function applyFilter(email: EmailForFilter, f: Filter): boolean {
