@@ -977,6 +977,7 @@ export async function handleDelete(
       .eq("id", groupId)
       .eq("user_id", userId);
     if (error) return new Response(error.message, { status: 500 });
+    await insertTombstone(userId, "group", groupId);
     return new Response(null, { status: 204 });
   }
 
