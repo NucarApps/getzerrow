@@ -45,18 +45,29 @@ function groupHref(email: string, groupId: string): string {
 // the whole book while the CTag is stable, so this must actually move on
 // edits and stay stable otherwise.
 async function computeBookCTag(userId: string): Promise<string> {
-  const { data } = await supabaseAdmin
+  // Include contact_groups.updated_at so group renames / membership changes
+  // invalidate iOS's cached copy.
+  const { data: cLatest } = await supabaseAdmin
     .from("contacts")
     .select("updated_at")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .limit(1);
-  const latest = data?.[0]?.updated_at ?? "1970-01-01T00:00:00Z";
-  const { count } = await supabaseAdmin
-    .from("contacts")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId);
-  return `"${new Date(latest).getTime().toString(36)}-${count ?? 0}"`;
+  const { data: gLatest } = await supabaseAdmin
+    .from("contact_groups")
+    .select("updated_at")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  const latest = [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
+    .filter((v): v is string => !!v)
+    .sort()
+    .pop() ?? "1970-01-01T00:00:00Z";
+  const [{ count: cCount }, { count: gCount }] = await Promise.all([
+    supabaseAdmin.from("contacts").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    supabaseAdmin.from("contact_groups").select("id", { count: "exact", head: true }).eq("user_id", userId),
+  ]);
+  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}"`;
 }
 
 async function listContactRows(userId: string): Promise<Array<{ id: string; updated_at: string }>> {
@@ -66,6 +77,42 @@ async function listContactRows(userId: string): Promise<Array<{ id: string; upda
     .eq("user_id", userId)
     .limit(5000);
   return (data as Array<{ id: string; updated_at: string }> | null) ?? [];
+}
+
+type GroupRow = {
+  id: string;
+  name: string;
+  updated_at: string;
+  carddav_uid: string | null;
+};
+
+async function listGroupRows(userId: string): Promise<GroupRow[]> {
+  const { data } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,name,updated_at,carddav_uid")
+    .eq("user_id", userId)
+    .limit(1000);
+  return (data as GroupRow[] | null) ?? [];
+}
+
+async function fetchGroupMembers(groupId: string): Promise<string[]> {
+  const { data } = await supabaseAdmin
+    .from("contact_group_members")
+    .select("contact_id")
+    .eq("group_id", groupId);
+  return ((data as Array<{ contact_id: string }> | null) ?? []).map((r) => r.contact_id);
+}
+
+async function fetchCategoriesForContact(userId: string, contactId: string): Promise<string[]> {
+  const { data } = await supabaseAdmin
+    .from("contact_group_members")
+    .select("contact_groups!inner(name,user_id)")
+    .eq("contact_id", contactId);
+  const rows = (data as Array<{ contact_groups: { name: string; user_id: string } | null }> | null) ?? [];
+  return rows
+    .map((r) => r.contact_groups)
+    .filter((g): g is { name: string; user_id: string } => !!g && g.user_id === userId)
+    .map((g) => g.name);
 }
 
 async function fetchPhones(contactId: string): Promise<PhoneRow[]> {
