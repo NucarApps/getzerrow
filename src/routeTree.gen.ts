@@ -56,6 +56,7 @@ import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as AuthenticatedSettingsMeetingsRecordingRouteImport } from './routes/_authenticated/settings.meetings-recording'
 import { Route as AuthenticatedSettingsMeetingsCalendarRouteImport } from './routes/_authenticated/settings.meetings-calendar'
 import { Route as AuthenticatedSettingsInboxRouteImport } from './routes/_authenticated/settings.inbox'
+import { Route as AuthenticatedSettingsCarddavRouteImport } from './routes/_authenticated/settings.carddav'
 import { Route as AuthenticatedSettingsActivityRouteImport } from './routes/_authenticated/settings.activity'
 import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_authenticated/settings.accounts'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings.account'
@@ -70,6 +71,7 @@ import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksReconcileMeetingsRouteImport } from './routes/api/public/hooks/reconcile-meetings'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
 import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
+import { Route as ApiPublicCarddavSplatRouteImport } from './routes/api/public/carddav/$'
 import { Route as ApiMobileEmailsFeedRouteImport } from './routes/api/mobile/emails.feed'
 import { Route as ApiMobileEmailsActionRouteImport } from './routes/api/mobile/emails.action'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
@@ -323,6 +325,12 @@ const AuthenticatedSettingsInboxRoute =
     path: '/inbox',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsCarddavRoute =
+  AuthenticatedSettingsCarddavRouteImport.update({
+    id: '/carddav',
+    path: '/carddav',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsActivityRoute =
   AuthenticatedSettingsActivityRouteImport.update({
     id: '/activity',
@@ -406,6 +414,11 @@ const ApiPublicHooksCheckFolderRetryAlertsRoute =
     path: '/api/public/hooks/check-folder-retry-alerts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicCarddavSplatRoute = ApiPublicCarddavSplatRouteImport.update({
+  id: '/api/public/carddav/$',
+  path: '/api/public/carddav/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMobileEmailsFeedRoute = ApiMobileEmailsFeedRouteImport.update({
   id: '/api/mobile/emails/feed',
   path: '/api/mobile/emails/feed',
@@ -446,6 +459,7 @@ export interface FileRoutesByFullPath {
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -476,6 +490,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -510,6 +525,7 @@ export interface FileRoutesByTo {
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -540,6 +556,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -577,6 +594,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/_authenticated/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/_authenticated/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
   '/_authenticated/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/_authenticated/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/_authenticated/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -607,6 +625,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -644,6 +663,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/accounts'
     | '/settings/activity'
+    | '/settings/carddav'
     | '/settings/inbox'
     | '/settings/meetings-calendar'
     | '/settings/meetings-recording'
@@ -674,6 +694,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -708,6 +729,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/accounts'
     | '/settings/activity'
+    | '/settings/carddav'
     | '/settings/inbox'
     | '/settings/meetings-calendar'
     | '/settings/meetings-recording'
@@ -738,6 +760,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -774,6 +797,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/accounts'
     | '/_authenticated/settings/activity'
+    | '/_authenticated/settings/carddav'
     | '/_authenticated/settings/inbox'
     | '/_authenticated/settings/meetings-calendar'
     | '/_authenticated/settings/meetings-recording'
@@ -804,6 +828,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -853,6 +878,7 @@ export interface RootRouteChildren {
   ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
   ApiMobileEmailsActionRoute: typeof ApiMobileEmailsActionRoute
   ApiMobileEmailsFeedRoute: typeof ApiMobileEmailsFeedRoute
+  ApiPublicCarddavSplatRoute: typeof ApiPublicCarddavSplatRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   ApiPublicHooksReconcileMeetingsRoute: typeof ApiPublicHooksReconcileMeetingsRoute
@@ -1196,6 +1222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsInboxRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/carddav': {
+      id: '/_authenticated/settings/carddav'
+      path: '/carddav'
+      fullPath: '/settings/carddav'
+      preLoaderRoute: typeof AuthenticatedSettingsCarddavRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/activity': {
       id: '/_authenticated/settings/activity'
       path: '/activity'
@@ -1294,6 +1327,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/carddav/$': {
+      id: '/api/public/carddav/$'
+      path: '/api/public/carddav/$'
+      fullPath: '/api/public/carddav/$'
+      preLoaderRoute: typeof ApiPublicCarddavSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mobile/emails/feed': {
       id: '/api/mobile/emails/feed'
       path: '/api/mobile/emails/feed'
@@ -1322,6 +1362,7 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
   AuthenticatedSettingsAccountsRoute: typeof AuthenticatedSettingsAccountsRoute
   AuthenticatedSettingsActivityRoute: typeof AuthenticatedSettingsActivityRoute
+  AuthenticatedSettingsCarddavRoute: typeof AuthenticatedSettingsCarddavRoute
   AuthenticatedSettingsInboxRoute: typeof AuthenticatedSettingsInboxRoute
   AuthenticatedSettingsMeetingsCalendarRoute: typeof AuthenticatedSettingsMeetingsCalendarRoute
   AuthenticatedSettingsMeetingsRecordingRoute: typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -1332,6 +1373,7 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
   AuthenticatedSettingsAccountsRoute: AuthenticatedSettingsAccountsRoute,
   AuthenticatedSettingsActivityRoute: AuthenticatedSettingsActivityRoute,
+  AuthenticatedSettingsCarddavRoute: AuthenticatedSettingsCarddavRoute,
   AuthenticatedSettingsInboxRoute: AuthenticatedSettingsInboxRoute,
   AuthenticatedSettingsMeetingsCalendarRoute:
     AuthenticatedSettingsMeetingsCalendarRoute,
@@ -1415,6 +1457,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
   ApiMobileEmailsActionRoute: ApiMobileEmailsActionRoute,
   ApiMobileEmailsFeedRoute: ApiMobileEmailsFeedRoute,
+  ApiPublicCarddavSplatRoute: ApiPublicCarddavSplatRoute,
   ApiPublicHooksCheckFolderRetryAlertsRoute:
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
