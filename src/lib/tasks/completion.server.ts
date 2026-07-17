@@ -48,15 +48,29 @@ async function scanUser(userId: string): Promise<number> {
   if (!tasks || tasks.length === 0) return 0;
 
   const since = new Date(Date.now() - LOOKBACK_HOURS * 3600 * 1000).toISOString();
-  const { data: sent } = await supabaseAdmin
+  const { data: sentRaw } = await supabaseAdmin
     .from("emails")
-    .select("id, subject, snippet, to_addrs, from_addr, received_at, raw_labels")
+    .select("id, from_addr, received_at, raw_labels")
     .eq("user_id", userId)
     .contains("raw_labels", ["SENT"])
     .gte("received_at", since)
     .order("received_at", { ascending: false })
     .limit(40);
-  if (!sent || sent.length === 0) return 0;
+  if (!sentRaw || sentRaw.length === 0) return 0;
+
+  const { rows: decrypted } = await getEmailListFieldsDecrypted(sentRaw.map((r) => r.id));
+  const decMap = new Map(decrypted.map((r) => [r.id, r]));
+  const sent: SentEmail[] = sentRaw.map((r) => {
+    const d = decMap.get(r.id);
+    return {
+      id: r.id,
+      subject: d?.subject ?? null,
+      snippet: d?.snippet ?? null,
+      to_addrs: d?.to_addrs ?? null,
+      from_addr: r.from_addr,
+      received_at: r.received_at,
+    };
+  });
 
   // Skip pairs we've already scored.
   const { data: existingRows } = await supabaseAdmin
