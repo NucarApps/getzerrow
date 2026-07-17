@@ -376,6 +376,7 @@ function ContactsPage() {
   }, [companyBuckets, groupByCompany]);
 
   return (
+    <>
     <div className="h-full overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <header className="mb-6 flex items-center gap-2 sm:gap-3">
