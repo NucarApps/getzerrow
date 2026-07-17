@@ -9,7 +9,14 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getContactDecrypted } from "@/lib/sync/encrypted-reader";
 import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
-import { contactETag, contactToVCard, parseVCard, type PhoneRow } from "./vcard";
+import {
+  buildGroupVCard,
+  contactETag,
+  contactToVCard,
+  groupETag,
+  parseVCard,
+  type PhoneRow,
+} from "./vcard";
 import {
   davResponse,
   MULTISTATUS_CLOSE,
@@ -29,6 +36,9 @@ function addressbookHref(email: string): string {
 }
 function contactHref(email: string, contactId: string): string {
   return `${BASE}/${encodeURIComponent(email)}/contacts/${contactId}.vcf`;
+}
+function groupHref(email: string, groupId: string): string {
+  return `${BASE}/${encodeURIComponent(email)}/contacts/group-${groupId}.vcf`;
 }
 
 // Sum of contact update times; changes when any contact changes. iOS caches
