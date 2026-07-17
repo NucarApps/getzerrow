@@ -61,7 +61,7 @@ function emailDomain(email: string | null | undefined): string | null {
 }
 
 async function loadLatestSuggestions(
-  supabase: Awaited<ReturnType<typeof requireSupabaseAuth.server>>["context"]["supabase"] extends infer T ? T : never,
+  supabase: DB,
   userId: string,
 ): Promise<SuggestionView[]> {
   const { data: latest, error: latestErr } = await supabase
