@@ -370,6 +370,7 @@ async function applyPersonChanges(
         .eq("contact_id", contactId)
         .in("group_id", toRemove);
     }
+    await progress?.increment(1);
   }
 
   // Deletions from Google → hard-delete locally IF the contact is only linked
@@ -382,6 +383,7 @@ async function applyPersonChanges(
       .delete()
       .eq("gmail_account_id", ids.gmailAccountId)
       .eq("resource_name", rn);
+    await progress?.increment(1);
   }
 }
 
