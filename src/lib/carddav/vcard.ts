@@ -21,22 +21,45 @@ function esc(v: string | null | undefined): string {
     .replace(/;/g, "\\;");
 }
 
-// Fold lines at 75 octets. iOS is forgiving but macOS Contacts is not.
+// Fold at 75 OCTETS (RFC 6350 §3.2) — not JS chars. Unicode notes and names
+// use multi-byte UTF-8; folding by `string.length` splits mid-codepoint and
+// corrupts the value on parse. We walk codepoints, count encoded bytes, and
+// only break on codepoint boundaries.
+const encoder = new TextEncoder();
+function utf8Bytes(s: string): number {
+  return encoder.encode(s).length;
+}
 function fold(line: string): string {
-  if (line.length <= 75) return line;
+  if (utf8Bytes(line) <= 75) return line;
   const chunks: string[] = [];
-  let i = 0;
-  chunks.push(line.slice(0, 75));
-  i = 75;
-  while (i < line.length) {
-    chunks.push(" " + line.slice(i, i + 74));
-    i += 74;
+  let buf = "";
+  let bufBytes = 0;
+  let isFirst = true;
+  const limit = () => (isFirst ? 75 : 74); // continuation lines start with 1-byte space.
+  for (const cp of line) {
+    const cpBytes = utf8Bytes(cp);
+    if (bufBytes + cpBytes > limit()) {
+      chunks.push(isFirst ? buf : " " + buf);
+      isFirst = false;
+      buf = "";
+      bufBytes = 0;
+    }
+    buf += cp;
+    bufBytes += cpBytes;
   }
+  if (buf.length > 0) chunks.push(isFirst ? buf : " " + buf);
   return chunks.join("\r\n");
 }
 
 function line(name: string, value: string): string {
   return fold(`${name}:${value}`);
+}
+
+/** Digits-only key for phone-number comparison. iOS may reformat numbers on
+ * every edit ("+1 555 1234" ↔ "(555) 1234"); we compare on digits so
+ * round-trips don't accumulate duplicate TEL lines. */
+export function phoneKey(s: string | null | undefined): string {
+  return (s ?? "").replace(/\D+/g, "");
 }
 
 function phoneTypeParam(label: string | null): string {
