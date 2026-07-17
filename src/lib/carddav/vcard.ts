@@ -420,10 +420,12 @@ export function parseVCard(text: string): ParsedVCard | null {
     out.name = [nGiven, nFamily].filter(Boolean).join(" ").trim() || null;
   }
 
-  // Dedupe phones by digits; keep first pref.
+  // Dedupe phones by DIGITS ONLY (see phoneKey). Whitespace-only stripping
+  // treats "+1 555 1234" and "(555) 1234" as different, which caused iOS to
+  // accumulate duplicates on every round-trip.
   const seen = new Map<string, ParsedPhone>();
   for (const p of out.phones) {
-    const key = p.number.replace(/\s+/g, "");
+    const key = phoneKey(p.number) || p.number.trim();
     const existing = seen.get(key);
     if (!existing) seen.set(key, p);
     else if (p.is_primary && !existing.is_primary) seen.set(key, p);
