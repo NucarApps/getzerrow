@@ -163,7 +163,7 @@ export type DuplicateSuggestion = {
   duplicate_contact_ids: string[];
   confidence: "high" | "medium" | "low";
   reason: string | null;
-  signals: Record<string, unknown>;
+  signals: Record<string, string>;
   status: "pending" | "merged" | "dismissed";
   created_at: string;
   contacts: Array<ContactWithPhones>;
