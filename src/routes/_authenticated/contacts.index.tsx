@@ -775,13 +775,22 @@ function GroupEditorDialog({
     if (!name.trim()) return;
     setSaving(true);
     try {
+      let gid: string | null = editGroup?.id ?? null;
       if (editGroup) {
         await update({ data: { id: editGroup.id, name: name.trim(), color } });
-        toast.success("Group updated");
       } else {
-        await create({ data: { name: name.trim(), color } });
-        toast.success("Group created");
+        const created = await create({ data: { name: name.trim(), color } });
+        gid = (created as { group?: { id: string } })?.group?.id ?? null;
       }
+      // Sync folder link (create/remove the sender_in_group filter row).
+      if (gid) {
+        const nextFolderId = folderId || null;
+        const currentFolderId = editGroup?.folder_id ?? null;
+        if (nextFolderId !== currentFolderId) {
+          await linkFolder({ data: { group_id: gid, folder_id: nextFolderId } });
+        }
+      }
+      toast.success(editGroup ? "Group updated" : "Group created");
       onChanged();
       onClose();
     } catch (e: unknown) {
