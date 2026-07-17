@@ -240,7 +240,12 @@ export async function handlePropfind(
 // -----------------------------------------------------------------------------
 // REPORT (addressbook-multiget / addressbook-query)
 
-async function buildContactResponse(email: string, contactId: string, includeVcard: boolean): Promise<string> {
+async function buildContactResponse(
+  userId: string,
+  email: string,
+  contactId: string,
+  includeVcard: boolean,
+): Promise<string> {
   const { row } = await getContactDecrypted(contactId);
   if (!row) {
     return (
@@ -250,13 +255,50 @@ async function buildContactResponse(email: string, contactId: string, includeVca
       `</D:response>`
     );
   }
-  const phones = await fetchPhones(contactId);
-  const vcard = contactToVCard(row, phones);
+  const [phones, categories] = await Promise.all([
+    fetchPhones(contactId),
+    fetchCategoriesForContact(userId, contactId),
+  ]);
+  const vcard = contactToVCard(row, phones, categories);
   const etag = contactETag(row.id, row.updated_at);
   const props =
     `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
     (includeVcard ? `<C:address-data>${xmlEscape(vcard)}</C:address-data>` : "");
   return responseBlock(contactHref(email, contactId), props);
+}
+
+async function buildGroupResponse(
+  userId: string,
+  email: string,
+  groupId: string,
+  includeVcard: boolean,
+): Promise<string> {
+  const { data: group } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,name,updated_at,carddav_uid")
+    .eq("id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!group) {
+    return (
+      `<D:response>` +
+      `<D:href>${groupHref(email, groupId)}</D:href>` +
+      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
+      `</D:response>`
+    );
+  }
+  const members = await fetchGroupMembers(group.id);
+  const vcard = buildGroupVCard({
+    uid: group.carddav_uid ?? `group-${group.id}`,
+    name: group.name,
+    memberContactIds: members,
+    updatedAt: group.updated_at,
+  });
+  const etag = groupETag(group.id, group.updated_at);
+  const props =
+    `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
+    (includeVcard ? `<C:address-data>${xmlEscape(vcard)}</C:address-data>` : "");
+  return responseBlock(groupHref(email, group.id), props);
 }
 
 export async function handleReport(
@@ -267,6 +309,7 @@ export async function handleReport(
   const raw = await request.text();
   const lower = raw.toLowerCase();
   const includeVcard = lower.includes("address-data");
+
 
   let ids: string[] = [];
   if (lower.includes("addressbook-multiget")) {
