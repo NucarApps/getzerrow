@@ -19,9 +19,12 @@ describe("listContactGroupsPage", () => {
 
     await listContactGroupsPage("account-1", {});
 
-    const [url] = fetchMock.mock.calls[0] ?? [];
+    const firstCall = fetchMock.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const url = firstCall?.[0];
     expect(url).toBeTypeOf("string");
-    const requested = new URL(url as string);
+    if (typeof url !== "string") throw new Error("Expected fetch URL string");
+    const requested = new URL(url);
     const groupFields = requested.searchParams.get("groupFields");
 
     expect(groupFields).toBe("name,groupType");
