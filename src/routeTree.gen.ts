@@ -70,6 +70,7 @@ import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksReconcileMeetingsRouteImport } from './routes/api/public/hooks/reconcile-meetings'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
 import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
+import { Route as ApiPublicCarddavSplatRouteImport } from './routes/api/public/carddav/$'
 import { Route as ApiMobileEmailsFeedRouteImport } from './routes/api/mobile/emails.feed'
 import { Route as ApiMobileEmailsActionRouteImport } from './routes/api/mobile/emails.action'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
@@ -406,6 +407,11 @@ const ApiPublicHooksCheckFolderRetryAlertsRoute =
     path: '/api/public/hooks/check-folder-retry-alerts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicCarddavSplatRoute = ApiPublicCarddavSplatRouteImport.update({
+  id: '/api/public/carddav/$',
+  path: '/api/public/carddav/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMobileEmailsFeedRoute = ApiMobileEmailsFeedRouteImport.update({
   id: '/api/mobile/emails/feed',
   path: '/api/mobile/emails/feed',
@@ -476,6 +482,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -540,6 +547,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -607,6 +615,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
@@ -674,6 +683,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -738,6 +748,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -804,6 +815,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/reconcile-meetings'
@@ -853,6 +865,7 @@ export interface RootRouteChildren {
   ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
   ApiMobileEmailsActionRoute: typeof ApiMobileEmailsActionRoute
   ApiMobileEmailsFeedRoute: typeof ApiMobileEmailsFeedRoute
+  ApiPublicCarddavSplatRoute: typeof ApiPublicCarddavSplatRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   ApiPublicHooksReconcileMeetingsRoute: typeof ApiPublicHooksReconcileMeetingsRoute
@@ -1294,6 +1307,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/carddav/$': {
+      id: '/api/public/carddav/$'
+      path: '/api/public/carddav/$'
+      fullPath: '/api/public/carddav/$'
+      preLoaderRoute: typeof ApiPublicCarddavSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mobile/emails/feed': {
       id: '/api/mobile/emails/feed'
       path: '/api/mobile/emails/feed'
@@ -1415,6 +1435,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
   ApiMobileEmailsActionRoute: ApiMobileEmailsActionRoute,
   ApiMobileEmailsFeedRoute: ApiMobileEmailsFeedRoute,
+  ApiPublicCarddavSplatRoute: ApiPublicCarddavSplatRoute,
   ApiPublicHooksCheckFolderRetryAlertsRoute:
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
