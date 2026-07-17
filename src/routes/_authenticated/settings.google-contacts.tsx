@@ -36,7 +36,7 @@ function friendlyError(err: string | null | undefined): string | null {
   if (err === "needs_reconnect")
     return "Google connection expired. Reconnect this account to resume syncing.";
   if (err === "missing_contacts_scope")
-    return "Contacts permission not granted. Reconnect to authorise access.";
+    return "Google did not grant Contacts access. On the consent screen, tick the \u201cSee, edit, download and permanently delete your contacts\u201d checkbox, then reconnect.";
   if (err === "sync_disabled") return "Sync is turned off for this account.";
   if (err === "locked") return "Another sync is already running. It will retry shortly.";
   return err;
@@ -57,7 +57,17 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   });
 
   const enabled = statusQ.data?.state?.enabled ?? false;
-  const lastError = statusQ.data?.state?.last_error ?? null;
+  const scopeGranted = statusQ.data?.scope_granted ?? null;
+  // If the OAuth callback recorded that Contacts access is missing, that's
+  // the truth — surface it even when the sync-state row still has a stale
+  // last_error from before the reconnect (or vice versa).
+  const rawLastError = statusQ.data?.state?.last_error ?? null;
+  const lastError =
+    scopeGranted === false
+      ? "missing_contacts_scope"
+      : scopeGranted === true && rawLastError === "missing_contacts_scope"
+        ? null
+        : rawLastError;
 
   const toggleMut = useMutation({
     mutationFn: (next: boolean) =>

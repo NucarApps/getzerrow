@@ -1272,6 +1272,7 @@ export type Database = {
           calendar_sync_error: string | null
           calendar_synced_at: string | null
           consecutive_silent_ticks: number
+          contacts_access: boolean
           created_at: string
           email_address: string
           history_id: string | null
@@ -1298,6 +1299,7 @@ export type Database = {
           calendar_sync_error?: string | null
           calendar_synced_at?: string | null
           consecutive_silent_ticks?: number
+          contacts_access?: boolean
           created_at?: string
           email_address: string
           history_id?: string | null
@@ -1324,6 +1326,7 @@ export type Database = {
           calendar_sync_error?: string | null
           calendar_synced_at?: string | null
           consecutive_silent_ticks?: number
+          contacts_access?: boolean
           created_at?: string
           email_address?: string
           history_id?: string | null

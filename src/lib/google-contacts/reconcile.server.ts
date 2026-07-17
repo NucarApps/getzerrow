@@ -85,14 +85,16 @@ export async function getGoogleContactsStatus(userId: string, gmailAccountId: st
   const state = await loadSyncState(userId, gmailAccountId);
   const { data: acct } = await supabaseAdmin
     .from("gmail_accounts")
-    .select("needs_reconnect, email_address")
+    .select("needs_reconnect, email_address, contacts_access")
     .eq("id", gmailAccountId)
     .maybeSingle();
   return {
     state,
     email: acct?.email_address ?? null,
-    // Scope grant is verified by the first People API call, not stored locally.
-    scope_granted: null as boolean | null,
+    // Reflects the scopes granted on the last OAuth consent. The People API
+    // call is still the source of truth at sync time, but this lets the UI
+    // show an accurate banner immediately after reconnect.
+    scope_granted: acct ? !!acct.contacts_access : (null as boolean | null),
     needs_reconnect: !!acct?.needs_reconnect,
   };
 }
