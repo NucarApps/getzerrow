@@ -131,6 +131,39 @@ export type Database = {
         }
         Relationships: []
       }
+      carddav_tokens: {
+        Row: {
+          created_at: string
+          id: string
+          label: string
+          last_used_at: string | null
+          revoked_at: string | null
+          token_hash: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          token_hash: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          token_hash?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       company_aliases: {
         Row: {
           alias_domain: string
@@ -2508,6 +2541,10 @@ export type Database = {
           p_token_expires_at: string
           p_user_id: string
         }
+        Returns: string
+      }
+      verify_carddav_token: {
+        Args: { p_token_hash: string; p_user_email: string }
         Returns: string
       }
     }
