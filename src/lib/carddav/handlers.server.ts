@@ -415,7 +415,9 @@ async function resolveGroupDisplayName(
   userId: string,
   groupId: string,
   ownName: string,
+  style: GroupNameStyle,
 ): Promise<string> {
+  if (style === "leaf") return ownName;
   const { data } = await supabaseAdmin
     .from("contact_groups")
     .select("id,name,parent_group_id")
@@ -435,7 +437,8 @@ async function resolveGroupDisplayName(
     cursor = node.parent;
     hops++;
   }
-  return parts.length > 1 ? parts.join(" / ") : ownName;
+  const sep = style === "path_dash" ? " - " : " / ";
+  return parts.length > 1 ? parts.join(sep) : ownName;
 }
 
 const TOMBSTONE_PRUNE_DAYS = 90;
