@@ -139,6 +139,19 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const forceMut = useMutation({
+    mutationFn: () => forceFull({ data: { accountId: account.id } }),
+    onSuccess: (res) => {
+      if (res.ok) {
+        toast.success(`Full re-pull complete — ${res.pull ?? 0} scanned from Google`);
+      } else {
+        toast.error(friendlyError(res.error) ?? "Full re-pull failed");
+      }
+      qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   async function handleReconnect() {
     setReconnecting(true);
     try {
