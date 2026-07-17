@@ -80,7 +80,26 @@ async function computeBookCTag(userId: string): Promise<string> {
     supabaseAdmin.from("contacts").select("id", { count: "exact", head: true }).eq("user_id", userId),
     supabaseAdmin.from("contact_groups").select("id", { count: "exact", head: true }).eq("user_id", userId),
   ]);
-  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}"`;
+  const style = await getGroupNameStyle(userId);
+  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}-${style}"`;
+}
+
+// User-selectable format for group vCards on iPhone. iOS Contacts only
+// displays a flat group list, so nested Zerrow groups need their display
+// name flattened. Options:
+//   leaf       -> "Toyota"
+//   path_slash -> "Factory / Toyota" (default)
+//   path_dash  -> "Factory - Toyota"
+export type GroupNameStyle = "leaf" | "path_slash" | "path_dash";
+
+export async function getGroupNameStyle(userId: string): Promise<GroupNameStyle> {
+  const { data } = await supabaseAdmin
+    .from("carddav_settings")
+    .select("group_name_style")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const v = (data as { group_name_style?: string } | null)?.group_name_style;
+  return v === "leaf" || v === "path_dash" ? v : "path_slash";
 }
 
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
