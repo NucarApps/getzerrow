@@ -32,6 +32,9 @@ export type AccountContext = {
   /** The connected Gmail address for this account. Used as the primary
    * identity for per-folder "surface to inbox" decisions. */
   accountEmail: string | null;
+  /** Lowercased sender email → set of contact_group ids the sender belongs
+   * to for this user. Feeds the `sender_in_group` filter op. */
+  senderGroups: Map<string, Set<string>>;
 };
 
 const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
