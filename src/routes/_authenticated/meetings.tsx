@@ -570,6 +570,24 @@ function InPersonRecordDialog({
 
   const BLOCKED_MESSAGE =
     "Microphone is blocked for this site. Click the padlock (or camera/mic icon) in your browser's address bar, set Microphone to Allow, then reload and try again.";
+  const IFRAME_BLOCKED_MESSAGE =
+    "Recording can't run inside the preview frame. Open the app in a new tab to grant microphone access, then start recording there.";
+
+  function detectIframeBlock(): boolean {
+    try {
+      if (typeof window === "undefined") return false;
+      const inIframe = window.self !== window.top;
+      if (!inIframe) return false;
+      const fp = (document as unknown as { featurePolicy?: { allowsFeature?: (f: string) => boolean } })
+        .featurePolicy;
+      if (fp?.allowsFeature && !fp.allowsFeature("microphone")) return true;
+      // If we're in an iframe and permissions-policy status is unknown, assume blocked.
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
 
   async function startRecording() {
     setError(null);
