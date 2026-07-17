@@ -26,6 +26,7 @@ import {
   getGoogleContactsSyncStatus,
   setGoogleContactsSyncMode,
   setGoogleContactsSyncInterval,
+  forceFullGoogleContactsResync,
 } from "@/lib/google-contacts.functions";
 import {
   Select,
