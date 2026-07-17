@@ -257,8 +257,31 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      )}
     </Card>
+  );
+}
+
+function ModeOption({
+  id,
+  value,
+  title,
+  description,
+}: {
+  id: string;
+  value: SyncMode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <RadioGroupItem id={id} value={value} className="mt-0.5" />
+      <div className="min-w-0">
+        <Label htmlFor={id} className="text-sm font-medium">
+          {title}
+        </Label>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+    </div>
   );
 }
 
