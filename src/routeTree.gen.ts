@@ -19,6 +19,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GuidesGmailRemindersRouteImport } from './routes/guides.gmail-reminders'
 import { Route as GuidesAiSortingAgentRouteImport } from './routes/guides.ai-sorting-agent'
 import { Route as CHandleRouteImport } from './routes/c.$handle'
+import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
@@ -121,6 +122,11 @@ const CHandleRoute = CHandleRouteImport.update({
   id: '/c/$handle',
   path: '/c/$handle',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedTasksRoute = AuthenticatedTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
@@ -431,6 +437,7 @@ export interface FileRoutesByFullPath {
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
@@ -494,6 +501,7 @@ export interface FileRoutesByTo {
   '/meetings': typeof AuthenticatedMeetingsRoute
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
@@ -560,6 +568,7 @@ export interface FileRoutesById {
   '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/_authenticated/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
@@ -626,6 +635,7 @@ export interface FileRouteTypes {
     | '/my-card'
     | '/reports'
     | '/settings'
+    | '/tasks'
     | '/c/$handle'
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
@@ -689,6 +699,7 @@ export interface FileRouteTypes {
     | '/meetings'
     | '/my-card'
     | '/reports'
+    | '/tasks'
     | '/c/$handle'
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
@@ -754,6 +765,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-card'
     | '/_authenticated/reports'
     | '/_authenticated/settings'
+    | '/_authenticated/tasks'
     | '/c/$handle'
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
@@ -924,6 +936,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/c/$handle'
       preLoaderRoute: typeof CHandleRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/tasks': {
+      id: '/_authenticated/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof AuthenticatedTasksRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
@@ -1334,6 +1353,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedMyCardRoute: typeof AuthenticatedMyCardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
+  AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
@@ -1347,6 +1367,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMyCardRoute: AuthenticatedMyCardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
+  AuthenticatedTasksRoute: AuthenticatedTasksRoute,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,

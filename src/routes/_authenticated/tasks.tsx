@@ -92,11 +92,12 @@ function TasksPage() {
     onSuccess: invalidate,
   });
 
+  const suggestions = q.data?.suggestions ?? [];
   const suggByTask = useMemo(() => {
-    const m = new Map<string, (typeof q.data)["suggestions"][number] | undefined>();
-    (q.data?.suggestions ?? []).forEach((s) => m.set(s.task_id, s));
+    const m = new Map<string, (typeof suggestions)[number]>();
+    suggestions.forEach((s) => m.set(s.task_id, s));
     return m;
-  }, [q.data]);
+  }, [suggestions]);
 
   const tasks = q.data?.tasks ?? [];
 
