@@ -509,13 +509,14 @@ async function handleSyncCollection(
       .limit(limit ?? 5000),
   ]);
 
+  const style = await getGroupNameStyle(userId);
   let body = MULTISTATUS_OPEN;
 
   for (const row of (cRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
     body += await buildContactResponse(userId, email, row.id, includeVcard);
   }
   for (const row of (gRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
-    body += await buildGroupResponse(userId, email, row.id, includeVcard);
+    body += await buildGroupResponse(userId, email, row.id, includeVcard, style);
   }
   for (const t of (tRows as Array<{ resource_type: string; resource_id: string }> | null) ?? []) {
     const href =
