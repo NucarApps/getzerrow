@@ -398,7 +398,7 @@ export const mergeContactDuplicate = createServerFn({ method: "POST" })
       if (toAdd.length > 0) {
         await supabaseAdmin
           .from("contact_group_members")
-          .insert(toAdd.map((g) => ({ group_id: g, contact_id: primaryId })));
+          .insert(toAdd.map((g) => ({ group_id: g, contact_id: primaryId, user_id: userId })));
       }
       await supabaseAdmin
         .from("contact_group_members")
