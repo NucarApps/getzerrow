@@ -21,22 +21,45 @@ function esc(v: string | null | undefined): string {
     .replace(/;/g, "\\;");
 }
 
-// Fold lines at 75 octets. iOS is forgiving but macOS Contacts is not.
+// Fold at 75 OCTETS (RFC 6350 §3.2) — not JS chars. Unicode notes and names
+// use multi-byte UTF-8; folding by `string.length` splits mid-codepoint and
+// corrupts the value on parse. We walk codepoints, count encoded bytes, and
+// only break on codepoint boundaries.
+const encoder = new TextEncoder();
+function utf8Bytes(s: string): number {
+  return encoder.encode(s).length;
+}
 function fold(line: string): string {
-  if (line.length <= 75) return line;
+  if (utf8Bytes(line) <= 75) return line;
   const chunks: string[] = [];
-  let i = 0;
-  chunks.push(line.slice(0, 75));
-  i = 75;
-  while (i < line.length) {
-    chunks.push(" " + line.slice(i, i + 74));
-    i += 74;
+  let buf = "";
+  let bufBytes = 0;
+  let isFirst = true;
+  const limit = () => (isFirst ? 75 : 74); // continuation lines start with 1-byte space.
+  for (const cp of line) {
+    const cpBytes = utf8Bytes(cp);
+    if (bufBytes + cpBytes > limit()) {
+      chunks.push(isFirst ? buf : " " + buf);
+      isFirst = false;
+      buf = "";
+      bufBytes = 0;
+    }
+    buf += cp;
+    bufBytes += cpBytes;
   }
+  if (buf.length > 0) chunks.push(isFirst ? buf : " " + buf);
   return chunks.join("\r\n");
 }
 
 function line(name: string, value: string): string {
   return fold(`${name}:${value}`);
+}
+
+/** Digits-only key for phone-number comparison. iOS may reformat numbers on
+ * every edit ("+1 555 1234" ↔ "(555) 1234"); we compare on digits so
+ * round-trips don't accumulate duplicate TEL lines. */
+export function phoneKey(s: string | null | undefined): string {
+  return (s ?? "").replace(/\D+/g, "");
 }
 
 function phoneTypeParam(label: string | null): string {
@@ -86,13 +109,23 @@ export function contactToVCard(
   }
 
   // Structured phones from contact_phones plus the legacy encrypted phone field.
+  const emittedPhoneKeys = new Set<string>();
   for (const p of phones) {
     if (!p.number) continue;
-    const params = phoneTypeParam(p.label) + (p.is_primary ? ";TYPE=pref" : "");
+    const key = phoneKey(p.number);
+    if (key && emittedPhoneKeys.has(key)) continue;
+    // Emit both TYPE=pref (legacy 3.0) and PREF=1 (RFC 6350) so every client
+    // recognizes the primary on the next fetch.
+    const params = phoneTypeParam(p.label) + (p.is_primary ? ";TYPE=pref;PREF=1" : "");
     out.push(line(`TEL${params}`, esc(p.number)));
+    if (key) emittedPhoneKeys.add(key);
   }
-  if (contact.phone && !phones.some((p) => p.number === contact.phone)) {
-    out.push(line("TEL;TYPE=VOICE", esc(contact.phone)));
+  if (contact.phone) {
+    const encKey = phoneKey(contact.phone);
+    if (encKey && !emittedPhoneKeys.has(encKey)) {
+      out.push(line("TEL;TYPE=VOICE", esc(contact.phone)));
+      emittedPhoneKeys.add(encKey);
+    }
   }
 
   const hasAddr =
@@ -309,7 +342,13 @@ export function parseVCard(text: string): ParsedVCard | null {
         const num = v.trim();
         if (!num) break;
         const types = p.params.TYPE ?? [];
-        const isPref = types.includes("PREF") || (p.params.PREF ?? []).length > 0;
+        // Primary can arrive three ways:
+        //   TEL;TYPE=pref:...    -> in TYPE array (parseLine uppercases)
+        //   TEL;PREF=1:...       -> params.PREF = ["1"]
+        //   TEL;PREF:...         -> bare param — parseLine routes to TYPE
+        const prefVals = (p.params.PREF ?? []).map((x) => x.trim());
+        const isPref =
+          types.includes("PREF") || prefVals.some((x) => x === "1" || x === "");
         out.phones.push({ label: phoneLabelFromTypes(types), number: num, is_primary: isPref });
         break;
       }
@@ -381,10 +420,12 @@ export function parseVCard(text: string): ParsedVCard | null {
     out.name = [nGiven, nFamily].filter(Boolean).join(" ").trim() || null;
   }
 
-  // Dedupe phones by digits; keep first pref.
+  // Dedupe phones by DIGITS ONLY (see phoneKey). Whitespace-only stripping
+  // treats "+1 555 1234" and "(555) 1234" as different, which caused iOS to
+  // accumulate duplicates on every round-trip.
   const seen = new Map<string, ParsedPhone>();
   for (const p of out.phones) {
-    const key = p.number.replace(/\s+/g, "");
+    const key = phoneKey(p.number) || p.number.trim();
     const existing = seen.get(key);
     if (!existing) seen.set(key, p);
     else if (p.is_primary && !existing.is_primary) seen.set(key, p);
