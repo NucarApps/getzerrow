@@ -428,18 +428,19 @@ function ContactsPage() {
                 count={ungroupedCount}
                 onClick={() => setFilter("ungrouped")}
               />
-              {(gq.data?.groups ?? []).map((g) => (
-                <GroupChip
-                  key={g.id}
-                  active={filter === g.id}
-                  color={g.color}
-                  label={g.name}
-                  count={g.count}
-                  onClick={() => setFilter(g.id)}
-                  onEdit={() => setGroupDialog({ mode: "edit", group: g })}
-                />
+              {groupTree.map(({ group: g, depth }) => (
+                <div key={g.id} style={{ paddingLeft: depth * 12 }}>
+                  <GroupChip
+                    active={filter === g.id}
+                    color={g.color}
+                    label={g.name}
+                    count={g.count}
+                    onClick={() => setFilter(g.id)}
+                    onEdit={() => setGroupDialog({ mode: "edit", group: g })}
+                  />
+                </div>
               ))}
-              {(gq.data?.groups ?? []).length === 0 && (
+              {groupTree.length === 0 && (
                 <p className="px-3 py-3 text-xs text-muted-foreground">
                   No groups yet. Click + to add one like “Work” or “Personal”.
                 </p>
