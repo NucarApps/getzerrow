@@ -51,8 +51,24 @@ function CardDavSettings() {
   const list = useServerFn(listCardDavTokens);
   const create = useServerFn(createCardDavToken);
   const revoke = useServerFn(revokeCardDavToken);
+  const getSettings = useServerFn(getCardDavSettings);
+  const updateSettings = useServerFn(updateCardDavSettings);
   const [label, setLabel] = useState("iPhone");
   const [freshToken, setFreshToken] = useState<string | null>(null);
+
+  const settingsQuery = useQuery({
+    queryKey: ["carddav-settings"],
+    queryFn: () => getSettings(),
+  });
+  const settingsMut = useMutation({
+    mutationFn: (style: GroupNameStyle) =>
+      updateSettings({ data: { group_name_style: style } }),
+    onSuccess: () => {
+      toast.success("iPhone will refresh group names on next sync");
+      qc.invalidateQueries({ queryKey: ["carddav-settings"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const tokensQuery = useQuery({
     queryKey: ["carddav-tokens"],
