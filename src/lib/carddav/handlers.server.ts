@@ -48,29 +48,104 @@ function groupHref(email: string, groupId: string): string {
 // edits and stay stable otherwise.
 async function computeBookCTag(userId: string): Promise<string> {
   // Include contact_groups.updated_at so group renames / membership changes
-  // invalidate iOS's cached copy.
-  const { data: cLatest } = await supabaseAdmin
-    .from("contacts")
-    .select("updated_at")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  const { data: gLatest } = await supabaseAdmin
-    .from("contact_groups")
-    .select("updated_at")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(1);
+  // invalidate iOS's cached copy. Include tombstone max seq so hard deletes
+  // also bump the CTag.
+  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("contacts")
+        .select("updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("contact_groups")
+        .select("updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("carddav_tombstones")
+        .select("sync_seq")
+        .eq("user_id", userId)
+        .order("sync_seq", { ascending: false })
+        .limit(1),
+    ]);
   const latest = [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
     .filter((v): v is string => !!v)
     .sort()
     .pop() ?? "1970-01-01T00:00:00Z";
+  const tombSeq = (tLatest?.[0] as { sync_seq: number } | undefined)?.sync_seq ?? 0;
   const [{ count: cCount }, { count: gCount }] = await Promise.all([
     supabaseAdmin.from("contacts").select("id", { count: "exact", head: true }).eq("user_id", userId),
     supabaseAdmin.from("contact_groups").select("id", { count: "exact", head: true }).eq("user_id", userId),
   ]);
-  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}"`;
+  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}"`;
 }
+
+const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
+
+type SyncState = { updatedSince: string; seqSince: number };
+
+function buildSyncToken(userId: string, updatedAtIso: string, seq: number): string {
+  const ms = new Date(updatedAtIso).getTime();
+  return `${SYNC_TOKEN_PREFIX}${userId}:${ms}:${seq}`;
+}
+
+function parseSyncToken(userId: string, token: string): SyncState | null {
+  if (!token || !token.startsWith(SYNC_TOKEN_PREFIX)) return null;
+  const rest = token.slice(SYNC_TOKEN_PREFIX.length);
+  const [uid, msStr, seqStr] = rest.split(":");
+  if (uid !== userId) return null;
+  const ms = Number.parseInt(msStr ?? "", 10);
+  const seq = Number.parseInt(seqStr ?? "", 10);
+  if (!Number.isFinite(ms) || !Number.isFinite(seq)) return null;
+  return { updatedSince: new Date(ms).toISOString(), seqSince: seq };
+}
+
+async function currentSyncSnapshot(userId: string): Promise<{ updatedAt: string; seq: number }> {
+  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("contacts")
+        .select("updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("contact_groups")
+        .select("updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("carddav_tombstones")
+        .select("sync_seq")
+        .eq("user_id", userId)
+        .order("sync_seq", { ascending: false })
+        .limit(1),
+    ]);
+  const updatedAt = [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
+    .filter((v): v is string => !!v)
+    .sort()
+    .pop() ?? "1970-01-01T00:00:00Z";
+  const seq = (tLatest?.[0] as { sync_seq: number } | undefined)?.sync_seq ?? 0;
+  return { updatedAt, seq };
+}
+
+async function insertTombstone(
+  userId: string,
+  resourceType: "contact" | "group",
+  resourceId: string,
+): Promise<void> {
+  await supabaseAdmin
+    .from("carddav_tombstones")
+    .upsert(
+      { user_id: userId, resource_type: resourceType, resource_id: resourceId, deleted_at: new Date().toISOString() },
+      { onConflict: "user_id,resource_type,resource_id" },
+    );
+}
+
 
 async function listContactRows(userId: string): Promise<Array<{ id: string; updated_at: string }>> {
   const { data } = await supabaseAdmin
