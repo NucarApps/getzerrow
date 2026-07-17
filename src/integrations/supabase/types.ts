@@ -1511,6 +1511,7 @@ export type Database = {
           progress_step: string | null
           progress_total: number
           progress_updated_at: string | null
+          sync_interval_minutes: number
           sync_mode: string
           updated_at: string
           user_id: string
@@ -1538,6 +1539,7 @@ export type Database = {
           progress_step?: string | null
           progress_total?: number
           progress_updated_at?: string | null
+          sync_interval_minutes?: number
           sync_mode?: string
           updated_at?: string
           user_id: string
@@ -1565,6 +1567,7 @@ export type Database = {
           progress_step?: string | null
           progress_total?: number
           progress_updated_at?: string | null
+          sync_interval_minutes?: number
           sync_mode?: string
           updated_at?: string
           user_id?: string
