@@ -1025,6 +1025,26 @@ function GroupEditorDialog({
             </div>
           </div>
           <div>
+            <Label className="text-xs text-muted-foreground">Parent group</Label>
+            <select
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">None — top level</option>
+              {allGroups
+                .filter((g) => !editGroup || g.id !== editGroup.id)
+                .map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+            </select>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Nest this group under another to build a subgroup tree.
+            </p>
+          </div>
+          <div>
             <Label className="text-xs text-muted-foreground">Linked folder</Label>
             <select
               value={folderId}
