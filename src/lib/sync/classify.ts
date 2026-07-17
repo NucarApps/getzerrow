@@ -93,6 +93,12 @@ export function classifyByRules(
 
   const fromAddr = (parsed.from_addr || "").toLowerCase();
   const fromDomain = fromAddr.split("@")[1] || "";
+  // Attach sender_in_group hits so applyFilter can evaluate
+  // `sender_in_group` conditions without a second DB round trip.
+  if (!parsed.sender_group_ids) {
+    const hits = context.senderGroups.get(fromAddr);
+    parsed.sender_group_ids = hits ? Array.from(hits) : [];
+  }
   const overrideHit = overrides.find((o) => {
     const val = (o.value || "").toLowerCase();
     return o.match_type === "email" ? val === fromAddr : val === fromDomain;
