@@ -333,6 +333,9 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
 
   if (status === "done") {
     await linkParticipantsToContacts(meeting.id, meeting.user_id);
+    await maybeExtractMeetingTasks(meeting.id).catch((e: unknown) =>
+      logError("meeting_task_extract_failed", { meetingId: meeting.id }, e),
+    );
   }
 
   return status;
@@ -696,5 +699,43 @@ export async function finalizeInPersonMeeting(meetingId: string): Promise<string
   const { error } = await supabaseAdmin.from("meetings").update(update).eq("id", meetingId);
   if (error) return fail("Could not save the transcript.", error.message);
 
+  await maybeExtractMeetingTasks(meetingId).catch((e: unknown) =>
+    logError("meeting_task_extract_failed", { meetingId }, e),
+  );
+
   return "done";
+}
+
+/**
+ * After a meeting reaches `done`, extract action items the USER personally
+ * committed to and insert them as tasks. Idempotent via task_extraction_runs.
+ */
+async function maybeExtractMeetingTasks(meetingId: string): Promise<void> {
+  const { data: m } = await supabaseAdmin
+    .from("meetings")
+    .select("id, user_id, transcript, summary")
+    .eq("id", meetingId)
+    .maybeSingle();
+  if (!m) return;
+
+  type Seg = { speaker?: string | null; text?: string | null };
+  const segs = (m.transcript ?? []) as Seg[];
+  const transcriptText =
+    segs.map((s) => `${s.speaker ? `${s.speaker}: ` : ""}${s.text ?? ""}`).join("\n").trim() ||
+    (m.summary ?? "");
+  if (!transcriptText) return;
+
+  // Get the user's display name/email so the model only picks their tasks.
+  const { data: user } = await supabaseAdmin.auth.admin.getUserById(m.user_id);
+  const email = user?.user?.email ?? "";
+  const meta = user?.user?.user_metadata as { full_name?: string; name?: string } | undefined;
+  const names = [meta?.full_name, meta?.name, email].filter(Boolean) as string[];
+
+  const { extractTasksFromMeetingTranscript } = await import("./tasks/extract.server");
+  await extractTasksFromMeetingTranscript({
+    userId: m.user_id,
+    meetingId,
+    transcriptText,
+    userDisplayNames: names,
+  });
 }

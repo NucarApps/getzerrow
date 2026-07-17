@@ -1880,6 +1880,144 @@ export type Database = {
         }
         Relationships: []
       }
+      task_completion_suggestions: {
+        Row: {
+          confidence: string
+          created_at: string
+          id: string
+          reasoning: string | null
+          sent_email_id: string | null
+          status: string
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          confidence: string
+          created_at?: string
+          id?: string
+          reasoning?: string | null
+          sent_email_id?: string | null
+          status?: string
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          confidence?: string
+          created_at?: string
+          id?: string
+          reasoning?: string | null
+          sent_email_id?: string | null
+          status?: string
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_completion_suggestions_sent_email_id_fkey"
+            columns: ["sent_email_id"]
+            isOneToOne: false
+            referencedRelation: "emails"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_completion_suggestions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_extraction_runs: {
+        Row: {
+          id: string
+          ran_at: string
+          source_id: string
+          source_type: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          ran_at?: string
+          source_id: string
+          source_type: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          ran_at?: string
+          source_id?: string
+          source_type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      tasks: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          dismissed_at: string | null
+          due_at: string | null
+          id: string
+          notes: string | null
+          source: string
+          source_email_id: string | null
+          source_meeting_id: string | null
+          source_snippet: string | null
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          dismissed_at?: string | null
+          due_at?: string | null
+          id?: string
+          notes?: string | null
+          source?: string
+          source_email_id?: string | null
+          source_meeting_id?: string | null
+          source_snippet?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          dismissed_at?: string | null
+          due_at?: string | null
+          id?: string
+          notes?: string | null
+          source?: string
+          source_email_id?: string | null
+          source_meeting_id?: string | null
+          source_snippet?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_source_email_id_fkey"
+            columns: ["source_email_id"]
+            isOneToOne: false
+            referencedRelation: "emails"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_source_meeting_id_fkey"
+            columns: ["source_meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -23,6 +23,7 @@ import {
   Users,
   Video,
   Shield,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -322,6 +323,16 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
           }}
         >
           <BarChart3 className="h-4 w-4" /> Reports
+        </button>
+        <button
+          type="button"
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname.startsWith("/tasks") ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          onClick={() => {
+            navigate({ to: "/tasks" });
+            onNavigate?.();
+          }}
+        >
+          <CheckCircle2 className="h-4 w-4" /> Tasks
         </button>
         <button
           type="button"

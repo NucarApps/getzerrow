@@ -19,6 +19,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GuidesGmailRemindersRouteImport } from './routes/guides.gmail-reminders'
 import { Route as GuidesAiSortingAgentRouteImport } from './routes/guides.ai-sorting-agent'
 import { Route as CHandleRouteImport } from './routes/c.$handle'
+import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
@@ -60,6 +61,7 @@ import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_aut
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings.account'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
+import { Route as ApiPublicHooksTasksCompletionScanRouteImport } from './routes/api/public/hooks/tasks-completion-scan'
 import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
 import { Route as ApiPublicHooksScheduleMeetingBotsRouteImport } from './routes/api/public/hooks/schedule-meeting-bots'
 import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
@@ -120,6 +122,11 @@ const CHandleRoute = CHandleRouteImport.update({
   id: '/c/$handle',
   path: '/c/$handle',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedTasksRoute = AuthenticatedTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
@@ -345,6 +352,12 @@ const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
   path: '/contacts/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const ApiPublicHooksTasksCompletionScanRoute =
+  ApiPublicHooksTasksCompletionScanRouteImport.update({
+    id: '/api/public/hooks/tasks-completion-scan',
+    path: '/api/public/hooks/tasks-completion-scan',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksSyncCalendarContactsRoute =
   ApiPublicHooksSyncCalendarContactsRouteImport.update({
     id: '/api/public/hooks/sync-calendar-contacts',
@@ -424,6 +437,7 @@ export interface FileRoutesByFullPath {
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
@@ -470,6 +484,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
+  '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesByTo {
@@ -486,6 +501,7 @@ export interface FileRoutesByTo {
   '/meetings': typeof AuthenticatedMeetingsRoute
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
@@ -532,6 +548,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
+  '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesById {
@@ -551,6 +568,7 @@ export interface FileRoutesById {
   '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/_authenticated/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
@@ -597,6 +615,7 @@ export interface FileRoutesById {
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
+  '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRouteTypes {
@@ -616,6 +635,7 @@ export interface FileRouteTypes {
     | '/my-card'
     | '/reports'
     | '/settings'
+    | '/tasks'
     | '/c/$handle'
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
@@ -662,6 +682,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/run-folder-summary-jobs'
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
+    | '/api/public/hooks/tasks-completion-scan'
     | '/api/public/og/card/$handle'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -678,6 +699,7 @@ export interface FileRouteTypes {
     | '/meetings'
     | '/my-card'
     | '/reports'
+    | '/tasks'
     | '/c/$handle'
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
@@ -724,6 +746,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/run-folder-summary-jobs'
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
+    | '/api/public/hooks/tasks-completion-scan'
     | '/api/public/og/card/$handle'
   id:
     | '__root__'
@@ -742,6 +765,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-card'
     | '/_authenticated/reports'
     | '/_authenticated/settings'
+    | '/_authenticated/tasks'
     | '/c/$handle'
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
@@ -788,6 +812,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/run-folder-summary-jobs'
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
+    | '/api/public/hooks/tasks-completion-scan'
     | '/api/public/og/card/$handle'
   fileRoutesById: FileRoutesById
 }
@@ -836,6 +861,7 @@ export interface RootRouteChildren {
   ApiPublicHooksRunFolderSummaryJobsRoute: typeof ApiPublicHooksRunFolderSummaryJobsRoute
   ApiPublicHooksScheduleMeetingBotsRoute: typeof ApiPublicHooksScheduleMeetingBotsRoute
   ApiPublicHooksSyncCalendarContactsRoute: typeof ApiPublicHooksSyncCalendarContactsRoute
+  ApiPublicHooksTasksCompletionScanRoute: typeof ApiPublicHooksTasksCompletionScanRoute
   ApiPublicOgCardHandleRoute: typeof ApiPublicOgCardHandleRoute
 }
 
@@ -910,6 +936,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/c/$handle'
       preLoaderRoute: typeof CHandleRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/tasks': {
+      id: '/_authenticated/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof AuthenticatedTasksRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
@@ -1198,6 +1231,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/api/public/hooks/tasks-completion-scan': {
+      id: '/api/public/hooks/tasks-completion-scan'
+      path: '/api/public/hooks/tasks-completion-scan'
+      fullPath: '/api/public/hooks/tasks-completion-scan'
+      preLoaderRoute: typeof ApiPublicHooksTasksCompletionScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/sync-calendar-contacts': {
       id: '/api/public/hooks/sync-calendar-contacts'
       path: '/api/public/hooks/sync-calendar-contacts'
@@ -1313,6 +1353,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedMyCardRoute: typeof AuthenticatedMyCardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
+  AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
@@ -1326,6 +1367,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMyCardRoute: AuthenticatedMyCardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
+  AuthenticatedTasksRoute: AuthenticatedTasksRoute,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
@@ -1386,6 +1428,8 @@ const rootRouteChildren: RootRouteChildren = {
     ApiPublicHooksScheduleMeetingBotsRoute,
   ApiPublicHooksSyncCalendarContactsRoute:
     ApiPublicHooksSyncCalendarContactsRoute,
+  ApiPublicHooksTasksCompletionScanRoute:
+    ApiPublicHooksTasksCompletionScanRoute,
   ApiPublicOgCardHandleRoute: ApiPublicOgCardHandleRoute,
 }
 export const routeTree = rootRouteImport
