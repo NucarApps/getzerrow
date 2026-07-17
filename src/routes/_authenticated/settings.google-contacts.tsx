@@ -201,15 +201,27 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
               {reconnecting ? "Redirecting…" : "Reconnect"}
             </Button>
           ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => syncMut.mutate()}
-              disabled={!enabled || syncMut.isPending}
-            >
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncMut.isPending ? "animate-spin" : ""}`} />
-              Sync now
-            </Button>
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => syncMut.mutate()}
+                disabled={!enabled || syncMut.isPending || forceMut.isPending}
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncMut.isPending ? "animate-spin" : ""}`} />
+                Sync now
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmForce(true)}
+                disabled={!enabled || syncMut.isPending || forceMut.isPending}
+                title="Discard the incremental sync token and re-scan every Google contact"
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${forceMut.isPending ? "animate-spin" : ""}`} />
+                Force full re-pull
+              </Button>
+            </div>
           )}
         </div>
       </div>
