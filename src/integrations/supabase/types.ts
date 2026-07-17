@@ -1470,6 +1470,56 @@ export type Database = {
           },
         ]
       }
+      meeting_qa: {
+        Row: {
+          answer: string | null
+          asker: string | null
+          bot_id: string
+          created_at: string
+          error: string | null
+          id: string
+          latency_ms: number | null
+          meeting_id: string | null
+          question: string
+          trigger_source: string
+          user_id: string
+        }
+        Insert: {
+          answer?: string | null
+          asker?: string | null
+          bot_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          meeting_id?: string | null
+          question: string
+          trigger_source: string
+          user_id: string
+        }
+        Update: {
+          answer?: string | null
+          asker?: string | null
+          bot_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          meeting_id?: string | null
+          question?: string
+          trigger_source?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_qa_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_record_blocklist: {
         Row: {
           created_at: string
@@ -1490,6 +1540,41 @@ export type Database = {
           value?: string
         }
         Relationships: []
+      }
+      meeting_transcript_buffer: {
+        Row: {
+          bot_id: string
+          last_trigger_at: string | null
+          meeting_id: string | null
+          segments: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bot_id: string
+          last_trigger_at?: string | null
+          meeting_id?: string | null
+          segments?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bot_id?: string
+          last_trigger_at?: string | null
+          meeting_id?: string | null
+          segments?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_transcript_buffer_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       meetings: {
         Row: {
