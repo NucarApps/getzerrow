@@ -8,7 +8,8 @@
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getContactDecrypted } from "@/lib/sync/encrypted-reader";
-import { contactETag, contactToVCard, type PhoneRow } from "./vcard";
+import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
+import { contactETag, contactToVCard, parseVCard, type PhoneRow } from "./vcard";
 import {
   davResponse,
   MULTISTATUS_CLOSE,
