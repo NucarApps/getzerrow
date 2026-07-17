@@ -148,7 +148,7 @@ export type GroupsPage = {
 
 export async function listContactGroupsPage(
   accountId: string,
-  opts: { pageToken?: string; syncToken?: string; requestSyncToken?: boolean },
+  opts: { pageToken?: string; syncToken?: string },
 ): Promise<GroupsPage> {
   const query: Record<string, string> = {
     pageSize: "200",
@@ -156,7 +156,9 @@ export async function listContactGroupsPage(
   };
   if (opts.pageToken) query.pageToken = opts.pageToken;
   if (opts.syncToken) query.syncToken = opts.syncToken;
-  if (opts.requestSyncToken) query.requestSyncToken = "true";
+  // Note: contactGroups.list does NOT accept requestSyncToken (unlike
+  // people.connections.list) — it always returns nextSyncToken on the
+  // final page. Sending it yields a 400 INVALID_ARGUMENT.
   return call<GroupsPage>(accountId, "/contactGroups", { query });
 }
 
