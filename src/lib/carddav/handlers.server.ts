@@ -368,6 +368,33 @@ export async function handleGet(
   path: string,
   method: "GET" | "HEAD",
 ): Promise<Response> {
+  const gm = path.match(/group-([0-9a-f-]{36})\.vcf$/i);
+  if (gm) {
+    const groupId = gm[1];
+    const { data: group } = await supabaseAdmin
+      .from("contact_groups")
+      .select("id,name,updated_at,carddav_uid")
+      .eq("id", groupId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!group) return new Response("Not found", { status: 404 });
+    const members = await fetchGroupMembers(group.id);
+    const vcard = buildGroupVCard({
+      uid: group.carddav_uid ?? `group-${group.id}`,
+      name: group.name,
+      memberContactIds: members,
+      updatedAt: group.updated_at,
+    });
+    return new Response(method === "HEAD" ? null : vcard, {
+      status: 200,
+      headers: {
+        "Content-Type": 'text/vcard; charset="utf-8"',
+        ETag: groupETag(group.id, group.updated_at),
+        "Cache-Control": "no-cache",
+      },
+    });
+  }
+
   const m = path.match(/([0-9a-f-]{36})\.vcf$/i);
   if (!m) return new Response("Not found", { status: 404 });
   const contactId = m[1];
@@ -382,8 +409,11 @@ export async function handleGet(
 
   const { row } = await getContactDecrypted(contactId);
   if (!row) return new Response("Not found", { status: 404 });
-  const phones = await fetchPhones(contactId);
-  const vcard = contactToVCard(row, phones);
+  const [phones, categories] = await Promise.all([
+    fetchPhones(contactId),
+    fetchCategoriesForContact(userId, contactId),
+  ]);
+  const vcard = contactToVCard(row, phones, categories);
   const etag = contactETag(row.id, row.updated_at);
 
   return new Response(method === "HEAD" ? null : vcard, {
@@ -401,7 +431,15 @@ export async function handleGet(
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 
+function extractGroupId(path: string): string | null {
+  const m = path.match(/group-([0-9a-f-]{36})\.vcf$/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
 function extractContactId(path: string): string | null {
+  // Skip if this is a group resource — group ids share the UUID pattern
+  // but live under group-<uuid>.vcf and must be routed separately.
+  if (extractGroupId(path)) return null;
   const m = path.match(/([0-9a-f-]{36})\.vcf$/i);
   return m ? m[1].toLowerCase() : null;
 }
