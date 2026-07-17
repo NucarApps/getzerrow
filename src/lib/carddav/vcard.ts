@@ -55,7 +55,11 @@ function phoneTypeParam(label: string | null): string {
  * lines from the phones table and only emit the encrypted `phone` field on
  * the contact itself.
  */
-export function contactToVCard(contact: DecryptedContact, phones: PhoneRow[] = []): string {
+export function contactToVCard(
+  contact: DecryptedContact,
+  phones: PhoneRow[] = [],
+  categories: string[] = [],
+): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
 
   // N: split "First Last" heuristically. iOS renders FN so the split just
