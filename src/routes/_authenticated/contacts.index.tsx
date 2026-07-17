@@ -218,7 +218,7 @@ function ContactsPage() {
       if (!t) return true;
       return (
         (x.name ?? "").toLowerCase().includes(t) ||
-        x.email.toLowerCase().includes(t) ||
+        (x.email ?? "").toLowerCase().includes(t) ||
         (x.company ?? "").toLowerCase().includes(t)
       );
     });
