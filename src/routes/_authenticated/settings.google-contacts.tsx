@@ -4,17 +4,30 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { RefreshCw, AlertCircle, Loader2 } from "lucide-react";
 import { listMyGmailAccounts, startConnectGmail } from "@/lib/gmail/accounts.functions";
 import {
   syncGoogleContactsNow,
   getGoogleContactsSyncStatus,
-  setGoogleContactsSyncEnabled,
+  setGoogleContactsSyncMode,
 } from "@/lib/google-contacts.functions";
+
+type SyncMode = "off" | "pull_only" | "two_way";
 
 export const Route = createFileRoute("/_authenticated/settings/google-contacts")({
   head: () => ({
