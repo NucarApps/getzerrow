@@ -8,7 +8,8 @@
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getContactDecrypted } from "@/lib/sync/encrypted-reader";
-import { contactETag, contactToVCard, type PhoneRow } from "./vcard";
+import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
+import { contactETag, contactToVCard, parseVCard, type PhoneRow } from "./vcard";
 import {
   davResponse,
   MULTISTATUS_CLOSE,
@@ -78,7 +79,7 @@ export function handleOptions(): Response {
     status: 200,
     headers: {
       DAV: "1, 3, addressbook",
-      Allow: "OPTIONS, GET, HEAD, PROPFIND, REPORT",
+      Allow: "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, REPORT",
       "Content-Length": "0",
     },
   });
@@ -268,4 +269,182 @@ export async function handleGet(
       "Cache-Control": "no-cache",
     },
   });
+}
+
+// -----------------------------------------------------------------------------
+// PUT / DELETE (two-way sync)
+
+const UUID_RE = /^[0-9a-f-]{36}$/i;
+
+function extractContactId(path: string): string | null {
+  const m = path.match(/([0-9a-f-]{36})\.vcf$/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+function preconditionFailed(): Response {
+  return new Response("Precondition Failed", { status: 412 });
+}
+
+// Handle PUT: iOS uploads a full vCard for create or replace. We honor
+// If-Match (must match current ETag) and If-None-Match: * (must not exist).
+// Ownership is enforced by the verified auth userId, never the vCard UID.
+export async function handlePut(
+  request: Request,
+  userId: string,
+  email: string,
+  path: string,
+): Promise<Response> {
+  const contactId = extractContactId(path);
+  if (!contactId || !UUID_RE.test(contactId)) {
+    return new Response("Bad Request", { status: 400 });
+  }
+
+  const body = await request.text();
+  const parsed = parseVCard(body);
+  if (!parsed) return new Response("Unparseable vCard", { status: 400 });
+
+  const { data: existing } = await supabaseAdmin
+    .from("contacts")
+    .select("id,updated_at,email,source")
+    .eq("id", contactId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const ifMatch = request.headers.get("if-match");
+  const ifNoneMatch = request.headers.get("if-none-match");
+
+  if (ifNoneMatch === "*" && existing) return preconditionFailed();
+  if (ifMatch && existing) {
+    const current = contactETag(existing.id, existing.updated_at as string);
+    // Accept either quoted or unquoted comparison.
+    const norm = (v: string) => v.trim().replace(/^W\//i, "");
+    if (norm(ifMatch) !== norm(current)) return preconditionFailed();
+  }
+  if (ifMatch && !existing) return preconditionFailed();
+
+  // iOS may omit EMAIL for a new personal contact; contacts.email is NOT NULL
+  // in the schema. Synthesize a stable placeholder tied to the UID so we
+  // never overwrite an existing contact by email collision.
+  const emailForRow =
+    (parsed.email && parsed.email.trim().toLowerCase()) ||
+    existing?.email ||
+    `carddav+${contactId}@local.zerrow`;
+
+  const nowIso = new Date().toISOString();
+  const plaintextPatch = {
+    user_id: userId,
+    email: emailForRow,
+    name: parsed.name,
+    company: parsed.company,
+    title: parsed.title,
+    website: parsed.website,
+    city: parsed.city,
+    region: parsed.region,
+    postal_code: parsed.postal_code,
+    country: parsed.country,
+    linkedin: parsed.linkedin,
+    twitter: parsed.twitter,
+    source: existing?.source ?? "carddav",
+    updated_at: nowIso,
+  };
+
+  if (existing) {
+    const { error: upErr } = await supabaseAdmin
+      .from("contacts")
+      .update(plaintextPatch)
+      .eq("id", contactId)
+      .eq("user_id", userId);
+    if (upErr) return new Response(upErr.message, { status: 500 });
+  } else {
+    const { error: insErr } = await supabaseAdmin
+      .from("contacts")
+      .insert({ id: contactId, ...plaintextPatch });
+    if (insErr) return new Response(insErr.message, { status: 500 });
+  }
+
+  // Encrypted fields. The RPC treats NULL as "leave unchanged", so use "" to
+  // clear a value the user wiped on the phone.
+  const primaryPhone = parsed.phones.find((p) => p.is_primary)?.number ?? parsed.phones[0]?.number ?? "";
+  const encErr = await setContactEncryptedFields({
+    contact_id: contactId,
+    notes: parsed.notes ?? "",
+    address_line1: parsed.address_line1 ?? "",
+    address_line2: parsed.address_line2 ?? "",
+    phone: primaryPhone,
+  });
+  if (encErr.error) return new Response(encErr.error, { status: 500 });
+
+  // Replace-all phones. RLS scopes to the caller via user_id filter.
+  const { error: delPhoneErr } = await supabaseAdmin
+    .from("contact_phones")
+    .delete()
+    .eq("contact_id", contactId)
+    .eq("user_id", userId);
+  if (delPhoneErr) return new Response(delPhoneErr.message, { status: 500 });
+
+  if (parsed.phones.length > 0) {
+    const hasPrimary = parsed.phones.some((p) => p.is_primary);
+    const rows = parsed.phones.map((p, idx) => ({
+      user_id: userId,
+      contact_id: contactId,
+      label: p.label.toLowerCase(),
+      number: p.number,
+      is_primary: hasPrimary ? p.is_primary : idx === 0,
+      position: idx,
+    }));
+    const { error: insPhoneErr } = await supabaseAdmin.from("contact_phones").insert(rows);
+    if (insPhoneErr) return new Response(insPhoneErr.message, { status: 500 });
+  }
+
+  const newEtag = contactETag(contactId, nowIso);
+  return new Response(null, {
+    status: existing ? 204 : 201,
+    headers: {
+      ETag: newEtag,
+      Location: contactHref(email, contactId),
+    },
+  });
+}
+
+// Handle DELETE: hard-delete the contact and cascade its phones.
+export async function handleDelete(
+  request: Request,
+  userId: string,
+  path: string,
+): Promise<Response> {
+  const contactId = extractContactId(path);
+  if (!contactId || !UUID_RE.test(contactId)) {
+    return new Response("Bad Request", { status: 400 });
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from("contacts")
+    .select("id,updated_at")
+    .eq("id", contactId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!existing) return new Response(null, { status: 404 });
+
+  const ifMatch = request.headers.get("if-match");
+  if (ifMatch) {
+    const current = contactETag(existing.id, existing.updated_at as string);
+    const norm = (v: string) => v.trim().replace(/^W\//i, "");
+    if (norm(ifMatch) !== norm(current)) return preconditionFailed();
+  }
+
+  // Phones first (no FK cascade guarantee across schemas).
+  await supabaseAdmin
+    .from("contact_phones")
+    .delete()
+    .eq("contact_id", contactId)
+    .eq("user_id", userId);
+
+  const { error } = await supabaseAdmin
+    .from("contacts")
+    .delete()
+    .eq("id", contactId)
+    .eq("user_id", userId);
+  if (error) return new Response(error.message, { status: 500 });
+
+  return new Response(null, { status: 204 });
 }

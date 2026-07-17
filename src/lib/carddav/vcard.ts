@@ -143,3 +143,197 @@ export function contactETag(id: string, updatedAt: string): string {
   for (let i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) | 0;
   return `"${(h >>> 0).toString(16)}-${new Date(updatedAt).getTime().toString(36)}"`;
 }
+
+// ---------------------------------------------------------------------------
+// vCard PARSER — handles what iOS emits on Add/Edit Contact: vCard 3.0,
+// CRLF-folded lines, backslash escapes, TEL/EMAIL/ADR TYPE params. Not a
+// full RFC 6350 parser — just the fields we round-trip in contactToVCard.
+
+export type ParsedPhone = {
+  label: string; // "Mobile" | "Work" | "Home" | "Fax" | "Other"
+  number: string;
+  is_primary: boolean;
+};
+
+export type ParsedVCard = {
+  uid: string | null;
+  name: string | null;
+  email: string | null;
+  company: string | null;
+  title: string | null;
+  phones: ParsedPhone[];
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  region: string | null;
+  postal_code: string | null;
+  country: string | null;
+  website: string | null;
+  linkedin: string | null;
+  twitter: string | null;
+  notes: string | null;
+};
+
+function unescapeValue(v: string): string {
+  const out: string[] = [];
+  for (let i = 0; i < v.length; i++) {
+    const c = v[i];
+    if (c === "\\" && i + 1 < v.length) {
+      const n = v[i + 1];
+      if (n === "n" || n === "N") out.push("\n");
+      else out.push(n);
+      i++;
+    } else {
+      out.push(c);
+    }
+  }
+  return out.join("");
+}
+
+function unfold(text: string): string[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  for (const l of lines) {
+    if ((l.startsWith(" ") || l.startsWith("\t")) && out.length > 0) {
+      out[out.length - 1] += l.slice(1);
+    } else {
+      out.push(l);
+    }
+  }
+  return out.filter((l) => l.length > 0);
+}
+
+type ParsedLine = { name: string; params: Record<string, string[]>; value: string };
+
+function parseLine(raw: string): ParsedLine | null {
+  const colonIdx = raw.indexOf(":");
+  if (colonIdx < 0) return null;
+  const head = raw.slice(0, colonIdx);
+  const value = raw.slice(colonIdx + 1);
+  const parts = head.split(";");
+  const name = parts[0].toUpperCase();
+  const params: Record<string, string[]> = {};
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i];
+    const eq = p.indexOf("=");
+    if (eq < 0) {
+      (params["TYPE"] ??= []).push(p.toUpperCase());
+    } else {
+      const key = p.slice(0, eq).toUpperCase();
+      const vals = p.slice(eq + 1).split(",");
+      (params[key] ??= []).push(...vals.map((v) => v.toUpperCase()));
+    }
+  }
+  return { name, params, value };
+}
+
+function phoneLabelFromTypes(types: string[]): string {
+  const set = new Set(types.map((t) => t.toUpperCase()));
+  if (set.has("CELL") || set.has("MOBILE") || set.has("IPHONE")) return "Mobile";
+  if (set.has("WORK")) return "Work";
+  if (set.has("HOME")) return "Home";
+  if (set.has("FAX")) return "Fax";
+  return "Other";
+}
+
+/** Parse a vCard body into a normalized shape, or null if not a vCard. */
+export function parseVCard(text: string): ParsedVCard | null {
+  if (!/BEGIN:VCARD/i.test(text)) return null;
+  const lines = unfold(text);
+  const parsed: ParsedLine[] = [];
+  for (const l of lines) {
+    const p = parseLine(l);
+    if (p) parsed.push(p);
+  }
+
+  const out: ParsedVCard = {
+    uid: null, name: null, email: null, company: null, title: null,
+    phones: [], address_line1: null, address_line2: null, city: null,
+    region: null, postal_code: null, country: null, website: null,
+    linkedin: null, twitter: null, notes: null,
+  };
+
+  let fn: string | null = null;
+  let nGiven: string | null = null;
+  let nFamily: string | null = null;
+
+  for (const p of parsed) {
+    const v = unescapeValue(p.value);
+    switch (p.name) {
+      case "UID":
+        out.uid = v.trim() || null;
+        break;
+      case "FN":
+        fn = v.trim() || null;
+        break;
+      case "N": {
+        const segs = p.value.split(";").map(unescapeValue);
+        nFamily = segs[0]?.trim() || null;
+        nGiven = segs[1]?.trim() || null;
+        break;
+      }
+      case "ORG":
+        out.company = unescapeValue(p.value.split(";")[0] ?? "").trim() || null;
+        break;
+      case "TITLE":
+        out.title = v.trim() || null;
+        break;
+      case "EMAIL":
+        if (!out.email) out.email = v.trim() || null;
+        else if ((p.params.TYPE ?? []).includes("PREF")) out.email = v.trim() || null;
+        break;
+      case "TEL": {
+        const num = v.trim();
+        if (!num) break;
+        const types = p.params.TYPE ?? [];
+        const isPref = types.includes("PREF") || (p.params.PREF ?? []).length > 0;
+        out.phones.push({ label: phoneLabelFromTypes(types), number: num, is_primary: isPref });
+        break;
+      }
+      case "ADR": {
+        const segs = p.value.split(";").map(unescapeValue);
+        const street = (segs[2] ?? "").trim();
+        const streetParts = street.split(/,\s*/);
+        out.address_line1 = streetParts[0] || null;
+        out.address_line2 = streetParts.slice(1).join(", ") || null;
+        out.city = (segs[3] ?? "").trim() || null;
+        out.region = (segs[4] ?? "").trim() || null;
+        out.postal_code = (segs[5] ?? "").trim() || null;
+        out.country = (segs[6] ?? "").trim() || null;
+        break;
+      }
+      case "URL": {
+        const url = v.trim();
+        if (!url) break;
+        const joined = (p.params.TYPE ?? []).join(",").toUpperCase();
+        if (joined.includes("LINKEDIN") || /linkedin\.com/i.test(url)) out.linkedin = url;
+        else if (joined.includes("TWITTER") || /twitter\.com|x\.com/i.test(url)) out.twitter = url;
+        else if (!out.website) out.website = url;
+        break;
+      }
+      case "NOTE":
+        out.notes = v || null;
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (fn) {
+    out.name = fn;
+  } else if (nGiven || nFamily) {
+    out.name = [nGiven, nFamily].filter(Boolean).join(" ").trim() || null;
+  }
+
+  // Dedupe phones by digits; keep first pref.
+  const seen = new Map<string, ParsedPhone>();
+  for (const p of out.phones) {
+    const key = p.number.replace(/\s+/g, "");
+    const existing = seen.get(key);
+    if (!existing) seen.set(key, p);
+    else if (p.is_primary && !existing.is_primary) seen.set(key, p);
+  }
+  out.phones = Array.from(seen.values());
+
+  return out;
+}

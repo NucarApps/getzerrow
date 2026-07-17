@@ -83,7 +83,8 @@ function CardDavSettings() {
       <div>
         <h2 className="text-xl font-semibold">iPhone contacts</h2>
         <p className="text-sm text-muted-foreground">
-          Sync your Zerrow contacts to your iPhone over CardDAV. Read-only — changes on your phone don't push back.
+          Two-way sync between Zerrow and your iPhone over CardDAV. Edits, adds, and deletes on your phone
+          push back to Zerrow — deleting a contact on iPhone removes it here too.
         </p>
       </div>
 
