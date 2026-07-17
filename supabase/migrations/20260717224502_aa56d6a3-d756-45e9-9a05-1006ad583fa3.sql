@@ -1,0 +1,1 @@
+ALTER TABLE public.carddav_settings ADD COLUMN IF NOT EXISTS resync_nonce integer NOT NULL DEFAULT 0;
