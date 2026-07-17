@@ -393,3 +393,45 @@ export function parseVCard(text: string): ParsedVCard | null {
 
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// GROUP vCARDS — Apple's Contacts app publishes groups as separate vCards
+// with X-ADDRESSBOOKSERVER-KIND:group + X-ADDRESSBOOKSERVER-MEMBER lines.
+// We serve these alongside contact vCards so iOS mirrors Zerrow groups.
+
+export type GroupCardInput = {
+  uid: string;
+  name: string;
+  memberContactIds: string[];
+  updatedAt: string;
+};
+
+/** Build an Apple-style group vCard. Members reference contact UIDs which
+ * must match the contacts.id used in the corresponding contact vCards. */
+export function buildGroupVCard(g: GroupCardInput): string {
+  const out: string[] = [];
+  out.push("BEGIN:VCARD");
+  out.push("VERSION:3.0");
+  out.push(line("PRODID", "-//Zerrow//CardDAV Group 1.0//EN"));
+  out.push(line("UID", g.uid));
+  out.push(line("FN", esc(g.name)));
+  out.push(line("N", `${esc(g.name)};;;;`));
+  out.push("X-ADDRESSBOOKSERVER-KIND:group");
+  for (const id of g.memberContactIds) {
+    out.push(line("X-ADDRESSBOOKSERVER-MEMBER", `urn:uuid:${id}`));
+  }
+  const rev = new Date(g.updatedAt).toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  out.push(line("REV", rev));
+  out.push("END:VCARD");
+  return out.join("\r\n") + "\r\n";
+}
+
+/** Stable ETag for a group vCard. Bumps whenever the group name or its
+ * membership list changes (the trigger on contact_group_members updates
+ * contact_groups.updated_at). */
+export function groupETag(id: string, updatedAt: string): string {
+  const src = `g:${id}:${updatedAt}`;
+  let h = 5381;
+  for (let i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) | 0;
+  return `"${(h >>> 0).toString(16)}-${new Date(updatedAt).getTime().toString(36)}"`;
+}
