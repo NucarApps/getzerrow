@@ -84,9 +84,18 @@ export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
           total: rows?.length ?? 0,
           ok,
           failed,
+          skipped,
         });
         return new Response(
-          JSON.stringify({ ok: true, runId, total: rows?.length ?? 0, ranOk: ok, failed, errors }),
+          JSON.stringify({
+            ok: true,
+            runId,
+            total: rows?.length ?? 0,
+            ranOk: ok,
+            failed,
+            skipped,
+            errors,
+          }),
           { headers: { "content-type": "application/json" } },
         );
       },
