@@ -717,6 +717,10 @@ export async function handlePut(
     if (insPhoneErr) return new Response(insPhoneErr.message, { status: 500 });
   }
 
+  // CATEGORIES → contact_group_members reconciliation. Groups are created
+  // on demand so the phone can name them freely without pre-configuration.
+  await reconcileContactCategories(userId, contactId, parsed.categories);
+
   const newEtag = contactETag(contactId, nowIso);
   return new Response(null, {
     status: existing ? 204 : 201,
