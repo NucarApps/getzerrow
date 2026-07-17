@@ -109,13 +109,23 @@ export function contactToVCard(
   }
 
   // Structured phones from contact_phones plus the legacy encrypted phone field.
+  const emittedPhoneKeys = new Set<string>();
   for (const p of phones) {
     if (!p.number) continue;
-    const params = phoneTypeParam(p.label) + (p.is_primary ? ";TYPE=pref" : "");
+    const key = phoneKey(p.number);
+    if (key && emittedPhoneKeys.has(key)) continue;
+    // Emit both TYPE=pref (legacy 3.0) and PREF=1 (RFC 6350) so every client
+    // recognizes the primary on the next fetch.
+    const params = phoneTypeParam(p.label) + (p.is_primary ? ";TYPE=pref;PREF=1" : "");
     out.push(line(`TEL${params}`, esc(p.number)));
+    if (key) emittedPhoneKeys.add(key);
   }
-  if (contact.phone && !phones.some((p) => p.number === contact.phone)) {
-    out.push(line("TEL;TYPE=VOICE", esc(contact.phone)));
+  if (contact.phone) {
+    const encKey = phoneKey(contact.phone);
+    if (encKey && !emittedPhoneKeys.has(encKey)) {
+      out.push(line("TEL;TYPE=VOICE", esc(contact.phone)));
+      emittedPhoneKeys.add(encKey);
+    }
   }
 
   const hasAddr =
