@@ -1,32 +1,47 @@
+## Why the count doesn't match
 
-## Current state (verified)
+- Google reports 459 contacts. Zerrow currently has 276 contacts, 270 of which are linked to a Google resource.
+- The Zerrow `contacts` table requires a non-null email and uses `(user_id, lower(email))` as its uniqueness key.
+- `src/lib/google-contacts/pull.server.ts` explicitly skips every Google person that has no primary email address (`if (!parsed.email) { breakdown.skipped_no_email++; continue; }`).
+- Result: any Google contact that has only a phone, a name, or an address (very common for contacts imported from a phone) is dropped on the way in.
 
-Background sync **is** running.
+That's the whole gap. Nothing is stuck — those contacts are being seen and deliberately skipped by design.
 
-- Cron job `google-contacts-sync-15m` is registered and **active** in pg_cron, schedule `*/15 * * * *` (every 15 minutes).
-- It calls `POST /api/public/hooks/google-contacts-sync` with the cron secret.
-- The hook loads every row in `google_sync_state` where `enabled = true`, then runs `runGoogleContactsSync(user_id, gmail_account_id)` for each — which respects the account's `sync_mode` (`pull_only` or `two_way`) and honors the 90s lease so a stuck run can't block the next tick.
-- "Sync now" from the settings card still works on demand and is independent of the cron.
+## What to change
 
-So: if the toggle is on, an account syncs at least every 15 minutes in the background, plus whenever you press Sync now.
+Let emailless Google contacts import into Zerrow, using the Google `resourceName` as the natural key when no email exists. Nothing about email-based merging or CardDAV changes for contacts that do have an email.
 
-## What "every 15 minutes" actually means
+### Database migration
+- Make `public.contacts.email` nullable.
+- Drop the plain `contacts_user_email_key` unique index.
+- Replace `contacts_user_email_unique` with a partial unique index so uniqueness only applies when email is present:
+  ```sql
+  CREATE UNIQUE INDEX contacts_user_email_unique
+    ON public.contacts (user_id, lower(email))
+    WHERE email IS NOT NULL;
+  ```
+- Backfill nothing (existing rows all have an email).
 
-- Pull side: any new/edited Google contact shows up in Zerrow within ~15 minutes.
-- Push side (two-way only): local edits push to Google within ~15 minutes.
-- Google People API has no push webhook, so polling is the only option — 15 minutes is a good default for a personal address book (well under People API quotas, ~96 pull passes per account per day).
+### Pull logic (`src/lib/google-contacts/pull.server.ts`)
+- Remove the "no email → skip" branch. Instead:
+  - If there's an existing `google_contact_links` row for this `resourceName`, update that contact as today.
+  - If not and the person has an email, keep today's find-or-create-by-email path (merge into existing Zerrow contact).
+  - If not and the person has no email, create a new contact with `email = null`, name/phones/company from the Google payload, `source = 'google'`, and immediately upsert the `google_contact_links` row so subsequent syncs update it in place.
+- Reclassify counters: emailless creates count toward `last_pull_created` (not `skipped_no_email`). Keep `skipped_no_email` for anything we still can't import (e.g. no email and no name and no phone — pure ghost entries).
 
-## Options
+### Contacts UI (`src/routes/_authenticated/contacts*` and list components)
+- Where we render a contact's email, fall back to the primary phone or "No email" when `email` is null so emailless rows are still readable and clickable.
+- Ensure list queries don't filter on `email IS NOT NULL`.
 
-Pick one — I'll implement in build mode.
+### Settings card (`src/routes/_authenticated/settings.google-contacts.tsx`)
+- Update the breakdown copy so "Skipped (no email)" reads "Skipped (no email, phone, or name)" — matches the tightened definition.
 
-1. **Keep 15 minutes** (recommended default). No change.
-2. **Speed it up to every 5 minutes** for all enabled accounts. Update the pg_cron schedule to `*/5 * * * *`. Roughly 3x the API calls; still safely inside People API quotas for normal use.
-3. **Per-account cadence picker** in the Google Contacts settings card: Off / 5 min / 15 min / 60 min. Adds a `sync_interval_minutes` column to `google_sync_state`, and the hook skips accounts whose `last_synced_at` is newer than their interval. Cron itself still ticks every 5 min, but each account only actually runs on its own cadence.
+## Verification after build
+1. Run "Sync now" (pull_only) for the affected account.
+2. Confirm `last_pull_created` jumps by roughly the missing ~183 contacts and `last_pull_skipped_no_email` drops to a small number (pure ghost entries only).
+3. Confirm `SELECT count(*) FROM google_contact_links WHERE gmail_account_id = 'adb85c80-…'` is close to 459.
+4. Open Contacts in the UI and confirm the emailless entries render with name/phone.
 
-## Also worth adding (optional, small)
-
-- A visible "Last background sync" timestamp on the settings card so you can tell at a glance that the cron is firing (we already store `last_synced_at`; just need to render it next to the mode badge).
-- If a background run fails, surface the last error inline on the card instead of only in logs.
-
-Say which option (1, 2, or 3) and whether to include the "last sync" + error line, and I'll ship it.
+## Out of scope
+- Any change to CardDAV export, folder mapping, two-way push, or company grouping — emailless contacts flow through the existing pipelines unchanged.
+- No change to the cadence picker or background cron behavior added in the previous turn.
