@@ -71,9 +71,11 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const syncNow = useServerFn(syncGoogleContactsNow);
   const setMode = useServerFn(setGoogleContactsSyncMode);
   const setInterval = useServerFn(setGoogleContactsSyncInterval);
+  const forceFull = useServerFn(forceFullGoogleContactsResync);
   const connect = useServerFn(startConnectGmail);
   const [reconnecting, setReconnecting] = useState(false);
   const [confirmUpgrade, setConfirmUpgrade] = useState(false);
+  const [confirmForce, setConfirmForce] = useState(false);
 
   const statusQ = useQuery({
     queryKey: ["google-contacts-status", account.id],
