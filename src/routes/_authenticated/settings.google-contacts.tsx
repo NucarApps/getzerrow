@@ -57,7 +57,17 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   });
 
   const enabled = statusQ.data?.state?.enabled ?? false;
-  const lastError = statusQ.data?.state?.last_error ?? null;
+  const scopeGranted = statusQ.data?.scope_granted ?? null;
+  // If the OAuth callback recorded that Contacts access is missing, that's
+  // the truth — surface it even when the sync-state row still has a stale
+  // last_error from before the reconnect (or vice versa).
+  const rawLastError = statusQ.data?.state?.last_error ?? null;
+  const lastError =
+    scopeGranted === false
+      ? "missing_contacts_scope"
+      : scopeGranted === true && rawLastError === "missing_contacts_scope"
+        ? null
+        : rawLastError;
 
   const toggleMut = useMutation({
     mutationFn: (next: boolean) =>
