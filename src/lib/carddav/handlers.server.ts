@@ -374,9 +374,10 @@ async function buildGroupResponse(
     );
   }
   const members = await fetchGroupMembers(group.id);
+  const displayName = await resolveGroupDisplayName(userId, group.id, group.name);
   const vcard = buildGroupVCard({
     uid: group.carddav_uid ?? `group-${group.id}`,
-    name: group.name,
+    name: displayName,
     memberContactIds: members,
     updatedAt: group.updated_at,
   });
