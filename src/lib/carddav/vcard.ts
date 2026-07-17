@@ -275,11 +275,6 @@ export function parseVCard(text: string): ParsedVCard | null {
     linkedin: null, twitter: null, notes: null,
     categories: [], isGroup: false, memberUids: [],
   };
-    uid: null, name: null, email: null, company: null, title: null,
-    phones: [], address_line1: null, address_line2: null, city: null,
-    region: null, postal_code: null, country: null, website: null,
-    linkedin: null, twitter: null, notes: null,
-  };
 
   let fn: string | null = null;
   let nGiven: string | null = null;
