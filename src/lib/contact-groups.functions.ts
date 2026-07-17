@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { reconcileIfAuto } from "./contacts/auto-company-subgroups.functions";
 
 type DB = SupabaseClient<Database>;
 
@@ -10,7 +11,7 @@ const COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const MAX_DEPTH = 4;
 
 const GROUP_SELECT =
-  "id,name,color,created_at,folder_id,carddav_uid,updated_at,parent_group_id";
+  "id,name,color,created_at,folder_id,carddav_uid,updated_at,parent_group_id,auto_company_subgroups,auto_generated_from_group_id";
 
 /** List the user's groups with member counts and any linked folder. */
 export const listContactGroups = createServerFn({ method: "GET" })
