@@ -15,7 +15,9 @@ import {
   Check,
   Building2,
   CalendarClock,
+  Sparkles,
 } from "lucide-react";
+import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -109,6 +111,7 @@ function ContactsPage() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const bulkAddToGroups = useServerFn(addContactsToGroups);
   const [aliasDialog, setAliasDialog] = useState<null | {
@@ -373,6 +376,7 @@ function ContactsPage() {
   }, [companyBuckets, groupByCompany]);
 
   return (
+    <>
     <div className="h-full overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <header className="mb-6 flex items-center gap-2 sm:gap-3">
@@ -518,6 +522,16 @@ function ContactsPage() {
               >
                 <Building2 className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">By company</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSuggestOpen(true)}
+                title="AI group suggestions"
+                className="shrink-0 px-2 sm:px-3"
+              >
+                <Sparkles className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Suggest groups</span>
               </Button>
               <Button
                 variant={selectionMode ? "default" : "outline"}
@@ -799,7 +813,9 @@ function ContactsPage() {
         aliases={aliasDialog ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
         contactIds={aliasDialog?.contactIds ?? []}
       />
-    </div>
+     </div>
+      <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
+    </>
   );
 }
 

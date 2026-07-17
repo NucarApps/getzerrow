@@ -338,6 +338,66 @@ export type Database = {
           },
         ]
       }
+      contact_group_suggestions: {
+        Row: {
+          contact_ids: string[]
+          created_at: string
+          existing_group_id: string | null
+          id: string
+          kind: string
+          name: string
+          parent_group_id: string | null
+          rationale: string | null
+          run_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contact_ids?: string[]
+          created_at?: string
+          existing_group_id?: string | null
+          id?: string
+          kind?: string
+          name: string
+          parent_group_id?: string | null
+          rationale?: string | null
+          run_id: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contact_ids?: string[]
+          created_at?: string
+          existing_group_id?: string | null
+          id?: string
+          kind?: string
+          name?: string
+          parent_group_id?: string | null
+          rationale?: string | null
+          run_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_group_suggestions_existing_group_id_fkey"
+            columns: ["existing_group_id"]
+            isOneToOne: false
+            referencedRelation: "contact_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_group_suggestions_parent_group_id_fkey"
+            columns: ["parent_group_id"]
+            isOneToOne: false
+            referencedRelation: "contact_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_groups: {
         Row: {
           carddav_uid: string
