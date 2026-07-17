@@ -85,13 +85,14 @@ export async function getGoogleContactsStatus(userId: string, gmailAccountId: st
   const state = await loadSyncState(userId, gmailAccountId);
   const { data: acct } = await supabaseAdmin
     .from("gmail_accounts")
-    .select("oauth_scope, needs_reconnect, email_address")
+    .select("needs_reconnect, email_address")
     .eq("id", gmailAccountId)
     .maybeSingle();
   return {
     state,
     email: acct?.email_address ?? null,
-    scope_granted: accountHasContactsScope(acct?.oauth_scope ?? null),
+    // Scope grant is verified by the first People API call, not stored locally.
+    scope_granted: null as boolean | null,
     needs_reconnect: !!acct?.needs_reconnect,
   };
 }
