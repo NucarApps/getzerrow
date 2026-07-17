@@ -88,6 +88,7 @@ type GroupRow = {
   color: string;
   count: number;
   folder_id?: string | null;
+  parent_group_id?: string | null;
   linked_folder?: { name: string; color: string | null } | null;
 };
 
