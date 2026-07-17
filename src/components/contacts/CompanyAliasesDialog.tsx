@@ -471,7 +471,7 @@ export function CompanyAliasesDialog({
             {groups.length > 0 && (
               <div className="mt-2 flex items-center justify-between">
                 <p className="text-[11px] text-muted-foreground">
-                  Tags apply to everyone in this company.
+                  Tags apply to all {contactIds.length} {contactIds.length === 1 ? "contact" : "contacts"}. Partial chips (n/N) show how many are already members.
                 </p>
                 <Button
                   size="sm"
