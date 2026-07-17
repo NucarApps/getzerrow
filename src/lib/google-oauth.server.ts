@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+export const CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts";
 
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
@@ -11,6 +12,7 @@ export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
   CALENDAR_SCOPE,
+  CONTACTS_SCOPE,
   "openid",
 ];
 
