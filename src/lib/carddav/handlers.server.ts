@@ -80,7 +80,26 @@ async function computeBookCTag(userId: string): Promise<string> {
     supabaseAdmin.from("contacts").select("id", { count: "exact", head: true }).eq("user_id", userId),
     supabaseAdmin.from("contact_groups").select("id", { count: "exact", head: true }).eq("user_id", userId),
   ]);
-  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}"`;
+  const style = await getGroupNameStyle(userId);
+  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}-${style}"`;
+}
+
+// User-selectable format for group vCards on iPhone. iOS Contacts only
+// displays a flat group list, so nested Zerrow groups need their display
+// name flattened. Options:
+//   leaf       -> "Toyota"
+//   path_slash -> "Factory / Toyota" (default)
+//   path_dash  -> "Factory - Toyota"
+export type GroupNameStyle = "leaf" | "path_slash" | "path_dash";
+
+export async function getGroupNameStyle(userId: string): Promise<GroupNameStyle> {
+  const { data } = await supabaseAdmin
+    .from("carddav_settings")
+    .select("group_name_style")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const v = (data as { group_name_style?: string } | null)?.group_name_style;
+  return v === "leaf" || v === "path_dash" ? v : "path_slash";
 }
 
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
@@ -358,6 +377,7 @@ async function buildGroupResponse(
   email: string,
   groupId: string,
   includeVcard: boolean,
+  style: GroupNameStyle,
 ): Promise<string> {
   const { data: group } = await supabaseAdmin
     .from("contact_groups")
@@ -374,7 +394,7 @@ async function buildGroupResponse(
     );
   }
   const members = await fetchGroupMembers(group.id);
-  const displayName = await resolveGroupDisplayName(userId, group.id, group.name);
+  const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style);
   const vcard = buildGroupVCard({
     uid: group.carddav_uid ?? `group-${group.id}`,
     name: displayName,
@@ -395,7 +415,9 @@ async function resolveGroupDisplayName(
   userId: string,
   groupId: string,
   ownName: string,
+  style: GroupNameStyle,
 ): Promise<string> {
+  if (style === "leaf") return ownName;
   const { data } = await supabaseAdmin
     .from("contact_groups")
     .select("id,name,parent_group_id")
@@ -415,7 +437,8 @@ async function resolveGroupDisplayName(
     cursor = node.parent;
     hops++;
   }
-  return parts.length > 1 ? parts.join(" / ") : ownName;
+  const sep = style === "path_dash" ? " - " : " / ";
+  return parts.length > 1 ? parts.join(sep) : ownName;
 }
 
 const TOMBSTONE_PRUNE_DAYS = 90;
@@ -486,13 +509,14 @@ async function handleSyncCollection(
       .limit(limit ?? 5000),
   ]);
 
+  const style = await getGroupNameStyle(userId);
   let body = MULTISTATUS_OPEN;
 
   for (const row of (cRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
     body += await buildContactResponse(userId, email, row.id, includeVcard);
   }
   for (const row of (gRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
-    body += await buildGroupResponse(userId, email, row.id, includeVcard);
+    body += await buildGroupResponse(userId, email, row.id, includeVcard, style);
   }
   for (const t of (tRows as Array<{ resource_type: string; resource_id: string }> | null) ?? []) {
     const href =
@@ -566,9 +590,10 @@ export async function handleReport(
       .eq("user_id", userId)
       .in("id", groupIds);
     const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
+    const style = await getGroupNameStyle(userId);
     for (const id of groupIds) {
       if (!owned.has(id)) continue;
-      body += await buildGroupResponse(userId, email, id, includeVcard);
+      body += await buildGroupResponse(userId, email, id, includeVcard, style);
     }
   }
   body += MULTISTATUS_CLOSE;
@@ -611,7 +636,8 @@ export async function handleGet(
       return new Response(null, { status: 304, headers: { ETag: etag } });
     }
     const members = await fetchGroupMembers(group.id);
-    const displayName = await resolveGroupDisplayName(userId, group.id, group.name);
+    const style = await getGroupNameStyle(userId);
+    const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style);
     const vcard = buildGroupVCard({
       uid: group.carddav_uid ?? `group-${group.id}`,
       name: displayName,

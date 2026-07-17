@@ -14,6 +14,18 @@ import {
   listCardDavTokens,
   revokeCardDavToken,
 } from "@/lib/carddav/tokens.functions";
+import {
+  getCardDavSettings,
+  updateCardDavSettings,
+  type GroupNameStyle,
+} from "@/lib/carddav/settings.functions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/settings/carddav")({
   head: () => ({
@@ -39,8 +51,24 @@ function CardDavSettings() {
   const list = useServerFn(listCardDavTokens);
   const create = useServerFn(createCardDavToken);
   const revoke = useServerFn(revokeCardDavToken);
+  const getSettings = useServerFn(getCardDavSettings);
+  const updateSettings = useServerFn(updateCardDavSettings);
   const [label, setLabel] = useState("iPhone");
   const [freshToken, setFreshToken] = useState<string | null>(null);
+
+  const settingsQuery = useQuery({
+    queryKey: ["carddav-settings"],
+    queryFn: () => getSettings(),
+  });
+  const settingsMut = useMutation({
+    mutationFn: (style: GroupNameStyle) =>
+      updateSettings({ data: { group_name_style: style } }),
+    onSuccess: () => {
+      toast.success("iPhone will refresh group names on next sync");
+      qc.invalidateQueries({ queryKey: ["carddav-settings"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const tokensQuery = useQuery({
     queryKey: ["carddav-tokens"],
@@ -202,6 +230,35 @@ function CardDavSettings() {
             ))}
           </ul>
         )}
+      </Card>
+
+      <Card className="space-y-3 p-5">
+        <div>
+          <p className="font-medium">Group names on iPhone</p>
+          <p className="text-sm text-muted-foreground">
+            iOS Contacts only shows a flat list of groups, so nested Zerrow
+            groups (like Factory → Toyota) need a display style. Changing this
+            triggers a group-name refresh on next sync — no need to remove
+            the account.
+          </p>
+        </div>
+        <div className="max-w-sm">
+          <Label className="mb-1 block text-sm">Display format</Label>
+          <Select
+            value={settingsQuery.data?.group_name_style ?? "path_slash"}
+            onValueChange={(v) => settingsMut.mutate(v as GroupNameStyle)}
+            disabled={settingsQuery.isLoading || settingsMut.isPending}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="leaf">Leaf name only — "Toyota"</SelectItem>
+              <SelectItem value="path_slash">Parent / Child — "Factory / Toyota"</SelectItem>
+              <SelectItem value="path_dash">Parent - Child — "Factory - Toyota"</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </Card>
     </div>
   );
