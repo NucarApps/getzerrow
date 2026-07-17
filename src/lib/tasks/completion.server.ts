@@ -3,6 +3,7 @@
 import { generateText } from "ai";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getEmailListFieldsDecrypted } from "@/lib/sync/encrypted-reader";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import { logError, logInfo } from "@/lib/log.server";
 
