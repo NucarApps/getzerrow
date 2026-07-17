@@ -90,9 +90,15 @@ export async function runGoogleContactsSync(
     result = { ok: false, error: errorKey };
     return result;
   } finally {
-    // Belt-and-suspenders: clear the lease regardless of what happened above.
-    // Swallow errors here — the caller already has its result and a stuck
-    // lease will still be reclaimed by the next run's stale-lease check.
+    // Belt-and-suspenders: clear the lease + progress regardless of what
+    // happened above. Swallow errors here — the caller already has its
+    // result and a stuck lease will still be reclaimed by the next run's
+    // stale-lease check.
+    try {
+      await progress.clear();
+    } catch {
+      // ignore
+    }
     try {
       await updateSyncState(state.id, { locked_at: null });
     } catch (unlockErr) {
