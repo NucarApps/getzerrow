@@ -50,6 +50,10 @@ export type ParsedEmailForClassify = {
   has_calendar_invite?: boolean;
   received_at: string;
   raw_labels: string[] | null;
+  /** Contact-group ids the sender belongs to (populated from
+   * AccountContext.senderGroups by classifyByRules). Optional so
+   * callers building ad-hoc parsed emails don't have to compute it. */
+  sender_group_ids?: string[];
 };
 
 export type RulesClassification = ClassificationResult & {
