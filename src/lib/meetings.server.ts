@@ -719,7 +719,7 @@ async function maybeExtractMeetingTasks(meetingId: string): Promise<void> {
   if (!m) return;
 
   type Seg = { speaker?: string | null; text?: string | null };
-  const segs = ((m.transcript ?? []) as Seg[]) ?? [];
+  const segs = (m.transcript ?? []) as Seg[];
   const transcriptText =
     segs.map((s) => `${s.speaker ? `${s.speaker}: ` : ""}${s.text ?? ""}`).join("\n").trim() ||
     (m.summary ?? "");
