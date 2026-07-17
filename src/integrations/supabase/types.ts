@@ -1502,6 +1502,10 @@ export type Database = {
           locked_at: string | null
           pending_bump: boolean
           people_sync_token: string | null
+          progress_processed: number
+          progress_step: string | null
+          progress_total: number
+          progress_updated_at: string | null
           updated_at: string
           user_id: string
         }
@@ -1519,6 +1523,10 @@ export type Database = {
           locked_at?: string | null
           pending_bump?: boolean
           people_sync_token?: string | null
+          progress_processed?: number
+          progress_step?: string | null
+          progress_total?: number
+          progress_updated_at?: string | null
           updated_at?: string
           user_id: string
         }
@@ -1536,6 +1544,10 @@ export type Database = {
           locked_at?: string | null
           pending_bump?: boolean
           people_sync_token?: string | null
+          progress_processed?: number
+          progress_step?: string | null
+          progress_total?: number
+          progress_updated_at?: string | null
           updated_at?: string
           user_id?: string
         }
