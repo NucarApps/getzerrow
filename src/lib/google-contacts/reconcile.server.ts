@@ -27,7 +27,9 @@ export async function runGoogleContactsSync(
   const ids = { userId, gmailAccountId, runId };
 
   const state = await ensureSyncState(userId, gmailAccountId);
-  if (!state.enabled) return { ok: false, error: "sync_disabled" };
+  const mode = state.sync_mode ?? (state.enabled ? "two_way" : "off");
+  if (mode === "off" || !state.enabled) return { ok: false, error: "sync_disabled" };
+  const pullOnly = mode === "pull_only";
 
   const now = new Date();
   if (state.locked_at) {
