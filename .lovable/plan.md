@@ -1,34 +1,23 @@
 ## Problem
 
-After reconnecting `chris@nucar.com`, the UI still shows "Contacts permission not granted." The DB confirms the reconnect succeeded (`needs_reconnect=false`, `last_oauth_error=null`), but `google_sync_state.last_error` is still the stale `missing_contacts_scope` from before the reconnect. Nothing on the OAuth-callback path clears it or re-checks the granted scope, so the warning sticks until the next reconcile happens to run and either clear or re-affirm it.
+Google People API `contactGroups.list` rejected our request:
+
+```
+400 INVALID_ARGUMENT — Unknown name "requestSyncToken":
+Cannot bind query parameter. Field 'requestSyncToken' could not be found in request message.
+```
+
+Unlike `people.connections.list` (which requires `requestSyncToken=true` to receive a `nextSyncToken`), `contactGroups.list` does **not** accept that parameter — it returns `nextSyncToken` automatically whenever pagination completes. We are sending it in `src/lib/google-contacts/people-client.server.ts:159` and `pull.server.ts` passes `requestSyncToken: true`, which breaks every groups pull and blocks the whole contacts sync.
 
 ## Fix
 
-Make the OAuth callback authoritative about contacts access, the same way it already is for calendar.
+1. **`src/lib/google-contacts/people-client.server.ts`** — in `listContactGroupsPage`, drop the `requestSyncToken` query param entirely (keep it in the `opts` type as a no-op for call-site compatibility, or remove it from the signature — I'll remove it to keep the surface honest). `syncToken` and `pageToken` stay.
 
-### 1. Persist granted contacts scope on the account
-- Add `scopeGrantsContacts(scope)` helper in `src/lib/google-oauth.server.ts` (mirrors `scopeGrantsCalendar`).
-- Add a `contacts_access boolean` column on `gmail_accounts` (migration + GRANT preserved).
-- In `src/routes/api/public/google-oauth-callback.ts`, when updating `calendar_access`, also update `contacts_access` from `tokens.scope`.
+2. **`src/lib/google-contacts/pull.server.ts`** — remove `requestSyncToken: true` from the `listContactGroupsPage` call in `paginateGroups`. Leave the `people.connections.list` call untouched — that one legitimately needs `requestSyncToken: true`.
 
-### 2. Reset stale contacts-sync error on reconnect
-In the callback, after `clearNeedsReconnect(account.id)`:
-- If contacts scope IS granted → update the account's `google_sync_state` row: `last_error = null` (only when it was `missing_contacts_scope` or `needs_reconnect`), so the banner clears immediately.
-- If contacts scope is NOT granted → set `google_sync_state.last_error = 'missing_contacts_scope'` right away so the UI shows the correct state without waiting for a reconcile.
-
-### 3. Surface a clearer message when Google actually withheld the scope
-In `src/routes/_authenticated/settings.google-contacts.tsx`, drive the warning from `account.contacts_access` (new column) instead of only `last_error`. Copy update when `contacts_access === false` after a reconnect: "Google did not grant Contacts access. On the consent screen make sure the 'See, edit, download, and permanently delete your contacts' checkbox is ticked, then reconnect." This distinguishes "user unchecked the box" from "stale error".
-
-### 4. Kick a sync right after reconnect
-Also in the callback, best-effort call the existing contacts reconcile enqueue for that account when contacts scope is present, so the first pull happens without the user clicking "Sync now".
-
-## Out of scope
-
-- No changes to the OAuth scope list itself (contacts scope is already requested).
-- No changes to reconcile logic beyond reading the same `contacts_access` flag if convenient.
+No schema, UI, or auth changes. Behavior after fix: groups still paginate and still return `nextSyncToken` on the final page, so incremental group sync keeps working.
 
 ## Verification
 
-1. Query `gmail_accounts` for chris@nucar.com — `contacts_access` reflects the last OAuth grant; `google_sync_state.last_error` is `null` when the scope is granted.
-2. UI shows the red banner only when `contacts_access = false`, with the new "consent-screen checkbox" copy.
-3. Reconnect with the Contacts checkbox ticked → banner disappears immediately, first pull runs.
+- Typecheck.
+- User clicks "Sync now" on `chris@nucar.com`; the groups pull no longer 400s and `google_sync_state.last_error` clears.
