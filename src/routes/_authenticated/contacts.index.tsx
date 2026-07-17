@@ -148,13 +148,69 @@ function ContactsPage() {
     return m;
   }, [gq.data]);
 
+  // Tree pre-order + per-group depth for indented sidebar rendering.
+  const groupTree = useMemo(() => {
+    const rows = gq.data?.groups ?? [];
+    const children = new Map<string | null, GroupRow[]>();
+    for (const g of rows) {
+      const key = g.parent_group_id ?? null;
+      const arr = children.get(key) ?? [];
+      arr.push(g);
+      children.set(key, arr);
+    }
+    for (const arr of children.values())
+      arr.sort((a, b) => a.name.localeCompare(b.name));
+    const out: { group: GroupRow; depth: number }[] = [];
+    const walk = (parent: string | null, depth: number) => {
+      for (const g of children.get(parent) ?? []) {
+        out.push({ group: g, depth });
+        walk(g.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  }, [gq.data]);
+
+  // groupId -> Set of descendant group ids (including itself) for filtering.
+  const descendantsById = useMemo(() => {
+    const rows = gq.data?.groups ?? [];
+    const kids = new Map<string, string[]>();
+    for (const g of rows) {
+      if (!g.parent_group_id) continue;
+      const arr = kids.get(g.parent_group_id) ?? [];
+      arr.push(g.id);
+      kids.set(g.parent_group_id, arr);
+    }
+    const out = new Map<string, Set<string>>();
+    for (const g of rows) {
+      const set = new Set<string>([g.id]);
+      const stack = [g.id];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const c of kids.get(cur) ?? []) {
+          if (!set.has(c)) {
+            set.add(c);
+            stack.push(c);
+          }
+        }
+      }
+      out.set(g.id, set);
+    }
+    return out;
+  }, [gq.data]);
+
   const filtered = useMemo(() => {
     const all = q.data?.contacts ?? [];
     const t = query.toLowerCase().trim();
+    const allowedGroupIds =
+      filter !== "all" && filter !== "ungrouped"
+        ? (descendantsById.get(filter) ?? new Set([filter]))
+        : null;
     return all.filter((x) => {
       if (filter === "ungrouped" && (contactGroupMap.get(x.id)?.length ?? 0) > 0) return false;
-      if (filter !== "all" && filter !== "ungrouped") {
-        if (!(contactGroupMap.get(x.id) ?? []).includes(filter)) return false;
+      if (allowedGroupIds) {
+        const gids = contactGroupMap.get(x.id) ?? [];
+        if (!gids.some((gid) => allowedGroupIds.has(gid))) return false;
       }
       if (!t) return true;
       return (
@@ -163,7 +219,7 @@ function ContactsPage() {
         (x.company ?? "").toLowerCase().includes(t)
       );
     });
-  }, [q.data, query, filter, contactGroupMap]);
+  }, [q.data, query, filter, contactGroupMap, descendantsById]);
 
   const ungroupedCount = useMemo(() => {
     const all = q.data?.contacts ?? [];
