@@ -910,6 +910,7 @@ function GroupEditorDialog({
   const [name, setName] = useState("");
   const [color, setColor] = useState(GROUP_COLORS[0]);
   const [folderId, setFolderId] = useState<string>("");
+  const [parentId, setParentId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -918,10 +919,12 @@ function GroupEditorDialog({
       setName(state.group.name);
       setColor(state.group.color);
       setFolderId(state.group.folder_id ?? "");
+      setParentId(state.group.parent_group_id ?? "");
     } else {
       setName("");
       setColor(GROUP_COLORS[0]);
       setFolderId("");
+      setParentId("");
     }
   }, [state]);
 
