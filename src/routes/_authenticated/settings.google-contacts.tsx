@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { RefreshCw, AlertCircle } from "lucide-react";
+import { RefreshCw, AlertCircle, Loader2 } from "lucide-react";
 import { listMyGmailAccounts, startConnectGmail } from "@/lib/gmail/accounts.functions";
 import {
   syncGoogleContactsNow,
