@@ -333,7 +333,7 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
 
   if (status === "done") {
     await linkParticipantsToContacts(meeting.id, meeting.user_id);
-    await maybeExtractMeetingTasks(meeting.id).catch((e) =>
+    await maybeExtractMeetingTasks(meeting.id).catch((e: unknown) =>
       logError("meeting_task_extract_failed", { meetingId: meeting.id }, e),
     );
   }
