@@ -604,7 +604,17 @@ function ContactsPage() {
                                 })
                             : undefined
                         }
+                        selectable
+                        selectionState={(() => {
+                          const ids = b.contacts.map((c) => c.id);
+                          const sel = ids.filter((id) => selectedIds.has(id)).length;
+                          if (sel === 0) return "none";
+                          if (sel === ids.length) return "all";
+                          return "some";
+                        })()}
+                        onToggleSelectAll={() => toggleBucketSelection(b.contacts.map((c) => c.id))}
                       />
+
                       {!isCollapsed && (
                         <ul className="divide-y divide-border border-x border-b border-border bg-card/40">
                           {b.contacts.map((c) => {
