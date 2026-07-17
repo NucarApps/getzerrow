@@ -241,6 +241,7 @@ async function applyPersonChanges(
   ids: Ids,
   persons: Person[],
   deletions: string[],
+  breakdown: PullBreakdown,
   progress?: ProgressReporter,
 ): Promise<void> {
   if (!persons.length && !deletions.length) return;
