@@ -523,6 +523,16 @@ function ContactsPage() {
                 <span className="hidden sm:inline">By company</span>
               </Button>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSuggestOpen(true)}
+                title="AI group suggestions"
+                className="shrink-0 px-2 sm:px-3"
+              >
+                <Sparkles className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Suggest groups</span>
+              </Button>
+              <Button
                 variant={selectionMode ? "default" : "outline"}
                 size="sm"
                 onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
