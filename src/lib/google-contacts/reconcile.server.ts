@@ -7,6 +7,7 @@ import { pushToGoogle } from "./push.server";
 import { ensureSyncState, updateSyncState, loadSyncState } from "./state.server";
 import { CONTACTS_SCOPE, PeopleApiError } from "./people-client.server";
 import { NeedsReconnectError } from "@/lib/google-oauth.server";
+import { createProgressReporter } from "./progress.server";
 
 /** True when the account has actually granted the People API scope. */
 export function accountHasContactsScope(scopeString: string | null | undefined): boolean {
