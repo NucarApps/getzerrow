@@ -797,11 +797,21 @@ function InPersonRecordDialog({
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </p>
-              {blocked && (
+              {iframeBlocked && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(window.location.href, "_blank", "noopener")}
+                >
+                  <ExternalLink className="mr-1.5 h-4 w-4" /> Open in new tab
+                </Button>
+              )}
+              {blocked && !iframeBlocked && (
                 <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
                   <RefreshCw className="mr-1.5 h-4 w-4" /> Reload page
                 </Button>
               )}
+
             </div>
           )}
         </div>
