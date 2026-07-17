@@ -646,8 +646,15 @@ function ContactsPage() {
                     <li key={c.id}>
                       <button
                         onClick={() => handleRowClick(c.id)}
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
+                        className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40 ${selectionMode && selectedIds.has(c.id) ? "bg-accent/50" : ""}`}
                       >
+                        {selectionMode && (
+                          <Checkbox
+                            checked={selectedIds.has(c.id)}
+                            onCheckedChange={() => toggleSelect(c.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
                         {showLogo ? (
                           <CompanyLogo
                             domain={resolvedDom ?? dom}
