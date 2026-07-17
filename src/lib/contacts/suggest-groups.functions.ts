@@ -1,8 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+
+type DB = SupabaseClient<Database>;
 
 const MAX_DEPTH = 4;
 const RESCAN_COOLDOWN_MS = 5 * 60 * 1000;
