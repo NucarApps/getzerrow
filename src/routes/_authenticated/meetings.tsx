@@ -514,6 +514,8 @@ function InPersonRecordDialog({
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
+  const [iframeBlocked, setIframeBlocked] = useState(false);
+
 
   // A "Record now" tap on an upcoming meeting opens the recorder with the
   // meeting's name pre-filled; the recording stays linked to that event.
