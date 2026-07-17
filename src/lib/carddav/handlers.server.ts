@@ -387,6 +387,100 @@ async function buildGroupResponse(
   return responseBlock(groupHref(email, group.id), props);
 }
 
+const TOMBSTONE_PRUNE_DAYS = 90;
+
+async function handleSyncCollection(
+  raw: string,
+  userId: string,
+  email: string,
+): Promise<Response> {
+  const { syncToken, syncLevel, limit } = parseSyncCollection(raw);
+  const includeVcard = raw.toLowerCase().includes("address-data");
+
+  if (syncLevel !== "1" && syncLevel !== "infinite") {
+    return new Response(
+      '<?xml version="1.0" encoding="utf-8"?>\n' +
+        '<D:error xmlns:D="DAV:"><D:valid-sync-token/></D:error>',
+      { status: 400, headers: { "Content-Type": 'application/xml; charset="utf-8"' } },
+    );
+  }
+
+  const snap = await currentSyncSnapshot(userId);
+
+  // Empty token = initial sync: return everything currently present.
+  let since: SyncState = { updatedSince: "1970-01-01T00:00:00Z", seqSince: 0 };
+  if (syncToken) {
+    const parsed = parseSyncToken(userId, syncToken);
+    if (!parsed) {
+      return new Response(
+        '<?xml version="1.0" encoding="utf-8"?>\n' +
+          '<D:error xmlns:D="DAV:"><D:valid-sync-token/></D:error>',
+        { status: 403, headers: { "Content-Type": 'application/xml; charset="utf-8"' } },
+      );
+    }
+    // Reject tokens older than our tombstone horizon — the RFC-defined
+    // fallback is a full resync via addressbook-multiget.
+    const horizonMs = Date.now() - TOMBSTONE_PRUNE_DAYS * 24 * 60 * 60 * 1000;
+    if (new Date(parsed.updatedSince).getTime() < horizonMs) {
+      return new Response(
+        '<?xml version="1.0" encoding="utf-8"?>\n' +
+          '<D:error xmlns:D="DAV:"><D:valid-sync-token/></D:error>',
+        { status: 403, headers: { "Content-Type": 'application/xml; charset="utf-8"' } },
+      );
+    }
+    since = parsed;
+  }
+
+  const [{ data: cRows }, { data: gRows }, { data: tRows }] = await Promise.all([
+    supabaseAdmin
+      .from("contacts")
+      .select("id,updated_at")
+      .eq("user_id", userId)
+      .gt("updated_at", since.updatedSince)
+      .order("updated_at", { ascending: true })
+      .limit(limit ?? 5000),
+    supabaseAdmin
+      .from("contact_groups")
+      .select("id,updated_at")
+      .eq("user_id", userId)
+      .gt("updated_at", since.updatedSince)
+      .order("updated_at", { ascending: true })
+      .limit(limit ?? 1000),
+    supabaseAdmin
+      .from("carddav_tombstones")
+      .select("resource_type,resource_id,sync_seq")
+      .eq("user_id", userId)
+      .gt("sync_seq", since.seqSince)
+      .order("sync_seq", { ascending: true })
+      .limit(limit ?? 5000),
+  ]);
+
+  let body = MULTISTATUS_OPEN;
+
+  for (const row of (cRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
+    body += await buildContactResponse(userId, email, row.id, includeVcard);
+  }
+  for (const row of (gRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
+    body += await buildGroupResponse(userId, email, row.id, includeVcard);
+  }
+  for (const t of (tRows as Array<{ resource_type: string; resource_id: string }> | null) ?? []) {
+    const href =
+      t.resource_type === "group"
+        ? groupHref(email, t.resource_id)
+        : contactHref(email, t.resource_id);
+    body +=
+      `<D:response>` +
+      `<D:href>${href}</D:href>` +
+      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
+      `</D:response>`;
+  }
+
+  const newToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
+  body += `<D:sync-token>${xmlEscape(newToken)}</D:sync-token>`;
+  body += MULTISTATUS_CLOSE;
+  return davResponse(body);
+}
+
 export async function handleReport(
   request: Request,
   userId: string,
@@ -395,6 +489,11 @@ export async function handleReport(
   const raw = await request.text();
   const lower = raw.toLowerCase();
   const includeVcard = lower.includes("address-data");
+
+  if (lower.includes("sync-collection")) {
+    return handleSyncCollection(raw, userId, email);
+  }
+
 
 
   const contactIds: string[] = [];
