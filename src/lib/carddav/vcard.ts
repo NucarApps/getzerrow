@@ -186,6 +186,14 @@ export type ParsedVCard = {
   linkedin: string | null;
   twitter: string | null;
   notes: string | null;
+  /** iOS "CATEGORIES:" list — the group names the user checked in the
+   * Contacts app. Empty when the card belongs to no groups. */
+  categories: string[];
+  /** True when this vCard represents an Apple-style group (KIND:group or
+   * X-ADDRESSBOOKSERVER-KIND:group). */
+  isGroup: boolean;
+  /** Member contact UIDs for a group vCard. Empty for individuals. */
+  memberUids: string[];
 };
 
 function unescapeValue(v: string): string {
