@@ -30,6 +30,7 @@ import { Route as DotwellKnownAppleAppSiteAssociationRouteImport } from './route
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings.index'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
 import { Route as ApiPublicRecallWebhookRouteImport } from './routes/api/public/recall-webhook'
+import { Route as ApiPublicRecallRealtimeRouteImport } from './routes/api/public/recall-realtime'
 import { Route as ApiPublicMeetingRecordingRouteImport } from './routes/api/public/meeting-recording'
 import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
@@ -176,6 +177,11 @@ const AuthenticatedContactsIndexRoute =
 const ApiPublicRecallWebhookRoute = ApiPublicRecallWebhookRouteImport.update({
   id: '/api/public/recall-webhook',
   path: '/api/public/recall-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRecallRealtimeRoute = ApiPublicRecallRealtimeRouteImport.update({
+  id: '/api/public/recall-realtime',
+  path: '/api/public/recall-realtime',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicMeetingRecordingRoute =
@@ -450,6 +456,7 @@ export interface FileRoutesByFullPath {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
+  '/api/public/recall-realtime': typeof ApiPublicRecallRealtimeRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
@@ -511,6 +518,7 @@ export interface FileRoutesByTo {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
+  '/api/public/recall-realtime': typeof ApiPublicRecallRealtimeRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
@@ -575,6 +583,7 @@ export interface FileRoutesById {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
   '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
+  '/api/public/recall-realtime': typeof ApiPublicRecallRealtimeRoute
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
@@ -639,6 +648,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/logo'
     | '/api/public/meeting-recording'
+    | '/api/public/recall-realtime'
     | '/api/public/recall-webhook'
     | '/contacts/'
     | '/settings/'
@@ -700,6 +710,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/logo'
     | '/api/public/meeting-recording'
+    | '/api/public/recall-realtime'
     | '/api/public/recall-webhook'
     | '/contacts'
     | '/settings'
@@ -763,6 +774,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/logo'
     | '/api/public/meeting-recording'
+    | '/api/public/recall-realtime'
     | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
     | '/_authenticated/settings/'
@@ -812,6 +824,7 @@ export interface RootRouteChildren {
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
   ApiPublicMeetingRecordingRoute: typeof ApiPublicMeetingRecordingRoute
+  ApiPublicRecallRealtimeRoute: typeof ApiPublicRecallRealtimeRoute
   ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
   ApiMobileEmailsActionRoute: typeof ApiMobileEmailsActionRoute
   ApiMobileEmailsFeedRoute: typeof ApiMobileEmailsFeedRoute
@@ -973,6 +986,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/recall-webhook'
       fullPath: '/api/public/recall-webhook'
       preLoaderRoute: typeof ApiPublicRecallWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/recall-realtime': {
+      id: '/api/public/recall-realtime'
+      path: '/api/public/recall-realtime'
+      fullPath: '/api/public/recall-realtime'
+      preLoaderRoute: typeof ApiPublicRecallRealtimeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/meeting-recording': {
@@ -1349,6 +1369,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicLogoRoute: ApiPublicLogoRoute,
   ApiPublicMeetingRecordingRoute: ApiPublicMeetingRecordingRoute,
+  ApiPublicRecallRealtimeRoute: ApiPublicRecallRealtimeRoute,
   ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
   ApiMobileEmailsActionRoute: ApiMobileEmailsActionRoute,
   ApiMobileEmailsFeedRoute: ApiMobileEmailsFeedRoute,
