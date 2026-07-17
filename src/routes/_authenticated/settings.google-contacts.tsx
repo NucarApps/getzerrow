@@ -164,6 +164,22 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
         </div>
       </div>
 
+      {isRunning && (
+        <div className="mt-3 rounded-md border bg-muted/40 p-3">
+          <div className="flex items-center gap-2 text-xs font-medium">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <span>{stepLabel(step)}</span>
+            <span className="ml-auto tabular-nums text-muted-foreground">
+              {total > 0 ? `${processed} / ${total}` : `${processed}`}
+            </span>
+          </div>
+          <Progress
+            className="mt-2 h-1.5"
+            value={total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : undefined}
+          />
+        </div>
+      )}
+
       {errorMsg && (
         <div className="mt-3 flex items-start gap-2 rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -172,6 +188,29 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
       )}
     </Card>
   );
+}
+
+function stepLabel(step: string | null): string {
+  switch (step) {
+    case "starting":
+      return "Starting sync…";
+    case "pulling_groups":
+      return "Pulling groups from Google";
+    case "pulling_contacts":
+      return "Pulling contacts from Google";
+    case "pushing_groups":
+      return "Pushing groups to Google";
+    case "pushing_contacts":
+      return "Pushing contacts to Google";
+    case "applying_tombstones":
+      return "Applying deletions";
+    case "finalizing":
+      return "Finalizing…";
+    case "done":
+      return "Done";
+    default:
+      return "Working…";
+  }
 }
 
 function GoogleContactsSettings() {
