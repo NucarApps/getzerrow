@@ -15,6 +15,7 @@ import {
 } from "./people-client.server";
 import { contactToPerson, groupToLabel } from "./mapper";
 import { loadLocalContact } from "./state.server";
+import type { ProgressReporter } from "./progress.server";
 
 type Ids = { userId: string; gmailAccountId: string; runId: string };
 
@@ -22,16 +23,22 @@ type Ids = { userId: string; gmailAccountId: string; runId: string };
 const MAX_CONTACTS_PER_RUN = 200;
 const MAX_GROUPS_PER_RUN = 100;
 
-export async function pushToGoogle(ids: Ids): Promise<{
+export async function pushToGoogle(
+  ids: Ids,
+  progress?: ProgressReporter,
+): Promise<{
   contactsPushed: number;
   groupsPushed: number;
   tombstonesApplied: number;
 }> {
   logInfo("google_contacts.push.start", { ...ids });
-  const groupsPushed = await pushGroups(ids);
+  await progress?.set("pushing_groups", 0, 0);
+  const groupsPushed = await pushGroups(ids, progress);
   const groupResourceByLocal = await loadGroupMap(ids);
-  const contactsPushed = await pushContacts(ids, groupResourceByLocal);
-  const tombstonesApplied = await applyTombstones(ids);
+  await progress?.set("pushing_contacts", 0, 0);
+  const contactsPushed = await pushContacts(ids, groupResourceByLocal, progress);
+  await progress?.set("applying_tombstones", 0, 0);
+  const tombstonesApplied = await applyTombstones(ids, progress);
   logInfo("google_contacts.push.done", {
     ...ids,
     contacts: contactsPushed,
@@ -49,7 +56,7 @@ async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
   return new Map((data ?? []).map((r) => [r.contact_group_id, r.resource_name]));
 }
 
-async function pushGroups(ids: Ids): Promise<number> {
+async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number> {
   // All local groups + linked resource (LEFT JOIN via two queries).
   const { data: groups } = await supabaseAdmin
     .from("contact_groups")
@@ -58,6 +65,7 @@ async function pushGroups(ids: Ids): Promise<number> {
     .order("updated_at", { ascending: true })
     .limit(MAX_GROUPS_PER_RUN);
   if (!groups?.length) return 0;
+  await progress?.set("pushing_groups", 0, groups.length);
 
   const { data: links } = await supabaseAdmin
     .from("google_group_links")
