@@ -13,6 +13,11 @@ export function accountHasContactsScope(scopeString: string | null | undefined):
   return (scopeString ?? "").split(/\s+/).includes(CONTACTS_SCOPE);
 }
 
+// Stale-lease window. A pull+push run finishes in a couple of seconds; if a
+// row's `locked_at` is older than this the previous worker was killed before
+// finalize (network abort, timeout) — safe to reclaim.
+const LEASE_STALE_MS = 90_000;
+
 export async function runGoogleContactsSync(
   userId: string,
   gmailAccountId: string,
@@ -23,17 +28,24 @@ export async function runGoogleContactsSync(
   const state = await ensureSyncState(userId, gmailAccountId);
   if (!state.enabled) return { ok: false, error: "sync_disabled" };
 
-  // Simple in-DB lease: skip if another run picked it up in the last 5 min.
   const now = new Date();
   if (state.locked_at) {
     const age = now.getTime() - new Date(state.locked_at).getTime();
-    if (age < 5 * 60 * 1000) {
+    if (age < LEASE_STALE_MS) {
       logInfo("google_contacts.run.skipped_lease", { ...ids });
       return { ok: false, error: "locked" };
     }
   }
   await updateSyncState(state.id, { locked_at: now.toISOString() });
 
+  // Always release the lease, even if the pull/push block throws in a place
+  // that skips the catch (e.g. a synchronous error inside a helper, or a
+  // secondary throw from the catch itself). Success/failure fields are
+  // written inside try/catch; finally only guarantees the unlock.
+  let result: { ok: boolean; pull?: number; push?: number; error?: string } = {
+    ok: false,
+    error: "unknown",
+  };
   try {
     // Short-circuit if the account is flagged for reconnect. The People API
     // itself returns 403 (isMissingScope) when the contacts scope is absent,
@@ -44,11 +56,9 @@ export async function runGoogleContactsSync(
       .eq("id", gmailAccountId)
       .maybeSingle();
     if (acct?.needs_reconnect) {
-      await updateSyncState(state.id, {
-        last_error: "needs_reconnect",
-        locked_at: null,
-      });
-      return { ok: false, error: "needs_reconnect" };
+      await updateSyncState(state.id, { last_error: "needs_reconnect" });
+      result = { ok: false, error: "needs_reconnect" };
+      return result;
     }
 
     const pull = await pullFromGoogle(ids);
@@ -63,20 +73,27 @@ export async function runGoogleContactsSync(
       last_push_count: push.contactsPushed + push.groupsPushed,
       last_error: null,
       pending_bump: false,
-      locked_at: null,
     });
-    return { ok: true, pull: pull.pulled, push: push.contactsPushed + push.groupsPushed };
+    result = { ok: true, pull: pull.pulled, push: push.contactsPushed + push.groupsPushed };
+    return result;
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
     logError("google_contacts.run.failed", { ...ids }, e);
     let errorKey = msg.slice(0, 400);
     if (e instanceof NeedsReconnectError) errorKey = "needs_reconnect";
     else if (e instanceof PeopleApiError && e.isMissingScope) errorKey = "missing_contacts_scope";
-    await updateSyncState(state.id, {
-      last_error: errorKey,
-      locked_at: null,
-    });
-    return { ok: false, error: errorKey };
+    await updateSyncState(state.id, { last_error: errorKey });
+    result = { ok: false, error: errorKey };
+    return result;
+  } finally {
+    // Belt-and-suspenders: clear the lease regardless of what happened above.
+    // Swallow errors here — the caller already has its result and a stuck
+    // lease will still be reclaimed by the next run's stale-lease check.
+    try {
+      await updateSyncState(state.id, { locked_at: null });
+    } catch (unlockErr) {
+      logError("google_contacts.run.unlock_failed", { ...ids }, unlockErr);
+    }
   }
 }
 

@@ -38,7 +38,7 @@ function friendlyError(err: string | null | undefined): string | null {
   if (err === "missing_contacts_scope")
     return "Google did not grant Contacts access. On the consent screen, tick the \u201cSee, edit, download and permanently delete your contacts\u201d checkbox, then reconnect.";
   if (err === "sync_disabled") return "Sync is turned off for this account.";
-  if (err === "locked") return "Another sync is already running. It will retry shortly.";
+  if (err === "locked") return "Another sync is already running — it should finish within about 90 seconds.";
   return err;
 }
 
