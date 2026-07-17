@@ -25,7 +25,15 @@ import {
   syncGoogleContactsNow,
   getGoogleContactsSyncStatus,
   setGoogleContactsSyncMode,
+  setGoogleContactsSyncInterval,
 } from "@/lib/google-contacts.functions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type SyncMode = "off" | "pull_only" | "two_way";
 
