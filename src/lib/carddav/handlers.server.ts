@@ -81,7 +81,20 @@ async function computeBookCTag(userId: string): Promise<string> {
     supabaseAdmin.from("contact_groups").select("id", { count: "exact", head: true }).eq("user_id", userId),
   ]);
   const style = await getGroupNameStyle(userId);
-  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}-${style}"`;
+  const nonce = await getResyncNonce(userId);
+  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}-${style}-${nonce}"`;
+}
+
+/** Manually bumped counter that participates in the book CTag. Users hit
+ * "Force iPhone resync" in Settings to increment it, which makes iOS treat
+ * the entire address book as changed on its next poll. */
+export async function getResyncNonce(userId: string): Promise<number> {
+  const { data } = await supabaseAdmin
+    .from("carddav_settings")
+    .select("resync_nonce")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data as { resync_nonce?: number } | null)?.resync_nonce ?? 0;
 }
 
 // User-selectable format for group vCards on iPhone. iOS Contacts only
