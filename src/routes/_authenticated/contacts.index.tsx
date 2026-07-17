@@ -569,7 +569,7 @@ function ContactsPage() {
                             return (
                               <li key={c.id}>
                                 <button
-                                  onClick={() => setDrawerId(c.id)}
+                                  onClick={() => handleRowClick(c.id)}
                                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/40"
                                 >
                                   <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
@@ -638,7 +638,7 @@ function ContactsPage() {
                   return (
                     <li key={c.id}>
                       <button
-                        onClick={() => setDrawerId(c.id)}
+                        onClick={() => handleRowClick(c.id)}
                         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
                       >
                         {showLogo ? (
