@@ -35,11 +35,12 @@ export async function runGoogleContactsSync(
   await updateSyncState(state.id, { locked_at: now.toISOString() });
 
   try {
-    // Verify the account has the contacts scope. We store `oauth_scope` on
-    // gmail_accounts (set by the OAuth callback). If missing, short-circuit.
+    // Short-circuit if the account is flagged for reconnect. The People API
+    // itself returns 403 (isMissingScope) when the contacts scope is absent,
+    // which we translate to `missing_contacts_scope` in the catch below.
     const { data: acct } = await supabaseAdmin
       .from("gmail_accounts")
-      .select("oauth_scope, needs_reconnect")
+      .select("needs_reconnect")
       .eq("id", gmailAccountId)
       .maybeSingle();
     if (acct?.needs_reconnect) {
@@ -48,13 +49,6 @@ export async function runGoogleContactsSync(
         locked_at: null,
       });
       return { ok: false, error: "needs_reconnect" };
-    }
-    if (acct?.oauth_scope && !accountHasContactsScope(acct.oauth_scope)) {
-      await updateSyncState(state.id, {
-        last_error: "missing_contacts_scope",
-        locked_at: null,
-      });
-      return { ok: false, error: "missing_contacts_scope" };
     }
 
     const pull = await pullFromGoogle(ids);
