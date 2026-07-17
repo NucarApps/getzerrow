@@ -1,57 +1,49 @@
-## Goal
-Two additions to the Contacts page:
-1. **Nested groups** (subgroups under a parent group) with a collapsible tree in the sidebar and filter-by-group that includes descendants.
-2. **Bulk multi-select** on the "Ungrouped" view (and any group view) with a one-click "Add to group(s)" action.
+# Google Contacts sync — finish the wiring
 
----
+The core sync modules (`mapper`, `people-client`, `state`, `pull`, `push`, `reconcile`) already exist under `src/lib/google-contacts/`. This plan bolts on everything needed to actually run them end-to-end for a user.
 
-## 1. Nested contact groups (subfolders)
+## 1. OAuth scope extension
 
-### Data
-- Add `parent_group_id uuid null` self-FK to `contact_groups` (`on delete set null`) plus an index. No CHECK for cycles — enforce in the server fn.
-- `listContactGroups` returns `parent_group_id`; UI builds the tree client-side.
-- `createContactGroup` / `updateContactGroup` accept optional `parent_group_id`, reject cycles and self-parenting, cap depth at 4 to keep the sidebar sane.
-- Filtering by a parent group includes contacts in any descendant group (computed client-side from the tree + membership map already in memory).
+- Add `https://www.googleapis.com/auth/contacts` to the Gmail OAuth consent scopes (wherever the auth URL is built and wherever tokens are refreshed).
+- On next connect / re-auth, tokens will include contacts scope. Existing accounts keep working for mail, but a `needs_reconnect` flag will be set the first time People API returns 403; the ReconnectBanner already surfaces that.
+- No schema change — reuses `gmail_accounts` tokens via the existing `get_gmail_oauth_tokens` RPC.
 
-### CardDAV round-trip
-Apple `KIND:group` vCards are flat — there is no nested-group field. To keep iOS syncing cleanly:
-- Serialize a nested group's `FN`/`N` as the path (`Clients / VIPs`) so the hierarchy is visible on iPhone as one flat group per node.
-- Keep `carddav_uid` stable across renames/reparents so incremental sync keeps working.
-- On PUT from iOS, treat any group name change the same as before (no attempt to parse `/` back into a parent — iOS-created groups stay top-level; users move them in Zerrow).
-- No change to `sender_in_group` filter semantics — the filter still matches direct membership only; a follow-up can add "include subgroups" if wanted.
+## 2. "Sync now" server fn
 
-### UI (`src/routes/_authenticated/contacts.index.tsx`)
-- Sidebar renders groups as a tree with chevrons for collapse/expand; drag-free for v1.
-- `GroupEditorDialog` adds a "Parent group" native `<select>` populated from existing groups (excluding self + descendants).
-- Filter chip for a parent shows aggregated descendant count.
+- New `syncGoogleContactsNow` in `src/lib/google-contacts.functions.ts`:
+  - `requireSupabaseAuth`, takes `{ accountId }`.
+  - Verifies the account belongs to the caller.
+  - Calls `reconcileGoogleContacts({ userId, accountId })` from `reconcile.server.ts` (loaded via dynamic import to keep server-only code out of the client graph).
+  - Returns `{ pulled, pushed, deleted, error? }` for the UI toast.
+- Second fn `getGoogleContactsSyncStatus({ accountId })` returns the row from `google_sync_state` (last sync at, last error, next allowed run) for the settings panel.
 
----
+## 3. Cron hook
 
-## 2. Bulk multi-select + add-to-group
+- New public route `src/routes/api/public/hooks/google-contacts-sync.ts`:
+  - `POST` handler, verifies `apikey` header matches `SUPABASE_ANON_KEY` (matches other cron hooks in the project).
+  - Loads all `gmail_accounts` where contacts scope is granted and `google_sync_state.next_allowed_at <= now()`.
+  - For each, `await reconcileGoogleContacts(...)` inside a try/catch so one bad account doesn't halt the batch.
+  - Returns `{ ran, ok, errors }`.
+- Migration adds a `pg_cron` job that hits this route every 15 min using `pg_net.http_post` with the anon key (same pattern as `tasks-completion-scan`).
 
-### Server
-- New `addContactsToGroups({ contact_ids: string[], group_ids: string[] })` server fn under `contact-groups.functions.ts` that upserts into `contact_group_members` (`on conflict do nothing`) in a single batch, RLS via `requireSupabaseAuth`. Returns `{ added: number }`.
-- (Companion) `removeContactsFromGroup({ contact_ids, group_id })` for the "Remove from group" action when viewing a specific group.
+## 4. Settings UI
 
-### UI
-- Add a selection mode toggle on the contacts list header ("Select"). While active:
-  - Row-level checkboxes replace the leading avatar hover state.
-  - A sticky action bar shows `N selected`, `Add to group…`, `Clear`.
-  - `Add to group…` opens a small popover with a search input + checkbox list of all groups (with nesting indent), plus a "Create new group…" shortcut that reuses `GroupEditorDialog` and pre-fills the selection.
-- Selection state resets when `filter` changes or the list refetches.
-- Works from any view (Ungrouped, All, or a specific group), so users can also reorganize contacts across groups in bulk.
+- New route `src/routes/_authenticated/settings.google-contacts.tsx`:
+  - Lists connected Gmail accounts with their sync state (last sync, last error, "Enabled" toggle backed by a new `google_contacts_sync_enabled` column on `gmail_accounts`, default false).
+  - "Sync now" button per account → `syncGoogleContactsNow`, shows toast with counts.
+  - Reconnect CTA when `needs_reconnect` is set — reuses the existing Google OAuth start URL with the new contacts scope appended.
+  - Short explainer: two-way sync, groups mapped to Google Labels, deletions propagate.
+- Add a nav link from `settings.carddav.tsx` sidebar / settings index so users can find it.
 
----
+## 5. Small schema addition
 
-## Files touched
-- `supabase/migrations/*` — add `parent_group_id`, index.
-- `src/lib/contact-groups.functions.ts` — parent field wiring, cycle guard, `addContactsToGroups`, `removeContactsFromGroup`.
-- `src/lib/carddav/vcard.ts` — path-style `FN` for nested groups in `buildGroupVCard`.
-- `src/lib/carddav/handlers.server.ts` — nothing structural; verify PUT handler still tolerates path-style names.
-- `src/routes/_authenticated/contacts.index.tsx` — tree sidebar, descendant-aware filter, selection mode, bulk action bar, updated `GroupEditorDialog`.
-- Small shared `GroupPickerPopover` component for the bulk action.
+Single migration:
+- `gmail_accounts.google_contacts_sync_enabled boolean not null default false`.
+- Backfill: leave false — users opt in from the settings UI.
+- Cron route skips accounts where the flag is false.
 
-## Out of scope (call out if wanted later)
-- Drag-and-drop reordering / reparenting in the sidebar.
-- `sender_in_group` filter auto-including descendants.
-- Nested representation over CardDAV beyond the name path.
+## Out of scope for this turn
+
+- Field-level conflict UI (last-write-wins remains, surfaced via `last_error`).
+- Photo sync (People API photos need a separate binary upload path).
+- Selective group sync (all groups sync; hide-from-sync toggle can come later).
