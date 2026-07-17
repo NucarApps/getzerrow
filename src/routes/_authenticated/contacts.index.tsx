@@ -738,9 +738,19 @@ function GroupEditorDialog({
   const create = useServerFn(createContactGroup);
   const update = useServerFn(updateContactGroup);
   const del = useServerFn(deleteContactGroup);
+  const linkFolder = useServerFn(linkContactGroupToFolder);
+  const listFolders = useServerFn(listFoldersForPicker);
+
+  const foldersQ = useQuery({
+    queryKey: ["folders-picker"],
+    queryFn: () => listFolders(),
+    enabled: !!state,
+    staleTime: 60_000,
+  });
 
   const [name, setName] = useState("");
   const [color, setColor] = useState(GROUP_COLORS[0]);
+  const [folderId, setFolderId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -748,9 +758,11 @@ function GroupEditorDialog({
     if (state.mode === "edit") {
       setName(state.group.name);
       setColor(state.group.color);
+      setFolderId(state.group.folder_id ?? "");
     } else {
       setName("");
       setColor(GROUP_COLORS[0]);
+      setFolderId("");
     }
   }, [state]);
 
