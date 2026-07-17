@@ -239,6 +239,16 @@ function ContactsPage() {
       return next;
     });
   }
+  function toggleBucketSelection(ids: string[]) {
+    if (!selectionMode) setSelectionMode(true);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = ids.length > 0 && ids.every((id) => next.has(id));
+      if (allSelected) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
   function handleRowClick(id: string) {
     if (selectionMode) toggleSelect(id);
     else setDrawerId(id);
