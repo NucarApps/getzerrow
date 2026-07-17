@@ -15,6 +15,7 @@ import {
 } from "./people-client.server";
 import { personToContact, labelToGroupName, type Person } from "./mapper";
 import { loadSyncState, updateSyncState, ensureSyncState } from "./state.server";
+import type { ProgressReporter } from "./progress.server";
 
 type Ids = { userId: string; gmailAccountId: string; runId: string };
 
@@ -105,7 +106,10 @@ async function paginateGroups(
 }
 
 /** Apply pulled people/groups to local Zerrow state. Returns the count applied. */
-export async function pullFromGoogle(ids: Ids): Promise<{
+export async function pullFromGoogle(
+  ids: Ids,
+  progress?: ProgressReporter,
+): Promise<{
   pulled: number;
   peopleSyncToken: string | null;
   groupsSyncToken: string | null;
@@ -116,11 +120,20 @@ export async function pullFromGoogle(ids: Ids): Promise<{
 
   logInfo("google_contacts.pull.start", { ...ids, has_token: !!state.people_sync_token });
 
+  await progress?.set("pulling_groups", 0, 0);
   const groupsResult = await paginateGroups(ids.gmailAccountId, state.groups_sync_token);
+  await progress?.set(
+    "pulling_groups",
+    0,
+    groupsResult.groups.length + groupsResult.deletions.length,
+  );
   await applyGroupChanges(ids, groupsResult.groups, groupsResult.deletions);
 
+  await progress?.set("pulling_contacts", 0, 0);
   const peopleResult = await paginateConnections(ids.gmailAccountId, state.people_sync_token);
-  await applyPersonChanges(ids, peopleResult.persons, peopleResult.deletions);
+  const peopleTotal = peopleResult.persons.length + peopleResult.deletions.length;
+  await progress?.set("pulling_contacts", 0, peopleTotal);
+  await applyPersonChanges(ids, peopleResult.persons, peopleResult.deletions, progress);
 
   logInfo("google_contacts.pull.done", {
     ...ids,
@@ -210,6 +223,7 @@ async function applyPersonChanges(
   ids: Ids,
   persons: Person[],
   deletions: string[],
+  progress?: ProgressReporter,
 ): Promise<void> {
   if (!persons.length && !deletions.length) return;
 
@@ -356,6 +370,7 @@ async function applyPersonChanges(
         .eq("contact_id", contactId)
         .in("group_id", toRemove);
     }
+    await progress?.increment(1);
   }
 
   // Deletions from Google → hard-delete locally IF the contact is only linked
@@ -368,6 +383,7 @@ async function applyPersonChanges(
       .delete()
       .eq("gmail_account_id", ids.gmailAccountId)
       .eq("resource_name", rn);
+    await progress?.increment(1);
   }
 }
 

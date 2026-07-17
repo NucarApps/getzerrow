@@ -15,6 +15,7 @@ import {
 } from "./people-client.server";
 import { contactToPerson, groupToLabel } from "./mapper";
 import { loadLocalContact } from "./state.server";
+import type { ProgressReporter } from "./progress.server";
 
 type Ids = { userId: string; gmailAccountId: string; runId: string };
 
@@ -22,16 +23,22 @@ type Ids = { userId: string; gmailAccountId: string; runId: string };
 const MAX_CONTACTS_PER_RUN = 200;
 const MAX_GROUPS_PER_RUN = 100;
 
-export async function pushToGoogle(ids: Ids): Promise<{
+export async function pushToGoogle(
+  ids: Ids,
+  progress?: ProgressReporter,
+): Promise<{
   contactsPushed: number;
   groupsPushed: number;
   tombstonesApplied: number;
 }> {
   logInfo("google_contacts.push.start", { ...ids });
-  const groupsPushed = await pushGroups(ids);
+  await progress?.set("pushing_groups", 0, 0);
+  const groupsPushed = await pushGroups(ids, progress);
   const groupResourceByLocal = await loadGroupMap(ids);
-  const contactsPushed = await pushContacts(ids, groupResourceByLocal);
-  const tombstonesApplied = await applyTombstones(ids);
+  await progress?.set("pushing_contacts", 0, 0);
+  const contactsPushed = await pushContacts(ids, groupResourceByLocal, progress);
+  await progress?.set("applying_tombstones", 0, 0);
+  const tombstonesApplied = await applyTombstones(ids, progress);
   logInfo("google_contacts.push.done", {
     ...ids,
     contacts: contactsPushed,
@@ -49,7 +56,7 @@ async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
   return new Map((data ?? []).map((r) => [r.contact_group_id, r.resource_name]));
 }
 
-async function pushGroups(ids: Ids): Promise<number> {
+async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number> {
   // All local groups + linked resource (LEFT JOIN via two queries).
   const { data: groups } = await supabaseAdmin
     .from("contact_groups")
@@ -58,6 +65,7 @@ async function pushGroups(ids: Ids): Promise<number> {
     .order("updated_at", { ascending: true })
     .limit(MAX_GROUPS_PER_RUN);
   if (!groups?.length) return 0;
+  await progress?.set("pushing_groups", 0, groups.length);
 
   const { data: links } = await supabaseAdmin
     .from("google_group_links")
@@ -95,6 +103,7 @@ async function pushGroups(ids: Ids): Promise<number> {
     } catch (e) {
       logError("google_contacts.push.group_failed", { ...ids, group_id: g.id }, e);
     }
+    await progress?.increment(1);
   }
   return count;
 }
@@ -108,6 +117,7 @@ type ContactRow = {
 async function pushContacts(
   ids: Ids,
   groupResourceByLocal: Map<string, string>,
+  progress?: ProgressReporter,
 ): Promise<number> {
   const { data: contacts } = await supabaseAdmin
     .from("contacts")
@@ -116,6 +126,7 @@ async function pushContacts(
     .order("updated_at", { ascending: true })
     .limit(MAX_CONTACTS_PER_RUN);
   if (!contacts?.length) return 0;
+  await progress?.set("pushing_contacts", 0, contacts.length);
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
@@ -190,17 +201,19 @@ async function pushContacts(
     } catch (e) {
       logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
     }
+    await progress?.increment(1);
   }
   return count;
 }
 
-async function applyTombstones(ids: Ids): Promise<number> {
+async function applyTombstones(ids: Ids, progress?: ProgressReporter): Promise<number> {
   const { data: tombs } = await supabaseAdmin
     .from("google_contact_tombstones")
     .select("id, kind, resource_name")
     .eq("gmail_account_id", ids.gmailAccountId)
     .limit(200);
   if (!tombs?.length) return 0;
+  await progress?.set("applying_tombstones", 0, tombs.length);
 
   let applied = 0;
   for (const t of tombs) {
@@ -222,6 +235,7 @@ async function applyTombstones(ids: Ids): Promise<number> {
         e,
       );
     }
+    await progress?.increment(1);
   }
   return applied;
 }

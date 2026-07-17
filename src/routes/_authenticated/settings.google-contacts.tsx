@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { RefreshCw, AlertCircle } from "lucide-react";
+import { RefreshCw, AlertCircle, Loader2 } from "lucide-react";
 import { listMyGmailAccounts, startConnectGmail } from "@/lib/gmail/accounts.functions";
 import {
   syncGoogleContactsNow,
@@ -53,8 +54,16 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const statusQ = useQuery({
     queryKey: ["google-contacts-status", account.id],
     queryFn: () => getStatus({ data: { accountId: account.id } }),
-    refetchInterval: 15_000,
+    // Poll fast while a run is in flight so the progress bar animates;
+    // fall back to a slow poll otherwise.
+    refetchInterval: (q) => (q.state.data?.state?.locked_at ? 1_000 : 15_000),
   });
+
+  const state = statusQ.data?.state;
+  const isRunning = !!state?.locked_at;
+  const step = state?.progress_step ?? null;
+  const processed = state?.progress_processed ?? 0;
+  const total = state?.progress_total ?? 0;
 
   const enabled = statusQ.data?.state?.enabled ?? false;
   const scopeGranted = statusQ.data?.scope_granted ?? null;
@@ -155,6 +164,22 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
         </div>
       </div>
 
+      {isRunning && (
+        <div className="mt-3 rounded-md border bg-muted/40 p-3">
+          <div className="flex items-center gap-2 text-xs font-medium">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <span>{stepLabel(step)}</span>
+            <span className="ml-auto tabular-nums text-muted-foreground">
+              {total > 0 ? `${processed} / ${total}` : `${processed}`}
+            </span>
+          </div>
+          <Progress
+            className="mt-2 h-1.5"
+            value={total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : undefined}
+          />
+        </div>
+      )}
+
       {errorMsg && (
         <div className="mt-3 flex items-start gap-2 rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -163,6 +188,29 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
       )}
     </Card>
   );
+}
+
+function stepLabel(step: string | null): string {
+  switch (step) {
+    case "starting":
+      return "Starting sync…";
+    case "pulling_groups":
+      return "Pulling groups from Google";
+    case "pulling_contacts":
+      return "Pulling contacts from Google";
+    case "pushing_groups":
+      return "Pushing groups to Google";
+    case "pushing_contacts":
+      return "Pushing contacts to Google";
+    case "applying_tombstones":
+      return "Applying deletions";
+    case "finalizing":
+      return "Finalizing…";
+    case "done":
+      return "Done";
+    default:
+      return "Working…";
+  }
 }
 
 function GoogleContactsSettings() {

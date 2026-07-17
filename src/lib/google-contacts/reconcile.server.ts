@@ -7,6 +7,7 @@ import { pushToGoogle } from "./push.server";
 import { ensureSyncState, updateSyncState, loadSyncState } from "./state.server";
 import { CONTACTS_SCOPE, PeopleApiError } from "./people-client.server";
 import { NeedsReconnectError } from "@/lib/google-oauth.server";
+import { createProgressReporter } from "./progress.server";
 
 /** True when the account has actually granted the People API scope. */
 export function accountHasContactsScope(scopeString: string | null | undefined): boolean {
@@ -37,6 +38,8 @@ export async function runGoogleContactsSync(
     }
   }
   await updateSyncState(state.id, { locked_at: now.toISOString() });
+  const progress = createProgressReporter(state.id);
+  await progress.set("starting", 0, 0);
 
   // Always release the lease, even if the pull/push block throws in a place
   // that skips the catch (e.g. a synchronous error inside a helper, or a
@@ -61,8 +64,9 @@ export async function runGoogleContactsSync(
       return result;
     }
 
-    const pull = await pullFromGoogle(ids);
-    const push = await pushToGoogle(ids);
+    const pull = await pullFromGoogle(ids, progress);
+    const push = await pushToGoogle(ids, progress);
+    await progress.set("finalizing", 0, 0);
 
     await updateSyncState(state.id, {
       people_sync_token: pull.peopleSyncToken ?? state.people_sync_token,
@@ -86,9 +90,15 @@ export async function runGoogleContactsSync(
     result = { ok: false, error: errorKey };
     return result;
   } finally {
-    // Belt-and-suspenders: clear the lease regardless of what happened above.
-    // Swallow errors here — the caller already has its result and a stuck
-    // lease will still be reclaimed by the next run's stale-lease check.
+    // Belt-and-suspenders: clear the lease + progress regardless of what
+    // happened above. Swallow errors here — the caller already has its
+    // result and a stuck lease will still be reclaimed by the next run's
+    // stale-lease check.
+    try {
+      await progress.clear();
+    } catch {
+      // ignore
+    }
     try {
       await updateSyncState(state.id, { locked_at: null });
     } catch (unlockErr) {
