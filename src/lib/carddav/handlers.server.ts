@@ -311,33 +311,48 @@ export async function handleReport(
   const includeVcard = lower.includes("address-data");
 
 
-  let ids: string[] = [];
+  const contactIds: string[] = [];
+  const groupIds: string[] = [];
   if (lower.includes("addressbook-multiget")) {
     const hrefs = parseMultigetHrefs(raw);
-    ids = hrefs
-      .map((h) => {
-        const m = h.match(/([0-9a-f-]{36})\.vcf$/i);
-        return m ? m[1] : null;
-      })
-      .filter((v): v is string => !!v);
+    for (const h of hrefs) {
+      const g = h.match(/group-([0-9a-f-]{36})\.vcf$/i);
+      if (g) {
+        groupIds.push(g[1]);
+        continue;
+      }
+      const c = h.match(/([0-9a-f-]{36})\.vcf$/i);
+      if (c) contactIds.push(c[1]);
+    }
   } else {
-    // addressbook-query or sync-collection fallback: return every contact.
-    const rows = await listContactRows(userId);
-    ids = rows.map((r) => r.id);
+    const [rows, groups] = await Promise.all([listContactRows(userId), listGroupRows(userId)]);
+    contactIds.push(...rows.map((r) => r.id));
+    groupIds.push(...groups.map((g) => g.id));
   }
 
   let body = MULTISTATUS_OPEN;
-  // Verify each id belongs to the caller before decrypting.
-  if (ids.length > 0) {
+  if (contactIds.length > 0) {
     const { data } = await supabaseAdmin
       .from("contacts")
       .select("id")
       .eq("user_id", userId)
-      .in("id", ids);
+      .in("id", contactIds);
     const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
-    for (const id of ids) {
+    for (const id of contactIds) {
       if (!owned.has(id)) continue;
-      body += await buildContactResponse(email, id, includeVcard);
+      body += await buildContactResponse(userId, email, id, includeVcard);
+    }
+  }
+  if (groupIds.length > 0) {
+    const { data } = await supabaseAdmin
+      .from("contact_groups")
+      .select("id")
+      .eq("user_id", userId)
+      .in("id", groupIds);
+    const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
+    for (const id of groupIds) {
+      if (!owned.has(id)) continue;
+      body += await buildGroupResponse(userId, email, id, includeVcard);
     }
   }
   body += MULTISTATUS_CLOSE;
