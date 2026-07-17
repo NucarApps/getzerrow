@@ -1,27 +1,46 @@
-## What's happening
+## Feature: Auto company subgroups
 
-Your "Sync now" is running an **incremental** sync — it hands Google's People API the `people_sync_token` from the previous run, so Google only returns contacts that changed since then. Nothing has changed on Google's side, so it reports 0.
+Let any contact group be flagged so that each distinct **company** among its members becomes a child subgroup automatically. Toggle it on/off per group.
 
-The DB confirms this:
-- 276 contacts locally, 270 linked to Google
-- `people_sync_token` is set (incremental mode)
-- Last pull counters are all 0 (incremental found no deltas)
+### UX
 
-So the 276 vs 459 gap is left over from the *first* pull — not something the current button can fix. We need a way to discard the sync token and re-pull everything from scratch.
+- In the group detail / group edit menu, add a switch: **"Auto-create company subgroups"**.
+- When ON:
+  - Scan every direct+nested contact in the group.
+  - For each unique non-empty `contacts.company` value, ensure a child `contact_groups` row exists under this group (matched by `parent_group_id` + normalized name).
+  - Add contacts to their matching company subgroup.
+  - Keep them in the parent group too (so the parent still shows "all factory contacts").
+  - Auto-created subgroups get a marker so we know we own them and can prune when a company disappears or the toggle flips off.
+- When OFF: leave existing auto-subgroups in place but stop maintaining them, and offer a one-click "Remove auto subgroups" action on the toggle row.
 
-## Plan
+### Data changes (one migration)
 
-1. **Expose `forceFullResync` as a server fn** (`src/lib/google-contacts.functions.ts`):
-   - New `forceFullGoogleContactsResync({ accountId })` — verifies account ownership, clears `people_sync_token` + `groups_sync_token` via the existing `forceFullResync` helper in `pull.server.ts`, then calls `runGoogleContactsSync` immediately so the user sees fresh counters.
+- `contact_groups.auto_company_subgroups boolean not null default false` — the toggle.
+- `contact_groups.auto_generated_from_group_id uuid null references contact_groups(id) on delete cascade` — marks a subgroup as auto-created and points to its parent source. Used to safely list/prune only rows we own; user-created subgroups are untouched.
+- Index on `(user_id, auto_generated_from_group_id)`.
 
-2. **Add "Force full re-pull" button** (`src/routes/_authenticated/settings.google-contacts.tsx`):
-   - New outline button next to "Sync now", with a confirm dialog explaining it will re-scan every Google contact (slower, but reveals what's actually skipped vs. imported).
-   - While it runs, the existing progress indicator (`PullBreakdown`) shows created / updated / skipped_no_email / merged / failed counts — that's how we'll finally see where the 183-contact gap comes from.
+### Server logic (`src/lib/contacts/auto-company-subgroups.functions.ts`)
 
-3. **Do NOT change pull logic itself** in this step. Once the force re-pull runs, the breakdown counters will tell us the real cause (skipped for no identity, insert failures, resource-name collisions, etc.). We fix root cause as a follow-up based on that evidence rather than guessing now.
+- `setAutoCompanySubgroups({ groupId, enabled })` — flips the flag; if enabling, runs a reconcile immediately; if disabling, no destructive action.
+- `reconcileAutoCompanySubgroups({ groupId })` — idempotent:
+  1. Load members of `groupId` (include contacts nested via other subgroups? **no** — only direct members to keep behavior predictable; can revisit).
+  2. Group by normalized `company` (trim, case-insensitive; ignore blank).
+  3. Upsert a child group per company (`parent_group_id = groupId`, `auto_generated_from_group_id = groupId`, name = company as typed).
+  4. Sync `contact_group_members` for each child to match its company's contact set (insert missing, delete extras that no longer match).
+  5. Delete auto subgroups whose company no longer appears among members.
+- `pruneAutoCompanySubgroups({ groupId })` — used by the "Remove auto subgroups" button; deletes all `contact_groups` where `auto_generated_from_group_id = groupId`.
+- Trigger reconcile from `crud.functions.ts` when a contact's company changes or membership in a flagged group changes (best-effort, wrapped so failures don't break the primary write).
 
-## Technical notes
+### UI wiring
 
-- `forceFullResync` already exists in `pull.server.ts:442`; it just isn't wired to a server fn or UI.
-- Reuses the existing 90s lease + `finally` unlock in `runGoogleContactsSync`, so no new locking concerns.
-- No schema/migration changes.
+- `src/routes/_authenticated/contacts.index.tsx` group sidebar: show child subgroups (already supported via `parent_group_id`), with a small "auto" badge on rows where `auto_generated_from_group_id` is set.
+- Group settings drawer: the switch + a **"Re-scan now"** button + **"Remove auto subgroups"** (visible when flag is off but auto rows still exist).
+
+### CardDAV / Google sync
+
+- Auto subgroups are normal `contact_groups` rows, so they flow through existing CardDAV and Google Contacts sync unchanged. No sync-side changes needed.
+
+### Out of scope
+
+- No AI naming/merging of similar company strings — we rely on the existing `company_aliases` normalization already used elsewhere (will apply the same normalizer inside the reconcile step so "Acme Inc" and "Acme, Inc." collapse).
+- Nested (grandchild) auto-subgrouping isn't part of this — the toggle only produces one level of company children under the flagged group.

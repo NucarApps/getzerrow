@@ -400,6 +400,8 @@ export type Database = {
       }
       contact_groups: {
         Row: {
+          auto_company_subgroups: boolean
+          auto_generated_from_group_id: string | null
           carddav_uid: string
           color: string
           created_at: string
@@ -411,6 +413,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          auto_company_subgroups?: boolean
+          auto_generated_from_group_id?: string | null
           carddav_uid: string
           color?: string
           created_at?: string
@@ -422,6 +426,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          auto_company_subgroups?: boolean
+          auto_generated_from_group_id?: string | null
           carddav_uid?: string
           color?: string
           created_at?: string
@@ -433,6 +439,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "contact_groups_auto_generated_from_group_id_fkey"
+            columns: ["auto_generated_from_group_id"]
+            isOneToOne: false
+            referencedRelation: "contact_groups"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "contact_groups_folder_id_fkey"
             columns: ["folder_id"]
