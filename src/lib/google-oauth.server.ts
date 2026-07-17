@@ -21,6 +21,11 @@ export function scopeGrantsCalendar(scope: string | null | undefined): boolean {
   return (scope ?? "").split(/\s+/).includes(CALENDAR_SCOPE);
 }
 
+/** True when Google's granted-scope string includes People API / Contacts access. */
+export function scopeGrantsContacts(scope: string | null | undefined): boolean {
+  return (scope ?? "").split(/\s+/).includes(CONTACTS_SCOPE);
+}
+
 function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`${name} is not configured`);
