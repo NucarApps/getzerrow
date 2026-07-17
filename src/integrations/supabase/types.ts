@@ -131,6 +131,27 @@ export type Database = {
         }
         Relationships: []
       }
+      carddav_settings: {
+        Row: {
+          created_at: string
+          group_name_style: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          group_name_style?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          group_name_style?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       carddav_tokens: {
         Row: {
           created_at: string
