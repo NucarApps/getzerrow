@@ -852,6 +852,24 @@ function GroupEditorDialog({
               ))}
             </div>
           </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Linked folder</Label>
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">None — group only</option>
+              {(foldersQ.data?.folders ?? []).map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              When linked, senders in this group are auto-filed into the folder.
+            </p>
+          </div>
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
           {editing && (
