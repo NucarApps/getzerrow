@@ -121,6 +121,7 @@ function ContactsPage() {
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [dupesOpen, setDupesOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const bulkAddToGroups = useServerFn(addContactsToGroups);
   const [aliasDialog, setAliasDialog] = useState<null | {
