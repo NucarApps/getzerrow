@@ -8,6 +8,7 @@ export type SyncState = {
   user_id: string;
   gmail_account_id: string;
   enabled: boolean;
+  sync_mode: "off" | "pull_only" | "two_way";
   people_sync_token: string | null;
   groups_sync_token: string | null;
   last_full_sync_at: string | null;
