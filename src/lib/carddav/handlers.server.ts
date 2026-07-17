@@ -448,6 +448,158 @@ function preconditionFailed(): Response {
   return new Response("Precondition Failed", { status: 412 });
 }
 
+// Reconcile a contact's group membership from the CATEGORIES: line the
+// phone sent. Any category name that doesn't yet exist as a group is
+// auto-created. Any group the contact belonged to but that CATEGORIES no
+// longer lists is removed. Group→folder links follow via the sender_in_group
+// filter row automatically since deletes/inserts flow through contact_group_members.
+async function reconcileContactCategories(
+  userId: string,
+  contactId: string,
+  categoryNames: string[],
+): Promise<void> {
+  const names = Array.from(
+    new Set(categoryNames.map((n) => n.trim()).filter((n) => n.length > 0)),
+  );
+
+  // Load the user's current groups keyed by lowercased name for a
+  // case-insensitive match on the phone's category strings.
+  const { data: existingGroups } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,name")
+    .eq("user_id", userId);
+  const byName = new Map<string, string>();
+  for (const g of (existingGroups ?? []) as Array<{ id: string; name: string }>) {
+    byName.set(g.name.toLowerCase(), g.id);
+  }
+
+  const targetIds: string[] = [];
+  for (const name of names) {
+    const key = name.toLowerCase();
+    const existingId = byName.get(key);
+    if (existingId) {
+      targetIds.push(existingId);
+      continue;
+    }
+    // Create the group with a stable CardDAV UID so iOS sees it on
+    // next PROPFIND.
+    const uid =
+      "group-" +
+      (globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const { data: created, error } = await supabaseAdmin
+      .from("contact_groups")
+      .insert({ user_id: userId, name, color: "#6366f1", carddav_uid: uid })
+      .select("id")
+      .single();
+    if (!error && created) {
+      targetIds.push(created.id);
+      byName.set(key, created.id);
+    }
+  }
+
+  // Replace membership: delete then insert. RLS is via user_id filter.
+  await supabaseAdmin
+    .from("contact_group_members")
+    .delete()
+    .eq("contact_id", contactId)
+    .eq("user_id", userId);
+  if (targetIds.length > 0) {
+    const rows = targetIds.map((group_id) => ({
+      group_id,
+      contact_id: contactId,
+      user_id: userId,
+    }));
+    await supabaseAdmin.from("contact_group_members").insert(rows);
+  }
+}
+
+// PUT for an Apple-style group vCard. Creates a contact_groups row (if
+// missing) and sets its member list to exactly the MEMBER UIDs in the vCard.
+async function handleGroupPut(
+  request: Request,
+  userId: string,
+  email: string,
+  path: string,
+  parsed: NonNullable<ReturnType<typeof parseVCard>>,
+): Promise<Response> {
+  const groupId = extractGroupId(path);
+  if (!groupId || !UUID_RE.test(groupId)) {
+    return new Response("Bad Request", { status: 400 });
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,updated_at,name,carddav_uid")
+    .eq("id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const ifMatch = request.headers.get("if-match");
+  const ifNoneMatch = request.headers.get("if-none-match");
+  if (ifNoneMatch === "*" && existing) return preconditionFailed();
+  if (ifMatch && existing) {
+    const current = groupETag(existing.id, existing.updated_at as string);
+    const norm = (v: string) => v.trim().replace(/^W\//i, "");
+    if (norm(ifMatch) !== norm(current)) return preconditionFailed();
+  }
+  if (ifMatch && !existing) return preconditionFailed();
+
+  const name = (parsed.name ?? "").trim() || "Untitled group";
+  const nowIso = new Date().toISOString();
+
+  if (existing) {
+    const { error } = await supabaseAdmin
+      .from("contact_groups")
+      .update({ name, updated_at: nowIso })
+      .eq("id", groupId)
+      .eq("user_id", userId);
+    if (error) return new Response(error.message, { status: 500 });
+  } else {
+    const { error } = await supabaseAdmin.from("contact_groups").insert({
+      id: groupId,
+      user_id: userId,
+      name,
+      color: "#6366f1",
+      carddav_uid: parsed.uid ?? `group-${groupId}`,
+    });
+    if (error) return new Response(error.message, { status: 500 });
+  }
+
+  // Set membership to exactly the parsed member UIDs (that the caller owns).
+  const memberIds = parsed.memberUids;
+  await supabaseAdmin
+    .from("contact_group_members")
+    .delete()
+    .eq("group_id", groupId)
+    .eq("user_id", userId);
+  if (memberIds.length > 0) {
+    const { data: owned } = await supabaseAdmin
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId)
+      .in("id", memberIds);
+    const rows = ((owned as Array<{ id: string }> | null) ?? []).map((r) => ({
+      group_id: groupId,
+      contact_id: r.id,
+      user_id: userId,
+    }));
+    if (rows.length > 0) {
+      await supabaseAdmin.from("contact_group_members").insert(rows);
+    }
+  }
+
+  return new Response(null, {
+    status: existing ? 204 : 201,
+    headers: {
+      ETag: groupETag(groupId, nowIso),
+      Location: groupHref(email, groupId),
+    },
+  });
+}
+
+
+
 // Handle PUT: iOS uploads a full vCard for create or replace. We honor
 // If-Match (must match current ETag) and If-None-Match: * (must not exist).
 // Ownership is enforced by the verified auth userId, never the vCard UID.
