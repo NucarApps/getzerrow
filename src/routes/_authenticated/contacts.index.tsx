@@ -31,7 +31,10 @@ import {
   updateContactGroup,
   deleteContactGroup,
   linkContactGroupToFolder,
+  addContactsToGroups,
 } from "@/lib/contact-groups.functions";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -85,6 +88,7 @@ type GroupRow = {
   color: string;
   count: number;
   folder_id?: string | null;
+  parent_group_id?: string | null;
   linked_folder?: { name: string; color: string | null } | null;
 };
 
@@ -104,6 +108,9 @@ function ContactsPage() {
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const bulkAddToGroups = useServerFn(addContactsToGroups);
   const [aliasDialog, setAliasDialog] = useState<null | {
     domain: string;
     name: string;
@@ -144,13 +151,69 @@ function ContactsPage() {
     return m;
   }, [gq.data]);
 
+  // Tree pre-order + per-group depth for indented sidebar rendering.
+  const groupTree = useMemo(() => {
+    const rows = gq.data?.groups ?? [];
+    const children = new Map<string | null, GroupRow[]>();
+    for (const g of rows) {
+      const key = g.parent_group_id ?? null;
+      const arr = children.get(key) ?? [];
+      arr.push(g);
+      children.set(key, arr);
+    }
+    for (const arr of children.values())
+      arr.sort((a, b) => a.name.localeCompare(b.name));
+    const out: { group: GroupRow; depth: number }[] = [];
+    const walk = (parent: string | null, depth: number) => {
+      for (const g of children.get(parent) ?? []) {
+        out.push({ group: g, depth });
+        walk(g.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  }, [gq.data]);
+
+  // groupId -> Set of descendant group ids (including itself) for filtering.
+  const descendantsById = useMemo(() => {
+    const rows = gq.data?.groups ?? [];
+    const kids = new Map<string, string[]>();
+    for (const g of rows) {
+      if (!g.parent_group_id) continue;
+      const arr = kids.get(g.parent_group_id) ?? [];
+      arr.push(g.id);
+      kids.set(g.parent_group_id, arr);
+    }
+    const out = new Map<string, Set<string>>();
+    for (const g of rows) {
+      const set = new Set<string>([g.id]);
+      const stack = [g.id];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const c of kids.get(cur) ?? []) {
+          if (!set.has(c)) {
+            set.add(c);
+            stack.push(c);
+          }
+        }
+      }
+      out.set(g.id, set);
+    }
+    return out;
+  }, [gq.data]);
+
   const filtered = useMemo(() => {
     const all = q.data?.contacts ?? [];
     const t = query.toLowerCase().trim();
+    const allowedGroupIds =
+      filter !== "all" && filter !== "ungrouped"
+        ? (descendantsById.get(filter) ?? new Set([filter]))
+        : null;
     return all.filter((x) => {
       if (filter === "ungrouped" && (contactGroupMap.get(x.id)?.length ?? 0) > 0) return false;
-      if (filter !== "all" && filter !== "ungrouped") {
-        if (!(contactGroupMap.get(x.id) ?? []).includes(filter)) return false;
+      if (allowedGroupIds) {
+        const gids = contactGroupMap.get(x.id) ?? [];
+        if (!gids.some((gid) => allowedGroupIds.has(gid))) return false;
       }
       if (!t) return true;
       return (
@@ -159,7 +222,7 @@ function ContactsPage() {
         (x.company ?? "").toLowerCase().includes(t)
       );
     });
-  }, [q.data, query, filter, contactGroupMap]);
+  }, [q.data, query, filter, contactGroupMap, descendantsById]);
 
   const ungroupedCount = useMemo(() => {
     const all = q.data?.contacts ?? [];
@@ -168,6 +231,41 @@ function ContactsPage() {
     return n;
   }, [q.data, contactGroupMap]);
 
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function handleRowClick(id: string) {
+    if (selectionMode) toggleSelect(id);
+    else setDrawerId(id);
+  }
+  function selectAllVisible() {
+    setSelectedIds(new Set(filtered.map((c) => c.id)));
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    clearSelection();
+  }
+  async function bulkAssignGroups(groupIds: string[]) {
+    if (!groupIds.length || selectedIds.size === 0) return;
+    try {
+      await bulkAddToGroups({
+        data: { groupIds, contactIds: Array.from(selectedIds) },
+      });
+      toast.success(`Added ${selectedIds.size} contact${selectedIds.size === 1 ? "" : "s"}`);
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      exitSelectionMode();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  }
   type Contact = (typeof filtered)[number];
   type Bucket = {
     key: string;
@@ -318,12 +416,12 @@ function ContactsPage() {
               count={ungroupedCount}
               onClick={() => setFilter("ungrouped")}
             />
-            {(gq.data?.groups ?? []).map((g) => (
+            {groupTree.map(({ group: g, depth }) => (
               <GroupPill
                 key={g.id}
                 active={filter === g.id}
                 color={g.color}
-                label={g.name}
+                label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
                 count={g.count}
                 onClick={() => setFilter(g.id)}
                 onEdit={() => setGroupDialog({ mode: "edit", group: g })}
@@ -368,18 +466,19 @@ function ContactsPage() {
                 count={ungroupedCount}
                 onClick={() => setFilter("ungrouped")}
               />
-              {(gq.data?.groups ?? []).map((g) => (
-                <GroupChip
-                  key={g.id}
-                  active={filter === g.id}
-                  color={g.color}
-                  label={g.name}
-                  count={g.count}
-                  onClick={() => setFilter(g.id)}
-                  onEdit={() => setGroupDialog({ mode: "edit", group: g })}
-                />
+              {groupTree.map(({ group: g, depth }) => (
+                <div key={g.id} style={{ paddingLeft: depth * 12 }}>
+                  <GroupChip
+                    active={filter === g.id}
+                    color={g.color}
+                    label={g.name}
+                    count={g.count}
+                    onClick={() => setFilter(g.id)}
+                    onEdit={() => setGroupDialog({ mode: "edit", group: g })}
+                  />
+                </div>
               ))}
-              {(gq.data?.groups ?? []).length === 0 && (
+              {groupTree.length === 0 && (
                 <p className="px-3 py-3 text-xs text-muted-foreground">
                   No groups yet. Click + to add one like “Work” or “Personal”.
                 </p>
@@ -410,7 +509,50 @@ function ContactsPage() {
                 <Building2 className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">By company</span>
               </Button>
+              <Button
+                variant={selectionMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
+                title="Select multiple"
+                aria-pressed={selectionMode}
+                className="shrink-0 px-2 sm:px-3"
+              >
+                <Check className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">
+                  {selectionMode ? "Done" : "Select"}
+                </span>
+              </Button>
             </div>
+
+            {selectionMode && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-accent/30 px-3 py-2 text-sm">
+                <span className="font-medium">{selectedIds.size} selected</span>
+                <button
+                  type="button"
+                  onClick={selectAllVisible}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Select all visible ({filtered.length})
+                </button>
+                {selectedIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearSelection}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Clear
+                  </button>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <GroupPickerPopover
+                    disabled={selectedIds.size === 0}
+                    groupTree={groupTree}
+                    onApply={bulkAssignGroups}
+                  />
+                </div>
+              </div>
+            )}
+
 
             {q.isLoading ? (
               <div className="grid gap-2">
@@ -470,9 +612,16 @@ function ContactsPage() {
                             return (
                               <li key={c.id}>
                                 <button
-                                  onClick={() => setDrawerId(c.id)}
-                                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/40"
+                                  onClick={() => handleRowClick(c.id)}
+                                  className={`flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/40 ${selectionMode && selectedIds.has(c.id) ? "bg-accent/50" : ""}`}
                                 >
+                                  {selectionMode && (
+                                    <Checkbox
+                                      checked={selectedIds.has(c.id)}
+                                      onCheckedChange={() => toggleSelect(c.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  )}
                                   <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
                                     {(c.name || c.email).slice(0, 1).toUpperCase()}
                                   </div>
@@ -539,9 +688,16 @@ function ContactsPage() {
                   return (
                     <li key={c.id}>
                       <button
-                        onClick={() => setDrawerId(c.id)}
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
+                        onClick={() => handleRowClick(c.id)}
+                        className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/40 ${selectionMode && selectedIds.has(c.id) ? "bg-accent/50" : ""}`}
                       >
+                        {selectionMode && (
+                          <Checkbox
+                            checked={selectedIds.has(c.id)}
+                            onCheckedChange={() => toggleSelect(c.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
                         {showLogo ? (
                           <CompanyLogo
                             domain={resolvedDom ?? dom}
@@ -598,6 +754,7 @@ function ContactsPage() {
 
       <GroupEditorDialog
         state={groupDialog}
+        allGroups={gq.data?.groups ?? []}
         onClose={() => setGroupDialog(null)}
         onChanged={() => qc.invalidateQueries({ queryKey: ["contact-groups"] })}
       />
@@ -728,10 +885,12 @@ function GroupPill({
 
 function GroupEditorDialog({
   state,
+  allGroups,
   onClose,
   onChanged,
 }: {
   state: null | { mode: "create" } | { mode: "edit"; group: GroupRow };
+  allGroups: GroupRow[];
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -751,6 +910,7 @@ function GroupEditorDialog({
   const [name, setName] = useState("");
   const [color, setColor] = useState(GROUP_COLORS[0]);
   const [folderId, setFolderId] = useState<string>("");
+  const [parentId, setParentId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -759,10 +919,12 @@ function GroupEditorDialog({
       setName(state.group.name);
       setColor(state.group.color);
       setFolderId(state.group.folder_id ?? "");
+      setParentId(state.group.parent_group_id ?? "");
     } else {
       setName("");
       setColor(GROUP_COLORS[0]);
       setFolderId("");
+      setParentId("");
     }
   }, [state]);
 
@@ -776,10 +938,20 @@ function GroupEditorDialog({
     setSaving(true);
     try {
       let gid: string | null = editGroup?.id ?? null;
+      const nextParentId = parentId || null;
       if (editGroup) {
-        await update({ data: { id: editGroup.id, name: name.trim(), color } });
+        await update({
+          data: {
+            id: editGroup.id,
+            name: name.trim(),
+            color,
+            parent_group_id: nextParentId,
+          },
+        });
       } else {
-        const created = await create({ data: { name: name.trim(), color } });
+        const created = await create({
+          data: { name: name.trim(), color, parent_group_id: nextParentId },
+        });
         gid = (created as { group?: { id: string } })?.group?.id ?? null;
       }
       // Sync folder link (create/remove the sender_in_group filter row).
@@ -851,6 +1023,26 @@ function GroupEditorDialog({
                 />
               ))}
             </div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Parent group</Label>
+            <select
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">None — top level</option>
+              {allGroups
+                .filter((g) => !editGroup || g.id !== editGroup.id)
+                .map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+            </select>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Nest this group under another to build a subgroup tree.
+            </p>
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Linked folder</Label>
@@ -1382,3 +1574,79 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+
+function GroupPickerPopover({
+  disabled,
+  groupTree,
+  onApply,
+}: {
+  disabled: boolean;
+  groupTree: { group: GroupRow; depth: number }[];
+  onApply: (groupIds: string[]) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!open) setPicked(new Set());
+  }, [open]);
+  function toggle(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" disabled={disabled}>
+          <Plus className="mr-1.5 h-4 w-4" /> Add to group
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-2">
+        {groupTree.length === 0 ? (
+          <p className="p-2 text-xs text-muted-foreground">Create a group first.</p>
+        ) : (
+          <>
+            <div className="max-h-64 overflow-y-auto">
+              {groupTree.map(({ group: g, depth }) => (
+                <label
+                  key={g.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent/50"
+                  style={{ paddingLeft: 8 + depth * 12 }}
+                >
+                  <Checkbox
+                    checked={picked.has(g.id)}
+                    onCheckedChange={() => toggle(g.id)}
+                  />
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: g.color }}
+                  />
+                  <span className="truncate">{g.name}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-2 flex justify-end gap-2 border-t border-border pt-2">
+              <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={picked.size === 0}
+                onClick={async () => {
+                  await onApply(Array.from(picked));
+                  setOpen(false);
+                }}
+              >
+                Add
+              </Button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+

@@ -1,10 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+type DB = SupabaseClient<Database>;
 
-const GROUP_SELECT = "id,name,color,created_at,folder_id,carddav_uid,updated_at";
+const COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const MAX_DEPTH = 4;
+
+const GROUP_SELECT =
+  "id,name,color,created_at,folder_id,carddav_uid,updated_at,parent_group_id";
 
 /** List the user's groups with member counts and any linked folder. */
 export const listContactGroups = createServerFn({ method: "GET" })
@@ -56,11 +62,25 @@ export const listContactGroups = createServerFn({ method: "GET" })
 
 export const createContactGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { name: string; color?: string }) =>
-    z.object({ name: z.string().min(1).max(60), color: COLOR.optional() }).parse(d),
+  .inputValidator((d: { name: string; color?: string; parent_group_id?: string | null }) =>
+    z
+      .object({
+        name: z.string().min(1).max(60),
+        color: COLOR.optional(),
+        parent_group_id: z.string().uuid().nullable().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // Validate parent depth (max MAX_DEPTH levels: root=1..MAX_DEPTH).
+    if (data.parent_group_id) {
+      const { parents } = await loadParentMap(supabase, userId);
+      const depth = chainDepth(parents, data.parent_group_id);
+      if (depth + 1 > MAX_DEPTH) {
+        throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
+      }
+    }
     // Generate a stable CardDAV UID up-front so a group created in the
     // web app is immediately visible/syncable to iPhones on next PROPFIND.
     const uid =
@@ -74,6 +94,7 @@ export const createContactGroup = createServerFn({ method: "POST" })
         name: data.name.trim(),
         color: data.color ?? "#6366f1",
         carddav_uid: uid,
+        parent_group_id: data.parent_group_id ?? null,
       })
       .select(GROUP_SELECT)
       .single();
@@ -83,18 +104,43 @@ export const createContactGroup = createServerFn({ method: "POST" })
 
 export const updateContactGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; name?: string; color?: string }) =>
-    z
-      .object({
-        id: z.string().uuid(),
-        name: z.string().min(1).max(60).optional(),
-        color: COLOR.optional(),
-      })
-      .parse(d),
+  .inputValidator(
+    (d: { id: string; name?: string; color?: string; parent_group_id?: string | null }) =>
+      z
+        .object({
+          id: z.string().uuid(),
+          name: z.string().min(1).max(60).optional(),
+          color: COLOR.optional(),
+          parent_group_id: z.string().uuid().nullable().optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const { id, ...patch } = data;
+    const { supabase, userId } = context;
+    const { id, parent_group_id, ...rest } = data;
+    // Cycle + depth guard when reparenting.
+    if (parent_group_id !== undefined && parent_group_id !== null) {
+      if (parent_group_id === id) throw new Error("A group can't be its own parent");
+      const { parents } = await loadParentMap(supabase, userId);
+      // Walk the proposed parent's ancestry: if `id` appears, it's a cycle.
+      let cursor: string | null = parent_group_id;
+      let hops = 0;
+      while (cursor && hops < 32) {
+        if (cursor === id) throw new Error("That would create a cycle");
+        cursor = parents.get(cursor) ?? null;
+        hops++;
+      }
+      const depth = chainDepth(parents, parent_group_id);
+      if (depth + 1 > MAX_DEPTH) {
+        throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
+      }
+    }
+    const patch: {
+      name?: string;
+      color?: string;
+      parent_group_id?: string | null;
+    } = { ...rest };
+    if (parent_group_id !== undefined) patch.parent_group_id = parent_group_id;
     const { data: row, error } = await supabase
       .from("contact_groups")
       .update(patch)
@@ -114,6 +160,35 @@ export const deleteContactGroup = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/** Load every group's `parent_group_id` for the user into a map so we can
+ * walk ancestry in memory instead of round-tripping per hop. Group counts
+ * are tiny per user, so this is cheap. */
+async function loadParentMap(
+  supabase: DB,
+  userId: string,
+): Promise<{ parents: Map<string, string | null> }> {
+  const { data, error } = await supabase
+    .from("contact_groups")
+    .select("id,parent_group_id")
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  const parents = new Map<string, string | null>();
+  for (const r of data ?? []) parents.set(r.id, r.parent_group_id ?? null);
+  return { parents };
+}
+
+/** Depth of the chain rooted at `startId`. 1 = the group itself has no
+ * parent. Bounded loop stops runaway data from freezing the request. */
+function chainDepth(parents: Map<string, string | null>, startId: string): number {
+  let cursor: string | null = startId;
+  let depth = 0;
+  while (cursor && depth < 32) {
+    depth++;
+    cursor = parents.get(cursor) ?? null;
+  }
+  return depth;
+}
 
 /** Replace the set of groups a contact belongs to. */
 export const setContactGroups = createServerFn({ method: "POST" })
@@ -170,6 +245,55 @@ export const addContactsToGroup = createServerFn({ method: "POST" })
       .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
     if (error) throw new Error(error.message);
     return { added: rows.length };
+  });
+
+/** Add many contacts to many groups in one batch (idempotent). Used by the
+ * bulk multi-select "Add to group…" action on the contacts list. */
+export const addContactsToGroups = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { groupIds: string[]; contactIds: string[] }) =>
+    z
+      .object({
+        groupIds: z.array(z.string().uuid()).min(1).max(50),
+        contactIds: z.array(z.string().uuid()).min(1).max(1000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const rows: { group_id: string; contact_id: string; user_id: string }[] = [];
+    for (const gid of data.groupIds) {
+      for (const cid of data.contactIds) {
+        rows.push({ group_id: gid, contact_id: cid, user_id: userId });
+      }
+    }
+    const { error } = await supabase
+      .from("contact_group_members")
+      .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
+    if (error) throw new Error(error.message);
+    return { added: rows.length };
+  });
+
+/** Remove many contacts from one group (idempotent). */
+export const removeContactsFromGroup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { groupId: string; contactIds: string[] }) =>
+    z
+      .object({
+        groupId: z.string().uuid(),
+        contactIds: z.array(z.string().uuid()).min(1).max(1000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase
+      .from("contact_group_members")
+      .delete()
+      .eq("group_id", data.groupId)
+      .in("contact_id", data.contactIds);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 /** Link (or unlink) a contact group to a folder. When linked, emails from

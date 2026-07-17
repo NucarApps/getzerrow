@@ -374,9 +374,10 @@ async function buildGroupResponse(
     );
   }
   const members = await fetchGroupMembers(group.id);
+  const displayName = await resolveGroupDisplayName(userId, group.id, group.name);
   const vcard = buildGroupVCard({
     uid: group.carddav_uid ?? `group-${group.id}`,
-    name: group.name,
+    name: displayName,
     memberContactIds: members,
     updatedAt: group.updated_at,
   });
@@ -385,6 +386,36 @@ async function buildGroupResponse(
     `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
     (includeVcard ? `<C:address-data>${xmlEscape(vcard)}</C:address-data>` : "");
   return responseBlock(groupHref(email, group.id), props);
+}
+
+/** Resolve a group's display name to its full nested path
+ * ("Clients / VIPs") so iOS can distinguish nested Zerrow groups. Apple's
+ * KIND:group vCard has no native parent field. */
+async function resolveGroupDisplayName(
+  userId: string,
+  groupId: string,
+  ownName: string,
+): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,name,parent_group_id")
+    .eq("user_id", userId);
+  const byId = new Map<string, { name: string; parent: string | null }>();
+  for (const g of data ?? [])
+    byId.set(g.id, { name: g.name, parent: g.parent_group_id ?? null });
+  const own = byId.get(groupId);
+  if (!own) return ownName;
+  const parts: string[] = [];
+  let cursor: string | null = groupId;
+  let hops = 0;
+  while (cursor && hops < 8) {
+    const node = byId.get(cursor);
+    if (!node) break;
+    parts.unshift(node.name);
+    cursor = node.parent;
+    hops++;
+  }
+  return parts.length > 1 ? parts.join(" / ") : ownName;
 }
 
 const TOMBSTONE_PRUNE_DAYS = 90;
@@ -580,9 +611,10 @@ export async function handleGet(
       return new Response(null, { status: 304, headers: { ETag: etag } });
     }
     const members = await fetchGroupMembers(group.id);
+    const displayName = await resolveGroupDisplayName(userId, group.id, group.name);
     const vcard = buildGroupVCard({
       uid: group.carddav_uid ?? `group-${group.id}`,
-      name: group.name,
+      name: displayName,
       memberContactIds: members,
       updatedAt: group.updated_at,
     });
