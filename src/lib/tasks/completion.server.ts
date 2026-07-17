@@ -84,7 +84,7 @@ async function scanUser(userId: string): Promise<number> {
   const seen = new Set((existingRows ?? []).map((r) => `${r.task_id}::${r.sent_email_id}`));
 
   let inserted = 0;
-  for (const email of sent as SentEmail[]) {
+  for (const email of sent) {
     // Ask the model which of the user's open tasks this sent email likely fulfills.
     const candidates = (tasks as OpenTask[]).filter(
       (t) => !seen.has(`${t.id}::${email.id}`),
