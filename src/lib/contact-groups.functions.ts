@@ -205,6 +205,14 @@ export const setContactGroups = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
+    // Capture the groups this contact currently belongs to so we can also
+    // reconcile any auto-parent that just lost the contact.
+    const { data: prev } = await supabase
+      .from("contact_group_members")
+      .select("group_id")
+      .eq("contact_id", data.contactId);
+    const affected = new Set<string>((prev ?? []).map((r) => r.group_id));
+
     const { error: delErr } = await supabase
       .from("contact_group_members")
       .delete()
@@ -219,7 +227,9 @@ export const setContactGroups = createServerFn({ method: "POST" })
       }));
       const { error: insErr } = await supabase.from("contact_group_members").insert(rows);
       if (insErr) throw new Error(insErr.message);
+      for (const gid of data.groupIds) affected.add(gid);
     }
+    for (const gid of affected) await reconcileIfAuto(supabase, userId, gid);
     return { ok: true };
   });
 
