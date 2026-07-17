@@ -239,6 +239,16 @@ function ContactsPage() {
       return next;
     });
   }
+  function toggleBucketSelection(ids: string[]) {
+    if (!selectionMode) setSelectionMode(true);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = ids.length > 0 && ids.every((id) => next.has(id));
+      if (allSelected) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
   function handleRowClick(id: string) {
     if (selectionMode) toggleSelect(id);
     else setDrawerId(id);
@@ -604,7 +614,17 @@ function ContactsPage() {
                                 })
                             : undefined
                         }
+                        selectable
+                        selectionState={(() => {
+                          const ids = b.contacts.map((c) => c.id);
+                          const sel = ids.filter((id) => selectedIds.has(id)).length;
+                          if (sel === 0) return "none";
+                          if (sel === ids.length) return "all";
+                          return "some";
+                        })()}
+                        onToggleSelectAll={() => toggleBucketSelection(b.contacts.map((c) => c.id))}
                       />
+
                       {!isCollapsed && (
                         <ul className="divide-y divide-border border-x border-b border-border bg-card/40">
                           {b.contacts.map((c) => {
