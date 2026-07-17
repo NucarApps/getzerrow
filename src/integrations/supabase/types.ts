@@ -1498,6 +1498,11 @@ export type Database = {
           last_full_sync_at: string | null
           last_incremental_at: string | null
           last_pull_count: number
+          last_pull_created: number
+          last_pull_failed: number
+          last_pull_merged: number
+          last_pull_skipped_no_email: number
+          last_pull_updated: number
           last_push_count: number
           locked_at: string | null
           pending_bump: boolean
@@ -1520,6 +1525,11 @@ export type Database = {
           last_full_sync_at?: string | null
           last_incremental_at?: string | null
           last_pull_count?: number
+          last_pull_created?: number
+          last_pull_failed?: number
+          last_pull_merged?: number
+          last_pull_skipped_no_email?: number
+          last_pull_updated?: number
           last_push_count?: number
           locked_at?: string | null
           pending_bump?: boolean
@@ -1542,6 +1552,11 @@ export type Database = {
           last_full_sync_at?: string | null
           last_incremental_at?: string | null
           last_pull_count?: number
+          last_pull_created?: number
+          last_pull_failed?: number
+          last_pull_merged?: number
+          last_pull_skipped_no_email?: number
+          last_pull_updated?: number
           last_push_count?: number
           locked_at?: string | null
           pending_bump?: boolean
