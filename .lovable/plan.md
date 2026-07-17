@@ -1,66 +1,99 @@
 ## Goal
 
-Contact groups become first-class in three places:
-1. Two-way sync with iOS via CardDAV (vCard CATEGORIES + Apple group vCards).
-2. Optional 1:1 link from a group to a folder, plus a reusable `sender_in_group` filter you can drop into any folder's rule tree.
-3. Filter chips on the Contacts page to slice the list by one or more groups.
+Reduce full iOS Contacts resyncs by (a) letting iOS ask "what changed since last time?" via RFC 6578 `sync-collection` and (b) keeping our ETag/CTag/If-None-Match semantics strict enough that iOS trusts its cache between polls.
 
-## Data model
+## Current state (verified)
 
-Single migration:
+- `computeBookCTag` moves on any contact/group `updated_at` bump and on row-count changes — good CTag.
+- ETag per contact/group is stable and used by PUT/DELETE via `If-Match` / `If-None-Match: *`.
+- PROPFIND on the addressbook returns one `<response>` per contact + per group with ETag → iOS still has to `addressbook-multiget` everything on any CTag change.
+- No RFC 6578 support: neither `<D:sync-token>` nor `sync-collection` in `supported-report-set` is advertised, so iOS never issues an incremental REPORT.
+- Hard deletes: `handleDelete` removes contacts/groups outright, so a sync-token approach has nowhere to learn what disappeared.
+- GET/HEAD does not honor `If-None-Match`, so a device that already has the current ETag still gets the full vCard body.
 
-- `contact_groups`: add `folder_id uuid null references folders(id) on delete set null`, `carddav_uid text` (stable UID exposed to iOS), `etag text`, `updated_at timestamptz`. Backfill `carddav_uid = 'group-' || id` and set `updated_at = now()`.
-- Unique partial index `(user_id, folder_id) where folder_id is not null` so a folder is linked by at most one group.
-- Add op `sender_in_group` to the allowed values in `folder_chat.functions.ts` / `folder_chat.server.ts` / filter engine. `value` stores the group id (uuid). No schema change to `folder_filters` — reuse existing `field`/`op`/`value` columns; `field` is set to `from` for consistency but ignored by the engine for this op.
+## Changes
 
-## CardDAV two-way group sync
+### 1. Tombstone table for deletions
 
-Extend `src/lib/carddav/vcard.ts`:
-- `buildContactVCard` writes `CATEGORIES:` line joining the contact's group names (RFC-escaped, comma-separated).
-- `buildGroupVCard(group, memberUids)` emits an Apple-style group card: `KIND:group`, `X-ADDRESSBOOKSERVER-KIND:group`, `FN:<name>`, one `X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:<contact-uid>` per member.
-- `parseVCard` picks up `CATEGORIES` (array) and, when `KIND:group` / `X-ADDRESSBOOKSERVER-KIND:group` is present, returns `{ kind: 'group', name, memberUids }`.
+New table `carddav_tombstones` so incremental sync can report removed resources:
 
-Extend `src/lib/carddav/handlers.server.ts`:
-- Group resources live at `/carddav/<email>/contacts/group-<groupId>.vcf`. `PROPFIND` on the collection lists both contact and group hrefs with their ETags (contact etag already exists; group etag = md5 of name + sorted member ids + updated_at).
-- `handleGet` returns the group vCard when the href points to a `group-*.vcf`.
-- `handleReport` (multiget / query / sync-collection) includes group resources.
-- `handlePut`:
-  - Contact PUT: parse CATEGORIES, diff against current memberships for that contact, upsert missing `contact_groups` rows by case-insensitive name, insert/delete `contact_group_members` rows accordingly. Skip name diffing on the contact itself (unchanged path).
-  - Group PUT: upsert `contact_groups` by `carddav_uid`, update name, then reconcile `contact_group_members` to exactly the parsed member UIDs. Honour `If-Match` / `If-None-Match` against the group etag.
-- `handleDelete` on a `group-*.vcf`: hard-delete the group row (members cascade). Contacts remain.
-- Bump `DAV`/`Allow` headers only if needed (already advertise write).
+```text
+carddav_tombstones
+  user_id uuid
+  resource_type text  -- 'contact' | 'group'
+  resource_id  uuid
+  deleted_at   timestamptz default now()
+  sync_seq     bigserial   -- monotonic ordering for sync tokens
+  PRIMARY KEY (user_id, resource_type, resource_id)
+```
 
-Concurrency: whenever `contact_group_members` or `contact_groups.name` changes (from either side), bump `contact_groups.updated_at` via trigger so the etag flips and iOS re-syncs.
+RLS: `auth.uid() = user_id`. GRANTs to `authenticated` + `service_role`. No `anon`.
 
-## Folder link + `sender_in_group` filter
+Insert a tombstone whenever `handleDelete` removes a contact or a group (both paths already exist in `handlers.server.ts`). Old rows are pruned by a small cron (keep 90 days); a client that hasn't synced in longer gets a `valid-sync-token` failure and falls back to full sync — the RFC-defined behavior.
 
-Server:
-- `src/lib/contact-groups.functions.ts`: add `linkContactGroupToFolder({ groupId, folderId | null })`. When linking, also insert a `folder_filters` row `{ folder_id, field: 'from', op: 'sender_in_group', value: groupId }` if none exists for that (folder, group). When unlinking, delete that specific filter row. Extend `listContactGroups` to return `folder_id` and (optionally) the linked folder's `name`/`color`.
-- `src/lib/sync/filter-engine.ts`:
-  - Extend `EmailForFilter` optional field `sender_group_ids?: string[]`.
-  - `applyFilter` gains a `case "sender_in_group":` returning `email.sender_group_ids?.includes(f.value) ?? false`. Treat as an INCLUDE op (not in `EXCLUDE_OPS`).
-  - Add `sender_in_group` to the `regex`-style skip list in `gmail-query-builder.ts` (no Gmail-native mapping).
-- `src/lib/sync/process-message.ts` (or wherever `EmailForFilter` is built): before running filters, resolve `sender_group_ids` by querying `contact_group_members` joined to `contacts` where `contacts.user_id = <user>` and `lower(contacts.email) = lower(from_addr)`. Cache per run.
-- Zod enums in `folder-chat.functions.ts` / `folder-chat.server.ts` gain `sender_in_group`; the AI prompt gets one sentence explaining it so the chat agent can suggest it.
+### 2. sync-token model
 
-Reprocess path (`src/lib/gmail/reprocess.functions.ts`) already reads the filter list — no change beyond the engine understanding the new op.
+A sync-token encodes "server state at time T for user U". We use:
 
-## UI
+```text
+sync-token = "urn:zerrow:carddav:<user_id>:<max_seq>"
+```
 
-- `src/routes/_authenticated/settings.contacts.groups.tsx` (or wherever groups are managed today — reuse existing route): each group row gets a "Linked folder" combobox (folders for the current account, plus "None"). Saving calls `linkContactGroupToFolder`. Show a small helper: "Emails from members are auto-filed to this folder."
-- Contacts page (`src/routes/_authenticated/contacts.tsx`): add a horizontal chip row above the list — one chip per group with member count. Clicking toggles a `groups` search param (comma-separated group ids) via `validateSearch` + `useNavigate`. When one or more chips are active, filter the contacts query to `id in (select contact_id from contact_group_members where group_id = any(:ids))` (intersection across chips if multi-select feels right — start with union / OR to match "chip" mental model). Chip row also shows an "All" reset.
-- Folder editor: when a folder has a `sender_in_group` filter, render it as a labeled chip ("Sender in group: Clients") instead of the raw op/value, with a delete affordance. Filter builder gains a "Sender in group" condition type.
-- CardDAV settings page copy update: mention that iOS groups sync both ways and that a Zerrow group can be linked to a folder from Contacts → Groups.
+`<max_seq>` = greatest of the newest `contacts.updated_at` epoch-ms, `contact_groups.updated_at` epoch-ms, and `carddav_tombstones.sync_seq` for the user. Encoding as a single opaque string is what RFC 6578 requires; iOS treats it as opaque.
 
-## Verification
+### 3. Advertise sync support
 
-- `src/lib/carddav/vcard.parse.test.ts`: add cases for `CATEGORIES` parsing (with escaped commas), Apple group vCard round-trip (build → parse), and unfolding of long member lists.
-- New `src/lib/sync/filter-engine.group.test.ts`: `sender_in_group` matches when `sender_group_ids` contains the id, misses otherwise, and does NOT act as an exclude.
-- New `src/lib/carddav/handlers.groups.test.ts` (integration-ish, mocking `supabaseAdmin`): PUT on a group vCard reconciles members; PUT on a contact with new CATEGORIES creates missing groups and adds membership; DELETE on group href removes the group.
-- Manual: iPhone → create group "Clients", add 2 contacts → appears in Zerrow with both members; link to folder "Clients"; send test email from one member → auto-filed; toggle chip on Contacts page → list narrows.
+In `propfindAddressbook` add to the addressbook props:
 
-## Out of scope
+- `<D:sync-token>...current token...</D:sync-token>`
+- `<D:supported-report-set><D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>...(existing addressbook-multiget + addressbook-query)</D:supported-report-set>`
 
-- Group colors syncing to iOS (CardDAV has no standard for it).
-- Cross-account group scoping — groups stay per-user, folder link references a specific `folders.id` which is already per-account.
-- Bulk import of existing iOS groups on first connect beyond what a normal iOS sync sends (iOS pushes the full book).
+In `handleOptions` extend DAV header: `DAV: 1, 3, addressbook, extended-mkcol` and keep `Allow` as-is.
+
+### 4. sync-collection REPORT
+
+In `handleReport`, before the existing multiget branch, detect `<D:sync-collection>` and handle it:
+
+- Parse `<D:sync-token>` (empty string / missing → treat as "initial sync": return every current resource).
+- Parse `<D:sync-level>` (`1` supported; anything else → 403 `<D:number-of-matches-within-limits/>` per RFC — we'll respond `400` with the standard precondition XML).
+- Parse optional `<D:limit><D:nresults>N</D:nresults></D:limit>`.
+- Query:
+  - `contacts` where `updated_at > since` for user
+  - `contact_groups` where `updated_at > since` for user
+  - `carddav_tombstones` where `sync_seq > since_seq` for user
+- Return one `<D:response>` per changed contact/group with ETag (+ address-data if requested) and one `<D:response>` per tombstone with `<D:status>HTTP/1.1 404 Not Found</D:status>`.
+- Trailer: `<D:sync-token>NEW_TOKEN</D:sync-token>` reflecting the max seq covered by the response (respect `limit` by clamping and setting the token to the last emitted row — subsequent syncs will pick up the rest).
+- If the incoming token references a `since_seq` older than the oldest surviving tombstone (pruned), respond `403` with `<D:error><D:valid-sync-token/></D:error>` so iOS gracefully falls back to a full sync.
+
+### 5. If-None-Match → 304 on GET/HEAD
+
+`handleGet` (both group and contact branches) reads `If-None-Match`, computes the current ETag first, and if they match responds `304 Not Modified` with just the `ETag` header (no body). This saves the vCard payload on every reconciliation poll where nothing changed for that item.
+
+### 6. Keep CTag consistent with deletions
+
+Extend `computeBookCTag` to include `max(sync_seq)` from `carddav_tombstones` so a delete moves the CTag even when no other row changed. Format stays the same opaque quoted string.
+
+### 7. Tests
+
+Add `src/lib/carddav/sync.test.ts`:
+
+- Initial `sync-collection` with empty token returns all rows + a fresh token.
+- After creating/updating a contact, second `sync-collection` with the previous token returns only that contact and a new token.
+- After deleting a contact, second `sync-collection` returns a `404` tombstone entry.
+- `If-None-Match` on GET with the current ETag returns 304 and no body.
+- Stale token (older than pruned tombstone horizon) returns 403 `valid-sync-token`.
+
+## Non-goals
+
+- No addressbook-query filter grammar changes — iOS uses sync-collection once advertised.
+- No CalDAV, no schedule-tag, no calendar collections.
+- Group-membership–only edits already move `contact_groups.updated_at` via existing triggers, so no extra plumbing there.
+
+## Files touched
+
+- New: `supabase` migration for `carddav_tombstones` + prune function.
+- Edit: `src/lib/carddav/handlers.server.ts` (PROPFIND advertisement, sync-collection branch in `handleReport`, tombstone inserts in `handleDelete`, 304 in `handleGet`, CTag update).
+- Edit: `src/lib/carddav/xml.ts` (small helper to parse `<D:sync-token>` / `<D:sync-level>` / `<D:limit>`).
+- Edit: `src/routes/api/public/carddav/$.ts` — no route changes, `REPORT` already dispatches.
+- New: `src/lib/carddav/sync.test.ts`.
+- Edit: `src/routes/_authenticated/settings.carddav.tsx` — one-line note that iOS now uses incremental sync.
