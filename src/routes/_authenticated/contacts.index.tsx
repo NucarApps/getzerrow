@@ -1538,3 +1538,79 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+
+function GroupPickerPopover({
+  disabled,
+  groupTree,
+  onApply,
+}: {
+  disabled: boolean;
+  groupTree: { group: GroupRow; depth: number }[];
+  onApply: (groupIds: string[]) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!open) setPicked(new Set());
+  }, [open]);
+  function toggle(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" disabled={disabled}>
+          <Plus className="mr-1.5 h-4 w-4" /> Add to group
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-2">
+        {groupTree.length === 0 ? (
+          <p className="p-2 text-xs text-muted-foreground">Create a group first.</p>
+        ) : (
+          <>
+            <div className="max-h-64 overflow-y-auto">
+              {groupTree.map(({ group: g, depth }) => (
+                <label
+                  key={g.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent/50"
+                  style={{ paddingLeft: 8 + depth * 12 }}
+                >
+                  <Checkbox
+                    checked={picked.has(g.id)}
+                    onCheckedChange={() => toggle(g.id)}
+                  />
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: g.color }}
+                  />
+                  <span className="truncate">{g.name}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-2 flex justify-end gap-2 border-t border-border pt-2">
+              <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={picked.size === 0}
+                onClick={async () => {
+                  await onApply(Array.from(picked));
+                  setOpen(false);
+                }}
+              >
+                Add
+              </Button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
