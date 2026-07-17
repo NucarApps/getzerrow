@@ -377,6 +377,7 @@ async function buildGroupResponse(
   email: string,
   groupId: string,
   includeVcard: boolean,
+  style: GroupNameStyle,
 ): Promise<string> {
   const { data: group } = await supabaseAdmin
     .from("contact_groups")
@@ -393,7 +394,7 @@ async function buildGroupResponse(
     );
   }
   const members = await fetchGroupMembers(group.id);
-  const displayName = await resolveGroupDisplayName(userId, group.id, group.name);
+  const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style);
   const vcard = buildGroupVCard({
     uid: group.carddav_uid ?? `group-${group.id}`,
     name: displayName,
