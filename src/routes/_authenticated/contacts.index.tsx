@@ -885,10 +885,12 @@ function GroupPill({
 
 function GroupEditorDialog({
   state,
+  allGroups,
   onClose,
   onChanged,
 }: {
   state: null | { mode: "create" } | { mode: "edit"; group: GroupRow };
+  allGroups: GroupRow[];
   onClose: () => void;
   onChanged: () => void;
 }) {
