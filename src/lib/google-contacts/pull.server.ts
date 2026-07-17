@@ -393,8 +393,10 @@ async function applyPersonChanges(
     }
 
     if (didCreate) breakdown.created++;
+    else if (mergedByPhone) breakdown.merged_by_phone++;
     else if (didMerge) breakdown.merged_duplicate_email++;
     else breakdown.updated++;
+
 
 
     if (!contactId) continue;
