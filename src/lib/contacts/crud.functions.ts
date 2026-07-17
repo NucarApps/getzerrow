@@ -32,8 +32,8 @@ export const listContacts = createServerFn({ method: "GET" })
       .limit(2000);
     if (error) throw new Error(error.message);
     const rows = (data ?? []).slice().sort((a, b) => {
-      const ka = firstNameKey(a.name, a.email);
-      const kb = firstNameKey(b.name, b.email);
+      const ka = firstNameKey(a.name, a.email ?? "");
+      const kb = firstNameKey(b.name, b.email ?? "");
       if (!ka && kb) return 1;
       if (ka && !kb) return -1;
       return ka.localeCompare(kb);

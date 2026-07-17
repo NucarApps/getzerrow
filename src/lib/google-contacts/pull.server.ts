@@ -266,7 +266,14 @@ async function applyPersonChanges(
   for (const p of persons) {
     if (!p.resourceName) continue;
     const parsed = personToContact(p);
-    if (!parsed.email) {
+    const hasIdentity =
+      !!parsed.email ||
+      !!parsed.patch.name ||
+      !!parsed.patch.company ||
+      parsed.phones.length > 0 ||
+      !!parsed.patch.primary_phone;
+    if (!hasIdentity) {
+      // Truly empty entry — no email, no name, no phone, no company.
       breakdown.skipped_no_email++;
       await progress?.increment(1);
       continue;
@@ -278,22 +285,28 @@ async function applyPersonChanges(
     let didMerge = false;
 
     if (!contactId) {
-      // Find or create by email — email is the natural key.
-      const { data: existing } = await supabaseAdmin
-        .from("contacts")
-        .select("id")
-        .eq("user_id", ids.userId)
-        .eq("email", parsed.email.toLowerCase())
-        .maybeSingle();
-      if (existing) {
-        contactId = existing.id;
-        didMerge = true;
-      } else {
+      // If the Google person has an email, prefer merging into any existing
+      // Zerrow contact with the same email (email is the natural key when
+      // present). Otherwise, create a fresh emailless row keyed by the
+      // Google resourceName via google_contact_links.
+      if (parsed.email) {
+        const { data: existing } = await supabaseAdmin
+          .from("contacts")
+          .select("id")
+          .eq("user_id", ids.userId)
+          .eq("email", parsed.email.toLowerCase())
+          .maybeSingle();
+        if (existing) {
+          contactId = existing.id;
+          didMerge = true;
+        }
+      }
+      if (!contactId) {
         const { data: created, error: cErr } = await supabaseAdmin
           .from("contacts")
           .insert({
             user_id: ids.userId,
-            email: parsed.email.toLowerCase(),
+            email: parsed.email ? parsed.email.toLowerCase() : null,
             source: "google",
             name: parsed.patch.name ?? null,
             company: parsed.patch.company ?? null,
@@ -309,7 +322,11 @@ async function applyPersonChanges(
           .select("id")
           .single();
         if (cErr || !created) {
-          logError("google_contacts.pull.contact_create_failed", { ...ids, email: parsed.email }, cErr);
+          logError(
+            "google_contacts.pull.contact_create_failed",
+            { ...ids, email: parsed.email ?? null, resource: p.resourceName },
+            cErr,
+          );
           breakdown.failed++;
           await progress?.increment(1);
           continue;

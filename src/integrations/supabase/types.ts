@@ -443,7 +443,7 @@ export type Database = {
           company: string | null
           country: string | null
           created_at: string
-          email: string
+          email: string | null
           enriched_at: string | null
           id: string
           key_version: number
@@ -471,7 +471,7 @@ export type Database = {
           company?: string | null
           country?: string | null
           created_at?: string
-          email: string
+          email?: string | null
           enriched_at?: string | null
           id?: string
           key_version?: number
@@ -499,7 +499,7 @@ export type Database = {
           company?: string | null
           country?: string | null
           created_at?: string
-          email?: string
+          email?: string | null
           enriched_at?: string | null
           id?: string
           key_version?: number

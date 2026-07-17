@@ -364,7 +364,7 @@ function PullBreakdown({ state }: { state: SyncStateShape }) {
       </p>
       {skipped > 0 && (
         <p title="Google contacts without an email address aren't stored in Zerrow yet.">
-          Skipped (no email): {skipped}
+          Skipped (no email, name, or phone): {skipped}
         </p>
       )}
       {merged > 0 && <p>Merged into existing: {merged}</p>}
