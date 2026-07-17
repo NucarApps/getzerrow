@@ -12,19 +12,18 @@ describe("listContactGroupsPage", () => {
   });
 
   it("uses only valid contactGroups.list field mask paths", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ contactGroups: [] }), { status: 200 }),
-    );
+    let capturedUrl: string | null = null;
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      capturedUrl = input.toString();
+      return new Response(JSON.stringify({ contactGroups: [] }), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await listContactGroupsPage("account-1", {});
 
-    const firstCall = fetchMock.mock.calls[0];
-    expect(firstCall).toBeDefined();
-    const url = firstCall?.[0];
-    expect(url).toBeTypeOf("string");
-    if (typeof url !== "string") throw new Error("Expected fetch URL string");
-    const requested = new URL(url);
+    expect(capturedUrl).toBeTypeOf("string");
+    if (!capturedUrl) throw new Error("Expected fetch URL string");
+    const requested = new URL(capturedUrl);
     const groupFields = requested.searchParams.get("groupFields");
 
     expect(groupFields).toBe("name,groupType");
