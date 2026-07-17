@@ -328,6 +328,32 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={confirmForce} onOpenChange={setConfirmForce}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Force full re-pull from Google?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This discards the incremental sync token and re-scans every contact
+              in your Google account. It's slower, but resets the created / updated
+              / skipped counters so you can see exactly why any contacts are missing.
+              Existing contacts won't be duplicated — they'll be re-matched by
+              Google resource name or email.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmForce(false);
+                forceMut.mutate();
+              }}
+            >
+              Re-pull everything
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
