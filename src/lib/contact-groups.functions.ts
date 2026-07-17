@@ -3,8 +3,10 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const MAX_DEPTH = 4;
 
-const GROUP_SELECT = "id,name,color,created_at,folder_id,carddav_uid,updated_at";
+const GROUP_SELECT =
+  "id,name,color,created_at,folder_id,carddav_uid,updated_at,parent_group_id";
 
 /** List the user's groups with member counts and any linked folder. */
 export const listContactGroups = createServerFn({ method: "GET" })
