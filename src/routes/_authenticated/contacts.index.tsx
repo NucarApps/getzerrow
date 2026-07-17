@@ -787,7 +787,7 @@ function GroupEditorDialog({
         const nextFolderId = folderId || null;
         const currentFolderId = editGroup?.folder_id ?? null;
         if (nextFolderId !== currentFolderId) {
-          await linkFolder({ data: { group_id: gid, folder_id: nextFolderId } });
+          await linkFolder({ data: { groupId: gid, folderId: nextFolderId } });
         }
       }
       toast.success(editGroup ? "Group updated" : "Group created");
