@@ -78,7 +78,6 @@ async function paginateGroups(
       page = await listContactGroupsPage(accountId, {
         pageToken,
         syncToken: useToken,
-        requestSyncToken: true,
       });
     } catch (e) {
       if (e instanceof PeopleApiError && e.isExpiredSyncToken && useToken) {
