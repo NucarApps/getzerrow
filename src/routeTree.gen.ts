@@ -56,6 +56,7 @@ import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as AuthenticatedSettingsMeetingsRecordingRouteImport } from './routes/_authenticated/settings.meetings-recording'
 import { Route as AuthenticatedSettingsMeetingsCalendarRouteImport } from './routes/_authenticated/settings.meetings-calendar'
 import { Route as AuthenticatedSettingsInboxRouteImport } from './routes/_authenticated/settings.inbox'
+import { Route as AuthenticatedSettingsCarddavRouteImport } from './routes/_authenticated/settings.carddav'
 import { Route as AuthenticatedSettingsActivityRouteImport } from './routes/_authenticated/settings.activity'
 import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_authenticated/settings.accounts'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings.account'
@@ -324,6 +325,12 @@ const AuthenticatedSettingsInboxRoute =
     path: '/inbox',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsCarddavRoute =
+  AuthenticatedSettingsCarddavRouteImport.update({
+    id: '/carddav',
+    path: '/carddav',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsActivityRoute =
   AuthenticatedSettingsActivityRouteImport.update({
     id: '/activity',
@@ -452,6 +459,7 @@ export interface FileRoutesByFullPath {
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -517,6 +525,7 @@ export interface FileRoutesByTo {
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -585,6 +594,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/_authenticated/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/_authenticated/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
   '/_authenticated/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/_authenticated/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/_authenticated/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -653,6 +663,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/accounts'
     | '/settings/activity'
+    | '/settings/carddav'
     | '/settings/inbox'
     | '/settings/meetings-calendar'
     | '/settings/meetings-recording'
@@ -718,6 +729,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/accounts'
     | '/settings/activity'
+    | '/settings/carddav'
     | '/settings/inbox'
     | '/settings/meetings-calendar'
     | '/settings/meetings-recording'
@@ -785,6 +797,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/accounts'
     | '/_authenticated/settings/activity'
+    | '/_authenticated/settings/carddav'
     | '/_authenticated/settings/inbox'
     | '/_authenticated/settings/meetings-calendar'
     | '/_authenticated/settings/meetings-recording'
@@ -1209,6 +1222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsInboxRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/carddav': {
+      id: '/_authenticated/settings/carddav'
+      path: '/carddav'
+      fullPath: '/settings/carddav'
+      preLoaderRoute: typeof AuthenticatedSettingsCarddavRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/activity': {
       id: '/_authenticated/settings/activity'
       path: '/activity'
@@ -1342,6 +1362,7 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
   AuthenticatedSettingsAccountsRoute: typeof AuthenticatedSettingsAccountsRoute
   AuthenticatedSettingsActivityRoute: typeof AuthenticatedSettingsActivityRoute
+  AuthenticatedSettingsCarddavRoute: typeof AuthenticatedSettingsCarddavRoute
   AuthenticatedSettingsInboxRoute: typeof AuthenticatedSettingsInboxRoute
   AuthenticatedSettingsMeetingsCalendarRoute: typeof AuthenticatedSettingsMeetingsCalendarRoute
   AuthenticatedSettingsMeetingsRecordingRoute: typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -1352,6 +1373,7 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
   AuthenticatedSettingsAccountsRoute: AuthenticatedSettingsAccountsRoute,
   AuthenticatedSettingsActivityRoute: AuthenticatedSettingsActivityRoute,
+  AuthenticatedSettingsCarddavRoute: AuthenticatedSettingsCarddavRoute,
   AuthenticatedSettingsInboxRoute: AuthenticatedSettingsInboxRoute,
   AuthenticatedSettingsMeetingsCalendarRoute:
     AuthenticatedSettingsMeetingsCalendarRoute,
