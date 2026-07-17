@@ -337,6 +337,39 @@ export function parseVCard(text: string): ParsedVCard | null {
       case "NOTE":
         out.notes = v || null;
         break;
+      case "CATEGORIES": {
+        // Commas separate values; already-escaped commas were resolved by
+        // unescapeValue, so re-split on unescaped commas via the raw value.
+        const raw = p.value;
+        const parts: string[] = [];
+        let buf = "";
+        for (let i = 0; i < raw.length; i++) {
+          const c = raw[i];
+          if (c === "\\" && i + 1 < raw.length) {
+            buf += raw[i + 1];
+            i++;
+          } else if (c === ",") {
+            if (buf.trim()) parts.push(buf.trim());
+            buf = "";
+          } else {
+            buf += c;
+          }
+        }
+        if (buf.trim()) parts.push(buf.trim());
+        out.categories = parts;
+        break;
+      }
+      case "KIND":
+      case "X-ADDRESSBOOKSERVER-KIND":
+        if (v.trim().toLowerCase() === "group") out.isGroup = true;
+        break;
+      case "MEMBER":
+      case "X-ADDRESSBOOKSERVER-MEMBER": {
+        // Format: urn:uuid:<uid>
+        const m = v.trim().match(/urn:uuid:([0-9a-f-]{36})/i);
+        if (m) out.memberUids.push(m[1].toLowerCase());
+        break;
+      }
       default:
         break;
     }
