@@ -22,9 +22,11 @@ import {
   MULTISTATUS_CLOSE,
   MULTISTATUS_OPEN,
   parseMultigetHrefs,
+  parseSyncCollection,
   responseBlock,
   xmlEscape,
 } from "./xml";
+
 
 const BASE = "/api/public/carddav";
 
