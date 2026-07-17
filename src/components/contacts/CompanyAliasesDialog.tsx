@@ -434,6 +434,8 @@ export function CompanyAliasesDialog({
               ) : (
                 groups.map((g) => {
                   const active = selectedGroupIds.has(g.id);
+                  const n = memberCountByGroup.get(g.id) ?? 0;
+                  const partial = n > 0 && n < contactIds.length;
                   return (
                     <button
                       key={g.id}
@@ -441,6 +443,11 @@ export function CompanyAliasesDialog({
                       onClick={() => toggleGroup(g.id)}
                       disabled={busy}
                       aria-pressed={active}
+                      title={
+                        n > 0
+                          ? `${n} of ${contactIds.length} contacts already in ${g.name}`
+                          : undefined
+                      }
                       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
                         active
                           ? "border-primary bg-primary/10 text-foreground"
@@ -449,10 +456,16 @@ export function CompanyAliasesDialog({
                     >
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
                       <span className="truncate max-w-[10rem]">{g.name}</span>
+                      {partial && (
+                        <span className="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">
+                          {n}/{contactIds.length}
+                        </span>
+                      )}
                       {active && <Check className="h-3 w-3" />}
                     </button>
                   );
                 })
+
               )}
             </div>
             {groups.length > 0 && (
