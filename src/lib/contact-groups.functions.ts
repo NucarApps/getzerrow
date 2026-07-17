@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { reconcileIfAuto } from "./contacts/auto-company-subgroups.functions";
 
 type DB = SupabaseClient<Database>;
 
@@ -10,7 +11,7 @@ const COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const MAX_DEPTH = 4;
 
 const GROUP_SELECT =
-  "id,name,color,created_at,folder_id,carddav_uid,updated_at,parent_group_id";
+  "id,name,color,created_at,folder_id,carddav_uid,updated_at,parent_group_id,auto_company_subgroups,auto_generated_from_group_id";
 
 /** List the user's groups with member counts and any linked folder. */
 export const listContactGroups = createServerFn({ method: "GET" })
@@ -204,6 +205,14 @@ export const setContactGroups = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
+    // Capture the groups this contact currently belongs to so we can also
+    // reconcile any auto-parent that just lost the contact.
+    const { data: prev } = await supabase
+      .from("contact_group_members")
+      .select("group_id")
+      .eq("contact_id", data.contactId);
+    const affected = new Set<string>((prev ?? []).map((r) => r.group_id));
+
     const { error: delErr } = await supabase
       .from("contact_group_members")
       .delete()
@@ -218,7 +227,9 @@ export const setContactGroups = createServerFn({ method: "POST" })
       }));
       const { error: insErr } = await supabase.from("contact_group_members").insert(rows);
       if (insErr) throw new Error(insErr.message);
+      for (const gid of data.groupIds) affected.add(gid);
     }
+    for (const gid of affected) await reconcileIfAuto(supabase, userId, gid);
     return { ok: true };
   });
 
@@ -244,6 +255,7 @@ export const addContactsToGroup = createServerFn({ method: "POST" })
       .from("contact_group_members")
       .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
     if (error) throw new Error(error.message);
+    await reconcileIfAuto(supabase, userId, data.groupId);
     return { added: rows.length };
   });
 
@@ -271,6 +283,7 @@ export const addContactsToGroups = createServerFn({ method: "POST" })
       .from("contact_group_members")
       .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
     if (error) throw new Error(error.message);
+    for (const gid of data.groupIds) await reconcileIfAuto(supabase, userId, gid);
     return { added: rows.length };
   });
 
@@ -286,13 +299,14 @@ export const removeContactsFromGroup = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     const { error } = await supabase
       .from("contact_group_members")
       .delete()
       .eq("group_id", data.groupId)
       .in("contact_id", data.contactIds);
     if (error) throw new Error(error.message);
+    await reconcileIfAuto(supabase, userId, data.groupId);
     return { ok: true };
   });
 

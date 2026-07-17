@@ -35,6 +35,12 @@ import {
   linkContactGroupToFolder,
   addContactsToGroups,
 } from "@/lib/contact-groups.functions";
+import {
+  setAutoCompanySubgroups,
+  reconcileAutoCompanySubgroups,
+  pruneAutoCompanySubgroups,
+} from "@/lib/contacts/auto-company-subgroups.functions";
+import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
@@ -91,6 +97,8 @@ type GroupRow = {
   count: number;
   folder_id?: string | null;
   parent_group_id?: string | null;
+  auto_company_subgroups?: boolean;
+  auto_generated_from_group_id?: string | null;
   linked_folder?: { name: string; color: string | null } | null;
 };
 
@@ -935,6 +943,9 @@ function GroupEditorDialog({
   const del = useServerFn(deleteContactGroup);
   const linkFolder = useServerFn(linkContactGroupToFolder);
   const listFolders = useServerFn(listFoldersForPicker);
+  const setAutoFn = useServerFn(setAutoCompanySubgroups);
+  const rescanAutoFn = useServerFn(reconcileAutoCompanySubgroups);
+  const pruneAutoFn = useServerFn(pruneAutoCompanySubgroups);
 
   const foldersQ = useQuery({
     queryKey: ["folders-picker"],
@@ -947,6 +958,8 @@ function GroupEditorDialog({
   const [color, setColor] = useState(GROUP_COLORS[0]);
   const [folderId, setFolderId] = useState<string>("");
   const [parentId, setParentId] = useState<string>("");
+  const [autoSubgroups, setAutoSubgroups] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -956,11 +969,13 @@ function GroupEditorDialog({
       setColor(state.group.color);
       setFolderId(state.group.folder_id ?? "");
       setParentId(state.group.parent_group_id ?? "");
+      setAutoSubgroups(!!state.group.auto_company_subgroups);
     } else {
       setName("");
       setColor(GROUP_COLORS[0]);
       setFolderId("");
       setParentId("");
+      setAutoSubgroups(false);
     }
   }, [state]);
 
@@ -1098,6 +1113,85 @@ function GroupEditorDialog({
               When linked, senders in this group are auto-filed into the folder.
             </p>
           </div>
+          {editing && editGroup && (
+            <div className="rounded-md border border-border/60 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Label className="text-sm">Auto-create company subgroups</Label>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Adds one subgroup per company found in this group's members.
+                    Contacts stay in this group too — the subgroups just slice
+                    them by company.
+                  </p>
+                </div>
+                <Switch
+                  checked={autoSubgroups}
+                  disabled={autoBusy}
+                  onCheckedChange={async (v) => {
+                    setAutoBusy(true);
+                    try {
+                      await setAutoFn({ data: { groupId: editGroup.id, enabled: v } });
+                      setAutoSubgroups(v);
+                      onChanged();
+                      toast.success(v ? "Auto subgroups enabled" : "Auto subgroups paused");
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : "Failed");
+                    } finally {
+                      setAutoBusy(false);
+                    }
+                  }}
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={autoBusy || !autoSubgroups}
+                  onClick={async () => {
+                    setAutoBusy(true);
+                    try {
+                      const r = (await rescanAutoFn({
+                        data: { groupId: editGroup.id },
+                      })) as { stats?: { created: number; removed: number } };
+                      onChanged();
+                      const c = r.stats?.created ?? 0;
+                      const rm = r.stats?.removed ?? 0;
+                      toast.success(`Re-scanned: +${c} / -${rm} subgroups`);
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : "Failed");
+                    } finally {
+                      setAutoBusy(false);
+                    }
+                  }}
+                >
+                  Re-scan now
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive"
+                  disabled={autoBusy}
+                  onClick={async () => {
+                    if (!confirm("Remove all auto-created company subgroups under this group?")) return;
+                    setAutoBusy(true);
+                    try {
+                      const r = (await pruneAutoFn({
+                        data: { groupId: editGroup.id },
+                      })) as { removed: number };
+                      onChanged();
+                      toast.success(`Removed ${r.removed} auto subgroup${r.removed === 1 ? "" : "s"}`);
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : "Failed");
+                    } finally {
+                      setAutoBusy(false);
+                    }
+                  }}
+                >
+                  Remove auto subgroups
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
           {editing && (
