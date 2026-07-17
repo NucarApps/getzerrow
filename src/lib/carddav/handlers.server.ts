@@ -636,7 +636,8 @@ export async function handleGet(
       return new Response(null, { status: 304, headers: { ETag: etag } });
     }
     const members = await fetchGroupMembers(group.id);
-    const displayName = await resolveGroupDisplayName(userId, group.id, group.name);
+    const style = await getGroupNameStyle(userId);
+    const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style);
     const vcard = buildGroupVCard({
       uid: group.carddav_uid ?? `group-${group.id}`,
       name: displayName,
