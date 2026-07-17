@@ -132,6 +132,20 @@ export async function createBot(input: CreateBotInput): Promise<RecallBot> {
   };
   if (input.joinAt) body.join_at = input.joinAt;
 
+  // Subscribe to real-time transcript + chat events so "Hey Zerrow / @Zerrow"
+  // wake phrases can be answered live. The webhook URL is authenticated with a
+  // per-project shared secret; Recall does not sign real-time endpoints.
+  const realtimeToken = process.env.RECALL_REALTIME_TOKEN?.trim();
+  if (realtimeToken) {
+    (body.recording_config as Record<string, unknown>).realtime_endpoints = [
+      {
+        type: "webhook",
+        url: `https://getzerrow.com/api/public/recall-realtime?t=${encodeURIComponent(realtimeToken)}`,
+        events: ["transcript.data", "participant_events.chat_message_sent"],
+      },
+    ];
+  }
+
   const chatMessage = input.chatMessage?.trim();
   if (chatMessage) {
     const message = chatMessage.slice(0, 4096);
@@ -173,6 +187,23 @@ export async function createBot(input: CreateBotInput): Promise<RecallBot> {
   }
 
   return recallFetch<RecallBot>("/bot", { method: "POST", body });
+}
+
+/** Post a chat message from the bot into the live meeting. */
+export async function sendBotChatMessage(botId: string, message: string): Promise<void> {
+  const trimmed = message.slice(0, 4096);
+  try {
+    await recallFetch(`/bot/${botId}/send_chat_message`, {
+      method: "POST",
+      body: { to: "everyone", message: trimmed },
+    });
+  } catch (e) {
+    // Some platforms (e.g. Zoom host-only chat) reject sends; log and continue.
+    if (e instanceof RecallApiError && (e.status === 400 || e.status === 403 || e.status === 404)) {
+      return;
+    }
+    throw e;
+  }
 }
 
 /** Fetch the current bot resource. */
