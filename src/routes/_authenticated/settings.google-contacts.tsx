@@ -412,7 +412,9 @@ function GoogleContactsSettings() {
           changes, adds, and deletes back to Google.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
-          The background sync runs every 15 minutes. Use "Sync now" for an immediate run.
+          The background sync runs automatically. Pick a cadence per account
+          below (every 5 min, 15 min, or hour), or hit "Sync now" for an
+          immediate run.
         </p>
       </Card>
 
