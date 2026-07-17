@@ -104,10 +104,14 @@ export const updateTask = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const patch: Record<string, unknown> = {};
+    const patch: {
+      title?: string;
+      notes?: string | null;
+      due_at?: string | null;
+    } = {};
     if (data.title !== undefined) patch.title = data.title;
-    if (data.notes !== undefined) patch.notes = data.notes;
-    if (data.due_at !== undefined) patch.due_at = data.due_at;
+    if (data.notes !== undefined) patch.notes = data.notes ?? null;
+    if (data.due_at !== undefined) patch.due_at = data.due_at ?? null;
     const { error } = await context.supabase
       .from("tasks")
       .update(patch)
