@@ -266,10 +266,16 @@ async function applyPersonChanges(
   for (const p of persons) {
     if (!p.resourceName) continue;
     const parsed = personToContact(p);
-    if (!parsed.email) continue; // Zerrow requires an email.
+    if (!parsed.email) {
+      breakdown.skipped_no_email++;
+      await progress?.increment(1);
+      continue;
+    }
 
     const link = byResource.get(p.resourceName);
     let contactId = link?.contact_id ?? null;
+    let didCreate = false;
+    let didMerge = false;
 
     if (!contactId) {
       // Find or create by email — email is the natural key.
@@ -281,6 +287,7 @@ async function applyPersonChanges(
         .maybeSingle();
       if (existing) {
         contactId = existing.id;
+        didMerge = true;
       } else {
         const { data: created, error: cErr } = await supabaseAdmin
           .from("contacts")
@@ -303,9 +310,12 @@ async function applyPersonChanges(
           .single();
         if (cErr || !created) {
           logError("google_contacts.pull.contact_create_failed", { ...ids, email: parsed.email }, cErr);
+          breakdown.failed++;
+          await progress?.increment(1);
           continue;
         }
         contactId = created.id;
+        didCreate = true;
       }
       await supabaseAdmin.from("google_contact_links").upsert(
         {
@@ -338,6 +348,11 @@ async function applyPersonChanges(
         .eq("gmail_account_id", ids.gmailAccountId)
         .eq("resource_name", p.resourceName);
     }
+
+    if (didCreate) breakdown.created++;
+    else if (didMerge) breakdown.merged_duplicate_email++;
+    else breakdown.updated++;
+
 
     if (!contactId) continue;
 
