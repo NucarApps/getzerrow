@@ -167,7 +167,7 @@ export const deleteContactGroup = createServerFn({ method: "POST" })
 /** Depth of the chain rooted at the given group (1 = the group itself, no
  * parent). Bounded loop stops runaway data from freezing the request. */
 async function parentChainDepth(
-  supabase: { from: (t: string) => { select: (s: string) => { eq: (c: string, v: string) => { maybeSingle: () => Promise<{ data: { parent_group_id: string | null } | null }> } } } },
+  supabase: DB,
   startId: string,
 ): Promise<number> {
   let cursor: string | null = startId;
