@@ -164,6 +164,30 @@ export type Database = {
         }
         Relationships: []
       }
+      carddav_tombstones: {
+        Row: {
+          deleted_at: string
+          resource_id: string
+          resource_type: string
+          sync_seq: number
+          user_id: string
+        }
+        Insert: {
+          deleted_at?: string
+          resource_id: string
+          resource_type: string
+          sync_seq?: number
+          user_id: string
+        }
+        Update: {
+          deleted_at?: string
+          resource_id?: string
+          resource_type?: string
+          sync_seq?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       company_aliases: {
         Row: {
           alias_domain: string
@@ -2406,6 +2430,10 @@ export type Database = {
           refresh_token_present: boolean
           watch_expiration: string
         }[]
+      }
+      prune_carddav_tombstones: {
+        Args: { p_keep_days?: number }
+        Returns: number
       }
       reindex_email_participants: {
         Args: { p_batch_limit: number; p_key: string }
