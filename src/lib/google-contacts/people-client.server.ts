@@ -6,6 +6,7 @@ import { READ_PERSON_FIELDS, UPDATE_PERSON_FIELDS, type Person } from "./mapper"
 
 const BASE = "https://people.googleapis.com/v1";
 const TIMEOUT_MS = 20_000;
+const CONTACT_GROUP_LIST_FIELDS = "name,groupType";
 
 export const CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts";
 
@@ -152,7 +153,7 @@ export async function listContactGroupsPage(
 ): Promise<GroupsPage> {
   const query: Record<string, string> = {
     pageSize: "200",
-    groupFields: "name,groupType,memberCount",
+    groupFields: CONTACT_GROUP_LIST_FIELDS,
   };
   if (opts.pageToken) query.pageToken = opts.pageToken;
   if (opts.syncToken) query.syncToken = opts.syncToken;
