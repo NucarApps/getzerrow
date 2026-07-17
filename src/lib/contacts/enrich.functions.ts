@@ -45,6 +45,11 @@ export const enrichContact = createServerFn({ method: "POST" })
       }
     }
 
+    if (!contact.email) {
+      // No email → nothing to enrich from mail history. Return as-is.
+      return { contact, skipped: true as const };
+    }
+
     if (!data.force && contact.enriched_at) {
       const age = Date.now() - new Date(contact.enriched_at).getTime();
       if (age < 30 * 24 * 60 * 60 * 1000) return { contact, skipped: true as const };
