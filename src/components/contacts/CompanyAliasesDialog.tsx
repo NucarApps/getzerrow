@@ -95,12 +95,30 @@ export function CompanyAliasesDialog({
         .filter((a) => a.primary_domain === primaryDomain)
         .map((a) => a.group_id)
     : [];
-  const savedKey = savedGroupIds.slice().sort().join(",");
+
+  // Per-group membership counts across the contacts in this bucket, so we can
+  // seed the selection and show partial ("3/5") coverage in the chip UI.
+  const contactIdSet = new Set(contactIds);
+  const memberCountByGroup = new Map<string, number>();
+  for (const m of groupsQ.data?.memberships ?? []) {
+    if (contactIdSet.has(m.contact_id)) {
+      memberCountByGroup.set(m.group_id, (memberCountByGroup.get(m.group_id) ?? 0) + 1);
+    }
+  }
+  const fullyCoveredGroupIds =
+    contactIds.length > 0
+      ? [...memberCountByGroup.entries()]
+          .filter(([, n]) => n === contactIds.length)
+          .map(([id]) => id)
+      : [];
+  const initialSelection = Array.from(new Set([...savedGroupIds, ...fullyCoveredGroupIds]));
+  const savedKey = initialSelection.slice().sort().join(",");
 
   useEffect(() => {
-    if (open) setSelectedGroupIds(new Set(savedGroupIds));
+    if (open) setSelectedGroupIds(new Set(initialSelection));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, savedKey]);
+
 
   useEffect(() => {
     if (open) setBrandQuery(companyName ?? "");
@@ -268,7 +286,8 @@ export function CompanyAliasesDialog({
 
   const groups = groupsQ.data?.groups ?? [];
   const tagsDirty =
-    [...selectedGroupIds].sort().join(",") !== savedGroupIds.slice().sort().join(",");
+    [...selectedGroupIds].sort().join(",") !== initialSelection.slice().sort().join(",");
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -415,6 +434,8 @@ export function CompanyAliasesDialog({
               ) : (
                 groups.map((g) => {
                   const active = selectedGroupIds.has(g.id);
+                  const n = memberCountByGroup.get(g.id) ?? 0;
+                  const partial = n > 0 && n < contactIds.length;
                   return (
                     <button
                       key={g.id}
@@ -422,6 +443,11 @@ export function CompanyAliasesDialog({
                       onClick={() => toggleGroup(g.id)}
                       disabled={busy}
                       aria-pressed={active}
+                      title={
+                        n > 0
+                          ? `${n} of ${contactIds.length} contacts already in ${g.name}`
+                          : undefined
+                      }
                       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
                         active
                           ? "border-primary bg-primary/10 text-foreground"
@@ -430,16 +456,22 @@ export function CompanyAliasesDialog({
                     >
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
                       <span className="truncate max-w-[10rem]">{g.name}</span>
+                      {partial && (
+                        <span className="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">
+                          {n}/{contactIds.length}
+                        </span>
+                      )}
                       {active && <Check className="h-3 w-3" />}
                     </button>
                   );
                 })
+
               )}
             </div>
             {groups.length > 0 && (
               <div className="mt-2 flex items-center justify-between">
                 <p className="text-[11px] text-muted-foreground">
-                  Tags apply to everyone in this company.
+                  Tags apply to all {contactIds.length} {contactIds.length === 1 ? "contact" : "contacts"}. Partial chips (n/N) show how many are already members.
                 </p>
                 <Button
                   size="sm"

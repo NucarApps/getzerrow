@@ -1,45 +1,22 @@
-Add two layers of contact deduplication so emailless duplicates stop inflating the count:
+## What's happening
 
-## 1. Deterministic merge on Google pull
+The pencil on a company row (e.g. IG Burton) opens the **Company Aliases + Tags** dialog. It currently only pre-selects tags that were saved as *company-level assignments* (`company_group_assignments` row for that domain). Tags that a contact in the bucket already belongs to via individual membership, bulk-add, auto-company-subgroups, or Google labels are ignored — so the dialog looks empty even when the contacts clearly are in groups.
 
-Currently `src/lib/google-contacts/pull.server.ts` only merges by email — any emailless contact becomes a brand-new row, so re-pulls can multiply the same person.
+Verified with a query: IG Burton has 1 contact, 0 group memberships and 0 company assignments — but the same bug shows up for any company whose contacts were tagged individually.
 
-Change the "no link, no email match" branch to also try these lookups against `contacts` + `contact_phones` (scoped to `user_id`, only against rows where `email IS NULL` to avoid stealing a real email-keyed contact):
+## Fix
 
-1. **Any phone match** — normalize each phone (E.164 fallback: strip non-digits, keep last 10). If any existing emailless contact shares a normalized number → merge.
-2. **Name + phone match** — if #1 finds multiple candidates, prefer the one where `lower(name)` also matches.
-3. **Name-only fallback** — only when the Google person has no phone: match on exact `lower(name)` + same `company` among emailless contacts. Skip if ambiguous (2+ candidates) to avoid false merges.
+Edit **only** `src/components/contacts/CompanyAliasesDialog.tsx` (presentation logic; no server or DB changes):
 
-Add a small helper `findEmaillessDuplicate({ userId, name, company, phones })` in a new `src/lib/contacts/dedup.server.ts`. Bump `breakdown.merged_duplicate_email` counter into two: `merged_by_email` and `merged_by_phone` (surface both in the sync UI counters block in `settings.google-contacts.tsx`).
+1. Use the `memberships` array already returned by `listContactGroups` to compute, per group, how many contacts in this bucket are members (`3 / 5`).
+2. Seed `selectedGroupIds` on open with the union of:
+   - saved `company_group_assignments` for this primary domain (today's behavior), **plus**
+   - any group where **every** contact in the bucket is already a member (fully-covered groups).
+3. In each group chip, when there is partial coverage (`0 < n < N`), show a small `n/N` badge next to the group name so the user can see "some of these contacts are already tagged here". Fully-covered / selected chips keep the existing check state.
+4. Update the helper copy under the chip row from "Tags apply to everyone in this company." to something like "Tags apply to all N contacts in this company. Partially-tagged groups show how many are already members."
 
-## 2. AI-assisted duplicate review
+Saving still calls `setCompanyGroups`, which materializes the tag onto every contact in the bucket — no behavior change on write.
 
-New page/drawer to clean up existing duplicates (works whether they came from Google, CSV, or manual entry).
+## Out of scope
 
-- Migration: `contact_duplicate_suggestions` table — `id`, `user_id`, `primary_contact_id`, `duplicate_contact_ids uuid[]`, `confidence` (`high|medium|low`), `reason text`, `signals jsonb`, `status` (`pending|merged|dismissed`), timestamps. RLS scoped to `auth.uid()`, GRANT to `authenticated` + `service_role`.
-- Server fn `scanContactDuplicates` in `src/lib/contacts/dedup.functions.ts`:
-  - Pulls all contacts for the user (id, name, company, email, phones via join).
-  - **Blocking pass** (cheap): groups candidates by normalized phone, by `lower(name)`, and by `lower(name)+company`. Any group with 2+ members becomes a candidate cluster.
-  - **AI pass** on ambiguous clusters (< ~200 clusters/run) using `google/gemini-3.5-flash` via Lovable AI Gateway. Prompt gives the model each cluster's contacts (name, company, title, email, phones, notes snippet) and asks it to decide `same_person: true|false` + `confidence` + short `reason`. Skip AI for high-signal exact phone matches — already write those as `high` confidence.
-  - Writes results to `contact_duplicate_suggestions` with `status='pending'`, upserting on `primary_contact_id`.
-- Server fn `mergeContactDuplicate({ suggestionId })`: picks the richest row as primary (most non-null fields, preferring one with email), moves group memberships / phones / google_contact_links to primary, deletes duplicates, marks suggestion `merged`. Server fn `dismissContactDuplicate` marks `dismissed`.
-
-## 3. UI
-
-Extend `src/components/contacts/GroupSuggestionsDrawer.tsx` pattern → new `DuplicateSuggestionsDrawer.tsx`:
-- Toolbar button "Find duplicates" in `contacts.index.tsx` next to "Suggest groups".
-- "Run AI scan" runs `scanContactDuplicates`; then lists clusters grouped by confidence.
-- Each cluster shows side-by-side cards for the contacts, the AI's reason, and buttons **Merge**, **Keep separate**.
-- On merge, invalidate contacts / groups queries and toast the reclaimed count.
-
-## Technical notes
-
-- Phone normalization: pure helper in `src/lib/contacts/phone.ts` (`digits.slice(-10)` when length ≥ 10, else raw digits) — reused by pull and dedup scan.
-- Dedup scan runs on demand only (button); no cron. Cap AI cluster count per run at 50 to keep credits predictable; show "N more not analyzed" if truncated.
-- AI schema stays tiny (`{ same_person: boolean, confidence: 'high'|'medium'|'low', reason: string }`) per cluster, batched — no bounded arrays in the schema.
-- All new server fns use `requireSupabaseAuth` and only touch `supabaseAdmin` inside the handler after auth.
-
-## Files
-
-- New: `src/lib/contacts/phone.ts`, `src/lib/contacts/dedup.server.ts`, `src/lib/contacts/dedup.functions.ts`, `src/components/contacts/DuplicateSuggestionsDrawer.tsx`, migration for `contact_duplicate_suggestions`.
-- Edited: `src/lib/google-contacts/pull.server.ts` (phone-match branch, split counters), `src/lib/google-contacts/reconcile.server.ts` (pass counters through), `src/routes/_authenticated/settings.google-contacts.tsx` (show `merged_by_phone`), `src/routes/_authenticated/contacts.index.tsx` (toolbar button + drawer wiring).
+No changes to the contact detail drawer, no schema changes, no changes to `setCompanyGroups` or the assignments table.
