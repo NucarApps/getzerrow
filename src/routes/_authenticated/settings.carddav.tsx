@@ -17,6 +17,7 @@ import {
 import {
   getCardDavSettings,
   updateCardDavSettings,
+  forceCarddavResync,
   type GroupNameStyle,
 } from "@/lib/carddav/settings.functions";
 import {
