@@ -590,9 +590,10 @@ export async function handleReport(
       .eq("user_id", userId)
       .in("id", groupIds);
     const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
+    const style = await getGroupNameStyle(userId);
     for (const id of groupIds) {
       if (!owned.has(id)) continue;
-      body += await buildGroupResponse(userId, email, id, includeVcard);
+      body += await buildGroupResponse(userId, email, id, includeVcard, style);
     }
   }
   body += MULTISTATUS_CLOSE;
