@@ -1014,6 +1014,8 @@ export async function handleDelete(
     .eq("id", contactId)
     .eq("user_id", userId);
   if (error) return new Response(error.message, { status: 500 });
+  await insertTombstone(userId, "contact", contactId);
 
   return new Response(null, { status: 204 });
 }
+
