@@ -255,6 +255,7 @@ export const addContactsToGroup = createServerFn({ method: "POST" })
       .from("contact_group_members")
       .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
     if (error) throw new Error(error.message);
+    await reconcileIfAuto(supabase, userId, data.groupId);
     return { added: rows.length };
   });
 
