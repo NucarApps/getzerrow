@@ -18,6 +18,7 @@ const GROUPS: NavGroup[] = [
       { label: "Inbox filters", to: "/settings/inbox" },
       { label: "Activity", to: "/settings/activity" },
       { label: "iPhone contacts", to: "/settings/carddav" },
+      { label: "Google contacts", to: "/settings/google-contacts" },
     ],
   },
   {

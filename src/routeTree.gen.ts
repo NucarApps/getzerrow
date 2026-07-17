@@ -56,6 +56,7 @@ import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as AuthenticatedSettingsMeetingsRecordingRouteImport } from './routes/_authenticated/settings.meetings-recording'
 import { Route as AuthenticatedSettingsMeetingsCalendarRouteImport } from './routes/_authenticated/settings.meetings-calendar'
 import { Route as AuthenticatedSettingsInboxRouteImport } from './routes/_authenticated/settings.inbox'
+import { Route as AuthenticatedSettingsGoogleContactsRouteImport } from './routes/_authenticated/settings.google-contacts'
 import { Route as AuthenticatedSettingsCarddavRouteImport } from './routes/_authenticated/settings.carddav'
 import { Route as AuthenticatedSettingsActivityRouteImport } from './routes/_authenticated/settings.activity'
 import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_authenticated/settings.accounts'
@@ -326,6 +327,12 @@ const AuthenticatedSettingsInboxRoute =
     path: '/inbox',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsGoogleContactsRoute =
+  AuthenticatedSettingsGoogleContactsRouteImport.update({
+    id: '/google-contacts',
+    path: '/google-contacts',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsCarddavRoute =
   AuthenticatedSettingsCarddavRouteImport.update({
     id: '/carddav',
@@ -467,6 +474,7 @@ export interface FileRoutesByFullPath {
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
+  '/settings/google-contacts': typeof AuthenticatedSettingsGoogleContactsRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -534,6 +542,7 @@ export interface FileRoutesByTo {
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
+  '/settings/google-contacts': typeof AuthenticatedSettingsGoogleContactsRoute
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -604,6 +613,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
   '/_authenticated/settings/activity': typeof AuthenticatedSettingsActivityRoute
   '/_authenticated/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
+  '/_authenticated/settings/google-contacts': typeof AuthenticatedSettingsGoogleContactsRoute
   '/_authenticated/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/_authenticated/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/_authenticated/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -674,6 +684,7 @@ export interface FileRouteTypes {
     | '/settings/accounts'
     | '/settings/activity'
     | '/settings/carddav'
+    | '/settings/google-contacts'
     | '/settings/inbox'
     | '/settings/meetings-calendar'
     | '/settings/meetings-recording'
@@ -741,6 +752,7 @@ export interface FileRouteTypes {
     | '/settings/accounts'
     | '/settings/activity'
     | '/settings/carddav'
+    | '/settings/google-contacts'
     | '/settings/inbox'
     | '/settings/meetings-calendar'
     | '/settings/meetings-recording'
@@ -810,6 +822,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/accounts'
     | '/_authenticated/settings/activity'
     | '/_authenticated/settings/carddav'
+    | '/_authenticated/settings/google-contacts'
     | '/_authenticated/settings/inbox'
     | '/_authenticated/settings/meetings-calendar'
     | '/_authenticated/settings/meetings-recording'
@@ -1236,6 +1249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsInboxRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/google-contacts': {
+      id: '/_authenticated/settings/google-contacts'
+      path: '/google-contacts'
+      fullPath: '/settings/google-contacts'
+      preLoaderRoute: typeof AuthenticatedSettingsGoogleContactsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/carddav': {
       id: '/_authenticated/settings/carddav'
       path: '/carddav'
@@ -1384,6 +1404,7 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsAccountsRoute: typeof AuthenticatedSettingsAccountsRoute
   AuthenticatedSettingsActivityRoute: typeof AuthenticatedSettingsActivityRoute
   AuthenticatedSettingsCarddavRoute: typeof AuthenticatedSettingsCarddavRoute
+  AuthenticatedSettingsGoogleContactsRoute: typeof AuthenticatedSettingsGoogleContactsRoute
   AuthenticatedSettingsInboxRoute: typeof AuthenticatedSettingsInboxRoute
   AuthenticatedSettingsMeetingsCalendarRoute: typeof AuthenticatedSettingsMeetingsCalendarRoute
   AuthenticatedSettingsMeetingsRecordingRoute: typeof AuthenticatedSettingsMeetingsRecordingRoute
@@ -1395,6 +1416,8 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsAccountsRoute: AuthenticatedSettingsAccountsRoute,
   AuthenticatedSettingsActivityRoute: AuthenticatedSettingsActivityRoute,
   AuthenticatedSettingsCarddavRoute: AuthenticatedSettingsCarddavRoute,
+  AuthenticatedSettingsGoogleContactsRoute:
+    AuthenticatedSettingsGoogleContactsRoute,
   AuthenticatedSettingsInboxRoute: AuthenticatedSettingsInboxRoute,
   AuthenticatedSettingsMeetingsCalendarRoute:
     AuthenticatedSettingsMeetingsCalendarRoute,
