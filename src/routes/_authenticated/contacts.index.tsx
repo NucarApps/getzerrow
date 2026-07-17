@@ -79,7 +79,14 @@ const GROUP_COLORS = [
   "#64748b",
 ];
 
-type GroupRow = { id: string; name: string; color: string; count: number };
+type GroupRow = {
+  id: string;
+  name: string;
+  color: string;
+  count: number;
+  folder_id?: string | null;
+  linked_folder?: { name: string; color: string | null } | null;
+};
 
 function ContactsPage() {
   const qc = useQueryClient();
