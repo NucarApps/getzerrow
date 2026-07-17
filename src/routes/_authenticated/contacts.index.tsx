@@ -31,7 +31,10 @@ import {
   updateContactGroup,
   deleteContactGroup,
   linkContactGroupToFolder,
+  addContactsToGroups,
 } from "@/lib/contact-groups.functions";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import {
   Dialog,
