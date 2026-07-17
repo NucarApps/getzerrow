@@ -70,3 +70,30 @@ export function parseMultigetHrefs(body: string): string[] {
   }
   return out;
 }
+
+/**
+ * Parse an RFC 6578 `sync-collection` REPORT body. Missing / empty token
+ * means "initial sync". `limit` is optional (iOS rarely sends one).
+ */
+export function parseSyncCollection(body: string): {
+  syncToken: string;
+  syncLevel: string;
+  limit: number | null;
+} {
+  const tokenMatch = body.match(
+    /<(?:\w+:)?sync-token[^>]*>([\s\S]*?)<\/(?:\w+:)?sync-token>/i,
+  );
+  const levelMatch = body.match(
+    /<(?:\w+:)?sync-level[^>]*>([\s\S]*?)<\/(?:\w+:)?sync-level>/i,
+  );
+  const limitMatch = body.match(
+    /<(?:\w+:)?nresults[^>]*>([\s\S]*?)<\/(?:\w+:)?nresults>/i,
+  );
+  const rawLimit = limitMatch ? Number.parseInt(limitMatch[1].trim(), 10) : NaN;
+  return {
+    syncToken: tokenMatch ? tokenMatch[1].trim() : "",
+    syncLevel: levelMatch ? levelMatch[1].trim() : "1",
+    limit: Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : null,
+  };
+}
+
