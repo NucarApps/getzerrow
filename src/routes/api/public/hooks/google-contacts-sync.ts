@@ -36,9 +36,24 @@ export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
 
         let ok = 0;
         let failed = 0;
+        let skipped = 0;
         const errors: Array<{ accountId: string; error: string }> = [];
+        const nowMs = Date.now();
 
         for (const row of rows ?? []) {
+          const intervalMin = (row.sync_interval_minutes as number | null) ?? 15;
+          const lastMs = row.last_incremental_at
+            ? new Date(row.last_incremental_at as string).getTime()
+            : 0;
+          // Skip accounts not yet due — respects per-account cadence. Grace of
+          // 30s prevents drift from making a due tick miss.
+          if (
+            lastMs > 0 &&
+            nowMs - lastMs < intervalMin * 60_000 - 30_000
+          ) {
+            skipped += 1;
+            continue;
+          }
           try {
             const res = await runGoogleContactsSync(
               row.user_id as string,
