@@ -110,8 +110,10 @@ export type PullBreakdown = {
   updated: number;
   skipped_no_email: number;
   merged_duplicate_email: number;
+  merged_by_phone: number;
   failed: number;
 };
+
 
 /** Apply pulled people/groups to local Zerrow state. Returns the count applied. */
 export async function pullFromGoogle(
@@ -147,8 +149,10 @@ export async function pullFromGoogle(
     updated: 0,
     skipped_no_email: 0,
     merged_duplicate_email: 0,
+    merged_by_phone: 0,
     failed: 0,
   };
+
   await applyPersonChanges(ids, peopleResult.persons, peopleResult.deletions, breakdown, progress);
 
   logInfo("google_contacts.pull.done", {
@@ -284,11 +288,12 @@ async function applyPersonChanges(
     let didCreate = false;
     let didMerge = false;
 
+    let mergedByPhone = false;
     if (!contactId) {
       // If the Google person has an email, prefer merging into any existing
       // Zerrow contact with the same email (email is the natural key when
-      // present). Otherwise, create a fresh emailless row keyed by the
-      // Google resourceName via google_contact_links.
+      // present). Otherwise fall back to phone / name+phone / name+company
+      // matches against emailless contacts.
       if (parsed.email) {
         const { data: existing } = await supabaseAdmin
           .from("contacts")
@@ -301,6 +306,27 @@ async function applyPersonChanges(
           didMerge = true;
         }
       }
+      if (!contactId) {
+        const { findEmaillessDuplicate } = await import(
+          "@/lib/contacts/dedup.server"
+        );
+        const phoneNumbers: string[] = [
+          ...parsed.phones.map((p) => p.number),
+          ...(parsed.patch.primary_phone ? [parsed.patch.primary_phone] : []),
+        ];
+        const dupId = await findEmaillessDuplicate({
+          userId: ids.userId,
+          name: parsed.patch.name ?? null,
+          company: parsed.patch.company ?? null,
+          phones: phoneNumbers,
+        });
+        if (dupId) {
+          contactId = dupId;
+          didMerge = true;
+          mergedByPhone = true;
+        }
+      }
+
       if (!contactId) {
         const { data: created, error: cErr } = await supabaseAdmin
           .from("contacts")
@@ -367,8 +393,10 @@ async function applyPersonChanges(
     }
 
     if (didCreate) breakdown.created++;
+    else if (mergedByPhone) breakdown.merged_by_phone++;
     else if (didMerge) breakdown.merged_duplicate_email++;
     else breakdown.updated++;
+
 
 
     if (!contactId) continue;

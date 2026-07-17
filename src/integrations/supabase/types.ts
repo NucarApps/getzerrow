@@ -302,6 +302,53 @@ export type Database = {
         }
         Relationships: []
       }
+      contact_duplicate_suggestions: {
+        Row: {
+          confidence: string
+          created_at: string
+          duplicate_contact_ids: string[]
+          id: string
+          primary_contact_id: string
+          reason: string | null
+          signals: Json
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          confidence: string
+          created_at?: string
+          duplicate_contact_ids: string[]
+          id?: string
+          primary_contact_id: string
+          reason?: string | null
+          signals?: Json
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          confidence?: string
+          created_at?: string
+          duplicate_contact_ids?: string[]
+          id?: string
+          primary_contact_id?: string
+          reason?: string | null
+          signals?: Json
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_duplicate_suggestions_primary_contact_id_fkey"
+            columns: ["primary_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_group_members: {
         Row: {
           contact_id: string
