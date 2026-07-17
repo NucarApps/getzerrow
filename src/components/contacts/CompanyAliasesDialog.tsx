@@ -95,12 +95,30 @@ export function CompanyAliasesDialog({
         .filter((a) => a.primary_domain === primaryDomain)
         .map((a) => a.group_id)
     : [];
-  const savedKey = savedGroupIds.slice().sort().join(",");
+
+  // Per-group membership counts across the contacts in this bucket, so we can
+  // seed the selection and show partial ("3/5") coverage in the chip UI.
+  const contactIdSet = new Set(contactIds);
+  const memberCountByGroup = new Map<string, number>();
+  for (const m of groupsQ.data?.memberships ?? []) {
+    if (contactIdSet.has(m.contact_id)) {
+      memberCountByGroup.set(m.group_id, (memberCountByGroup.get(m.group_id) ?? 0) + 1);
+    }
+  }
+  const fullyCoveredGroupIds =
+    contactIds.length > 0
+      ? [...memberCountByGroup.entries()]
+          .filter(([, n]) => n === contactIds.length)
+          .map(([id]) => id)
+      : [];
+  const initialSelection = Array.from(new Set([...savedGroupIds, ...fullyCoveredGroupIds]));
+  const savedKey = initialSelection.slice().sort().join(",");
 
   useEffect(() => {
-    if (open) setSelectedGroupIds(new Set(savedGroupIds));
+    if (open) setSelectedGroupIds(new Set(initialSelection));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, savedKey]);
+
 
   useEffect(() => {
     if (open) setBrandQuery(companyName ?? "");
