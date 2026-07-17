@@ -69,6 +69,7 @@ import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/public/hooks/relearn-folders'
 import { Route as ApiPublicHooksReconcileMeetingsRouteImport } from './routes/api/public/hooks/reconcile-meetings'
+import { Route as ApiPublicHooksGoogleContactsSyncRouteImport } from './routes/api/public/hooks/google-contacts-sync'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
 import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
 import { Route as ApiPublicCarddavSplatRouteImport } from './routes/api/public/carddav/$'
@@ -402,6 +403,12 @@ const ApiPublicHooksReconcileMeetingsRoute =
     path: '/api/public/hooks/reconcile-meetings',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksGoogleContactsSyncRoute =
+  ApiPublicHooksGoogleContactsSyncRouteImport.update({
+    id: '/api/public/hooks/google-contacts-sync',
+    path: '/api/public/hooks/google-contacts-sync',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksCheckFolderWriteAlertsRoute =
   ApiPublicHooksCheckFolderWriteAlertsRouteImport.update({
     id: '/api/public/hooks/check-folder-write-alerts',
@@ -493,6 +500,7 @@ export interface FileRoutesByFullPath {
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/google-contacts-sync': typeof ApiPublicHooksGoogleContactsSyncRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -559,6 +567,7 @@ export interface FileRoutesByTo {
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/google-contacts-sync': typeof ApiPublicHooksGoogleContactsSyncRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -628,6 +637,7 @@ export interface FileRoutesById {
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/google-contacts-sync': typeof ApiPublicHooksGoogleContactsSyncRoute
   '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
@@ -697,6 +707,7 @@ export interface FileRouteTypes {
     | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/google-contacts-sync'
     | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
@@ -763,6 +774,7 @@ export interface FileRouteTypes {
     | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/google-contacts-sync'
     | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
@@ -831,6 +843,7 @@ export interface FileRouteTypes {
     | '/api/public/carddav/$'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/google-contacts-sync'
     | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
@@ -881,6 +894,7 @@ export interface RootRouteChildren {
   ApiPublicCarddavSplatRoute: typeof ApiPublicCarddavSplatRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  ApiPublicHooksGoogleContactsSyncRoute: typeof ApiPublicHooksGoogleContactsSyncRoute
   ApiPublicHooksReconcileMeetingsRoute: typeof ApiPublicHooksReconcileMeetingsRoute
   ApiPublicHooksRelearnFoldersRoute: typeof ApiPublicHooksRelearnFoldersRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
@@ -1313,6 +1327,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksReconcileMeetingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/google-contacts-sync': {
+      id: '/api/public/hooks/google-contacts-sync'
+      path: '/api/public/hooks/google-contacts-sync'
+      fullPath: '/api/public/hooks/google-contacts-sync'
+      preLoaderRoute: typeof ApiPublicHooksGoogleContactsSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/check-folder-write-alerts': {
       id: '/api/public/hooks/check-folder-write-alerts'
       path: '/api/public/hooks/check-folder-write-alerts'
@@ -1462,6 +1483,7 @@ const rootRouteChildren: RootRouteChildren = {
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
     ApiPublicHooksCheckFolderWriteAlertsRoute,
+  ApiPublicHooksGoogleContactsSyncRoute: ApiPublicHooksGoogleContactsSyncRoute,
   ApiPublicHooksReconcileMeetingsRoute: ApiPublicHooksReconcileMeetingsRoute,
   ApiPublicHooksRelearnFoldersRoute: ApiPublicHooksRelearnFoldersRoute,
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
