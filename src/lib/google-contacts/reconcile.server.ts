@@ -79,6 +79,11 @@ export async function runGoogleContactsSync(
       last_incremental_at: now.toISOString(),
       last_pull_count: pull.pulled,
       last_push_count: push.contactsPushed + push.groupsPushed,
+      last_pull_created: pull.breakdown.created,
+      last_pull_updated: pull.breakdown.updated,
+      last_pull_skipped_no_email: pull.breakdown.skipped_no_email,
+      last_pull_merged: pull.breakdown.merged_duplicate_email,
+      last_pull_failed: pull.breakdown.failed,
       last_error: null,
       pending_bump: false,
     });

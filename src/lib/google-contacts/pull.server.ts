@@ -105,6 +105,14 @@ async function paginateGroups(
   return { groups, deletions, nextSyncToken };
 }
 
+export type PullBreakdown = {
+  created: number;
+  updated: number;
+  skipped_no_email: number;
+  merged_duplicate_email: number;
+  failed: number;
+};
+
 /** Apply pulled people/groups to local Zerrow state. Returns the count applied. */
 export async function pullFromGoogle(
   ids: Ids,
@@ -114,6 +122,7 @@ export async function pullFromGoogle(
   peopleSyncToken: string | null;
   groupsSyncToken: string | null;
   usedFullResync: boolean;
+  breakdown: PullBreakdown;
 }> {
   const state = await loadSyncState(ids.userId, ids.gmailAccountId);
   if (!state) throw new Error("google_sync_state row missing");
@@ -133,7 +142,14 @@ export async function pullFromGoogle(
   const peopleResult = await paginateConnections(ids.gmailAccountId, state.people_sync_token);
   const peopleTotal = peopleResult.persons.length + peopleResult.deletions.length;
   await progress?.set("pulling_contacts", 0, peopleTotal);
-  await applyPersonChanges(ids, peopleResult.persons, peopleResult.deletions, progress);
+  const breakdown: PullBreakdown = {
+    created: 0,
+    updated: 0,
+    skipped_no_email: 0,
+    merged_duplicate_email: 0,
+    failed: 0,
+  };
+  await applyPersonChanges(ids, peopleResult.persons, peopleResult.deletions, breakdown, progress);
 
   logInfo("google_contacts.pull.done", {
     ...ids,
@@ -141,6 +157,7 @@ export async function pullFromGoogle(
     deletions: peopleResult.deletions.length,
     groups: groupsResult.groups.length,
     used_full: peopleResult.usedFull,
+    ...breakdown,
   });
 
   return {
@@ -148,6 +165,7 @@ export async function pullFromGoogle(
     peopleSyncToken: peopleResult.nextSyncToken,
     groupsSyncToken: groupsResult.nextSyncToken,
     usedFullResync: peopleResult.usedFull,
+    breakdown,
   };
 }
 
@@ -223,6 +241,7 @@ async function applyPersonChanges(
   ids: Ids,
   persons: Person[],
   deletions: string[],
+  breakdown: PullBreakdown,
   progress?: ProgressReporter,
 ): Promise<void> {
   if (!persons.length && !deletions.length) return;
@@ -247,10 +266,16 @@ async function applyPersonChanges(
   for (const p of persons) {
     if (!p.resourceName) continue;
     const parsed = personToContact(p);
-    if (!parsed.email) continue; // Zerrow requires an email.
+    if (!parsed.email) {
+      breakdown.skipped_no_email++;
+      await progress?.increment(1);
+      continue;
+    }
 
     const link = byResource.get(p.resourceName);
     let contactId = link?.contact_id ?? null;
+    let didCreate = false;
+    let didMerge = false;
 
     if (!contactId) {
       // Find or create by email — email is the natural key.
@@ -262,6 +287,7 @@ async function applyPersonChanges(
         .maybeSingle();
       if (existing) {
         contactId = existing.id;
+        didMerge = true;
       } else {
         const { data: created, error: cErr } = await supabaseAdmin
           .from("contacts")
@@ -284,9 +310,12 @@ async function applyPersonChanges(
           .single();
         if (cErr || !created) {
           logError("google_contacts.pull.contact_create_failed", { ...ids, email: parsed.email }, cErr);
+          breakdown.failed++;
+          await progress?.increment(1);
           continue;
         }
         contactId = created.id;
+        didCreate = true;
       }
       await supabaseAdmin.from("google_contact_links").upsert(
         {
@@ -319,6 +348,11 @@ async function applyPersonChanges(
         .eq("gmail_account_id", ids.gmailAccountId)
         .eq("resource_name", p.resourceName);
     }
+
+    if (didCreate) breakdown.created++;
+    else if (didMerge) breakdown.merged_duplicate_email++;
+    else breakdown.updated++;
+
 
     if (!contactId) continue;
 
