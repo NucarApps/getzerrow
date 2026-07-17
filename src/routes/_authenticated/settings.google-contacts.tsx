@@ -156,12 +156,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
           <p className="mt-1 text-xs text-muted-foreground">
             Last sync: {formatWhen(statusQ.data?.state?.last_incremental_at)}
           </p>
-          {statusQ.data?.state && (
-            <p className="text-xs text-muted-foreground">
-              Pulled {statusQ.data.state.last_pull_count ?? 0} · Pushed{" "}
-              {statusQ.data.state.last_push_count ?? 0}
-            </p>
-          )}
+          {statusQ.data?.state && <PullBreakdown state={statusQ.data.state} />}
         </div>
 
         <div className="flex flex-col items-start gap-2 md:items-end">
