@@ -52,7 +52,7 @@ describe("parseVCard", () => {
 
   it("unfolds continuation lines", () => {
     const folded =
-      "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Long\r\n Name Here\r\nEND:VCARD\r\n";
+      "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Long \r\n Name Here\r\nEND:VCARD\r\n";
     expect(parseVCard(folded)!.name).toBe("Long Name Here");
   });
 
