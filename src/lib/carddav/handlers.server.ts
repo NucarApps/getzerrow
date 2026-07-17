@@ -199,6 +199,16 @@ async function propfindAddressbook(userId: string, email: string, depth: string)
         `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`;
       body += responseBlock(contactHref(email, row.id), props);
     }
+    // Groups appear as their own vCards (Apple X-ADDRESSBOOKSERVER-KIND).
+    const groups = await listGroupRows(userId);
+    for (const g of groups) {
+      const etag = groupETag(g.id, g.updated_at);
+      const props =
+        `<D:resourcetype/>` +
+        `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
+        `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`;
+      body += responseBlock(groupHref(email, g.id), props);
+    }
   }
   body += MULTISTATUS_CLOSE;
   return davResponse(body, { "Cache-Control": "no-cache" });
