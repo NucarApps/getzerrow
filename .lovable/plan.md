@@ -1,41 +1,51 @@
+## Goal
+Add a **one-way "Pull from Google" mode** as the default entry point for Google Contacts sync. Users import their Google contacts/groups into Zerrow, clean and merge them here, and then explicitly opt in to full two-way sync as a separate step.
 
-## What's happening
+## UX flow (settings → Google contacts)
 
-The Google Contacts sync isn't stuck in Google — it's stuck on our side.
+Per Gmail account, three states instead of one toggle:
 
-`google_sync_state` for your Gmail account currently has:
+1. **Off** — nothing syncs.
+2. **Pull only (import from Google)** — default when a user first turns on sync. Cron + "Sync now" runs `pullFromGoogle` only. Local edits, adds, and deletes in Zerrow are NOT pushed back. Safe sandbox for cleanup/merging.
+3. **Two-way sync** — current behavior (pull + push + tombstones).
 
-- `locked_at = 22:58:11` (about 2 minutes ago and counting)
-- `last_error = People API 400 on /contactGroups … Invalid groupFields mask path: "formatted_name"`
-- `updated_at` identical to `locked_at`
+The card shows:
+- Radio group: Off / Pull only / Two-way
+- A callout under "Pull only" explaining it's read-only from Google's side, safe to merge duplicates in Zerrow
+- When switching Pull only → Two-way, a confirm dialog: "Local changes since import will now be pushed to Google."
 
-That's the fingerprint of a sync run that acquired the in-DB lease, hit the (now-fixed) `formatted_name` error, and got killed by the worker mid-handler before the `catch` block could clear the lock. `reconcile.server.ts` refuses to start a new run while `locked_at` is under 5 minutes old, so every "Sync now" click returns `{ ok: false, error: "locked" }` and the UI just re-polls and keeps spinning until the lease naturally expires.
+## Technical changes
 
-The `formatted_name` fix is already in `people-client.server.ts` (`CONTACT_GROUP_LIST_FIELDS = "name,groupType"`), so once the lock is cleared the next run should actually reach Google and succeed.
+**DB migration**
+- Add `sync_mode text not null default 'pull_only'` to `google_sync_state` with check constraint `('off','pull_only','two_way')`.
+- Backfill: rows with `enabled = true` → `'two_way'` (preserves current behavior for existing users), `enabled = false` → `'off'`.
+- Keep the `enabled` column for now (derived: `sync_mode <> 'off'`) to avoid breaking the existing UI/queries during rollout.
 
-## Fix
+**`src/lib/google-contacts/reconcile.server.ts`**
+- Read `state.sync_mode`. Branch:
+  - `'off'` → return `{ ok: false, error: "sync_disabled" }` (same as today).
+  - `'pull_only'` → run `pullFromGoogle` only, skip `pushToGoogle`, still bump cursors and progress. Set `last_push_count: 0`.
+  - `'two_way'` → current pull + push flow.
+- Progress reporter skips the "pushing…" steps in pull-only mode.
 
-1. **Release the stuck lease now.** One-off UPDATE on `google_sync_state` setting `locked_at = null` and `last_error = null` for the affected row so the next "Sync now" starts fresh.
+**`src/lib/google-contacts/push.server.ts`**
+- No logic changes — simply not invoked in pull-only mode. Tombstones keep queuing locally; they'll flush the first time the user upgrades to two-way (existing code already drains them).
 
-2. **Shrink the lease + always release it.** In `src/lib/google-contacts/reconcile.server.ts`:
-   - Drop the stale-lease window from 5 minutes to **90 seconds** (the pull+push flow finishes in well under that; longer just prolongs wedge time).
-   - Wrap the pull/push work in `try / catch / finally` so the lock is cleared in a `finally`, not only in the `catch`. That way even if the handler is aborted after the throw (worker timeout, client disconnect), the *next* run's own stale-lease check reclaims it within 90 s instead of 5 min.
-   - Keep the existing `last_error` semantics — clear on success, set on failure.
+**`src/lib/google-contacts.functions.ts`**
+- Replace `setGoogleContactsSyncEnabled(enabled: boolean)` with `setGoogleContactsSyncMode(mode: 'off' | 'pull_only' | 'two_way')`. Keep the old fn as a thin wrapper mapping `true → 'two_way'`, `false → 'off'` for one release so nothing else breaks.
+- `getGoogleContactsSyncStatus` returns `sync_mode` in addition to existing fields.
 
-3. **Surface locked state clearly in the UI.** In `src/routes/_authenticated/settings.google-contacts.tsx`:
-   - When `syncNow` resolves with `error: "locked"`, show the existing "Another sync is already running" toast (already wired via `friendlyError`) *and* tell the user it will retry within ~90 s.
-   - No auto-unlock button — the shorter lease makes it unnecessary and a manual override risks racing a real in-flight run.
+**`src/routes/_authenticated/settings.google-contacts.tsx`**
+- Swap the `<Switch>` for a shadcn `<RadioGroup>` with the three options and helper copy.
+- Add confirm `AlertDialog` on the Pull only → Two-way transition.
+- Show a subtle "Pull only" badge next to the account email while in that mode.
 
-4. **Verify.** After the migration/edit, click "Sync now" once and confirm via `google_sync_state` that `last_incremental_at` bumps, `last_error` clears, and `last_pull_count` reflects your Google contacts count.
-
-## Technical notes
-
-- No schema change. Just a data update + code edits in `reconcile.server.ts` and `settings.google-contacts.tsx`.
-- The 15-minute cron and manual "Sync now" both go through `runGoogleContactsSync`, so the finally-based cleanup covers both paths.
-- Nothing changes for `people_sync_token` / `groups_sync_token` — they stay null so the next run does a full pull (which is what we want after the previous failure).
-- Does NOT touch the OAuth reconnect / contacts-scope handling — those paths were already resolved earlier this session and are working.
+**Cron tick**
+- No change; it already calls `runGoogleContactsSync` per account and the mode is read inside.
 
 ## Out of scope
+- No changes to CardDAV, contact groups UI, or the mapper.
+- No auto-merge/dedupe tooling — that's a separate future feature the user hinted at ("I could do the merging, the cleaning up"); existing contacts UI already supports manual merge.
 
-- Retrying a background job automatically after a lease reclaim (the 15-min cron already covers that cadence).
-- Streaming progress to the UI. Current 15 s polling is fine for a run that finishes in a few seconds.
+## Rollout note
+Existing connected accounts stay on two-way (backfill). New accounts default to pull-only so the first-time experience matches what the user asked for.

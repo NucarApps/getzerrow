@@ -28,11 +28,18 @@ export const syncGoogleContactsNow = createServerFn({ method: "POST" })
       "@/lib/google-contacts/reconcile.server"
     );
     // Ensure sync is enabled (a manual run is an implicit opt-in).
+    // Default new opt-ins to pull-only so the first run is safe (read-only
+    // from Google's side) — the user can upgrade to two-way from settings.
     const { ensureSyncState, updateSyncState } = await import(
       "@/lib/google-contacts/state.server"
     );
     const state = await ensureSyncState(context.userId, data.accountId);
-    if (!state.enabled) await updateSyncState(state.id, { enabled: true });
+    if (!state.enabled) {
+      await updateSyncState(state.id, {
+        enabled: true,
+        sync_mode: state.sync_mode === "off" ? "pull_only" : state.sync_mode,
+      });
+    }
     return await runGoogleContactsSync(context.userId, data.accountId);
   });
 
@@ -49,6 +56,30 @@ export const getGoogleContactsSyncStatus = createServerFn({ method: "POST" })
     return await getGoogleContactsStatus(context.userId, data.accountId);
   });
 
+const SYNC_MODES = ["off", "pull_only", "two_way"] as const;
+type SyncMode = (typeof SYNC_MODES)[number];
+
+export const setGoogleContactsSyncMode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { accountId: string; mode: SyncMode }) =>
+    z
+      .object({ accountId: z.string().uuid(), mode: z.enum(SYNC_MODES) })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwnsAccount(context.userId, data.accountId);
+    const { ensureSyncState, updateSyncState } = await import(
+      "@/lib/google-contacts/state.server"
+    );
+    const state = await ensureSyncState(context.userId, data.accountId);
+    await updateSyncState(state.id, {
+      sync_mode: data.mode,
+      enabled: data.mode !== "off",
+    });
+    return { ok: true };
+  });
+
+/** @deprecated Prefer setGoogleContactsSyncMode. Retained for older callers. */
 export const setGoogleContactsSyncEnabled = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { accountId: string; enabled: boolean }) =>
@@ -60,6 +91,13 @@ export const setGoogleContactsSyncEnabled = createServerFn({ method: "POST" })
       "@/lib/google-contacts/state.server"
     );
     const state = await ensureSyncState(context.userId, data.accountId);
-    await updateSyncState(state.id, { enabled: data.enabled });
+    await updateSyncState(state.id, {
+      enabled: data.enabled,
+      sync_mode: data.enabled
+        ? state.sync_mode === "off"
+          ? "pull_only"
+          : state.sync_mode
+        : "off",
+    });
     return { ok: true };
   });
