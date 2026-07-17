@@ -152,7 +152,7 @@ export async function listContactGroupsPage(
 ): Promise<GroupsPage> {
   const query: Record<string, string> = {
     pageSize: "200",
-    groupFields: "name,formattedName,groupType,memberCount",
+    groupFields: "name,groupType,memberCount",
   };
   if (opts.pageToken) query.pageToken = opts.pageToken;
   if (opts.syncToken) query.syncToken = opts.syncToken;
