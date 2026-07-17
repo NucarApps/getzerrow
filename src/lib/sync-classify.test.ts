@@ -51,6 +51,7 @@ function ctx(over: Partial<AccountContext> = {}): AccountContext {
     calendarGuardEnabled: over.calendarGuardEnabled ?? false,
     calendarContacts: over.calendarContacts ?? new Set<string>(),
     accountEmail: over.accountEmail ?? null,
+    senderGroups: over.senderGroups ?? new Map(),
   };
 }
 

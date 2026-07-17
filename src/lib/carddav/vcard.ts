@@ -55,7 +55,11 @@ function phoneTypeParam(label: string | null): string {
  * lines from the phones table and only emit the encrypted `phone` field on
  * the contact itself.
  */
-export function contactToVCard(contact: DecryptedContact, phones: PhoneRow[] = []): string {
+export function contactToVCard(
+  contact: DecryptedContact,
+  phones: PhoneRow[] = [],
+  categories: string[] = [],
+): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
 
   // N: split "First Last" heuristically. iOS renders FN so the split just
@@ -123,6 +127,16 @@ export function contactToVCard(contact: DecryptedContact, phones: PhoneRow[] = [
 
   if (contact.notes) out.push(line("NOTE", esc(contact.notes)));
 
+  // CATEGORIES: comma-separated group names iOS displays on the contact and
+  // uses to build its Groups. We escape each name and join with unescaped
+  // commas per RFC 2426.
+  if (categories.length > 0) {
+    const cats = categories
+      .filter((c) => c && c.trim().length > 0)
+      .map((c) => esc(c.trim()));
+    if (cats.length > 0) out.push(line("CATEGORIES", cats.join(",")));
+  }
+
   // REV drives iOS's "last modified" and pairs with ETag for change detection.
   const rev = new Date(contact.updated_at).toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
   out.push(line("REV", rev));
@@ -172,6 +186,14 @@ export type ParsedVCard = {
   linkedin: string | null;
   twitter: string | null;
   notes: string | null;
+  /** iOS "CATEGORIES:" list — the group names the user checked in the
+   * Contacts app. Empty when the card belongs to no groups. */
+  categories: string[];
+  /** True when this vCard represents an Apple-style group (KIND:group or
+   * X-ADDRESSBOOKSERVER-KIND:group). */
+  isGroup: boolean;
+  /** Member contact UIDs for a group vCard. Empty for individuals. */
+  memberUids: string[];
 };
 
 function unescapeValue(v: string): string {
@@ -251,6 +273,7 @@ export function parseVCard(text: string): ParsedVCard | null {
     phones: [], address_line1: null, address_line2: null, city: null,
     region: null, postal_code: null, country: null, website: null,
     linkedin: null, twitter: null, notes: null,
+    categories: [], isGroup: false, memberUids: [],
   };
 
   let fn: string | null = null;
@@ -314,6 +337,39 @@ export function parseVCard(text: string): ParsedVCard | null {
       case "NOTE":
         out.notes = v || null;
         break;
+      case "CATEGORIES": {
+        // Commas separate values; already-escaped commas were resolved by
+        // unescapeValue, so re-split on unescaped commas via the raw value.
+        const raw = p.value;
+        const parts: string[] = [];
+        let buf = "";
+        for (let i = 0; i < raw.length; i++) {
+          const c = raw[i];
+          if (c === "\\" && i + 1 < raw.length) {
+            buf += raw[i + 1];
+            i++;
+          } else if (c === ",") {
+            if (buf.trim()) parts.push(buf.trim());
+            buf = "";
+          } else {
+            buf += c;
+          }
+        }
+        if (buf.trim()) parts.push(buf.trim());
+        out.categories = parts;
+        break;
+      }
+      case "KIND":
+      case "X-ADDRESSBOOKSERVER-KIND":
+        if (v.trim().toLowerCase() === "group") out.isGroup = true;
+        break;
+      case "MEMBER":
+      case "X-ADDRESSBOOKSERVER-MEMBER": {
+        // Format: urn:uuid:<uid>
+        const m = v.trim().match(/urn:uuid:([0-9a-f-]{36})/i);
+        if (m) out.memberUids.push(m[1].toLowerCase());
+        break;
+      }
       default:
         break;
     }
@@ -336,4 +392,46 @@ export function parseVCard(text: string): ParsedVCard | null {
   out.phones = Array.from(seen.values());
 
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// GROUP vCARDS — Apple's Contacts app publishes groups as separate vCards
+// with X-ADDRESSBOOKSERVER-KIND:group + X-ADDRESSBOOKSERVER-MEMBER lines.
+// We serve these alongside contact vCards so iOS mirrors Zerrow groups.
+
+export type GroupCardInput = {
+  uid: string;
+  name: string;
+  memberContactIds: string[];
+  updatedAt: string;
+};
+
+/** Build an Apple-style group vCard. Members reference contact UIDs which
+ * must match the contacts.id used in the corresponding contact vCards. */
+export function buildGroupVCard(g: GroupCardInput): string {
+  const out: string[] = [];
+  out.push("BEGIN:VCARD");
+  out.push("VERSION:3.0");
+  out.push(line("PRODID", "-//Zerrow//CardDAV Group 1.0//EN"));
+  out.push(line("UID", g.uid));
+  out.push(line("FN", esc(g.name)));
+  out.push(line("N", `${esc(g.name)};;;;`));
+  out.push("X-ADDRESSBOOKSERVER-KIND:group");
+  for (const id of g.memberContactIds) {
+    out.push(line("X-ADDRESSBOOKSERVER-MEMBER", `urn:uuid:${id}`));
+  }
+  const rev = new Date(g.updatedAt).toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  out.push(line("REV", rev));
+  out.push("END:VCARD");
+  return out.join("\r\n") + "\r\n";
+}
+
+/** Stable ETag for a group vCard. Bumps whenever the group name or its
+ * membership list changes (the trigger on contact_group_members updates
+ * contact_groups.updated_at). */
+export function groupETag(id: string, updatedAt: string): string {
+  const src = `g:${id}:${updatedAt}`;
+  let h = 5381;
+  for (let i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) | 0;
+  return `"${(h >>> 0).toString(16)}-${new Date(updatedAt).getTime().toString(36)}"`;
 }

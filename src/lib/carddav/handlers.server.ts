@@ -9,7 +9,14 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getContactDecrypted } from "@/lib/sync/encrypted-reader";
 import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
-import { contactETag, contactToVCard, parseVCard, type PhoneRow } from "./vcard";
+import {
+  buildGroupVCard,
+  contactETag,
+  contactToVCard,
+  groupETag,
+  parseVCard,
+  type PhoneRow,
+} from "./vcard";
 import {
   davResponse,
   MULTISTATUS_CLOSE,
@@ -30,23 +37,37 @@ function addressbookHref(email: string): string {
 function contactHref(email: string, contactId: string): string {
   return `${BASE}/${encodeURIComponent(email)}/contacts/${contactId}.vcf`;
 }
+function groupHref(email: string, groupId: string): string {
+  return `${BASE}/${encodeURIComponent(email)}/contacts/group-${groupId}.vcf`;
+}
 
 // Sum of contact update times; changes when any contact changes. iOS caches
 // the whole book while the CTag is stable, so this must actually move on
 // edits and stay stable otherwise.
 async function computeBookCTag(userId: string): Promise<string> {
-  const { data } = await supabaseAdmin
+  // Include contact_groups.updated_at so group renames / membership changes
+  // invalidate iOS's cached copy.
+  const { data: cLatest } = await supabaseAdmin
     .from("contacts")
     .select("updated_at")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .limit(1);
-  const latest = data?.[0]?.updated_at ?? "1970-01-01T00:00:00Z";
-  const { count } = await supabaseAdmin
-    .from("contacts")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId);
-  return `"${new Date(latest).getTime().toString(36)}-${count ?? 0}"`;
+  const { data: gLatest } = await supabaseAdmin
+    .from("contact_groups")
+    .select("updated_at")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  const latest = [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
+    .filter((v): v is string => !!v)
+    .sort()
+    .pop() ?? "1970-01-01T00:00:00Z";
+  const [{ count: cCount }, { count: gCount }] = await Promise.all([
+    supabaseAdmin.from("contacts").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    supabaseAdmin.from("contact_groups").select("id", { count: "exact", head: true }).eq("user_id", userId),
+  ]);
+  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}"`;
 }
 
 async function listContactRows(userId: string): Promise<Array<{ id: string; updated_at: string }>> {
@@ -56,6 +77,42 @@ async function listContactRows(userId: string): Promise<Array<{ id: string; upda
     .eq("user_id", userId)
     .limit(5000);
   return (data as Array<{ id: string; updated_at: string }> | null) ?? [];
+}
+
+type GroupRow = {
+  id: string;
+  name: string;
+  updated_at: string;
+  carddav_uid: string | null;
+};
+
+async function listGroupRows(userId: string): Promise<GroupRow[]> {
+  const { data } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,name,updated_at,carddav_uid")
+    .eq("user_id", userId)
+    .limit(1000);
+  return (data as GroupRow[] | null) ?? [];
+}
+
+async function fetchGroupMembers(groupId: string): Promise<string[]> {
+  const { data } = await supabaseAdmin
+    .from("contact_group_members")
+    .select("contact_id")
+    .eq("group_id", groupId);
+  return ((data as Array<{ contact_id: string }> | null) ?? []).map((r) => r.contact_id);
+}
+
+async function fetchCategoriesForContact(userId: string, contactId: string): Promise<string[]> {
+  const { data } = await supabaseAdmin
+    .from("contact_group_members")
+    .select("contact_groups!inner(name,user_id)")
+    .eq("contact_id", contactId);
+  const rows = (data as Array<{ contact_groups: { name: string; user_id: string } | null }> | null) ?? [];
+  return rows
+    .map((r) => r.contact_groups)
+    .filter((g): g is { name: string; user_id: string } => !!g && g.user_id === userId)
+    .map((g) => g.name);
 }
 
 async function fetchPhones(contactId: string): Promise<PhoneRow[]> {
@@ -142,6 +199,16 @@ async function propfindAddressbook(userId: string, email: string, depth: string)
         `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`;
       body += responseBlock(contactHref(email, row.id), props);
     }
+    // Groups appear as their own vCards (Apple X-ADDRESSBOOKSERVER-KIND).
+    const groups = await listGroupRows(userId);
+    for (const g of groups) {
+      const etag = groupETag(g.id, g.updated_at);
+      const props =
+        `<D:resourcetype/>` +
+        `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
+        `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`;
+      body += responseBlock(groupHref(email, g.id), props);
+    }
   }
   body += MULTISTATUS_CLOSE;
   return davResponse(body, { "Cache-Control": "no-cache" });
@@ -173,7 +240,12 @@ export async function handlePropfind(
 // -----------------------------------------------------------------------------
 // REPORT (addressbook-multiget / addressbook-query)
 
-async function buildContactResponse(email: string, contactId: string, includeVcard: boolean): Promise<string> {
+async function buildContactResponse(
+  userId: string,
+  email: string,
+  contactId: string,
+  includeVcard: boolean,
+): Promise<string> {
   const { row } = await getContactDecrypted(contactId);
   if (!row) {
     return (
@@ -183,13 +255,50 @@ async function buildContactResponse(email: string, contactId: string, includeVca
       `</D:response>`
     );
   }
-  const phones = await fetchPhones(contactId);
-  const vcard = contactToVCard(row, phones);
+  const [phones, categories] = await Promise.all([
+    fetchPhones(contactId),
+    fetchCategoriesForContact(userId, contactId),
+  ]);
+  const vcard = contactToVCard(row, phones, categories);
   const etag = contactETag(row.id, row.updated_at);
   const props =
     `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
     (includeVcard ? `<C:address-data>${xmlEscape(vcard)}</C:address-data>` : "");
   return responseBlock(contactHref(email, contactId), props);
+}
+
+async function buildGroupResponse(
+  userId: string,
+  email: string,
+  groupId: string,
+  includeVcard: boolean,
+): Promise<string> {
+  const { data: group } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,name,updated_at,carddav_uid")
+    .eq("id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!group) {
+    return (
+      `<D:response>` +
+      `<D:href>${groupHref(email, groupId)}</D:href>` +
+      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
+      `</D:response>`
+    );
+  }
+  const members = await fetchGroupMembers(group.id);
+  const vcard = buildGroupVCard({
+    uid: group.carddav_uid ?? `group-${group.id}`,
+    name: group.name,
+    memberContactIds: members,
+    updatedAt: group.updated_at,
+  });
+  const etag = groupETag(group.id, group.updated_at);
+  const props =
+    `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
+    (includeVcard ? `<C:address-data>${xmlEscape(vcard)}</C:address-data>` : "");
+  return responseBlock(groupHref(email, group.id), props);
 }
 
 export async function handleReport(
@@ -201,33 +310,49 @@ export async function handleReport(
   const lower = raw.toLowerCase();
   const includeVcard = lower.includes("address-data");
 
-  let ids: string[] = [];
+
+  const contactIds: string[] = [];
+  const groupIds: string[] = [];
   if (lower.includes("addressbook-multiget")) {
     const hrefs = parseMultigetHrefs(raw);
-    ids = hrefs
-      .map((h) => {
-        const m = h.match(/([0-9a-f-]{36})\.vcf$/i);
-        return m ? m[1] : null;
-      })
-      .filter((v): v is string => !!v);
+    for (const h of hrefs) {
+      const g = h.match(/group-([0-9a-f-]{36})\.vcf$/i);
+      if (g) {
+        groupIds.push(g[1]);
+        continue;
+      }
+      const c = h.match(/([0-9a-f-]{36})\.vcf$/i);
+      if (c) contactIds.push(c[1]);
+    }
   } else {
-    // addressbook-query or sync-collection fallback: return every contact.
-    const rows = await listContactRows(userId);
-    ids = rows.map((r) => r.id);
+    const [rows, groups] = await Promise.all([listContactRows(userId), listGroupRows(userId)]);
+    contactIds.push(...rows.map((r) => r.id));
+    groupIds.push(...groups.map((g) => g.id));
   }
 
   let body = MULTISTATUS_OPEN;
-  // Verify each id belongs to the caller before decrypting.
-  if (ids.length > 0) {
+  if (contactIds.length > 0) {
     const { data } = await supabaseAdmin
       .from("contacts")
       .select("id")
       .eq("user_id", userId)
-      .in("id", ids);
+      .in("id", contactIds);
     const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
-    for (const id of ids) {
+    for (const id of contactIds) {
       if (!owned.has(id)) continue;
-      body += await buildContactResponse(email, id, includeVcard);
+      body += await buildContactResponse(userId, email, id, includeVcard);
+    }
+  }
+  if (groupIds.length > 0) {
+    const { data } = await supabaseAdmin
+      .from("contact_groups")
+      .select("id")
+      .eq("user_id", userId)
+      .in("id", groupIds);
+    const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
+    for (const id of groupIds) {
+      if (!owned.has(id)) continue;
+      body += await buildGroupResponse(userId, email, id, includeVcard);
     }
   }
   body += MULTISTATUS_CLOSE;
@@ -243,6 +368,33 @@ export async function handleGet(
   path: string,
   method: "GET" | "HEAD",
 ): Promise<Response> {
+  const gm = path.match(/group-([0-9a-f-]{36})\.vcf$/i);
+  if (gm) {
+    const groupId = gm[1];
+    const { data: group } = await supabaseAdmin
+      .from("contact_groups")
+      .select("id,name,updated_at,carddav_uid")
+      .eq("id", groupId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!group) return new Response("Not found", { status: 404 });
+    const members = await fetchGroupMembers(group.id);
+    const vcard = buildGroupVCard({
+      uid: group.carddav_uid ?? `group-${group.id}`,
+      name: group.name,
+      memberContactIds: members,
+      updatedAt: group.updated_at,
+    });
+    return new Response(method === "HEAD" ? null : vcard, {
+      status: 200,
+      headers: {
+        "Content-Type": 'text/vcard; charset="utf-8"',
+        ETag: groupETag(group.id, group.updated_at),
+        "Cache-Control": "no-cache",
+      },
+    });
+  }
+
   const m = path.match(/([0-9a-f-]{36})\.vcf$/i);
   if (!m) return new Response("Not found", { status: 404 });
   const contactId = m[1];
@@ -257,8 +409,11 @@ export async function handleGet(
 
   const { row } = await getContactDecrypted(contactId);
   if (!row) return new Response("Not found", { status: 404 });
-  const phones = await fetchPhones(contactId);
-  const vcard = contactToVCard(row, phones);
+  const [phones, categories] = await Promise.all([
+    fetchPhones(contactId),
+    fetchCategoriesForContact(userId, contactId),
+  ]);
+  const vcard = contactToVCard(row, phones, categories);
   const etag = contactETag(row.id, row.updated_at);
 
   return new Response(method === "HEAD" ? null : vcard, {
@@ -276,7 +431,15 @@ export async function handleGet(
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 
+function extractGroupId(path: string): string | null {
+  const m = path.match(/group-([0-9a-f-]{36})\.vcf$/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
 function extractContactId(path: string): string | null {
+  // Skip if this is a group resource — group ids share the UUID pattern
+  // but live under group-<uuid>.vcf and must be routed separately.
+  if (extractGroupId(path)) return null;
   const m = path.match(/([0-9a-f-]{36})\.vcf$/i);
   return m ? m[1].toLowerCase() : null;
 }
@@ -284,6 +447,158 @@ function extractContactId(path: string): string | null {
 function preconditionFailed(): Response {
   return new Response("Precondition Failed", { status: 412 });
 }
+
+// Reconcile a contact's group membership from the CATEGORIES: line the
+// phone sent. Any category name that doesn't yet exist as a group is
+// auto-created. Any group the contact belonged to but that CATEGORIES no
+// longer lists is removed. Group→folder links follow via the sender_in_group
+// filter row automatically since deletes/inserts flow through contact_group_members.
+async function reconcileContactCategories(
+  userId: string,
+  contactId: string,
+  categoryNames: string[],
+): Promise<void> {
+  const names = Array.from(
+    new Set(categoryNames.map((n) => n.trim()).filter((n) => n.length > 0)),
+  );
+
+  // Load the user's current groups keyed by lowercased name for a
+  // case-insensitive match on the phone's category strings.
+  const { data: existingGroups } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,name")
+    .eq("user_id", userId);
+  const byName = new Map<string, string>();
+  for (const g of (existingGroups ?? []) as Array<{ id: string; name: string }>) {
+    byName.set(g.name.toLowerCase(), g.id);
+  }
+
+  const targetIds: string[] = [];
+  for (const name of names) {
+    const key = name.toLowerCase();
+    const existingId = byName.get(key);
+    if (existingId) {
+      targetIds.push(existingId);
+      continue;
+    }
+    // Create the group with a stable CardDAV UID so iOS sees it on
+    // next PROPFIND.
+    const uid =
+      "group-" +
+      (globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const { data: created, error } = await supabaseAdmin
+      .from("contact_groups")
+      .insert({ user_id: userId, name, color: "#6366f1", carddav_uid: uid })
+      .select("id")
+      .single();
+    if (!error && created) {
+      targetIds.push(created.id);
+      byName.set(key, created.id);
+    }
+  }
+
+  // Replace membership: delete then insert. RLS is via user_id filter.
+  await supabaseAdmin
+    .from("contact_group_members")
+    .delete()
+    .eq("contact_id", contactId)
+    .eq("user_id", userId);
+  if (targetIds.length > 0) {
+    const rows = targetIds.map((group_id) => ({
+      group_id,
+      contact_id: contactId,
+      user_id: userId,
+    }));
+    await supabaseAdmin.from("contact_group_members").insert(rows);
+  }
+}
+
+// PUT for an Apple-style group vCard. Creates a contact_groups row (if
+// missing) and sets its member list to exactly the MEMBER UIDs in the vCard.
+async function handleGroupPut(
+  request: Request,
+  userId: string,
+  email: string,
+  path: string,
+  parsed: NonNullable<ReturnType<typeof parseVCard>>,
+): Promise<Response> {
+  const groupId = extractGroupId(path);
+  if (!groupId || !UUID_RE.test(groupId)) {
+    return new Response("Bad Request", { status: 400 });
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,updated_at,name,carddav_uid")
+    .eq("id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const ifMatch = request.headers.get("if-match");
+  const ifNoneMatch = request.headers.get("if-none-match");
+  if (ifNoneMatch === "*" && existing) return preconditionFailed();
+  if (ifMatch && existing) {
+    const current = groupETag(existing.id, existing.updated_at as string);
+    const norm = (v: string) => v.trim().replace(/^W\//i, "");
+    if (norm(ifMatch) !== norm(current)) return preconditionFailed();
+  }
+  if (ifMatch && !existing) return preconditionFailed();
+
+  const name = (parsed.name ?? "").trim() || "Untitled group";
+  const nowIso = new Date().toISOString();
+
+  if (existing) {
+    const { error } = await supabaseAdmin
+      .from("contact_groups")
+      .update({ name, updated_at: nowIso })
+      .eq("id", groupId)
+      .eq("user_id", userId);
+    if (error) return new Response(error.message, { status: 500 });
+  } else {
+    const { error } = await supabaseAdmin.from("contact_groups").insert({
+      id: groupId,
+      user_id: userId,
+      name,
+      color: "#6366f1",
+      carddav_uid: parsed.uid ?? `group-${groupId}`,
+    });
+    if (error) return new Response(error.message, { status: 500 });
+  }
+
+  // Set membership to exactly the parsed member UIDs (that the caller owns).
+  const memberIds = parsed.memberUids;
+  await supabaseAdmin
+    .from("contact_group_members")
+    .delete()
+    .eq("group_id", groupId)
+    .eq("user_id", userId);
+  if (memberIds.length > 0) {
+    const { data: owned } = await supabaseAdmin
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId)
+      .in("id", memberIds);
+    const rows = ((owned as Array<{ id: string }> | null) ?? []).map((r) => ({
+      group_id: groupId,
+      contact_id: r.id,
+      user_id: userId,
+    }));
+    if (rows.length > 0) {
+      await supabaseAdmin.from("contact_group_members").insert(rows);
+    }
+  }
+
+  return new Response(null, {
+    status: existing ? 204 : 201,
+    headers: {
+      ETag: groupETag(groupId, nowIso),
+      Location: groupHref(email, groupId),
+    },
+  });
+}
+
+
 
 // Handle PUT: iOS uploads a full vCard for create or replace. We honor
 // If-Match (must match current ETag) and If-None-Match: * (must not exist).
@@ -294,14 +609,20 @@ export async function handlePut(
   email: string,
   path: string,
 ): Promise<Response> {
+  const body = await request.text();
+  const parsed = parseVCard(body);
+  if (!parsed) return new Response("Unparseable vCard", { status: 400 });
+
+  // Group vCards (Apple X-ADDRESSBOOKSERVER-KIND:group or the group- URL
+  // prefix) route to the group upsert path.
+  if (extractGroupId(path) || parsed.isGroup) {
+    return handleGroupPut(request, userId, email, path, parsed);
+  }
+
   const contactId = extractContactId(path);
   if (!contactId || !UUID_RE.test(contactId)) {
     return new Response("Bad Request", { status: 400 });
   }
-
-  const body = await request.text();
-  const parsed = parseVCard(body);
-  if (!parsed) return new Response("Unparseable vCard", { status: 400 });
 
   const { data: existing } = await supabaseAdmin
     .from("contacts")
@@ -396,6 +717,10 @@ export async function handlePut(
     if (insPhoneErr) return new Response(insPhoneErr.message, { status: 500 });
   }
 
+  // CATEGORIES → contact_group_members reconciliation. Groups are created
+  // on demand so the phone can name them freely without pre-configuration.
+  await reconcileContactCategories(userId, contactId, parsed.categories);
+
   const newEtag = contactETag(contactId, nowIso);
   return new Response(null, {
     status: existing ? 204 : 201,
@@ -412,6 +737,43 @@ export async function handleDelete(
   userId: string,
   path: string,
 ): Promise<Response> {
+  const groupId = extractGroupId(path);
+  if (groupId) {
+    const { data: existing } = await supabaseAdmin
+      .from("contact_groups")
+      .select("id,updated_at")
+      .eq("id", groupId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!existing) return new Response(null, { status: 404 });
+    const ifMatch = request.headers.get("if-match");
+    if (ifMatch) {
+      const current = groupETag(existing.id, existing.updated_at as string);
+      const norm = (v: string) => v.trim().replace(/^W\//i, "");
+      if (norm(ifMatch) !== norm(current)) return preconditionFailed();
+    }
+    // Membership rows and any sender_in_group folder_filter cascade
+    // via ON DELETE (folder_filters clean-up is handled by app-side link
+    // UI; a hard group delete just drops rules that referenced it).
+    await supabaseAdmin
+      .from("contact_group_members")
+      .delete()
+      .eq("group_id", groupId)
+      .eq("user_id", userId);
+    await supabaseAdmin
+      .from("folder_filters")
+      .delete()
+      .eq("op", "sender_in_group")
+      .eq("value", groupId);
+    const { error } = await supabaseAdmin
+      .from("contact_groups")
+      .delete()
+      .eq("id", groupId)
+      .eq("user_id", userId);
+    if (error) return new Response(error.message, { status: 500 });
+    return new Response(null, { status: 204 });
+  }
+
   const contactId = extractContactId(path);
   if (!contactId || !UUID_RE.test(contactId)) {
     return new Response("Bad Request", { status: 400 });

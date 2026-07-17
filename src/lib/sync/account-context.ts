@@ -32,6 +32,9 @@ export type AccountContext = {
   /** The connected Gmail address for this account. Used as the primary
    * identity for per-folder "surface to inbox" decisions. */
   accountEmail: string | null;
+  /** Lowercased sender email → set of contact_group ids the sender belongs
+   * to for this user. Feeds the `sender_in_group` filter op. */
+  senderGroups: Map<string, Set<string>>;
 };
 
 const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
@@ -141,6 +144,24 @@ export async function loadAccountContext(
     }
   }
 
+  // Sender → group memberships for this user. One row per contact that is
+  // in at least one group; we key by lowercased email so lookups from
+  // parsed from_addr are O(1) at classify time.
+  const senderGroups = new Map<string, Set<string>>();
+  const { data: groupMembers } = await supabaseAdmin
+    .from("contact_group_members")
+    .select("group_id,contacts!inner(email,user_id)")
+    .eq("user_id", userId);
+  for (const m of (groupMembers ?? []) as Array<{
+    group_id: string;
+    contacts: { email: string | null; user_id: string } | null;
+  }>) {
+    const em = m.contacts?.email?.toLowerCase();
+    if (!em) continue;
+    if (!senderGroups.has(em)) senderGroups.set(em, new Set());
+    senderGroups.get(em)!.add(m.group_id);
+  }
+
   const ctx: AccountContext = {
     folders: folderList,
     filters: filterList,
@@ -150,6 +171,7 @@ export async function loadAccountContext(
     calendarGuardEnabled,
     calendarContacts,
     accountEmail: account?.email_address ?? null,
+    senderGroups,
   };
   accountContextCache.set(accountId, { ctx, expires: Date.now() + ACCOUNT_CONTEXT_TTL_MS });
   return ctx;

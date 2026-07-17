@@ -57,6 +57,10 @@ export type EmailForFilter = {
   subject: string;
   body_text: string;
   has_attachment: boolean;
+  /** IDs of contact_groups the sender belongs to for this user. Populated
+   * at classify time from AccountContext. Empty/absent for messages
+   * whose sender isn't a saved contact. */
+  sender_group_ids?: string[];
 };
 
 export function applyFilter(email: EmailForFilter, f: Filter): boolean {
@@ -108,6 +112,12 @@ export function applyFilter(email: EmailForFilter, f: Filter): boolean {
       if (!domain) return false;
       const allow = parseDomainList(f.value);
       return allow.has(domain);
+    }
+    case "sender_in_group": {
+      // Include op: the sender must be a member of the contact group whose
+      // id is stored in f.value. Resolved into email.sender_group_ids by
+      // the classifier before evaluation.
+      return email.sender_group_ids?.includes(f.value) ?? false;
     }
     default:
       return false;

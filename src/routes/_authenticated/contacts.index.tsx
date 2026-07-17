@@ -30,6 +30,7 @@ import {
   createContactGroup,
   updateContactGroup,
   deleteContactGroup,
+  linkContactGroupToFolder,
 } from "@/lib/contact-groups.functions";
 import { toast } from "sonner";
 import {
@@ -78,7 +79,14 @@ const GROUP_COLORS = [
   "#64748b",
 ];
 
-type GroupRow = { id: string; name: string; color: string; count: number };
+type GroupRow = {
+  id: string;
+  name: string;
+  color: string;
+  count: number;
+  folder_id?: string | null;
+  linked_folder?: { name: string; color: string | null } | null;
+};
 
 function ContactsPage() {
   const qc = useQueryClient();
@@ -730,9 +738,19 @@ function GroupEditorDialog({
   const create = useServerFn(createContactGroup);
   const update = useServerFn(updateContactGroup);
   const del = useServerFn(deleteContactGroup);
+  const linkFolder = useServerFn(linkContactGroupToFolder);
+  const listFolders = useServerFn(listFoldersForPicker);
+
+  const foldersQ = useQuery({
+    queryKey: ["folders-picker"],
+    queryFn: () => listFolders(),
+    enabled: !!state,
+    staleTime: 60_000,
+  });
 
   const [name, setName] = useState("");
   const [color, setColor] = useState(GROUP_COLORS[0]);
+  const [folderId, setFolderId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -740,9 +758,11 @@ function GroupEditorDialog({
     if (state.mode === "edit") {
       setName(state.group.name);
       setColor(state.group.color);
+      setFolderId(state.group.folder_id ?? "");
     } else {
       setName("");
       setColor(GROUP_COLORS[0]);
+      setFolderId("");
     }
   }, [state]);
 
@@ -755,13 +775,22 @@ function GroupEditorDialog({
     if (!name.trim()) return;
     setSaving(true);
     try {
+      let gid: string | null = editGroup?.id ?? null;
       if (editGroup) {
         await update({ data: { id: editGroup.id, name: name.trim(), color } });
-        toast.success("Group updated");
       } else {
-        await create({ data: { name: name.trim(), color } });
-        toast.success("Group created");
+        const created = await create({ data: { name: name.trim(), color } });
+        gid = (created as { group?: { id: string } })?.group?.id ?? null;
       }
+      // Sync folder link (create/remove the sender_in_group filter row).
+      if (gid) {
+        const nextFolderId = folderId || null;
+        const currentFolderId = editGroup?.folder_id ?? null;
+        if (nextFolderId !== currentFolderId) {
+          await linkFolder({ data: { groupId: gid, folderId: nextFolderId } });
+        }
+      }
+      toast.success(editGroup ? "Group updated" : "Group created");
       onChanged();
       onClose();
     } catch (e: unknown) {
@@ -822,6 +851,24 @@ function GroupEditorDialog({
                 />
               ))}
             </div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Linked folder</Label>
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">None — group only</option>
+              {(foldersQ.data?.folders ?? []).map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              When linked, senders in this group are auto-filed into the folder.
+            </p>
           </div>
         </div>
         <DialogFooter className="gap-2 sm:gap-0">

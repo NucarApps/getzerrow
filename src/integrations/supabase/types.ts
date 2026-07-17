@@ -292,30 +292,44 @@ export type Database = {
       }
       contact_groups: {
         Row: {
+          carddav_uid: string
           color: string
           created_at: string
+          folder_id: string | null
           id: string
           name: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          carddav_uid: string
           color?: string
           created_at?: string
+          folder_id?: string | null
           id?: string
           name: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          carddav_uid?: string
           color?: string
           created_at?: string
+          folder_id?: string | null
           id?: string
           name?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contact_groups_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contact_phones: {
         Row: {

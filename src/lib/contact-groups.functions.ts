@@ -4,7 +4,9 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
-/** List the user's groups with member counts. */
+const GROUP_SELECT = "id,name,color,created_at,folder_id,carddav_uid,updated_at";
+
+/** List the user's groups with member counts and any linked folder. */
 export const listContactGroups = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -12,7 +14,7 @@ export const listContactGroups = createServerFn({ method: "GET" })
     const [{ data: groups, error: gErr }, { data: members, error: mErr }] = await Promise.all([
       supabase
         .from("contact_groups")
-        .select("id,name,color,created_at")
+        .select(GROUP_SELECT)
         .order("name", { ascending: true }),
       supabase.from("contact_group_members").select("group_id,contact_id"),
     ]);
@@ -22,8 +24,32 @@ export const listContactGroups = createServerFn({ method: "GET" })
     const counts = new Map<string, number>();
     for (const m of members ?? []) counts.set(m.group_id, (counts.get(m.group_id) ?? 0) + 1);
 
+    // Load folder names for linked folders so the UI can show a chip
+    // without a second round trip.
+    const folderIds = Array.from(
+      new Set(
+        ((groups ?? [])
+          .map((g) => g.folder_id)
+          .filter((v): v is string => !!v)) as string[],
+      ),
+    );
+    let folderById = new Map<string, { name: string; color: string | null }>();
+    if (folderIds.length > 0) {
+      const { data: folders } = await supabase
+        .from("folders")
+        .select("id,name,color")
+        .in("id", folderIds);
+      folderById = new Map(
+        (folders ?? []).map((f) => [f.id, { name: f.name, color: f.color ?? null }]),
+      );
+    }
+
     return {
-      groups: (groups ?? []).map((g) => ({ ...g, count: counts.get(g.id) ?? 0 })),
+      groups: (groups ?? []).map((g) => ({
+        ...g,
+        count: counts.get(g.id) ?? 0,
+        linked_folder: g.folder_id ? (folderById.get(g.folder_id) ?? null) : null,
+      })),
       memberships: (members ?? []) as { group_id: string; contact_id: string }[],
     };
   });
@@ -35,10 +61,21 @@ export const createContactGroup = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // Generate a stable CardDAV UID up-front so a group created in the
+    // web app is immediately visible/syncable to iPhones on next PROPFIND.
+    const uid =
+      "group-" +
+      (globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const { data: row, error } = await supabase
       .from("contact_groups")
-      .insert({ user_id: userId, name: data.name.trim(), color: data.color ?? "#6366f1" })
-      .select("id,name,color,created_at")
+      .insert({
+        user_id: userId,
+        name: data.name.trim(),
+        color: data.color ?? "#6366f1",
+        carddav_uid: uid,
+      })
+      .select(GROUP_SELECT)
       .single();
     if (error) throw new Error(error.message);
     return { group: row };
@@ -62,7 +99,7 @@ export const updateContactGroup = createServerFn({ method: "POST" })
       .from("contact_groups")
       .update(patch)
       .eq("id", id)
-      .select("id,name,color,created_at")
+      .select(GROUP_SELECT)
       .single();
     if (error) throw new Error(error.message);
     return { group: row };
@@ -133,4 +170,70 @@ export const addContactsToGroup = createServerFn({ method: "POST" })
       .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
     if (error) throw new Error(error.message);
     return { added: rows.length };
+  });
+
+/** Link (or unlink) a contact group to a folder. When linked, emails from
+ * any member of the group are auto-filed to the folder via a
+ * `sender_in_group` folder_filters row. Unlinking removes that row. */
+export const linkContactGroupToFolder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { groupId: string; folderId: string | null }) =>
+    z
+      .object({
+        groupId: z.string().uuid(),
+        folderId: z.string().uuid().nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // Verify the group belongs to the caller and read its current link.
+    const { data: group, error: gErr } = await supabase
+      .from("contact_groups")
+      .select("id,user_id,folder_id")
+      .eq("id", data.groupId)
+      .maybeSingle();
+    if (gErr) throw new Error(gErr.message);
+    if (!group || group.user_id !== userId) throw new Error("Group not found");
+
+    // Verify target folder ownership when linking.
+    if (data.folderId) {
+      const { data: folder, error: fErr } = await supabase
+        .from("folders")
+        .select("id,user_id")
+        .eq("id", data.folderId)
+        .maybeSingle();
+      if (fErr) throw new Error(fErr.message);
+      if (!folder || folder.user_id !== userId) throw new Error("Folder not found");
+    }
+
+    // Remove any previous sender_in_group filter row for this group across
+    // any folder it may have been linked to.
+    const { error: delErr } = await supabase
+      .from("folder_filters")
+      .delete()
+      .eq("op", "sender_in_group")
+      .eq("value", data.groupId);
+    if (delErr) throw new Error(delErr.message);
+
+    // Update the group's folder link.
+    const { error: upErr } = await supabase
+      .from("contact_groups")
+      .update({ folder_id: data.folderId })
+      .eq("id", data.groupId);
+    if (upErr) throw new Error(upErr.message);
+
+    // Insert the new filter row when linking.
+    if (data.folderId) {
+      const { error: insErr } = await supabase.from("folder_filters").insert({
+        folder_id: data.folderId,
+        field: "from",
+        op: "sender_in_group",
+        value: data.groupId,
+      });
+      if (insErr) throw new Error(insErr.message);
+    }
+
+    return { ok: true };
   });
