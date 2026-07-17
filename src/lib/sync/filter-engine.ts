@@ -113,6 +113,12 @@ export function applyFilter(email: EmailForFilter, f: Filter): boolean {
       const allow = parseDomainList(f.value);
       return allow.has(domain);
     }
+    case "sender_in_group": {
+      // Include op: the sender must be a member of the contact group whose
+      // id is stored in f.value. Resolved into email.sender_group_ids by
+      // the classifier before evaluation.
+      return email.sender_group_ids?.includes(f.value) ?? false;
+    }
     default:
       return false;
   }
