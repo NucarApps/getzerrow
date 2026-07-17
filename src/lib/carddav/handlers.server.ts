@@ -79,7 +79,7 @@ export function handleOptions(): Response {
     status: 200,
     headers: {
       DAV: "1, 3, addressbook",
-      Allow: "OPTIONS, GET, HEAD, PROPFIND, REPORT",
+      Allow: "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, REPORT",
       "Content-Length": "0",
     },
   });
