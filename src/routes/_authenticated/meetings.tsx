@@ -594,6 +594,7 @@ function InPersonRecordDialog({
   async function startRecording() {
     setError(null);
     setBlocked(false);
+    setIframeBlocked(false);
 
     const AudioCtx: typeof AudioContext | undefined =
       typeof window !== "undefined"
@@ -613,8 +614,13 @@ function InPersonRecordDialog({
         name: "microphone" as PermissionName,
       });
       if (status?.state === "denied") {
-        setBlocked(true);
-        setError(BLOCKED_MESSAGE);
+        if (detectIframeBlock()) {
+          setIframeBlocked(true);
+          setError(IFRAME_BLOCKED_MESSAGE);
+        } else {
+          setBlocked(true);
+          setError(BLOCKED_MESSAGE);
+        }
         return;
       }
     } catch {
@@ -648,8 +654,13 @@ function InPersonRecordDialog({
       cleanupStream();
       const name = err instanceof DOMException ? err.name : "";
       if (name === "NotAllowedError" || name === "SecurityError") {
-        setBlocked(true);
-        setError(BLOCKED_MESSAGE);
+        if (detectIframeBlock()) {
+          setIframeBlocked(true);
+          setError(IFRAME_BLOCKED_MESSAGE);
+        } else {
+          setBlocked(true);
+          setError(BLOCKED_MESSAGE);
+        }
       } else if (name === "NotFoundError" || name === "OverconstrainedError") {
         setError("No microphone was found. Connect a mic and try again.");
       } else if (name === "NotReadableError" || name === "AbortError") {
@@ -658,6 +669,7 @@ function InPersonRecordDialog({
         setError("Couldn't start recording. Please try again.");
       }
     }
+
   }
 
   function stopRecording() {
