@@ -643,7 +643,7 @@ function ContactsPage() {
                                     />
                                   )}
                                   <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
-                                    {(c.name || c.email).slice(0, 1).toUpperCase()}
+                                    {(c.name || c.email || "?").slice(0, 1).toUpperCase()}
                                   </div>
                                   <div className="min-w-0 flex-1">
                                     <div className="truncate text-sm font-medium text-foreground">
