@@ -138,7 +138,11 @@ export const updateContactGroup = createServerFn({ method: "POST" })
         throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
       }
     }
-    const patch: Record<string, unknown> = { ...rest };
+    const patch: {
+      name?: string;
+      color?: string;
+      parent_group_id?: string | null;
+    } = { ...rest };
     if (parent_group_id !== undefined) patch.parent_group_id = parent_group_id;
     const { data: row, error } = await supabase
       .from("contact_groups")
