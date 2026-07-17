@@ -514,6 +514,8 @@ function InPersonRecordDialog({
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
+  const [iframeBlocked, setIframeBlocked] = useState(false);
+
 
   // A "Record now" tap on an upcoming meeting opens the recorder with the
   // meeting's name pre-filled; the recording stays linked to that event.
@@ -570,10 +572,29 @@ function InPersonRecordDialog({
 
   const BLOCKED_MESSAGE =
     "Microphone is blocked for this site. Click the padlock (or camera/mic icon) in your browser's address bar, set Microphone to Allow, then reload and try again.";
+  const IFRAME_BLOCKED_MESSAGE =
+    "Recording can't run inside the preview frame. Open the app in a new tab to grant microphone access, then start recording there.";
+
+  function detectIframeBlock(): boolean {
+    try {
+      if (typeof window === "undefined") return false;
+      const inIframe = window.self !== window.top;
+      if (!inIframe) return false;
+      const fp = (document as unknown as { featurePolicy?: { allowsFeature?: (f: string) => boolean } })
+        .featurePolicy;
+      if (fp?.allowsFeature && !fp.allowsFeature("microphone")) return true;
+      // If we're in an iframe and permissions-policy status is unknown, assume blocked.
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
 
   async function startRecording() {
     setError(null);
     setBlocked(false);
+    setIframeBlocked(false);
 
     const AudioCtx: typeof AudioContext | undefined =
       typeof window !== "undefined"
@@ -593,8 +614,13 @@ function InPersonRecordDialog({
         name: "microphone" as PermissionName,
       });
       if (status?.state === "denied") {
-        setBlocked(true);
-        setError(BLOCKED_MESSAGE);
+        if (detectIframeBlock()) {
+          setIframeBlocked(true);
+          setError(IFRAME_BLOCKED_MESSAGE);
+        } else {
+          setBlocked(true);
+          setError(BLOCKED_MESSAGE);
+        }
         return;
       }
     } catch {
@@ -628,8 +654,13 @@ function InPersonRecordDialog({
       cleanupStream();
       const name = err instanceof DOMException ? err.name : "";
       if (name === "NotAllowedError" || name === "SecurityError") {
-        setBlocked(true);
-        setError(BLOCKED_MESSAGE);
+        if (detectIframeBlock()) {
+          setIframeBlocked(true);
+          setError(IFRAME_BLOCKED_MESSAGE);
+        } else {
+          setBlocked(true);
+          setError(BLOCKED_MESSAGE);
+        }
       } else if (name === "NotFoundError" || name === "OverconstrainedError") {
         setError("No microphone was found. Connect a mic and try again.");
       } else if (name === "NotReadableError" || name === "AbortError") {
@@ -638,6 +669,7 @@ function InPersonRecordDialog({
         setError("Couldn't start recording. Please try again.");
       }
     }
+
   }
 
   function stopRecording() {
@@ -765,11 +797,21 @@ function InPersonRecordDialog({
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </p>
-              {blocked && (
+              {iframeBlocked && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(window.location.href, "_blank", "noopener")}
+                >
+                  <ExternalLink className="mr-1.5 h-4 w-4" /> Open in new tab
+                </Button>
+              )}
+              {blocked && !iframeBlocked && (
                 <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
                   <RefreshCw className="mr-1.5 h-4 w-4" /> Reload page
                 </Button>
               )}
+
             </div>
           )}
         </div>
