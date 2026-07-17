@@ -26,6 +26,7 @@ import {
   getGoogleContactsSyncStatus,
   setGoogleContactsSyncMode,
   setGoogleContactsSyncInterval,
+  forceFullGoogleContactsResync,
 } from "@/lib/google-contacts.functions";
 import {
   Select,
@@ -70,9 +71,11 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const syncNow = useServerFn(syncGoogleContactsNow);
   const setMode = useServerFn(setGoogleContactsSyncMode);
   const setInterval = useServerFn(setGoogleContactsSyncInterval);
+  const forceFull = useServerFn(forceFullGoogleContactsResync);
   const connect = useServerFn(startConnectGmail);
   const [reconnecting, setReconnecting] = useState(false);
   const [confirmUpgrade, setConfirmUpgrade] = useState(false);
+  const [confirmForce, setConfirmForce] = useState(false);
 
   const statusQ = useQuery({
     queryKey: ["google-contacts-status", account.id],
@@ -136,6 +139,19 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const forceMut = useMutation({
+    mutationFn: () => forceFull({ data: { accountId: account.id } }),
+    onSuccess: (res) => {
+      if (res.ok) {
+        toast.success(`Full re-pull complete — ${res.pull ?? 0} scanned from Google`);
+      } else {
+        toast.error(friendlyError(res.error) ?? "Full re-pull failed");
+      }
+      qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   async function handleReconnect() {
     setReconnecting(true);
     try {
@@ -185,15 +201,27 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
               {reconnecting ? "Redirecting…" : "Reconnect"}
             </Button>
           ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => syncMut.mutate()}
-              disabled={!enabled || syncMut.isPending}
-            >
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncMut.isPending ? "animate-spin" : ""}`} />
-              Sync now
-            </Button>
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => syncMut.mutate()}
+                disabled={!enabled || syncMut.isPending || forceMut.isPending}
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncMut.isPending ? "animate-spin" : ""}`} />
+                Sync now
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmForce(true)}
+                disabled={!enabled || syncMut.isPending || forceMut.isPending}
+                title="Discard the incremental sync token and re-scan every Google contact"
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${forceMut.isPending ? "animate-spin" : ""}`} />
+                Force full re-pull
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -296,6 +324,32 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
               }}
             >
               Enable two-way
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmForce} onOpenChange={setConfirmForce}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Force full re-pull from Google?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This discards the incremental sync token and re-scans every contact
+              in your Google account. It's slower, but resets the created / updated
+              / skipped counters so you can see exactly why any contacts are missing.
+              Existing contacts won't be duplicated — they'll be re-matched by
+              Google resource name or email.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmForce(false);
+                forceMut.mutate();
+              }}
+            >
+              Re-pull everything
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

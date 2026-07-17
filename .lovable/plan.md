@@ -1,61 +1,27 @@
-## AI-suggested contact groups
+## What's happening
 
-Add an "AI suggestions" panel on the Contacts page that reviews the user's contacts and proposes new groups (and subgroups) plus which contacts belong in each. The user reviews suggestions and accepts them one-by-one or in bulk — nothing changes without confirmation.
+Your "Sync now" is running an **incremental** sync — it hands Google's People API the `people_sync_token` from the previous run, so Google only returns contacts that changed since then. Nothing has changed on Google's side, so it reports 0.
 
-### User flow
-1. On `/contacts`, a new "Suggest groups with AI" button (near the existing group controls) opens a drawer.
-2. The drawer streams a scan: "Analyzing 459 contacts…" then lists suggested groups.
-3. Each suggestion shows: proposed name, optional parent group, short rationale, and the contacts that would be added (with counts).
-4. Actions per suggestion: **Create group & add contacts**, **Add to existing group** (dropdown of current groups), **Edit name**, **Dismiss**. A bulk "Accept all" is also available.
-5. Ungrouped contacts are prioritized; already-grouped contacts can be suggested as subgroup candidates (e.g., split a large "Clients" group by company).
+The DB confirms this:
+- 276 contacts locally, 270 linked to Google
+- `people_sync_token` is set (incremental mode)
+- Last pull counters are all 0 (incremental found no deltas)
 
-### What the AI considers
-- Company / title / domain of email (biggest signal — cluster by employer).
-- Existing groups + parent hierarchy (so suggestions extend, don't duplicate).
-- Notes / relationship summary (already stored, decrypted server-side).
-- Recent email interaction volume (optional signal for "VIP" / "Frequent" style groups).
-- Contact source (Google label, CardDAV, manual).
+So the 276 vs 459 gap is left over from the *first* pull — not something the current button can fix. We need a way to discard the sync token and re-pull everything from scratch.
 
-The AI is instructed to return between 3 and 15 suggestions, favor useful clusters (>=3 contacts), and propose subgroups only when a parent group is oversized (>25 contacts) or when a clear sub-cluster exists (e.g., company inside an industry group).
+## Plan
 
-### Technical outline
+1. **Expose `forceFullResync` as a server fn** (`src/lib/google-contacts.functions.ts`):
+   - New `forceFullGoogleContactsResync({ accountId })` — verifies account ownership, clears `people_sync_token` + `groups_sync_token` via the existing `forceFullResync` helper in `pull.server.ts`, then calls `runGoogleContactsSync` immediately so the user sees fresh counters.
 
-**New server function** `src/lib/contacts/suggest-groups.functions.ts`
-- `suggestContactGroups()` — auth-protected. Loads:
-  - All contacts (id, name, email domain, company, title, city, source, group memberships).
-  - Existing contact_groups (name, parent, member count).
-- Builds a compact prompt (only signals, no PII beyond what's needed) and calls Lovable AI Gateway via the AI SDK with a small structured-output schema:
-  ```
-  { suggestions: [{ name, parent_group_name?, rationale, contact_ids[], kind: "new"|"subgroup"|"merge_into_existing", existing_group_id? }] }
-  ```
-- Model: `google/gemini-3.5-flash` (fast, cheap, strong at clustering). No schema bounds — enforce sizes in the prompt and clamp in code (per `ai-sdk-agent-patterns`).
-- Returns suggestions with resolved contact previews (name/email for first ~5 members).
-- Cache latest run in a new table `contact_group_suggestions` (see migration below) so the drawer can reopen without re-billing.
+2. **Add "Force full re-pull" button** (`src/routes/_authenticated/settings.google-contacts.tsx`):
+   - New outline button next to "Sync now", with a confirm dialog explaining it will re-scan every Google contact (slower, but reveals what's actually skipped vs. imported).
+   - While it runs, the existing progress indicator (`PullBreakdown`) shows created / updated / skipped_no_email / merged / failed counts — that's how we'll finally see where the 183-contact gap comes from.
 
-**Apply function** `applyContactGroupSuggestion()`
-- Reuses existing `createContactGroup` + `addContactsToGroups` logic.
-- Supports "add to existing" by skipping group creation.
-- Marks suggestion row as `accepted` / `dismissed`.
+3. **Do NOT change pull logic itself** in this step. Once the force re-pull runs, the breakdown counters will tell us the real cause (skipped for no identity, insert failures, resource-name collisions, etc.). We fix root cause as a follow-up based on that evidence rather than guessing now.
 
-**Migration** — new table `contact_group_suggestions`:
-- `run_id`, `user_id`, `name`, `parent_group_id` (nullable), `existing_group_id` (nullable), `contact_ids` (uuid[]), `rationale`, `kind`, `status` ('pending'|'accepted'|'dismissed'), timestamps.
-- RLS to `auth.uid()`, grants to `authenticated` + `service_role`.
+## Technical notes
 
-**UI** `src/components/contacts/GroupSuggestionsDrawer.tsx`
-- Uses `useQuery` for the cached run + a "Rescan" button that calls the server fn.
-- Card per suggestion with member preview, accept/dismiss buttons, and an inline group-picker for "add to existing".
-- Toasts on success; invalidates the contacts + groups queries so the list updates immediately.
-
-**Entry point** — add "Suggest groups with AI" button on `src/routes/_authenticated/contacts.index.tsx` next to the existing group controls.
-
-### Guardrails
-- Never auto-apply — always requires user confirmation.
-- Skip contacts that already belong to a group with the same suggested name.
-- Respect the 4-level nesting cap (reject parent suggestions that would exceed depth).
-- Rate-limit rescan (1 per 5 min) to control AI cost.
-- No PII sent to the model beyond first name + email domain + company + title + notes snippet.
-
-### Out of scope
-- Automatic recurring scans (can add later as a cron).
-- Renaming/reorganizing existing groups (only proposes additions).
-- CardDAV/Google push happens automatically via existing sync once the group is created.
+- `forceFullResync` already exists in `pull.server.ts:442`; it just isn't wired to a server fn or UI.
+- Reuses the existing 90s lease + `finally` unlock in `runGoogleContactsSync`, so no new locking concerns.
+- No schema/migration changes.

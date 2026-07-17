@@ -43,6 +43,31 @@ export const syncGoogleContactsNow = createServerFn({ method: "POST" })
     return await runGoogleContactsSync(context.userId, data.accountId);
   });
 
+export const forceFullGoogleContactsResync = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { accountId: string }) =>
+    z.object({ accountId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwnsAccount(context.userId, data.accountId);
+    const { forceFullResync } = await import("@/lib/google-contacts/pull.server");
+    const { ensureSyncState, updateSyncState } = await import(
+      "@/lib/google-contacts/state.server"
+    );
+    const state = await ensureSyncState(context.userId, data.accountId);
+    if (!state.enabled) {
+      await updateSyncState(state.id, {
+        enabled: true,
+        sync_mode: state.sync_mode === "off" ? "pull_only" : state.sync_mode,
+      });
+    }
+    await forceFullResync(context.userId, data.accountId);
+    const { runGoogleContactsSync } = await import(
+      "@/lib/google-contacts/reconcile.server"
+    );
+    return await runGoogleContactsSync(context.userId, data.accountId);
+  });
+
 export const getGoogleContactsSyncStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { accountId: string }) =>
