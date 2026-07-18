@@ -145,6 +145,35 @@ export async function getIncludeSummaryInNotes(userId: string): Promise<boolean>
   return v === false ? false : true;
 }
 
+/** Whether to inline the company logo as a `PHOTO` for contacts without a
+ * user-uploaded picture. Defaults to true so existing installs pick it up. */
+export async function getUseCompanyLogoFallback(userId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from("carddav_settings")
+    .select("use_company_logo_fallback")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const v = (data as { use_company_logo_fallback?: boolean } | null)
+    ?.use_company_logo_fallback;
+  return v === false ? false : true;
+}
+
+/** Load the contact's own photo bytes, or a company-logo fallback when the
+ * user preference is on and the contact has no real avatar. Returns null
+ * when neither exists. */
+async function loadContactPhotoOrLogo(
+  userId: string,
+  row: { avatar_url?: string | null; website?: string | null; email?: string | null },
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const own = await loadContactPhotoBytes(row.avatar_url ?? null);
+  if (own) return own;
+  if (!(await getUseCompanyLogoFallback(userId))) return null;
+  const { fetchCompanyLogoBytes, logoDomainForContact } = await import(
+    "@/lib/contacts/logo-photo.server"
+  );
+  return fetchCompanyLogoBytes(logoDomainForContact(row));
+}
+
 
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
 
@@ -428,7 +457,7 @@ async function buildContactResponse(
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
-    includeVcard ? loadContactPhotoBytes(row.avatar_url ?? null) : Promise.resolve(null),
+    includeVcard ? loadContactPhotoOrLogo(userId, row) : Promise.resolve(null),
     getIncludeSummaryInNotes(userId),
   ]);
   const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
@@ -746,7 +775,7 @@ export async function handleGet(
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
-    loadContactPhotoBytes(row.avatar_url ?? null),
+    loadContactPhotoOrLogo(userId, row),
     getIncludeSummaryInNotes(userId),
   ]);
   const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });

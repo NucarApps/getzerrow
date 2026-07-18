@@ -28,6 +28,7 @@ import {
   setGoogleContactsSyncInterval,
   forceFullGoogleContactsResync,
   backfillMultiEmailsFromGoogle,
+  backfillGoogleContactPhotos,
 } from "@/lib/google-contacts.functions";
 import {
   Select,
@@ -74,6 +75,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const setInterval = useServerFn(setGoogleContactsSyncInterval);
   const forceFull = useServerFn(forceFullGoogleContactsResync);
   const backfillEmails = useServerFn(backfillMultiEmailsFromGoogle);
+  const backfillPhotos = useServerFn(backfillGoogleContactPhotos);
   const connect = useServerFn(startConnectGmail);
   const [reconnecting, setReconnecting] = useState(false);
   const [confirmUpgrade, setConfirmUpgrade] = useState(false);
@@ -174,6 +176,19 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const backfillPhotosMut = useMutation({
+    mutationFn: () => backfillPhotos({ data: { accountId: account.id } }),
+    onSuccess: (res) => {
+      toast.success(
+        res.cleared === 0
+          ? "No contacts missing photos"
+          : `Queued ${res.cleared} contact${res.cleared === 1 ? "" : "s"} — Google photos will pull in on next sync`,
+      );
+      qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
 
   async function handleReconnect() {
     setReconnecting(true);
@@ -253,6 +268,16 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
               >
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${backfillMut.isPending ? "animate-spin" : ""}`} />
                 Recover missing emails
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => backfillPhotosMut.mutate()}
+                disabled={!enabled || backfillPhotosMut.isPending}
+                title="Clear stored photo tags for contacts without a local picture, so Google photos re-download on the next sync"
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${backfillPhotosMut.isPending ? "animate-spin" : ""}`} />
+                Repull missing photos
               </Button>
             </div>
           )}

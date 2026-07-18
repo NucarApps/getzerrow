@@ -4,6 +4,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { contactLogoDomain } from "@/lib/company-domains";
 import {
   uploadContactPhoto,
   removeContactPhoto,
@@ -31,6 +33,8 @@ type Props = {
   contactId: string;
   avatarUrl: string | null;
   displayName: string;
+  email?: string | null;
+  website?: string | null;
   onChanged: () => void;
 };
 
@@ -40,7 +44,7 @@ type Props = {
  * `contact-photos` bucket and marked dirty for Google/CardDAV sync so the
  * change propagates to iPhone and Google Contacts on their next tick.
  */
-export function ContactPhotoUploader({ contactId, avatarUrl, displayName, onChanged }: Props) {
+export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, onChanged }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const upload = useServerFn(uploadContactPhoto);
@@ -99,6 +103,8 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, onChan
     }
   };
 
+  const logoDomain = !displaySrc ? contactLogoDomain(website ?? null, email ?? null) : null;
+
   return (
     <div className="group relative h-16 w-16 shrink-0">
       {displaySrc ? (
@@ -107,6 +113,8 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, onChan
           alt={displayName}
           className="h-16 w-16 rounded-full object-cover"
         />
+      ) : logoDomain ? (
+        <CompanyLogo domain={logoDomain} name={displayName} size={64} className="!rounded-full" />
       ) : (
         <div className="grid h-16 w-16 place-items-center rounded-full bg-primary/15 text-2xl font-semibold text-primary">
           {displayName.slice(0, 1).toUpperCase()}

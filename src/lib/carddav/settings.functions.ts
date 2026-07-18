@@ -8,6 +8,7 @@ export type GroupNameStyle = (typeof STYLES)[number];
 export type CardDavSettings = {
   group_name_style: GroupNameStyle;
   include_summary_in_notes: boolean;
+  use_company_logo_fallback: boolean;
 };
 
 /** Read the caller's CardDAV display preferences. Returns defaults if no
@@ -18,12 +19,16 @@ export const getCardDavSettings = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data, error } = await supabase
       .from("carddav_settings")
-      .select("group_name_style, include_summary_in_notes")
+      .select("group_name_style, include_summary_in_notes, use_company_logo_fallback")
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
     const row = data as
-      | { group_name_style?: string; include_summary_in_notes?: boolean }
+      | {
+          group_name_style?: string;
+          include_summary_in_notes?: boolean;
+          use_company_logo_fallback?: boolean;
+        }
       | null;
     const style: GroupNameStyle =
       row?.group_name_style === "leaf" || row?.group_name_style === "path_dash"
@@ -32,6 +37,7 @@ export const getCardDavSettings = createServerFn({ method: "GET" })
     return {
       group_name_style: style,
       include_summary_in_notes: row?.include_summary_in_notes ?? true,
+      use_company_logo_fallback: row?.use_company_logo_fallback ?? true,
     };
   });
 
@@ -40,11 +46,13 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
   .inputValidator((d: {
     group_name_style?: GroupNameStyle;
     include_summary_in_notes?: boolean;
+    use_company_logo_fallback?: boolean;
   }) =>
     z
       .object({
         group_name_style: z.enum(STYLES).optional(),
         include_summary_in_notes: z.boolean().optional(),
+        use_company_logo_fallback: z.boolean().optional(),
       })
       .parse(d),
   )
@@ -54,11 +62,15 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
     // so iOS pulls a fresh copy of every contact on next sync.
     const { data: existing } = await supabase
       .from("carddav_settings")
-      .select("resync_nonce, include_summary_in_notes")
+      .select("resync_nonce, include_summary_in_notes, use_company_logo_fallback")
       .eq("user_id", userId)
       .maybeSingle();
     const prev = existing as
-      | { resync_nonce?: number; include_summary_in_notes?: boolean }
+      | {
+          resync_nonce?: number;
+          include_summary_in_notes?: boolean;
+          use_company_logo_fallback?: boolean;
+        }
       | null;
     const nextNonce = (prev?.resync_nonce ?? 0) + 1;
     const patch: {
@@ -66,6 +78,7 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
       resync_nonce: number;
       group_name_style?: GroupNameStyle;
       include_summary_in_notes?: boolean;
+      use_company_logo_fallback?: boolean;
     } = {
       user_id: userId,
       resync_nonce: nextNonce,
@@ -73,6 +86,8 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
     if (data.group_name_style !== undefined) patch.group_name_style = data.group_name_style;
     if (data.include_summary_in_notes !== undefined)
       patch.include_summary_in_notes = data.include_summary_in_notes;
+    if (data.use_company_logo_fallback !== undefined)
+      patch.use_company_logo_fallback = data.use_company_logo_fallback;
     const { error } = await supabase
       .from("carddav_settings")
       .upsert(patch, { onConflict: "user_id" });

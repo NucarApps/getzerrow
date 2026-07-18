@@ -187,3 +187,41 @@ export const backfillMultiEmailsFromGoogle = createServerFn({ method: "POST" })
     return await backfillMultiEmails(context.userId, data.accountId);
   });
 
+/** Clear stored photo etags so the next Google pull re-downloads the photo
+ * for every linked contact that currently has no local avatar. Fixes cases
+ * where a picture was set on Google/iOS before Zerrow's photo sync shipped:
+ * the pull loop otherwise short-circuits on the stable photo URL and never
+ * touches those contacts again. */
+export const backfillGoogleContactPhotos = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { accountId: string }) =>
+    z.object({ accountId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwnsAccount(context.userId, data.accountId);
+    // Fetch links whose contact has no local photo.
+    const { data: links, error } = await supabaseAdmin
+      .from("google_contact_links")
+      .select("contact_id, contacts!inner(avatar_url)")
+      .eq("user_id", context.userId)
+      .eq("gmail_account_id", data.accountId)
+      .is("contacts.avatar_url", null);
+    if (error) throw new Error(error.message);
+    const ids = (links ?? [])
+      .map((l) => (l as { contact_id?: string }).contact_id)
+      .filter((v): v is string => !!v);
+    if (ids.length > 0) {
+      await supabaseAdmin
+        .from("google_contact_links")
+        .update({ photo_etag: null })
+        .eq("gmail_account_id", data.accountId)
+        .in("contact_id", ids);
+    }
+    // Kick off a sync so the pull loop refetches photos on the next tick.
+    const { runGoogleContactsSync } = await import(
+      "@/lib/google-contacts/reconcile.server"
+    );
+    await runGoogleContactsSync(context.userId, data.accountId).catch(() => null);
+    return { ok: true, cleared: ids.length };
+  });
+

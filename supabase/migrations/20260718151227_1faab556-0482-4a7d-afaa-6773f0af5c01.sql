@@ -1,0 +1,2 @@
+ALTER TABLE public.carddav_settings
+  ADD COLUMN IF NOT EXISTS use_company_logo_fallback boolean NOT NULL DEFAULT true;
