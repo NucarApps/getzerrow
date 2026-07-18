@@ -91,7 +91,8 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
             <Sparkles className="h-5 w-5" /> Enrich contacts
           </SheetTitle>
           <SheetDescription>
-            Find missing emails, phone numbers, companies, and titles by looking at your inbox.
+            Reads recent messages from each contact to extract company, title, and phone from
+            email signatures. For contacts without an email, matches names against inbox senders.
           </SheetDescription>
         </SheetHeader>
 
