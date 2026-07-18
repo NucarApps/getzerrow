@@ -74,7 +74,7 @@ export const getContact = createServerFn({ method: "POST" })
           .order("received_at", { ascending: false })
           .limit(10)
       : Promise.resolve({ data: [] });
-    const [{ data: emails }, { data: phones }] = await Promise.all([
+    const [{ data: emails }, { data: phones }, { data: emailRows }] = await Promise.all([
       emailsQuery,
       supabase
         .from("contact_phones")
@@ -82,8 +82,20 @@ export const getContact = createServerFn({ method: "POST" })
         .eq("contact_id", data.id)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
+      supabase
+        .from("contact_emails")
+        .select("id,label,address,is_primary,position")
+        .eq("contact_id", data.id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
     ]);
-    return { contact, recentEmails: emails ?? [], phones: phones ?? [] };
+    return {
+      contact,
+      recentEmails: emails ?? [],
+      phones: phones ?? [],
+      emails: emailRows ?? [],
+    };
+
   });
 export const updateContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
