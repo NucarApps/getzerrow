@@ -59,7 +59,12 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
       .maybeSingle();
     const nextNonce =
       ((existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
-    const patch: Record<string, unknown> = {
+    const patch: {
+      user_id: string;
+      resync_nonce: number;
+      group_name_style?: GroupNameStyle;
+      include_summary_in_notes?: boolean;
+    } = {
       user_id: userId,
       resync_nonce: nextNonce,
     };
@@ -69,6 +74,7 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
     const { error } = await supabase
       .from("carddav_settings")
       .upsert(patch, { onConflict: "user_id" });
+
     if (error) throw new Error(error.message);
     return { ok: true };
   });
