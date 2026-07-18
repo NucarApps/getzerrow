@@ -144,7 +144,7 @@ function ContactsPage() {
       try {
         const res = await backfillAutoGroups({});
         if (cancelled) return;
-        window.localStorage.setItem(KEY, "1");
+        window.sessionStorage.setItem(KEY, "1");
         if (res.membershipsAdded > 0 || res.membershipsRemoved > 0) {
           qc.invalidateQueries({ queryKey: ["contacts"] });
           qc.invalidateQueries({ queryKey: ["contact-groups"] });
