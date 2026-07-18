@@ -325,10 +325,42 @@ export function CompanyAliasesDialog({
               provider={currentProvider}
               sourceDomain={currentSource}
             />
-            <span className="truncate">{companyName}</span>
+            <Input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void saveName();
+                } else if (e.key === "Escape") {
+                  setNameDraft(companyName);
+                }
+              }}
+              disabled={busy}
+              placeholder="Company name"
+              className="h-8 flex-1 text-base font-semibold"
+              aria-label="Company name"
+            />
+            {nameDraft.trim() && nameDraft.trim() !== companyName && (
+              <>
+                <Button size="sm" onClick={saveName} disabled={busy}>
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setNameDraft(companyName)}
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+              </>
+            )}
           </DialogTitle>
           <DialogDescription>
-            Merge multiple email domains under this company and pick which logo to show.
+            Rename the company (applies to all {contactIds.length}{" "}
+            {contactIds.length === 1 ? "contact" : "contacts"} in this bucket), merge domains, and
+            pick which logo to show.
           </DialogDescription>
         </DialogHeader>
 
