@@ -441,7 +441,9 @@ export function CompanyAliasesDialog({
 
 
           {hasPrimary && (
+          <>
           <div>
+
 
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">Logo</Label>
             <div className="mt-2 rounded-md border border-border bg-card/40 p-2.5">
