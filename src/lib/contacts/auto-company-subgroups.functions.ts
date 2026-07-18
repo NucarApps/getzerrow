@@ -329,10 +329,11 @@ export async function reconcileIfAuto(
   }
 }
 
-/** For a set of contacts whose `company` may have changed, find every
- *  parent group with auto-subgroups enabled that has any of them as a
- *  direct member and reconcile it. Deduped per parent group.
- *  Best-effort: individual failures are swallowed. */
+/** For a set of contacts whose `company` may have changed, reconcile every
+ *  parent group with auto-subgroups enabled. We can't just look at the
+ *  parents the contacts are already members of — a company change may
+ *  newly qualify them for a parent they've never been in. Best-effort:
+ *  individual failures are swallowed. */
 export async function reconcileAutoParentsForContacts(
   supabase: DB,
   userId: string,
@@ -340,19 +341,12 @@ export async function reconcileAutoParentsForContacts(
 ): Promise<void> {
   if (contactIds.length === 0) return;
   try {
-    const { data: memberships } = await supabase
-      .from("contact_group_members")
-      .select("group_id")
-      .in("contact_id", contactIds);
-    const groupIds = Array.from(new Set((memberships ?? []).map((m) => m.group_id)));
-    if (groupIds.length === 0) return;
     const { data: parents } = await supabase
       .from("contact_groups")
-      .select("id,auto_company_subgroups,user_id")
-      .in("id", groupIds)
+      .select("id,user_id")
+      .eq("user_id", userId)
       .eq("auto_company_subgroups", true);
     for (const p of parents ?? []) {
-      if (p.user_id !== userId) continue;
       try {
         await reconcileAutoCompanySubgroupsImpl(supabase, userId, p.id);
       } catch {
@@ -363,6 +357,34 @@ export async function reconcileAutoParentsForContacts(
     // Non-fatal.
   }
 }
+
+/** Reconcile every auto-company-subgroup parent for the current user.
+ *  Used by the one-time backfill on the contacts page. */
+export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: parents, error } = await supabase
+      .from("contact_groups")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("auto_company_subgroups", true);
+    if (error) throw new Error(error.message);
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    let reconciled = 0;
+    for (const p of parents ?? []) {
+      try {
+        const s = await reconcileAutoCompanySubgroupsImpl(supabase, userId, p.id);
+        totalAdded += s.membershipsAdded;
+        totalRemoved += s.membershipsRemoved;
+        reconciled += 1;
+      } catch {
+        // Skip failing parents; keep going.
+      }
+    }
+    return { reconciled, membershipsAdded: totalAdded, membershipsRemoved: totalRemoved };
+  });
 
 /** Flip the toggle. When enabling, run an immediate reconcile so the user
  *  sees subgroups right away. Disabling leaves auto rows in place until
