@@ -1055,6 +1055,32 @@ export async function handlePut(
     }
   }
 
+  // Replace-all emails — only when EMAIL was actually present in the PUT
+  // AND the vCard carried at least one non-empty address. iOS's blank-slot
+  // partial PUTs should never wipe stored emails (parser already excludes
+  // them from `parsed.emails`).
+  if (present.has("EMAIL") && parsed.emails.length > 0) {
+    const { error: delEmailErr } = await supabaseAdmin
+      .from("contact_emails")
+      .delete()
+      .eq("contact_id", contactId)
+      .eq("user_id", userId);
+    if (delEmailErr) return new Response(delEmailErr.message, { status: 500 });
+
+    const hasPrimaryEmail = parsed.emails.some((e) => e.is_primary);
+    const emailRows = parsed.emails.map((e, idx) => ({
+      user_id: userId,
+      contact_id: contactId,
+      label: e.label.toLowerCase(),
+      address: e.address.toLowerCase(),
+      is_primary: hasPrimaryEmail ? e.is_primary : idx === 0,
+      position: idx,
+    }));
+    const { error: insEmailErr } = await supabaseAdmin.from("contact_emails").insert(emailRows);
+    if (insEmailErr) return new Response(insEmailErr.message, { status: 500 });
+  }
+
+
   // CATEGORIES → contact_group_members reconciliation. Only when the vCard
   // actually included a CATEGORIES line — iOS omits it for most edits and
   // running it unconditionally erased group membership.
