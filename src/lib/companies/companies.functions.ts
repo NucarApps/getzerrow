@@ -530,6 +530,14 @@ export const deleteCompany = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // Capture affected contacts BEFORE the delete so we can prune their
+    // auto-company subgroup labels after the FK goes NULL. Otherwise the
+    // previous company's subgroup label lingers as a duplicate.
+    const { data: affected } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("company_id", data.id);
     // company_id on contacts is ON DELETE SET NULL, so contacts are preserved.
     const { error } = await supabase
       .from("companies")
@@ -537,6 +545,13 @@ export const deleteCompany = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .eq("user_id", userId);
     if (error) throw new Error(error.message);
+    const ids = (affected ?? []).map((r) => (r as { id: string }).id);
+    if (ids.length > 0) {
+      const { reconcileAutoParentsForContacts } = await import(
+        "@/lib/contacts/auto-company-subgroups.functions"
+      );
+      await reconcileAutoParentsForContacts(supabase, userId, ids);
+    }
     return { ok: true as const };
   });
 
