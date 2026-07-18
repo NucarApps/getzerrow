@@ -199,8 +199,12 @@ async function runEnrichForContact(
       .map((e, i) => `--- Email ${i + 1} ---\nSubject: ${e.subject}\n${e.tail}`)
       .join("\n\n");
 
+    const locked = buildLockedFieldSet(contact);
+
     if (!sample.trim()) {
-      const betterName = pickBetterName(contact.name, fromNameCandidate);
+      const betterName = locked.has("name")
+        ? contact.name
+        : pickBetterName(contact.name, fromNameCandidate);
       const earlyPatch: { enriched_at: string; name?: string } = {
         enriched_at: new Date().toISOString(),
       };
@@ -213,6 +217,7 @@ async function runEnrichForContact(
         .single();
       return { contact: updated ?? contact, skipped: false as const };
     }
+
 
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
       name: null,
