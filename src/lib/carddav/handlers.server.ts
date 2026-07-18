@@ -178,12 +178,27 @@ async function loadContactPhotoOrLogo(
   if (fallback) {
     try {
       const { sha256Hex } = await import("@/lib/contacts/photos.server");
+      const { recordCompanyLogoHash } = await import("@/lib/contacts/logo-photo.server");
       const sha = await sha256Hex(fallback.bytes);
+      const { data: linked } = await supabaseAdmin
+        .from("contacts")
+        .select("company_id")
+        .eq("id", row.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      const companyId = (linked as { company_id?: string | null } | null)?.company_id ?? null;
       await supabaseAdmin
         .from("contacts")
         .update({ company_logo_photo_sha: sha })
         .eq("id", row.id)
         .eq("user_id", userId);
+      await recordCompanyLogoHash({
+        userId,
+        companyId,
+        domain: logoDomain,
+        sha256: sha,
+        source: "carddav_inline",
+      });
     } catch {
       // Non-fatal: fingerprinting is best-effort.
     }
@@ -1180,7 +1195,7 @@ export async function handlePut(
       const incomingSha = await sha256Hex(parsed.photo.bytes);
       const { data: fp } = await supabaseAdmin
         .from("contacts")
-        .select("avatar_url,company_logo_photo_sha")
+        .select("avatar_url,company_id,company_logo_photo_sha")
         .eq("id", contactId)
         .eq("user_id", userId)
         .maybeSingle();
@@ -1188,6 +1203,13 @@ export async function handlePut(
         (fp as { company_logo_photo_sha?: string | null } | null)
           ?.company_logo_photo_sha ?? null;
       let skip = storedFallbackSha !== null && storedFallbackSha === incomingSha;
+      const companyId = (fp as { company_id?: string | null } | null)?.company_id ?? null;
+      if (!skip && companyId) {
+        const { getKnownCompanyLogoHashes } = await import(
+          "@/lib/contacts/logo-photo.server"
+        );
+        skip = (await getKnownCompanyLogoHashes(userId, companyId)).has(incomingSha);
+      }
       if (!skip) {
         const currentAvatar =
           (fp as { avatar_url?: string | null } | null)?.avatar_url ?? null;
@@ -1209,7 +1231,7 @@ export async function handlePut(
           incoming_sha: incomingSha.slice(0, 16),
         });
       } else {
-        await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime);
+        await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime, "carddav");
       }
 
     } catch (err) {

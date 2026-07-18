@@ -181,6 +181,42 @@ type LogoChoiceRow = {
   source_domain: string | null;
 };
 
+export async function recordCompanyLogoHash(args: {
+  userId: string;
+  companyId: string | null;
+  domain: string | null;
+  sha256: string;
+  source?: string;
+}): Promise<void> {
+  if (!args.companyId || !args.sha256) return;
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await supabaseAdmin.from("company_logo_hashes").upsert(
+    {
+      user_id: args.userId,
+      company_id: args.companyId,
+      domain: args.domain?.toLowerCase() ?? null,
+      sha256: args.sha256,
+      source: args.source ?? "observed",
+      last_seen_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,company_id,sha256" },
+  );
+}
+
+export async function getKnownCompanyLogoHashes(
+  userId: string,
+  companyId?: string | null,
+): Promise<Set<string>> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  let query = supabaseAdmin
+    .from("company_logo_hashes")
+    .select("sha256")
+    .eq("user_id", userId);
+  if (companyId) query = query.eq("company_id", companyId);
+  const { data } = await query.limit(5000);
+  return new Set(((data as Array<{ sha256: string }> | null) ?? []).map((row) => row.sha256));
+}
+
 function sortedCompanyDomains(rows: CompanyDomainRow[]): string[] {
   return rows
     .slice()
@@ -262,6 +298,9 @@ export async function findMatchingCompanyLogoSha(
   computeSha: (bytes: Uint8Array) => Promise<string>,
 ): Promise<string | null> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const known = await getKnownCompanyLogoHashes(userId, companyId);
+  if (known.has(targetSha)) return targetSha;
+
   const { data: domainRows } = await supabaseAdmin
     .from("company_domains")
     .select("domain,source,member_count,created_at")
@@ -280,7 +319,16 @@ export async function findMatchingCompanyLogoSha(
       const hit = await tryFetch(url);
       if (!hit) continue;
       const sha = await computeSha(hit.bytes);
-      if (sha === targetSha) return sha;
+      if (sha === targetSha) {
+        await recordCompanyLogoHash({
+          userId,
+          companyId,
+          domain,
+          sha256: sha,
+          source: "provider_probe",
+        });
+        return sha;
+      }
     }
   }
   return null;

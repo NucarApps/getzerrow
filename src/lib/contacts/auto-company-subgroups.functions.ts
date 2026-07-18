@@ -191,7 +191,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
   }
 
   // 3. Load every user contact and bucket by derived key.
-  const byKey = new Map<string, { rawValues: string[]; contactIds: Set<string> }>();
+  const byKey = new Map<string, { rawValues: string[]; contactIds: Set<string>; displayName: string }>();
   if (repKeys.size > 0) {
     const { data: allContacts, error: cErr } = await supabase
       .from("contacts")
@@ -203,7 +203,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
       if (!derived || !repKeys.has(derived.key)) continue;
       let bucket = byKey.get(derived.key);
       if (!bucket) {
-        bucket = { rawValues: [], contactIds: new Set() };
+        bucket = { rawValues: [], contactIds: new Set(), displayName: derived.displayName };
         byKey.set(derived.key, bucket);
       }
       if (derived.rawCompany) bucket.rawValues.push(derived.rawCompany);
@@ -211,7 +211,13 @@ export async function reconcileAutoCompanySubgroupsImpl(
     }
     // Ensure every represented key exists, even if no candidate matched.
     for (const key of repKeys) {
-      if (!byKey.has(key)) byKey.set(key, { rawValues: [], contactIds: new Set() });
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          rawValues: [],
+          contactIds: new Set(),
+          displayName: fallbackDisplayNames.get(key) ?? key,
+        });
+      }
     }
   }
 
@@ -231,13 +237,41 @@ export async function reconcileAutoCompanySubgroupsImpl(
     if (!existingByKey.has(k)) existingByKey.set(k, g);
   }
 
+  const wantedKeys = new Set(byKey.keys());
+
+  // Legacy auto subgroups may be named from old free-text company values
+  // while the current bucket key is the canonical Company entity id. Alias
+  // those existing groups by the company-id-derived key of their members so
+  // they are renamed in place instead of replaced.
+  const existingIds = (existing ?? []).map((group) => group.id);
+  if (existingIds.length > 0) {
+    const { data: subgroupMembers } = await supabase
+      .from("contact_group_members")
+      .select("group_id, contacts:contacts(id, company, email, website, company_id)")
+      .in("group_id", existingIds);
+    type SubgroupMemberRow = {
+      group_id: string;
+      contacts: ContactShape | null;
+    };
+    const existingById = new Map((existing ?? []).map((group) => [group.id, group]));
+    for (const row of (subgroupMembers ?? []) as unknown as SubgroupMemberRow[]) {
+      if (!row.contacts) continue;
+      const derived = deriveCompanyKey(row.contacts, aliasMap, companyMap);
+      const existingGroup = existingById.get(row.group_id);
+      if (!derived || !existingGroup || !wantedKeys.has(derived.key)) continue;
+      if (!existingByKey.has(derived.key)) existingByKey.set(derived.key, existingGroup);
+    }
+  }
+
   // 5. Create/rename subgroups for each represented key.
   let created = 0;
   let renamed = 0;
-  const wantedKeys = new Set(byKey.keys());
   for (const [key, info] of byKey) {
     const display =
-      pickDisplayName(info.rawValues) || fallbackDisplayNames.get(key) || key;
+      (key.startsWith("cid:") ? trimRaw(info.displayName) : "") ||
+      pickDisplayName(info.rawValues) ||
+      fallbackDisplayNames.get(key) ||
+      key;
     const existingRow = existingByKey.get(key);
     if (existingRow) {
       if (existingRow.name !== display) {

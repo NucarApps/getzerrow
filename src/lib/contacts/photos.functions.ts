@@ -56,7 +56,13 @@ export const uploadContactPhoto = createServerFn({ method: "POST" })
     if (bytes.length > MAX_UPLOAD_BYTES) throw new Error("Image too large (max 5 MB)");
 
     const { saveContactPhoto } = await import("@/lib/contacts/photos.server");
-    const { avatarUrl } = await saveContactPhoto(context.userId, data.contactId, bytes, data.mime);
+    const { avatarUrl } = await saveContactPhoto(
+      context.userId,
+      data.contactId,
+      bytes,
+      data.mime,
+      "user_upload",
+    );
 
     // Nudge Google sync to push the new picture upstream on next run.
     try {

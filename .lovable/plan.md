@@ -1,35 +1,39 @@
-## Problem
+Do I know what the issue is? Yes.
 
-Auto company subgroups produce three labels for one Company entity:
-`VW`, `Volkswagen`, `Volkswagen Group of America Inc.`
+Problem confirmed from the live data:
+- Bryan Barks is still linked to the old company record: `Volkswagen Group of America Inc.`, not the canonical `Volkswagen` company.
+- There are actually three Volkswagen-related company records in the backend data: `Volkswagen`, `Volkswagen Group of America Inc.`, and `VW`.
+- Bryan still has a saved `avatar_url`, so the UI first renders the live company logo fallback, then the signed saved photo loads and replaces it. That is the flicker.
+- The visible label is coming from the old auto-generated contact group/subgroup membership named `Volkswagen Group of America Inc.`.
 
-Root cause in `src/lib/contacts/auto-company-subgroups.functions.ts` → `deriveCompanyKey`:
-the bucketing key is the normalized `contact.company` string (or a fallback email/website domain). It ignores `contacts.company_id`. So contacts linked to the same Company entity but with different `company` free-text values ("VW", "Volkswagen", "Volkswagen Group of America Inc.") each spawn their own subgroup, and domain-only contacts on a secondary domain (e.g. `vw.com` vs `vwoa.com`) form yet another.
+Plan:
 
-## Fix
+1. Add durable photo provenance and logo-echo protection
+   - Add an `avatar_source` field for contacts so future photos are distinguishable as user-uploaded, CardDAV/iPhone, Google, or unknown legacy data.
+   - Add a company-logo hash history table so when a company logo changes, older logo snapshots can still be recognized as company-logo echoes later.
+   - Update all photo write paths:
+     - Manual Zerrow upload marks the photo as user-uploaded.
+     - CardDAV/iPhone photo sync skips saving photos that match any known company-logo hash.
+     - Google Contacts pull skips saving photos that match any known company-logo hash.
+     - Company-logo fallback rendering records the logo hash for future echo detection.
 
-Make `company_id` the primary bucketing key, falling back to the current string/domain logic only when a contact has no `company_id`.
+2. Stop the UI flicker deterministically
+   - In `getContact`, treat any saved avatar that matches the contact company’s logo history as a stale company-logo snapshot.
+   - When detected, automatically clear `avatar_url`, preserve the matched logo hash, and return no personal avatar so the company logo is the only rendered image.
+   - Keep real personal photos working: user-uploaded photos and synced photos that do not match company-logo hashes will still display.
 
-### Changes in `src/lib/contacts/auto-company-subgroups.functions.ts`
+3. Clean up the existing Volkswagen data
+   - Merge/reassign the duplicate Volkswagen-related records into the canonical `Volkswagen` company.
+   - Move Bryan and other matching contacts/domains/tags from `Volkswagen Group of America Inc.` and `VW` to `Volkswagen`.
+   - Normalize the linked contacts’ displayed company field to `Volkswagen`.
+   - Clear Bryan’s stale saved avatar so it cannot flicker back again.
 
-1. Extend `ContactShape` to include `company_id`. Update every `.select(...)` on `contacts` in this file (member load at line 133, all-contacts load at line 170) to include `company_id`.
-2. In `deriveCompanyKey` (and its call sites), accept an optional `companyMap: Map<string, { name: string }>` keyed by company id:
-   - If `contact.company_id` is present and in the map, return `{ key: "cid:" + company_id, displayName: company.name, rawCompany: company.name }`. This guarantees one bucket per Company entity and the label follows the canonical company name.
-   - Otherwise, fall through to today's string/domain logic.
-3. Before step 2 of `reconcileAutoCompanySubgroupsImpl`, load the set of company ids referenced by the parent's manual members plus all user contacts sharing those ids, then fetch `companies(id, name)` once and build `companyMap`.
-4. Keep step 6's "delete stale" pass — after the change it will prune the two extra VW/Volkswagen Inc. subgroups on the next reconcile automatically.
+4. Fix company subgroup/label reconciliation
+   - Harden auto-company subgroup reconciliation so company-linked contacts use the canonical `company_id` + company name, not stale free-text company names.
+   - Ensure stale auto-generated subgroups like `Volkswagen Group of America Inc.` are removed or renamed during reconcile.
+   - Re-run reconcile for the affected parent groups so Bryan’s labels collapse to the canonical Volkswagen label.
 
-### Trigger a one-time reconcile
-
-Because the existing subgroups were created under the old keying, they need one reconcile pass to collapse:
-
-- Call `reconcileAllAutoGroups` (already exposed) after deploy, or the user can hit the existing "Reconcile auto subgroups" affordance. No new server fn or migration required.
-
-### Out of scope (call out, don't change)
-
-- Manual (non-auto) groups the user created by hand named "VW" or "Volkswagen" are not touched — only rows with `auto_generated_from_group_id` are managed. If any of the three labels in the screenshot is a manual group, it will remain; I'll surface that in the UI response so the user can delete it if desired.
-
-### Verification
-
-- Unit-level: extend `src/lib/contacts/company-name.test.ts` (or a new sibling) with a case asserting that two contacts sharing `company_id` but different `company` strings produce a single bucket.
-- Manual: on the Bryan Barks parent group, run reconcile and confirm only one "Volkswagen" subgroup remains, matching the Company entity's name.
+5. Add regression tests
+   - Test that Google/CardDAV photo saves skip company-logo echoes.
+   - Test that a legacy saved logo snapshot is self-healed and does not render as a personal avatar.
+   - Test that duplicate company labels collapse to the canonical company name after reconciliation.
