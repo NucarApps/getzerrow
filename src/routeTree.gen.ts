@@ -77,6 +77,7 @@ import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './rout
 import { Route as ApiPublicCarddavSplatRouteImport } from './routes/api/public/carddav/$'
 import { Route as ApiMobileEmailsFeedRouteImport } from './routes/api/mobile/emails.feed'
 import { Route as ApiMobileEmailsActionRouteImport } from './routes/api/mobile/emails.action'
+import { Route as AuthenticatedContactsCompaniesCompanyIdRouteImport } from './routes/_authenticated/contacts.companies.$companyId'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
 
 const TermsRoute = TermsRouteImport.update({
@@ -450,6 +451,12 @@ const ApiMobileEmailsActionRoute = ApiMobileEmailsActionRouteImport.update({
   path: '/api/mobile/emails/action',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedContactsCompaniesCompanyIdRoute =
+  AuthenticatedContactsCompaniesCompanyIdRouteImport.update({
+    id: '/contacts/companies/$companyId',
+    path: '/contacts/companies/$companyId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const ApiPublicOgCardHandleRoute = ApiPublicOgCardHandleRouteImport.update({
   id: '/api/public/og/card/$handle',
   path: '/api/public/og/card/$handle',
@@ -510,6 +517,7 @@ export interface FileRoutesByFullPath {
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/contacts/companies/$companyId': typeof AuthenticatedContactsCompaniesCompanyIdRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
@@ -579,6 +587,7 @@ export interface FileRoutesByTo {
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
+  '/contacts/companies/$companyId': typeof AuthenticatedContactsCompaniesCompanyIdRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
@@ -651,6 +660,7 @@ export interface FileRoutesById {
   '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/_authenticated/contacts/companies/$companyId': typeof AuthenticatedContactsCompaniesCompanyIdRoute
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
@@ -723,6 +733,7 @@ export interface FileRouteTypes {
     | '/api/public/recall-webhook'
     | '/contacts/'
     | '/settings/'
+    | '/contacts/companies/$companyId'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/carddav/$'
@@ -792,6 +803,7 @@ export interface FileRouteTypes {
     | '/api/public/recall-webhook'
     | '/contacts'
     | '/settings'
+    | '/contacts/companies/$companyId'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/carddav/$'
@@ -863,6 +875,7 @@ export interface FileRouteTypes {
     | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
     | '/_authenticated/settings/'
+    | '/_authenticated/contacts/companies/$companyId'
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/carddav/$'
@@ -1409,6 +1422,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMobileEmailsActionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/contacts/companies/$companyId': {
+      id: '/_authenticated/contacts/companies/$companyId'
+      path: '/contacts/companies/$companyId'
+      fullPath: '/contacts/companies/$companyId'
+      preLoaderRoute: typeof AuthenticatedContactsCompaniesCompanyIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/api/public/og/card/$handle': {
       id: '/api/public/og/card/$handle'
       path: '/api/public/og/card/$handle'
@@ -1463,6 +1483,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
+  AuthenticatedContactsCompaniesCompanyIdRoute: typeof AuthenticatedContactsCompaniesCompanyIdRoute
   AuthenticatedContactsCompaniesIndexRoute: typeof AuthenticatedContactsCompaniesIndexRoute
 }
 
@@ -1478,6 +1499,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
+  AuthenticatedContactsCompaniesCompanyIdRoute:
+    AuthenticatedContactsCompaniesCompanyIdRoute,
   AuthenticatedContactsCompaniesIndexRoute:
     AuthenticatedContactsCompaniesIndexRoute,
 }
