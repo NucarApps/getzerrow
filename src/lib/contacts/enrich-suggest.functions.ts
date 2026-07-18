@@ -1,8 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
+import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import {
+  getEmailsDecrypted,
   searchEmailsParticipantsDecrypted,
 } from "../sync/encrypted-reader";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
@@ -10,7 +13,6 @@ import { normalizePhone } from "./phone";
 import {
   firstLastTokens,
   nameMatchConfidence,
-  normalizeNameLoose,
   type NameMatchConfidence,
 } from "./name-match";
 
@@ -36,7 +38,21 @@ type CandidateRow = {
   title: string | null;
 };
 
+// Cap contacts we ship to AI per scan (each contact costs ~1 gateway call).
+const MAX_AI_EXTRACTIONS = 40;
+// Total candidate pool (name-search + AI extraction combined).
 const MAX_CONTACTS_PER_RUN = 200;
+// Emails per contact fed to the extractor.
+const EMAILS_PER_CONTACT = 6;
+// Trim body text to keep prompts small.
+const MAX_BODY_CHARS = 1200;
+
+const SignatureExtraction = z.object({
+  company: z.string().nullable(),
+  title: z.string().nullable(),
+  phones: z.array(z.string()).nullable(),
+});
+type SignatureExtraction = z.infer<typeof SignatureExtraction>;
 
 /** Kick off a scan across contacts and produce enrichment suggestions. */
 export const scanContactEnrichment = createServerFn({ method: "POST" })
@@ -52,10 +68,13 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
     const userId = context.userId;
     const strictness = data.strictness ?? 3;
 
+    const apiKey = process.env.LOVABLE_API_KEY;
+    if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+
     // Candidate contacts: named contacts that are missing email OR company OR title.
     const { data: rawCandidates, error: cErr } = await supabase
       .from("contacts")
-      .select("id, name, email, company, title")
+      .select("id, name, email, company, title, updated_at")
       .not("name", "is", null)
       .order("updated_at", { ascending: false })
       .limit(MAX_CONTACTS_PER_RUN * 3);
@@ -69,11 +88,7 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       .slice(0, MAX_CONTACTS_PER_RUN);
 
     if (candidates.length === 0) {
-      return {
-        scanned: 0,
-        created: 0,
-        run_id: null as string | null,
-      };
+      return { scanned: 0, created: 0, run_id: null as string | null };
     }
 
     const runId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`;
@@ -99,33 +114,200 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       ),
     );
 
-    // For contacts with an email but missing company: derive from non-personal domain.
-    for (const c of candidates) {
-      if (c.email && !c.company) {
-        const domain = c.email.split("@")[1]?.toLowerCase();
-        if (domain && !PERSONAL_DOMAINS.has(domain)) {
-          const company = deriveCompanyFromDomain(domain);
-          if (company) {
-            const key = `${c.id}|company|${company.toLowerCase()}`;
-            if (!existing.has(key)) {
-              rows.push({
-                user_id: userId,
-                contact_id: c.id,
-                run_id: runId,
-                field: "company",
-                value: company,
-                source: "domain_derived",
-                evidence: `Derived from ${c.email}`,
-                confidence: "medium",
-              });
-              existing.add(key);
-            }
-          }
-        }
-      }
+    // Existing phones per contact so we don't re-suggest numbers already on file.
+    const { data: phoneRows } = await supabase
+      .from("contact_phones")
+      .select("contact_id, number")
+      .eq("user_id", userId);
+    const phonesByContact = new Map<string, Set<string>>();
+    for (const p of (phoneRows ?? []) as Array<{ contact_id: string; number: string }>) {
+      const set = phonesByContact.get(p.contact_id) ?? new Set<string>();
+      set.add(normalizePhone(p.number) || p.number.toLowerCase());
+      phonesByContact.set(p.contact_id, set);
     }
 
-    // For contacts missing email: search mail participants by name.
+    // ---------- AI signature extraction for candidates WITH an email ----------
+    const withEmail = candidates.filter(
+      (c) => !!c.email && (!c.company || !c.title || (phonesByContact.get(c.id)?.size ?? 0) === 0),
+    );
+    const forAi = withEmail.slice(0, MAX_AI_EXTRACTIONS);
+    const gateway = createLovableAiGatewayProvider(apiKey);
+    const model = gateway("google/gemini-3.1-flash-lite");
+    let aiSuccess = 0;
+    let aiEmpty = 0;
+
+    for (const c of forAi) {
+      const addr = (c.email ?? "").toLowerCase();
+      if (!addr) continue;
+
+      // Find their recent messages by participant.
+      const { rows: hits } = await searchEmailsParticipantsDecrypted({
+        userId,
+        from: addr,
+        to: null,
+        rest: "",
+        limit: EMAILS_PER_CONTACT,
+        offset: 0,
+        accountId: null,
+      });
+      if (!hits || hits.length === 0) continue;
+
+      const ids = hits.map((h) => h.id);
+      const { rows: bodies } = await getEmailsDecrypted(ids);
+      if (bodies.length === 0) continue;
+
+      const corpus = bodies
+        .map((b) => {
+          const body = (b.body_text ?? b.snippet ?? "").slice(-MAX_BODY_CHARS);
+          return `Subject: ${b.subject ?? ""}\n${body}`;
+        })
+        .join("\n---\n")
+        .slice(0, MAX_BODY_CHARS * 3);
+
+      const prompt = `You are extracting professional identity from the tail of email messages (where signatures usually live).
+Contact on file: name="${c.name ?? ""}" email="${addr}"
+
+Return JSON with these fields:
+- company: employer/organization the sender writes for (null if not clearly present)
+- title: job title (null if not clearly present)
+- phones: array of phone numbers found in a signature (empty array or null if none)
+
+Only extract facts that are clearly the sender's OWN signature (bottom-of-email blocks, headers with "|" or "·"). Ignore quoted replies, marketing footers, unsubscribe blocks, and other people's info.
+
+Messages:
+${corpus}`;
+
+      let extracted: SignatureExtraction | null = null;
+      try {
+        const { output } = await generateText({
+          model,
+          output: Output.object({ schema: SignatureExtraction }),
+          prompt,
+        });
+        extracted = output;
+      } catch (error) {
+        if (NoObjectGeneratedError.isInstance(error)) {
+          try {
+            extracted = SignatureExtraction.parse(JSON.parse(error.text ?? "{}"));
+          } catch {
+            extracted = null;
+          }
+        } else {
+          logInfo("contact_enrichment.ai_error", {
+            userId,
+            contact_id: c.id,
+            message: (error as Error).message,
+          });
+          continue;
+        }
+      }
+
+      if (!extracted) {
+        aiEmpty++;
+        continue;
+      }
+
+      const fieldsReturned: string[] = [];
+      const evidenceBase = `From ${bodies.length} message${bodies.length === 1 ? "" : "s"}`;
+
+      const company = (extracted.company ?? "").trim();
+      if (company && !c.company) {
+        const key = `${c.id}|company|${company.toLowerCase()}`;
+        if (!existing.has(key)) {
+          rows.push({
+            user_id: userId,
+            contact_id: c.id,
+            run_id: runId,
+            field: "company",
+            value: company.slice(0, 120),
+            source: "email_signature",
+            evidence: `${evidenceBase} · signature`,
+            confidence: "high",
+          });
+          existing.add(key);
+          fieldsReturned.push("company");
+        }
+      }
+
+      const title = (extracted.title ?? "").trim();
+      if (title && !c.title) {
+        const key = `${c.id}|title|${title.toLowerCase()}`;
+        if (!existing.has(key)) {
+          rows.push({
+            user_id: userId,
+            contact_id: c.id,
+            run_id: runId,
+            field: "title",
+            value: title.slice(0, 120),
+            source: "email_signature",
+            evidence: `${evidenceBase} · signature`,
+            confidence: "high",
+          });
+          existing.add(key);
+          fieldsReturned.push("title");
+        }
+      }
+
+      const existingPhones = phonesByContact.get(c.id) ?? new Set<string>();
+      for (const raw of extracted.phones ?? []) {
+        const normalized = normalizePhone(raw);
+        if (!normalized || normalized.length < 7) continue;
+        if (existingPhones.has(normalized)) continue;
+        const key = `${c.id}|phone|${normalized}`;
+        if (existing.has(key)) continue;
+        rows.push({
+          user_id: userId,
+          contact_id: c.id,
+          run_id: runId,
+          field: "phone",
+          value: normalized,
+          source: "email_signature",
+          evidence: `${evidenceBase} · signature`,
+          confidence: "high",
+        });
+        existing.add(key);
+        existingPhones.add(normalized);
+        fieldsReturned.push("phone");
+      }
+
+      if (fieldsReturned.length > 0) aiSuccess++;
+      else aiEmpty++;
+
+      logInfo("contact_enrichment.contact_extracted", {
+        userId,
+        contact_id: c.id,
+        fields: fieldsReturned,
+        message_count: bodies.length,
+      });
+    }
+
+    // ---------- Domain fallback: only when AI produced no company for that contact ----------
+    const suggestedCompanyContacts = new Set(
+      rows.filter((r) => r.field === "company").map((r) => r.contact_id),
+    );
+    for (const c of candidates) {
+      if (!c.email || c.company) continue;
+      if (suggestedCompanyContacts.has(c.id)) continue;
+      const domain = c.email.split("@")[1]?.toLowerCase();
+      if (!domain || PERSONAL_DOMAINS.has(domain)) continue;
+      const company = deriveCompanyFromDomain(domain);
+      if (!company) continue;
+      const key = `${c.id}|company|${company.toLowerCase()}`;
+      if (existing.has(key)) continue;
+      rows.push({
+        user_id: userId,
+        contact_id: c.id,
+        run_id: runId,
+        field: "company",
+        value: company,
+        source: "domain_derived",
+        evidence: `Derived from ${c.email}`,
+        confidence: "low",
+      });
+      existing.add(key);
+    }
+
+    // ---------- Name-based email match for contacts WITHOUT an email ----------
     const nameLackingEmail = candidates.filter((c) => !c.email);
     for (const c of nameLackingEmail) {
       const tokens = firstLastTokens(c.name);
@@ -145,7 +327,6 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       });
       if (sErr) continue;
 
-      // Group by from_addr; take best match per address.
       const byAddr = new Map<
         string,
         { name: string | null; count: number; confidence: NameMatchConfidence }
@@ -160,13 +341,11 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
           byAddr.set(addr, { name: h.from_name, count: 1, confidence: conf });
         } else {
           prev.count += 1;
-          // Upgrade confidence if a later hit is stronger.
           if (rank(conf) > rank(prev.confidence)) prev.confidence = conf;
         }
       }
 
       for (const [addr, info] of byAddr) {
-        // Skip if that email already belongs to another contact of this user.
         const { count } = await supabase
           .from("contacts")
           .select("id", { count: "exact", head: true })
@@ -200,6 +379,9 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       userId,
       run_id: runId,
       scanned: candidates.length,
+      ai_attempts: forAi.length,
+      ai_success: aiSuccess,
+      ai_empty: aiEmpty,
       created: rows.length,
     });
 
@@ -257,18 +439,12 @@ export const listContactEnrichmentSuggestions = createServerFn({ method: "GET" }
 
     const grouped = new Map<
       string,
-      {
-        contact: ContactMini;
-        suggestions: Array<Omit<Row, "contacts">>;
-      }
+      { contact: ContactMini; suggestions: Array<Omit<Row, "contacts">> }
     >();
     for (const r of (data as Row[] | null) ?? []) {
       const c = Array.isArray(r.contacts) ? r.contacts[0] : r.contacts;
       if (!c) continue;
-      const bucket = grouped.get(r.contact_id) ?? {
-        contact: c,
-        suggestions: [],
-      };
+      const bucket = grouped.get(r.contact_id) ?? { contact: c, suggestions: [] };
       const { contacts: _c, ...rest } = r;
       void _c;
       bucket.suggestions.push(rest);
