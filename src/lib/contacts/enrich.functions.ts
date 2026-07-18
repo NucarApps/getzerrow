@@ -277,26 +277,18 @@ ${sample}`,
       postal_code?: string | null;
       country?: string | null;
     } = { enriched_at: new Date().toISOString() };
-    for (const k of [
-      "name",
-      "title",
-      "company",
-      "phone",
-      "website",
-      "linkedin",
-      "twitter",
-      ...ADDRESS_FIELDS,
-    ] as const) {
-      if (locked.has(k)) continue; // user-owned — never overwrite
-      const v = extracted[k];
-      if (k === "name") {
-        let best = pickBetterName(contact.name, fromNameCandidate);
-        best = pickBetterName(best, v);
-        if (best && best !== contact.name) patch.name = best;
-        continue;
-      }
-      if (v && (!(contact as Record<string, unknown>)[k] || data.force)) patch[k] = v;
+    const fieldPatch = computeEnrichmentFieldPatch({
+      contact,
+      extracted,
+      fromNameCandidate,
+      force: data.force,
+      pickBetterName,
+    });
+    for (const [k, v] of Object.entries(fieldPatch) as [EnrichableField, string][]) {
+      (patch as Record<string, unknown>)[k] = v;
     }
+    // Locked set is still needed below for the summary short-circuit logic.
+    void locked;
 
     // Fields persisted only via the encrypted RPC — strip from the
     // plaintext patch since the columns are gone post-Migration B.
