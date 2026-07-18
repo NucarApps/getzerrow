@@ -237,6 +237,8 @@ export async function reconcileAutoCompanySubgroupsImpl(
     if (!existingByKey.has(k)) existingByKey.set(k, g);
   }
 
+  const wantedKeys = new Set(byKey.keys());
+
   // Legacy auto subgroups may be named from old free-text company values
   // while the current bucket key is the canonical Company entity id. Alias
   // those existing groups by the company-id-derived key of their members so
@@ -264,7 +266,6 @@ export async function reconcileAutoCompanySubgroupsImpl(
   // 5. Create/rename subgroups for each represented key.
   let created = 0;
   let renamed = 0;
-  const wantedKeys = new Set(byKey.keys());
   for (const [key, info] of byKey) {
     const display =
       (key.startsWith("cid:") ? trimRaw(info.displayName) : "") ||
