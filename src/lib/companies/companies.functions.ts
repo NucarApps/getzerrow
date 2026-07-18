@@ -72,7 +72,7 @@ export const listCompanies = createServerFn({ method: "GET" })
     const [{ data: doms }, { data: mems }] = await Promise.all([
       supabase
         .from("company_domains")
-        .select("domain,source,member_count,discovered_from_contact_id")
+        .select("company_id,domain,source,member_count,discovered_from_contact_id")
         .in("company_id", ids)
         .order("source", { ascending: false }) // manual > auto
         .order("member_count", { ascending: false })
