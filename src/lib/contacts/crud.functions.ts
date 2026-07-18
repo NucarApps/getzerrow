@@ -243,6 +243,35 @@ export const renameCompanyForContacts = createServerFn({ method: "POST" })
     await reconcileAutoParentsForContacts(supabase, userId, data.contactIds);
     return { updated: count ?? 0 };
   });
+
+/**
+ * Set (or clear) the `website` field on every contact in a bucket. Used by
+ * the company dialog for name-only buckets so the user can attach a primary
+ * domain — bucketing then upgrades the bucket to a domain-keyed one on the
+ * next refresh via `contactLogoDomain(website, email)`.
+ */
+export const setCompanyWebsiteForContacts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        contactIds: z.array(z.string().uuid()).min(1).max(1000),
+        website: z.string().trim().max(500).nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const value = data.website && data.website.length > 0 ? data.website : null;
+    const { error, count } = await supabase
+      .from("contacts")
+      .update({ website: value }, { count: "exact" })
+      .eq("user_id", userId)
+      .in("id", data.contactIds);
+    if (error) throw new Error(error.message);
+    return { updated: count ?? 0 };
+  });
+
 /** Manually create a contact. */
 export const createContactManual = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
