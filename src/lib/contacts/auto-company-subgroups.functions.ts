@@ -140,7 +140,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
   // 1. Load direct members of the parent, split by auto/manual.
   const { data: members, error: mErr } = await supabase
     .from("contact_group_members")
-    .select("contact_id, auto_added, contacts:contacts(id, company, email, website)")
+    .select("contact_id, auto_added, contacts:contacts(id, company, email, website, company_id)")
     .eq("group_id", parentGroupId);
   if (mErr) throw new Error(mErr.message);
 
@@ -159,12 +159,30 @@ export async function reconcileAutoCompanySubgroupsImpl(
     if (r.contacts) manualContacts.push(r.contacts);
   }
 
+  // 1b. Load company_id → name map for every company referenced by manual
+  //     members (used both here and when we bucket all-user contacts).
+  const manualCompanyIds = new Set<string>();
+  for (const c of manualContacts) {
+    if (c.company_id) manualCompanyIds.add(c.company_id);
+  }
+  const companyMap = new Map<string, string>();
+  if (manualCompanyIds.size > 0) {
+    const { data: companyRows, error: coErr } = await supabase
+      .from("companies")
+      .select("id,name")
+      .in("id", [...manualCompanyIds]);
+    if (coErr) throw new Error(coErr.message);
+    for (const c of companyRows ?? []) {
+      if (c.id && c.name) companyMap.set(c.id, c.name);
+    }
+  }
+
   // 2. Represented-companies = distinct normalized key across manual members,
-  //    derived from `company` OR (fallback) non-personal email/website domain.
+  //    derived from `company_id` (preferred), then `company`, then domain.
   const repKeys = new Set<string>();
   const fallbackDisplayNames = new Map<string, string>();
   for (const c of manualContacts) {
-    const derived = deriveCompanyKey(c, aliasMap);
+    const derived = deriveCompanyKey(c, aliasMap, companyMap);
     if (!derived) continue;
     repKeys.add(derived.key);
     if (!derived.rawCompany && !fallbackDisplayNames.has(derived.key)) {
@@ -177,11 +195,11 @@ export async function reconcileAutoCompanySubgroupsImpl(
   if (repKeys.size > 0) {
     const { data: allContacts, error: cErr } = await supabase
       .from("contacts")
-      .select("id, company, email, website")
+      .select("id, company, email, website, company_id")
       .eq("user_id", userId);
     if (cErr) throw new Error(cErr.message);
     for (const c of (allContacts ?? []) as ContactShape[]) {
-      const derived = deriveCompanyKey(c, aliasMap);
+      const derived = deriveCompanyKey(c, aliasMap, companyMap);
       if (!derived || !repKeys.has(derived.key)) continue;
       let bucket = byKey.get(derived.key);
       if (!bucket) {
@@ -196,6 +214,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
       if (!byKey.has(key)) byKey.set(key, { rawValues: [], contactIds: new Set() });
     }
   }
+
 
   // 4. Load existing auto subgroups for this parent.
   const { data: existing, error: exErr } = await supabase
