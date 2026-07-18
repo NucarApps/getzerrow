@@ -1,75 +1,50 @@
 ## Goal
+Clean up the duplicate contact labels once and stop new ones from being created going forward, with the same UX pattern we already use for company duplicates.
 
-Stop auto-creating company groups/labels on ingest. Instead:
-1. **Suggest** groups when a contact is added (match existing labels first, or offer to create).
-2. Give each label its own **auto-assignment rules** (domains, AI category) so future contacts match to *existing* labels instead of spawning duplicates.
+## 1. One-time "Find duplicate labels" drawer
+- New `src/components/contacts/LabelDuplicatesDrawer.tsx` modeled on `CompanyDuplicatesDrawer`.
+- Server functions in a new `src/lib/contacts/label-duplicates.functions.ts`:
+  - `findDuplicateLabels({ useAi })` — clusters `contact_groups` by:
+    - Identical `normalize_company_name(name)`
+    - Same `company_id` (labels auto-created for the same company)
+    - Name matches a `company_name_aliases` entry that resolves to the same company
+    - If `useAi` on: pass remaining fuzzy candidates through Gemini for near-match clustering (same toggle UX as company drawer).
+  - `mergeLabelCluster({ canonicalId, foldIds })` — moves `contact_group_members` (dedupe on `(group_id, contact_id)`), moves `contact_group_rules` (dedupe on `(group_id, rule_type, value)`), reparents children whose `parent_group_id` is in `foldIds`, deletes the losers, then calls the existing `reconcileAutoParentsForContacts` so CardDAV/labels update.
+- Add "Find duplicate labels" button on `src/routes/_authenticated/contacts.index.tsx` next to the existing labels UI.
 
----
+## 2. Auto-merge legacy auto-company subgroups
+- One-shot server function `consolidateCompanyLabels()`:
+  - Groups all `contact_groups` where `company_id IS NOT NULL` by `company_id`, keeps the oldest (or the one whose name matches the company's canonical name), folds the rest via `mergeLabelCluster`.
+  - Also folds labels whose free-text name matches a `company_name_aliases.alias` for a company that already has a canonical label.
+- Runs automatically once after this deploy (idempotent). Exposed as a "Consolidate now" button in the drawer for future runs.
 
-## 1. Turn off auto-creation
+## 3. Block new duplicates going forward
+Single choke point: a new helper `findOrCreateContactGroup(userId, { name, companyId, parentId })` in `src/lib/contacts/group-resolve.server.ts`:
+- If `companyId` provided → return existing label for that `company_id` (create only if none).
+- Else normalize name via `normalize_company_name`; look up existing label by normalized name; check `company_name_aliases` to redirect variants ("VW" → Volkswagen's canonical label).
+- Only insert when no match found.
 
-- `auto-company-subgroups.functions.ts`: gate the "create subgroup per distinct company" behavior behind a new user setting `contact_settings.auto_create_company_subgroups` (default **off** going forward).
-- `resolveContactCompany` (in `crud.functions.ts`) keeps linking `company_id` when a clear existing match is found (by canonical name or alias), but **stops creating** new `companies` rows silently. If no match, leaves `company_id` null and emits a suggestion instead.
-- Existing auto-created subgroups are left in place; user cleans them up via the duplicates drawer already built.
+Route every current call site through it:
+- `src/lib/contacts/auto-company-subgroups.functions.ts` (main offender)
+- `src/lib/carddav/handlers.server.ts` (iPhone-created groups)
+- `src/lib/google-contacts/*` (Google Contacts pulls)
+- `src/lib/contacts/group-rules.functions.ts` and any group-suggestion apply paths
+- Any AI enrichment path that touches labels
 
-## 2. Label auto-assignment rules (the core new feature)
+DB safety net: add a partial unique index on `contact_groups (user_id, company_id)` where `company_id IS NOT NULL` so two labels can never point at the same company again.
 
-New table `contact_group_rules` attached to each `contact_groups` row:
+## 4. Bulk actions on the labels list
+On `contacts.index.tsx` labels section:
+- Multi-select checkboxes per label.
+- Bulk bar: **Merge into…** (picker of remaining labels, calls `mergeLabelCluster`), **Rename**, **Delete** (with member-count confirmation).
 
-```text
-contact_group_rules
-  id, user_id, group_id
-  rule_type      enum: 'domain' | 'company_id' | 'ai_category'
-  value          text        -- domain string, company uuid, or category slug
-  auto_apply     bool        -- true = add on match, false = suggest only
-  created_at
-  unique(group_id, rule_type, value)
-```
-
-Semantics on contact insert/update:
-- Collect candidate rules by matching the contact's email domain(s), linked `company_id`, and (if enrichment ran) inferred AI category (`software`, `automotive`, `finance`, …).
-- `auto_apply=true` rules → membership added immediately.
-- `auto_apply=false` rules → written to existing `contact_group_suggestions` for review.
-
-## 3. Suggestion flow on Add Contact
-
-In `ContactDrawer` / contact form:
-- After email/company fields fill in, call a new `suggestGroupsForContact` server fn that returns:
-  - **Exact/close label matches** by company name, alias, and domain rules.
-  - **AI-inferred category** (reuse Gemini enrichment) → suggested existing label with that `ai_category` rule, or offer to "create new label for Software".
-- Render a chip row: "Suggested: Nissan · Automotive". User taps to accept; nothing is auto-added unless a rule with `auto_apply=true` fires.
-
-## 4. Per-label settings UI
-
-Edit dialog for a label (`contact_groups` row) gets a new **Auto-assign** section:
-- Domains list (add/remove chips): "anyone from nissanusa.com goes here"
-- Linked companies (multi-select from `companies`)
-- AI category dropdown: none / Software / Automotive / Finance / Legal / Media / … (seeded list)
-- Toggle: **Auto-apply** vs **Suggest only**
-
-Stored as rows in `contact_group_rules`.
-
-## 5. AI category on contacts
-
-Add `contacts.ai_category text` populated by the existing enrichment run (`enrich.functions.ts`) — small addition to the Gemini prompt returning one slug from a fixed vocabulary. Used by rule matching in step 2.
-
-## 6. Backfill helper
-
-One-shot server fn `applyGroupRulesToAllContacts` (admin action in Contacts settings): re-evaluates every contact against current rules. Lets the user seed rules once and pull existing contacts into the right labels without editing each.
-
----
+## Out of scope
+- Rule engine changes (rules keep working; they're just moved during merges).
+- Company merging (already handled by the company duplicates drawer).
+- Any change to CardDAV group-display style settings.
 
 ## Technical notes
-
-- Migration: new table + GRANTs + RLS scoped to `auth.uid()`; add `ai_category` column to `contacts` and `contact_settings.auto_create_company_subgroups` bool.
-- Suggestion writes reuse existing `contact_group_suggestions` table — no new suggestion surface needed.
-- Rule matching is a pure function in `src/lib/contacts/group-rules.ts` (testable, no Supabase imports), called from `crud.functions.ts` on insert/update and from the new `suggestGroupsForContact` fn.
-- No changes to CardDAV/Google sync semantics — rules fire on the same `crud.functions.ts` upsert path both syncs already use.
-
----
-
-## Open questions before I build
-
-1. When a rule matches an **existing** label, do you want it applied silently (`auto_apply=true` default) or always shown as a suggestion first for the first N contacts?
-2. Should the AI category be a **fixed** vocabulary (Software, Automotive, Finance, Legal, Media, Healthcare, Retail, Nonprofit, Government, Other) or freeform where AI picks any string?
-3. Keep the existing auto-created Nissan-style subgroups as-is (you clean via the duplicates drawer), or run a one-time pass that converts each into a label + a domain rule and then deletes the auto-parent scaffolding?
+- Reuse `normalize_company_name` SQL function and `company_name_aliases` for matching so labels and companies stay aligned.
+- Merges are transactional at the RPC level per cluster; UI shows count of members/rules moved.
+- After every merge/consolidate, invalidate `["contact-groups"]`, `["contacts"]`, and bump the CardDAV `resync_nonce` so iPhone re-pulls clean labels.
+- AI clustering uses the existing Lovable AI gateway with Gemini, same prompt shape as `findDuplicateCompanies`.
