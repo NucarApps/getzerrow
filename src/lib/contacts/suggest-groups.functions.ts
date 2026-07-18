@@ -38,10 +38,10 @@ const AiOutput = z.object({
   suggestions: z.array(
     z.object({
       name: z.string(),
-      rationale: z.string().nullable(),
+      rationale: z.string().nullish(),
       kind: z.enum(["new", "subgroup", "merge_into_existing"]),
-      parent_group_name: z.string().nullable(),
-      existing_group_name: z.string().nullable(),
+      parent_group_name: z.string().nullish(),
+      existing_group_name: z.string().nullish(),
       // Contacts are referenced by the short `i` index we send in the prompt,
       // not by UUID — models reliably echo small ints, not long UUIDs.
       contact_ids: z.array(z.number().int().positive()),
@@ -208,7 +208,7 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
     }));
 
     const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-3.5-flash");
+    const model = gateway("google/gemini-3.1-flash-lite");
 
     const prompt = `You are helping organize a user's contact list into meaningful groups.
 
@@ -231,7 +231,8 @@ Rules:
 - rationale: one short sentence explaining the cluster.
 Return JSON matching the schema.`;
 
-    let parsed: z.infer<typeof AiOutput>;
+    let parsed: z.infer<typeof AiOutput> = { suggestions: [] };
+    let parseNote: string | null = null;
     try {
       const { output } = await generateText({
         model,
@@ -243,12 +244,13 @@ Return JSON matching the schema.`;
       if (NoObjectGeneratedError.isInstance(error)) {
         try {
           parsed = AiOutput.parse(JSON.parse(error.text ?? "{}"));
+          parseNote = "recovered_from_raw_text";
         } catch {
-          logInfo("contact_group_suggestions.parse_failed", { userId });
-          return {
-            suggestions: [] as SuggestionView[],
-            stats: { parsed: 0, kept: 0, inserted: 0 },
-          };
+          parseNote = "unparseable";
+          logInfo("contact_group_suggestions.parse_failed", {
+            userId,
+            raw_len: error.text?.length ?? 0,
+          });
         }
       } else {
         throw error;
