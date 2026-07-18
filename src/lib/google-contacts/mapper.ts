@@ -282,7 +282,7 @@ export function personToContact(person: Person): {
 
   const updateTime = person.metadata?.sources?.[0]?.updateTime ?? null;
 
-  return { email: primaryEmail, patch, phones, membershipResourceNames, updateTime };
+  return { email: primaryEmail, emails, patch, phones, membershipResourceNames, updateTime };
 }
 
 /** Zerrow group → Google contactGroups payload. */
