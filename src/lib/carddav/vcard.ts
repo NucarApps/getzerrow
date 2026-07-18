@@ -388,13 +388,14 @@ export function parseVCard(text: string): ParsedVCard | null {
   }
 
   const out: ParsedVCard = {
-    uid: null, name: null, email: null, company: null, title: null,
+    uid: null, name: null, email: null, emails: [], company: null, title: null,
     phones: [], address_line1: null, address_line2: null, city: null,
     region: null, postal_code: null, country: null, website: null,
     linkedin: null, twitter: null, notes: null,
     categories: [], isGroup: false, memberUids: [],
     presentFields: new Set<PresentField>(),
   };
+
 
   let fn: string | null = null;
   let nGiven: string | null = null;
