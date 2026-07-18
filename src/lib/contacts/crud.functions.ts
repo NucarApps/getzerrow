@@ -218,12 +218,38 @@ export const updateContact = createServerFn({ method: "POST" })
       }
     }
 
+    if (emails) {
+      const { error: delErr } = await supabase.from("contact_emails").delete().eq("contact_id", id);
+      if (delErr) throw new Error(delErr.message);
+      if (emails.length > 0) {
+        const hasPrimary = emails.some((e) => e.is_primary);
+        const normalized = emails.map((e, idx) => ({
+          user_id: userId,
+          contact_id: id,
+          label: e.label.trim().toLowerCase(),
+          address: e.address.trim().toLowerCase(),
+          is_primary: hasPrimary ? !!e.is_primary : idx === 0,
+          position: idx,
+        }));
+        const { error: insErr } = await supabase.from("contact_emails").insert(normalized);
+        if (insErr) throw new Error(insErr.message);
+      }
+    }
+
     const { data: refreshedPhones } = await supabase
       .from("contact_phones")
       .select("id,label,number,is_primary,position")
       .eq("contact_id", id)
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
+
+    const { data: refreshedEmails } = await supabase
+      .from("contact_emails")
+      .select("id,label,address,is_primary,position")
+      .eq("contact_id", id)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
+
 
     // If company changed, reconcile any auto-company-subgroup parents this
     // contact belongs to so subgroups collapse/rename/split immediately.
