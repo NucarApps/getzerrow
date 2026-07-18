@@ -1,0 +1,1 @@
+ALTER TABLE public.contacts ADD COLUMN IF NOT EXISTS company_logo_photo_sha text;

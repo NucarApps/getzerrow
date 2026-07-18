@@ -873,6 +873,7 @@ export type Database = {
           city: string | null
           company: string | null
           company_id: string | null
+          company_logo_photo_sha: string | null
           country: string | null
           created_at: string
           email: string | null
@@ -902,6 +903,7 @@ export type Database = {
           city?: string | null
           company?: string | null
           company_id?: string | null
+          company_logo_photo_sha?: string | null
           country?: string | null
           created_at?: string
           email?: string | null
@@ -931,6 +933,7 @@ export type Database = {
           city?: string | null
           company?: string | null
           company_id?: string | null
+          company_logo_photo_sha?: string | null
           country?: string | null
           created_at?: string
           email?: string | null
