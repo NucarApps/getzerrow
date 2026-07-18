@@ -6,11 +6,19 @@ import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import { logInfo } from "@/lib/log.server";
+import {
+  getEmailsDecrypted,
+  searchEmailsParticipantsDecrypted,
+} from "@/lib/sync/encrypted-reader";
+import { normalizeCompanyName } from "./company-name";
 
 type DB = SupabaseClient<Database>;
 
 const MAX_DEPTH = 4;
 const RESCAN_COOLDOWN_MS = 5 * 60 * 1000;
+const MAX_CONTACTS_FOR_TOPICS = 60;
+const EMAILS_PER_CONTACT_FOR_TOPICS = 3;
+const TOPIC_SNIPPET_CHARS = 180;
 
 type SuggestionKind = "new" | "subgroup" | "merge_into_existing";
 
