@@ -1112,6 +1112,7 @@ function ContactsPage() {
      </div>
       <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
       <DuplicateSuggestionsDrawer open={dupesOpen} onOpenChange={setDupesOpen} />
+      <EnrichmentSuggestionsDrawer open={enrichOpen} onOpenChange={setEnrichOpen} />
     </>
   );
 }
