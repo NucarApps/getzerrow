@@ -23,6 +23,23 @@ import {
   pickBetterName,
   phoneEntrySchema,
 } from "../contacts-helpers.server";
+import { MANUAL_TRACKED_FIELDS } from "./crud.functions";
+
+/** Fields the user has locked in — enrichment must never overwrite them. */
+function buildLockedFieldSet(contact: {
+  manual_overrides?: string[] | null;
+  company_id?: string | null;
+}): Set<string> {
+  const locked = new Set<string>(contact.manual_overrides ?? []);
+  // Explicitly linking a company via the combobox is an unambiguous user
+  // action, so treat the company text as locked even without an override.
+  if (contact.company_id) locked.add("company");
+  return locked;
+}
+
+// Silence unused-import lint if MANUAL_TRACKED_FIELDS drifts unused.
+void MANUAL_TRACKED_FIELDS;
+
 
 type EnrichSupabase = SupabaseClient<Database>;
   
