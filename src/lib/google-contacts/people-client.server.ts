@@ -106,6 +106,13 @@ export async function listConnectionsPage(
   return call<ConnectionsPage>(accountId, "/people/me/connections", { query });
 }
 
+/** Fetch a single Google Person by resource name. Used for on-demand repair. */
+export async function getPerson(accountId: string, resourceName: string): Promise<Person> {
+  return call<Person>(accountId, `/${resourceName}`, {
+    query: { personFields: READ_PERSON_FIELDS },
+  });
+}
+
 export async function createPerson(accountId: string, body: Partial<Person>): Promise<Person> {
   return call<Person>(accountId, "/people:createContact", {
     method: "POST",

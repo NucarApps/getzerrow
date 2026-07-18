@@ -27,6 +27,7 @@ import {
   setGoogleContactsSyncMode,
   setGoogleContactsSyncInterval,
   forceFullGoogleContactsResync,
+  backfillMultiEmailsFromGoogle,
 } from "@/lib/google-contacts.functions";
 import {
   Select,
@@ -72,6 +73,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const setMode = useServerFn(setGoogleContactsSyncMode);
   const setInterval = useServerFn(setGoogleContactsSyncInterval);
   const forceFull = useServerFn(forceFullGoogleContactsResync);
+  const backfillEmails = useServerFn(backfillMultiEmailsFromGoogle);
   const connect = useServerFn(startConnectGmail);
   const [reconnecting, setReconnecting] = useState(false);
   const [confirmUpgrade, setConfirmUpgrade] = useState(false);
@@ -152,6 +154,27 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const backfillMut = useMutation({
+    mutationFn: () => backfillEmails({ data: { accountId: account.id } }),
+    onSuccess: (res) => {
+      if (res.emailsAdded === 0 && res.phonesAdded === 0) {
+        toast.success(
+          `Scanned ${res.contactsScanned} — nothing missing`,
+        );
+      } else {
+        toast.success(
+          `Added ${res.emailsAdded} email${res.emailsAdded === 1 ? "" : "s"}` +
+            (res.phonesAdded
+              ? ` and ${res.phonesAdded} phone${res.phonesAdded === 1 ? "" : "s"}`
+              : "") +
+            ` across ${res.contactsUpdated} contact${res.contactsUpdated === 1 ? "" : "s"}`,
+        );
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+
   async function handleReconnect() {
     setReconnecting(true);
     try {
@@ -220,6 +243,16 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
               >
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${forceMut.isPending ? "animate-spin" : ""}`} />
                 Force full re-pull
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => backfillMut.mutate()}
+                disabled={!enabled || backfillMut.isPending}
+                title="Scan every linked contact and additively import any emails/phones that exist in Google but not in Zerrow"
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${backfillMut.isPending ? "animate-spin" : ""}`} />
+                Recover missing emails
               </Button>
             </div>
           )}
