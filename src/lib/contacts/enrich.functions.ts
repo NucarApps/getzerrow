@@ -251,6 +251,7 @@ Fields:
 - region: state / province / region
 - postal_code: ZIP / postal code
 - country: country
+- ai_category: one industry slug for the person's employer, from this fixed set — software, automotive, finance, legal, media, healthcare, retail, manufacturing, consulting, real_estate, education, nonprofit, government, hospitality, energy, other. null if unclear.
 
 Emails (most-signature-likely first):
 ${sample}`,
