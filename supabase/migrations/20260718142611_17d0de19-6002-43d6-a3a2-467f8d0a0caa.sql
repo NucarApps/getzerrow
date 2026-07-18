@@ -1,0 +1,1 @@
+ALTER TABLE public.carddav_settings ADD COLUMN IF NOT EXISTS include_summary_in_notes boolean NOT NULL DEFAULT true;

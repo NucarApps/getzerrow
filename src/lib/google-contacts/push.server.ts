@@ -130,6 +130,19 @@ async function pushContacts(
   if (!contacts?.length) return 0;
   await progress?.set("pushing_contacts", 0, contacts.length);
 
+  // Per-user preference: fold Zerrow's AI relationship summary into the NOTE
+  // pushed to Google (mirrors the CardDAV path so iOS + Google Contacts show
+  // the same block). Default on.
+  const { data: settingsRow } = await supabaseAdmin
+    .from("carddav_settings")
+    .select("include_summary_in_notes")
+    .eq("user_id", ids.userId)
+    .maybeSingle();
+  const includeSummary =
+    (settingsRow as { include_summary_in_notes?: boolean } | null)
+      ?.include_summary_in_notes !== false;
+
+
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
     .select("contact_id, resource_name, etag, last_synced_at, photo_etag")
@@ -175,7 +188,9 @@ async function pushContacts(
         memberResourceNames,
         undefined,
         (emails ?? []).map((e) => ({ label: e.label, address: e.address, is_primary: e.is_primary })),
+        { includeSummary },
       );
+
 
 
       if (!link) {

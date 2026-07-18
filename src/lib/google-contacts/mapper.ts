@@ -1,6 +1,9 @@
 // Pure mapping between Zerrow's internal contact shape and Google People API
 // `Person` resources. No I/O, no Supabase — safe to unit test in isolation.
 
+import { buildMergedNote, stripSummaryFromNote } from "@/lib/carddav/vcard";
+
+
 export type PersonName = {
   givenName?: string;
   familyName?: string;
@@ -62,8 +65,10 @@ export type LocalContact = {
   postal_code: string | null;
   country: string | null;
   notes: string | null;
+  relationship_summary?: string | null;
   primary_phone: string | null;
 };
+
 
 export type LocalPhone = { label: string; number: string; is_primary: boolean };
 
@@ -106,7 +111,9 @@ export function contactToPerson(
   memberships: string[], // Google contactGroups/xxx resource names
   primaryEmailPrevious?: boolean,
   emails: LocalEmail[] = [],
+  options: { includeSummary?: boolean } = {},
 ): Partial<Person> {
+
   const person: Partial<Person> = {};
 
   const nm = splitName(contact.name);
@@ -157,9 +164,14 @@ export function contactToPerson(
     ];
   }
 
-  if (contact.notes && contact.notes.trim()) {
-    person.biographies = [{ value: contact.notes.trim(), contentType: "TEXT_PLAIN" }];
+  const mergedNote = buildMergedNote(
+    options.includeSummary !== false ? contact.relationship_summary ?? null : null,
+    contact.notes,
+  );
+  if (mergedNote) {
+    person.biographies = [{ value: mergedNote, contentType: "TEXT_PLAIN" }];
   }
+
 
   const addrLine =
     [contact.address_line1, contact.address_line2].filter(Boolean).join(", ").trim() || undefined;
@@ -252,7 +264,7 @@ export function personToContact(person: Person): {
     name: joinName(person.names?.[0]),
     company: person.organizations?.[0]?.name?.trim() || null,
     title: person.organizations?.[0]?.title?.trim() || null,
-    notes: person.biographies?.[0]?.value?.trim() || null,
+    notes: stripSummaryFromNote(person.biographies?.[0]?.value ?? null) || null,
   };
 
   const addr = person.addresses?.[0];

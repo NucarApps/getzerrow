@@ -1,7 +1,7 @@
 // Round-trip guards: iOS → parse → server model → serialize → parse must
 // preserve phone, email, and notes without duplicating or corrupting them.
 import { describe, it, expect } from "vitest";
-import { parseVCard, contactToVCard, phoneKey, type PhoneRow } from "./vcard";
+import { parseVCard, contactToVCard, phoneKey, buildMergedNote, stripSummaryFromNote, type PhoneRow } from "./vcard";
 import type { DecryptedContact } from "@/lib/sync/encrypted-reader";
 
 function buildContact(overrides: Partial<DecryptedContact> = {}): DecryptedContact {
@@ -125,3 +125,66 @@ describe("notes round-trip", () => {
   });
 });
 
+
+describe("AI summary in NOTE", () => {
+
+
+  it("merges summary and user notes with summary first", () => {
+    const merged = buildMergedNote("She runs ops at Acme.", "Met at conf.");
+    expect(merged).toContain("🤖 Zerrow summary");
+    expect(merged).toContain("She runs ops at Acme.");
+    expect(merged).toContain("— My notes —");
+    expect(merged).toContain("Met at conf.");
+    expect(merged!.indexOf("Zerrow summary")).toBeLessThan(merged!.indexOf("— My notes —"));
+  });
+
+  it("returns user notes only when there is no summary", () => {
+    expect(buildMergedNote(null, "Just notes")).toBe("Just notes");
+    expect(buildMergedNote("", "Just notes")).toBe("Just notes");
+  });
+
+  it("returns null when both are empty", () => {
+    expect(buildMergedNote(null, null)).toBeNull();
+    expect(buildMergedNote("", "")).toBeNull();
+  });
+
+  it("emits merged NOTE in vCard when summary is present and option not disabled", () => {
+    const c = buildContact({
+      relationship_summary: "Head of design.",
+      notes: "Prefers email.",
+    });
+    const vcard = contactToVCard(c);
+    const unfolded = vcard.replace(/\r\n /g, "");
+    expect(unfolded).toMatch(/NOTE[:;]/);
+    expect(unfolded).toContain("Head of design.");
+    expect(unfolded).toContain("Prefers email.");
+  });
+
+
+  it("omits summary when includeSummary=false", () => {
+    const c = buildContact({
+      relationship_summary: "Head of design.",
+      notes: "Prefers email.",
+    });
+    const vcard = contactToVCard(c, [], [], [], null, { includeSummary: false });
+    const unfolded = vcard.replace(/\r\n /g, "");
+    expect(unfolded).not.toContain("Head of design.");
+    expect(unfolded).toContain("Prefers email.");
+  });
+
+
+  it("stripSummaryFromNote returns only user portion for merged text", () => {
+    const merged = buildMergedNote("AI text", "user text")!;
+    expect(stripSummaryFromNote(merged)).toBe("user text");
+  });
+
+  it("stripSummaryFromNote returns empty string for summary-only inbound", () => {
+    const merged = buildMergedNote("AI text", null)!;
+    expect(stripSummaryFromNote(merged)).toBe("");
+  });
+
+  it("stripSummaryFromNote passes plain user notes through unchanged", () => {
+    expect(stripSummaryFromNote("Just my notes")).toBe("Just my notes");
+    expect(stripSummaryFromNote(null)).toBe("");
+  });
+});

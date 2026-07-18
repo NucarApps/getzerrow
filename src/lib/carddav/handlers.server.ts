@@ -23,9 +23,11 @@ import {
   contactToVCard,
   groupETag,
   parseVCard,
+  stripSummaryFromNote,
   type EmailRow,
   type PhoneRow,
 } from "./vcard";
+
 
 import {
   davResponse,
@@ -128,6 +130,21 @@ export async function getGroupNameStyle(userId: string): Promise<GroupNameStyle>
   const v = (data as { group_name_style?: string } | null)?.group_name_style;
   return v === "leaf" || v === "path_dash" ? v : "path_slash";
 }
+
+/** Whether to fold `relationship_summary` into the NOTE emitted to iOS.
+ * Defaults to true so existing installs light up the feature automatically;
+ * users can turn it off in Settings → iPhone contacts. */
+export async function getIncludeSummaryInNotes(userId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from("carddav_settings")
+    .select("include_summary_in_notes")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const v = (data as { include_summary_in_notes?: boolean } | null)
+    ?.include_summary_in_notes;
+  return v === false ? false : true;
+}
+
 
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
 
@@ -407,13 +424,15 @@ async function buildContactResponse(
       `</D:response>`
     );
   }
-  const [phones, categories, emails, photo] = await Promise.all([
+  const [phones, categories, emails, photo, includeSummary] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
     includeVcard ? loadContactPhotoBytes(row.avatar_url ?? null) : Promise.resolve(null),
+    getIncludeSummaryInNotes(userId),
   ]);
-  const vcard = contactToVCard(row, phones, categories, emails, photo);
+  const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
+
 
   const etag = contactETag(row.id, row.updated_at);
   const props =
@@ -723,13 +742,15 @@ export async function handleGet(
 
   const { row } = await getContactDecrypted(contactId);
   if (!row) return new Response("Not found", { status: 404 });
-  const [phones, categories, emails, photo] = await Promise.all([
+  const [phones, categories, emails, photo, includeSummary] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
     loadContactPhotoBytes(row.avatar_url ?? null),
+    getIncludeSummaryInNotes(userId),
   ]);
-  const vcard = contactToVCard(row, phones, categories, emails, photo);
+  const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
+
 
 
   return new Response(method === "HEAD" ? null : vcard, {
@@ -1017,7 +1038,7 @@ export async function handlePut(
     address_line2?: string | null;
     phone?: string | null;
   } = { contact_id: contactId };
-  if (present.has("NOTE")) encPatch.notes = parsed.notes ?? "";
+  if (present.has("NOTE")) encPatch.notes = stripSummaryFromNote(parsed.notes);
   if (present.has("ADR")) {
     encPatch.address_line1 = parsed.address_line1 ?? "";
     encPatch.address_line2 = parsed.address_line2 ?? "";
