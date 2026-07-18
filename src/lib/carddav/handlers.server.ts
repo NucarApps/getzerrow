@@ -19,8 +19,10 @@ import {
   contactToVCard,
   groupETag,
   parseVCard,
+  type EmailRow,
   type PhoneRow,
 } from "./vcard";
+
 import {
   davResponse,
   MULTISTATUS_CLOSE,
