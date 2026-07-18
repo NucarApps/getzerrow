@@ -457,7 +457,7 @@ async function buildContactResponse(
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
-    includeVcard ? loadContactPhotoBytes(row.avatar_url ?? null) : Promise.resolve(null),
+    includeVcard ? loadContactPhotoOrLogo(userId, row) : Promise.resolve(null),
     getIncludeSummaryInNotes(userId),
   ]);
   const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
