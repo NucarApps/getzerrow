@@ -62,12 +62,14 @@ export function CompanyAliasesDialog({
   const listGroups = useServerFn(listContactGroups);
   const setGroupsFn = useServerFn(setCompanyGroups);
   const searchBrandsFn = useServerFn(searchLogoBrands);
+  const renameFn = useServerFn(renameCompanyForContacts);
 
   const [newDomain, setNewDomain] = useState("");
   const [busy, setBusy] = useState(false);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [brandQuery, setBrandQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [nameDraft, setNameDraft] = useState(companyName);
 
   const choicesQ = useQuery({
     queryKey: ["company-logo-choices"],
