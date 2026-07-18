@@ -1,8 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { generateText, Output } from "ai";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import { sendContactShareEmail } from "../cards.server";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
 import {
@@ -22,12 +24,7 @@ import {
   phoneEntrySchema,
 } from "../contacts-helpers.server";
 
-type EnrichSupabase = Parameters<Parameters<typeof requireSupabaseAuth.server>[0]>[0] extends {
-  context: infer C;
-}
-  ? C extends { supabase: infer S }
-    ? S
-    : never
+type EnrichSupabase = SupabaseClient<Database>;
   : never;
 
 /** Shared enrichment core so both the single-contact server fn and the
