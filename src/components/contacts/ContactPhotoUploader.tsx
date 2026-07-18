@@ -140,7 +140,9 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
     ? (companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null))
     : null;
   const logoChoice = logoDomain
-    ? (logoChoicesQuery.data ?? []).find((c) => c.domain === logoDomain)
+    ? (logoChoicesQuery.data ?? []).find(
+        (c) => c.domain === logoDomain || c.source_domain === logoDomain,
+      )
     : undefined;
 
   return (
