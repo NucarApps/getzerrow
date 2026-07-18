@@ -21,6 +21,7 @@ import {
   pickBetterName,
   phoneEntrySchema,
 } from "../contacts-helpers.server";
+import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
