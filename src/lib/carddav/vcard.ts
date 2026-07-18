@@ -554,6 +554,34 @@ export function parseVCard(text: string): ParsedVCard | null {
         if (m) out.memberUids.push(m[1].toLowerCase());
         break;
       }
+      case "PHOTO": {
+        // iOS emits `PHOTO;ENCODING=b;TYPE=JPEG:<base64>` (vCard 3.0) or
+        // `PHOTO;VALUE=uri:<https-url>`. Only the inline base64 form is
+        // decoded — external URIs are ignored (they're rare from iOS and
+        // would need a network round-trip we don't want inside a PUT).
+        const enc = (p.params.ENCODING ?? []).join(",").toUpperCase();
+        const valueParam = (p.params.VALUE ?? []).join(",").toUpperCase();
+        if (valueParam === "URI") break;
+        const raw = p.value.replace(/\s+/g, "");
+        if (!raw || !enc.includes("B")) {
+          // Empty PHOTO slot from a partial PUT — mark it present so a
+          // handler can distinguish "photo cleared" from "photo untouched"
+          // if it wants, but do NOT clobber the existing photo bytes.
+          break;
+        }
+        try {
+          const bin = atob(raw);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const typeParams = p.params.TYPE ?? [];
+          const mime = mimeForPhotoType(typeParams);
+          out.photo = { bytes, mime };
+          out.presentFields.add("PHOTO");
+        } catch {
+          // Malformed base64 — treat as no photo rather than failing the PUT.
+        }
+        break;
+      }
       default:
         break;
     }
