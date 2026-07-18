@@ -127,6 +127,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
     country: "",
   });
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
+  const [emails, setEmails] = useState<EmailEntry[]>([]);
+
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
