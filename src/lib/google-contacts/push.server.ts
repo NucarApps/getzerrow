@@ -196,6 +196,78 @@ async function pushContacts(
         }
       } else if (link.etag) {
         try {
+          // Conflict guard: if Google has emails we don't, abort the push
+          // and flip the link back to "trust remote" so the next pull will
+          // import the missing addresses instead of us clobbering them.
+          try {
+            const remote = await getPerson(ids.gmailAccountId, link.resource_name);
+            const remoteEmails = new Set(
+              (remote.emailAddresses ?? [])
+                .map((e) => e.value?.trim().toLowerCase())
+                .filter((v): v is string => !!v),
+            );
+            const localEmails = new Set(
+              (emails ?? [])
+                .map((e) => e.address?.trim().toLowerCase())
+                .filter((v): v is string => !!v),
+            );
+            const remoteOnly = [...remoteEmails].filter((e) => !localEmails.has(e));
+            if (remoteOnly.length > 0) {
+              logInfo("google_contacts.push.remote_has_more_emails_skip", {
+                ...ids,
+                contact_id: c.id,
+                remote_only_count: remoteOnly.length,
+              });
+              await supabaseAdmin
+                .from("google_contact_links")
+                .update({
+                  etag: remote.etag ?? link.etag,
+                  last_synced_at: new Date(0).toISOString(),
+                })
+                .eq("contact_id", c.id)
+                .eq("gmail_account_id", ids.gmailAccountId);
+              // Immediately additively import the remote-only emails so the
+              // user sees them without waiting for the next full pull.
+              const parsedRemote = personToContact(remote);
+              const { data: existing } = await supabaseAdmin
+                .from("contact_emails")
+                .select("address, position, is_primary")
+                .eq("contact_id", c.id);
+              const existingSet = new Set(
+                (existing ?? []).map((r) => (r.address ?? "").toLowerCase()),
+              );
+              const hasPrimary = (existing ?? []).some((r) => r.is_primary);
+              const startPos =
+                (existing ?? []).reduce(
+                  (m, r) => Math.max(m, r.position ?? 0),
+                  -1,
+                ) + 1;
+              const toInsert = parsedRemote.emails
+                .filter((e) => !existingSet.has(e.address.toLowerCase()))
+                .map((e, idx) => ({
+                  user_id: ids.userId,
+                  contact_id: c.id,
+                  label: e.label || "other",
+                  address: e.address.toLowerCase(),
+                  is_primary: !hasPrimary && idx === 0,
+                  position: startPos + idx,
+                }));
+              if (toInsert.length) {
+                await supabaseAdmin.from("contact_emails").insert(toInsert);
+              }
+              await progress?.increment(1);
+              continue;
+            }
+          } catch (guardErr) {
+            // If the guard itself fails, fall through to the normal update
+            // (the etag path still protects against silent overwrites).
+            logError(
+              "google_contacts.push.guard_failed",
+              { ...ids, contact_id: c.id },
+              guardErr,
+            );
+          }
+
           const updated = await updatePerson(ids.gmailAccountId, link.resource_name, {
             ...body,
             etag: link.etag,
