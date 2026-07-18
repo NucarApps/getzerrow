@@ -82,7 +82,7 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
       deleteContactPhoto,
       sha256Hex,
     } = await import("@/lib/contacts/photos.server");
-    const { fetchChosenCompanyLogoBytes, logoDomainForContact } = await import(
+    const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } = await import(
       "@/lib/contacts/logo-photo.server"
     );
 
@@ -117,9 +117,10 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
       const ownSha = await sha256Hex(own.bytes);
 
       // Current-company logo SHA (may be null if provider failed).
+      const logoDomain = await resolveCompanyLogoDomainForContact(context.userId, r);
       const currentLogo = await fetchChosenCompanyLogoBytes(
         context.userId,
-        logoDomainForContact(r),
+        logoDomain,
       );
       const currentLogoSha = currentLogo
         ? await sha256Hex(currentLogo.bytes)
@@ -182,7 +183,7 @@ export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
     const { deleteContactPhoto, sha256Hex } = await import(
       "@/lib/contacts/photos.server"
     );
-    const { fetchChosenCompanyLogoBytes, logoDomainForContact } = await import(
+    const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } = await import(
       "@/lib/contacts/logo-photo.server"
     );
 
@@ -207,9 +208,10 @@ export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
       await deleteContactPhoto(context.userId, r.id);
     }
 
+    const logoDomain = await resolveCompanyLogoDomainForContact(context.userId, r);
     const logo = await fetchChosenCompanyLogoBytes(
       context.userId,
-      logoDomainForContact(r),
+      logoDomain,
     );
     const logoSha = logo ? await sha256Hex(logo.bytes) : null;
     if (logoSha) {
