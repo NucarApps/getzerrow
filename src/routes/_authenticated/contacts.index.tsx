@@ -1067,6 +1067,7 @@ function GroupPill({
   count,
   onClick,
   onEdit,
+  locked,
 }: {
   active: boolean;
   color: string;
