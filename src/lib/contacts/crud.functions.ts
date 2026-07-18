@@ -26,6 +26,55 @@ import {
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 import { resolveContactCompany } from "@/lib/companies/companies.functions";
 
+/**
+ * Fields we treat as "user-owned once you edit them". Enrichment reads this
+ * list from `contacts.manual_overrides` and skips any field named here that
+ * the user has set by hand, even on a forced rerun. Keep in one place so
+ * `crud` and `enrich` can't drift.
+ */
+export const MANUAL_TRACKED_FIELDS = [
+  "name",
+  "title",
+  "company",
+  "phone",
+  "website",
+  "linkedin",
+  "twitter",
+  "notes",
+  "address_line1",
+  "address_line2",
+  "city",
+  "region",
+  "postal_code",
+  "country",
+] as const;
+export type ManualTrackedField = (typeof MANUAL_TRACKED_FIELDS)[number];
+
+const MANUAL_TRACKED_SET: Set<string> = new Set(MANUAL_TRACKED_FIELDS);
+
+/**
+ * Merge `patch` into `current` overrides:
+ *   - a non-empty tracked field is added (user set it)
+ *   - an explicit null / empty-string tracked field is removed (user cleared
+ *     it, so enrichment may fill it again).
+ * Fields not present in the patch are left alone.
+ */
+export function computeManualOverrides(
+  current: readonly string[] | null | undefined,
+  patch: Record<string, unknown>,
+): string[] {
+  const set = new Set<string>(current ?? []);
+  for (const [key, value] of Object.entries(patch)) {
+    if (!MANUAL_TRACKED_SET.has(key)) continue;
+    const isCleared =
+      value === null || (typeof value === "string" && value.trim() === "");
+    if (isCleared) set.delete(key);
+    else if (value !== undefined) set.add(key);
+  }
+  return Array.from(set).sort();
+}
+
+
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
