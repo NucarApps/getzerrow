@@ -269,6 +269,16 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${backfillMut.isPending ? "animate-spin" : ""}`} />
                 Recover missing emails
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => backfillPhotosMut.mutate()}
+                disabled={!enabled || backfillPhotosMut.isPending}
+                title="Clear stored photo tags for contacts without a local picture, so Google photos re-download on the next sync"
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${backfillPhotosMut.isPending ? "animate-spin" : ""}`} />
+                Repull missing photos
+              </Button>
             </div>
           )}
         </div>
