@@ -175,7 +175,7 @@ async function judgeCluster(
   cluster: ClusterInput,
 ): Promise<z.infer<typeof AiSchema>> {
   const gateway = createLovableAiGatewayProvider(apiKey);
-  const model = gateway("google/gemini-3.5-flash");
+  const model = gateway("google/gemini-3.1-flash-lite");
   const prompt = `You review a small group of contact rows and decide whether they represent the same real person.
 
 Contacts (JSON):
