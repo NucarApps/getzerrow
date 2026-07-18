@@ -1,64 +1,75 @@
-## Problem
-
-The database actually has **8 separate company records** for Nissan:
-
-- Nissan North America (4 contacts) ← what you think of as "the" Nissan
-- Nissan, Nissan-USA, Nissan-USA.com, Nissan Motor Acceptance Company, Nissan Northeast Region, Nissan Of Keene, Boch Nissan South (1 contact each)
-
-Auto-company-subgroups faithfully creates one child label per distinct company record under the "Factory" parent, so the group list shows "Nissan", "Nissan North America", "Nissan Motor Acceptance Company", "Nissan-usa.com", etc. The labels are correct given the data — the underlying problem is duplicate company records, not the label engine.
-
 ## Goal
 
-Give you a first-class way to consolidate near-duplicate companies so that (a) one canonical company owns the contacts, (b) alternate names live as aliases (so future enrichment/import doesn't recreate them), and (c) auto-generated subgroup labels collapse to a single label per canonical company.
+Stop auto-creating company groups/labels on ingest. Instead:
+1. **Suggest** groups when a contact is added (match existing labels first, or offer to create).
+2. Give each label its own **auto-assignment rules** (domains, AI category) so future contacts match to *existing* labels instead of spawning duplicates.
 
-## Plan
+---
 
-### 1. Alias-aware auto-subgroup bucketing
-Update `src/lib/contacts/auto-company-subgroups.functions.ts` so contacts whose free-text `company` matches a `company_aliases` row bucket under the canonical `company_id` instead of a new string bucket. Pruning already removes empty legacy string buckets, so the "Nissan", "Nissan-USA" labels disappear once contacts move.
+## 1. Turn off auto-creation
 
-### 2. Duplicate-company detector + AI review
-New server fn `findDuplicateCompanies` in `src/lib/companies/companies.functions.ts` that clusters companies by:
-- normalized name similarity (existing `normalize.ts` + token overlap: "Nissan", "Nissan-USA", "Nissan North America" → one cluster)
-- shared `company_domains` (nissan-usa.com, nissanusa.com)
-- shared contact email domains
+- `auto-company-subgroups.functions.ts`: gate the "create subgroup per distinct company" behavior behind a new user setting `contact_settings.auto_create_company_subgroups` (default **off** going forward).
+- `resolveContactCompany` (in `crud.functions.ts`) keeps linking `company_id` when a clear existing match is found (by canonical name or alias), but **stops creating** new `companies` rows silently. If no match, leaves `company_id` null and emits a suggestion instead.
+- Existing auto-created subgroups are left in place; user cleans them up via the duplicates drawer already built.
 
-Optional AI pass (Gemini) reviews each cluster and proposes the canonical record + which entries are true duplicates vs. distinct entities (e.g. "Nissan Motor Acceptance Company" and "Boch Nissan South" are separate businesses — keep them; "Nissan", "Nissan-USA", "Nissan-USA.com" fold into "Nissan North America").
+## 2. Label auto-assignment rules (the core new feature)
 
-### 3. Bulk-merge UI
-New drawer `CompanyDuplicatesDrawer.tsx` on `/contacts/companies` showing each cluster:
-- proposed canonical (editable)
-- checkbox per duplicate to include/exclude
-- preview: N contacts reassigned, N domains merged, N subgroup labels removed
-- "Merge cluster" runs existing `mergeCompanies` for each pair, promoting old names into `company_aliases` and triggering `reconcileAutoParentsForContacts`.
+New table `contact_group_rules` attached to each `contact_groups` row:
 
-### 4. Prevention at write time
-- `createCompany` / `updateCompany`: before insert, check `company_aliases` and normalized name against existing companies; if a match exists, offer "use existing" instead of creating a duplicate.
-- Enrichment (`enrich.functions.ts`): when it would set `company` to a string that matches an alias of the contact's current canonical company, no-op instead of overwriting.
+```text
+contact_group_rules
+  id, user_id, group_id
+  rule_type      enum: 'domain' | 'company_id' | 'ai_category'
+  value          text        -- domain string, company uuid, or category slug
+  auto_apply     bool        -- true = add on match, false = suggest only
+  created_at
+  unique(group_id, rule_type, value)
+```
 
-### 5. One-time cleanup for your Nissan cluster
-After you approve the merges in the UI, the reconcile pass will:
-- Reassign all 4 stray Nissan contacts to "Nissan North America" (or whichever canonical you pick)
-- Delete the "Nissan", "Nissan-USA", "Nissan-USA.com" subgroups under Factory
-- Keep "Nissan Motor Acceptance Company" and dealer entities (Boch Nissan South, Nissan Of Keene) as separate if AI/you flag them as distinct businesses
-- Bump `resync_nonce` so iPhone CardDAV re-fetches the cleaned group set
+Semantics on contact insert/update:
+- Collect candidate rules by matching the contact's email domain(s), linked `company_id`, and (if enrichment ran) inferred AI category (`software`, `automotive`, `finance`, …).
+- `auto_apply=true` rules → membership added immediately.
+- `auto_apply=false` rules → written to existing `contact_group_suggestions` for review.
 
-## Technical details
+## 3. Suggestion flow on Add Contact
 
-Files touched:
-- `src/lib/companies/companies.functions.ts` — add `findDuplicateCompanies`, `previewClusterMerge`, `mergeCluster`
-- `src/lib/contacts/auto-company-subgroups.functions.ts` — alias-aware bucketing
-- `src/lib/contacts/enrich.functions.ts` — alias-aware no-op guard
-- `src/components/contacts/CompanyCombobox.tsx` — surface "did you mean <existing>?" when typing a near-match
-- `src/routes/_authenticated/contacts.companies.index.tsx` — "Find duplicates" button + drawer
-- New `src/components/contacts/CompanyDuplicatesDrawer.tsx`
+In `ContactDrawer` / contact form:
+- After email/company fields fill in, call a new `suggestGroupsForContact` server fn that returns:
+  - **Exact/close label matches** by company name, alias, and domain rules.
+  - **AI-inferred category** (reuse Gemini enrichment) → suggested existing label with that `ai_category` rule, or offer to "create new label for Software".
+- Render a chip row: "Suggested: Nissan · Automotive". User taps to accept; nothing is auto-added unless a rule with `auto_apply=true` fires.
 
-No migrations needed — `companies`, `company_aliases`, `company_domains`, `contact_groups.auto_generated_from_group_id` already exist.
+## 4. Per-label settings UI
 
-## One question before I build
+Edit dialog for a label (`contact_groups` row) gets a new **Auto-assign** section:
+- Domains list (add/remove chips): "anyone from nissanusa.com goes here"
+- Linked companies (multi-select from `companies`)
+- AI category dropdown: none / Software / Automotive / Finance / Legal / Media / … (seeded list)
+- Toggle: **Auto-apply** vs **Suggest only**
 
-For the Nissan cluster specifically, do you want me to treat these as separate businesses (keep them) or fold them into "Nissan North America"?
+Stored as rows in `contact_group_rules`.
 
-- **Fold into Nissan North America**: Nissan, Nissan-USA, Nissan-USA.com
-- **Likely separate (keep)**: Nissan Motor Acceptance Company (financing arm), Boch Nissan South (dealer), Nissan Of Keene (dealer), Nissan Northeast Region (regional office)
+## 5. AI category on contacts
 
-I'll wire the AI suggester with that same convention (corporate parents fold; dealers/financing arms stay separate) unless you tell me otherwise.
+Add `contacts.ai_category text` populated by the existing enrichment run (`enrich.functions.ts`) — small addition to the Gemini prompt returning one slug from a fixed vocabulary. Used by rule matching in step 2.
+
+## 6. Backfill helper
+
+One-shot server fn `applyGroupRulesToAllContacts` (admin action in Contacts settings): re-evaluates every contact against current rules. Lets the user seed rules once and pull existing contacts into the right labels without editing each.
+
+---
+
+## Technical notes
+
+- Migration: new table + GRANTs + RLS scoped to `auth.uid()`; add `ai_category` column to `contacts` and `contact_settings.auto_create_company_subgroups` bool.
+- Suggestion writes reuse existing `contact_group_suggestions` table — no new suggestion surface needed.
+- Rule matching is a pure function in `src/lib/contacts/group-rules.ts` (testable, no Supabase imports), called from `crud.functions.ts` on insert/update and from the new `suggestGroupsForContact` fn.
+- No changes to CardDAV/Google sync semantics — rules fire on the same `crud.functions.ts` upsert path both syncs already use.
+
+---
+
+## Open questions before I build
+
+1. When a rule matches an **existing** label, do you want it applied silently (`auto_apply=true` default) or always shown as a suggestion first for the first N contacts?
+2. Should the AI category be a **fixed** vocabulary (Software, Automotive, Finance, Legal, Media, Healthcare, Retail, Nonprofit, Government, Other) or freeform where AI picks any string?
+3. Keep the existing auto-created Nissan-style subgroups as-is (you clean via the duplicates drawer), or run a one-time pass that converts each into a label + a domain rule and then deletes the auto-parent scaffolding?
