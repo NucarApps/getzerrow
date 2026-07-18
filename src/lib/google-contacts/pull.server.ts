@@ -450,6 +450,8 @@ async function applyPersonChanges(
         .eq("contact_id", contactId)
         .in("group_id", toRemove);
     }
+    }
+    if (contactId) touchedContactIds.add(contactId);
     await progress?.increment(1);
   }
 
@@ -464,6 +466,23 @@ async function applyPersonChanges(
       .eq("gmail_account_id", ids.gmailAccountId)
       .eq("resource_name", rn);
     await progress?.increment(1);
+  }
+
+  // After the batch, reconcile any auto-company-subgroup parents that
+  // include touched contacts so subgroups reflect the new company values.
+  if (touchedContactIds.size > 0) {
+    try {
+      const { reconcileAutoParentsForContacts } = await import(
+        "@/lib/contacts/auto-company-subgroups.functions"
+      );
+      await reconcileAutoParentsForContacts(
+        supabaseAdmin,
+        ids.userId,
+        Array.from(touchedContactIds),
+      );
+    } catch (err) {
+      logError("google_contacts.pull.auto_subgroup_reconcile_failed", ids, err);
+    }
   }
 }
 
