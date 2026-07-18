@@ -127,3 +127,26 @@ export async function loadContactPhotoBytes(
 export async function contactPhotoHash(bytes: Uint8Array): Promise<string> {
   return shortHash(bytes);
 }
+
+/** Mint a short-lived signed URL for a contact's stored photo. Returns null
+ * when the contact has no `avatar_url` on file, when the URL doesn't point
+ * at our bucket, or when signing fails. Callers must verify ownership
+ * before invoking this. */
+export async function signContactPhotoUrl(
+  userId: string,
+  contactId: string,
+): Promise<string | null> {
+  const { data: current } = await supabaseAdmin
+    .from("contacts")
+    .select("avatar_url")
+    .eq("id", contactId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const key = pathToBucketKey(current?.avatar_url ?? null);
+  if (!key) return null;
+  const { data, error } = await supabaseAdmin.storage
+    .from(CONTACT_PHOTO_BUCKET)
+    .createSignedUrl(key, 60 * 60); // 1 hour
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
