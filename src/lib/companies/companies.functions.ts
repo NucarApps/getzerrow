@@ -430,6 +430,158 @@ export const previewMergeCompanies = createServerFn({ method: "POST" })
     };
   });
 
+async function mergeCompaniesImpl(
+  ctx: Ctx,
+  sourceId: string,
+  targetId: string,
+): Promise<{ ok: true; movedContacts: number }> {
+  if (sourceId === targetId) throw new Error("Cannot merge a company into itself");
+  const { supabase, userId } = ctx;
+  const { data: targetRow, error: tErr } = await supabase
+    .from("companies")
+    .select("id,name")
+    .eq("id", targetId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (tErr) throw new Error(tErr.message);
+  if (!targetRow) throw new Error("Target company not found");
+  const { data: movedContacts, error: moveErr } = await supabase
+    .from("contacts")
+    .update({ company_id: targetId, company: targetRow.name })
+    .eq("user_id", userId)
+    .eq("company_id", sourceId)
+    .select("id");
+  if (moveErr) throw new Error(moveErr.message);
+  // Move domains.
+  const { data: srcDomains } = await supabase
+    .from("company_domains")
+    .select("domain,source")
+    .eq("company_id", sourceId)
+    .eq("user_id", userId);
+  if (srcDomains && srcDomains.length > 0) {
+    await supabase
+      .from("company_domains")
+      .delete()
+      .eq("company_id", sourceId)
+      .eq("user_id", userId);
+    await supabase.from("company_domains").upsert(
+      srcDomains.map((d) => ({
+        user_id: userId,
+        company_id: targetId,
+        domain: d.domain,
+        source: d.source,
+      })),
+      { onConflict: "user_id,domain" },
+    );
+  }
+  // Move tags.
+  const { data: srcTags } = await supabase
+    .from("company_tags")
+    .select("tag")
+    .eq("company_id", sourceId)
+    .eq("user_id", userId);
+  if (srcTags && srcTags.length > 0) {
+    await supabase
+      .from("company_tags")
+      .delete()
+      .eq("company_id", sourceId)
+      .eq("user_id", userId);
+    for (const t of srcTags) {
+      await supabase
+        .from("company_tags")
+        .upsert(
+          { user_id: userId, company_id: targetId, tag: t.tag },
+          { onConflict: "company_id,tag" },
+        );
+    }
+  }
+  // Move logo hashes.
+  const { data: srcHashes } = await supabase
+    .from("company_logo_hashes")
+    .select("domain,sha256,source")
+    .eq("company_id", sourceId)
+    .eq("user_id", userId);
+  if (srcHashes && srcHashes.length > 0) {
+    await supabase
+      .from("company_logo_hashes")
+      .delete()
+      .eq("company_id", sourceId)
+      .eq("user_id", userId);
+    await supabase.from("company_logo_hashes").upsert(
+      srcHashes.map((h) => ({
+        user_id: userId,
+        company_id: targetId,
+        domain: h.domain,
+        sha256: h.sha256,
+        source: h.source,
+        last_seen_at: new Date().toISOString(),
+      })),
+      { onConflict: "user_id,company_id,sha256" },
+    );
+  }
+  const movedIds = (movedContacts ?? []).map((row) => (row as { id: string }).id);
+  // Remember source name (and its existing aliases) as aliases of target,
+  // then reassign stray contacts that reference the source by free-text.
+  const { data: srcCompany } = await supabase
+    .from("companies")
+    .select("id,name,name_key")
+    .eq("id", sourceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (srcCompany) {
+    const { data: srcAliases } = await supabase
+      .from("company_name_aliases")
+      .select("name_key, source_name")
+      .eq("user_id", userId)
+      .eq("company_id", sourceId);
+    const sourceNames = new Set<string>([srcCompany.name]);
+    for (const a of srcAliases ?? []) sourceNames.add(a.source_name);
+    if (sourceNames.size > 0) {
+      const { data: strayContacts } = await supabase
+        .from("contacts")
+        .update({ company_id: targetId, company: targetRow.name })
+        .eq("user_id", userId)
+        .is("company_id", null)
+        .in("company", [...sourceNames])
+        .select("id");
+      for (const r of strayContacts ?? []) {
+        movedIds.push((r as { id: string }).id);
+      }
+    }
+    const aliasRows = [
+      {
+        user_id: userId,
+        name_key: srcCompany.name_key,
+        company_id: targetId,
+        source_name: srcCompany.name,
+      },
+      ...(srcAliases ?? []).map((a) => ({
+        user_id: userId,
+        name_key: a.name_key,
+        company_id: targetId,
+        source_name: a.source_name,
+      })),
+    ].filter((r) => r.name_key);
+    if (aliasRows.length > 0) {
+      await supabase
+        .from("company_name_aliases")
+        .upsert(aliasRows, { onConflict: "user_id,name_key" });
+    }
+  }
+  if (movedIds.length > 0) {
+    const { reconcileAutoParentsForContacts } = await import(
+      "@/lib/contacts/auto-company-subgroups.functions"
+    );
+    await reconcileAutoParentsForContacts(supabase, userId, movedIds);
+  }
+  await supabase
+    .from("companies")
+    .delete()
+    .eq("id", sourceId)
+    .eq("user_id", userId);
+  return { ok: true, movedContacts: movedIds.length };
+}
+
 export const mergeCompanies = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -438,161 +590,8 @@ export const mergeCompanies = createServerFn({ method: "POST" })
       .refine((v) => v.sourceId !== v.targetId, { message: "Cannot merge a company into itself" })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    // Reassign contacts.
-    const { data: targetRow, error: tErr } = await supabase
-      .from("companies")
-      .select("id,name")
-      .eq("id", data.targetId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (tErr) throw new Error(tErr.message);
-    if (!targetRow) throw new Error("Target company not found");
-    const { data: movedContacts, error: moveErr } = await supabase
-      .from("contacts")
-      .update({ company_id: data.targetId, company: targetRow.name })
-      .eq("user_id", userId)
-      .eq("company_id", data.sourceId)
-      .select("id");
-    if (moveErr) throw new Error(moveErr.message);
-    // Move domains — upsert to avoid unique conflict on (user_id, domain).
-    const { data: srcDomains } = await supabase
-      .from("company_domains")
-      .select("domain,source")
-      .eq("company_id", data.sourceId)
-      .eq("user_id", userId);
-    if (srcDomains && srcDomains.length > 0) {
-      await supabase
-        .from("company_domains")
-        .delete()
-        .eq("company_id", data.sourceId)
-        .eq("user_id", userId);
-      await supabase.from("company_domains").upsert(
-        srcDomains.map((d) => ({
-          user_id: userId,
-          company_id: data.targetId,
-          domain: d.domain,
-          source: d.source,
-        })),
-        { onConflict: "user_id,domain" },
-      );
-    }
-    // Move tags.
-    const { data: srcTags } = await supabase
-      .from("company_tags")
-      .select("tag")
-      .eq("company_id", data.sourceId)
-      .eq("user_id", userId);
-    if (srcTags && srcTags.length > 0) {
-      await supabase
-        .from("company_tags")
-        .delete()
-        .eq("company_id", data.sourceId)
-        .eq("user_id", userId);
-      for (const t of srcTags) {
-        await supabase
-          .from("company_tags")
-          .upsert(
-            { user_id: userId, company_id: data.targetId, tag: t.tag },
-            { onConflict: "company_id,tag" },
-          );
-      }
-    }
-    // Move remembered company-logo hashes so legacy logo snapshots remain
-    // detectable after duplicate companies are consolidated.
-    const { data: srcHashes } = await supabase
-      .from("company_logo_hashes")
-      .select("domain,sha256,source")
-      .eq("company_id", data.sourceId)
-      .eq("user_id", userId);
-    if (srcHashes && srcHashes.length > 0) {
-      await supabase
-        .from("company_logo_hashes")
-        .delete()
-        .eq("company_id", data.sourceId)
-        .eq("user_id", userId);
-      await supabase.from("company_logo_hashes").upsert(
-        srcHashes.map((h) => ({
-          user_id: userId,
-          company_id: data.targetId,
-          domain: h.domain,
-          sha256: h.sha256,
-          source: h.source,
-          last_seen_at: new Date().toISOString(),
-        })),
-        { onConflict: "user_id,company_id,sha256" },
-      );
-    }
-    const movedIds = (movedContacts ?? []).map((row) => (row as { id: string }).id);
-    // Pull the source company's row so we can remember its name as an
-    // alias before deletion.
-    const { data: srcCompany } = await supabase
-      .from("companies")
-      .select("id,name,name_key")
-      .eq("id", data.sourceId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    // Backfill: any contact whose free-text `company` matches the source
-    // name (or any existing alias of the source) but has no company_id
-    // should link to the target.
-    if (srcCompany) {
-      const { data: srcAliases } = await supabase
-        .from("company_name_aliases")
-        .select("name_key, source_name")
-        .eq("user_id", userId)
-        .eq("company_id", data.sourceId);
-      const nameKeys = new Set<string>();
-      const sourceNames = new Set<string>();
-      if (srcCompany.name_key) nameKeys.add(srcCompany.name_key);
-      sourceNames.add(srcCompany.name);
-      for (const a of srcAliases ?? []) {
-        nameKeys.add(a.name_key);
-        sourceNames.add(a.source_name);
-      }
-      // Reassign any contact with company_id NULL but matching name.
-      if (sourceNames.size > 0) {
-        const { data: strayContacts } = await supabase
-          .from("contacts")
-          .update({ company_id: data.targetId, company: targetRow.name })
-          .eq("user_id", userId)
-          .is("company_id", null)
-          .in("company", [...sourceNames])
-          .select("id");
-        for (const r of strayContacts ?? []) {
-          movedIds.push((r as { id: string }).id);
-        }
-      }
-      // Remember the alias so future creates/enrichments route here.
-      const aliasRows = [
-        { user_id: userId, name_key: srcCompany.name_key, company_id: data.targetId, source_name: srcCompany.name },
-        ...([...srcAliases ?? []].map((a) => ({
-          user_id: userId,
-          name_key: a.name_key,
-          company_id: data.targetId,
-          source_name: a.source_name,
-        }))),
-      ];
-      if (aliasRows.length > 0) {
-        await supabase
-          .from("company_name_aliases")
-          .upsert(aliasRows, { onConflict: "user_id,name_key" });
-      }
-    }
-    if (movedIds.length > 0) {
-      const { reconcileAutoParentsForContacts } = await import(
-        "@/lib/contacts/auto-company-subgroups.functions"
-      );
-      await reconcileAutoParentsForContacts(supabase, userId, movedIds);
-    }
-    // Delete source.
-    await supabase
-      .from("companies")
-      .delete()
-      .eq("id", data.sourceId)
-      .eq("user_id", userId);
-    return { ok: true as const, movedContacts: movedIds.length };
-  });
+  .handler(async ({ data, context }) => mergeCompaniesImpl(context, data.sourceId, data.targetId));
+
 
 
 export const deleteCompany = createServerFn({ method: "POST" })
