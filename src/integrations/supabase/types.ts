@@ -881,6 +881,7 @@ export type Database = {
           id: string
           key_version: number
           linkedin: string | null
+          manual_overrides: string[]
           name: string | null
           notes_enc: string | null
           phone_enc: string | null
@@ -911,6 +912,7 @@ export type Database = {
           id?: string
           key_version?: number
           linkedin?: string | null
+          manual_overrides?: string[]
           name?: string | null
           notes_enc?: string | null
           phone_enc?: string | null
@@ -941,6 +943,7 @@ export type Database = {
           id?: string
           key_version?: number
           linkedin?: string | null
+          manual_overrides?: string[]
           name?: string | null
           notes_enc?: string | null
           phone_enc?: string | null
