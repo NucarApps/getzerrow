@@ -1,27 +1,27 @@
-## Fix "Alias must differ from primary" merge error
+## Enable company editing for name-only buckets (add domain, edit info)
 
-### Root cause
-Both DCD/Nucar rows resolve to `nucar.com` but appear as two separate buckets (one keyed by domain, one keyed by `name:...` because some contacts have no email — just a website + manual company). The merge suggestion then tries to add `nucar.com` as an alias of itself, and the server-side validator (`company-aliases.functions.ts`) rejects it with the raw Zod error shown in the toast.
+Right now the pencil button on a company header only appears when the bucket has a domain (`b.kind === "company" && b.domain`). Buckets keyed by company name only — the ones that get created for contacts without an email — have no way to edit the company, add a domain, adjust logo, or attach groups. This closes that gap.
 
-### Changes (all in `src/routes/_authenticated/contacts.index.tsx`, plus one small server tweak)
+### What changes
 
-1. **Collapse same-domain buckets after construction** (`companyBuckets` memo)
-   - After the current loop, do a second pass that merges any `name:*` bucket into an existing domain bucket when its contacts' website/email domain resolves to the same domain. This eliminates the duplicate Nucar row entirely for most cases.
+**Contacts list (`src/routes/_authenticated/contacts.index.tsx`)**
+- Show the pencil `onEdit` on any bucket with `b.kind === "company"`, including name-only buckets (no `&& b.domain` check).
+- When there's no domain, pass `primaryDomain: null` and the bucket's normalized company name into the dialog instead of a domain.
 
-2. **Guard the merge suggestion builder** (`mergeSuggestions` memo)
-   - Deduplicate `aliasDomains` and drop any alias equal to `primaryDomain`.
-   - If, after dedupe, there are no distinct alias domains left, switch the suggestion to a **rename-only** merge (new field `kind: "rename" | "alias"`).
+**Company dialog (`src/components/contacts/CompanyAliasesDialog.tsx`)**
+- Detect "no primary domain yet" mode (`primaryDomain === null`) and render a top **"Add primary domain"** section: single input + "Save" that validates as a domain (accepts `example.com` or `https://example.com/…`, strips protocol/path, lowercases). On save it calls `addCompanyAlias` with the new value as the primary domain for this company name (server side already treats the first entry as primary), then flips the dialog into normal mode.
+- Company name inline rename already works via `renameCompanyForContacts` — keep it. It stays enabled in name-only mode so users can clean up the name before assigning a domain.
+- Logo picker and group assignment sections: disable with an inline explainer ("Add a primary domain to enable logo and company groups") while `primaryDomain === null` — both features are keyed by domain today and changing that is out of scope for this pass.
+- Alias list section: hidden until a primary domain exists (nothing to alias yet).
 
-3. **Handle rename-only merges** (`performMerge`)
-   - For `kind: "rename"`, call the existing `renameCompanyForContacts` server fn on the alias bucket's contact IDs, setting them to the primary display name. No alias insert, no server error.
-   - For `kind: "alias"`, keep today's behavior but skip any alias equal to primary as a safety net.
-
-4. **Friendlier error surface** (`src/lib/company-aliases.functions.ts`)
-   - Wrap the Zod refine failure to throw a plain `Error("Alias domain must differ from the primary domain")` instead of leaking the raw Zod issue array into the toast.
+**No server-side changes.** `addCompanyAlias`, `renameCompanyForContacts`, and the existing bucket-collapse logic in `companyBuckets` already handle the case where a domain appears after the fact — on refetch, the bucket switches from name-keyed to domain-keyed automatically.
 
 ### Out of scope
-No schema changes. No changes to Google Contacts sync or auto-subgroup reconcile.
+- Editing per-contact fields (already available on the contact detail view).
+- Making logo/group assignment work without a domain (would require re-keying those tables on `(user_id, normalized_name)` — separate change if you want it).
+- Auto-suggesting a domain from contact emails (none exist for these buckets by definition).
 
 ### Verification
-- Reload contacts page: the two Nucar rows collapse to one bucket (change 1). If any edge case still leaves two same-domain buckets, the "Merge" banner now works and renames instead of erroring (changes 2–3).
-- Manually trigger a real cross-domain merge (e.g. Hyundai on two different domains) to confirm alias-based merges still work.
+- Open a name-only company bucket (e.g. Brad Taylor's company) → pencil appears.
+- In the dialog: rename the company → all members update. Enter a domain → dialog switches to normal mode; on close, the bucket collapses into the domain-keyed bucket (or becomes one).
+- Logo/group sections show the disabled explainer until a domain is added, then become active.
