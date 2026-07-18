@@ -260,7 +260,12 @@ export const updateContact = createServerFn({ method: "POST" })
     // Return the decrypted view so the UI re-renders with the new
     // phone/notes/address values written through the encrypted RPC.
     const { row: decRow } = await getContactDecrypted(id);
-    return { contact: decRow ?? updated, phones: refreshedPhones ?? [] };
+    return {
+      contact: decRow ?? updated,
+      phones: refreshedPhones ?? [],
+      emails: refreshedEmails ?? [],
+    };
+
   });
 
 /** Delete a contact. */
