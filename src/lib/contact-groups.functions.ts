@@ -227,19 +227,46 @@ export const setContactGroups = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
+    // Reject direct membership writes to auto-generated subgroups — they
+    // are derived from the parent's members.
+    if (data.groupIds.length > 0) {
+      const { data: targets } = await supabase
+        .from("contact_groups")
+        .select("id,auto_generated_from_group_id")
+        .in("id", data.groupIds);
+      const bad = (targets ?? []).find((r) => r.auto_generated_from_group_id);
+      if (bad) {
+        throw new Error(
+          "Can't assign: one of the selected groups is managed automatically",
+        );
+      }
+    }
+
     // Capture the groups this contact currently belongs to so we can also
     // reconcile any auto-parent that just lost the contact.
     const { data: prev } = await supabase
       .from("contact_group_members")
-      .select("group_id")
+      .select("group_id, contact_groups:contact_groups(auto_generated_from_group_id)")
       .eq("contact_id", data.contactId);
-    const affected = new Set<string>((prev ?? []).map((r) => r.group_id));
-
-    const { error: delErr } = await supabase
-      .from("contact_group_members")
-      .delete()
-      .eq("contact_id", data.contactId);
-    if (delErr) throw new Error(delErr.message);
+    type PrevRow = {
+      group_id: string;
+      contact_groups: { auto_generated_from_group_id: string | null } | null;
+    };
+    const prevRows = (prev ?? []) as unknown as PrevRow[];
+    const affected = new Set<string>(prevRows.map((r) => r.group_id));
+    // Only delete non-auto memberships; auto memberships will be corrected
+    // by reconcileIfAuto on the affected parents.
+    const deletableGroupIds = prevRows
+      .filter((r) => !r.contact_groups?.auto_generated_from_group_id)
+      .map((r) => r.group_id);
+    if (deletableGroupIds.length > 0) {
+      const { error: delErr } = await supabase
+        .from("contact_group_members")
+        .delete()
+        .eq("contact_id", data.contactId)
+        .in("group_id", deletableGroupIds);
+      if (delErr) throw new Error(delErr.message);
+    }
 
     if (data.groupIds.length > 0) {
       const rows = data.groupIds.map((group_id) => ({
@@ -247,7 +274,9 @@ export const setContactGroups = createServerFn({ method: "POST" })
         contact_id: data.contactId,
         user_id: userId,
       }));
-      const { error: insErr } = await supabase.from("contact_group_members").insert(rows);
+      const { error: insErr } = await supabase
+        .from("contact_group_members")
+        .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
       if (insErr) throw new Error(insErr.message);
       for (const gid of data.groupIds) affected.add(gid);
     }
