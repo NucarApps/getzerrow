@@ -149,6 +149,25 @@ function CompanyDetailPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
+  const discoverMut = useMutation({
+    mutationFn: () => discoverFn({ data: { id: companyId } }),
+    onSuccess: (r) => {
+      const parts: string[] = [];
+      if (r.added) parts.push(`${r.added} new`);
+      if (r.updated) parts.push(`${r.updated} refreshed`);
+      toast.success(
+        parts.length
+          ? `Discovered domains: ${parts.join(", ")}`
+          : "No new domains found",
+      );
+      // Refresh both this company detail and the companies list so the logo
+      // in every list view updates immediately.
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["companies"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
   const tagsMut = useMutation({
     mutationFn: (tags: string[]) => tagsFn({ data: { id: companyId, tags } }),
     onSuccess: () => invalidate(),
