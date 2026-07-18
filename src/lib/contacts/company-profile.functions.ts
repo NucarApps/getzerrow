@@ -2,14 +2,18 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const keyInput = z
-  .object({
-    domain: z.string().trim().toLowerCase().nullable().optional(),
-    nameKey: z.string().trim().toLowerCase().nullable().optional(),
-  })
-  .refine((v) => !!(v.domain || v.nameKey), {
-    message: "domain or nameKey required",
-  });
+const keyShape = {
+  domain: z.string().trim().toLowerCase().nullable().optional(),
+  nameKey: z.string().trim().toLowerCase().nullable().optional(),
+};
+
+const getInput = z.object(keyShape).refine((v) => !!(v.domain || v.nameKey), {
+  message: "domain or nameKey required",
+});
+
+const upsertInput = z
+  .object({ ...keyShape, description: z.string().max(4000) })
+  .refine((v) => !!(v.domain || v.nameKey), { message: "domain or nameKey required" });
 
 function resolveKey(input: { domain?: string | null; nameKey?: string | null }): {
   key_type: "domain" | "name";
@@ -21,7 +25,7 @@ function resolveKey(input: { domain?: string | null; nameKey?: string | null }):
 
 export const getCompanyProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => keyInput.parse(data))
+  .inputValidator((data: unknown) => getInput.parse(data))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const key = resolveKey(data);
@@ -36,17 +40,9 @@ export const getCompanyProfile = createServerFn({ method: "POST" })
     return { description: row?.description ?? "" };
   });
 
-const upsertInput = keyInput._def.schema.extend({
-  description: z.string().max(4000),
-});
-
 export const upsertCompanyProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    upsertInput
-      .refine((v) => !!(v.domain || v.nameKey), { message: "domain or nameKey required" })
-      .parse(data),
-  )
+  .inputValidator((data: unknown) => upsertInput.parse(data))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const key = resolveKey(data);
@@ -62,3 +58,4 @@ export const upsertCompanyProfile = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true as const };
   });
+
