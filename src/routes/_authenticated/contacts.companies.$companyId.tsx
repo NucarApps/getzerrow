@@ -33,6 +33,7 @@ import {
   mergeCompanies,
   deleteCompany,
   listCompanies,
+  discoverCompanyDomains,
 } from "@/lib/companies/companies.functions";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 
