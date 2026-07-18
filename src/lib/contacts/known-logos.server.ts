@@ -31,7 +31,9 @@ export async function buildKnownCompanyLogoShaSet(
     if (hit && hit.expiresAt > now) return hit.shas;
   }
 
-  const domains = new Set<string>();
+  // Prefer explicit user picks; they're the ones iOS most often echoes back.
+  const primary = new Set<string>();
+  const secondary = new Set<string>();
 
   const { data: choices } = await supabaseAdmin
     .from("company_logo_choices")
@@ -39,28 +41,44 @@ export async function buildKnownCompanyLogoShaSet(
     .eq("user_id", userId);
   for (const row of choices ?? []) {
     const choice = row as { domain?: string | null; source_domain?: string | null };
-    const d = choice.domain;
-    if (d) domains.add(d.toLowerCase());
-    if (choice.source_domain) domains.add(choice.source_domain.toLowerCase());
+    if (choice.domain) primary.add(choice.domain.toLowerCase());
+    if (choice.source_domain) primary.add(choice.source_domain.toLowerCase());
   }
 
   const { data: cdomains } = await supabaseAdmin
     .from("company_domains")
     .select("domain")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(120);
   for (const row of cdomains ?? []) {
     const d = (row as { domain?: string | null }).domain;
-    if (d) domains.add(d.toLowerCase());
+    if (d && !primary.has(d.toLowerCase())) secondary.add(d.toLowerCase());
   }
 
+  // Hard cap total domains scanned per call so a tenant with hundreds of
+  // auto-discovered domains can't stall the CardDAV PUT hot path.
+  const MAX_DOMAINS = 60;
+  const CONCURRENCY = 6;
+  const FETCH_TIMEOUT_MS = 2000;
+  const ordered = [...primary, ...secondary].slice(0, MAX_DOMAINS);
+
   const shas = new Set<string>();
-  for (const domain of domains) {
+  async function hashDomain(domain: string): Promise<void> {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
     try {
-      const hit = await fetchChosenCompanyLogoBytes(userId, domain);
+      const hit = await fetchChosenCompanyLogoBytes(userId, domain, { signal: ac.signal });
       if (hit) shas.add(await sha256Hex(hit.bytes));
     } catch {
-      // Provider hiccups shouldn't poison the whole set.
+      // Provider hiccups / aborts shouldn't poison the whole set.
+    } finally {
+      clearTimeout(timer);
     }
+  }
+
+  for (let i = 0; i < ordered.length; i += CONCURRENCY) {
+    await Promise.all(ordered.slice(i, i + CONCURRENCY).map(hashDomain));
   }
 
   cache.set(userId, { shas, expiresAt: now + TTL_MS });
