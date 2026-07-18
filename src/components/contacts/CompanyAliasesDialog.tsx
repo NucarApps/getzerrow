@@ -668,8 +668,10 @@ export function CompanyAliasesDialog({
               If that domain is already its own company, it will be merged in.
             </p>
           </div>
+          </>
           )}
         </div>
+
 
 
         <DialogFooter className="gap-2 sm:gap-0">
