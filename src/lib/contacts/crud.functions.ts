@@ -176,6 +176,12 @@ export const updateContact = createServerFn({ method: "POST" })
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
 
+    // If company changed, reconcile any auto-company-subgroup parents this
+    // contact belongs to so subgroups collapse/rename/split immediately.
+    if ("company" in data) {
+      await reconcileAutoParentsForContacts(supabase, userId, [id]);
+    }
+
     // Return the decrypted view so the UI re-renders with the new
     // phone/notes/address values written through the encrypted RPC.
     const { row: decRow } = await getContactDecrypted(id);
