@@ -132,7 +132,7 @@ async function pushContacts(
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
-    .select("contact_id, resource_name, etag, last_synced_at")
+    .select("contact_id, resource_name, etag, last_synced_at, photo_etag")
     .eq("gmail_account_id", ids.gmailAccountId);
   const byLocal = new Map(
     (links ?? []).map((l) => [l.contact_id, l]),
