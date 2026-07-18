@@ -487,6 +487,29 @@ async function applyPersonChanges(
         .eq("contact_id", contactId)
         .in("group_id", toRemove);
     }
+    // Photo sync: only refetch bytes when the remote URL changed since our
+    // last pull (`photo_etag` stores the previously-seen URL). Google's
+    // photos URL is a signed link that changes when the picture changes, so
+    // comparing URLs is a cheap change detector; refetch + upload otherwise.
+    let nextPhotoEtag: string | null | undefined = undefined;
+    if (parsed.photoUrl) {
+      const linkRow = link as { photo_etag?: string | null } | undefined;
+      const previous = linkRow?.photo_etag ?? null;
+      if (previous !== parsed.photoUrl) {
+        try {
+          const { fetchPhotoBytes } = await import("./people-client.server");
+          const { saveContactPhoto } = await import("@/lib/contacts/photos.server");
+          const bytes = await fetchPhotoBytes(parsed.photoUrl);
+          if (bytes) {
+            await saveContactPhoto(ids.userId, contactId!, bytes.bytes, bytes.mime);
+            nextPhotoEtag = parsed.photoUrl;
+          }
+        } catch (err) {
+          logError("google_contacts.pull.photo_failed", { ...ids, contact_id: contactId }, err);
+        }
+      }
+    }
+
     await supabaseAdmin.from("google_contact_links").upsert(
       {
         user_id: ids.userId,
@@ -495,6 +518,7 @@ async function applyPersonChanges(
         resource_name: p.resourceName,
         etag: p.etag ?? null,
         last_synced_at: new Date().toISOString(),
+        ...(nextPhotoEtag !== undefined ? { photo_etag: nextPhotoEtag } : {}),
       },
       { onConflict: "gmail_account_id,contact_id" },
     );
