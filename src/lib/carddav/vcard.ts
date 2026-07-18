@@ -398,7 +398,7 @@ export function parseVCard(text: string): ParsedVCard | null {
     phones: [], address_line1: null, address_line2: null, city: null,
     region: null, postal_code: null, country: null, website: null,
     linkedin: null, twitter: null, notes: null,
-    categories: [], isGroup: false, memberUids: [],
+    categories: [], isGroup: false, memberUids: [], photo: null,
     presentFields: new Set<PresentField>(),
   };
 
