@@ -245,13 +245,23 @@ export const updateCompany = createServerFn({ method: "POST" })
       }
       throw new Error(error.message);
     }
-    // Keep linked contacts' display name in sync when we renamed.
+    // Keep linked contacts' display name in sync when we renamed, then
+    // recompute any auto-company subgroup labels so the group name follows
+    // the new company name (e.g. "Volkswagen of North America" → "Volkswagen").
     if (typeof patch.name === "string") {
-      await supabase
+      const { data: updated } = await supabase
         .from("contacts")
         .update({ company: patch.name })
         .eq("user_id", userId)
-        .eq("company_id", id);
+        .eq("company_id", id)
+        .select("id");
+      const ids = (updated ?? []).map((r) => (r as { id: string }).id);
+      if (ids.length > 0) {
+        const { reconcileAutoParentsForContacts } = await import(
+          "@/lib/contacts/auto-company-subgroups.functions"
+        );
+        await reconcileAutoParentsForContacts(supabase, userId, ids);
+      }
     }
     return { ok: true as const };
   });
