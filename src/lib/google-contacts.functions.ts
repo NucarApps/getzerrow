@@ -199,29 +199,34 @@ export const backfillGoogleContactPhotos = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertOwnsAccount(context.userId, data.accountId);
-    // Fetch links whose contact has no local photo.
+    // Only pick links that are actually stale: local avatar missing AND we
+    // still have a cached photo_etag. Rerunning after a successful backfill
+    // (or on contacts that already have a photo) is a no-op — we skip the
+    // UPDATE, skip the sync kick, and return `cleared: 0`.
     const { data: links, error } = await supabaseAdmin
       .from("google_contact_links")
       .select("contact_id, contacts!inner(avatar_url)")
       .eq("user_id", context.userId)
       .eq("gmail_account_id", data.accountId)
+      .not("photo_etag", "is", null)
       .is("contacts.avatar_url", null);
     if (error) throw new Error(error.message);
     const ids = (links ?? [])
       .map((l) => (l as { contact_id?: string }).contact_id)
       .filter((v): v is string => !!v);
-    if (ids.length > 0) {
-      await supabaseAdmin
-        .from("google_contact_links")
-        .update({ photo_etag: null })
-        .eq("gmail_account_id", data.accountId)
-        .in("contact_id", ids);
+    if (ids.length === 0) {
+      return { ok: true, cleared: 0, synced: false };
     }
+    await supabaseAdmin
+      .from("google_contact_links")
+      .update({ photo_etag: null })
+      .eq("gmail_account_id", data.accountId)
+      .in("contact_id", ids);
     // Kick off a sync so the pull loop refetches photos on the next tick.
     const { runGoogleContactsSync } = await import(
       "@/lib/google-contacts/reconcile.server"
     );
     await runGoogleContactsSync(context.userId, data.accountId).catch(() => null);
-    return { ok: true, cleared: ids.length };
+    return { ok: true, cleared: ids.length, synced: true };
   });
 
