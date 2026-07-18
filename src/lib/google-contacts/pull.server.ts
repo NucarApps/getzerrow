@@ -398,7 +398,6 @@ async function applyPersonChanges(
 
       // Update plaintext fields.
       const plainPatch = {
-        email: parsed.email ? parsed.email.toLowerCase() : null,
         name: parsed.patch.name ?? null,
         company: parsed.patch.company ?? null,
         title: parsed.patch.title ?? null,
@@ -410,6 +409,9 @@ async function applyPersonChanges(
         postal_code: parsed.patch.postal_code ?? null,
         country: parsed.patch.country ?? null,
       };
+      if (parsed.email) {
+        (plainPatch as typeof plainPatch & { email: string }).email = parsed.email.toLowerCase();
+      }
       await supabaseAdmin.from("contacts").update(plainPatch).eq("id", contactId);
     }
 
