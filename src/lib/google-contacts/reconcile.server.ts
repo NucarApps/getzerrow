@@ -66,6 +66,13 @@ export async function runGoogleContactsSync(
       return result;
     }
 
+    // Auto-backfill missing photos: clear photo_etag for any linked contact
+    // whose local avatar is still empty, so this run's pull refetches the
+    // Google photo. Covers contacts that were linked before photo sync
+    // shipped and cases where a prior download failed. Cheap: one indexed
+    // UPDATE, and the pull loop only downloads bytes for the cleared rows.
+    await autoClearMissingPhotoEtags(userId, gmailAccountId);
+
     const pull = await pullFromGoogle(ids, progress);
     const push = pullOnly
       ? { contactsPushed: 0, groupsPushed: 0 }
