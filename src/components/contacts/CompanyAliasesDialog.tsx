@@ -10,9 +10,11 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   addCompanyAlias,
@@ -24,7 +26,6 @@ import {
   renameCompanyForContacts,
   setCompanyWebsiteForContacts,
 } from "@/lib/contacts/crud.functions";
-
 import {
   listCompanyLogoChoices,
   setCompanyLogoChoice,
@@ -35,6 +36,11 @@ import { listContactGroups } from "@/lib/contact-groups.functions";
 import { searchLogoBrands, type LogoBrand } from "@/lib/logo-search.functions";
 import { LOGO_PROVIDER_LABELS } from "@/lib/logo-providers";
 import { logoCandidates } from "@/lib/company-domains";
+import { normalizeCompanyName } from "@/lib/contacts/company-name";
+import {
+  getCompanyProfile,
+  upsertCompanyProfile,
+} from "@/lib/contacts/company-profile.functions";
 import { CompanyLogo } from "./CompanyLogo";
 
 type Props = {
@@ -68,6 +74,8 @@ export function CompanyAliasesDialog({
   const searchBrandsFn = useServerFn(searchLogoBrands);
   const renameFn = useServerFn(renameCompanyForContacts);
   const setWebsiteFn = useServerFn(setCompanyWebsiteForContacts);
+  const getProfileFn = useServerFn(getCompanyProfile);
+  const upsertProfileFn = useServerFn(upsertCompanyProfile);
 
   const [newDomain, setNewDomain] = useState("");
   const [primaryDraft, setPrimaryDraft] = useState("");
@@ -77,6 +85,23 @@ export function CompanyAliasesDialog({
   const [brandQuery, setBrandQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [nameDraft, setNameDraft] = useState(companyName);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [savedDescription, setSavedDescription] = useState("");
+  const [descSaving, setDescSaving] = useState(false);
+  const [tab, setTab] = useState<"details" | "domains" | "logo" | "groups">("details");
+
+  // Profile key: prefer domain, fall back to normalized name.
+  const nameKey = normalizeCompanyName(companyName);
+  const profileKey = primaryDomain
+    ? ({ domain: primaryDomain } as const)
+    : nameKey
+      ? ({ nameKey } as const)
+      : null;
+  const profileKeyStr = profileKey
+    ? "domain" in profileKey
+      ? `d:${profileKey.domain}`
+      : `n:${profileKey.nameKey}`
+    : null;
 
   const choicesQ = useQuery({
     queryKey: ["company-logo-choices"],
@@ -100,14 +125,25 @@ export function CompanyAliasesDialog({
     enabled: open,
   });
 
+  const profileQ = useQuery({
+    queryKey: ["company-profile", profileKeyStr],
+    queryFn: () => getProfileFn({ data: profileKey! }),
+    enabled: open && !!profileKey,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const desc = profileQ.data?.description ?? "";
+    setSavedDescription(desc);
+    setDescriptionDraft(desc);
+  }, [open, profileQ.data?.description]);
+
   const savedGroupIds = primaryDomain
     ? (assignmentsQ.data ?? [])
         .filter((a) => a.primary_domain === primaryDomain)
         .map((a) => a.group_id)
     : [];
 
-  // Per-group membership counts across the contacts in this bucket, so we can
-  // seed the selection and show partial ("3/5") coverage in the chip UI.
   const contactIdSet = new Set(contactIds);
   const memberCountByGroup = new Map<string, number>();
   for (const m of groupsQ.data?.memberships ?? []) {
@@ -129,12 +165,12 @@ export function CompanyAliasesDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, savedKey]);
 
-
   useEffect(() => {
     if (open) {
       setBrandQuery(companyName ?? "");
       setNameDraft(companyName ?? "");
       setPrimaryDraft("");
+      setTab("details");
     } else {
       setNewDomain("");
       setPrimaryDraft("");
@@ -142,7 +178,6 @@ export function CompanyAliasesDialog({
       setDebouncedQuery("");
     }
   }, [open, companyName]);
-
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(brandQuery.trim()), 300);
@@ -157,6 +192,24 @@ export function CompanyAliasesDialog({
   });
 
   const hasPrimary = !!primaryDomain;
+
+  async function saveDescription() {
+    if (!profileKey) {
+      toast.error("Set a company name or primary domain first");
+      return;
+    }
+    if (descriptionDraft === savedDescription) return;
+    setDescSaving(true);
+    try {
+      await upsertProfileFn({ data: { ...profileKey, description: descriptionDraft } });
+      setSavedDescription(descriptionDraft);
+      qc.invalidateQueries({ queryKey: ["company-profile", profileKeyStr] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't save description");
+    } finally {
+      setDescSaving(false);
+    }
+  }
 
   async function savePrimary() {
     const d = primaryDraft
@@ -184,7 +237,6 @@ export function CompanyAliasesDialog({
     }
   }
 
-
   function invalidate() {
     qc.invalidateQueries({ queryKey: ["company-aliases"] });
   }
@@ -203,8 +255,7 @@ export function CompanyAliasesDialog({
       setNewDomain("");
       invalidate();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Couldn't add domain";
-      toast.error(msg);
+      toast.error(e instanceof Error ? e.message : "Couldn't add domain");
     } finally {
       setBusy(false);
     }
@@ -252,7 +303,6 @@ export function CompanyAliasesDialog({
       if (provider === null && sourceDomain === primaryDomain) {
         await clearChoiceFn({ data: { domain: primaryDomain! } });
       } else {
-        // "Auto" for an alias source means provider 0 (Clearbit) from that domain.
         const p = provider ?? 0;
         await setChoiceFn({ data: { domain: primaryDomain!, provider: p, sourceDomain } });
       }
@@ -348,11 +398,17 @@ export function CompanyAliasesDialog({
   const groups = groupsQ.data?.groups ?? [];
   const tagsDirty =
     [...selectedGroupIds].sort().join(",") !== initialSelection.slice().sort().join(",");
+  const descDirty = descriptionDraft !== savedDescription;
 
+  const needsPrimary = (
+    <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-6 text-center text-xs text-muted-foreground">
+      Add a primary domain in the Domains tab to unlock this.
+    </p>
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-md">
+      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <CompanyLogo
@@ -362,317 +418,392 @@ export function CompanyAliasesDialog({
               provider={currentProvider}
               sourceDomain={currentSource}
             />
-            <Input
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void saveName();
-                } else if (e.key === "Escape") {
-                  setNameDraft(companyName);
-                }
-              }}
-              disabled={busy}
-              placeholder="Company name"
-              className="h-8 flex-1 text-base font-semibold"
-              aria-label="Company name"
-            />
-            {nameDraft.trim() && nameDraft.trim() !== companyName && (
-              <>
-                <Button size="sm" onClick={saveName} disabled={busy}>
-                  Save
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setNameDraft(companyName)}
-                  disabled={busy}
-                >
-                  Cancel
-                </Button>
-              </>
-            )}
+            <span className="truncate text-base font-semibold">{companyName}</span>
           </DialogTitle>
           <DialogDescription>
-            Rename the company (applies to all {contactIds.length}{" "}
-            {contactIds.length === 1 ? "contact" : "contacts"} in this bucket), merge domains, and
-            pick which logo to show.
+            Edit details for this company across {contactIds.length}{" "}
+            {contactIds.length === 1 ? "contact" : "contacts"}.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
-          <div>
-            <Label className="text-xs uppercase tracking-widest text-muted-foreground">
-              Primary domain
-            </Label>
-            {hasPrimary ? (
-              <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
-                {primaryDomain}
-              </div>
-            ) : (
-              <div className="mt-1 space-y-1.5">
-                <div className="flex gap-2">
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as typeof tab)}
+          className="flex flex-1 flex-col overflow-hidden"
+        >
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="domains">Domains</TabsTrigger>
+            <TabsTrigger value="logo">Logo</TabsTrigger>
+            <TabsTrigger value="groups">Groups</TabsTrigger>
+          </TabsList>
+
+          <div className="-mx-6 mt-3 flex-1 overflow-y-auto px-6">
+            {/* DETAILS */}
+            <TabsContent value="details" className="mt-0 space-y-4">
+              <div>
+                <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+                  Company name
+                </Label>
+                <div className="mt-1 flex gap-2">
                   <Input
-                    value={primaryDraft}
-                    onChange={(e) => setPrimaryDraft(e.target.value)}
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        void savePrimary();
+                        void saveName();
+                      } else if (e.key === "Escape") {
+                        setNameDraft(companyName);
                       }
                     }}
-                    placeholder="acme.com"
                     disabled={busy}
+                    placeholder="Company name"
                   />
-                  <Button onClick={savePrimary} disabled={busy || !primaryDraft.trim()} size="sm">
-                    Save
-                  </Button>
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Sets the website on all {contactIds.length}{" "}
-                  {contactIds.length === 1 ? "contact" : "contacts"} in this bucket, which enables
-                  logo and group assignments below.
-                </p>
-              </div>
-            )}
-          </div>
-
-
-
-          {hasPrimary && (
-          <>
-          <div>
-
-
-            <Label className="text-xs uppercase tracking-widest text-muted-foreground">Logo</Label>
-            <div className="mt-2 rounded-md border border-border bg-card/40 p-2.5">
-              <Input
-                value={brandQuery}
-                onChange={(e) => setBrandQuery(e.target.value)}
-                placeholder="Search logos by company name"
-                disabled={busy}
-              />
-              {debouncedQuery.length >= 2 && (
-                <div className="mt-2">
-                  {brandsQ.isFetching ? (
-                    <p className="text-[11px] text-muted-foreground">Searching…</p>
-                  ) : (brandsQ.data?.results.length ?? 0) === 0 ? (
-                    <p className="text-[11px] text-muted-foreground">No matches.</p>
-                  ) : (
-                    <div className="grid grid-cols-5 gap-2">
-                      {brandsQ.data!.results.map((b) => {
-                        const selected = currentSource === b.domain && currentProvider === 0;
-                        return (
-                          <button
-                            key={b.domain}
-                            type="button"
-                            onClick={() => pickBrand(b)}
-                            disabled={busy}
-                            title={`${b.name} (${b.domain})`}
-                            aria-pressed={selected}
-                            className={`relative grid aspect-square place-items-center overflow-hidden rounded-md border bg-white p-1.5 transition disabled:opacity-50 ${
-                              selected
-                                ? "border-primary ring-2 ring-primary/40"
-                                : "border-border hover:border-primary/60"
-                            }`}
-                          >
-                            <img
-                              src={logoCandidates(b.domain, 256, 0)[0]}
-                              alt={b.name}
-                              loading="lazy"
-                              referrerPolicy="no-referrer"
-                              className="h-full w-full object-contain"
-                            />
-                            {selected && (
-                              <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-primary text-primary-foreground">
-                                <Check className="h-3 w-3" />
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  {nameDraft.trim() && nameDraft.trim() !== companyName && (
+                    <>
+                      <Button size="sm" onClick={saveName} disabled={busy}>
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setNameDraft(companyName)}
+                        disabled={busy}
+                      >
+                        Cancel
+                      </Button>
+                    </>
                   )}
                 </div>
-              )}
-            </div>
-            <div className="mt-3 space-y-3">
-              {[primaryDomain, ...aliases].map((d) => {
-                const isActiveSource = (currentSource ?? primaryDomain) === d;
-                return (
-                  <div key={d}>
-                    <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <span className="truncate">{d}</span>
-                      {d === primaryDomain && (
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
-                          primary
-                        </span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {d === primaryDomain && (
-                        <LogoTile
-                          label="Auto"
-                          domain={d}
-                          provider={null}
-                          selected={isActiveSource && currentProvider === null}
-                          disabled={busy}
-                          onSelect={() => pickLogo(null, d)}
-                        />
-                      )}
-                      {LOGO_PROVIDER_LABELS.map((label, i) => (
-                        <LogoTile
-                          key={`${d}-${i}`}
-                          label={label}
-                          domain={d}
-                          provider={i}
-                          selected={isActiveSource && currentProvider === i}
-                          disabled={busy}
-                          onSelect={() => pickLogo(i, d)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Tiles that can't load are hidden. Auto picks the first one that works on the primary
-              domain.
-            </p>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-xs uppercase tracking-widest text-muted-foreground">
-                Tags
-              </Label>
-              <span className="text-[11px] text-muted-foreground">
-                {contactIds.length} {contactIds.length === 1 ? "contact" : "contacts"}
-              </span>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {groups.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No tags yet. Create one from the contacts page first.
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Applies to all {contactIds.length}{" "}
+                  {contactIds.length === 1 ? "contact" : "contacts"} in this bucket.
                 </p>
-              ) : (
-                groups.map((g) => {
-                  const active = selectedGroupIds.has(g.id);
-                  const n = memberCountByGroup.get(g.id) ?? 0;
-                  const partial = n > 0 && n < contactIds.length;
-                  return (
-                    <button
-                      key={g.id}
-                      type="button"
-                      onClick={() => toggleGroup(g.id)}
-                      disabled={busy}
-                      aria-pressed={active}
-                      title={
-                        n > 0
-                          ? `${n} of ${contactIds.length} contacts already in ${g.name}`
-                          : undefined
-                      }
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
-                        active
-                          ? "border-primary bg-primary/10 text-foreground"
-                          : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
-                      <span className="truncate max-w-[10rem]">{g.name}</span>
-                      {partial && (
-                        <span className="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">
-                          {n}/{contactIds.length}
-                        </span>
-                      )}
-                      {active && <Check className="h-3 w-3" />}
-                    </button>
-                  );
-                })
-
-              )}
-            </div>
-            {groups.length > 0 && (
-              <div className="mt-2 flex items-center justify-between">
-                <p className="text-[11px] text-muted-foreground">
-                  Tags apply to all {contactIds.length} {contactIds.length === 1 ? "contact" : "contacts"}. Partial chips (n/N) show how many are already members.
-                </p>
-                <Button
-                  size="sm"
-                  variant={tagsDirty ? "default" : "outline"}
-                  onClick={saveTags}
-                  disabled={busy || !tagsDirty}
-                >
-                  Save tags
-                </Button>
               </div>
-            )}
-          </div>
 
-          <div>
-            <Label className="text-xs uppercase tracking-widest text-muted-foreground">
-              Other domains for this company
-            </Label>
-            <div className="mt-1 space-y-1">
-              {aliases.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No merged domains yet.</p>
-              ) : (
-                aliases.map((a) => (
-                  <div
-                    key={a}
-                    className="flex items-center gap-2 rounded-md border border-border bg-card/40 px-2.5 py-1.5 text-sm"
-                  >
-                    <span className="flex-1 truncate">{a}</span>
-                    <button
-                      onClick={() => promote(a)}
-                      disabled={busy}
-                      aria-label={`Make ${a} primary`}
-                      title="Make primary"
-                      className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-                    >
-                      <Star className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => remove(a)}
-                      disabled={busy}
-                      aria-label={`Remove ${a}`}
-                      title="Remove"
-                      className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="mt-2 flex gap-2">
-              <Input
-                value={newDomain}
-                onChange={(e) => setNewDomain(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void add();
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+                    Description
+                  </Label>
+                  <span className="text-[11px] text-muted-foreground">
+                    {descSaving ? "Saving…" : descDirty ? "Unsaved" : savedDescription ? "Saved" : ""}
+                  </span>
+                </div>
+                <Textarea
+                  value={descriptionDraft}
+                  onChange={(e) => setDescriptionDraft(e.target.value)}
+                  onBlur={saveDescription}
+                  placeholder={
+                    profileKey
+                      ? "Notes about this company — what they do, how you know them, key context…"
+                      : "Add a primary domain or set a company name first"
                   }
-                }}
-                placeholder="acme.io"
-                disabled={busy}
-              />
-              <Button onClick={add} disabled={busy || !newDomain.trim()} size="sm">
-                <Plus className="mr-1 h-4 w-4" /> Add
-              </Button>
-            </div>
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              If that domain is already its own company, it will be merged in.
-            </p>
+                  disabled={busy || descSaving || !profileKey}
+                  rows={6}
+                  maxLength={4000}
+                />
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-[11px] text-muted-foreground">
+                    Autosaves when you tab away.
+                  </p>
+                  {descDirty && (
+                    <Button size="sm" onClick={saveDescription} disabled={descSaving || !profileKey}>
+                      Save
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* DOMAINS */}
+            <TabsContent value="domains" className="mt-0 space-y-4">
+              <div>
+                <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+                  Primary domain
+                </Label>
+                {hasPrimary ? (
+                  <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
+                    {primaryDomain}
+                  </div>
+                ) : (
+                  <div className="mt-1 space-y-1.5">
+                    <div className="flex gap-2">
+                      <Input
+                        value={primaryDraft}
+                        onChange={(e) => setPrimaryDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void savePrimary();
+                          }
+                        }}
+                        placeholder="acme.com"
+                        disabled={busy}
+                      />
+                      <Button
+                        onClick={savePrimary}
+                        disabled={busy || !primaryDraft.trim()}
+                        size="sm"
+                      >
+                        Save
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Sets the website on all {contactIds.length}{" "}
+                      {contactIds.length === 1 ? "contact" : "contacts"} in this bucket.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {hasPrimary && (
+                <div>
+                  <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+                    Other domains
+                  </Label>
+                  <div className="mt-1 space-y-1">
+                    {aliases.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No merged domains yet.</p>
+                    ) : (
+                      aliases.map((a) => (
+                        <div
+                          key={a}
+                          className="flex items-center gap-2 rounded-md border border-border bg-card/40 px-2.5 py-1.5 text-sm"
+                        >
+                          <span className="flex-1 truncate">{a}</span>
+                          <button
+                            onClick={() => promote(a)}
+                            disabled={busy}
+                            aria-label={`Make ${a} primary`}
+                            title="Make primary"
+                            className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                          >
+                            <Star className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => remove(a)}
+                            disabled={busy}
+                            aria-label={`Remove ${a}`}
+                            title="Remove"
+                            className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <Input
+                      value={newDomain}
+                      onChange={(e) => setNewDomain(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void add();
+                        }
+                      }}
+                      placeholder="acme.io"
+                      disabled={busy}
+                    />
+                    <Button onClick={add} disabled={busy || !newDomain.trim()} size="sm">
+                      <Plus className="mr-1 h-4 w-4" /> Add
+                    </Button>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    If that domain is already its own company, it will be merged in.
+                  </p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* LOGO */}
+            <TabsContent value="logo" className="mt-0 space-y-3">
+              {!hasPrimary ? (
+                needsPrimary
+              ) : (
+                <>
+                  <div className="rounded-md border border-border bg-card/40 p-2.5">
+                    <Input
+                      value={brandQuery}
+                      onChange={(e) => setBrandQuery(e.target.value)}
+                      placeholder="Search logos by company name"
+                      disabled={busy}
+                    />
+                    {debouncedQuery.length >= 2 && (
+                      <div className="mt-2">
+                        {brandsQ.isFetching ? (
+                          <p className="text-[11px] text-muted-foreground">Searching…</p>
+                        ) : (brandsQ.data?.results.length ?? 0) === 0 ? (
+                          <p className="text-[11px] text-muted-foreground">No matches.</p>
+                        ) : (
+                          <div className="grid grid-cols-5 gap-2">
+                            {brandsQ.data!.results.map((b) => {
+                              const selected =
+                                currentSource === b.domain && currentProvider === 0;
+                              return (
+                                <button
+                                  key={b.domain}
+                                  type="button"
+                                  onClick={() => pickBrand(b)}
+                                  disabled={busy}
+                                  title={`${b.name} (${b.domain})`}
+                                  aria-pressed={selected}
+                                  className={`relative grid aspect-square place-items-center overflow-hidden rounded-md border bg-white p-1.5 transition disabled:opacity-50 ${
+                                    selected
+                                      ? "border-primary ring-2 ring-primary/40"
+                                      : "border-border hover:border-primary/60"
+                                  }`}
+                                >
+                                  <img
+                                    src={logoCandidates(b.domain, 256, 0)[0]}
+                                    alt={b.name}
+                                    loading="lazy"
+                                    referrerPolicy="no-referrer"
+                                    className="h-full w-full object-contain"
+                                  />
+                                  {selected && (
+                                    <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-primary text-primary-foreground">
+                                      <Check className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {[primaryDomain, ...aliases].map((d) => {
+                      const isActiveSource = (currentSource ?? primaryDomain) === d;
+                      return (
+                        <div key={d}>
+                          <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                            <span className="truncate">{d}</span>
+                            {d === primaryDomain && (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
+                                primary
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {d === primaryDomain && (
+                              <LogoTile
+                                label="Auto"
+                                domain={d as string}
+                                provider={null}
+                                selected={isActiveSource && currentProvider === null}
+                                disabled={busy}
+                                onSelect={() => pickLogo(null, d as string)}
+                              />
+                            )}
+                            {LOGO_PROVIDER_LABELS.map((label, i) => (
+                              <LogoTile
+                                key={`${d}-${i}`}
+                                label={label}
+                                domain={d as string}
+                                provider={i}
+                                selected={isActiveSource && currentProvider === i}
+                                disabled={busy}
+                                onSelect={() => pickLogo(i, d as string)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Tiles that can't load are hidden. Auto picks the first one that works on the
+                    primary domain.
+                  </p>
+                </>
+              )}
+            </TabsContent>
+
+            {/* GROUPS */}
+            <TabsContent value="groups" className="mt-0 space-y-2">
+              {!hasPrimary ? (
+                needsPrimary
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs uppercase tracking-widest text-muted-foreground">
+                      Tags
+                    </Label>
+                    <span className="text-[11px] text-muted-foreground">
+                      {contactIds.length} {contactIds.length === 1 ? "contact" : "contacts"}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {groups.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No tags yet. Create one from the contacts page first.
+                      </p>
+                    ) : (
+                      groups.map((g) => {
+                        const active = selectedGroupIds.has(g.id);
+                        const n = memberCountByGroup.get(g.id) ?? 0;
+                        const partial = n > 0 && n < contactIds.length;
+                        return (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => toggleGroup(g.id)}
+                            disabled={busy}
+                            aria-pressed={active}
+                            title={
+                              n > 0
+                                ? `${n} of ${contactIds.length} contacts already in ${g.name}`
+                                : undefined
+                            }
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
+                              active
+                                ? "border-primary bg-primary/10 text-foreground"
+                                : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            <span
+                              className="h-2 w-2 rounded-full"
+                              style={{ backgroundColor: g.color }}
+                            />
+                            <span className="max-w-[10rem] truncate">{g.name}</span>
+                            {partial && (
+                              <span className="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">
+                                {n}/{contactIds.length}
+                              </span>
+                            )}
+                            {active && <Check className="h-3 w-3" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  {groups.length > 0 && (
+                    <div className="flex items-center justify-between pt-1">
+                      <p className="text-[11px] text-muted-foreground">
+                        Applies to all {contactIds.length}{" "}
+                        {contactIds.length === 1 ? "contact" : "contacts"}.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant={tagsDirty ? "default" : "outline"}
+                        onClick={saveTags}
+                        disabled={busy || !tagsDirty}
+                      >
+                        Save tags
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </TabsContent>
           </div>
-          </>
-          )}
-        </div>
-
-
+        </Tabs>
 
         <DialogFooter className="gap-2 sm:gap-0">
           {aliases.length > 0 && (
@@ -705,8 +836,6 @@ type TileProps = {
 
 function LogoTile({ label, domain, provider, selected, disabled, onSelect }: TileProps) {
   const [failed, setFailed] = useState(false);
-  // "Auto" tile always renders (no provider arg).
-  // Specific-provider tiles hide themselves when the proxy 404s.
   if (provider !== null && failed) return null;
 
   const src =
