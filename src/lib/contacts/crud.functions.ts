@@ -358,14 +358,19 @@ export const createContactManual = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { userId, supabase } = context;
+    // Resolve company text → company_id (find-or-create).
+    const { companyId, canonicalName } = data.company
+      ? await resolveContactCompany({ supabase, userId }, data.company)
+      : { companyId: null as string | null, canonicalName: null as string | null };
     // phone / notes live in encrypted columns only after Phase 3.
     const payload = {
       user_id: userId,
       email: data.email,
       name: normalizeName(data.name ?? null),
       title: data.title || null,
-      company: data.company || null,
+      company: canonicalName ?? data.company ?? null,
+      company_id: companyId,
       website: data.website || null,
       linkedin: data.linkedin || null,
       twitter: data.twitter || null,
