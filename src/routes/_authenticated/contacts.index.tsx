@@ -552,17 +552,21 @@ function ContactsPage() {
               count={ungroupedCount}
               onClick={() => setFilter("ungrouped")}
             />
-            {groupTree.map(({ group: g, depth }) => (
-              <GroupPill
-                key={g.id}
-                active={filter === g.id}
-                color={g.color}
-                label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
-                count={g.count}
-                onClick={() => setFilter(g.id)}
-                onEdit={() => setGroupDialog({ mode: "edit", group: g })}
-              />
-            ))}
+            {groupTree.map(({ group: g, depth }) => {
+              const isAuto = !!g.auto_generated_from_group_id;
+              return (
+                <GroupPill
+                  key={g.id}
+                  active={filter === g.id}
+                  color={g.color}
+                  label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
+                  count={g.count}
+                  onClick={() => setFilter(g.id)}
+                  onEdit={isAuto ? undefined : () => setGroupDialog({ mode: "edit", group: g })}
+                  locked={isAuto}
+                />
+              );
+            })}
             <button
               onClick={() => setGroupDialog({ mode: "create" })}
               className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground"
