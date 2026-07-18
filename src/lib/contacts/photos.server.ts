@@ -10,7 +10,8 @@ export const CONTACT_PHOTO_BUCKET = "contact-photos";
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB — iOS caps around 2 MB anyway
 
 async function shortHash(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const digest = await crypto.subtle.digest("SHA-256", buf);
   const hex = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
