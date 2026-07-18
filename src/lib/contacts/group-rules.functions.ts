@@ -96,7 +96,7 @@ export const updateGroupRule = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const patch: Record<string, unknown> = {};
+    const patch: { auto_apply?: boolean; value?: string } = {};
     if (data.autoApply !== undefined) patch.auto_apply = data.autoApply;
     if (data.value !== undefined) patch.value = data.value;
     const { error } = await supabase
