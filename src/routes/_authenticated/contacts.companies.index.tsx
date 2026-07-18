@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowLeft, Building2, Plus, Search } from "lucide-react";
+import { ArrowLeft, Plus, Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import {
   createCompany,
 } from "@/lib/companies/companies.functions";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { CompanyDuplicatesDrawer } from "@/components/contacts/CompanyDuplicatesDrawer";
 
 export const Route = createFileRoute("/_authenticated/contacts/companies/")({
   head: () => ({
