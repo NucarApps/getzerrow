@@ -38,10 +38,10 @@ const AiOutput = z.object({
   suggestions: z.array(
     z.object({
       name: z.string(),
-      rationale: z.string().nullable(),
+      rationale: z.string().nullish(),
       kind: z.enum(["new", "subgroup", "merge_into_existing"]),
-      parent_group_name: z.string().nullable(),
-      existing_group_name: z.string().nullable(),
+      parent_group_name: z.string().nullish(),
+      existing_group_name: z.string().nullish(),
       // Contacts are referenced by the short `i` index we send in the prompt,
       // not by UUID — models reliably echo small ints, not long UUIDs.
       contact_ids: z.array(z.number().int().positive()),
@@ -208,7 +208,7 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
     }));
 
     const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-3.5-flash");
+    const model = gateway("google/gemini-3.1-flash-lite");
 
     const prompt = `You are helping organize a user's contact list into meaningful groups.
 
@@ -231,7 +231,8 @@ Rules:
 - rationale: one short sentence explaining the cluster.
 Return JSON matching the schema.`;
 
-    let parsed: z.infer<typeof AiOutput>;
+    let parsed: z.infer<typeof AiOutput> = { suggestions: [] };
+    let parseNote: string | null = null;
     try {
       const { output } = await generateText({
         model,
@@ -243,12 +244,13 @@ Return JSON matching the schema.`;
       if (NoObjectGeneratedError.isInstance(error)) {
         try {
           parsed = AiOutput.parse(JSON.parse(error.text ?? "{}"));
+          parseNote = "recovered_from_raw_text";
         } catch {
-          logInfo("contact_group_suggestions.parse_failed", { userId });
-          return {
-            suggestions: [] as SuggestionView[],
-            stats: { parsed: 0, kept: 0, inserted: 0 },
-          };
+          parseNote = "unparseable";
+          logInfo("contact_group_suggestions.parse_failed", {
+            userId,
+            raw_len: error.text?.length ?? 0,
+          });
         }
       } else {
         throw error;
@@ -257,6 +259,8 @@ Return JSON matching the schema.`;
 
     const parsedCount = parsed.suggestions.length;
     let droppedMissingIds = 0;
+    let droppedTooSmall = 0;
+    let droppedDuplicateName = 0;
 
     
     const groupByLowerName = new Map(
@@ -334,9 +338,12 @@ Return JSON matching the schema.`;
         existingGroupId = g.id;
       }
 
-      // Merges are useful with as few as 2 new members; new groups still need 3.
-      const minMembers = kind === "merge_into_existing" ? 2 : 3;
-      if (mappedIds.length < minMembers) continue;
+      // Loosened: 2 members is a real cluster; new groups also 2 minimum.
+      const minMembers = 2;
+      if (mappedIds.length < minMembers) {
+        droppedTooSmall++;
+        continue;
+      }
 
       rowsToInsert.push({
         user_id: userId,
@@ -351,10 +358,13 @@ Return JSON matching the schema.`;
       });
     }
 
-    if (rowsToInsert.length > 0) {
+    // Cap at 20 to keep the drawer usable.
+    const capped = rowsToInsert.slice(0, 20);
+
+    if (capped.length > 0) {
       const { error: insErr } = await supabase
         .from("contact_group_suggestions")
-        .insert(rowsToInsert);
+        .insert(capped);
       if (insErr) throw new Error(insErr.message);
     }
 
@@ -362,8 +372,11 @@ Return JSON matching the schema.`;
       userId,
       run_id: runId,
       parsed_count: parsedCount,
-      kept_count: rowsToInsert.length,
+      kept_count: capped.length,
       dropped_missing_ids: droppedMissingIds,
+      dropped_too_small: droppedTooSmall,
+      dropped_duplicate_name: droppedDuplicateName,
+      parse_note: parseNote,
       contact_pool: contacts.length,
     });
 
@@ -372,8 +385,11 @@ Return JSON matching the schema.`;
       suggestions,
       stats: {
         parsed: parsedCount,
-        kept: rowsToInsert.length,
-        inserted: rowsToInsert.length,
+        kept: capped.length,
+        inserted: capped.length,
+        droppedMissingIds,
+        droppedTooSmall,
+        parseNote,
       },
     };
   });

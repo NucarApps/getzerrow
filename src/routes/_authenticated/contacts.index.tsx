@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { DuplicateSuggestionsDrawer } from "@/components/contacts/DuplicateSuggestionsDrawer";
+import { EnrichmentSuggestionsDrawer } from "@/components/contacts/EnrichmentSuggestionsDrawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -126,6 +127,7 @@ function ContactsPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [dupesOpen, setDupesOpen] = useState(false);
+  const [enrichOpen, setEnrichOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const bulkAddToGroups = useServerFn(addContactsToGroups);
   const backfillAutoGroups = useServerFn(reconcileAllAutoGroups);
@@ -777,6 +779,16 @@ function ContactsPage() {
                 <span className="hidden sm:inline">Find duplicates</span>
               </Button>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEnrichOpen(true)}
+                title="Enrich contacts from your inbox"
+                className="shrink-0 px-2 sm:px-3"
+              >
+                <Sparkles className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Enrich</span>
+              </Button>
+              <Button
                 variant={selectionMode ? "default" : "outline"}
                 size="sm"
                 onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
@@ -1100,6 +1112,7 @@ function ContactsPage() {
      </div>
       <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
       <DuplicateSuggestionsDrawer open={dupesOpen} onOpenChange={setDupesOpen} />
+      <EnrichmentSuggestionsDrawer open={enrichOpen} onOpenChange={setEnrichOpen} />
     </>
   );
 }
