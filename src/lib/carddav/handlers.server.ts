@@ -129,6 +129,21 @@ export async function getGroupNameStyle(userId: string): Promise<GroupNameStyle>
   return v === "leaf" || v === "path_dash" ? v : "path_slash";
 }
 
+/** Whether to fold `relationship_summary` into the NOTE emitted to iOS.
+ * Defaults to true so existing installs light up the feature automatically;
+ * users can turn it off in Settings → iPhone contacts. */
+export async function getIncludeSummaryInNotes(userId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from("carddav_settings")
+    .select("include_summary_in_notes")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const v = (data as { include_summary_in_notes?: boolean } | null)
+    ?.include_summary_in_notes;
+  return v === false ? false : true;
+}
+
+
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
 
 type SyncState = { updatedSince: string; seqSince: number };
