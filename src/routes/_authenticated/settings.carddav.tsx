@@ -58,6 +58,7 @@ function CardDavSettings() {
   const getSettings = useServerFn(getCardDavSettings);
   const updateSettings = useServerFn(updateCardDavSettings);
   const forceResync = useServerFn(forceCarddavResync);
+  const resyncSummaries = useServerFn(resyncSummaryContacts);
   const [label, setLabel] = useState("iPhone");
   const [freshToken, setFreshToken] = useState<string | null>(null);
 
