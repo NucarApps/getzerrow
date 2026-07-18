@@ -445,11 +445,17 @@ export function parseVCard(text: string): ParsedVCard | null {
         // clobber the saved address with null.
         const em = v.trim();
         if (!em) break;
+        const types = p.params.TYPE ?? [];
+        const prefVals = (p.params.PREF ?? []).map((x) => x.trim());
+        const isPref =
+          types.includes("PREF") || prefVals.some((x) => x === "1" || x === "");
+        out.emails.push({ label: emailLabelFromTypes(types), address: em, is_primary: isPref });
         if (!out.email) out.email = em;
-        else if ((p.params.TYPE ?? []).includes("PREF")) out.email = em;
+        else if (isPref) out.email = em;
         out.presentFields.add("EMAIL");
         break;
       }
+
       case "TEL": {
         const num = v.trim();
         if (!num) break;
