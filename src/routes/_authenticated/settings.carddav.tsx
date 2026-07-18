@@ -270,6 +270,24 @@ function CardDavSettings() {
             </SelectContent>
           </Select>
         </div>
+        <div className="flex items-start justify-between gap-4 border-t pt-4">
+          <div className="flex-1">
+            <p className="text-sm font-medium">Include AI relationship summary in notes</p>
+            <p className="text-sm text-muted-foreground">
+              Zerrow adds the "who is this?" summary it generates for a
+              contact into the Notes field on your iPhone and Google Contacts,
+              above your own notes. Turn off to keep Notes user-only.
+            </p>
+          </div>
+          <Switch
+            checked={settingsQuery.data?.include_summary_in_notes ?? true}
+            onCheckedChange={(v) =>
+              settingsMut.mutate({ include_summary_in_notes: v })
+            }
+            disabled={settingsQuery.isLoading || settingsMut.isPending}
+          />
+        </div>
+
         <div className="border-t pt-4">
           <p className="text-sm font-medium">Force iPhone resync</p>
           <p className="mb-2 text-sm text-muted-foreground">
