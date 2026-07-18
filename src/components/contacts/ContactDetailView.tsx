@@ -36,6 +36,7 @@ import { repullContactFromGoogle } from "@/lib/google-contacts.functions";
 import { listMeetingsForContact } from "@/lib/meetings.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { listContactRevisions, restoreContactRevision } from "@/lib/contacts/revisions.functions";
+import { uploadContactPhoto, removeContactPhoto } from "@/lib/contacts/photos.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { EmailsEditor, type EmailEntry } from "@/components/contacts/EmailsEditor";
 
