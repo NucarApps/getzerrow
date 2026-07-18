@@ -112,4 +112,16 @@ describe("notes round-trip", () => {
     const parsed = parseVCard(vcard)!;
     expect(parsed.notes).toBe(notes);
   });
+
+  it("does not emit legacy placeholder emails back to iOS", () => {
+    // Historically we synthesized `carddav+<uuid>@local.zerrow` when iOS
+    // omitted EMAIL. That fallback is gone but stale rows can linger — the
+    // serializer must not echo them or iPhone displays the placeholder as
+    // the real address.
+    const c = buildContact({ email: `carddav+${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}@local.zerrow` });
+    const vcard = contactToVCard(c);
+    expect(vcard).not.toContain("EMAIL");
+    expect(vcard).not.toContain("local.zerrow");
+  });
 });
+
