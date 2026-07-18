@@ -259,6 +259,8 @@ Return JSON matching the schema.`;
 
     const parsedCount = parsed.suggestions.length;
     let droppedMissingIds = 0;
+    let droppedTooSmall = 0;
+    let droppedDuplicateName = 0;
 
     
     const groupByLowerName = new Map(
@@ -336,9 +338,12 @@ Return JSON matching the schema.`;
         existingGroupId = g.id;
       }
 
-      // Merges are useful with as few as 2 new members; new groups still need 3.
-      const minMembers = kind === "merge_into_existing" ? 2 : 3;
-      if (mappedIds.length < minMembers) continue;
+      // Loosened: 2 members is a real cluster; new groups also 2 minimum.
+      const minMembers = 2;
+      if (mappedIds.length < minMembers) {
+        droppedTooSmall++;
+        continue;
+      }
 
       rowsToInsert.push({
         user_id: userId,
@@ -353,10 +358,13 @@ Return JSON matching the schema.`;
       });
     }
 
-    if (rowsToInsert.length > 0) {
+    // Cap at 20 to keep the drawer usable.
+    const capped = rowsToInsert.slice(0, 20);
+
+    if (capped.length > 0) {
       const { error: insErr } = await supabase
         .from("contact_group_suggestions")
-        .insert(rowsToInsert);
+        .insert(capped);
       if (insErr) throw new Error(insErr.message);
     }
 
@@ -364,8 +372,11 @@ Return JSON matching the schema.`;
       userId,
       run_id: runId,
       parsed_count: parsedCount,
-      kept_count: rowsToInsert.length,
+      kept_count: capped.length,
       dropped_missing_ids: droppedMissingIds,
+      dropped_too_small: droppedTooSmall,
+      dropped_duplicate_name: droppedDuplicateName,
+      parse_note: parseNote,
       contact_pool: contacts.length,
     });
 
@@ -374,8 +385,11 @@ Return JSON matching the schema.`;
       suggestions,
       stats: {
         parsed: parsedCount,
-        kept: rowsToInsert.length,
-        inserted: rowsToInsert.length,
+        kept: capped.length,
+        inserted: capped.length,
+        droppedMissingIds,
+        droppedTooSmall,
+        parseNote,
       },
     };
   });
