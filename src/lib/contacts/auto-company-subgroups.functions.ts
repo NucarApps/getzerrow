@@ -16,16 +16,25 @@ type ContactShape = {
   company: string | null;
   email: string | null;
   website: string | null;
+  company_id: string | null;
 };
 
-/** Derive a normalized company key + display name from a contact. Falls back
- *  to the non-personal email/website domain when no `company` field is set,
- *  so contacts bucketed by domain (e.g. all @nissan.com with empty company)
- *  still contribute to auto subgroups. */
+/** Derive a normalized company key + display name from a contact. Prefers
+ *  `company_id` when the contact is linked to a Company entity so all
+ *  contacts on the same Company collapse into one bucket regardless of the
+ *  free-text `company` value. Falls back to `company` string, then to the
+ *  non-personal email/website domain. */
 function deriveCompanyKey(
-  contact: Pick<ContactShape, "company" | "email" | "website">,
+  contact: Pick<ContactShape, "company" | "email" | "website" | "company_id">,
   aliasMap: Map<string, string> | null,
+  companyMap: Map<string, string> | null,
 ): { key: string; displayName: string; rawCompany: string | null } | null {
+  if (contact.company_id && companyMap) {
+    const name = companyMap.get(contact.company_id);
+    if (name) {
+      return { key: "cid:" + contact.company_id, displayName: name, rawCompany: name };
+    }
+  }
   const rawCompany = (contact.company ?? "").trim() || null;
   if (rawCompany) {
     const key = normalizeCompanyName(rawCompany);
@@ -40,6 +49,7 @@ function deriveCompanyKey(
   }
   return null;
 }
+
 
 type DB = SupabaseClient<Database>;
 
