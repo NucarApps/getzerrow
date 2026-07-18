@@ -127,10 +127,7 @@ describe("notes round-trip", () => {
 
 
 describe("AI summary in NOTE", () => {
-  const { buildMergedNote, stripSummaryFromNote } = require("./vcard") as {
-    buildMergedNote: (s: string | null, n: string | null) => string | null;
-    stripSummaryFromNote: (v: string | null) => string;
-  };
+
 
   it("merges summary and user notes with summary first", () => {
     const merged = buildMergedNote("She runs ops at Acme.", "Met at conf.");
