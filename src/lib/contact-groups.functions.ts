@@ -103,6 +103,26 @@ export const createContactGroup = createServerFn({ method: "POST" })
         throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
       }
     }
+    // Choke point: before inserting, look for an existing group in the
+    // same parent scope whose normalized name matches. This prevents new
+    // duplicate labels from being created via the UI ("Nissan" vs
+    // "Nissan Inc") and from any code path that reuses createContactGroup.
+    const { normalizeCompanyName } = await import("@/lib/companies/normalize");
+    const key = normalizeCompanyName(data.name);
+    if (key) {
+      const q = supabase
+        .from("contact_groups")
+        .select(GROUP_SELECT)
+        .eq("user_id", userId);
+      const scoped = data.parent_group_id
+        ? q.eq("parent_group_id", data.parent_group_id)
+        : q.is("parent_group_id", null);
+      const { data: candidates } = await scoped;
+      const hit = (candidates ?? []).find(
+        (g) => normalizeCompanyName(g.name) === key,
+      );
+      if (hit) return { group: hit };
+    }
     // Generate a stable CardDAV UID up-front so a group created in the
     // web app is immediately visible/syncable to iPhones on next PROPFIND.
     const uid =
