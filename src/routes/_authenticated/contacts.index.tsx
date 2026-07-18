@@ -130,19 +130,21 @@ function ContactsPage() {
   const bulkAddToGroups = useServerFn(addContactsToGroups);
   const backfillAutoGroups = useServerFn(reconcileAllAutoGroups);
 
-  // One-time per browser: reconcile every auto-company-subgroup parent so
-  // existing groups pick up contacts that were added later or came in
-  // via Google sync after the feature was enabled.
+  // Once per browser tab session: reconcile every auto-company-subgroup parent
+  // so groups pick up contacts added since the last reconcile (Google sync,
+  // manual create, company edits elsewhere). sessionStorage means it re-runs
+  // on each fresh tab load without hammering on every route change.
   useEffect(() => {
-    const KEY = "zerrow.auto-groups.backfilled.v1";
+    const KEY = "zerrow.auto-groups.backfilled.session";
     if (typeof window === "undefined") return;
-    if (window.localStorage.getItem(KEY)) return;
+    if (window.sessionStorage.getItem(KEY)) return;
+
     let cancelled = false;
     (async () => {
       try {
         const res = await backfillAutoGroups({});
         if (cancelled) return;
-        window.localStorage.setItem(KEY, "1");
+        window.sessionStorage.setItem(KEY, "1");
         if (res.membershipsAdded > 0 || res.membershipsRemoved > 0) {
           qc.invalidateQueries({ queryKey: ["contacts"] });
           qc.invalidateQueries({ queryKey: ["contact-groups"] });
