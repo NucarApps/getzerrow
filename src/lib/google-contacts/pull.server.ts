@@ -498,11 +498,19 @@ async function applyPersonChanges(
       if (previous !== parsed.photoUrl) {
         try {
           const { fetchPhotoBytes } = await import("./people-client.server");
-          const { saveContactPhoto } = await import("@/lib/contacts/photos.server");
+          const { saveContactPhoto, sha256Hex } = await import("@/lib/contacts/photos.server");
           const bytes = await fetchPhotoBytes(parsed.photoUrl);
           if (bytes) {
-            await saveContactPhoto(ids.userId, contactId!, bytes.bytes, bytes.mime);
-            nextPhotoEtag = parsed.photoUrl;
+            const incomingSha = await sha256Hex(bytes.bytes);
+            const { buildKnownCompanyLogoShaSet } = await import(
+              "@/lib/contacts/known-logos.server"
+            );
+            if ((await buildKnownCompanyLogoShaSet(ids.userId)).has(incomingSha)) {
+              nextPhotoEtag = parsed.photoUrl;
+            } else {
+              await saveContactPhoto(ids.userId, contactId!, bytes.bytes, bytes.mime, "google");
+              nextPhotoEtag = parsed.photoUrl;
+            }
           }
         } catch (err) {
           logError("google_contacts.pull.photo_failed", { ...ids, contact_id: contactId }, err);

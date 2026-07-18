@@ -8,6 +8,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const CONTACT_PHOTO_BUCKET = "contact-photos";
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB — iOS caps around 2 MB anyway
+export type ContactPhotoSource = "unknown" | "user_upload" | "carddav" | "google" | "company_logo";
 
 async function shortHash(bytes: Uint8Array): Promise<string> {
   const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -45,6 +46,7 @@ export async function saveContactPhoto(
   contactId: string,
   bytes: Uint8Array,
   mime: string,
+  source: ContactPhotoSource = "unknown",
 ): Promise<{ avatarUrl: string; hash: string }> {
   if (bytes.length === 0) throw new Error("Empty photo bytes");
   if (bytes.length > MAX_PHOTO_BYTES) throw new Error("Photo too large");
@@ -72,7 +74,12 @@ export async function saveContactPhoto(
 
   const { error: updErr } = await supabaseAdmin
     .from("contacts")
-    .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+    .update({
+      avatar_url: avatarUrl,
+      avatar_source: source,
+      company_logo_photo_sha: null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", contactId)
     .eq("user_id", userId);
   if (updErr) throw new Error(updErr.message);
@@ -98,7 +105,7 @@ export async function deleteContactPhoto(userId: string, contactId: string): Pro
   }
   await supabaseAdmin
     .from("contacts")
-    .update({ avatar_url: null, updated_at: new Date().toISOString() })
+    .update({ avatar_url: null, avatar_source: "unknown", updated_at: new Date().toISOString() })
     .eq("id", contactId)
     .eq("user_id", userId);
 }

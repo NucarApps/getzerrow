@@ -434,11 +434,13 @@ export const mergeCompanies = createServerFn({ method: "POST" })
       .maybeSingle();
     if (tErr) throw new Error(tErr.message);
     if (!targetRow) throw new Error("Target company not found");
-    await supabase
+    const { data: movedContacts, error: moveErr } = await supabase
       .from("contacts")
       .update({ company_id: data.targetId, company: targetRow.name })
       .eq("user_id", userId)
-      .eq("company_id", data.sourceId);
+      .eq("company_id", data.sourceId)
+      .select("id");
+    if (moveErr) throw new Error(moveErr.message);
     // Move domains — upsert to avoid unique conflict on (user_id, domain).
     const { data: srcDomains } = await supabase
       .from("company_domains")
@@ -481,6 +483,38 @@ export const mergeCompanies = createServerFn({ method: "POST" })
             { onConflict: "company_id,tag" },
           );
       }
+    }
+    // Move remembered company-logo hashes so legacy logo snapshots remain
+    // detectable after duplicate companies are consolidated.
+    const { data: srcHashes } = await supabase
+      .from("company_logo_hashes")
+      .select("domain,sha256,source")
+      .eq("company_id", data.sourceId)
+      .eq("user_id", userId);
+    if (srcHashes && srcHashes.length > 0) {
+      await supabase
+        .from("company_logo_hashes")
+        .delete()
+        .eq("company_id", data.sourceId)
+        .eq("user_id", userId);
+      await supabase.from("company_logo_hashes").upsert(
+        srcHashes.map((h) => ({
+          user_id: userId,
+          company_id: data.targetId,
+          domain: h.domain,
+          sha256: h.sha256,
+          source: h.source,
+          last_seen_at: new Date().toISOString(),
+        })),
+        { onConflict: "user_id,company_id,sha256" },
+      );
+    }
+    const movedIds = (movedContacts ?? []).map((row) => (row as { id: string }).id);
+    if (movedIds.length > 0) {
+      const { reconcileAutoParentsForContacts } = await import(
+        "@/lib/contacts/auto-company-subgroups.functions"
+      );
+      await reconcileAutoParentsForContacts(supabase, userId, movedIds);
     }
     // Delete source.
     await supabase

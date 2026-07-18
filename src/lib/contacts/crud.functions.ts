@@ -132,7 +132,7 @@ export const getContact = createServerFn({ method: "POST" })
     // we can resolve the company's primary domain for the logo fallback.
     const { data: companyLink } = await supabase
       .from("contacts")
-      .select("company_id,company_logo_photo_sha")
+      .select("company_id,company_logo_photo_sha,avatar_source")
       .eq("id", data.id)
       .maybeSingle();
     const linkedCompanyId = companyLink?.company_id ?? null;
@@ -161,7 +161,8 @@ export const getContact = createServerFn({ method: "POST" })
     });
     let avatarIsCompanyLogoSnapshot = false;
     let effectiveAvatarUrl: string | null = contact.avatar_url ?? null;
-    if (contact.avatar_url && linkedCompanyId) {
+    const avatarSource = (companyLink as { avatar_source?: string | null } | null)?.avatar_source ?? "unknown";
+    if (contact.avatar_url && linkedCompanyId && avatarSource !== "user_upload") {
       try {
         const { loadContactPhotoBytes, sha256Hex, deleteContactPhoto } = await import(
           "@/lib/contacts/photos.server"
@@ -173,6 +174,15 @@ export const getContact = createServerFn({ method: "POST" })
           let matchedSha: string | null =
             storedLogoSha !== null && storedLogoSha === ownSha ? storedLogoSha : null;
 
+          if (matchedSha === null) {
+            const { getKnownCompanyLogoHashes } = await import(
+              "@/lib/contacts/logo-photo.server"
+            );
+            matchedSha = (await getKnownCompanyLogoHashes(userId, linkedCompanyId)).has(ownSha)
+              ? ownSha
+              : null;
+          }
+
           if (matchedSha === null && companyDomain) {
             // Fast path: currently chosen logo for this contact's domain.
             const { fetchChosenCompanyLogoBytes } = await import(
@@ -181,7 +191,19 @@ export const getContact = createServerFn({ method: "POST" })
             const hit = await fetchChosenCompanyLogoBytes(userId, companyDomain);
             if (hit) {
               const logoSha = await sha256Hex(hit.bytes);
-              if (logoSha === ownSha) matchedSha = logoSha;
+              if (logoSha === ownSha) {
+                matchedSha = logoSha;
+                const { recordCompanyLogoHash } = await import(
+                  "@/lib/contacts/logo-photo.server"
+                );
+                await recordCompanyLogoHash({
+                  userId,
+                  companyId: linkedCompanyId,
+                  domain: companyDomain,
+                  sha256: logoSha,
+                  source: "detail_view",
+                });
+              }
             }
           }
 

@@ -191,7 +191,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
   }
 
   // 3. Load every user contact and bucket by derived key.
-  const byKey = new Map<string, { rawValues: string[]; contactIds: Set<string> }>();
+  const byKey = new Map<string, { rawValues: string[]; contactIds: Set<string>; displayName: string }>();
   if (repKeys.size > 0) {
     const { data: allContacts, error: cErr } = await supabase
       .from("contacts")
@@ -203,7 +203,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
       if (!derived || !repKeys.has(derived.key)) continue;
       let bucket = byKey.get(derived.key);
       if (!bucket) {
-        bucket = { rawValues: [], contactIds: new Set() };
+        bucket = { rawValues: [], contactIds: new Set(), displayName: derived.displayName };
         byKey.set(derived.key, bucket);
       }
       if (derived.rawCompany) bucket.rawValues.push(derived.rawCompany);
@@ -211,7 +211,13 @@ export async function reconcileAutoCompanySubgroupsImpl(
     }
     // Ensure every represented key exists, even if no candidate matched.
     for (const key of repKeys) {
-      if (!byKey.has(key)) byKey.set(key, { rawValues: [], contactIds: new Set() });
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          rawValues: [],
+          contactIds: new Set(),
+          displayName: fallbackDisplayNames.get(key) ?? key,
+        });
+      }
     }
   }
 
@@ -237,7 +243,10 @@ export async function reconcileAutoCompanySubgroupsImpl(
   const wantedKeys = new Set(byKey.keys());
   for (const [key, info] of byKey) {
     const display =
-      pickDisplayName(info.rawValues) || fallbackDisplayNames.get(key) || key;
+      (key.startsWith("cid:") ? trimRaw(info.displayName) : "") ||
+      pickDisplayName(info.rawValues) ||
+      fallbackDisplayNames.get(key) ||
+      key;
     const existingRow = existingByKey.get(key);
     if (existingRow) {
       if (existingRow.name !== display) {

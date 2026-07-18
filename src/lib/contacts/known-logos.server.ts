@@ -64,6 +64,15 @@ export async function buildKnownCompanyLogoShaSet(
   const ordered = [...primary, ...secondary].slice(0, MAX_DOMAINS);
 
   const shas = new Set<string>();
+  const { data: storedHashes } = await supabaseAdmin
+    .from("company_logo_hashes")
+    .select("sha256")
+    .eq("user_id", userId)
+    .limit(5000);
+  for (const row of (storedHashes ?? []) as Array<{ sha256?: string | null }>) {
+    if (row.sha256) shas.add(row.sha256);
+  }
+
   async function hashDomain(domain: string): Promise<void> {
     try {
       const hit = await Promise.race<
