@@ -132,6 +132,7 @@ function ContactsPage() {
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [dupesOpen, setDupesOpen] = useState(false);
   const [enrichOpen, setEnrichOpen] = useState(false);
+  const [labelDupesOpen, setLabelDupesOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const bulkAddToGroups = useServerFn(addContactsToGroups);
   const backfillAutoGroups = useServerFn(reconcileAllAutoGroups);
