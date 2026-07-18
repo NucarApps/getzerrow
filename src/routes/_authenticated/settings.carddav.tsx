@@ -85,6 +85,19 @@ function CardDavSettings() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const resyncSummariesMut = useMutation({
+    mutationFn: () => resyncSummaries(),
+    onSuccess: (res) => {
+      const n = res.count ?? 0;
+      toast.success(
+        n === 0
+          ? "No contacts with AI summaries yet"
+          : `Queued ${n} contact${n === 1 ? "" : "s"} — iPhone and Google will pick them up on next sync`,
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const tokensQuery = useQuery({
     queryKey: ["carddav-tokens"],
     queryFn: () => list(),
