@@ -25,7 +25,7 @@ import {
 } from "../contacts-helpers.server";
 
 type EnrichSupabase = SupabaseClient<Database>;
-  : never;
+  
 
 /** Shared enrichment core so both the single-contact server fn and the
  * bulk "rerun for everyone" batch can reuse the same logic without one
