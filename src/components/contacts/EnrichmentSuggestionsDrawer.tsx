@@ -34,6 +34,7 @@ const fieldLabels: Record<string, string> = {
   phone: "Phone",
   company: "Company",
   title: "Title",
+  name: "Name",
 };
 
 export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
