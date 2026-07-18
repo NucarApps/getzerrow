@@ -45,6 +45,19 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, onChan
   const [busy, setBusy] = useState(false);
   const upload = useServerFn(uploadContactPhoto);
   const remove = useServerFn(removeContactPhoto);
+  const signUrl = useServerFn(getContactPhotoSignedUrl);
+
+  // The bucket is private, so we mint a short-lived signed URL after
+  // server-side ownership check. `avatarUrl` from the DB just tells us
+  // whether a photo exists; the browser never fetches it directly.
+  const signedQuery = useQuery({
+    queryKey: ["contact-photo-signed", contactId, avatarUrl],
+    queryFn: async () => (await signUrl({ data: { contactId } })).url,
+    enabled: !!avatarUrl,
+    staleTime: 50 * 60 * 1000, // refresh well before the 1h signed-URL expiry
+  });
+  const displaySrc = avatarUrl ? signedQuery.data ?? null : null;
+
 
   const openPicker = () => fileRef.current?.click();
 
