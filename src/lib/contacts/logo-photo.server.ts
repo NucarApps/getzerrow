@@ -202,6 +202,7 @@ export async function resolveCompanyLogoDomainForContact(
   userId: string,
   row: ContactLogoRow,
 ): Promise<string | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   let companyId = row.company_id ?? null;
   if (!companyId && row.id) {
     const { data } = await supabaseAdmin
