@@ -28,6 +28,7 @@ import {
   setGoogleContactsSyncInterval,
   forceFullGoogleContactsResync,
   backfillMultiEmailsFromGoogle,
+  backfillGoogleContactPhotos,
 } from "@/lib/google-contacts.functions";
 import {
   Select,
