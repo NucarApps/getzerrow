@@ -4,6 +4,42 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./company-name";
+import {
+  contactLogoDomain,
+  isPersonalDomain,
+  prettyCompanyName,
+  resolveCompanyDomain,
+} from "@/lib/company-domains";
+
+type ContactShape = {
+  id: string;
+  company: string | null;
+  email: string | null;
+  website: string | null;
+};
+
+/** Derive a normalized company key + display name from a contact. Falls back
+ *  to the non-personal email/website domain when no `company` field is set,
+ *  so contacts bucketed by domain (e.g. all @nissan.com with empty company)
+ *  still contribute to auto subgroups. */
+function deriveCompanyKey(
+  contact: Pick<ContactShape, "company" | "email" | "website">,
+  aliasMap: Map<string, string> | null,
+): { key: string; displayName: string; rawCompany: string | null } | null {
+  const rawCompany = (contact.company ?? "").trim() || null;
+  if (rawCompany) {
+    const key = normalizeCompanyName(rawCompany);
+    if (key) return { key, displayName: rawCompany, rawCompany };
+  }
+  const raw = contactLogoDomain(contact.website, contact.email);
+  const resolved = resolveCompanyDomain(raw, aliasMap);
+  if (resolved && !isPersonalDomain(resolved)) {
+    const pretty = prettyCompanyName(resolved);
+    const key = normalizeCompanyName(pretty);
+    if (key) return { key, displayName: pretty, rawCompany: null };
+  }
+  return null;
+}
 
 type DB = SupabaseClient<Database>;
 
@@ -81,63 +117,73 @@ export async function reconcileAutoCompanySubgroupsImpl(
   membershipsAdded: number;
   membershipsRemoved: number;
 }> {
+  // 0. Load alias map so alias domains collapse to their primary.
+  const { data: aliasRows } = await supabase
+    .from("company_aliases")
+    .select("primary_domain, alias_domain")
+    .eq("user_id", userId);
+  const aliasMap = new Map<string, string>();
+  for (const r of aliasRows ?? []) {
+    if (r.alias_domain && r.primary_domain) aliasMap.set(r.alias_domain, r.primary_domain);
+  }
+
   // 1. Load direct members of the parent, split by auto/manual.
   const { data: members, error: mErr } = await supabase
     .from("contact_group_members")
-    .select("contact_id, auto_added, contacts:contacts(id, company)")
+    .select("contact_id, auto_added, contacts:contacts(id, company, email, website)")
     .eq("group_id", parentGroupId);
   if (mErr) throw new Error(mErr.message);
 
   type MemberRow = {
     contact_id: string;
     auto_added: boolean | null;
-    contacts: { id: string; company: string | null } | null;
+    contacts: ContactShape | null;
   };
   const rows = (members ?? []) as unknown as MemberRow[];
 
   const manualIds = new Set<string>();
-  const manualCompanies: string[] = [];
+  const manualContacts: ContactShape[] = [];
   for (const r of rows) {
     if (r.auto_added) continue;
     manualIds.add(r.contact_id);
-    const raw = r.contacts?.company ?? null;
-    if (raw) manualCompanies.push(raw);
+    if (r.contacts) manualContacts.push(r.contacts);
   }
 
-  // 2. Represented-companies = distinct normalized company of manual members.
+  // 2. Represented-companies = distinct normalized key across manual members,
+  //    derived from `company` OR (fallback) non-personal email/website domain.
   const repKeys = new Set<string>();
-  for (const raw of manualCompanies) {
-    const k = normalizeCompanyName(raw);
-    if (k) repKeys.add(k);
+  const fallbackDisplayNames = new Map<string, string>();
+  for (const c of manualContacts) {
+    const derived = deriveCompanyKey(c, aliasMap);
+    if (!derived) continue;
+    repKeys.add(derived.key);
+    if (!derived.rawCompany && !fallbackDisplayNames.has(derived.key)) {
+      fallbackDisplayNames.set(derived.key, derived.displayName);
+    }
   }
 
-  // 3. Load every user contact with a non-empty company and bucket by key.
+  // 3. Load every user contact and bucket by derived key.
   const byKey = new Map<string, { rawValues: string[]; contactIds: Set<string> }>();
   if (repKeys.size > 0) {
     const { data: allContacts, error: cErr } = await supabase
       .from("contacts")
-      .select("id, company")
-      .eq("user_id", userId)
-      .not("company", "is", null);
+      .select("id, company, email, website")
+      .eq("user_id", userId);
     if (cErr) throw new Error(cErr.message);
-    for (const c of allContacts ?? []) {
-      const raw = c.company ?? null;
-      const key = normalizeCompanyName(raw);
-      if (!key || !repKeys.has(key)) continue;
-      let bucket = byKey.get(key);
+    for (const c of (allContacts ?? []) as ContactShape[]) {
+      const derived = deriveCompanyKey(c, aliasMap);
+      if (!derived || !repKeys.has(derived.key)) continue;
+      let bucket = byKey.get(derived.key);
       if (!bucket) {
         bucket = { rawValues: [], contactIds: new Set() };
-        byKey.set(key, bucket);
+        byKey.set(derived.key, bucket);
       }
-      if (raw) bucket.rawValues.push(raw);
+      if (derived.rawCompany) bucket.rawValues.push(derived.rawCompany);
       bucket.contactIds.add(c.id);
     }
-    // Every represented key must exist as a bucket even if no matching
-    // contact was returned (shouldn't happen, but keeps the invariant tight).
+    // Ensure every represented key exists, even if no candidate matched.
     for (const key of repKeys) {
-      if (!byKey.has(key)) {
-        byKey.set(key, { rawValues: [], contactIds: new Set() });
-      }
+      if (!byKey.has(key)) byKey.set(key, { rawValues: [], contactIds: new Set() });
     }
   }
 
@@ -161,7 +207,8 @@ export async function reconcileAutoCompanySubgroupsImpl(
   let renamed = 0;
   const wantedKeys = new Set(byKey.keys());
   for (const [key, info] of byKey) {
-    const display = pickDisplayName(info.rawValues) || key;
+    const display =
+      pickDisplayName(info.rawValues) || fallbackDisplayNames.get(key) || key;
     const existingRow = existingByKey.get(key);
     if (existingRow) {
       if (existingRow.name !== display) {
