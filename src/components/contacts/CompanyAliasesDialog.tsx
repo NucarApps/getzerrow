@@ -20,6 +20,7 @@ import {
   clearCompanyAliases,
   promoteAliasToPrimary,
 } from "@/lib/company-aliases.functions";
+import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
 import {
   listCompanyLogoChoices,
   setCompanyLogoChoice,
