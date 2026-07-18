@@ -56,7 +56,7 @@ export async function snapshotContact(
     user_id: userId,
     contact_id: contactId,
     source,
-    snapshot: snapshot as unknown as Record<string, unknown>,
+    snapshot: JSON.parse(JSON.stringify(snapshot)),
   });
 
   // Trim: keep the newest MAX_REVISIONS_PER_CONTACT rows per contact.
