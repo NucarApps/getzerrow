@@ -1,46 +1,37 @@
-# Contact photo fallback + backfill
+## Goal
 
-Two related gaps:
+When a contact has no photo, fall back to the company logo the user *picked* in Zerrow (the selection stored in `company_logo_choices`), not just the first provider guess. That way every contact under Nissan gets the exact Nissan logo the user chose, on iPhone (CardDAV) and inside Zerrow.
 
-1. **No fallback picture.** When a contact has no `avatar_url`, the app renders the orange initials tile and CardDAV emits no `PHOTO`, so iOS also has nothing. We should fall back to the company logo we already resolve for the contact.
-2. **Chanell case: iOS has a photo, Zerrow doesn't.** Photo sync only fires when a picture is *changed after* the feature shipped. Contacts whose photo predates it never re-push from iOS and (if unlinked to Google) never get pulled. We need a way to backfill those.
+## Current state (verified)
 
-## What to build
+- `company_logo_choices(user_id, domain, provider, source_domain)` already stores the user's picked logo per company domain.
+- `CompanyLogo.tsx` (in-app) already accepts `provider` + `sourceDomain` — but the contact avatar fallback path in `ContactPhotoUploader.tsx` and detail views doesn't pass them, so contacts under a picked company still show a generic provider guess or monogram.
+- CardDAV `loadContactPhotoOrLogo` (`src/lib/carddav/handlers.server.ts`) → `fetchCompanyLogoBytes(logoDomainForContact(row))` in `src/lib/contacts/logo-photo.server.ts`. It walks providers in a fixed order and ignores `company_logo_choices` entirely, so the iPhone photo doesn't match what the user selected.
 
-### A. Company-logo fallback (display + push)
+## Changes
 
-- New helper `resolveContactPhoto(contact)` that returns, in order:
-  1. `avatar_url` (real user photo) — unchanged.
-  2. A *derived* company-logo photo — the same logo `CompanyLogo` shows in the UI, resolved from the contact's email domain / `company_logo_choices`.
-  3. `null` → initials tile stays.
-- Store the derived source as a **virtual** photo, not written back into `contacts.avatar_url`, so a real user photo added later always wins and clearing the company never leaves stale bytes. Track it via a new nullable `contacts.logo_photo_domain` + `logo_photo_etag` (etag = provider+domain hash) so we know when to re-push.
-- **UI (`ContactPhotoUploader`, contact list avatars):** when `avatar_url` is null but `logo_photo_domain` is set, render `<CompanyLogo domain=... />` instead of initials. Uploader "Remove" only clears the real photo; the logo fallback then reappears automatically.
-- **CardDAV push (`vcard.ts` / `handlers.server.ts` GET):** when no real photo, fetch the logo bytes server-side (reuse `/api/public/logo` guards for SSRF safety), inline as `PHOTO;ENCODING=b`. Cache bytes in the `contact-photos` bucket under a `logo/<domain>/<provider>.jpg` key so we don't re-fetch per contact.
-- **Google push:** same fallback — upload the logo bytes via `updateContactPhoto` when no real photo exists. Guard with the etag so we don't re-upload every sync.
-- **Settings toggle** on `settings.carddav.tsx`: "Use company logo when a contact has no photo" (default on). Toggling off bumps `resync_nonce` and strips the fallback on next sync.
+1. **`src/lib/contacts/logo-photo.server.ts`**
+   - Add `fetchChosenCompanyLogoBytes(userId, domain)` that:
+     - Looks up `company_logo_choices` for `(userId, domain)`.
+     - If a choice exists, fetches the single URL from `logoProviders(source_domain ?? domain)[provider]` (reusing `LOGO_PROVIDER_COUNT`/provider list — extract a shared `logoProviders(domain, size)` helper so client `logoCandidates` and server stay aligned).
+     - Falls back to the existing multi-provider walk only when no choice is set.
+   - Cache key becomes `${userId}:${domain}:${provider ?? "auto"}` so different users' picks don't collide.
 
-### B. Backfill existing iOS-only photos (fix Chanell)
+2. **`src/lib/carddav/handlers.server.ts`**
+   - `loadContactPhotoOrLogo` calls `fetchChosenCompanyLogoBytes(userId, domain)` instead of `fetchCompanyLogoBytes(domain)`.
+   - Bump the address-book `resync_nonce` once on deploy (or when a user sets/changes a logo choice) so iPhone re-pulls contacts and picks up the new photo. Best approach: whenever `setCompanyLogoChoice` / `clearCompanyLogoChoice` succeeds, also bump `carddav_settings.resync_nonce` for that user (existing pattern used for other setting changes).
 
-Root cause: photo sync fires on iOS `PUT` after the feature shipped or on Google pull. Chanell's photo was set on iOS before that, and CardDAV has no way for the server to *ask* iOS for a specific contact's photo — iOS only pushes on user edit.
+3. **`src/lib/company-logo.functions.ts`**
+   - After `upsert`/`delete`, increment `carddav_settings.resync_nonce` so the phone resyncs affected contacts' photos.
+   - Also clear stored `photo_etag` on `google_contact_links` for contacts under that company domain so the next Google Contacts sync pushes the newly picked logo (only when `use_company_logo_fallback` is on for that user).
 
-Two-pronged fix:
+4. **In-app contact avatar fallback** (`src/components/contacts/ContactPhotoUploader.tsx`, and any place using `CompanyLogo` for a contact avatar)
+   - Load the user's `company_logo_choices` once (React Query on the contacts page / detail view) and pass matching `provider` + `sourceDomain` to `CompanyLogo` for the contact's domain — so Chanell shows the same Nissan logo the user picked, not the orange "C" or a different provider's image.
 
-1. **Google pull sweep (immediate for Google-linked contacts):** add a one-shot "Backfill contact photos from Google" server fn that ignores the `photo_etag` short-circuit and re-fetches photo bytes for every linked contact whose `avatar_url` is null. Runs in the existing pull lease. Button on `settings.google-contacts.tsx`. This alone likely fixes Chanell if she's in Google Contacts.
-2. **CardDAV nudge for the rest:** add a per-contact "Request photo from iPhone" action in the contact drawer that (a) bumps `updated_at` + per-contact ETag, (b) writes a marker so the next `PUT` that arrives without a `PHOTO` line is treated as "iOS still hasn't sent it" (no-op) but a `PUT` *with* `PHOTO` overwrites as normal. Combined with a settings note explaining iOS only pushes photos when the user opens & edits the card, this gives you a clear manual recovery.
+5. **No schema changes.** `company_logo_choices` and `carddav_settings.resync_nonce` already exist.
 
-### C. Diagnostics
+## Non-goals
 
-Small drawer entry under contact → "Photo status": shows source (`user` / `logo:acme.com` / `none`), last pulled from Google, last pushed to iOS/Google. Makes future "why is X not showing" trivial.
-
-## Technical notes
-
-- Schema: `ALTER TABLE contacts ADD COLUMN logo_photo_domain text, ADD COLUMN logo_photo_etag text;` — no RLS change needed.
-- Logo fetch reuses `src/lib/logo-guards.ts` + provider list in `src/lib/logo-providers.ts`. Cache in `contact-photos` bucket at `logo/<domain>/<providerIdx>` and serve via signed URL for the UI (matches the private-bucket pattern we just landed).
-- Google push: `updateContactPhoto` already accepts bytes; add an `if (fallbackLogo && !avatar_url)` branch in `push.server.ts`, gated on etag change.
-- Backfill fn adds one flag `{ mode: "force_photos" }` to the existing pull loop rather than a whole new path.
-- No changes to encryption or existing RLS.
-
-## Out of scope
-
-- Auto-generating a stylized initials avatar when there's no company either (still shows the orange C).
-- Watching Google for photo changes in near-real-time (still on the 5-min cron).
+- Not changing how the user picks a company logo (`CompanyAliasesDialog` flow stays as-is).
+- Not touching the public `/api/public/logo` proxy — this is purely fallback resolution.
+- Not letting per-contact photos be overridden (real avatar always wins).

@@ -36,6 +36,8 @@ function writeCache(key: string, hit: CacheEntry["hit"]): void {
   cache.set(key, { hit, expires: Date.now() + (hit ? HIT_TTL_MS : MISS_TTL_MS) });
 }
 
+/** Provider URLs in the same order as `LOGO_PROVIDER_LABELS` and the
+ * `/api/public/logo` proxy. Keep in sync with both. */
 function providersFor(domain: string): string[] {
   const d = encodeURIComponent(domain);
   const size = 256;
@@ -107,6 +109,47 @@ export async function fetchCompanyLogoBytes(
   }
   writeCache(d, null);
   return null;
+}
+
+/** Fetch the specific company logo the user picked in Zerrow
+ * (`company_logo_choices` row for `domain`), falling back to the multi-provider
+ * walk when there's no pick. This is what CardDAV and Google Contacts push to
+ * iPhone / Google People so every contact under, e.g., Nissan gets the exact
+ * Nissan logo the user chose. */
+export async function fetchChosenCompanyLogoBytes(
+  userId: string,
+  domain: string | null,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  if (!domain) return null;
+  const d = domain.toLowerCase();
+  if (!isValidDomainShape(d) || isBlockedDomain(d)) return null;
+
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: choice } = await supabaseAdmin
+    .from("company_logo_choices")
+    .select("provider, source_domain")
+    .eq("user_id", userId)
+    .eq("domain", d)
+    .maybeSingle();
+
+  if (!choice) return fetchCompanyLogoBytes(d);
+
+  const provider = (choice as { provider?: number }).provider ?? 0;
+  const source = ((choice as { source_domain?: string | null }).source_domain ?? d).toLowerCase();
+  if (!isValidDomainShape(source) || isBlockedDomain(source)) {
+    return fetchCompanyLogoBytes(d);
+  }
+  const urls = providersFor(source);
+  const url = urls[provider];
+  if (!url) return fetchCompanyLogoBytes(d);
+  const key = `${userId}:${d}:${provider}:${source}`;
+  const cached = readCache(key);
+  if (cached) return cached.hit;
+  const hit = await tryFetch(url);
+  writeCache(key, hit);
+  // If the exact pick failed (dead provider), don't strand the contact — fall
+  // through to the generic walker so the phone still gets some logo.
+  return hit ?? (await fetchCompanyLogoBytes(d));
 }
 
 /** Best-guess logo domain for a contact row (website beats email). Returns

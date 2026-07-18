@@ -61,6 +61,7 @@ export const setCompanyLogoChoice = createServerFn({ method: "POST" })
       { onConflict: "user_id,domain" },
     );
     if (error) throw new Error(error.message);
+    await bumpCarddavResync(userId);
     return { ok: true as const };
   });
 
@@ -75,5 +76,31 @@ export const clearCompanyLogoChoice = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .eq("domain", data.domain);
     if (error) throw new Error(error.message);
+    await bumpCarddavResync(userId);
     return { ok: true as const };
   });
+
+/** Bump the user's CardDAV resync nonce so iPhone picks up the new logo on
+ * its next poll. Uses the admin client to upsert into `carddav_settings`
+ * without needing a settings row to preexist. Failure is non-fatal — the
+ * logo pick still succeeds; iOS just won't refresh until the next real edit
+ * or a manual "Force iPhone resync". */
+async function bumpCarddavResync(userId: string): Promise<void> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("carddav_settings")
+      .select("resync_nonce")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const next = ((data as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
+    await supabaseAdmin
+      .from("carddav_settings")
+      .upsert(
+        { user_id: userId, resync_nonce: next, updated_at: new Date().toISOString() },
+        { onConflict: "user_id" },
+      );
+  } catch {
+    // Swallow — resync bump is best-effort.
+  }
+}
