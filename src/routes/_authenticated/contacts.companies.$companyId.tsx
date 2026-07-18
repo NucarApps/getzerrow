@@ -31,10 +31,21 @@ import {
   removeCompanyDomain,
   setCompanyTags,
   mergeCompanies,
+  previewMergeCompanies,
   deleteCompany,
   listCompanies,
   discoverCompanyDomains,
 } from "@/lib/companies/companies.functions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 
 export const Route = createFileRoute(
