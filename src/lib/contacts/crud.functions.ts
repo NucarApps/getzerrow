@@ -162,7 +162,12 @@ export const getContact = createServerFn({ method: "POST" })
     let avatarIsCompanyLogoSnapshot = false;
     let effectiveAvatarUrl: string | null = contact.avatar_url ?? null;
     const avatarSource = (companyLink as { avatar_source?: string | null } | null)?.avatar_source ?? "unknown";
-    if (contact.avatar_url && linkedCompanyId && avatarSource !== "user_upload") {
+    // Never self-heal photos the user explicitly chose. "user_upload" is the
+    // web/app uploader; "carddav" is a legacy label for iPhone Contacts saves
+    // (current writes use "user_upload" — see handlers.server.ts). Either way
+    // a human picked the picture, so leave it alone.
+    const isUserChosenPhoto = avatarSource === "user_upload" || avatarSource === "carddav";
+    if (contact.avatar_url && linkedCompanyId && !isUserChosenPhoto) {
       try {
         const { loadContactPhotoBytes, sha256Hex, deleteContactPhoto } = await import(
           "@/lib/contacts/photos.server"
