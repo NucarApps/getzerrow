@@ -504,10 +504,11 @@ export const applyContactEnrichmentSuggestion = createServerFn({ method: "POST" 
         phone: normalized,
       });
     } else {
-      const patch: { email?: string; company?: string; title?: string } = {};
+      const patch: { email?: string; company?: string; title?: string; name?: string } = {};
       if (sug.field === "email") patch.email = sug.value.toLowerCase();
       if (sug.field === "company") patch.company = sug.value;
       if (sug.field === "title") patch.title = sug.value;
+      if (sug.field === "name") patch.name = sug.value;
       const { error: upErr } = await supabase
         .from("contacts")
         .update(patch)
