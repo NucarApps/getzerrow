@@ -2814,6 +2814,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_manual_overrides: {
+        Args: { p_fields: string[]; p_ids: string[] }
+        Returns: undefined
+      }
       admin_daily_activity: {
         Args: { p_days?: number }
         Returns: {
