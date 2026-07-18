@@ -33,6 +33,8 @@ type Props = {
   contactId: string;
   avatarUrl: string | null;
   displayName: string;
+  email?: string | null;
+  website?: string | null;
   onChanged: () => void;
 };
 
