@@ -162,18 +162,28 @@ export const getContact = createServerFn({ method: "POST" })
     let avatarIsCompanyLogoSnapshot = false;
     if (contact.avatar_url && linkedCompanyId) {
       try {
-        const [{ loadContactPhotoBytes, sha256Hex }, { buildKnownCompanyLogoShaSet }] =
-          await Promise.all([
-            import("@/lib/contacts/photos.server"),
-            import("@/lib/contacts/known-logos.server"),
-          ]);
+        const { loadContactPhotoBytes, sha256Hex } = await import(
+          "@/lib/contacts/photos.server"
+        );
         const own = await loadContactPhotoBytes(contact.avatar_url);
         if (own) {
           const ownSha = await sha256Hex(own.bytes);
           const storedLogoSha = companyLink?.company_logo_photo_sha ?? null;
-          avatarIsCompanyLogoSnapshot =
-            (storedLogoSha !== null && storedLogoSha === ownSha) ||
-            (await buildKnownCompanyLogoShaSet(userId)).has(ownSha);
+          if (storedLogoSha !== null && storedLogoSha === ownSha) {
+            avatarIsCompanyLogoSnapshot = true;
+          } else if (companyDomain) {
+            // Scoped fallback: only hash this contact's own company logo,
+            // never the whole tenant's logo set (that was blowing the Worker
+            // subrequest budget for users with many company_domains).
+            const { fetchChosenCompanyLogoBytes } = await import(
+              "@/lib/contacts/logo-photo.server"
+            );
+            const hit = await fetchChosenCompanyLogoBytes(userId, companyDomain);
+            if (hit) {
+              const logoSha = await sha256Hex(hit.bytes);
+              avatarIsCompanyLogoSnapshot = logoSha === ownSha;
+            }
+          }
         }
       } catch {
         avatarIsCompanyLogoSnapshot = false;
