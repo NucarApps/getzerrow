@@ -8,6 +8,7 @@ export type GroupNameStyle = (typeof STYLES)[number];
 export type CardDavSettings = {
   group_name_style: GroupNameStyle;
   include_summary_in_notes: boolean;
+  use_company_logo_fallback: boolean;
 };
 
 /** Read the caller's CardDAV display preferences. Returns defaults if no
@@ -18,12 +19,16 @@ export const getCardDavSettings = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data, error } = await supabase
       .from("carddav_settings")
-      .select("group_name_style, include_summary_in_notes")
+      .select("group_name_style, include_summary_in_notes, use_company_logo_fallback")
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
     const row = data as
-      | { group_name_style?: string; include_summary_in_notes?: boolean }
+      | {
+          group_name_style?: string;
+          include_summary_in_notes?: boolean;
+          use_company_logo_fallback?: boolean;
+        }
       | null;
     const style: GroupNameStyle =
       row?.group_name_style === "leaf" || row?.group_name_style === "path_dash"
@@ -32,6 +37,7 @@ export const getCardDavSettings = createServerFn({ method: "GET" })
     return {
       group_name_style: style,
       include_summary_in_notes: row?.include_summary_in_notes ?? true,
+      use_company_logo_fallback: row?.use_company_logo_fallback ?? true,
     };
   });
 
