@@ -91,6 +91,22 @@ export const updateContact = createServerFn({ method: "POST" })
         name: z.string().max(200).nullable().optional(),
         title: z.string().max(200).nullable().optional(),
         company: z.string().max(200).nullable().optional(),
+        email: z
+          .union([z.string(), z.null()])
+          .optional()
+          .transform((v) => {
+            if (v === undefined) return undefined;
+            if (v === null) return null;
+            const trimmed = v.trim().toLowerCase();
+            return trimmed === "" ? null : trimmed;
+          })
+          .refine(
+            (v) => v === undefined || v === null || /.+@.+\..+/.test(v),
+            { message: "Enter a valid email address" },
+          )
+          .refine((v) => v === undefined || v === null || v.length <= 255, {
+            message: "Email is too long",
+          }),
         phone: z.string().max(60).nullable().optional(),
         website: z.string().max(500).nullable().optional(),
         linkedin: z.string().max(500).nullable().optional(),
