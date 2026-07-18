@@ -329,6 +329,7 @@ ${corpus}`;
     for (const c of candidates) {
       if (!c.email || c.company) continue;
       if (suggestedCompanyContacts.has(c.id)) continue;
+      if (dismissedDomainCompany.has(c.id)) continue;
       const domain = c.email.split("@")[1]?.toLowerCase();
       if (!domain || PERSONAL_DOMAINS.has(domain)) continue;
       const company = deriveCompanyFromDomain(domain);
