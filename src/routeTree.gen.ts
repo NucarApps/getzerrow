@@ -63,6 +63,7 @@ import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_aut
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings.account'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
+import { Route as AuthenticatedContactsCompaniesIndexRouteImport } from './routes/_authenticated/contacts.companies.index'
 import { Route as ApiPublicHooksTasksCompletionScanRouteImport } from './routes/api/public/hooks/tasks-completion-scan'
 import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
 import { Route as ApiPublicHooksScheduleMeetingBotsRouteImport } from './routes/api/public/hooks/schedule-meeting-bots'
@@ -368,6 +369,12 @@ const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
   path: '/contacts/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedContactsCompaniesIndexRoute =
+  AuthenticatedContactsCompaniesIndexRouteImport.update({
+    id: '/contacts/companies/',
+    path: '/contacts/companies/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const ApiPublicHooksTasksCompletionScanRoute =
   ApiPublicHooksTasksCompletionScanRouteImport.update({
     id: '/api/public/hooks/tasks-completion-scan',
@@ -516,6 +523,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
+  '/contacts/companies/': typeof AuthenticatedContactsCompaniesIndexRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesByTo {
@@ -584,6 +592,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
+  '/contacts/companies': typeof AuthenticatedContactsCompaniesIndexRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesById {
@@ -655,6 +664,7 @@ export interface FileRoutesById {
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
+  '/_authenticated/contacts/companies/': typeof AuthenticatedContactsCompaniesIndexRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRouteTypes {
@@ -726,6 +736,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/hooks/tasks-completion-scan'
+    | '/contacts/companies/'
     | '/api/public/og/card/$handle'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -794,6 +805,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/hooks/tasks-completion-scan'
+    | '/contacts/companies'
     | '/api/public/og/card/$handle'
   id:
     | '__root__'
@@ -864,6 +876,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/hooks/tasks-completion-scan'
+    | '/_authenticated/contacts/companies/'
     | '/api/public/og/card/$handle'
   fileRoutesById: FileRoutesById
 }
@@ -1298,6 +1311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/contacts/companies/': {
+      id: '/_authenticated/contacts/companies/'
+      path: '/contacts/companies'
+      fullPath: '/contacts/companies/'
+      preLoaderRoute: typeof AuthenticatedContactsCompaniesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/api/public/hooks/tasks-completion-scan': {
       id: '/api/public/hooks/tasks-completion-scan'
       path: '/api/public/hooks/tasks-completion-scan'
@@ -1443,6 +1463,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
+  AuthenticatedContactsCompaniesIndexRoute: typeof AuthenticatedContactsCompaniesIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1457,6 +1478,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
+  AuthenticatedContactsCompaniesIndexRoute:
+    AuthenticatedContactsCompaniesIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
