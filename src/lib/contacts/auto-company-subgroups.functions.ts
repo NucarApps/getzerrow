@@ -237,6 +237,30 @@ export async function reconcileAutoCompanySubgroupsImpl(
     if (!existingByKey.has(k)) existingByKey.set(k, g);
   }
 
+  // Legacy auto subgroups may be named from old free-text company values
+  // while the current bucket key is the canonical Company entity id. Alias
+  // those existing groups by the company-id-derived key of their members so
+  // they are renamed in place instead of replaced.
+  const existingIds = (existing ?? []).map((group) => group.id);
+  if (existingIds.length > 0) {
+    const { data: subgroupMembers } = await supabase
+      .from("contact_group_members")
+      .select("group_id, contacts:contacts(id, company, email, website, company_id)")
+      .in("group_id", existingIds);
+    type SubgroupMemberRow = {
+      group_id: string;
+      contacts: ContactShape | null;
+    };
+    const existingById = new Map((existing ?? []).map((group) => [group.id, group]));
+    for (const row of (subgroupMembers ?? []) as unknown as SubgroupMemberRow[]) {
+      if (!row.contacts) continue;
+      const derived = deriveCompanyKey(row.contacts, aliasMap, companyMap);
+      const existingGroup = existingById.get(row.group_id);
+      if (!derived || !existingGroup || !wantedKeys.has(derived.key)) continue;
+      if (!existingByKey.has(derived.key)) existingByKey.set(derived.key, existingGroup);
+    }
+  }
+
   // 5. Create/rename subgroups for each represented key.
   let created = 0;
   let renamed = 0;
