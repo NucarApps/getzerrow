@@ -36,6 +36,8 @@ function writeCache(key: string, hit: CacheEntry["hit"]): void {
   cache.set(key, { hit, expires: Date.now() + (hit ? HIT_TTL_MS : MISS_TTL_MS) });
 }
 
+/** Provider URLs in the same order as `LOGO_PROVIDER_LABELS` and the
+ * `/api/public/logo` proxy. Keep in sync with both. */
 function providersFor(domain: string): string[] {
   const d = encodeURIComponent(domain);
   const size = 256;
