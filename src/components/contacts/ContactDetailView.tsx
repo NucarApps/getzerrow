@@ -224,8 +224,10 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           contact: r.contact,
           recentEmails: prev?.recentEmails ?? [],
           phones: prev?.phones ?? [],
+          emails: prev?.emails ?? [],
         }));
       }
+
       await qc.invalidateQueries({ queryKey: ["contact", id] });
       await qc.invalidateQueries({ queryKey: ["contacts"] });
     } catch (e: unknown) {
