@@ -241,13 +241,23 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       const cleanPhones = phones
         .map((p) => ({ ...p, number: p.number.trim() }))
         .filter((p) => p.number.length > 0);
+      const cleanEmails = emails
+        .map((e) => ({ ...e, address: e.address.trim().toLowerCase() }))
+        .filter((e) => e.address.length > 0);
+      // When emails[] is provided, the server derives contacts.email from the
+      // primary row — don't also pass the single email field.
+      const primaryEmail = cleanEmails.length
+        ? (cleanEmails.find((e) => e.is_primary)?.address ?? cleanEmails[0].address)
+        : form.email.trim()
+          ? form.email.trim()
+          : null;
       await update({
         data: {
           id,
           name: form.name || null,
           title: form.title || null,
           company: form.company || null,
-          email: form.email.trim() ? form.email.trim() : null,
+          email: primaryEmail,
           website: form.website || null,
           linkedin: form.linkedin || null,
           twitter: form.twitter || null,
@@ -259,8 +269,10 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           postal_code: form.postal_code || null,
           country: form.country || null,
           phones: cleanPhones,
+          emails: cleanEmails,
         },
       });
+
       toast.success("Saved");
       qc.invalidateQueries({ queryKey: ["contact", id] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
