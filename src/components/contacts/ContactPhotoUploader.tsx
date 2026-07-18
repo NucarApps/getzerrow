@@ -118,7 +118,9 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
     }
   };
 
-  const logoDomain = !displaySrc ? contactLogoDomain(website ?? null, email ?? null) : null;
+  const logoDomain = !displaySrc
+    ? (companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null))
+    : null;
   const logoChoice = logoDomain
     ? (logoChoicesQuery.data ?? []).find((c) => c.domain === logoDomain)
     : undefined;
