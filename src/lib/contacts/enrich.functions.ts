@@ -410,7 +410,73 @@ ${convoSample}`,
     // (the inbox / contact drawer) sees the freshly-written values.
     const { row: decRow } = await getContactDecrypted(contact.id);
     return { contact: decRow ?? updated, skipped: false as const };
+  }
+}
+
+export const enrichContact = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string; force?: boolean }) =>
+    z.object({ id: z.string().uuid(), force: z.boolean().optional() }).parse(d),
+  )
+  .handler(async ({ data, context }) =>
+    runEnrichForContact(context.supabase, data.id, data.force ?? false),
+  );
+
+/** Batch entrypoint for the "Rerun AI enrichment + summaries for everyone"
+ * settings flow. Small `ids` chunks keep each HTTP call well under the
+ * Safari wall-clock so the browser doesn't drop the request with
+ * "Load failed"; the client fires successive chunks until every contact
+ * has been processed. Always runs with `force: true` so previously-enriched
+ * contacts get a fresh summary. */
+export const rerunEnrichmentBatch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        ids: z.array(z.string().uuid()).min(1).max(15),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const results = await Promise.allSettled(
+      data.ids.map((id) => runEnrichForContact(supabase, id, true)),
+    );
+    const failed: Array<{ id: string; error: string }> = [];
+    let skipped = 0;
+    let processed = 0;
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        if (r.value.skipped) skipped += 1;
+        else processed += 1;
+      } else {
+        failed.push({
+          id: data.ids[i],
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      }
+    });
+    return { processed, skipped, failed };
   });
+
+/** Return every contact id for the signed-in user in a single cheap query.
+ * The bulk-rerun client uses this once at the start to build its work list;
+ * subsequent per-chunk calls only pass the ids so the payload stays small. */
+export const listContactIdsForRerun = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId)
+      .not("email", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(5000);
+    if (error) throw new Error(error.message);
+    return { ids: (data ?? []).map((r) => r.id as string) };
+  });
+
 export const addContactFromEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { emailId: string }) => z.object({ emailId: z.string().uuid() }).parse(d))
