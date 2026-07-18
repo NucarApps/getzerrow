@@ -104,7 +104,7 @@ export const Route = createFileRoute("/api/public/logo")({
         const domain = (url.searchParams.get("domain") || "").trim().toLowerCase();
         const size = Number(url.searchParams.get("size") || "64");
         const providerParam = url.searchParams.get("provider");
-        if (!domain || !DOMAIN_RE.test(domain) || isBlockedDomain(domain)) {
+        if (!domain || !isValidDomainShape(domain) || isBlockedDomain(domain)) {
           return new Response("Bad domain", { status: 400 });
         }
         const all = providersFor(domain, size);
