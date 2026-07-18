@@ -96,6 +96,7 @@ function CompanyDetailPage() {
   const [tagInput, setTagInput] = useState("");
   const [newDomain, setNewDomain] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
+  const [mergePreviewOpen, setMergePreviewOpen] = useState(false);
 
   useEffect(() => {
     if (q.data?.company) {
