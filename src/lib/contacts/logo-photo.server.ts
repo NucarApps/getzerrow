@@ -246,3 +246,43 @@ export function logoDomainForContact(row: {
 }): string | null {
   return contactLogoDomain(row.website ?? null, row.email ?? null);
 }
+
+/** Walk every provider variant for every domain linked to `companyId` and
+ * return the first SHA-256 that matches `targetSha`. Used by `getContact` to
+ * detect a stale iOS/Google snapshot of a *previously* chosen logo — the
+ * current-pick comparison can miss it when the user has since swapped
+ * providers or the pick returns different bytes today.
+ *
+ * Bounded by design: one company × its domains × 7 providers, all cached in
+ * the module-level logo byte cache, so a hit on a re-open is instant. */
+export async function findMatchingCompanyLogoSha(
+  userId: string,
+  companyId: string,
+  targetSha: string,
+  computeSha: (bytes: Uint8Array) => Promise<string>,
+): Promise<string | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: domainRows } = await supabaseAdmin
+    .from("company_domains")
+    .select("domain,source,member_count,created_at")
+    .eq("company_id", companyId)
+    .eq("user_id", userId);
+
+  const domains = sortedCompanyDomains((domainRows ?? []) as CompanyDomainRow[]);
+  if (domains.length === 0) return null;
+
+  const MAX_FETCHES = 20;
+  let budget = MAX_FETCHES;
+  for (const domain of domains) {
+    if (!isValidDomainShape(domain) || isBlockedDomain(domain)) continue;
+    for (const url of providersFor(domain)) {
+      if (budget-- <= 0) return null;
+      const hit = await tryFetch(url);
+      if (!hit) continue;
+      const sha = await computeSha(hit.bytes);
+      if (sha === targetSha) return sha;
+    }
+  }
+  return null;
+}
+
