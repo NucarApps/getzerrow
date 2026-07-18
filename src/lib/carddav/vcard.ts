@@ -241,6 +241,13 @@ export function contactToVCard(
 
   if (contact.notes) out.push(line("NOTE", esc(contact.notes)));
 
+  if (photo && photo.bytes.length > 0) {
+    // vCard 3.0 form Apple's Contacts app expects. The base64 payload gets
+    // line-folded by `line()` at 75 octets, matching what iOS emits itself.
+    out.push(line(`PHOTO;ENCODING=b;TYPE=${photoTypeParam(photo.mime)}`, bytesToBase64(photo.bytes)));
+  }
+
+
   // Intentionally NOT emitting CATEGORIES for group membership. iOS Contacts
   // materializes both KIND:group vCards AND CATEGORIES tags into separate
   // visible groups, so shipping both duplicates every group on the phone
