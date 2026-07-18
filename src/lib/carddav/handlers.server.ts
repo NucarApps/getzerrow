@@ -11,6 +11,7 @@ import { getContactDecrypted } from "@/lib/sync/encrypted-reader";
 import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
 import { snapshotContact } from "@/lib/contacts/revisions.server";
 import { logInfo } from "@/lib/log.server";
+import { buildCardDavContactPatch } from "./merge";
 
 import {
   buildGroupVCard,
@@ -951,65 +952,22 @@ export async function handlePut(
   // property actually appeared in this PUT — iOS sends partial vCards for
   // single-field edits and any unspecified field must survive.
   const present = parsed.presentFields;
-  type ContactPatch = {
-    user_id: string;
-    source: string;
-    updated_at: string;
-    email?: string | null;
-    name?: string | null;
-    company?: string | null;
-    title?: string | null;
-    website?: string | null;
-    city?: string | null;
-    region?: string | null;
-    postal_code?: string | null;
-    country?: string | null;
-    linkedin?: string | null;
-    twitter?: string | null;
-  };
-  const plaintextPatch: ContactPatch = {
-    user_id: userId,
-    source: existing?.source ?? "carddav",
-    updated_at: nowIso,
-  };
+  const merge = buildCardDavContactPatch({ userId, existing, parsed, nowIso });
+  const plaintextPatch = merge.patch;
   logInfo("carddav.put.received", {
     contact_id: contactId,
     present_fields: [...present].sort(),
     has_email_value: !!parsed.email,
+    email_decision: merge.emailDecision,
     body_len: body.length,
     existing: !!existing,
   });
-  // Email is now nullable in the schema; only touch it when the vCard
-  // actually carried an EMAIL line WITH a value. The parser now strips
-  // empty EMAIL slots from presentFields, but keep a belt-and-suspenders
-  // guard here: never null a saved email over a blank iOS partial PUT.
-  if (present.has("EMAIL")) {
-    if (parsed.email) {
-      plaintextPatch.email = parsed.email.trim().toLowerCase();
-    } else if (existing?.email) {
-      logInfo("carddav.put.email_preserved_over_blank", {
-        contact_id: contactId,
-        body_len: body.length,
-      });
-    } else {
-      plaintextPatch.email = null;
-    }
-  } else if (!existing) {
-    plaintextPatch.email = null;
+  if (merge.preservedEmailOverBlank) {
+    logInfo("carddav.put.email_preserved_over_blank", {
+      contact_id: contactId,
+      body_len: body.length,
+    });
   }
-
-  if (present.has("FN")) plaintextPatch.name = parsed.name;
-  if (present.has("ORG")) plaintextPatch.company = parsed.company;
-  if (present.has("TITLE")) plaintextPatch.title = parsed.title;
-  if (present.has("URL")) plaintextPatch.website = parsed.website;
-  if (present.has("ADR")) {
-    plaintextPatch.city = parsed.city;
-    plaintextPatch.region = parsed.region;
-    plaintextPatch.postal_code = parsed.postal_code;
-    plaintextPatch.country = parsed.country;
-  }
-  if (present.has("LINKEDIN")) plaintextPatch.linkedin = parsed.linkedin;
-  if (present.has("TWITTER")) plaintextPatch.twitter = parsed.twitter;
 
   if (existing) {
     const { error: upErr } = await supabaseAdmin
@@ -1091,7 +1049,14 @@ export async function handlePut(
   // a just-pulled remote snapshot mark it as already synced.
   await markGoogleContactLinkDirty(userId, contactId);
 
-  const newEtag = contactETag(contactId, nowIso);
+  const { data: updatedContact } = await supabaseAdmin
+    .from("contacts")
+    .select("updated_at")
+    .eq("id", contactId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const responseUpdatedAt = (updatedContact as { updated_at?: string } | null)?.updated_at ?? nowIso;
+  const newEtag = contactETag(contactId, responseUpdatedAt);
   return new Response(null, {
     status: existing ? 204 : 201,
     headers: {
