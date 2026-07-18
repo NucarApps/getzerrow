@@ -31,6 +31,7 @@ import {
   deleteContact,
   shareContactByEmail,
   getContactCardSignedUrl,
+  clearContactManualOverrides,
 } from "@/lib/contacts.functions";
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { repullContactFromGoogle } from "@/lib/google-contacts.functions";
