@@ -209,15 +209,37 @@ export const READ_PERSON_FIELDS =
 /** Parse Google's Person into the writable subset of a Zerrow contact. */
 export function personToContact(person: Person): {
   email: string | null;
+  emails: LocalEmail[];
   patch: Partial<LocalContact>;
   phones: LocalPhone[];
   membershipResourceNames: string[];
   updateTime: string | null;
 } {
+  const rawEmails = person.emailAddresses ?? [];
+  const primaryEmailIdx = rawEmails.findIndex((e) => e.metadata?.primary && e.value);
   const primaryEmail =
-    person.emailAddresses?.find((e) => e.metadata?.primary && e.value)?.value ??
-    person.emailAddresses?.find((e) => e.value)?.value ??
+    (primaryEmailIdx >= 0 ? rawEmails[primaryEmailIdx].value : null) ??
+    rawEmails.find((e) => e.value)?.value ??
     null;
+
+  const seenEmail = new Set<string>();
+  const emails: LocalEmail[] = [];
+  for (const e of rawEmails) {
+    const v = e.value?.trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seenEmail.has(key)) continue;
+    seenEmail.add(key);
+    emails.push({
+      label: (e.type ?? "other").toLowerCase(),
+      address: v,
+      is_primary: !!e.metadata?.primary,
+    });
+  }
+  if (emails.length && !emails.some((e) => e.is_primary)) {
+    emails[0] = { ...emails[0], is_primary: true };
+  }
+
 
   const patch: Partial<LocalContact> = {
     name: joinName(person.names?.[0]),
