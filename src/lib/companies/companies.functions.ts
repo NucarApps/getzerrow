@@ -72,8 +72,11 @@ export const listCompanies = createServerFn({ method: "GET" })
     const [{ data: doms }, { data: mems }] = await Promise.all([
       supabase
         .from("company_domains")
-        .select("company_id,domain,source")
-        .in("company_id", ids),
+        .select("domain,source,member_count,discovered_from_contact_id")
+        .in("company_id", ids)
+        .order("source", { ascending: false }) // manual > auto
+        .order("member_count", { ascending: false })
+        .order("created_at", { ascending: true }),
       supabase.from("contacts").select("company_id").in("company_id", ids),
     ]);
     const domainMap = new Map<string, { domain: string; source: string }[]>();
