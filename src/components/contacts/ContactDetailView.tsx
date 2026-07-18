@@ -901,3 +901,47 @@ function ContactRevisions({ contactId }: { contactId: string }) {
     </section>
   );
 }
+
+function RepullFromGoogleButton({ contactId }: { contactId: string }) {
+  const qc = useQueryClient();
+  const repull = useServerFn(repullContactFromGoogle);
+  const [busy, setBusy] = useState(false);
+  async function onClick() {
+    setBusy(true);
+    try {
+      const res = await repull({ data: { contactId } });
+      if (!res.ok) {
+        const reason =
+          res.reason === "not_linked"
+            ? "This contact isn't linked to a Google contact."
+            : res.reason === "not_found_in_google"
+              ? "Google no longer has this contact."
+              : (res.reason ?? "Re-pull failed");
+        toast.error(reason);
+        return;
+      }
+      if (res.emailsAdded || res.phonesAdded) {
+        toast.success(
+          `Imported ${res.emailsAdded} email${res.emailsAdded === 1 ? "" : "s"}` +
+            (res.phonesAdded ? ` and ${res.phonesAdded} phone${res.phonesAdded === 1 ? "" : "s"}` : "") +
+            " from Google",
+        );
+        qc.invalidateQueries({ queryKey: ["contact", contactId] });
+      } else {
+        toast.info("Already up to date with Google");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Re-pull failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="mt-2 flex items-center justify-end">
+      <Button variant="ghost" size="sm" onClick={onClick} disabled={busy}>
+        {busy ? "Re-pulling…" : "Re-pull emails from Google"}
+      </Button>
+    </div>
+  );
+}
+
