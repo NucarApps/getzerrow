@@ -441,6 +441,38 @@ export type Database = {
           },
         ]
       }
+      company_name_aliases: {
+        Row: {
+          company_id: string
+          created_at: string
+          name_key: string
+          source_name: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          name_key: string
+          source_name: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          name_key?: string
+          source_name?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_name_aliases_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_profiles: {
         Row: {
           created_at: string

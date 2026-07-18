@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowLeft, Building2, Plus, Search } from "lucide-react";
+import { ArrowLeft, Plus, Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import {
   createCompany,
 } from "@/lib/companies/companies.functions";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { CompanyDuplicatesDrawer } from "@/components/contacts/CompanyDuplicatesDrawer";
 
 export const Route = createFileRoute("/_authenticated/contacts/companies/")({
   head: () => ({
@@ -36,6 +37,7 @@ function CompaniesListPage() {
   });
   const [search, setSearch] = useState("");
   const [newName, setNewName] = useState("");
+  const [dupOpen, setDupOpen] = useState(false);
 
   const createMut = useMutation({
     mutationFn: (name: string) => createFn({ data: { name } }),
@@ -61,7 +63,13 @@ function CompaniesListPage() {
           </Link>
         </Button>
         <h1 className="text-2xl font-semibold">Companies</h1>
+        <div className="ml-auto">
+          <Button variant="outline" size="sm" onClick={() => setDupOpen(true)}>
+            <Sparkles className="mr-2 h-4 w-4" /> Find duplicates
+          </Button>
+        </div>
       </div>
+      <CompanyDuplicatesDrawer open={dupOpen} onOpenChange={setDupOpen} />
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">

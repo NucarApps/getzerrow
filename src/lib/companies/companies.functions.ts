@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./normalize";
 import { isPersonalDomain, extractDomain } from "@/lib/company-domains";
+import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 
 type Ctx = { supabase: import("@supabase/supabase-js").SupabaseClient; userId: string };
 
@@ -16,6 +17,7 @@ async function findOrCreateCompanyByName(
   if (!name) return null;
   const key = normalizeCompanyName(name);
   if (!key) return null;
+  // 1. Direct name_key match on companies.
   const { data: existing, error: selErr } = await ctx.supabase
     .from("companies")
     .select("id,name")
@@ -24,6 +26,18 @@ async function findOrCreateCompanyByName(
     .maybeSingle();
   if (selErr) throw new Error(selErr.message);
   if (existing) return existing;
+  // 2. Alias match: an earlier merge remembered this name pointing at
+  //    the canonical company. Route the new reference to the target
+  //    instead of recreating the duplicate.
+  const { data: alias } = await ctx.supabase
+    .from("company_name_aliases")
+    .select("company_id, companies:companies(id,name)")
+    .eq("user_id", ctx.userId)
+    .eq("name_key", key)
+    .maybeSingle();
+  const aliased = (alias as { companies?: { id: string; name: string } | null } | null)?.companies;
+  if (aliased) return aliased;
+  // 3. Insert.
   const { data: inserted, error: insErr } = await ctx.supabase
     .from("companies")
     .insert({ user_id: ctx.userId, name, name_key: key })
@@ -42,6 +56,7 @@ async function findOrCreateCompanyByName(
   }
   return inserted;
 }
+
 
 export async function resolveContactCompany(
   ctx: Ctx,
@@ -415,6 +430,158 @@ export const previewMergeCompanies = createServerFn({ method: "POST" })
     };
   });
 
+async function mergeCompaniesImpl(
+  ctx: Ctx,
+  sourceId: string,
+  targetId: string,
+): Promise<{ ok: true; movedContacts: number }> {
+  if (sourceId === targetId) throw new Error("Cannot merge a company into itself");
+  const { supabase, userId } = ctx;
+  const { data: targetRow, error: tErr } = await supabase
+    .from("companies")
+    .select("id,name")
+    .eq("id", targetId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (tErr) throw new Error(tErr.message);
+  if (!targetRow) throw new Error("Target company not found");
+  const { data: movedContacts, error: moveErr } = await supabase
+    .from("contacts")
+    .update({ company_id: targetId, company: targetRow.name })
+    .eq("user_id", userId)
+    .eq("company_id", sourceId)
+    .select("id");
+  if (moveErr) throw new Error(moveErr.message);
+  // Move domains.
+  const { data: srcDomains } = await supabase
+    .from("company_domains")
+    .select("domain,source")
+    .eq("company_id", sourceId)
+    .eq("user_id", userId);
+  if (srcDomains && srcDomains.length > 0) {
+    await supabase
+      .from("company_domains")
+      .delete()
+      .eq("company_id", sourceId)
+      .eq("user_id", userId);
+    await supabase.from("company_domains").upsert(
+      srcDomains.map((d) => ({
+        user_id: userId,
+        company_id: targetId,
+        domain: d.domain,
+        source: d.source,
+      })),
+      { onConflict: "user_id,domain" },
+    );
+  }
+  // Move tags.
+  const { data: srcTags } = await supabase
+    .from("company_tags")
+    .select("tag")
+    .eq("company_id", sourceId)
+    .eq("user_id", userId);
+  if (srcTags && srcTags.length > 0) {
+    await supabase
+      .from("company_tags")
+      .delete()
+      .eq("company_id", sourceId)
+      .eq("user_id", userId);
+    for (const t of srcTags) {
+      await supabase
+        .from("company_tags")
+        .upsert(
+          { user_id: userId, company_id: targetId, tag: t.tag },
+          { onConflict: "company_id,tag" },
+        );
+    }
+  }
+  // Move logo hashes.
+  const { data: srcHashes } = await supabase
+    .from("company_logo_hashes")
+    .select("domain,sha256,source")
+    .eq("company_id", sourceId)
+    .eq("user_id", userId);
+  if (srcHashes && srcHashes.length > 0) {
+    await supabase
+      .from("company_logo_hashes")
+      .delete()
+      .eq("company_id", sourceId)
+      .eq("user_id", userId);
+    await supabase.from("company_logo_hashes").upsert(
+      srcHashes.map((h) => ({
+        user_id: userId,
+        company_id: targetId,
+        domain: h.domain,
+        sha256: h.sha256,
+        source: h.source,
+        last_seen_at: new Date().toISOString(),
+      })),
+      { onConflict: "user_id,company_id,sha256" },
+    );
+  }
+  const movedIds = (movedContacts ?? []).map((row) => (row as { id: string }).id);
+  // Remember source name (and its existing aliases) as aliases of target,
+  // then reassign stray contacts that reference the source by free-text.
+  const { data: srcCompany } = await supabase
+    .from("companies")
+    .select("id,name,name_key")
+    .eq("id", sourceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (srcCompany) {
+    const { data: srcAliases } = await supabase
+      .from("company_name_aliases")
+      .select("name_key, source_name")
+      .eq("user_id", userId)
+      .eq("company_id", sourceId);
+    const sourceNames = new Set<string>([srcCompany.name]);
+    for (const a of srcAliases ?? []) sourceNames.add(a.source_name);
+    if (sourceNames.size > 0) {
+      const { data: strayContacts } = await supabase
+        .from("contacts")
+        .update({ company_id: targetId, company: targetRow.name })
+        .eq("user_id", userId)
+        .is("company_id", null)
+        .in("company", [...sourceNames])
+        .select("id");
+      for (const r of strayContacts ?? []) {
+        movedIds.push((r as { id: string }).id);
+      }
+    }
+    const aliasRows = [
+      {
+        user_id: userId,
+        name_key: srcCompany.name_key,
+        company_id: targetId,
+        source_name: srcCompany.name,
+      },
+      ...(srcAliases ?? []).map((a) => ({
+        user_id: userId,
+        name_key: a.name_key,
+        company_id: targetId,
+        source_name: a.source_name,
+      })),
+    ].filter((r) => r.name_key);
+    if (aliasRows.length > 0) {
+      await supabase
+        .from("company_name_aliases")
+        .upsert(aliasRows, { onConflict: "user_id,name_key" });
+    }
+  }
+  if (movedIds.length > 0) {
+    const { reconcileAutoParentsForContacts } = await import(
+      "@/lib/contacts/auto-company-subgroups.functions"
+    );
+    await reconcileAutoParentsForContacts(supabase, userId, movedIds);
+  }
+  await supabase
+    .from("companies")
+    .delete()
+    .eq("id", sourceId)
+    .eq("user_id", userId);
+  return { ok: true, movedContacts: movedIds.length };
+}
+
 export const mergeCompanies = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -423,107 +590,9 @@ export const mergeCompanies = createServerFn({ method: "POST" })
       .refine((v) => v.sourceId !== v.targetId, { message: "Cannot merge a company into itself" })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    // Reassign contacts.
-    const { data: targetRow, error: tErr } = await supabase
-      .from("companies")
-      .select("id,name")
-      .eq("id", data.targetId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (tErr) throw new Error(tErr.message);
-    if (!targetRow) throw new Error("Target company not found");
-    const { data: movedContacts, error: moveErr } = await supabase
-      .from("contacts")
-      .update({ company_id: data.targetId, company: targetRow.name })
-      .eq("user_id", userId)
-      .eq("company_id", data.sourceId)
-      .select("id");
-    if (moveErr) throw new Error(moveErr.message);
-    // Move domains — upsert to avoid unique conflict on (user_id, domain).
-    const { data: srcDomains } = await supabase
-      .from("company_domains")
-      .select("domain,source")
-      .eq("company_id", data.sourceId)
-      .eq("user_id", userId);
-    if (srcDomains && srcDomains.length > 0) {
-      await supabase
-        .from("company_domains")
-        .delete()
-        .eq("company_id", data.sourceId)
-        .eq("user_id", userId);
-      await supabase.from("company_domains").upsert(
-        srcDomains.map((d) => ({
-          user_id: userId,
-          company_id: data.targetId,
-          domain: d.domain,
-          source: d.source,
-        })),
-        { onConflict: "user_id,domain" },
-      );
-    }
-    // Move tags.
-    const { data: srcTags } = await supabase
-      .from("company_tags")
-      .select("tag")
-      .eq("company_id", data.sourceId)
-      .eq("user_id", userId);
-    if (srcTags && srcTags.length > 0) {
-      await supabase
-        .from("company_tags")
-        .delete()
-        .eq("company_id", data.sourceId)
-        .eq("user_id", userId);
-      for (const t of srcTags) {
-        await supabase
-          .from("company_tags")
-          .upsert(
-            { user_id: userId, company_id: data.targetId, tag: t.tag },
-            { onConflict: "company_id,tag" },
-          );
-      }
-    }
-    // Move remembered company-logo hashes so legacy logo snapshots remain
-    // detectable after duplicate companies are consolidated.
-    const { data: srcHashes } = await supabase
-      .from("company_logo_hashes")
-      .select("domain,sha256,source")
-      .eq("company_id", data.sourceId)
-      .eq("user_id", userId);
-    if (srcHashes && srcHashes.length > 0) {
-      await supabase
-        .from("company_logo_hashes")
-        .delete()
-        .eq("company_id", data.sourceId)
-        .eq("user_id", userId);
-      await supabase.from("company_logo_hashes").upsert(
-        srcHashes.map((h) => ({
-          user_id: userId,
-          company_id: data.targetId,
-          domain: h.domain,
-          sha256: h.sha256,
-          source: h.source,
-          last_seen_at: new Date().toISOString(),
-        })),
-        { onConflict: "user_id,company_id,sha256" },
-      );
-    }
-    const movedIds = (movedContacts ?? []).map((row) => (row as { id: string }).id);
-    if (movedIds.length > 0) {
-      const { reconcileAutoParentsForContacts } = await import(
-        "@/lib/contacts/auto-company-subgroups.functions"
-      );
-      await reconcileAutoParentsForContacts(supabase, userId, movedIds);
-    }
-    // Delete source.
-    await supabase
-      .from("companies")
-      .delete()
-      .eq("id", data.sourceId)
-      .eq("user_id", userId);
-    return { ok: true as const };
-  });
+  .handler(async ({ data, context }) => mergeCompaniesImpl(context, data.sourceId, data.targetId));
+
+
 
 export const deleteCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -557,3 +626,276 @@ export const deleteCompany = createServerFn({ method: "POST" })
 
 // Suppress the personal-domain import if unused elsewhere.
 void isPersonalDomain;
+
+// ---------------------------------------------------------------------------
+// Duplicate detection & cluster merge
+// ---------------------------------------------------------------------------
+
+type CompanyLite = {
+  id: string;
+  name: string;
+  member_count: number;
+  domains: string[];
+};
+
+/** Tokenize a normalized company name into significant words. */
+function tokenize(name: string): string[] {
+  const key = normalizeCompanyName(name) ?? "";
+  return key
+    .split(/[^a-z0-9]+/i)
+    .filter((t) => t.length >= 3 && !STOP_TOKENS.has(t));
+}
+
+const STOP_TOKENS = new Set([
+  "the",
+  "and",
+  "of",
+  "for",
+  "com",
+  "www",
+  "usa",
+  "america",
+  "north",
+  "south",
+  "east",
+  "west",
+  "inc",
+  "llc",
+  "corp",
+  "group",
+  "company",
+  "co",
+  "ltd",
+]);
+
+/** Cluster companies whose names share a distinctive brand token or a
+ *  root email/site domain. Each cluster contains at least 2 companies. */
+function clusterCompanies(companies: CompanyLite[]): CompanyLite[][] {
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    const p = parent.get(x);
+    if (!p || p === x) {
+      parent.set(x, x);
+      return x;
+    }
+    const r = find(p);
+    parent.set(x, r);
+    return r;
+  };
+  const union = (a: string, b: string) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  for (const c of companies) parent.set(c.id, c.id);
+
+  const tokenBuckets = new Map<string, string[]>();
+  const domainBuckets = new Map<string, string[]>();
+  for (const c of companies) {
+    for (const t of tokenize(c.name)) {
+      const arr = tokenBuckets.get(t) ?? [];
+      arr.push(c.id);
+      tokenBuckets.set(t, arr);
+    }
+    for (const d of c.domains) {
+      // Root domain (last two labels) e.g. nissan-usa.com → nissan-usa.com,
+      // but also record nissan for cross-linking.
+      const parts = d.toLowerCase().split(".");
+      if (parts.length >= 2) {
+        const root = parts.slice(-2).join(".");
+        const arr = domainBuckets.get(root) ?? [];
+        arr.push(c.id);
+        domainBuckets.set(root, arr);
+      }
+    }
+  }
+  // Only unite on tokens shared by ≥2 companies (a distinctive brand token).
+  for (const ids of tokenBuckets.values()) {
+    if (ids.length < 2) continue;
+    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+  }
+  for (const ids of domainBuckets.values()) {
+    if (ids.length < 2) continue;
+    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+  }
+  const byRoot = new Map<string, CompanyLite[]>();
+  for (const c of companies) {
+    const r = find(c.id);
+    const arr = byRoot.get(r) ?? [];
+    arr.push(c);
+    byRoot.set(r, arr);
+  }
+  return [...byRoot.values()].filter((cluster) => cluster.length >= 2);
+}
+
+export const findDuplicateCompanies = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ useAi: z.boolean().optional().default(false) }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: companies, error } = await supabase
+      .from("companies")
+      .select("id,name")
+      .eq("user_id", userId)
+      .limit(2000);
+    if (error) throw new Error(error.message);
+    const ids = (companies ?? []).map((c) => c.id);
+    if (ids.length < 2) return { clusters: [], aiUsed: false };
+    const [{ data: doms }, { data: mems }] = await Promise.all([
+      supabase.from("company_domains").select("company_id,domain").in("company_id", ids),
+      supabase.from("contacts").select("company_id").in("company_id", ids),
+    ]);
+    const domainMap = new Map<string, string[]>();
+    for (const d of doms ?? []) {
+      const arr = domainMap.get(d.company_id) ?? [];
+      arr.push(d.domain);
+      domainMap.set(d.company_id, arr);
+    }
+    const memberMap = new Map<string, number>();
+    for (const m of mems ?? []) {
+      if (!m.company_id) continue;
+      memberMap.set(m.company_id, (memberMap.get(m.company_id) ?? 0) + 1);
+    }
+    const lite: CompanyLite[] = (companies ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      member_count: memberMap.get(c.id) ?? 0,
+      domains: domainMap.get(c.id) ?? [],
+    }));
+    const rawClusters = clusterCompanies(lite);
+
+    // Suggest a canonical: the entry with the most members, tie-break by
+    // shortest name (usually the umbrella brand, e.g. "Nissan North America"
+    // beats "Nissan Motor Acceptance Company" when it has more contacts).
+    let clusters = rawClusters.map((cluster) => {
+      const sorted = [...cluster].sort((a, b) => {
+        if (b.member_count !== a.member_count) return b.member_count - a.member_count;
+        return a.name.length - b.name.length;
+      });
+      const canonical = sorted[0];
+      return {
+        canonicalId: canonical.id,
+        canonicalName: canonical.name,
+        members: cluster.map((c) => ({
+          id: c.id,
+          name: c.name,
+          member_count: c.member_count,
+          domains: c.domains,
+          // Default: only fold members whose token overlap looks tight.
+          // The UI lets the user check/uncheck individually.
+          include: c.id !== canonical.id,
+        })),
+        rationale: "Grouped by shared brand token / domain root.",
+      };
+    });
+
+    let aiUsed = false;
+    if (data.useAi && clusters.length > 0) {
+      try {
+        const apiKey = process.env.LOVABLE_API_KEY;
+        if (apiKey) {
+          const { generateText, Output, NoObjectGeneratedError } = await import("ai");
+          const gateway = createLovableAiGatewayProvider(apiKey);
+          const model = gateway("google/gemini-3.1-flash-lite");
+          const AiSchema = z.object({
+            clusters: z.array(
+              z.object({
+                canonicalName: z.string(),
+                fold: z.array(z.string()), // company names to fold in
+                keep: z.array(z.string()), // company names to KEEP separate
+                rationale: z.string(),
+              }),
+            ),
+          });
+          const payload = clusters.map((c) => ({
+            canonical: c.canonicalName,
+            candidates: c.members.map((m) => ({
+              name: m.name,
+              contacts: m.member_count,
+              domains: m.domains,
+            })),
+          }));
+          const prompt = `You review clusters of possibly-duplicate company records in a personal CRM.
+For each cluster, decide which entries are TRULY the same corporate entity (fold them into one canonical name) and which are legitimately separate businesses that just share a brand token (keep them apart).
+
+Guidance:
+- Parent umbrella brand + spelling / punctuation variants → FOLD.
+  e.g. "Nissan", "Nissan-USA", "Nissan-USA.com" all fold into "Nissan North America".
+- Separate legal entities under the same brand → KEEP.
+  e.g. "Nissan Motor Acceptance Company" (financing arm), individual dealers ("Boch Nissan South", "Nissan Of Keene"), regional offices → keep separate.
+- Prefer the entry with more contacts as the canonical, or the most complete legal name.
+
+Clusters:
+${JSON.stringify(payload)}
+
+Return JSON matching the schema. For each cluster, include the canonical name plus one "fold" list and one "keep" list of the ORIGINAL candidate names.`;
+          try {
+            const { output } = await generateText({
+              model,
+              output: Output.object({ schema: AiSchema }),
+              prompt,
+            });
+            aiUsed = true;
+            // Merge AI verdict back into clusters.
+            const aiByCanon = new Map(
+              output.clusters.map((c) => [c.canonicalName.toLowerCase(), c] as const),
+            );
+            clusters = clusters.map((c) => {
+              const ai = aiByCanon.get(c.canonicalName.toLowerCase());
+              if (!ai) return c;
+              const foldSet = new Set(ai.fold.map((n) => n.toLowerCase()));
+              const keepSet = new Set(ai.keep.map((n) => n.toLowerCase()));
+              return {
+                ...c,
+                rationale: ai.rationale,
+                members: c.members.map((m) => {
+                  if (m.id === c.canonicalId) return m;
+                  const lname = m.name.toLowerCase();
+                  if (keepSet.has(lname)) return { ...m, include: false };
+                  if (foldSet.has(lname)) return { ...m, include: true };
+                  return m;
+                }),
+              };
+            });
+          } catch (e) {
+            if (!NoObjectGeneratedError.isInstance(e)) throw e;
+          }
+        }
+      } catch {
+        // AI review is best-effort; fall back to rules.
+      }
+    }
+
+    return { clusters, aiUsed };
+  });
+
+export const mergeCluster = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        canonicalId: z.string().uuid(),
+        foldIds: z.array(z.string().uuid()).min(1).max(50),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    let merged = 0;
+    let failed = 0;
+    let totalMovedContacts = 0;
+    for (const sourceId of data.foldIds) {
+      if (sourceId === data.canonicalId) continue;
+      try {
+        const r = await mergeCompaniesImpl(context, sourceId, data.canonicalId);
+        totalMovedContacts += r.movedContacts;
+        merged++;
+      } catch {
+        failed++;
+      }
+    }
+    return { merged, failed, movedContacts: totalMovedContacts };
+  });
+
+
