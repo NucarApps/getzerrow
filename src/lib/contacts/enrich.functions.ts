@@ -288,6 +288,11 @@ ${sample}`,
     for (const [k, v] of Object.entries(fieldPatch) as [EnrichableField, string][]) {
       (patch as Record<string, unknown>)[k] = v;
     }
+    // ai_category isn't a locked/enrichable field — always overwrite when
+    // the model returns one; leave the previous value when it doesn't.
+    if (extracted.ai_category) {
+      (patch as Record<string, unknown>).ai_category = extracted.ai_category;
+    }
 
     // Fields persisted only via the encrypted RPC — strip from the
     // plaintext patch since the columns are gone post-Migration B.
