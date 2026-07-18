@@ -79,10 +79,21 @@ export const listCompanies = createServerFn({ method: "GET" })
         .order("created_at", { ascending: true }),
       supabase.from("contacts").select("company_id").in("company_id", ids),
     ]);
-    const domainMap = new Map<string, { domain: string; source: string }[]>();
+    type DomainRow = {
+      domain: string;
+      source: string;
+      member_count: number;
+      discovered_from_contact_id: string | null;
+    };
+    const domainMap = new Map<string, DomainRow[]>();
     for (const d of doms ?? []) {
       const arr = domainMap.get(d.company_id) ?? [];
-      arr.push({ domain: d.domain, source: d.source });
+      arr.push({
+        domain: d.domain,
+        source: d.source,
+        member_count: d.member_count,
+        discovered_from_contact_id: d.discovered_from_contact_id,
+      });
       domainMap.set(d.company_id, arr);
     }
     const memberMap = new Map<string, number>();
