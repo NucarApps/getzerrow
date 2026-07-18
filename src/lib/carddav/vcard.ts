@@ -253,6 +253,12 @@ export type ParsedPhone = {
   is_primary: boolean;
 };
 
+export type ParsedEmail = {
+  label: string; // "Work" | "Home" | "Other"
+  address: string;
+  is_primary: boolean;
+};
+
 export type PresentField =
   | "FN"
   | "ORG"
@@ -269,7 +275,12 @@ export type PresentField =
 export type ParsedVCard = {
   uid: string | null;
   name: string | null;
+  /** Primary email — first PREF, else first non-empty. Kept for callers that
+   * only care about a single address. All parsed addresses live in `emails`. */
   email: string | null;
+  /** Every non-empty EMAIL line, deduped case-insensitively. Order preserves
+   * the vCard, but the primary (PREF) is guaranteed to be first. */
+  emails: ParsedEmail[];
   company: string | null;
   title: string | null;
   phones: ParsedPhone[];
@@ -283,6 +294,7 @@ export type ParsedVCard = {
   linkedin: string | null;
   twitter: string | null;
   notes: string | null;
+
   /** iOS "CATEGORIES:" list — the group names the user checked in the
    * Contacts app. Empty when the card belongs to no groups. */
   categories: string[];
