@@ -12,6 +12,11 @@ import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
 import { snapshotContact } from "@/lib/contacts/revisions.server";
 import { logInfo } from "@/lib/log.server";
 import { buildCardDavContactPatch } from "./merge";
+import {
+  saveContactPhoto,
+  deleteContactPhoto,
+  loadContactPhotoBytes,
+} from "@/lib/contacts/photos.server";
 
 import {
   buildGroupVCard,
