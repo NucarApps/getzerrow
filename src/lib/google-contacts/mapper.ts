@@ -217,6 +217,10 @@ export function personToContact(person: Person): {
   phones: LocalPhone[];
   membershipResourceNames: string[];
   updateTime: string | null;
+  /** URL to Google's copy of the contact photo (short-lived signed URL from
+   * the People API). Present only when the user has actually attached a
+   * picture — Google auto-generates a "silhouette" default that we skip. */
+  photoUrl: string | null;
 } {
   const rawEmails = person.emailAddresses ?? [];
   const primaryEmailIdx = rawEmails.findIndex((e) => e.metadata?.primary && e.value);
