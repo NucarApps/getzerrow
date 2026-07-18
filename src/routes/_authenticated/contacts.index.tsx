@@ -623,6 +623,12 @@ function ContactsPage() {
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild className="px-2 sm:px-3">
+            <Link to="/contacts/companies" aria-label="Companies" title="Companies">
+              <Building2 className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Companies</span>
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild className="px-2 sm:px-3">
             <Link to="/contacts/scan" aria-label="Scan card" title="Scan card">
               <ScanLine className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Scan card</span>
