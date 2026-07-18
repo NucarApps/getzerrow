@@ -947,7 +947,23 @@ export async function handlePut(
   // property actually appeared in this PUT — iOS sends partial vCards for
   // single-field edits and any unspecified field must survive.
   const present = parsed.presentFields;
-  const plaintextPatch: Record<string, unknown> = {
+  type ContactPatch = {
+    user_id: string;
+    email: string;
+    source: string;
+    updated_at: string;
+    name?: string | null;
+    company?: string | null;
+    title?: string | null;
+    website?: string | null;
+    city?: string | null;
+    region?: string | null;
+    postal_code?: string | null;
+    country?: string | null;
+    linkedin?: string | null;
+    twitter?: string | null;
+  };
+  const plaintextPatch: ContactPatch = {
     user_id: userId,
     email: emailForRow,
     source: existing?.source ?? "carddav",
