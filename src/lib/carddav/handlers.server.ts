@@ -403,11 +403,13 @@ async function buildContactResponse(
       `</D:response>`
     );
   }
-  const [phones, categories] = await Promise.all([
+  const [phones, categories, emails] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
+    fetchEmails(contactId),
   ]);
-  const vcard = contactToVCard(row, phones, categories);
+  const vcard = contactToVCard(row, phones, categories, emails);
+
   const etag = contactETag(row.id, row.updated_at);
   const props =
     `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
