@@ -65,4 +65,30 @@ describe("parseVCard", () => {
       "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nTEL:+1 555\r\nTEL:+1 555\r\nEND:VCARD\r\n";
     expect(parseVCard(dup)!.phones).toHaveLength(1);
   });
+
+  it("parses iOS grouped `itemN.` properties (EMAIL/TEL/URL/ADR)", () => {
+    // iOS emits this shape whenever a field has an X-ABLabel or, often, for
+    // the first EMAIL on a newly created contact. The parser must strip the
+    // group prefix so the base property still populates the parsed fields.
+    const grouped =
+      "BEGIN:VCARD\r\n" +
+      "VERSION:3.0\r\n" +
+      "UID:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\r\n" +
+      "FN:Grouped Person\r\n" +
+      "item1.EMAIL;type=INTERNET;type=pref:person@example.com\r\n" +
+      "item1.X-ABLabel:_$!<Work>!$_\r\n" +
+      "item2.TEL;type=CELL;type=pref:+1 555 111 2222\r\n" +
+      "item3.URL:https://linkedin.com/in/person\r\n" +
+      "item3.X-ABLabel:LinkedIn\r\n" +
+      "END:VCARD\r\n";
+    const p = parseVCard(grouped)!;
+    expect(p.email).toBe("person@example.com");
+    expect(p.presentFields.has("EMAIL")).toBe(true);
+    expect(p.phones).toHaveLength(1);
+    expect(p.phones[0].number).toContain("555");
+    expect(p.presentFields.has("TEL")).toBe(true);
+    expect(p.linkedin).toContain("linkedin.com/in/person");
+    expect(p.presentFields.has("LINKEDIN")).toBe(true);
+  });
 });
+

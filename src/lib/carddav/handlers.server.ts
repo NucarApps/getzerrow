@@ -924,14 +924,6 @@ export async function handlePut(
   }
   if (ifMatch && !existing) return preconditionFailed();
 
-  // iOS may omit EMAIL for a new personal contact; contacts.email is NOT NULL
-  // in the schema. Synthesize a stable placeholder tied to the UID so we
-  // never overwrite an existing contact by email collision.
-  const emailForRow =
-    (parsed.email && parsed.email.trim().toLowerCase()) ||
-    existing?.email ||
-    `carddav+${contactId}@local.zerrow`;
-
   const nowIso = new Date().toISOString();
 
   // Snapshot the previous state BEFORE we touch anything so a bad iOS PUT
@@ -950,9 +942,9 @@ export async function handlePut(
   const present = parsed.presentFields;
   type ContactPatch = {
     user_id: string;
-    email: string;
     source: string;
     updated_at: string;
+    email?: string | null;
     name?: string | null;
     company?: string | null;
     title?: string | null;
@@ -966,10 +958,17 @@ export async function handlePut(
   };
   const plaintextPatch: ContactPatch = {
     user_id: userId,
-    email: emailForRow,
     source: existing?.source ?? "carddav",
     updated_at: nowIso,
   };
+  // Email is now nullable in the schema; only touch it when the vCard
+  // actually carried an EMAIL line. Never synthesize a placeholder — that
+  // was the source of `carddav+<uuid>@local.zerrow` overwrites.
+  if (present.has("EMAIL")) {
+    plaintextPatch.email = parsed.email ? parsed.email.trim().toLowerCase() : null;
+  } else if (!existing) {
+    plaintextPatch.email = null;
+  }
   if (present.has("FN")) plaintextPatch.name = parsed.name;
   if (present.has("ORG")) plaintextPatch.company = parsed.company;
   if (present.has("TITLE")) plaintextPatch.title = parsed.title;
