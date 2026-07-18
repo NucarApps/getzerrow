@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { DuplicateSuggestionsDrawer } from "@/components/contacts/DuplicateSuggestionsDrawer";
+import { LabelDuplicatesDrawer } from "@/components/contacts/LabelDuplicatesDrawer";
 import { EnrichmentSuggestionsDrawer } from "@/components/contacts/EnrichmentSuggestionsDrawer";
 import { GroupRulesSection } from "@/components/contacts/GroupRulesSection";
 import { Button } from "@/components/ui/button";
