@@ -167,9 +167,11 @@ describe("AI summary in NOTE", () => {
       notes: "Prefers email.",
     });
     const vcard = contactToVCard(c, [], [], [], null, { includeSummary: false });
-    expect(vcard).not.toContain("Head of design.");
-    expect(vcard).toContain("Prefers email.");
+    const unfolded = vcard.replace(/\r\n /g, "");
+    expect(unfolded).not.toContain("Head of design.");
+    expect(unfolded).toContain("Prefers email.");
   });
+
 
   it("stripSummaryFromNote returns only user portion for merged text", () => {
     const merged = buildMergedNote("AI text", "user text")!;
