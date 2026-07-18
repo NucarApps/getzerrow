@@ -156,7 +156,34 @@ export function CompanyAliasesDialog({
     staleTime: 60_000,
   });
 
-  if (!primaryDomain) return null;
+  const hasPrimary = !!primaryDomain;
+
+  async function savePrimary() {
+    const d = primaryDraft
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .replace(/\/.*$/, "");
+    if (!d) return;
+    if (!/^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(d)) {
+      toast.error("Enter a valid domain (e.g. acme.com)");
+      return;
+    }
+    setBusy(true);
+    try {
+      await setWebsiteFn({ data: { contactIds, website: `https://${d}` } });
+      toast.success(`Set ${d} as the primary domain`);
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      setPrimaryDraft("");
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't set domain");
+    } finally {
+      setBusy(false);
+    }
+  }
+
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: ["company-aliases"] });
