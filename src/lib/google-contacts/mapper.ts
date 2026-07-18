@@ -289,7 +289,16 @@ export function personToContact(person: Person): {
 
   const updateTime = person.metadata?.sources?.[0]?.updateTime ?? null;
 
-  return { email: primaryEmail, emails, patch, phones, membershipResourceNames, updateTime };
+  // Prefer the primary photo (Google marks the user-uploaded one); fall
+  // back to the first non-default entry so we still pick up photos on
+  // People API rows that omit the primary flag.
+  const photoRow =
+    (person.photos ?? []).find((p) => p.metadata?.primary && p.url && !p.default) ??
+    (person.photos ?? []).find((p) => p.url && !p.default) ??
+    null;
+  const photoUrl = photoRow?.url ?? null;
+
+  return { email: primaryEmail, emails, patch, phones, membershipResourceNames, updateTime, photoUrl };
 }
 
 /** Zerrow group → Google contactGroups payload. */
