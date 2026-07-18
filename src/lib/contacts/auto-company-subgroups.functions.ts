@@ -207,7 +207,8 @@ export async function reconcileAutoCompanySubgroupsImpl(
   let renamed = 0;
   const wantedKeys = new Set(byKey.keys());
   for (const [key, info] of byKey) {
-    const display = pickDisplayName(info.rawValues) || key;
+    const display =
+      pickDisplayName(info.rawValues) || fallbackDisplayNames.get(key) || key;
     const existingRow = existingByKey.get(key);
     if (existingRow) {
       if (existingRow.name !== display) {
