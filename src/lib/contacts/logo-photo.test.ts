@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-type ContactRow = { id: string; company_id: string | null };
+type ContactRow = { id: string; user_id: string; company_id: string | null };
 type CompanyDomainRow = {
+  user_id: string;
   company_id: string;
   domain: string;
   source: string;
   member_count: number;
   created_at: string;
 };
-type LogoChoiceRow = { domain: string; source_domain: string | null };
+type LogoChoiceRow = { user_id: string; domain: string; source_domain: string | null };
 
 const contactsRows: ContactRow[] = [];
 const companyDomainRows: CompanyDomainRow[] = [];
@@ -62,6 +63,7 @@ describe("resolveCompanyLogoDomainForContact", () => {
   it("prefers the selected logo source domain across linked company aliases", async () => {
     companyDomainRows.push(
       {
+        user_id: "user-a",
         company_id: "company-nissan",
         domain: "nissanusa.com",
         source: "manual",
@@ -69,6 +71,7 @@ describe("resolveCompanyLogoDomainForContact", () => {
         created_at: "2026-07-18T15:59:54.000Z",
       },
       {
+        user_id: "user-a",
         company_id: "company-nissan",
         domain: "nissan-usa.com",
         source: "auto",
@@ -76,7 +79,7 @@ describe("resolveCompanyLogoDomainForContact", () => {
         created_at: "2026-07-18T15:59:54.000Z",
       },
     );
-    logoChoiceRows.push({ domain: "nissan-usa.com", source_domain: "nissanusa.com" });
+    logoChoiceRows.push({ user_id: "user-a", domain: "nissan-usa.com", source_domain: "nissanusa.com" });
 
     const { resolveCompanyLogoDomainForContact } = await import("./logo-photo.server");
     const domain = await resolveCompanyLogoDomainForContact("user-a", {
@@ -90,8 +93,9 @@ describe("resolveCompanyLogoDomainForContact", () => {
   });
 
   it("falls back to the linked company domain before contact email heuristics", async () => {
-    contactsRows.push({ id: "contact-aditya", company_id: "company-nissan" });
+    contactsRows.push({ id: "contact-aditya", user_id: "user-a", company_id: "company-nissan" });
     companyDomainRows.push({
+      user_id: "user-a",
       company_id: "company-nissan",
       domain: "nissanusa.com",
       source: "manual",
