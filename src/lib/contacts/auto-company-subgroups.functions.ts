@@ -4,6 +4,42 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./company-name";
+import {
+  contactLogoDomain,
+  isPersonalDomain,
+  prettyCompanyName,
+  resolveCompanyDomain,
+} from "@/lib/company-domains";
+
+type ContactShape = {
+  id: string;
+  company: string | null;
+  email: string | null;
+  website: string | null;
+};
+
+/** Derive a normalized company key + display name from a contact. Falls back
+ *  to the non-personal email/website domain when no `company` field is set,
+ *  so contacts bucketed by domain (e.g. all @nissan.com with empty company)
+ *  still contribute to auto subgroups. */
+function deriveCompanyKey(
+  contact: Pick<ContactShape, "company" | "email" | "website">,
+  aliasMap: Map<string, string> | null,
+): { key: string; displayName: string; rawCompany: string | null } | null {
+  const rawCompany = (contact.company ?? "").trim() || null;
+  if (rawCompany) {
+    const key = normalizeCompanyName(rawCompany);
+    if (key) return { key, displayName: rawCompany, rawCompany };
+  }
+  const raw = contactLogoDomain(contact.website, contact.email);
+  const resolved = resolveCompanyDomain(raw, aliasMap);
+  if (resolved && !isPersonalDomain(resolved)) {
+    const pretty = prettyCompanyName(resolved);
+    const key = normalizeCompanyName(pretty);
+    if (key) return { key, displayName: pretty, rawCompany: null };
+  }
+  return null;
+}
 
 type DB = SupabaseClient<Database>;
 
