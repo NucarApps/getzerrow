@@ -327,7 +327,17 @@ function ContactsPage() {
       const resolvedWeb = resolveCompanyDomain(webDomain, aliasMap);
       let key: string;
       let bucket: Bucket | undefined;
-      if (!d) {
+      const manualCompany = (c.company ?? "").trim();
+      if (!d && manualCompany) {
+        key = `name:${normalizeCompanyName(manualCompany)}`;
+        bucket = map.get(key) ?? {
+          key,
+          domain: null,
+          name: manualCompany,
+          kind: "company",
+          contacts: [],
+        };
+      } else if (!d) {
         key = OTHER_KEY;
         bucket = map.get(key) ?? { key, domain: null, name: "Other", kind: "other", contacts: [] };
       } else if (isPersonalDomain(d)) {

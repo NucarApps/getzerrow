@@ -1,33 +1,34 @@
-# Editable company name in the company dialog
+## Problem
 
-Today the pencil on a company bucket opens `CompanyAliasesDialog`, which shows the company name as static title text. Add an inline edit so renaming it updates every contact currently grouped under that company.
+In `src/routes/_authenticated/contacts.index.tsx` (`companyBuckets`, lines 319–356), a contact is bucketed by the domain extracted from their email. If a contact has no email (e.g. Brad Taylor, phone-only), `extractDomain` returns null and the contact falls into the `__other__` bucket — even when `c.company` is filled in. That's why Brad shows up under "Other" instead of under his company.
 
-## Behavior
+## Fix
 
-- In the dialog header, replace the static `{companyName}` span with an inline editable field (click to edit, or a small pencil next to it) that seeds from the current bucket name.
-- Save button appears when the name is changed and non-empty. Cancel reverts.
-- On save: every contact in `contactIds` (already passed into the dialog — that's the full bucket, aliases included) gets `contacts.company` set to the new name. Auto-generated company subgroups reconcile so the subgroup name follows the rename.
-- Toast: "Renamed N contacts to <new name>". Dialog stays open; header reflects the new name.
-- Empty / whitespace-only name is rejected client-side.
+Before falling through to "Other", check whether the contact has a non-empty `company` field. If yes, bucket by that company name (keyed off `normalizeCompanyName(c.company)` so "Honda Inc" and "Honda" collapse together, matching the rest of the app's normalization). No domain, no logo — just a name-keyed company bucket that behaves like the domain-keyed ones.
 
-## Files
+New bucketing order inside the `for` loop:
 
-1. `src/lib/contacts/crud.functions.ts` — add `renameCompanyForContacts` server fn.
-   - Input: `{ contactIds: string[], newName: string }`, Zod-validated (trim, 1–200 chars).
-   - `context.supabase.from("contacts").update({ company: newName }).eq("user_id", context.userId).in("id", contactIds)` (RLS also enforces ownership).
-   - After update, call `reconcileAutoParentsForContacts(supabase, userId, contactIds)` from `@/lib/contacts/auto-company-subgroups.functions` so any auto-company subgroups rebuild to the new name.
-   - Return `{ updated: <count> }`.
+1. Has real (non-personal) email domain → domain-keyed company bucket (unchanged).
+2. Personal-domain email (gmail/yahoo/etc.) → Personal bucket (unchanged).
+3. No domain BUT `c.company?.trim()` is set → company-name-keyed bucket:
+   - `key = "name:" + normalizeCompanyName(company)`
+   - `domain = null`, `name = company.trim()`, `kind = "company"`.
+   - Same push/merge behavior as existing company buckets, so sorting, collapse, group multi-select, and the pencil/alias dialog all keep working.
+4. Otherwise → "Other" (unchanged).
 
-2. `src/components/contacts/CompanyAliasesDialog.tsx`
-   - Add `useServerFn(renameCompanyForContacts)`.
-   - Local state `nameDraft` seeded from `companyName` on open.
-   - Header title becomes: logo + `<Input>` (compact, borderless-until-focus) + save/cancel buttons that show only when `nameDraft.trim() !== companyName && nameDraft.trim().length > 0`.
-   - On save: call server fn, toast success, invalidate `["contacts"]` and `["company-aliases"]` and `["company-group-assignments"]` so the contacts list re-buckets under the new name.
+Downstream effects to verify (read-only checks, no other edits expected):
 
-3. `src/routes/_authenticated/contacts.index.tsx` — no logic change; the existing `queryClient.invalidateQueries({ queryKey: ["contacts"] })` triggered by the dialog will re-fetch and re-bucket. Verify the invalidation key matches what this page uses; adjust the invalidation keys in step 2 to match if different.
+- Sort block at line 358–360 already treats every `kind === "company"` bucket the same, so name-keyed buckets sort alphabetically alongside domain-keyed ones.
+- Same-name merge suggestions (lines 391–437) explicitly skip buckets without a domain (`!b.domain`), so they won't try to merge these name-only buckets — correct behavior.
+- The company logo/pencil UI (line 747+) already branches on `b.kind === "company" && b.domain` for logo rendering, so name-only buckets will render with no logo but still show the header, contact list, and the rename dialog we just added.
+- `CompanyAliasesDialog` receives `contactIds` from the bucket; renaming still works because `renameCompanyForContacts` updates the `company` column directly.
 
 ## Out of scope
 
-- Renaming does **not** touch `company_aliases` domain mappings — those are keyed by domain, not name. Future emails from the same domain will still land in the (renamed) bucket.
-- Auto-subgroups already use `normalizeCompanyName`; the rename flows through naturally on reconcile.
-- No change to Google Contacts push in this step. If two-way sync is on, the next push will send the new `company` value up to Google per existing push logic.
+- Not changing the Google Contacts pull, dedupe, or auto-subgroup logic.
+- Not adding a logo/domain to name-only buckets.
+- Not touching "Other" behavior for contacts that have neither email nor company.
+
+## Files
+
+- `src/routes/_authenticated/contacts.index.tsx` — only the `companyBuckets` `useMemo` (~lines 319–356). `normalizeCompanyName` is already imported (line 71).
