@@ -11,6 +11,13 @@ export type PhoneRow = {
   is_primary: boolean | null;
 };
 
+export type EmailRow = {
+  label: string | null;
+  address: string;
+  is_primary: boolean | null;
+};
+
+
 // Escape a text value for a vCard property field.
 function esc(v: string | null | undefined): string {
   if (!v) return "";
@@ -73,6 +80,26 @@ function phoneTypeParam(label: string | null): string {
   return ";TYPE=VOICE";
 }
 
+function emailTypeParam(label: string | null): string {
+  const l = (label ?? "").toLowerCase();
+  if (l.includes("work")) return ";TYPE=INTERNET,WORK";
+  if (l.includes("home")) return ";TYPE=INTERNET,HOME";
+  return ";TYPE=INTERNET";
+}
+
+function emailLabelFromTypes(types: string[]): string {
+  const set = new Set(types.map((t) => t.toUpperCase()));
+  if (set.has("WORK")) return "Work";
+  if (set.has("HOME")) return "Home";
+  return "Other";
+}
+
+/** Case-insensitive key for email dedupe. */
+export function emailKey(s: string | null | undefined): string {
+  return (s ?? "").trim().toLowerCase();
+}
+
+
 /**
  * Contact -> vCard 3.0 text. `phones` is optional; when omitted we skip TEL
  * lines from the phones table and only emit the encrypted `phone` field on
@@ -82,6 +109,7 @@ export function contactToVCard(
   contact: DecryptedContact,
   phones: PhoneRow[] = [],
   _categories: string[] = [],
+  emails: EmailRow[] = [],
 ): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
 
@@ -104,13 +132,34 @@ export function contactToVCard(
     if (contact.title) out.push(line("TITLE", esc(contact.title)));
   }
 
-  // Skip legacy placeholder emails so iOS stops displaying them as the
-  // contact's real address. Rows are migrated to NULL separately, but a
-  // stale echo can otherwise round-trip until every cache invalidates.
-  const isPlaceholderEmail = !!contact.email && /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(contact.email);
-  if (contact.email && !isPlaceholderEmail) {
-    out.push(line("EMAIL;TYPE=INTERNET,WORK,pref", esc(contact.email)));
+  // Emit all EMAIL entries from contact_emails (fall back to the single
+  // legacy contact.email column when no rows exist). Legacy placeholder
+  // addresses are filtered so iOS stops caching them.
+  const isPlaceholderEmail = (v: string): boolean =>
+    /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(v);
+  const emittedEmailKeys = new Set<string>();
+  const emailList: EmailRow[] = emails.length
+    ? emails
+    : contact.email && !isPlaceholderEmail(contact.email)
+      ? [{ label: "Work", address: contact.email, is_primary: true }]
+      : [];
+  // Ensure the primary comes first so iOS renders it as the default.
+  const sortedEmails = [...emailList].sort((a, b) => {
+    const ap = a.is_primary ? 0 : 1;
+    const bp = b.is_primary ? 0 : 1;
+    return ap - bp;
+  });
+  for (const em of sortedEmails) {
+    const addr = em.address?.trim();
+    if (!addr) continue;
+    if (isPlaceholderEmail(addr)) continue;
+    const key = emailKey(addr);
+    if (key && emittedEmailKeys.has(key)) continue;
+    const params = emailTypeParam(em.label) + (em.is_primary ? ",pref;PREF=1" : "");
+    out.push(line(`EMAIL${params}`, esc(addr)));
+    if (key) emittedEmailKeys.add(key);
   }
+
 
   // Structured phones from contact_phones plus the legacy encrypted phone field.
   const emittedPhoneKeys = new Set<string>();
@@ -204,6 +253,12 @@ export type ParsedPhone = {
   is_primary: boolean;
 };
 
+export type ParsedEmail = {
+  label: string; // "Work" | "Home" | "Other"
+  address: string;
+  is_primary: boolean;
+};
+
 export type PresentField =
   | "FN"
   | "ORG"
@@ -220,7 +275,12 @@ export type PresentField =
 export type ParsedVCard = {
   uid: string | null;
   name: string | null;
+  /** Primary email — first PREF, else first non-empty. Kept for callers that
+   * only care about a single address. All parsed addresses live in `emails`. */
   email: string | null;
+  /** Every non-empty EMAIL line, deduped case-insensitively. Order preserves
+   * the vCard, but the primary (PREF) is guaranteed to be first. */
+  emails: ParsedEmail[];
   company: string | null;
   title: string | null;
   phones: ParsedPhone[];
@@ -234,6 +294,7 @@ export type ParsedVCard = {
   linkedin: string | null;
   twitter: string | null;
   notes: string | null;
+
   /** iOS "CATEGORIES:" list — the group names the user checked in the
    * Contacts app. Empty when the card belongs to no groups. */
   categories: string[];
@@ -327,13 +388,14 @@ export function parseVCard(text: string): ParsedVCard | null {
   }
 
   const out: ParsedVCard = {
-    uid: null, name: null, email: null, company: null, title: null,
+    uid: null, name: null, email: null, emails: [], company: null, title: null,
     phones: [], address_line1: null, address_line2: null, city: null,
     region: null, postal_code: null, country: null, website: null,
     linkedin: null, twitter: null, notes: null,
     categories: [], isGroup: false, memberUids: [],
     presentFields: new Set<PresentField>(),
   };
+
 
   let fn: string | null = null;
   let nGiven: string | null = null;
@@ -383,11 +445,17 @@ export function parseVCard(text: string): ParsedVCard | null {
         // clobber the saved address with null.
         const em = v.trim();
         if (!em) break;
+        const types = p.params.TYPE ?? [];
+        const prefVals = (p.params.PREF ?? []).map((x) => x.trim());
+        const isPref =
+          types.includes("PREF") || prefVals.some((x) => x === "1" || x === "");
+        out.emails.push({ label: emailLabelFromTypes(types), address: em, is_primary: isPref });
         if (!out.email) out.email = em;
-        else if ((p.params.TYPE ?? []).includes("PREF")) out.email = em;
+        else if (isPref) out.email = em;
         out.presentFields.add("EMAIL");
         break;
       }
+
       case "TEL": {
         const num = v.trim();
         if (!num) break;
@@ -503,8 +571,26 @@ export function parseVCard(text: string): ParsedVCard | null {
   }
   out.phones = Array.from(seen.values());
 
+  // Dedupe emails case-insensitively; keep the PREF entry when both exist.
+  const seenEmails = new Map<string, ParsedEmail>();
+  for (const e of out.emails) {
+    const k = emailKey(e.address);
+    if (!k) continue;
+    const existing = seenEmails.get(k);
+    if (!existing) seenEmails.set(k, e);
+    else if (e.is_primary && !existing.is_primary) seenEmails.set(k, e);
+  }
+  // Ensure exactly one primary and sort primary-first.
+  let emailsArr = Array.from(seenEmails.values());
+  if (emailsArr.length && !emailsArr.some((e) => e.is_primary)) {
+    emailsArr[0] = { ...emailsArr[0], is_primary: true };
+  }
+  emailsArr = emailsArr.sort((a, b) => (a.is_primary === b.is_primary ? 0 : a.is_primary ? -1 : 1));
+  out.emails = emailsArr;
+
   return out;
 }
+
 
 // ---------------------------------------------------------------------------
 // GROUP vCARDS — Apple's Contacts app publishes groups as separate vCards

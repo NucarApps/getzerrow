@@ -64,6 +64,9 @@ export type LocalContact = {
 
 export type LocalPhone = { label: string; number: string; is_primary: boolean };
 
+export type LocalEmail = { label: string; address: string; is_primary: boolean };
+
+
 /** Split a display name into given/family. Best-effort — Google is forgiving. */
 export function splitName(name: string | null): PersonName | null {
   if (!name) return null;
@@ -99,22 +102,35 @@ export function contactToPerson(
   phones: LocalPhone[],
   memberships: string[], // Google contactGroups/xxx resource names
   primaryEmailPrevious?: boolean,
+  emails: LocalEmail[] = [],
 ): Partial<Person> {
   const person: Partial<Person> = {};
 
   const nm = splitName(contact.name);
   if (nm) person.names = [nm];
 
-  const email = contact.email?.trim();
-  if (email) {
-    person.emailAddresses = [
-      {
-        value: email,
-        type: "work",
-        metadata: { primary: primaryEmailPrevious !== false },
-      },
-    ];
+  // Emit every email row. Fall back to the single contact.email column when
+  // the caller didn't provide the multi-email list (keeps older tests working).
+  const emailList: LocalEmail[] = emails.length
+    ? emails
+    : contact.email?.trim()
+      ? [{ label: "work", address: contact.email.trim(), is_primary: primaryEmailPrevious !== false }]
+      : [];
+  if (emailList.length) {
+    const seen = new Set<string>();
+    const rows: PersonEmail[] = [];
+    for (const em of emailList) {
+      const v = em.address.trim().toLowerCase();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      rows.push({ value: em.address.trim(), type: em.label || "other", metadata: { primary: em.is_primary } });
+    }
+    if (rows.length && !rows.some((r) => r.metadata?.primary)) {
+      rows[0] = { ...rows[0], metadata: { primary: true } };
+    }
+    if (rows.length) person.emailAddresses = rows;
   }
+
 
   const phoneList: PersonPhone[] = [];
   const seen = new Set<string>();
@@ -193,15 +209,37 @@ export const READ_PERSON_FIELDS =
 /** Parse Google's Person into the writable subset of a Zerrow contact. */
 export function personToContact(person: Person): {
   email: string | null;
+  emails: LocalEmail[];
   patch: Partial<LocalContact>;
   phones: LocalPhone[];
   membershipResourceNames: string[];
   updateTime: string | null;
 } {
+  const rawEmails = person.emailAddresses ?? [];
+  const primaryEmailIdx = rawEmails.findIndex((e) => e.metadata?.primary && e.value);
   const primaryEmail =
-    person.emailAddresses?.find((e) => e.metadata?.primary && e.value)?.value ??
-    person.emailAddresses?.find((e) => e.value)?.value ??
+    (primaryEmailIdx >= 0 ? rawEmails[primaryEmailIdx].value : null) ??
+    rawEmails.find((e) => e.value)?.value ??
     null;
+
+  const seenEmail = new Set<string>();
+  const emails: LocalEmail[] = [];
+  for (const e of rawEmails) {
+    const v = e.value?.trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seenEmail.has(key)) continue;
+    seenEmail.add(key);
+    emails.push({
+      label: (e.type ?? "other").toLowerCase(),
+      address: v,
+      is_primary: !!e.metadata?.primary,
+    });
+  }
+  if (emails.length && !emails.some((e) => e.is_primary)) {
+    emails[0] = { ...emails[0], is_primary: true };
+  }
+
 
   const patch: Partial<LocalContact> = {
     name: joinName(person.names?.[0]),
@@ -244,7 +282,7 @@ export function personToContact(person: Person): {
 
   const updateTime = person.metadata?.sources?.[0]?.updateTime ?? null;
 
-  return { email: primaryEmail, patch, phones, membershipResourceNames, updateTime };
+  return { email: primaryEmail, emails, patch, phones, membershipResourceNames, updateTime };
 }
 
 /** Zerrow group → Google contactGroups payload. */

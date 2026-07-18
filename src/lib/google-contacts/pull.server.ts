@@ -447,6 +447,21 @@ async function applyPersonChanges(
       await supabaseAdmin.from("contact_phones").insert(rows);
     }
 
+    // Replace emails.
+    if (parsed.emails.length) {
+      await supabaseAdmin.from("contact_emails").delete().eq("contact_id", contactId);
+      const rows = parsed.emails.map((em, idx) => ({
+        user_id: ids.userId,
+        contact_id: contactId!,
+        label: em.label || "other",
+        address: em.address.toLowerCase(),
+        is_primary: em.is_primary,
+        position: idx,
+      }));
+      await supabaseAdmin.from("contact_emails").insert(rows);
+    }
+
+
     // Membership diff.
     const desiredGroupIds = new Set(
       parsed.membershipResourceNames

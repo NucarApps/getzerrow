@@ -154,6 +154,12 @@ async function pushContacts(
         .eq("contact_id", c.id)
         .order("position", { ascending: true });
 
+      const { data: emails } = await supabaseAdmin
+        .from("contact_emails")
+        .select("label, address, is_primary")
+        .eq("contact_id", c.id)
+        .order("position", { ascending: true });
+
       const { data: memberships } = await supabaseAdmin
         .from("contact_group_members")
         .select("group_id")
@@ -162,7 +168,14 @@ async function pushContacts(
         .map((m) => groupResourceByLocal.get(m.group_id))
         .filter((n): n is string => !!n);
 
-      const body = contactToPerson(local, phones ?? [], memberResourceNames);
+      const body = contactToPerson(
+        local,
+        phones ?? [],
+        memberResourceNames,
+        undefined,
+        (emails ?? []).map((e) => ({ label: e.label, address: e.address, is_primary: e.is_primary })),
+      );
+
 
       if (!link) {
         const created = await createPerson(ids.gmailAccountId, body);

@@ -36,6 +36,8 @@ import { listMeetingsForContact } from "@/lib/meetings.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { listContactRevisions, restoreContactRevision } from "@/lib/contacts/revisions.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
+import { EmailsEditor, type EmailEntry } from "@/components/contacts/EmailsEditor";
+
 import { toast } from "sonner";
 import {
   DropdownMenu,
@@ -125,6 +127,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
     country: "",
   });
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
+  const [emails, setEmails] = useState<EmailEntry[]>([]);
+
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -168,7 +172,26 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       } else {
         setPhones([]);
       }
+      const serverEmails = (q.data.emails ?? []) as Array<{
+        label: string;
+        address: string;
+        is_primary: boolean;
+      }>;
+      if (serverEmails.length > 0) {
+        setEmails(
+          serverEmails.map((e) => ({
+            label: e.label,
+            address: e.address,
+            is_primary: !!e.is_primary,
+          })),
+        );
+      } else if (c.email) {
+        setEmails([{ label: "work", address: c.email, is_primary: true }]);
+      } else {
+        setEmails([]);
+      }
     }
+
     // Seed local form state when the contact's identity/version changes, keyed
     // on the specific fields below — not on the whole q.data.contact/phones
     // objects, whose refs change on every refetch and would clobber live edits.
@@ -201,8 +224,10 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           contact: r.contact,
           recentEmails: prev?.recentEmails ?? [],
           phones: prev?.phones ?? [],
+          emails: prev?.emails ?? [],
         }));
       }
+
       await qc.invalidateQueries({ queryKey: ["contact", id] });
       await qc.invalidateQueries({ queryKey: ["contacts"] });
     } catch (e: unknown) {
@@ -218,13 +243,23 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       const cleanPhones = phones
         .map((p) => ({ ...p, number: p.number.trim() }))
         .filter((p) => p.number.length > 0);
+      const cleanEmails = emails
+        .map((e) => ({ ...e, address: e.address.trim().toLowerCase() }))
+        .filter((e) => e.address.length > 0);
+      // When emails[] is provided, the server derives contacts.email from the
+      // primary row — don't also pass the single email field.
+      const primaryEmail = cleanEmails.length
+        ? (cleanEmails.find((e) => e.is_primary)?.address ?? cleanEmails[0].address)
+        : form.email.trim()
+          ? form.email.trim()
+          : null;
       await update({
         data: {
           id,
           name: form.name || null,
           title: form.title || null,
           company: form.company || null,
-          email: form.email.trim() ? form.email.trim() : null,
+          email: primaryEmail,
           website: form.website || null,
           linkedin: form.linkedin || null,
           twitter: form.twitter || null,
@@ -236,8 +271,10 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           postal_code: form.postal_code || null,
           country: form.country || null,
           phones: cleanPhones,
+          emails: cleanEmails,
         },
       });
+
       toast.success("Saved");
       qc.invalidateQueries({ queryKey: ["contact", id] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
@@ -426,15 +463,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
             onChange={(e) => setForm({ ...form, company: e.target.value })}
           />
         </Field>
-        <Field label="Email" icon={<Mail className="h-3.5 w-3.5" />}>
-          <Input
-            type="email"
-            placeholder="name@example.com"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
-        </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
+
           <Input
             value={form.website}
             onChange={(e) => setForm({ ...form, website: e.target.value })}
@@ -455,8 +485,13 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       </div>
 
       <div className="mt-6">
+        <EmailsEditor value={emails} onChange={setEmails} />
+      </div>
+
+      <div className="mt-6">
         <PhonesEditor value={phones} onChange={setPhones} />
       </div>
+
 
       <div className="mt-6">
         <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">

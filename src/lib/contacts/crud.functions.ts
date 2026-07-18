@@ -20,7 +20,9 @@ import {
   firstNameKey,
   pickBetterName,
   phoneEntrySchema,
+  emailEntrySchema,
 } from "../contacts-helpers.server";
+
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 
 export const listContacts = createServerFn({ method: "GET" })
@@ -74,7 +76,7 @@ export const getContact = createServerFn({ method: "POST" })
           .order("received_at", { ascending: false })
           .limit(10)
       : Promise.resolve({ data: [] });
-    const [{ data: emails }, { data: phones }] = await Promise.all([
+    const [{ data: emails }, { data: phones }, { data: emailRows }] = await Promise.all([
       emailsQuery,
       supabase
         .from("contact_phones")
@@ -82,8 +84,20 @@ export const getContact = createServerFn({ method: "POST" })
         .eq("contact_id", data.id)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
+      supabase
+        .from("contact_emails")
+        .select("id,label,address,is_primary,position")
+        .eq("contact_id", data.id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
     ]);
-    return { contact, recentEmails: emails ?? [], phones: phones ?? [] };
+    return {
+      contact,
+      recentEmails: emails ?? [],
+      phones: phones ?? [],
+      emails: emailRows ?? [],
+    };
+
   });
 export const updateContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -128,12 +142,13 @@ export const updateContact = createServerFn({ method: "POST" })
           .nullable()
           .optional(),
         phones: z.array(phoneEntrySchema).max(20).optional(),
+        emails: z.array(emailEntrySchema).max(20).optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { id, phones, ...patch } = data;
+    const { id, phones, emails, ...patch } = data;
     if ("name" in patch) patch.name = normalizeName(patch.name ?? null);
 
     // If phones provided, sync the primary into the legacy contacts.phone mirror.
@@ -141,6 +156,15 @@ export const updateContact = createServerFn({ method: "POST" })
       const primary = phones.find((p) => p.is_primary) ?? phones[0];
       patch.phone = primary?.number?.trim() || null;
     }
+
+    // If emails provided, sync the primary into the legacy contacts.email
+    // column so existing lookups and unique constraints stay consistent.
+    if (emails) {
+      const primary = emails.find((e) => e.is_primary) ?? emails[0];
+      patch.email = primary?.address?.trim().toLowerCase() || null;
+    }
+
+
 
     // Split: sensitive fields go through the encrypted RPC only; their
     // plaintext columns no longer exist (Phase 3 Migration B).
@@ -194,12 +218,38 @@ export const updateContact = createServerFn({ method: "POST" })
       }
     }
 
+    if (emails) {
+      const { error: delErr } = await supabase.from("contact_emails").delete().eq("contact_id", id);
+      if (delErr) throw new Error(delErr.message);
+      if (emails.length > 0) {
+        const hasPrimary = emails.some((e) => e.is_primary);
+        const normalized = emails.map((e, idx) => ({
+          user_id: userId,
+          contact_id: id,
+          label: e.label.trim().toLowerCase(),
+          address: e.address.trim().toLowerCase(),
+          is_primary: hasPrimary ? !!e.is_primary : idx === 0,
+          position: idx,
+        }));
+        const { error: insErr } = await supabase.from("contact_emails").insert(normalized);
+        if (insErr) throw new Error(insErr.message);
+      }
+    }
+
     const { data: refreshedPhones } = await supabase
       .from("contact_phones")
       .select("id,label,number,is_primary,position")
       .eq("contact_id", id)
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
+
+    const { data: refreshedEmails } = await supabase
+      .from("contact_emails")
+      .select("id,label,address,is_primary,position")
+      .eq("contact_id", id)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
+
 
     // If company changed, reconcile any auto-company-subgroup parents this
     // contact belongs to so subgroups collapse/rename/split immediately.
@@ -210,7 +260,12 @@ export const updateContact = createServerFn({ method: "POST" })
     // Return the decrypted view so the UI re-renders with the new
     // phone/notes/address values written through the encrypted RPC.
     const { row: decRow } = await getContactDecrypted(id);
-    return { contact: decRow ?? updated, phones: refreshedPhones ?? [] };
+    return {
+      contact: decRow ?? updated,
+      phones: refreshedPhones ?? [],
+      emails: refreshedEmails ?? [],
+    };
+
   });
 
 /** Delete a contact. */

@@ -166,3 +166,10 @@ export const phoneEntrySchema = z.object({
   number: z.string().trim().min(3).max(60).regex(PHONE_NUMBER_RE, "Invalid phone format"),
   is_primary: z.boolean().optional(),
 });
+
+export const emailEntrySchema = z.object({
+  label: z.string().trim().min(1).max(20),
+  address: z.string().trim().toLowerCase().email().max(255),
+  is_primary: z.boolean().optional(),
+});
+

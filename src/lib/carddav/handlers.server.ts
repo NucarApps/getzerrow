@@ -19,8 +19,10 @@ import {
   contactToVCard,
   groupETag,
   parseVCard,
+  type EmailRow,
   type PhoneRow,
 } from "./vcard";
+
 import {
   davResponse,
   MULTISTATUS_CLOSE,
@@ -245,6 +247,18 @@ async function fetchPhones(contactId: string): Promise<PhoneRow[]> {
   }));
 }
 
+async function fetchEmails(contactId: string): Promise<EmailRow[]> {
+  const { data } = await supabaseAdmin
+    .from("contact_emails")
+    .select("label,address,is_primary,position")
+    .eq("contact_id", contactId)
+    .order("position", { ascending: true });
+  return ((data as Array<{ label: string; address: string; is_primary: boolean }> | null) ?? []).map(
+    (r) => ({ label: r.label, address: r.address, is_primary: r.is_primary }),
+  );
+}
+
+
 async function markGoogleContactLinkDirty(userId: string, contactId: string): Promise<void> {
   await supabaseAdmin
     .from("google_contact_links")
@@ -389,11 +403,13 @@ async function buildContactResponse(
       `</D:response>`
     );
   }
-  const [phones, categories] = await Promise.all([
+  const [phones, categories, emails] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
+    fetchEmails(contactId),
   ]);
-  const vcard = contactToVCard(row, phones, categories);
+  const vcard = contactToVCard(row, phones, categories, emails);
+
   const etag = contactETag(row.id, row.updated_at);
   const props =
     `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
@@ -702,11 +718,13 @@ export async function handleGet(
 
   const { row } = await getContactDecrypted(contactId);
   if (!row) return new Response("Not found", { status: 404 });
-  const [phones, categories] = await Promise.all([
+  const [phones, categories, emails] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
+    fetchEmails(contactId),
   ]);
-  const vcard = contactToVCard(row, phones, categories);
+  const vcard = contactToVCard(row, phones, categories, emails);
+
 
   return new Response(method === "HEAD" ? null : vcard, {
     status: 200,
@@ -1036,6 +1054,32 @@ export async function handlePut(
       if (insPhoneErr) return new Response(insPhoneErr.message, { status: 500 });
     }
   }
+
+  // Replace-all emails — only when EMAIL was actually present in the PUT
+  // AND the vCard carried at least one non-empty address. iOS's blank-slot
+  // partial PUTs should never wipe stored emails (parser already excludes
+  // them from `parsed.emails`).
+  if (present.has("EMAIL") && parsed.emails.length > 0) {
+    const { error: delEmailErr } = await supabaseAdmin
+      .from("contact_emails")
+      .delete()
+      .eq("contact_id", contactId)
+      .eq("user_id", userId);
+    if (delEmailErr) return new Response(delEmailErr.message, { status: 500 });
+
+    const hasPrimaryEmail = parsed.emails.some((e) => e.is_primary);
+    const emailRows = parsed.emails.map((e, idx) => ({
+      user_id: userId,
+      contact_id: contactId,
+      label: e.label.toLowerCase(),
+      address: e.address.toLowerCase(),
+      is_primary: hasPrimaryEmail ? e.is_primary : idx === 0,
+      position: idx,
+    }));
+    const { error: insEmailErr } = await supabaseAdmin.from("contact_emails").insert(emailRows);
+    if (insEmailErr) return new Response(insEmailErr.message, { status: 500 });
+  }
+
 
   // CATEGORIES → contact_group_members reconciliation. Only when the vCard
   // actually included a CATEGORIES line — iOS omits it for most edits and

@@ -379,6 +379,50 @@ export type Database = {
           },
         ]
       }
+      contact_emails: {
+        Row: {
+          address: string
+          contact_id: string
+          created_at: string
+          id: string
+          is_primary: boolean
+          label: string
+          position: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          address: string
+          contact_id: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          label?: string
+          position?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          address?: string
+          contact_id?: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          label?: string
+          position?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_emails_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_enrichment_suggestions: {
         Row: {
           confidence: string
