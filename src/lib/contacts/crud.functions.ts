@@ -24,6 +24,7 @@ import {
 } from "../contacts-helpers.server";
 
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
+import { resolveContactCompany } from "@/lib/companies/companies.functions";
 
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -164,7 +165,15 @@ export const updateContact = createServerFn({ method: "POST" })
       patch.email = primary?.address?.trim().toLowerCase() || null;
     }
 
-
+    // Resolve company text → company_id (find-or-create).
+    if ("company" in patch) {
+      const { companyId, canonicalName } = await resolveContactCompany(
+        { supabase, userId },
+        patch.company ?? null,
+      );
+      (patch as Record<string, unknown>).company_id = companyId;
+      if (canonicalName) patch.company = canonicalName;
+    }
 
     // Split: sensitive fields go through the encrypted RPC only; their
     // plaintext columns no longer exist (Phase 3 Migration B).
@@ -349,14 +358,19 @@ export const createContactManual = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { userId, supabase } = context;
+    // Resolve company text → company_id (find-or-create).
+    const { companyId, canonicalName } = data.company
+      ? await resolveContactCompany({ supabase, userId }, data.company)
+      : { companyId: null as string | null, canonicalName: null as string | null };
     // phone / notes live in encrypted columns only after Phase 3.
     const payload = {
       user_id: userId,
       email: data.email,
       name: normalizeName(data.name ?? null),
       title: data.title || null,
-      company: data.company || null,
+      company: canonicalName ?? data.company ?? null,
+      company_id: companyId,
       website: data.website || null,
       linkedin: data.linkedin || null,
       twitter: data.twitter || null,

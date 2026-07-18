@@ -218,6 +218,74 @@ export type Database = {
         }
         Relationships: []
       }
+      companies: {
+        Row: {
+          address_line1: string | null
+          address_line2: string | null
+          city: string | null
+          country: string | null
+          created_at: string
+          description: string | null
+          id: string
+          industry: string | null
+          linked_group_id: string | null
+          name: string
+          name_key: string
+          phone: string | null
+          postal_code: string | null
+          region: string | null
+          updated_at: string
+          user_id: string
+          website: string | null
+        }
+        Insert: {
+          address_line1?: string | null
+          address_line2?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          industry?: string | null
+          linked_group_id?: string | null
+          name: string
+          name_key: string
+          phone?: string | null
+          postal_code?: string | null
+          region?: string | null
+          updated_at?: string
+          user_id: string
+          website?: string | null
+        }
+        Update: {
+          address_line1?: string | null
+          address_line2?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          industry?: string | null
+          linked_group_id?: string | null
+          name?: string
+          name_key?: string
+          phone?: string | null
+          postal_code?: string | null
+          region?: string | null
+          updated_at?: string
+          user_id?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "companies_linked_group_id_fkey"
+            columns: ["linked_group_id"]
+            isOneToOne: false
+            referencedRelation: "contact_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_aliases: {
         Row: {
           alias_domain: string
@@ -238,6 +306,41 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      company_domains: {
+        Row: {
+          company_id: string
+          created_at: string
+          domain: string
+          id: string
+          source: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          domain: string
+          id?: string
+          source?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          domain?: string
+          id?: string
+          source?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_domains_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_group_assignments: {
         Row: {
@@ -313,6 +416,38 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      company_tags: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          tag: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          tag: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          tag?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_tags_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contact_cards_sent: {
         Row: {
@@ -724,6 +859,7 @@ export type Database = {
           card_image_url: string | null
           city: string | null
           company: string | null
+          company_id: string | null
           country: string | null
           created_at: string
           email: string | null
@@ -752,6 +888,7 @@ export type Database = {
           card_image_url?: string | null
           city?: string | null
           company?: string | null
+          company_id?: string | null
           country?: string | null
           created_at?: string
           email?: string | null
@@ -780,6 +917,7 @@ export type Database = {
           card_image_url?: string | null
           city?: string | null
           company?: string | null
+          company_id?: string | null
           country?: string | null
           created_at?: string
           email?: string | null
@@ -801,7 +939,15 @@ export type Database = {
           user_id?: string
           website?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       device_push_tokens: {
         Row: {
@@ -2745,6 +2891,7 @@ export type Database = {
         Args: { p_account_id: string; p_user_id: string }
         Returns: number
       }
+      email_domain: { Args: { p_email: string }; Returns: string }
       get_contact_decrypted: {
         Args: { p_contact_id: string; p_key: string }
         Returns: {
@@ -2963,6 +3110,7 @@ export type Database = {
         }
         Returns: string
       }
+      is_personal_email_domain: { Args: { p_domain: string }; Returns: boolean }
       list_decryption_audit: {
         Args: { p_limit?: number }
         Returns: {
@@ -2986,6 +3134,7 @@ export type Database = {
           watch_expiration: string
         }[]
       }
+      normalize_company_name: { Args: { p_name: string }; Returns: string }
       prune_carddav_tombstones: {
         Args: { p_keep_days?: number }
         Returns: number

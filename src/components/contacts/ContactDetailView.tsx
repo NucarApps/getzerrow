@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CompanyCombobox } from "@/components/contacts/CompanyCombobox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
@@ -465,9 +466,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
         </Field>
         <Field label="Company" icon={<Building2 className="h-3.5 w-3.5" />}>
-          <Input
+          <CompanyCombobox
             value={form.company}
-            onChange={(e) => setForm({ ...form, company: e.target.value })}
+            onChange={(v) => setForm({ ...form, company: v })}
           />
         </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
