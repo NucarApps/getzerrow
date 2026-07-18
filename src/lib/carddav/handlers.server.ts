@@ -408,12 +408,13 @@ async function buildContactResponse(
       `</D:response>`
     );
   }
-  const [phones, categories, emails] = await Promise.all([
+  const [phones, categories, emails, photo] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
+    includeVcard ? loadContactPhotoBytes(row.avatar_url ?? null) : Promise.resolve(null),
   ]);
-  const vcard = contactToVCard(row, phones, categories, emails);
+  const vcard = contactToVCard(row, phones, categories, emails, photo);
 
   const etag = contactETag(row.id, row.updated_at);
   const props =
