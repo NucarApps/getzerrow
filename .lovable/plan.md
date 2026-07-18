@@ -1,22 +1,45 @@
-## What's happening
+## Goal
+In the Contacts "By company" view, when two or more buckets share the same normalized company name but live on different email domains (e.g. two Honda dealers), surface a "Merge N companies?" suggestion in each affected bucket header. Clicking it collapses them into one bucket by writing the extra domains to `company_aliases`, so all downstream logic (tags, logos, sync) treats them as one company. No automatic writes.
 
-The pencil on a company row (e.g. IG Burton) opens the **Company Aliases + Tags** dialog. It currently only pre-selects tags that were saved as *company-level assignments* (`company_group_assignments` row for that domain). Tags that a contact in the bucket already belongs to via individual membership, bulk-add, auto-company-subgroups, or Google labels are ignored — so the dialog looks empty even when the contacts clearly are in groups.
+## What changes
 
-Verified with a query: IG Burton has 1 contact, 0 group memberships and 0 company assignments — but the same bug shows up for any company whose contacts were tagged individually.
+### 1. Company-name normalizer
+Add `src/lib/contacts/company-name.ts` exporting `normalizeCompanyName(raw)`:
+- Lowercase, trim, collapse whitespace.
+- Strip trailing legal suffixes: `inc`, `inc.`, `llc`, `l.l.c.`, `ltd`, `co`, `co.`, `corp`, `corporation`, `gmbh`, `s.a.`, `s.a.s`, `pty`, `plc`, `bv`, `ag`, `kg`.
+- Strip punctuation (`.,'"&/`), collapse multiple spaces.
+- Return `null` for empty/1-char results (so we don't merge on garbage).
 
-## Fix
+### 2. Suggest merges in the contacts view
+In `src/routes/_authenticated/contacts.index.tsx`:
+- Keep existing domain-keyed `companyBuckets` as-is.
+- Add a new `useMemo` that walks `companyBuckets` (kind === "company"), derives the dominant `company` string per bucket (mode of `c.company` values, fallback to `bucket.name`), normalizes it, and groups bucket keys by that normalized name.
+- Produce a `mergeSuggestions: Map<bucketKey, { normalizedName; displayName; otherBuckets: Bucket[] }>` for any name shared by ≥2 buckets.
 
-Edit **only** `src/components/contacts/CompanyAliasesDialog.tsx` (presentation logic; no server or DB changes):
+### 3. Bucket header UI
+Where each company bucket row is rendered (around lines 620–690), if `mergeSuggestions.has(b.key)`:
+- Show a small inline chip: `Merge {N} "{displayName}" companies?` with a `Merge` button and a `Dismiss` button.
+- Merge picks the bucket with the most contacts as primary (tiebreak: most emails, then alphabetical domain) and calls a new server fn `mergeCompaniesByName` with `{ primaryDomain, aliasDomains[] }`.
+- Dismiss stores the normalized name in `localStorage` under `zerrow.mergeDismissed` so it stops nagging.
 
-1. Use the `memberships` array already returned by `listContactGroups` to compute, per group, how many contacts in this bucket are members (`3 / 5`).
-2. Seed `selectedGroupIds` on open with the union of:
-   - saved `company_group_assignments` for this primary domain (today's behavior), **plus**
-   - any group where **every** contact in the bucket is already a member (fully-covered groups).
-3. In each group chip, when there is partial coverage (`0 < n < N`), show a small `n/N` badge next to the group name so the user can see "some of these contacts are already tagged here". Fully-covered / selected chips keep the existing check state.
-4. Update the helper copy under the chip row from "Tags apply to everyone in this company." to something like "Tags apply to all N contacts in this company. Partially-tagged groups show how many are already members."
+### 4. Server function
+Add `mergeCompaniesByName` in `src/lib/contacts/company-merge.functions.ts` (auth-required via `requireSupabaseAuth`):
+- Validate inputs (Zod: primary domain + non-empty aliases, all lowercase hostnames).
+- For each alias domain, upsert into `company_aliases` (`user_id`, `alias_domain`, `primary_domain`) — reuses the existing table already read by `aliasMap`.
+- Return `{ inserted: n }`.
+Client-side: `useMutation` invalidates the `company_aliases` query so the buckets recollapse via the existing `aliasMap` path.
 
-Saving still calls `setCompanyGroups`, which materializes the tag onto every contact in the bucket — no behavior change on write.
+### 5. Nothing else changes
+- Pencil / tags dialog, logos, filters, and Google/CardDAV sync all continue to work because they read `company_aliases`. No schema migration needed — the table exists.
+
+## Technical notes
+- Normalizer lives in `src/lib/contacts/` (pure, unit-testable). Add `company-name.test.ts` covering "Honda Inc.", "honda", "Honda  Motor Co", "Honda, LLC".
+- Dominant name per bucket: iterate `bucket.contacts`, count non-empty `c.company` occurrences (case-insensitive), pick the highest; ignore buckets whose normalized name is `null`.
+- Don't suggest merges across `kind !== "company"` (skip Personal / Other).
+- Dismissed set is client-only (localStorage); persistence across devices isn't needed for a nudge.
+- Keep `companyBuckets`'s existing memo dependency list intact; add the new memo separately so re-renders stay cheap.
 
 ## Out of scope
-
-No changes to the contact detail drawer, no schema changes, no changes to `setCompanyGroups` or the assignments table.
+- No auto-merge, no writes without user click.
+- No changes to the aliases dialog (existing pencil flow already lets users manage aliases manually).
+- No changes to CardDAV/Google sync — they pick up merges via `company_aliases` automatically on next sync.
