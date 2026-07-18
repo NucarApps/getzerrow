@@ -63,10 +63,12 @@ async function assertOwnsGroup(supabase: DB, userId: string, groupId: string) {
 }
 
 /**
- * Idempotent reconcile: given a group, ensure the auto company subgroups
- * exactly reflect the parent's current direct members. Safe to call whether
- * or not the flag is on (callers should still gate at their side to avoid
- * an extra round trip).
+ * Idempotent reconcile: for a parent group `P` with auto-company-subgroups
+ * enabled, ensure that every contact whose normalized `company` matches a
+ * company represented by `P`'s manual members is present in `P` (as an
+ * `auto_added=true` row) and in the matching auto subgroup. Auto subgroups
+ * are created/renamed/removed to match the represented-companies set.
+ * Manual memberships (`auto_added=false`) are never touched.
  */
 export async function reconcileAutoCompanySubgroupsImpl(
   supabase: DB,
@@ -79,35 +81,67 @@ export async function reconcileAutoCompanySubgroupsImpl(
   membershipsAdded: number;
   membershipsRemoved: number;
 }> {
-  // 1. Load direct members of the parent group + their companies.
+  // 1. Load direct members of the parent, split by auto/manual.
   const { data: members, error: mErr } = await supabase
     .from("contact_group_members")
-    .select("contact_id, contacts:contacts(id, company)")
+    .select("contact_id, auto_added, contacts:contacts(id, company)")
     .eq("group_id", parentGroupId);
   if (mErr) throw new Error(mErr.message);
 
   type MemberRow = {
     contact_id: string;
+    auto_added: boolean | null;
     contacts: { id: string; company: string | null } | null;
   };
   const rows = (members ?? []) as unknown as MemberRow[];
 
-  // Group contacts by normalized company (skip blank / un-normalizable).
-  const byKey = new Map<string, { rawValues: string[]; contactIds: Set<string> }>();
+  const manualIds = new Set<string>();
+  const manualCompanies: string[] = [];
   for (const r of rows) {
+    if (r.auto_added) continue;
+    manualIds.add(r.contact_id);
     const raw = r.contacts?.company ?? null;
-    const key = normalizeCompanyName(raw);
-    if (!key) continue;
-    let bucket = byKey.get(key);
-    if (!bucket) {
-      bucket = { rawValues: [], contactIds: new Set() };
-      byKey.set(key, bucket);
-    }
-    if (raw) bucket.rawValues.push(raw);
-    bucket.contactIds.add(r.contact_id);
+    if (raw) manualCompanies.push(raw);
   }
 
-  // 2. Load existing auto subgroups for this parent.
+  // 2. Represented-companies = distinct normalized company of manual members.
+  const repKeys = new Set<string>();
+  for (const raw of manualCompanies) {
+    const k = normalizeCompanyName(raw);
+    if (k) repKeys.add(k);
+  }
+
+  // 3. Load every user contact with a non-empty company and bucket by key.
+  const byKey = new Map<string, { rawValues: string[]; contactIds: Set<string> }>();
+  if (repKeys.size > 0) {
+    const { data: allContacts, error: cErr } = await supabase
+      .from("contacts")
+      .select("id, company")
+      .eq("user_id", userId)
+      .not("company", "is", null);
+    if (cErr) throw new Error(cErr.message);
+    for (const c of allContacts ?? []) {
+      const raw = c.company ?? null;
+      const key = normalizeCompanyName(raw);
+      if (!key || !repKeys.has(key)) continue;
+      let bucket = byKey.get(key);
+      if (!bucket) {
+        bucket = { rawValues: [], contactIds: new Set() };
+        byKey.set(key, bucket);
+      }
+      if (raw) bucket.rawValues.push(raw);
+      bucket.contactIds.add(c.id);
+    }
+    // Every represented key must exist as a bucket even if no matching
+    // contact was returned (shouldn't happen, but keeps the invariant tight).
+    for (const key of repKeys) {
+      if (!byKey.has(key)) {
+        byKey.set(key, { rawValues: [], contactIds: new Set() });
+      }
+    }
+  }
+
+  // 4. Load existing auto subgroups for this parent.
   const { data: existing, error: exErr } = await supabase
     .from("contact_groups")
     .select("id,name")
@@ -115,18 +149,14 @@ export async function reconcileAutoCompanySubgroupsImpl(
     .eq("auto_generated_from_group_id", parentGroupId);
   if (exErr) throw new Error(exErr.message);
 
-  // Existing rows are indexed by normalized(name) so a stored "Hyundai
-  // America, Inc." matches the newly-normalized key "hyundai america".
   const existingByKey = new Map<string, { id: string; name: string }>();
   for (const g of existing ?? []) {
     const k = normalizeCompanyName(g.name);
     if (!k) continue;
-    // If two auto rows collapse to the same key (legacy data), keep the
-    // first and let the delete pass below drop the extras.
     if (!existingByKey.has(k)) existingByKey.set(k, g);
   }
 
-  // 3. Create missing subgroups.
+  // 5. Create/rename subgroups for each represented key.
   let created = 0;
   let renamed = 0;
   const wantedKeys = new Set(byKey.keys());
@@ -134,7 +164,6 @@ export async function reconcileAutoCompanySubgroupsImpl(
     const display = pickDisplayName(info.rawValues) || key;
     const existingRow = existingByKey.get(key);
     if (existingRow) {
-      // Keep the display label in sync with the most common raw variant.
       if (existingRow.name !== display) {
         const { error: rnErr } = await supabase
           .from("contact_groups")
@@ -171,8 +200,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
     created++;
   }
 
-  // 4. Delete auto subgroups whose company disappeared, plus any legacy
-  //    duplicates that share a key with a kept row.
+  // 6. Delete stale auto subgroups + legacy duplicates.
   let removed = 0;
   const keptIds = new Set<string>();
   for (const [key, g] of existingByKey) {
@@ -191,9 +219,51 @@ export async function reconcileAutoCompanySubgroupsImpl(
     removed = toDeleteIds.length;
   }
 
-  // 5. Reconcile members of each remaining auto subgroup.
+  // 7. Reconcile parent-group auto memberships. wantedAutoIds = every
+  //    matched contact that isn't already a manual member of the parent.
+  const wantedAutoIds = new Set<string>();
+  for (const bucket of byKey.values()) {
+    for (const cid of bucket.contactIds) {
+      if (!manualIds.has(cid)) wantedAutoIds.add(cid);
+    }
+  }
+  const currentAutoIds = new Set<string>();
+  for (const r of rows) {
+    if (r.auto_added) currentAutoIds.add(r.contact_id);
+  }
+  const parentToAdd: string[] = [];
+  for (const cid of wantedAutoIds) if (!currentAutoIds.has(cid)) parentToAdd.push(cid);
+  const parentToRemove: string[] = [];
+  for (const cid of currentAutoIds) if (!wantedAutoIds.has(cid)) parentToRemove.push(cid);
+
   let membershipsAdded = 0;
   let membershipsRemoved = 0;
+  if (parentToAdd.length > 0) {
+    const { error: aErr } = await supabase.from("contact_group_members").upsert(
+      parentToAdd.map((contact_id) => ({
+        group_id: parentGroupId,
+        contact_id,
+        user_id: userId,
+        auto_added: true,
+      })),
+      { onConflict: "group_id,contact_id", ignoreDuplicates: true },
+    );
+    if (aErr) throw new Error(aErr.message);
+    membershipsAdded += parentToAdd.length;
+  }
+  if (parentToRemove.length > 0) {
+    const { error: rErr } = await supabase
+      .from("contact_group_members")
+      .delete()
+      .eq("group_id", parentGroupId)
+      .eq("auto_added", true)
+      .in("contact_id", parentToRemove);
+    if (rErr) throw new Error(rErr.message);
+    membershipsRemoved += parentToRemove.length;
+  }
+
+  // 8. Reconcile subgroup memberships: each auto subgroup contains every
+  //    matched contact for its key (manual + auto in parent).
   for (const [key, g] of existingByKey) {
     if (!wantedKeys.has(key)) continue;
     const wanted = byKey.get(key)?.contactIds ?? new Set<string>();
@@ -213,7 +283,12 @@ export async function reconcileAutoCompanySubgroupsImpl(
       const { error: aErr } = await supabase
         .from("contact_group_members")
         .upsert(
-          toAdd.map((contact_id) => ({ group_id: g.id, contact_id, user_id: userId })),
+          toAdd.map((contact_id) => ({
+            group_id: g.id,
+            contact_id,
+            user_id: userId,
+            auto_added: true,
+          })),
           { onConflict: "group_id,contact_id", ignoreDuplicates: true },
         );
       if (aErr) throw new Error(aErr.message);
