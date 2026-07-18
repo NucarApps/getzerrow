@@ -101,9 +101,9 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, onChan
 
   return (
     <div className="group relative h-16 w-16 shrink-0">
-      {avatarUrl ? (
+      {displaySrc ? (
         <img
-          src={avatarUrl}
+          src={displaySrc}
           alt={displayName}
           className="h-16 w-16 rounded-full object-cover"
         />
