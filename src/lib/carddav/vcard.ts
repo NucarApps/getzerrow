@@ -81,7 +81,7 @@ function phoneTypeParam(label: string | null): string {
 export function contactToVCard(
   contact: DecryptedContact,
   phones: PhoneRow[] = [],
-  categories: string[] = [],
+  _categories: string[] = [],
 ): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
 
