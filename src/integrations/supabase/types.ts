@@ -351,18 +351,21 @@ export type Database = {
       }
       contact_group_members: {
         Row: {
+          auto_added: boolean
           contact_id: string
           created_at: string
           group_id: string
           user_id: string
         }
         Insert: {
+          auto_added?: boolean
           contact_id: string
           created_at?: string
           group_id: string
           user_id: string
         }
         Update: {
+          auto_added?: boolean
           contact_id?: string
           created_at?: string
           group_id?: string
