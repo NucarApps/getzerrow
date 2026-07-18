@@ -406,7 +406,10 @@ ${convoSample}`,
     // Re-hydrate decrypted fields onto the returned row so the caller
     // (the inbox / contact drawer) sees the freshly-written values.
     const { row: decRow } = await getContactDecrypted(contact.id);
-    return { contact: decRow ?? updated, skipped: false as const };
+    return {
+      contact: (decRow ?? updated) as Database["public"]["Tables"]["contacts"]["Row"],
+      skipped: false as const,
+    };
   }
 }
 
