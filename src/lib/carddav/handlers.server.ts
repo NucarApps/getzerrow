@@ -1095,6 +1095,23 @@ export async function handlePut(
     await reconcileContactCategories(userId, contactId, parsed.categories);
   }
 
+  // PHOTO: iOS uploads a fresh contact photo inline as base64. We accept
+  // non-empty photos as "set to this picture" and skip empty PHOTO slots
+  // to preserve the existing avatar during partial edits (matches the
+  // conservative merge policy for the other fields). Google-linked
+  // contacts get flagged dirty right after so the picture also flows
+  // upstream.
+  if (present.has("PHOTO") && parsed.photo && parsed.photo.bytes.length > 0) {
+    try {
+      await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime);
+    } catch (err) {
+      logInfo("carddav.put.photo_save_failed", {
+        contact_id: contactId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // A CardDAV edit is a local source of truth. If this contact is linked to
   // Google Contacts, force the next two-way run to push it instead of letting
   // a just-pulled remote snapshot mark it as already synced.
