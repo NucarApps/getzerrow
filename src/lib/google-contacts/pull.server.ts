@@ -249,6 +249,7 @@ async function applyPersonChanges(
   progress?: ProgressReporter,
 ): Promise<void> {
   if (!persons.length && !deletions.length) return;
+  const touchedContactIds = new Set<string>();
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
