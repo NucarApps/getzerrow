@@ -9,6 +9,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getContactDecrypted } from "@/lib/sync/encrypted-reader";
 import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
+import { snapshotContact } from "@/lib/contacts/revisions.server";
 import {
   buildGroupVCard,
   contactETag,
