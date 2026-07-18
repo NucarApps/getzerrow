@@ -21,6 +21,7 @@ import {
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { DuplicateSuggestionsDrawer } from "@/components/contacts/DuplicateSuggestionsDrawer";
 import { EnrichmentSuggestionsDrawer } from "@/components/contacts/EnrichmentSuggestionsDrawer";
+import { GroupRulesSection } from "@/components/contacts/GroupRulesSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
