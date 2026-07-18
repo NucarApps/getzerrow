@@ -14,7 +14,6 @@ import { logInfo } from "@/lib/log.server";
 import { buildCardDavContactPatch } from "./merge";
 import {
   saveContactPhoto,
-  deleteContactPhoto,
   loadContactPhotoBytes,
 } from "@/lib/contacts/photos.server";
 
