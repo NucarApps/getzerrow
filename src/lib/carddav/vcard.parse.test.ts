@@ -88,7 +88,7 @@ describe("parseVCard", () => {
     expect(p.phones[0].number).toContain("555");
     expect(p.presentFields.has("TEL")).toBe(true);
     expect(p.linkedin).toContain("linkedin.com/in/person");
-    expect(p.presentFields.has("URL")).toBe(true);
+    expect(p.presentFields.has("LINKEDIN")).toBe(true);
   });
 });
 
