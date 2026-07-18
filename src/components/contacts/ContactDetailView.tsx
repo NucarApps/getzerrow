@@ -34,6 +34,7 @@ import {
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { listMeetingsForContact } from "@/lib/meetings.functions";
 import { sendMyCard } from "@/lib/cards.functions";
+import { listContactRevisions, restoreContactRevision } from "@/lib/contacts/revisions.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { toast } from "sonner";
 import {
