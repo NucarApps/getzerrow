@@ -24,6 +24,20 @@ import {
   phoneEntrySchema,
 } from "../contacts-helpers.server";
 
+/** Fields the user has locked in — enrichment must never overwrite them. */
+function buildLockedFieldSet(contact: {
+  manual_overrides?: string[] | null;
+  company_id?: string | null;
+}): Set<string> {
+  const locked = new Set<string>(contact.manual_overrides ?? []);
+  // Explicitly linking a company via the combobox is an unambiguous user
+  // action, so treat the company text as locked even without an override.
+  if (contact.company_id) locked.add("company");
+  return locked;
+}
+
+
+
 type EnrichSupabase = SupabaseClient<Database>;
   
 
@@ -185,8 +199,12 @@ async function runEnrichForContact(
       .map((e, i) => `--- Email ${i + 1} ---\nSubject: ${e.subject}\n${e.tail}`)
       .join("\n\n");
 
+    const locked = buildLockedFieldSet(contact);
+
     if (!sample.trim()) {
-      const betterName = pickBetterName(contact.name, fromNameCandidate);
+      const betterName = locked.has("name")
+        ? contact.name
+        : pickBetterName(contact.name, fromNameCandidate);
       const earlyPatch: { enriched_at: string; name?: string } = {
         enriched_at: new Date().toISOString(),
       };
@@ -199,6 +217,7 @@ async function runEnrichForContact(
         .single();
       return { contact: updated ?? contact, skipped: false as const };
     }
+
 
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
       name: null,
@@ -274,6 +293,7 @@ ${sample}`,
       "twitter",
       ...ADDRESS_FIELDS,
     ] as const) {
+      if (locked.has(k)) continue; // user-owned — never overwrite
       const v = extracted[k];
       if (k === "name") {
         let best = pickBetterName(contact.name, fromNameCandidate);
@@ -283,6 +303,7 @@ ${sample}`,
       }
       if (v && (!(contact as Record<string, unknown>)[k] || data.force)) patch[k] = v;
     }
+
     // Fields persisted only via the encrypted RPC — strip from the
     // plaintext patch since the columns are gone post-Migration B.
     const ENCRYPTED_ONLY = ["phone", "address_line1", "address_line2"] as const;
@@ -598,7 +619,9 @@ ${body}`,
       "postal_code",
       "country",
     ] as const;
+    const baseLocked = buildLockedFieldSet(base);
     for (const k of plaintextFields) {
+      if (baseLocked.has(k)) continue;
       const v = extracted[k];
       if (k === "name") {
         const better = pickBetterName(base.name, v);
@@ -608,9 +631,11 @@ ${body}`,
       if (v && !base[k]) patch[k] = v;
     }
     for (const k of ENCRYPTED_ONLY) {
+      if (baseLocked.has(k)) continue;
       const v = extracted[k];
       if (v) encPatch[k] = v;
     }
+
 
     const { error: updErr } = await supabase.from("contacts").update(patch).eq("id", base.id);
     if (updErr) throw new Error(updErr.message);

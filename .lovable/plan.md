@@ -1,37 +1,40 @@
-## Problem
+# Stop enrichment from overwriting fields you manually edited
 
-Erica's `contacts.avatar_url` holds bytes of the **Nissan** logo (a stale company-logo snapshot from a previous mis-association or CardDAV round-trip). Her contact is now correctly linked to Fenway Sports (`fenwaysports.com`, FSG logo chosen). The existing "Fix company logo photos" cleanup only clears an avatar when its bytes exactly match her *current* company's chosen logo, so a Nissan-logo snapshot on an FSG contact is never detected and stays pinned as her personal photo.
+## Problem
+When you edit a contact's name or company and later run "Enrich" (single or the batch "Rerun for everyone"), the AI can replace your edit:
+- `enrichContact` picks a "better" name via `pickBetterName(contact.name, fromNameCandidate)` — a signature-derived name can beat yours.
+- Batch/force runs use `data.force`, which flips the "only fill empty fields" guard off and lets AI overwrite `company`, `title`, `website`, etc. even when you've set them.
+- Nothing today records that a field was set by *you* vs. by AI, so enrichment can't tell the difference.
 
 ## Fix
 
-### 1. Broaden the batch cleanup (`src/lib/contacts/company-logo-cleanup.functions.ts`)
+Track which fields are user-owned and treat them as locked during enrichment.
 
-For each contact with a company-linked `avatar_url`:
+1. **Schema** — add `contacts.manual_overrides text[] not null default '{}'`. Values are field names like `name`, `company`, `title`, `phone`, `website`, `linkedin`, `twitter`, `address_line1`, `city`, `region`, `postal_code`, `country`.
 
-- Hash the stored avatar bytes once.
-- Compare against the SHA of the contact's own chosen company logo (existing behavior).
-- **New:** also compare against a per-user set of "known company-logo SHAs" — computed by fetching bytes for every domain in the user's `company_logo_choices` (and the primary domain of every company the user owns). Cache SHAs in-memory per run.
-- If the avatar SHA matches ANY known company-logo SHA, clear `avatar_url`, delete the storage object, and stamp `company_logo_photo_sha` with the *current* company's logo SHA so CardDAV round-trips stay non-destructive.
+2. **Mark on user edits** (`src/lib/contacts/crud.functions.ts`):
+   - In `updateContact`, for every key present in the incoming patch with a non-empty value, union it into `manual_overrides`. Empty/null clears that key from the array (so a user blanking a field re-opens it to enrichment).
+   - In `createContact`, seed `manual_overrides` with the non-empty fields the user typed.
+   - In `renameCompanyBucket` / `setCompanyWebsite` / bulk edit paths, add `company` / `website` similarly.
+   - Do this atomically in the same `update` call.
 
-This catches Erica (avatar = Nissan logo, matches the Nissan entry in the known-logos set) even though her contact is now under FSG.
+3. **Honor on enrichment** (`src/lib/contacts/enrich.functions.ts`, both `enrichContact` and the batch `rerunEnrichmentBatch` path around line 485–615):
+   - Load `manual_overrides` with the contact.
+   - Before assigning any field to `patch`, skip if the field is in `manual_overrides` — regardless of `force`.
+   - For `name`, wrap the `pickBetterName` logic in the same guard: if `name` is locked, keep `contact.name` as-is.
+   - `company` gets an extra guard: if `contact.company_id` is set (user explicitly linked a company via the combobox), treat `company` as locked even if not in `manual_overrides` — linking a company is an unambiguous user action.
+   - `relationship_summary` and `enriched_at` are AI-owned and stay writeable.
 
-### 2. Per-contact "Reset to company logo" action (`src/components/contacts/ContactPhotoUploader.tsx` + a new server fn)
-
-Add a small menu item / button next to Remove, visible only when the contact has a `company_id`. It calls a new `resetContactToCompanyLogo` server fn that unconditionally clears `avatar_url` for that one contact, deletes the storage blob, sets `company_logo_photo_sha` to the current logo's SHA, and bumps the CardDAV resync nonce. This is an escape hatch for any future stale-snapshot cases where the batch heuristic can't identify the bytes.
-
-### 3. Re-run
-
-After deploying, the user clicks "Fix company logo photos" once more; Erica's stored Nissan bytes match the known-logos set and get cleared. Her drawer then falls back to the live FSG company logo. iPhone re-pulls on the next CardDAV sync.
+4. **Client** — no UI change required. Enrichment silently respects the lock. (Optional: a small "edited by you" hint next to locked fields is out of scope for this fix.)
 
 ## Technical notes
 
-- Known-logos SHA set is built once per batch call: read `company_logo_choices` for the user, call `fetchChosenCompanyLogoBytes` for each domain, hash with `sha256Hex`. Failures per domain are skipped, not fatal.
-- No schema change needed; `company_logo_photo_sha` already exists.
-- The per-contact reset fn uses `requireSupabaseAuth` and scopes by `user_id` + `contact_id`.
-- No UI change to `CompanyLogo`; the fallback path already works once `avatar_url` is null.
+- Field list to track lives in one constant `MANUAL_TRACKED_FIELDS` in `crud.functions.ts`, reused by enrichment via import so the two lists can't drift.
+- Use `array_append` / `array_remove` in SQL via a small helper (compute the next array in JS from the loaded row + patch, then include it in the same `.update()` — avoids a race with the plaintext `.update` already running there).
+- Encrypted fields (`phone`, `address_line1`, `address_line2`, `relationship_summary`) still route through the encrypted RPC; the lock check happens before we build the encrypted patch so locked encrypted fields are also skipped.
+- No data backfill: existing contacts start with an empty `manual_overrides`, so the first future edit is what locks a field. That matches user intent ("if I edited it, it should stay") without guessing about historical rows.
 
-## Files touched
+## Out of scope
 
-- `src/lib/contacts/company-logo-cleanup.functions.ts` — add known-logo SHA set + broadened match, add `resetContactToCompanyLogo` server fn.
-- `src/components/contacts/ContactPhotoUploader.tsx` — add "Reset to company logo" affordance when `companyDomain` is present and `avatarUrl` is set.
-- `src/components/contacts/ContactDetailView.tsx` — pass `companyId` through so the reset fn has an id to call with (only if not already threaded).
+- Undoing past bad overwrites (revisions table already exists if you want to roll one back manually).
+- A UI badge showing which fields are locked.

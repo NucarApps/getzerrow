@@ -26,6 +26,55 @@ import {
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 import { resolveContactCompany } from "@/lib/companies/companies.functions";
 
+/**
+ * Fields we treat as "user-owned once you edit them". Enrichment reads this
+ * list from `contacts.manual_overrides` and skips any field named here that
+ * the user has set by hand, even on a forced rerun. Keep in one place so
+ * `crud` and `enrich` can't drift.
+ */
+export const MANUAL_TRACKED_FIELDS = [
+  "name",
+  "title",
+  "company",
+  "phone",
+  "website",
+  "linkedin",
+  "twitter",
+  "notes",
+  "address_line1",
+  "address_line2",
+  "city",
+  "region",
+  "postal_code",
+  "country",
+] as const;
+export type ManualTrackedField = (typeof MANUAL_TRACKED_FIELDS)[number];
+
+const MANUAL_TRACKED_SET: Set<string> = new Set(MANUAL_TRACKED_FIELDS);
+
+/**
+ * Merge `patch` into `current` overrides:
+ *   - a non-empty tracked field is added (user set it)
+ *   - an explicit null / empty-string tracked field is removed (user cleared
+ *     it, so enrichment may fill it again).
+ * Fields not present in the patch are left alone.
+ */
+export function computeManualOverrides(
+  current: readonly string[] | null | undefined,
+  patch: Record<string, unknown>,
+): string[] {
+  const set = new Set<string>(current ?? []);
+  for (const [key, value] of Object.entries(patch)) {
+    if (!MANUAL_TRACKED_SET.has(key)) continue;
+    const isCleared =
+      value === null || (typeof value === "string" && value.trim() === "");
+    if (isCleared) set.delete(key);
+    else if (value !== undefined) set.add(key);
+  }
+  return Array.from(set).sort();
+}
+
+
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -212,12 +261,28 @@ export const updateContact = createServerFn({ method: "POST" })
       delete (patch as Record<string, unknown>)[k];
     }
 
+    // Merge tracked fields the user just set into `manual_overrides` so
+    // enrichment leaves them alone next time. Use the full user-supplied
+    // patch (plaintext + encrypted + `data`) so encrypted fields lock too.
+    const { data: existingOverridesRow } = await supabase
+      .from("contacts")
+      .select("manual_overrides")
+      .eq("id", id)
+      .maybeSingle();
+    const nextOverrides = computeManualOverrides(
+      (existingOverridesRow as { manual_overrides?: string[] | null } | null)
+        ?.manual_overrides ?? [],
+      { ...data, ...encryptedPatch } as Record<string, unknown>,
+    );
+    (patch as Record<string, unknown>).manual_overrides = nextOverrides;
+
     const { data: updated, error } = await supabase
       .from("contacts")
       .update(patch as never)
       .eq("id", id)
       .select("*")
       .single();
+
     if (error) {
       const code = (error as { code?: string }).code;
       if (code === "23505") {
@@ -332,9 +397,16 @@ export const renameCompanyForContacts = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .in("id", data.contactIds);
     if (error) throw new Error(error.message);
+    // Bulk rename is an explicit user edit — lock `company` on every affected
+    // contact so enrichment won't overwrite the new name later.
+    await supabase.rpc("add_manual_overrides", {
+      p_ids: data.contactIds,
+      p_fields: ["company"],
+    });
     await reconcileAutoParentsForContacts(supabase, userId, data.contactIds);
     return { updated: count ?? 0 };
   });
+
 
 /**
  * Set (or clear) the `website` field on every contact in a bucket. Used by
@@ -361,8 +433,17 @@ export const setCompanyWebsiteForContacts = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .in("id", data.contactIds);
     if (error) throw new Error(error.message);
+    if (value) {
+      // Only lock when the user set a website. Clearing it should re-open
+      // the field to enrichment.
+      await supabase.rpc("add_manual_overrides", {
+        p_ids: data.contactIds,
+        p_fields: ["website"],
+      });
+    }
     return { updated: count ?? 0 };
   });
+
 
 /** Manually create a contact. */
 export const createContactManual = createServerFn({ method: "POST" })
@@ -389,6 +470,7 @@ export const createContactManual = createServerFn({ method: "POST" })
       ? await resolveContactCompany({ supabase, userId }, data.company)
       : { companyId: null as string | null, canonicalName: null as string | null };
     // phone / notes live in encrypted columns only after Phase 3.
+    const overrides = computeManualOverrides([], data as Record<string, unknown>);
     const payload = {
       user_id: userId,
       email: data.email,
@@ -400,7 +482,9 @@ export const createContactManual = createServerFn({ method: "POST" })
       linkedin: data.linkedin || null,
       twitter: data.twitter || null,
       source: "manual",
+      manual_overrides: overrides,
     };
+
     const { data: row, error } = await supabaseAdmin
       .from("contacts")
       .upsert(payload, { onConflict: "user_id,email" })

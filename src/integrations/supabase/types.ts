@@ -881,6 +881,7 @@ export type Database = {
           id: string
           key_version: number
           linkedin: string | null
+          manual_overrides: string[]
           name: string | null
           notes_enc: string | null
           phone_enc: string | null
@@ -911,6 +912,7 @@ export type Database = {
           id?: string
           key_version?: number
           linkedin?: string | null
+          manual_overrides?: string[]
           name?: string | null
           notes_enc?: string | null
           phone_enc?: string | null
@@ -941,6 +943,7 @@ export type Database = {
           id?: string
           key_version?: number
           linkedin?: string | null
+          manual_overrides?: string[]
           name?: string | null
           notes_enc?: string | null
           phone_enc?: string | null
@@ -2811,6 +2814,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_manual_overrides: {
+        Args: { p_fields: string[]; p_ids: string[] }
+        Returns: undefined
+      }
       admin_daily_activity: {
         Args: { p_days?: number }
         Returns: {
