@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./normalize";
 import { isPersonalDomain, extractDomain } from "@/lib/company-domains";
+import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 
 type Ctx = { supabase: import("@supabase/supabase-js").SupabaseClient; userId: string };
 
