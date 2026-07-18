@@ -200,6 +200,19 @@ export type ParsedPhone = {
   is_primary: boolean;
 };
 
+export type PresentField =
+  | "FN"
+  | "ORG"
+  | "TITLE"
+  | "EMAIL"
+  | "TEL"
+  | "ADR"
+  | "URL"
+  | "LINKEDIN"
+  | "TWITTER"
+  | "NOTE"
+  | "CATEGORIES";
+
 export type ParsedVCard = {
   uid: string | null;
   name: string | null;
@@ -225,6 +238,11 @@ export type ParsedVCard = {
   isGroup: boolean;
   /** Member contact UIDs for a group vCard. Empty for individuals. */
   memberUids: string[];
+  /** Set of top-level properties that actually appeared in the vCard body.
+   * Used by CardDAV PUT to merge instead of replace — iOS routinely uploads
+   * partial vCards for single-field edits and we must not clobber the
+   * fields it omitted. */
+  presentFields: Set<PresentField>;
 };
 
 function unescapeValue(v: string): string {
