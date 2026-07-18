@@ -282,10 +282,13 @@ ${sample}`,
     // === Relationship summary: who are they, what have you discussed? ===
     try {
       const addr = contact.email;
+      // to_addrs was dropped in the encryption migration; match by from_addr
+      // only here and rely on getEmailsDecrypted + the Gmail fallback below
+      // to surface outbound messages.
       const { data: idRows } = await supabase
         .from("emails")
         .select("id")
-        .or(`from_addr.eq.${addr},to_addrs.ilike.%${addr}%`)
+        .eq("from_addr", addr)
         .order("received_at", { ascending: false })
         .limit(30);
       const { rows: decryptedConvo } = await getEmailsDecrypted((idRows ?? []).map((r) => r.id));
