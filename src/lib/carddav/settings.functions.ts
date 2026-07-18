@@ -108,7 +108,7 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
         .from("contacts")
         .update({ updated_at: new Date().toISOString() })
         .eq("user_id", userId)
-        .not("relationship_summary", "is", null);
+        .not("relationship_summary_enc", "is", null);
     }
 
     return { ok: true };
@@ -140,7 +140,7 @@ export const resyncSummaryContacts = createServerFn({ method: "POST" })
       .from("contacts")
       .update({ updated_at: new Date().toISOString() })
       .eq("user_id", userId)
-      .not("relationship_summary", "is", null)
+      .not("relationship_summary_enc", "is", null)
       .select("id");
     if (error) throw new Error(error.message);
     return { ok: true, count: touched?.length ?? 0 };
