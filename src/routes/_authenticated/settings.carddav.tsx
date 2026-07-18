@@ -491,7 +491,36 @@ function CardDavSettings() {
             {resyncMut.isPending ? "Bumping…" : "Force iPhone resync"}
           </Button>
         </div>
+
+        <div className="border-t pt-4">
+          <p className="text-sm font-medium">
+            Fix contacts showing an old company logo
+          </p>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Scans every contact whose stored photo is really a snapshot of an
+            earlier company logo (from an iPhone round-trip) and clears it so
+            the current company logo shows again. Safe to re-run.
+          </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={runLogoCleanup}
+              disabled={logoCleanupState.running}
+            >
+              {logoCleanupState.running
+                ? `Scanning… ${logoCleanupState.done}/${logoCleanupState.total}`
+                : "Fix company logo photos"}
+            </Button>
+            {(logoCleanupState.running || logoCleanupState.done > 0) && (
+              <p className="text-xs text-muted-foreground">
+                {logoCleanupState.cleared} cleared
+              </p>
+            )}
+          </div>
+        </div>
       </Card>
+
     </div>
   );
 }
