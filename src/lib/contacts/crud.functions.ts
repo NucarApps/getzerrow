@@ -317,8 +317,13 @@ export const createContactManual = createServerFn({ method: "POST" })
         notes: data.notes ?? undefined,
       });
     }
+    if (row?.id && row.company) {
+      const { supabase } = context;
+      await reconcileAutoParentsForContacts(supabase, userId, [row.id]);
+    }
     return { contact: row };
   });
+
 /** Bulk-create contacts from a list of {email, name?}. */
 export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
