@@ -42,7 +42,9 @@ const AiOutput = z.object({
       kind: z.enum(["new", "subgroup", "merge_into_existing"]),
       parent_group_name: z.string().nullable(),
       existing_group_name: z.string().nullable(),
-      contact_ids: z.array(z.string()),
+      // Contacts are referenced by the short `i` index we send in the prompt,
+      // not by UUID — models reliably echo small ints, not long UUIDs.
+      contact_ids: z.array(z.number().int().positive()),
     }),
   ),
 });
