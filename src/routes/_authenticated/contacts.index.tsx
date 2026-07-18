@@ -1544,6 +1544,7 @@ function GroupEditorDialog({
               </div>
             </div>
           )}
+          {editing && editGroup && <GroupRulesSection groupId={editGroup.id} />}
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
           {editing && (
