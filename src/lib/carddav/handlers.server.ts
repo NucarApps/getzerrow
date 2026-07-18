@@ -168,10 +168,10 @@ async function loadContactPhotoOrLogo(
   const own = await loadContactPhotoBytes(row.avatar_url ?? null);
   if (own) return own;
   if (!(await getUseCompanyLogoFallback(userId))) return null;
-  const { fetchCompanyLogoBytes, logoDomainForContact } = await import(
+  const { fetchChosenCompanyLogoBytes, logoDomainForContact } = await import(
     "@/lib/contacts/logo-photo.server"
   );
-  return fetchCompanyLogoBytes(logoDomainForContact(row));
+  return fetchChosenCompanyLogoBytes(userId, logoDomainForContact(row));
 }
 
 
