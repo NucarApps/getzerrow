@@ -157,10 +157,11 @@ function ContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [aliasDialog, setAliasDialog] = useState<null | {
-    domain: string;
+    domain: string | null;
     name: string;
     contactIds: string[];
   }>(null);
+
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
