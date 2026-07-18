@@ -223,6 +223,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           name: form.name || null,
           title: form.title || null,
           company: form.company || null,
+          email: form.email.trim() ? form.email.trim() : null,
           website: form.website || null,
           linkedin: form.linkedin || null,
           twitter: form.twitter || null,
