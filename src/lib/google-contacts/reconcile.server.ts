@@ -19,6 +19,43 @@ export function accountHasContactsScope(scopeString: string | null | undefined):
 // finalize (network abort, timeout) — safe to reclaim.
 const LEASE_STALE_MS = 90_000;
 
+/** Clear stored photo tags for linked contacts that have no local avatar,
+ * so the next pull refetches the Google photo. Runs opportunistically on
+ * every sync — the pull loop only downloads bytes for rows whose etag was
+ * actually cleared, so this is safe to repeat. */
+async function autoClearMissingPhotoEtags(
+  userId: string,
+  gmailAccountId: string,
+): Promise<void> {
+  try {
+    const { data: links } = await supabaseAdmin
+      .from("google_contact_links")
+      .select("contact_id, contacts!inner(avatar_url)")
+      .eq("user_id", userId)
+      .eq("gmail_account_id", gmailAccountId)
+      .not("photo_etag", "is", null)
+      .is("contacts.avatar_url", null)
+      .limit(500);
+    const ids = (links ?? [])
+      .map((l) => (l as { contact_id?: string }).contact_id)
+      .filter((v): v is string => !!v);
+    if (ids.length === 0) return;
+    await supabaseAdmin
+      .from("google_contact_links")
+      .update({ photo_etag: null })
+      .eq("gmail_account_id", gmailAccountId)
+      .in("contact_id", ids);
+    logInfo("google_contacts.photo_backfill.cleared", {
+      userId,
+      gmailAccountId,
+      count: ids.length,
+    });
+  } catch (e) {
+    // Non-fatal: the sync should proceed even if this optimization fails.
+    logError("google_contacts.photo_backfill.failed", { userId, gmailAccountId }, e);
+  }
+}
+
 export async function runGoogleContactsSync(
   userId: string,
   gmailAccountId: string,
@@ -65,6 +102,13 @@ export async function runGoogleContactsSync(
       result = { ok: false, error: "needs_reconnect" };
       return result;
     }
+
+    // Auto-backfill missing photos: clear photo_etag for any linked contact
+    // whose local avatar is still empty, so this run's pull refetches the
+    // Google photo. Covers contacts that were linked before photo sync
+    // shipped and cases where a prior download failed. Cheap: one indexed
+    // UPDATE, and the pull loop only downloads bytes for the cleared rows.
+    await autoClearMissingPhotoEtags(userId, gmailAccountId);
 
     const pull = await pullFromGoogle(ids, progress);
     const push = pullOnly
