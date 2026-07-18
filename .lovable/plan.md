@@ -1,25 +1,35 @@
 ## Problem
 
-When a company is renamed (e.g. "Volkswagen of North America" → "Volkswagen"), `updateCompany` propagates the new name to every linked `contacts.company` field, but the auto-generated **subgroup label** ("Volkswagen of North America") is derived from members' raw `company` strings and only recomputed when subgroup reconcile runs — which currently fires on membership/company edits from the contact side, not on a company rename. So Bryan Barks's contact says "Volkswagen" while the group he lives under still says "Volkswagen of North America".
+Auto company subgroups produce three labels for one Company entity:
+`VW`, `Volkswagen`, `Volkswagen Group of America Inc.`
 
-## Change
+Root cause in `src/lib/contacts/auto-company-subgroups.functions.ts` → `deriveCompanyKey`:
+the bucketing key is the normalized `contact.company` string (or a fallback email/website domain). It ignores `contacts.company_id`. So contacts linked to the same Company entity but with different `company` free-text values ("VW", "Volkswagen", "Volkswagen Group of America Inc.") each spawn their own subgroup, and domain-only contacts on a secondary domain (e.g. `vw.com` vs `vwoa.com`) form yet another.
 
-In `src/lib/companies/companies.functions.ts` → `updateCompany` handler, after we sync `contacts.company` to the new name, collect the affected contact IDs and call the existing `reconcileAutoParentsForContacts(supabase, userId, ids)` helper.
+## Fix
 
-That helper already:
-- walks every parent group with `auto_company_subgroups=true`
-- calls `reconcileAutoCompanySubgroupsImpl`, which recomputes each subgroup's display name via `pickDisplayName` (most-common raw `company` among members)
-- renames the existing subgroup row in place (same `id`, same `carddav_uid`) so iPhone/CardDAV sees a rename, not a create+delete
+Make `company_id` the primary bucketing key, falling back to the current string/domain logic only when a contact has no `company_id`.
 
-No schema changes. No new UI. Rename-only path — direct company edits (adding a contact to a company, merges) already trigger reconcile through the contact-side code paths.
+### Changes in `src/lib/contacts/auto-company-subgroups.functions.ts`
 
-### Files touched
+1. Extend `ContactShape` to include `company_id`. Update every `.select(...)` on `contacts` in this file (member load at line 133, all-contacts load at line 170) to include `company_id`.
+2. In `deriveCompanyKey` (and its call sites), accept an optional `companyMap: Map<string, { name: string }>` keyed by company id:
+   - If `contact.company_id` is present and in the map, return `{ key: "cid:" + company_id, displayName: company.name, rawCompany: company.name }`. This guarantees one bucket per Company entity and the label follows the canonical company name.
+   - Otherwise, fall through to today's string/domain logic.
+3. Before step 2 of `reconcileAutoCompanySubgroupsImpl`, load the set of company ids referenced by the parent's manual members plus all user contacts sharing those ids, then fetch `companies(id, name)` once and build `companyMap`.
+4. Keep step 6's "delete stale" pass — after the change it will prune the two extra VW/Volkswagen Inc. subgroups on the next reconcile automatically.
 
-- `src/lib/companies/companies.functions.ts` — inside `updateCompany`, when `patch.name` is set:
-  1. Change the `contacts` sync to `.select("id")` so we get the affected IDs back.
-  2. `await reconcileAutoParentsForContacts(supabase, userId, ids)` (dynamic import to avoid circular deps).
+### Trigger a one-time reconcile
 
-### Out of scope
+Because the existing subgroups were created under the old keying, they need one reconcile pass to collapse:
 
-- Manually created (non-auto) groups keep their user-chosen names — those are not derived from company name and should not silently rename.
-- CardDAV group-display-style formatting (Group — Company) already reads live company name at render time, so nothing to change there.
+- Call `reconcileAllAutoGroups` (already exposed) after deploy, or the user can hit the existing "Reconcile auto subgroups" affordance. No new server fn or migration required.
+
+### Out of scope (call out, don't change)
+
+- Manual (non-auto) groups the user created by hand named "VW" or "Volkswagen" are not touched — only rows with `auto_generated_from_group_id` are managed. If any of the three labels in the screenshot is a manual group, it will remain; I'll surface that in the UI response so the user can delete it if desired.
+
+### Verification
+
+- Unit-level: extend `src/lib/contacts/company-name.test.ts` (or a new sibling) with a case asserting that two contacts sharing `company_id` but different `company` strings produce a single bucket.
+- Manual: on the Bryan Barks parent group, run reconcile and confirm only one "Volkswagen" subgroup remains, matching the Company entity's name.
