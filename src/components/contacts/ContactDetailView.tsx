@@ -591,6 +591,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
 
       <ContactMeetings contactId={id} />
 
+      <ContactRevisions contactId={id} />
+
+
       <ShareContactDialog open={shareOpen} onOpenChange={setShareOpen} contactId={id} contact={c} />
     </div>
   );
