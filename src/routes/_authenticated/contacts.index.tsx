@@ -859,15 +859,16 @@ function ContactsPage() {
                             : null
                         }
                         onEdit={
-                          b.kind === "company" && b.domain
+                          b.kind === "company"
                             ? () =>
                                 setAliasDialog({
-                                  domain: b.domain!,
+                                  domain: b.domain,
                                   name: b.name,
                                   contactIds: b.contacts.map((c) => c.id),
                                 })
                             : undefined
                         }
+
                         selectable
                         selectionState={(() => {
                           const ids = b.contacts.map((c) => c.id);
