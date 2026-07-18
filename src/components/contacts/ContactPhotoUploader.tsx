@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent } from "react";
-import { Camera, Trash2, Loader2 } from "lucide-react";
+import { Camera, Trash2, Loader2, Building2 } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import {
   removeContactPhoto,
   getContactPhotoSignedUrl,
 } from "@/lib/contacts/photos.functions";
+import { resetContactToCompanyLogo } from "@/lib/contacts/company-logo-cleanup.functions";
 
 const ALLOWED = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type AllowedMime = (typeof ALLOWED)[number];
@@ -41,6 +42,9 @@ type Props = {
    * inherit their company's chosen logo domain (e.g. `nissanusa.com`)
    * rather than falling back to their personal email domain. */
   companyDomain?: string | null;
+  /** When set, enables the "Reset to company logo" action, which clears the
+   * stored personal avatar so the live company logo shows through again. */
+  companyId?: string | null;
   onChanged: () => void;
 };
 
@@ -50,13 +54,14 @@ type Props = {
  * `contact-photos` bucket and marked dirty for Google/CardDAV sync so the
  * change propagates to iPhone and Google Contacts on their next tick.
  */
-export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, companyDomain, onChanged }: Props) {
+export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, companyDomain, companyId, onChanged }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const upload = useServerFn(uploadContactPhoto);
   const remove = useServerFn(removeContactPhoto);
   const signUrl = useServerFn(getContactPhotoSignedUrl);
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
+  const resetToCompany = useServerFn(resetContactToCompanyLogo);
 
   // Shares its cache key with the contacts list page so the network hit is
   // deduped when the drawer opens over the list.
@@ -118,6 +123,19 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
     }
   };
 
+  const onResetToCompany = async () => {
+    setBusy(true);
+    try {
+      await resetToCompany({ data: { contactId } });
+      toast.success("Reset to company logo");
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const logoDomain = !displaySrc
     ? (companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null))
     : null;
@@ -166,6 +184,19 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
           className="absolute -right-1 -bottom-1 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100"
         >
           <Trash2 className="h-3 w-3" />
+        </Button>
+      ) : null}
+      {avatarUrl && companyId && !busy ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="secondary"
+          onClick={onResetToCompany}
+          aria-label="Reset to company logo"
+          title="Reset to company logo"
+          className="absolute -left-1 -bottom-1 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100"
+        >
+          <Building2 className="h-3 w-3" />
         </Button>
       ) : null}
       <input

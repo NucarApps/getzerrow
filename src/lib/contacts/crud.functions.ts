@@ -121,6 +121,7 @@ export const getContact = createServerFn({ method: "POST" })
       phones: phones ?? [],
       emails: emailRows ?? [],
       companyDomain: companyDomain?.domain ?? null,
+      companyId: linkedCompanyId,
     };
 
   });
