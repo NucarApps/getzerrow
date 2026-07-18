@@ -79,11 +79,19 @@ export const getContact = createServerFn({ method: "POST" })
           .order("received_at", { ascending: false })
           .limit(10)
       : Promise.resolve({ data: [] });
-    const companyDomainQuery = contact.company_id
+    // company_id isn't returned by the decrypt RPC; fetch it separately so
+    // we can resolve the company's primary domain for the logo fallback.
+    const { data: companyLink } = await supabase
+      .from("contacts")
+      .select("company_id")
+      .eq("id", data.id)
+      .maybeSingle();
+    const linkedCompanyId = companyLink?.company_id ?? null;
+    const companyDomainQuery = linkedCompanyId
       ? supabase
           .from("company_domains")
           .select("domain,source,member_count,created_at")
-          .eq("company_id", contact.company_id)
+          .eq("company_id", linkedCompanyId)
           .order("source", { ascending: false }) // manual > auto
           .order("member_count", { ascending: false })
           .order("created_at", { ascending: true })
