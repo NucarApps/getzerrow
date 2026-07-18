@@ -72,6 +72,7 @@ function CompanyDetailPage() {
   const discoverFn = useServerFn(discoverCompanyDomains);
   const tagsFn = useServerFn(setCompanyTags);
   const mergeFn = useServerFn(mergeCompanies);
+  const previewMergeFn = useServerFn(previewMergeCompanies);
   const deleteFn = useServerFn(deleteCompany);
 
   const q = useQuery({
