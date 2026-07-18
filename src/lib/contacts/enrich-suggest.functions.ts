@@ -129,10 +129,23 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
     }
 
     // ---------- AI signature extraction for candidates WITH an email ----------
-    const withEmail = candidates.filter(
-      (c) => !!c.email && (!c.company || !c.title || (phonesByContact.get(c.id)?.size ?? 0) === 0),
-    );
+    // Any contact with an email is a candidate — the model may find a better
+    // name, additional emails, phones, company, or title.
+    const withEmail = candidates.filter((c) => !!c.email);
     const forAi = withEmail.slice(0, MAX_AI_EXTRACTIONS);
+
+    // Snapshot of every email already on a contact row so we don't propose
+    // an "additional email" that's already someone's primary.
+    const { data: allContactEmails } = await supabase
+      .from("contacts")
+      .select("email")
+      .not("email", "is", null);
+    const knownEmails = new Set(
+      (allContactEmails ?? [])
+        .map((r) => (r.email ?? "").toLowerCase())
+        .filter(Boolean),
+    );
+
     const gateway = createLovableAiGatewayProvider(apiKey);
     const model = gateway("google/gemini-3.1-flash-lite");
     let aiSuccess = 0;
@@ -161,20 +174,27 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       const corpus = bodies
         .map((b) => {
           const body = (b.body_text ?? b.snippet ?? "").slice(-MAX_BODY_CHARS);
-          return `Subject: ${b.subject ?? ""}\n${body}`;
+          return `Subject: ${b.subject ?? ""}\nFrom-Name: ${b.from_name ?? ""}\n${body}`;
         })
         .join("\n---\n")
         .slice(0, MAX_BODY_CHARS * 3);
 
-      const prompt = `You are extracting professional identity from the tail of email messages (where signatures usually live).
-Contact on file: name="${c.name ?? ""}" email="${addr}"
+      const prompt = `You are extracting professional identity for one person from the tail of email messages they sent (where signatures live).
 
-Return JSON with these fields:
-- company: employer/organization the sender writes for (null if not clearly present)
-- title: job title (null if not clearly present)
-- phones: array of phone numbers found in a signature (empty array or null if none)
+Contact on file:
+- name: "${c.name ?? ""}"
+- primary email: "${addr}"
+- company: "${c.company ?? ""}"
+- title: "${c.title ?? ""}"
 
-Only extract facts that are clearly the sender's OWN signature (bottom-of-email blocks, headers with "|" or "·"). Ignore quoted replies, marketing footers, unsubscribe blocks, and other people's info.
+Return JSON with these fields (use null / [] when a field is not clearly present):
+- name: the sender's full personal name as it appears in their signature (not a company name)
+- company: employer/organization the sender writes for
+- title: job title
+- phones: array of phone numbers found in a signature (any format)
+- emails: array of OTHER email addresses the sender uses (alt/personal/work). Do NOT include the primary email above, quoted reply addresses, or unrelated people.
+
+Only extract facts that clearly belong to THIS sender's own signature (bottom-of-email blocks, "Name | Title | Company" headers, contact cards). Ignore quoted replies, marketing footers, unsubscribe blocks, list-manager addresses, and info about other people in the thread.
 
 Messages:
 ${corpus}`;
@@ -212,42 +232,52 @@ ${corpus}`;
       const fieldsReturned: string[] = [];
       const evidenceBase = `From ${bodies.length} message${bodies.length === 1 ? "" : "s"}`;
 
+      const pushSuggestion = (
+        field: SuggestionField,
+        value: string,
+        keyValue: string,
+        confidence: Confidence = "high",
+      ) => {
+        const key = `${c.id}|${field}|${keyValue.toLowerCase()}`;
+        if (existing.has(key)) return false;
+        rows.push({
+          user_id: userId,
+          contact_id: c.id,
+          run_id: runId,
+          field,
+          value,
+          source: "email_signature",
+          evidence: `${evidenceBase} · signature`,
+          confidence,
+        });
+        existing.add(key);
+        fieldsReturned.push(field);
+        return true;
+      };
+
+      const name = (extracted.name ?? "").trim();
+      if (
+        name &&
+        name.length >= 2 &&
+        name.length <= 80 &&
+        /\s/.test(name) && // require at least a two-part name to reduce noise
+        (!c.name || c.name.trim().toLowerCase() !== name.toLowerCase())
+      ) {
+        // Only suggest a name change when the current name is missing or clearly
+        // differs from what the signature shows.
+        if (!c.name || !c.name.trim()) {
+          pushSuggestion("name", name.slice(0, 80), name);
+        }
+      }
+
       const company = (extracted.company ?? "").trim();
       if (company && !c.company) {
-        const key = `${c.id}|company|${company.toLowerCase()}`;
-        if (!existing.has(key)) {
-          rows.push({
-            user_id: userId,
-            contact_id: c.id,
-            run_id: runId,
-            field: "company",
-            value: company.slice(0, 120),
-            source: "email_signature",
-            evidence: `${evidenceBase} · signature`,
-            confidence: "high",
-          });
-          existing.add(key);
-          fieldsReturned.push("company");
-        }
+        pushSuggestion("company", company.slice(0, 120), company);
       }
 
       const title = (extracted.title ?? "").trim();
       if (title && !c.title) {
-        const key = `${c.id}|title|${title.toLowerCase()}`;
-        if (!existing.has(key)) {
-          rows.push({
-            user_id: userId,
-            contact_id: c.id,
-            run_id: runId,
-            field: "title",
-            value: title.slice(0, 120),
-            source: "email_signature",
-            evidence: `${evidenceBase} · signature`,
-            confidence: "high",
-          });
-          existing.add(key);
-          fieldsReturned.push("title");
-        }
+        pushSuggestion("title", title.slice(0, 120), title);
       }
 
       const existingPhones = phonesByContact.get(c.id) ?? new Set<string>();
@@ -255,21 +285,19 @@ ${corpus}`;
         const normalized = normalizePhone(raw);
         if (!normalized || normalized.length < 7) continue;
         if (existingPhones.has(normalized)) continue;
-        const key = `${c.id}|phone|${normalized}`;
-        if (existing.has(key)) continue;
-        rows.push({
-          user_id: userId,
-          contact_id: c.id,
-          run_id: runId,
-          field: "phone",
-          value: normalized,
-          source: "email_signature",
-          evidence: `${evidenceBase} · signature`,
-          confidence: "high",
-        });
-        existing.add(key);
-        existingPhones.add(normalized);
-        fieldsReturned.push("phone");
+        if (pushSuggestion("phone", normalized, normalized)) {
+          existingPhones.add(normalized);
+        }
+      }
+
+      for (const rawEmail of extracted.emails ?? []) {
+        const email = rawEmail.trim().toLowerCase();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
+        if (email === addr) continue;
+        if (knownEmails.has(email)) continue;
+        if (pushSuggestion("email", email, email, "medium")) {
+          knownEmails.add(email);
+        }
       }
 
       if (fieldsReturned.length > 0) aiSuccess++;
