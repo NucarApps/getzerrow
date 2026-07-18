@@ -111,6 +111,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
     name: "",
     title: "",
     company: "",
+    email: "",
     website: "",
     linkedin: "",
     twitter: "",
@@ -135,6 +136,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         name: c.name ?? "",
         title: c.title ?? "",
         company: c.company ?? "",
+        email: c.email ?? "",
         website: c.website ?? "",
         linkedin: c.linkedin ?? "",
         twitter: c.twitter ?? "",
@@ -221,6 +223,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           name: form.name || null,
           title: form.title || null,
           company: form.company || null,
+          email: form.email.trim() ? form.email.trim() : null,
           website: form.website || null,
           linkedin: form.linkedin || null,
           twitter: form.twitter || null,
@@ -417,7 +420,12 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           />
         </Field>
         <Field label="Email" icon={<Mail className="h-3.5 w-3.5" />}>
-          <Input value={c.email} disabled />
+          <Input
+            type="email"
+            placeholder="name@example.com"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
         </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
           <Input
