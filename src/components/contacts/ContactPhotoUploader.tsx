@@ -1,9 +1,14 @@
 import { useRef, useState, type ChangeEvent } from "react";
 import { Camera, Trash2, Loader2 } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { uploadContactPhoto, removeContactPhoto } from "@/lib/contacts/photos.functions";
+import {
+  uploadContactPhoto,
+  removeContactPhoto,
+  getContactPhotoSignedUrl,
+} from "@/lib/contacts/photos.functions";
 
 const ALLOWED = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type AllowedMime = (typeof ALLOWED)[number];
