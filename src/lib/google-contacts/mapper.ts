@@ -25,6 +25,8 @@ export type PersonAddress = {
 
 export type PersonMembership = { contactGroupMembership?: { contactGroupResourceName?: string } };
 
+export type PersonPhoto = { url?: string; default?: boolean; metadata?: { primary?: boolean } };
+
 export type Person = {
   resourceName?: string;
   etag?: string;
@@ -40,6 +42,7 @@ export type Person = {
   addresses?: PersonAddress[];
   urls?: Array<{ value?: string; type?: string }>;
   memberships?: PersonMembership[];
+  photos?: PersonPhoto[];
 };
 
 /** Local Zerrow contact projection used by the sync layer. */
