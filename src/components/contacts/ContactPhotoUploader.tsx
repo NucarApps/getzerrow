@@ -1,9 +1,14 @@
 import { useRef, useState, type ChangeEvent } from "react";
 import { Camera, Trash2, Loader2 } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { uploadContactPhoto, removeContactPhoto } from "@/lib/contacts/photos.functions";
+import {
+  uploadContactPhoto,
+  removeContactPhoto,
+  getContactPhotoSignedUrl,
+} from "@/lib/contacts/photos.functions";
 
 const ALLOWED = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type AllowedMime = (typeof ALLOWED)[number];
@@ -40,6 +45,19 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, onChan
   const [busy, setBusy] = useState(false);
   const upload = useServerFn(uploadContactPhoto);
   const remove = useServerFn(removeContactPhoto);
+  const signUrl = useServerFn(getContactPhotoSignedUrl);
+
+  // The bucket is private, so we mint a short-lived signed URL after
+  // server-side ownership check. `avatarUrl` from the DB just tells us
+  // whether a photo exists; the browser never fetches it directly.
+  const signedQuery = useQuery({
+    queryKey: ["contact-photo-signed", contactId, avatarUrl],
+    queryFn: async () => (await signUrl({ data: { contactId } })).url,
+    enabled: !!avatarUrl,
+    staleTime: 50 * 60 * 1000, // refresh well before the 1h signed-URL expiry
+  });
+  const displaySrc = avatarUrl ? signedQuery.data ?? null : null;
+
 
   const openPicker = () => fileRef.current?.click();
 
@@ -83,9 +101,9 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, onChan
 
   return (
     <div className="group relative h-16 w-16 shrink-0">
-      {avatarUrl ? (
+      {displaySrc ? (
         <img
-          src={avatarUrl}
+          src={displaySrc}
           alt={displayName}
           className="h-16 w-16 rounded-full object-cover"
         />
