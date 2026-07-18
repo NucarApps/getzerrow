@@ -20,6 +20,7 @@ import {
   getCardDavSettings,
   updateCardDavSettings,
   forceCarddavResync,
+  resyncSummaryContacts,
   type GroupNameStyle,
 } from "@/lib/carddav/settings.functions";
 import {
