@@ -172,7 +172,26 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       } else {
         setPhones([]);
       }
+      const serverEmails = (q.data.emails ?? []) as Array<{
+        label: string;
+        address: string;
+        is_primary: boolean;
+      }>;
+      if (serverEmails.length > 0) {
+        setEmails(
+          serverEmails.map((e) => ({
+            label: e.label,
+            address: e.address,
+            is_primary: !!e.is_primary,
+          })),
+        );
+      } else if (c.email) {
+        setEmails([{ label: "work", address: c.email, is_primary: true }]);
+      } else {
+        setEmails([]);
+      }
     }
+
     // Seed local form state when the contact's identity/version changes, keyed
     // on the specific fields below — not on the whole q.data.contact/phones
     // objects, whose refs change on every refetch and would clobber live edits.
