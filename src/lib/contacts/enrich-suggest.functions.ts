@@ -103,15 +103,28 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       confidence: Confidence;
     }[] = [];
 
-    // Existing pending suggestions we should not duplicate.
+    // Existing pending + dismissed suggestions we should not duplicate.
+    // Dismissed rows count too — the user already said no; don't re-propose them.
     const { data: pendingRows } = await supabase
       .from("contact_enrichment_suggestions")
-      .select("contact_id, field, value")
-      .eq("status", "pending");
+      .select("contact_id, field, value, source, status")
+      .in("status", ["pending", "dismissed"]);
     const existing = new Set(
       (pendingRows ?? []).map(
         (r) => `${r.contact_id}|${r.field}|${(r.value ?? "").toLowerCase()}`,
       ),
+    );
+    // Hard-mute the domain-derived company guess per contact once dismissed —
+    // clearing `contacts.company` would otherwise re-trigger the same guess.
+    const dismissedDomainCompany = new Set(
+      (pendingRows ?? [])
+        .filter(
+          (r) =>
+            r.status === "dismissed" &&
+            r.field === "company" &&
+            r.source === "domain_derived",
+        )
+        .map((r) => r.contact_id),
     );
 
     // Existing phones per contact so we don't re-suggest numbers already on file.
@@ -316,6 +329,7 @@ ${corpus}`;
     for (const c of candidates) {
       if (!c.email || c.company) continue;
       if (suggestedCompanyContacts.has(c.id)) continue;
+      if (dismissedDomainCompany.has(c.id)) continue;
       const domain = c.email.split("@")[1]?.toLowerCase();
       if (!domain || PERSONAL_DOMAINS.has(domain)) continue;
       const company = deriveCompanyFromDomain(domain);
@@ -431,17 +445,24 @@ function deriveCompanyFromDomain(domain: string): string | null {
   return capped.length > 40 ? null : capped;
 }
 
-/** List latest pending suggestions grouped by contact. */
+/** List suggestions grouped by contact. Defaults to pending; pass status='dismissed' for the declines tab. */
 export const listContactEnrichmentSuggestions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d: { status?: "pending" | "dismissed" } | undefined) =>
+    z
+      .object({ status: z.enum(["pending", "dismissed"]).optional() })
+      .default({})
+      .parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { data, error } = await supabase
+    const status = data.status ?? "pending";
+    const { data: rows, error } = await supabase
       .from("contact_enrichment_suggestions")
       .select(
         "id, contact_id, field, value, source, evidence, confidence, created_at, contacts!inner(id, name, email, company, title)",
       )
-      .eq("status", "pending")
+      .eq("status", status)
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw new Error(error.message);
@@ -469,7 +490,7 @@ export const listContactEnrichmentSuggestions = createServerFn({ method: "GET" }
       string,
       { contact: ContactMini; suggestions: Array<Omit<Row, "contacts">> }
     >();
-    for (const r of (data as Row[] | null) ?? []) {
+    for (const r of (rows as Row[] | null) ?? []) {
       const c = Array.isArray(r.contacts) ? r.contacts[0] : r.contacts;
       if (!c) continue;
       const bucket = grouped.get(r.contact_id) ?? { contact: c, suggestions: [] };
@@ -547,4 +568,21 @@ export const dismissContactEnrichmentSuggestion = createServerFn({ method: "POST
       .eq("id", data.suggestionId);
     if (error) throw new Error(error.message);
     return { dismissed: true as const };
+  });
+
+/** Restore a dismissed suggestion back to pending (for accidental dismisses). */
+export const undismissContactEnrichmentSuggestion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { suggestionId: string }) =>
+    z.object({ suggestionId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase
+      .from("contact_enrichment_suggestions")
+      .update({ status: "pending" })
+      .eq("id", data.suggestionId)
+      .eq("status", "dismissed");
+    if (error) throw new Error(error.message);
+    return { restored: true as const };
   });
