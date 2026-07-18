@@ -424,13 +424,15 @@ async function buildContactResponse(
       `</D:response>`
     );
   }
-  const [phones, categories, emails, photo] = await Promise.all([
+  const [phones, categories, emails, photo, includeSummary] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
     includeVcard ? loadContactPhotoBytes(row.avatar_url ?? null) : Promise.resolve(null),
+    getIncludeSummaryInNotes(userId),
   ]);
-  const vcard = contactToVCard(row, phones, categories, emails, photo);
+  const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
+
 
   const etag = contactETag(row.id, row.updated_at);
   const props =
