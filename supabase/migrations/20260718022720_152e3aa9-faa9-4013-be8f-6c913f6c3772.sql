@@ -1,0 +1,2 @@
+ALTER TABLE public.contact_enrichment_suggestions DROP CONSTRAINT contact_enrichment_suggestions_field_check;
+ALTER TABLE public.contact_enrichment_suggestions ADD CONSTRAINT contact_enrichment_suggestions_field_check CHECK (field = ANY (ARRAY['email','phone','company','title','name']));
