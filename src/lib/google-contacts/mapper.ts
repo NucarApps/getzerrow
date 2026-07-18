@@ -207,7 +207,7 @@ export const UPDATE_PERSON_FIELDS =
 
 /** `personFields` mask for reads (connections.list, batchGet, createContact). */
 export const READ_PERSON_FIELDS =
-  "names,emailAddresses,phoneNumbers,organizations,biographies,addresses,urls,memberships,metadata";
+  "names,emailAddresses,phoneNumbers,organizations,biographies,addresses,urls,memberships,photos,metadata";
 
 /** Parse Google's Person into the writable subset of a Zerrow contact. */
 export function personToContact(person: Person): {
