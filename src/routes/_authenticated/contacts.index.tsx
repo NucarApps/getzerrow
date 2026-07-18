@@ -883,11 +883,13 @@ function ContactsPage() {
                             <Sparkles className="h-3.5 w-3.5 text-amber-600" />
                             <span className="flex-1 min-w-0">
                               {s.otherCount + 1} companies share the name{" "}
-                              <strong>&ldquo;{s.displayName}&rdquo;</strong> on different
-                              domains.{" "}
+                              <strong>&ldquo;{s.displayName}&rdquo;</strong>
+                              {s.kind === "alias" ? " on different domains." : "."}{" "}
                               {isPrimary
                                 ? `Merge the other ${s.otherCount} into this one?`
-                                : `Merge into ${s.primaryDomain}?`}
+                                : s.kind === "alias"
+                                  ? `Merge into ${s.primaryDomain}?`
+                                  : `Merge into "${s.displayName}"?`}
                             </span>
                             <Button
                               size="sm"
