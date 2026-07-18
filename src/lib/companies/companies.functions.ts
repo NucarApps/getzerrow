@@ -884,34 +884,18 @@ export const mergeCluster = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     let merged = 0;
     let failed = 0;
+    let totalMovedContacts = 0;
     for (const sourceId of data.foldIds) {
       if (sourceId === data.canonicalId) continue;
       try {
-        // Re-use mergeCompanies handler locally by inlining the same body
-        // through the exported server fn is awkward — call the mutation
-        // logic directly by invoking the raw handler function.
-        await (
-          mergeCompanies as unknown as {
-            handler: (args: { data: { sourceId: string; targetId: string }; context: typeof context }) => Promise<unknown>;
-          }
-        )
-          // Fall back to a plain call if the internal handler is not
-          // reachable — the exported RPC works from the server too.
-          .handler?.({
-            data: { sourceId, targetId: data.canonicalId },
-            context,
-          });
+        const r = await mergeCompaniesImpl(context, sourceId, data.canonicalId);
+        totalMovedContacts += r.movedContacts;
         merged++;
       } catch {
-        // Fallback: call the RPC form.
-        try {
-          await mergeCompanies({ data: { sourceId, targetId: data.canonicalId } });
-          merged++;
-        } catch {
-          failed++;
-        }
+        failed++;
       }
     }
-    return { merged, failed };
+    return { merged, failed, movedContacts: totalMovedContacts };
   });
+
 
