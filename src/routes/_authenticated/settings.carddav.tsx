@@ -63,14 +63,15 @@ function CardDavSettings() {
     queryFn: () => getSettings(),
   });
   const settingsMut = useMutation({
-    mutationFn: (style: GroupNameStyle) =>
-      updateSettings({ data: { group_name_style: style } }),
+    mutationFn: (patch: { group_name_style?: GroupNameStyle; include_summary_in_notes?: boolean }) =>
+      updateSettings({ data: patch }),
     onSuccess: () => {
-      toast.success("iPhone will refresh group names on next sync");
+      toast.success("iPhone will refresh on next sync");
       qc.invalidateQueries({ queryKey: ["carddav-settings"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
   const resyncMut = useMutation({
     mutationFn: () => forceResync(),
     onSuccess: () =>
