@@ -283,3 +283,46 @@ describe("buildKnownCompanyLogoShaSet", () => {
     expect(shas.has(good)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: photos saved via the iPhone (CardDAV PUT) must be treated as
+// user-chosen and never wiped by the getContact self-heal, regardless of
+// whether the contact has a linked company. Enforced by two contracts:
+//   1. handlers.server.ts persists surviving PUT photos with
+//      source="user_upload" (not "carddav").
+//   2. crud.functions.ts skips the self-heal for both "user_upload" and the
+//      legacy "carddav" label.
+// A behavioural end-to-end test would require stubbing the full CardDAV +
+// Supabase stack; asserting the two source contracts is cheaper and prevents
+// silent regressions.
+// ---------------------------------------------------------------------------
+
+describe("iPhone photo save is treated as authoritative", () => {
+  it("PUT handler saves surviving photos with source=\"user_upload\"", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve(process.cwd(), "src/lib/carddav/handlers.server.ts"),
+      "utf8",
+    );
+    // Exactly one saveContactPhoto call in the PUT photo branch, and it
+    // must use "user_upload".
+    const saveCalls = [...src.matchAll(/saveContactPhoto\([^)]*\)/g)].map((m) => m[0]);
+    expect(saveCalls.length).toBeGreaterThan(0);
+    for (const call of saveCalls) {
+      expect(call).toContain('"user_upload"');
+      expect(call).not.toContain('"carddav"');
+    }
+  });
+
+  it("getContact self-heal exempts both user_upload and legacy carddav sources", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve(process.cwd(), "src/lib/contacts/crud.functions.ts"),
+      "utf8",
+    );
+    expect(src).toMatch(/avatarSource === "user_upload"/);
+    expect(src).toMatch(/avatarSource === "carddav"/);
+  });
+});
