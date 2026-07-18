@@ -811,6 +811,16 @@ function ContactsPage() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setLabelDupesOpen(true)}
+                title="Find duplicate labels"
+                className="shrink-0 px-2 sm:px-3"
+              >
+                <Sparkles className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Dedupe labels</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setEnrichOpen(true)}
                 title="Enrich contacts from your inbox"
                 className="shrink-0 px-2 sm:px-3"
