@@ -28,6 +28,11 @@ import {
   listContactIdsForRerun,
 } from "@/lib/contacts/enrich.functions";
 import {
+  listContactsForLogoCleanup,
+  cleanupCompanyLogoPhotosBatch,
+} from "@/lib/contacts/company-logo-cleanup.functions";
+
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -75,6 +80,47 @@ function CardDavSettings() {
     skipped: number;
     failed: number;
   }>({ running: false, total: 0, done: 0, processed: 0, skipped: 0, failed: 0 });
+  const listLogoCleanup = useServerFn(listContactsForLogoCleanup);
+  const cleanupLogoBatch = useServerFn(cleanupCompanyLogoPhotosBatch);
+  const [logoCleanupState, setLogoCleanupState] = useState<{
+    running: boolean;
+    total: number;
+    done: number;
+    cleared: number;
+  }>({ running: false, total: 0, done: 0, cleared: 0 });
+
+  const runLogoCleanup = async () => {
+    setLogoCleanupState({ running: true, total: 0, done: 0, cleared: 0 });
+    try {
+      const { ids } = await listLogoCleanup();
+      if (ids.length === 0) {
+        toast.info("No contacts to check");
+        setLogoCleanupState((s) => ({ ...s, running: false }));
+        return;
+      }
+      setLogoCleanupState((s) => ({ ...s, total: ids.length }));
+      const CHUNK = 10;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        try {
+          const res = await cleanupLogoBatch({ data: { ids: slice } });
+          setLogoCleanupState((s) => ({
+            ...s,
+            done: s.done + slice.length,
+            cleared: s.cleared + res.cleared,
+          }));
+        } catch (e) {
+          setLogoCleanupState((s) => ({ ...s, done: s.done + slice.length }));
+          // eslint-disable-next-line no-console
+          console.error("[logo-cleanup] chunk failed", e);
+        }
+      }
+      toast.success("Logo cleanup complete");
+    } finally {
+      setLogoCleanupState((s) => ({ ...s, running: false }));
+    }
+  };
+
 
   // Chunk the "rerun for everyone" work client-side so each request stays
   // well under the Safari wall-clock (which surfaces long fetches as the
@@ -445,7 +491,36 @@ function CardDavSettings() {
             {resyncMut.isPending ? "Bumping…" : "Force iPhone resync"}
           </Button>
         </div>
+
+        <div className="border-t pt-4">
+          <p className="text-sm font-medium">
+            Fix contacts showing an old company logo
+          </p>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Scans every contact whose stored photo is really a snapshot of an
+            earlier company logo (from an iPhone round-trip) and clears it so
+            the current company logo shows again. Safe to re-run.
+          </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={runLogoCleanup}
+              disabled={logoCleanupState.running}
+            >
+              {logoCleanupState.running
+                ? `Scanning… ${logoCleanupState.done}/${logoCleanupState.total}`
+                : "Fix company logo photos"}
+            </Button>
+            {(logoCleanupState.running || logoCleanupState.done > 0) && (
+              <p className="text-xs text-muted-foreground">
+                {logoCleanupState.cleared} cleared
+              </p>
+            )}
+          </div>
+        </div>
       </Card>
+
     </div>
   );
 }

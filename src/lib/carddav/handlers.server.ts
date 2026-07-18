@@ -160,10 +160,12 @@ export async function getUseCompanyLogoFallback(userId: string): Promise<boolean
 
 /** Load the contact's own photo bytes, or a company-logo fallback when the
  * user preference is on and the contact has no real avatar. Returns null
- * when neither exists. */
+ * when neither exists. When a company-logo fallback is returned, its full
+ * SHA-256 is recorded on the contact so a round-tripped copy from iOS can
+ * be recognized in `PUT` and skipped instead of frozen into `avatar_url`. */
 async function loadContactPhotoOrLogo(
   userId: string,
-  row: { avatar_url?: string | null; website?: string | null; email?: string | null },
+  row: { id: string; avatar_url?: string | null; website?: string | null; email?: string | null },
 ): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const own = await loadContactPhotoBytes(row.avatar_url ?? null);
   if (own) return own;
@@ -171,8 +173,23 @@ async function loadContactPhotoOrLogo(
   const { fetchChosenCompanyLogoBytes, logoDomainForContact } = await import(
     "@/lib/contacts/logo-photo.server"
   );
-  return fetchChosenCompanyLogoBytes(userId, logoDomainForContact(row));
+  const fallback = await fetchChosenCompanyLogoBytes(userId, logoDomainForContact(row));
+  if (fallback) {
+    try {
+      const { sha256Hex } = await import("@/lib/contacts/photos.server");
+      const sha = await sha256Hex(fallback.bytes);
+      await supabaseAdmin
+        .from("contacts")
+        .update({ company_logo_photo_sha: sha })
+        .eq("id", row.id)
+        .eq("user_id", userId);
+    } catch {
+      // Non-fatal: fingerprinting is best-effort.
+    }
+  }
+  return fallback;
 }
+
 
 
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
@@ -1149,10 +1166,45 @@ export async function handlePut(
   // to preserve the existing avatar during partial edits (matches the
   // conservative merge policy for the other fields). Google-linked
   // contacts get flagged dirty right after so the picture also flows
-  // upstream.
+  // upstream. When the incoming bytes match a company-logo fallback we
+  // inlined on a previous GET (or exactly match the currently stored
+  // avatar), skip the save — otherwise iOS "echoing" a company logo would
+  // freeze it into `avatar_url` and later company-logo changes wouldn't
+  // reach the contact.
   if (present.has("PHOTO") && parsed.photo && parsed.photo.bytes.length > 0) {
     try {
-      await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime);
+      const { sha256Hex, loadContactPhotoBytes } = await import(
+        "@/lib/contacts/photos.server"
+      );
+      const incomingSha = await sha256Hex(parsed.photo.bytes);
+      const { data: fp } = await supabaseAdmin
+        .from("contacts")
+        .select("avatar_url,company_logo_photo_sha")
+        .eq("id", contactId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      const storedFallbackSha =
+        (fp as { company_logo_photo_sha?: string | null } | null)
+          ?.company_logo_photo_sha ?? null;
+      let skip = storedFallbackSha !== null && storedFallbackSha === incomingSha;
+      if (!skip) {
+        const currentAvatar =
+          (fp as { avatar_url?: string | null } | null)?.avatar_url ?? null;
+        const currentBytes = await loadContactPhotoBytes(currentAvatar);
+        if (currentBytes) {
+          const currentSha = await sha256Hex(currentBytes.bytes);
+          if (currentSha === incomingSha) skip = true;
+        }
+      }
+      if (skip) {
+        logInfo("carddav.put.photo_fallback_echo_ignored", {
+          contact_id: contactId,
+          incoming_sha: incomingSha.slice(0, 16),
+        });
+      } else {
+        await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime);
+      }
+
     } catch (err) {
       logInfo("carddav.put.photo_save_failed", {
         contact_id: contactId,
@@ -1160,6 +1212,7 @@ export async function handlePut(
       });
     }
   }
+
 
   // A CardDAV edit is a local source of truth. If this contact is linked to
   // Google Contacts, force the next two-way run to push it instead of letting

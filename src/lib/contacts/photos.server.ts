@@ -128,6 +128,21 @@ export async function contactPhotoHash(bytes: Uint8Array): Promise<string> {
   return shortHash(bytes);
 }
 
+/** Full SHA-256 hex of a byte array. Used to fingerprint the exact company
+ * logo we inlined into a vCard PHOTO so a round-tripped copy from iOS can
+ * be recognized and skipped instead of promoted to a real personal avatar. */
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const buf = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+
 /** Mint a short-lived signed URL for a contact's stored photo. Returns null
  * when the contact has no `avatar_url` on file, when the URL doesn't point
  * at our bucket, or when signing fails. Callers must verify ownership
