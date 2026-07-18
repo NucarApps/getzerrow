@@ -227,6 +227,7 @@ async function runEnrichForContact(
       region: null,
       postal_code: null,
       country: null,
+      ai_category: null,
     };
     try {
       const { output } = await generateText({
@@ -539,6 +540,7 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
       region: null,
       postal_code: null,
       country: null,
+      ai_category: null,
     };
     if (body.trim()) {
       try {
