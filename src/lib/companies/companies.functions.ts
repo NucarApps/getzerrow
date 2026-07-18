@@ -524,6 +524,60 @@ export const mergeCompanies = createServerFn({ method: "POST" })
       );
     }
     const movedIds = (movedContacts ?? []).map((row) => (row as { id: string }).id);
+    // Pull the source company's row so we can remember its name as an
+    // alias before deletion.
+    const { data: srcCompany } = await supabase
+      .from("companies")
+      .select("id,name,name_key")
+      .eq("id", data.sourceId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    // Backfill: any contact whose free-text `company` matches the source
+    // name (or any existing alias of the source) but has no company_id
+    // should link to the target.
+    if (srcCompany) {
+      const { data: srcAliases } = await supabase
+        .from("company_name_aliases")
+        .select("name_key, source_name")
+        .eq("user_id", userId)
+        .eq("company_id", data.sourceId);
+      const nameKeys = new Set<string>();
+      const sourceNames = new Set<string>();
+      if (srcCompany.name_key) nameKeys.add(srcCompany.name_key);
+      sourceNames.add(srcCompany.name);
+      for (const a of srcAliases ?? []) {
+        nameKeys.add(a.name_key);
+        sourceNames.add(a.source_name);
+      }
+      // Reassign any contact with company_id NULL but matching name.
+      if (sourceNames.size > 0) {
+        const { data: strayContacts } = await supabase
+          .from("contacts")
+          .update({ company_id: data.targetId, company: targetRow.name })
+          .eq("user_id", userId)
+          .is("company_id", null)
+          .in("company", [...sourceNames])
+          .select("id");
+        for (const r of strayContacts ?? []) {
+          movedIds.push((r as { id: string }).id);
+        }
+      }
+      // Remember the alias so future creates/enrichments route here.
+      const aliasRows = [
+        { user_id: userId, name_key: srcCompany.name_key, company_id: data.targetId, source_name: srcCompany.name },
+        ...([...srcAliases ?? []].map((a) => ({
+          user_id: userId,
+          name_key: a.name_key,
+          company_id: data.targetId,
+          source_name: a.source_name,
+        }))),
+      ];
+      if (aliasRows.length > 0) {
+        await supabase
+          .from("company_name_aliases")
+          .upsert(aliasRows, { onConflict: "user_id,name_key" });
+      }
+    }
     if (movedIds.length > 0) {
       const { reconcileAutoParentsForContacts } = await import(
         "@/lib/contacts/auto-company-subgroups.functions"
@@ -536,8 +590,9 @@ export const mergeCompanies = createServerFn({ method: "POST" })
       .delete()
       .eq("id", data.sourceId)
       .eq("user_id", userId);
-    return { ok: true as const };
+    return { ok: true as const, movedContacts: movedIds.length };
   });
+
 
 export const deleteCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
