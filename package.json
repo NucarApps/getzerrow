@@ -14,6 +14,7 @@
     "test:schema": "vitest run src/lib/folder-examples-schema.test.ts",
     "test:meetings-transcript": "vitest run src/lib/transcript-sanitize.snapshot.test.ts src/lib/meetings-in-person-transcript.test.ts src/lib/wav-encoder.test.ts",
     "test:meetings-transcript:update": "vitest run src/lib/transcript-sanitize.snapshot.test.ts -u",
+    "test:carddav": "vitest run src/lib/carddav/sync.regression.test.ts src/lib/carddav/merge.test.ts src/lib/carddav/vcard.parse.test.ts src/lib/carddav/vcard.roundtrip.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
