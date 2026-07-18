@@ -345,34 +345,53 @@ export function parseVCard(text: string): ParsedVCard | null {
       case "UID":
         out.uid = v.trim() || null;
         break;
-      case "FN":
-        fn = v.trim() || null;
-        out.presentFields.add("FN");
+      case "FN": {
+        const t = v.trim();
+        if (t) {
+          fn = t;
+          out.presentFields.add("FN");
+        }
         break;
+      }
       case "N": {
         const segs = p.value.split(";").map(unescapeValue);
         nFamily = segs[0]?.trim() || null;
         nGiven = segs[1]?.trim() || null;
-        out.presentFields.add("FN");
+        if (nFamily || nGiven) out.presentFields.add("FN");
         break;
       }
-      case "ORG":
-        out.company = unescapeValue(p.value.split(";")[0] ?? "").trim() || null;
-        out.presentFields.add("ORG");
+      case "ORG": {
+        const c = unescapeValue(p.value.split(";")[0] ?? "").trim();
+        if (c) {
+          out.company = c;
+          out.presentFields.add("ORG");
+        }
         break;
-      case "TITLE":
-        out.title = v.trim() || null;
-        out.presentFields.add("TITLE");
+      }
+      case "TITLE": {
+        const t = v.trim();
+        if (t) {
+          out.title = t;
+          out.presentFields.add("TITLE");
+        }
         break;
-      case "EMAIL":
-        if (!out.email) out.email = v.trim() || null;
-        else if ((p.params.TYPE ?? []).includes("PREF")) out.email = v.trim() || null;
+      }
+      case "EMAIL": {
+        // Only treat EMAIL as "present" (and mergeable into the DB) when the
+        // vCard actually carried a non-empty value. iOS routinely uploads
+        // empty EMAIL slots on partial syncs; if we honored those we would
+        // clobber the saved address with null.
+        const em = v.trim();
+        if (!em) break;
+        if (!out.email) out.email = em;
+        else if ((p.params.TYPE ?? []).includes("PREF")) out.email = em;
         out.presentFields.add("EMAIL");
         break;
+      }
       case "TEL": {
-        out.presentFields.add("TEL");
         const num = v.trim();
         if (!num) break;
+        out.presentFields.add("TEL");
         const types = p.params.TYPE ?? [];
         // Primary can arrive three ways:
         //   TEL;TYPE=pref:...    -> in TYPE array (parseLine uppercases)
@@ -388,12 +407,19 @@ export function parseVCard(text: string): ParsedVCard | null {
         const segs = p.value.split(";").map(unescapeValue);
         const street = (segs[2] ?? "").trim();
         const streetParts = street.split(/,\s*/);
-        out.address_line1 = streetParts[0] || null;
-        out.address_line2 = streetParts.slice(1).join(", ") || null;
-        out.city = (segs[3] ?? "").trim() || null;
-        out.region = (segs[4] ?? "").trim() || null;
-        out.postal_code = (segs[5] ?? "").trim() || null;
-        out.country = (segs[6] ?? "").trim() || null;
+        const line1 = streetParts[0] || null;
+        const line2 = streetParts.slice(1).join(", ") || null;
+        const city = (segs[3] ?? "").trim() || null;
+        const region = (segs[4] ?? "").trim() || null;
+        const postal = (segs[5] ?? "").trim() || null;
+        const country = (segs[6] ?? "").trim() || null;
+        if (!line1 && !line2 && !city && !region && !postal && !country) break;
+        out.address_line1 = line1;
+        out.address_line2 = line2;
+        out.city = city;
+        out.region = region;
+        out.postal_code = postal;
+        out.country = country;
         out.presentFields.add("ADR");
         break;
       }
@@ -413,10 +439,13 @@ export function parseVCard(text: string): ParsedVCard | null {
         }
         break;
       }
-      case "NOTE":
-        out.notes = v || null;
+      case "NOTE": {
+        if (!v) break;
+        out.notes = v;
         out.presentFields.add("NOTE");
         break;
+      }
+
       case "CATEGORIES": {
         out.presentFields.add("CATEGORIES");
         // Commas separate values; already-escaped commas were resolved by
