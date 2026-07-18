@@ -24,17 +24,11 @@ import {
   phoneEntrySchema,
 } from "../contacts-helpers.server";
 
-/** Fields the user has locked in — enrichment must never overwrite them. */
-function buildLockedFieldSet(contact: {
-  manual_overrides?: string[] | null;
-  company_id?: string | null;
-}): Set<string> {
-  const locked = new Set<string>(contact.manual_overrides ?? []);
-  // Explicitly linking a company via the combobox is an unambiguous user
-  // action, so treat the company text as locked even without an override.
-  if (contact.company_id) locked.add("company");
-  return locked;
-}
+import {
+  buildLockedFieldSet,
+  computeEnrichmentFieldPatch,
+  type EnrichableField,
+} from "./enrich-locks";
 
 
 
@@ -283,25 +277,15 @@ ${sample}`,
       postal_code?: string | null;
       country?: string | null;
     } = { enriched_at: new Date().toISOString() };
-    for (const k of [
-      "name",
-      "title",
-      "company",
-      "phone",
-      "website",
-      "linkedin",
-      "twitter",
-      ...ADDRESS_FIELDS,
-    ] as const) {
-      if (locked.has(k)) continue; // user-owned — never overwrite
-      const v = extracted[k];
-      if (k === "name") {
-        let best = pickBetterName(contact.name, fromNameCandidate);
-        best = pickBetterName(best, v);
-        if (best && best !== contact.name) patch.name = best;
-        continue;
-      }
-      if (v && (!(contact as Record<string, unknown>)[k] || data.force)) patch[k] = v;
+    const fieldPatch = computeEnrichmentFieldPatch({
+      contact,
+      extracted,
+      fromNameCandidate,
+      force: data.force,
+      pickBetterName,
+    });
+    for (const [k, v] of Object.entries(fieldPatch) as [EnrichableField, string][]) {
+      (patch as Record<string, unknown>)[k] = v;
     }
 
     // Fields persisted only via the encrypted RPC — strip from the
