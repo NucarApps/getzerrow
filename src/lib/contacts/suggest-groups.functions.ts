@@ -404,6 +404,7 @@ Return JSON matching the schema.`;
       dropped_duplicate_name: droppedDuplicateName,
       parse_note: parseNote,
       contact_pool: contacts.length,
+      ungrouped_total: ungroupedTotal,
     });
 
     const suggestions = await loadLatestSuggestions(supabase, userId);
@@ -416,6 +417,8 @@ Return JSON matching the schema.`;
         droppedMissingIds,
         droppedTooSmall,
         parseNote,
+        contactPool: contacts.length,
+        ungroupedTotal,
       },
     };
   });
