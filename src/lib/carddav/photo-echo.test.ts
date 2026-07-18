@@ -191,13 +191,22 @@ vi.mock("@/integrations/supabase/client.server", () => ({
             : [];
       return {
         select() {
-          return {
+          const result = Promise.resolve({ data: rows, error: null });
+          const chain = {
             eq() {
-              return Promise.resolve({ data: rows, error: null });
+              return {
+                order() {
+                  return { limit: () => result };
+                },
+                then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
+                  result.then(onF, onR),
+              };
             },
           };
+          return chain;
         },
       };
+
     },
   },
 }));

@@ -160,29 +160,68 @@ export const getContact = createServerFn({ method: "POST" })
       email: contact.email,
     });
     let avatarIsCompanyLogoSnapshot = false;
+    let effectiveAvatarUrl: string | null = contact.avatar_url ?? null;
     if (contact.avatar_url && linkedCompanyId) {
       try {
-        const { loadContactPhotoBytes, sha256Hex } = await import(
+        const { loadContactPhotoBytes, sha256Hex, deleteContactPhoto } = await import(
           "@/lib/contacts/photos.server"
         );
         const own = await loadContactPhotoBytes(contact.avatar_url);
         if (own) {
           const ownSha = await sha256Hex(own.bytes);
           const storedLogoSha = companyLink?.company_logo_photo_sha ?? null;
-          if (storedLogoSha !== null && storedLogoSha === ownSha) {
-            avatarIsCompanyLogoSnapshot = true;
-          } else if (companyDomain) {
-            // Scoped fallback: only hash this contact's own company logo,
-            // never the whole tenant's logo set (that was blowing the Worker
-            // subrequest budget for users with many company_domains).
+          let matchedSha: string | null =
+            storedLogoSha !== null && storedLogoSha === ownSha ? storedLogoSha : null;
+
+          if (matchedSha === null && companyDomain) {
+            // Fast path: currently chosen logo for this contact's domain.
             const { fetchChosenCompanyLogoBytes } = await import(
               "@/lib/contacts/logo-photo.server"
             );
             const hit = await fetchChosenCompanyLogoBytes(userId, companyDomain);
             if (hit) {
               const logoSha = await sha256Hex(hit.bytes);
-              avatarIsCompanyLogoSnapshot = logoSha === ownSha;
+              if (logoSha === ownSha) matchedSha = logoSha;
             }
+          }
+
+          if (matchedSha === null) {
+            // Broader fallback: check every provider variant for every domain
+            // linked to this contact's company. Catches stale snapshots from
+            // an older logo pick or a different provider that no longer
+            // returns the same bytes today.
+            const { findMatchingCompanyLogoSha } = await import(
+              "@/lib/contacts/logo-photo.server"
+            );
+            matchedSha = await findMatchingCompanyLogoSha(
+              userId,
+              linkedCompanyId,
+              ownSha,
+              sha256Hex,
+            );
+          }
+
+          if (matchedSha !== null) {
+            avatarIsCompanyLogoSnapshot = true;
+            // Self-heal: remove the frozen snapshot so it can never race the
+            // company-logo render again, and fingerprint the contact so the
+            // next open takes the cheap stored-SHA path.
+            try {
+              await deleteContactPhoto(userId, data.id);
+            } catch {
+              // If the storage object is already gone, just null the column.
+              await supabaseAdmin
+                .from("contacts")
+                .update({ avatar_url: null, updated_at: new Date().toISOString() })
+                .eq("id", data.id)
+                .eq("user_id", userId);
+            }
+            await supabaseAdmin
+              .from("contacts")
+              .update({ company_logo_photo_sha: matchedSha })
+              .eq("id", data.id)
+              .eq("user_id", userId);
+            effectiveAvatarUrl = null;
           }
         }
       } catch {
@@ -190,7 +229,7 @@ export const getContact = createServerFn({ method: "POST" })
       }
     }
     return {
-      contact,
+      contact: { ...contact, avatar_url: effectiveAvatarUrl },
       recentEmails: emails ?? [],
       phones: phones ?? [],
       emails: emailRows ?? [],
