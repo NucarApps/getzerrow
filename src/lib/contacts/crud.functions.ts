@@ -470,6 +470,7 @@ export const createContactManual = createServerFn({ method: "POST" })
       ? await resolveContactCompany({ supabase, userId }, data.company)
       : { companyId: null as string | null, canonicalName: null as string | null };
     // phone / notes live in encrypted columns only after Phase 3.
+    const overrides = computeManualOverrides([], data as Record<string, unknown>);
     const payload = {
       user_id: userId,
       email: data.email,
@@ -481,7 +482,9 @@ export const createContactManual = createServerFn({ method: "POST" })
       linkedin: data.linkedin || null,
       twitter: data.twitter || null,
       source: "manual",
+      manual_overrides: overrides,
     };
+
     const { data: row, error } = await supabaseAdmin
       .from("contacts")
       .upsert(payload, { onConflict: "user_id,email" })
