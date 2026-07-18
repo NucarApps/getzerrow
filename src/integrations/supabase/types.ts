@@ -278,6 +278,36 @@ export type Database = {
         }
         Relationships: []
       }
+      company_profiles: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          key_type: string
+          key_value: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          id?: string
+          key_type: string
+          key_value: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          key_type?: string
+          key_value?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       contact_cards_sent: {
         Row: {
           contact_id: string | null
