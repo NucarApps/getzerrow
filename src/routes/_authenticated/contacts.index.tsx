@@ -69,6 +69,7 @@ import {
 } from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.functions";
+import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
 import { normalizeCompanyName } from "@/lib/contacts/company-name";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 import { listMeetingPeople } from "@/lib/calendar.functions";
@@ -394,11 +395,46 @@ function ContactsPage() {
       map.set(key, bucket);
     }
     const arr = Array.from(map.values());
-    const companies = arr
+    // Collapse name-keyed buckets whose members share a website/email domain
+    // with an existing domain bucket (e.g. contacts with no email but a
+    // website pointing to nucar.com should merge into the nucar.com bucket).
+    const byDomain = new Map<string, Bucket>();
+    for (const b of arr) {
+      if (b.kind === "company" && b.domain) byDomain.set(b.domain, b);
+    }
+    const collapsed: Bucket[] = [];
+    for (const b of arr) {
+      if (b.kind === "company" && b.key.startsWith("name:")) {
+        // Determine dominant domain among this bucket's contacts (via website).
+        const domCounts = new Map<string, number>();
+        for (const c of b.contacts) {
+          const wd = contactLogoDomain(c.website, c.email);
+          const rd = wd ? resolveCompanyDomain(wd, aliasMap) : null;
+          if (rd && !isPersonalDomain(rd)) {
+            domCounts.set(rd, (domCounts.get(rd) ?? 0) + 1);
+          }
+        }
+        let target: string | null = null;
+        let best = 0;
+        for (const [d, n] of domCounts) {
+          if (n > best && byDomain.has(d)) {
+            best = n;
+            target = d;
+          }
+        }
+        if (target) {
+          const dst = byDomain.get(target)!;
+          dst.contacts.push(...b.contacts);
+          continue;
+        }
+      }
+      collapsed.push(b);
+    }
+    const companies = collapsed
       .filter((b) => b.kind === "company")
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-    const personal = arr.filter((b) => b.kind === "personal");
-    const other = arr.filter((b) => b.kind === "other");
+    const personal = collapsed.filter((b) => b.kind === "personal");
+    const other = collapsed.filter((b) => b.kind === "other");
     return [...companies, ...personal, ...other];
   }, [filtered, aliasMap]);
 
@@ -417,11 +453,14 @@ function ContactsPage() {
   const [mergingKey, setMergingKey] = useState<string | null>(null);
 
   type MergeSuggestion = {
+    kind: "alias" | "rename";
     normalizedName: string;
     displayName: string;
     primaryBucketKey: string;
     primaryDomain: string;
     aliasDomains: string[];
+    /** Contact IDs from non-primary buckets, used for rename-mode merges. */
+    aliasContactIds: string[];
     otherCount: number;
   };
   const mergeSuggestions = useMemo(() => {
@@ -431,7 +470,6 @@ function ContactsPage() {
     >();
     for (const b of companyBuckets) {
       if (b.kind !== "company" || !b.domain) continue;
-      // Pick dominant `company` field for this bucket (fallback to display name).
       const counts = new Map<string, number>();
       for (const c of b.contacts) {
         const name = (c.company ?? "").trim();
@@ -456,19 +494,26 @@ function ContactsPage() {
     for (const [norm, entry] of byName) {
       if (entry.buckets.length < 2) continue;
       if (mergeDismissed.has(norm)) continue;
-      // Primary = most contacts, tiebreak alphabetical by domain.
       const sorted = [...entry.buckets].sort(
         (a, b) => b.contacts.length - a.contacts.length || a.domain.localeCompare(b.domain),
       );
       const primary = sorted[0];
-      const aliases = sorted.slice(1).map((s) => s.domain);
+      const others = sorted.slice(1);
+      // Dedupe alias domains and drop any that equal the primary domain to
+      // avoid the server's "alias must differ from primary" rejection.
+      const aliasDomains = Array.from(
+        new Set(others.map((s) => s.domain).filter((d) => d !== primary.domain)),
+      );
+      const aliasContactIds = others.flatMap((b) => b.contacts.map((c) => c.id));
       const suggestion: MergeSuggestion = {
+        kind: aliasDomains.length > 0 ? "alias" : "rename",
         normalizedName: norm,
         displayName: entry.displayName,
         primaryBucketKey: primary.key,
         primaryDomain: primary.domain,
-        aliasDomains: aliases,
-        otherCount: aliases.length,
+        aliasDomains,
+        aliasContactIds,
+        otherCount: others.length,
       };
       for (const b of entry.buckets) out.set(b.key, suggestion);
     }
@@ -493,15 +538,26 @@ function ContactsPage() {
     });
   }
 
+  const renameCompanyFn = useServerFn(renameCompanyForContacts);
   async function performMerge(s: MergeSuggestion) {
     setMergingKey(s.normalizedName);
     try {
-      for (const alias of s.aliasDomains) {
+      // Guard: always skip an alias equal to primary as a belt-and-suspenders check.
+      const cleanAliases = s.aliasDomains.filter((d) => d !== s.primaryDomain);
+      for (const alias of cleanAliases) {
         await addAlias({ data: { primaryDomain: s.primaryDomain, aliasDomain: alias } });
       }
+      if (s.kind === "rename" && s.aliasContactIds.length > 0) {
+        // Same domain, different name variants — normalize the company name
+        // on the non-primary contacts so the buckets collapse on next render.
+        await renameCompanyFn({
+          data: { contactIds: s.aliasContactIds, newName: s.displayName },
+        });
+      }
       await qc.invalidateQueries({ queryKey: ["company-aliases"] });
+      await qc.invalidateQueries({ queryKey: ["contacts"] });
       toast.success(
-        `Merged ${s.aliasDomains.length + 1} companies into "${s.displayName}".`,
+        `Merged ${s.otherCount + 1} companies into "${s.displayName}".`,
       );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Merge failed");
@@ -827,11 +883,13 @@ function ContactsPage() {
                             <Sparkles className="h-3.5 w-3.5 text-amber-600" />
                             <span className="flex-1 min-w-0">
                               {s.otherCount + 1} companies share the name{" "}
-                              <strong>&ldquo;{s.displayName}&rdquo;</strong> on different
-                              domains.{" "}
+                              <strong>&ldquo;{s.displayName}&rdquo;</strong>
+                              {s.kind === "alias" ? " on different domains." : "."}{" "}
                               {isPrimary
                                 ? `Merge the other ${s.otherCount} into this one?`
-                                : `Merge into ${s.primaryDomain}?`}
+                                : s.kind === "alias"
+                                  ? `Merge into ${s.primaryDomain}?`
+                                  : `Merge into "${s.displayName}"?`}
                             </span>
                             <Button
                               size="sm"

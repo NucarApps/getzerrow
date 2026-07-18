@@ -28,15 +28,15 @@ export const listCompanyAliases = createServerFn({ method: "GET" })
 
 export const addCompanyAlias = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z
+  .inputValidator((input: unknown) => {
+    const parsed = z
       .object({ primaryDomain: domainSchema, aliasDomain: domainSchema })
-      .refine((v) => v.primaryDomain !== v.aliasDomain, {
-        message: "Alias must differ from primary",
-        path: ["aliasDomain"],
-      })
-      .parse(input),
-  )
+      .parse(input);
+    if (parsed.primaryDomain === parsed.aliasDomain) {
+      throw new Error("Alias domain must differ from the primary domain");
+    }
+    return parsed;
+  })
   .handler(async ({ data, context }): Promise<CompanyAlias[]> => {
     const { supabase, userId } = context;
     const { primaryDomain, aliasDomain } = data;
