@@ -215,12 +215,13 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
 Existing groups (do not duplicate):
 ${JSON.stringify(existingGroupsPayload)}
 
-Contacts (id, n=name, co=company, t=title, d=email domain, city, src=source, g=current groups):
+Contacts (i=short id, n=name, co=company, t=title, d=email domain, city, src=source, g=current groups):
 ${JSON.stringify(contactLines)}
 
 Task: propose between 3 and 15 new groups (or subgroups) that would help the user organize this list.
 Rules:
-- Each suggestion must include at least 3 contact_ids from the list above.
+- Reference contacts by their "i" field. Return contact_ids as an array of those integers (e.g. [3, 7, 12]). Never invent an "i" that isn't in the list above.
+- Each suggestion must include at least 3 contact_ids for "new"/"subgroup", or at least 2 for "merge_into_existing".
 - Prefer clustering by company/employer, then by industry/domain, role, or city.
 - Use "subgroup" kind and set parent_group_name to an EXISTING group name when the cluster fits under one (e.g., a company inside a broader group), especially when that parent has more than 25 members.
 - Use "merge_into_existing" kind with existing_group_name when the suggestion is really about adding contacts to an already-present group.
@@ -228,7 +229,7 @@ Rules:
 - Do not repeat an existing group name.
 - Keep names concise (1-4 words), no emoji.
 - rationale: one short sentence explaining the cluster.
-Return JSON matching the schema. Do NOT include contacts outside the provided list.`;
+Return JSON matching the schema.`;
 
     let parsed: z.infer<typeof AiOutput>;
     try {
