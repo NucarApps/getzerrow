@@ -65,15 +65,16 @@ export async function buildKnownCompanyLogoShaSet(
 
   const shas = new Set<string>();
   async function hashDomain(domain: string): Promise<void> {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
     try {
-      const hit = await fetchChosenCompanyLogoBytes(userId, domain, { signal: ac.signal });
+      const hit = await Promise.race<
+        Awaited<ReturnType<typeof fetchChosenCompanyLogoBytes>> | null
+      >([
+        fetchChosenCompanyLogoBytes(userId, domain),
+        new Promise((resolve) => setTimeout(() => resolve(null), FETCH_TIMEOUT_MS)),
+      ]);
       if (hit) shas.add(await sha256Hex(hit.bytes));
     } catch {
-      // Provider hiccups / aborts shouldn't poison the whole set.
-    } finally {
-      clearTimeout(timer);
+      // Provider hiccups shouldn't poison the whole set.
     }
   }
 
