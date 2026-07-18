@@ -23,7 +23,6 @@ import {
   pickBetterName,
   phoneEntrySchema,
 } from "../contacts-helpers.server";
-import { MANUAL_TRACKED_FIELDS } from "./crud.functions";
 
 /** Fields the user has locked in — enrichment must never overwrite them. */
 function buildLockedFieldSet(contact: {
@@ -37,8 +36,6 @@ function buildLockedFieldSet(contact: {
   return locked;
 }
 
-// Silence unused-import lint if MANUAL_TRACKED_FIELDS drifts unused.
-void MANUAL_TRACKED_FIELDS;
 
 
 type EnrichSupabase = SupabaseClient<Database>;
