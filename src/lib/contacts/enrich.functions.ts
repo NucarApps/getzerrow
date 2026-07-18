@@ -1,8 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { generateText, Output } from "ai";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import { sendContactShareEmail } from "../cards.server";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
 import {
@@ -22,13 +24,19 @@ import {
   phoneEntrySchema,
 } from "../contacts-helpers.server";
 
-export const enrichContact = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; force?: boolean }) =>
-    z.object({ id: z.string().uuid(), force: z.boolean().optional() }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
+type EnrichSupabase = SupabaseClient<Database>;
+  
+
+/** Shared enrichment core so both the single-contact server fn and the
+ * bulk "rerun for everyone" batch can reuse the same logic without one
+ * server fn calling another. */
+async function runEnrichForContact(
+  supabase: EnrichSupabase,
+  contactId: string,
+  force: boolean,
+): Promise<{ contact: Database["public"]["Tables"]["contacts"]["Row"]; skipped: boolean }> {
+  const data = { id: contactId, force };
+  {
     const { data: contact, error } = await supabase
       .from("contacts")
       .select("*")
@@ -398,8 +406,77 @@ ${convoSample}`,
     // Re-hydrate decrypted fields onto the returned row so the caller
     // (the inbox / contact drawer) sees the freshly-written values.
     const { row: decRow } = await getContactDecrypted(contact.id);
-    return { contact: decRow ?? updated, skipped: false as const };
+    return {
+      contact: (decRow ?? updated) as Database["public"]["Tables"]["contacts"]["Row"],
+      skipped: false as const,
+    };
+  }
+}
+
+export const enrichContact = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string; force?: boolean }) =>
+    z.object({ id: z.string().uuid(), force: z.boolean().optional() }).parse(d),
+  )
+  .handler(async ({ data, context }) =>
+    runEnrichForContact(context.supabase, data.id, data.force ?? false),
+  );
+
+/** Batch entrypoint for the "Rerun AI enrichment + summaries for everyone"
+ * settings flow. Small `ids` chunks keep each HTTP call well under the
+ * Safari wall-clock so the browser doesn't drop the request with
+ * "Load failed"; the client fires successive chunks until every contact
+ * has been processed. Always runs with `force: true` so previously-enriched
+ * contacts get a fresh summary. */
+export const rerunEnrichmentBatch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        ids: z.array(z.string().uuid()).min(1).max(15),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const results = await Promise.allSettled(
+      data.ids.map((id) => runEnrichForContact(supabase, id, true)),
+    );
+    const failed: Array<{ id: string; error: string }> = [];
+    let skipped = 0;
+    let processed = 0;
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        if (r.value.skipped) skipped += 1;
+        else processed += 1;
+      } else {
+        failed.push({
+          id: data.ids[i],
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      }
+    });
+    return { processed, skipped, failed };
   });
+
+/** Return every contact id for the signed-in user in a single cheap query.
+ * The bulk-rerun client uses this once at the start to build its work list;
+ * subsequent per-chunk calls only pass the ids so the payload stays small. */
+export const listContactIdsForRerun = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId)
+      .not("email", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(5000);
+    if (error) throw new Error(error.message);
+    return { ids: (data ?? []).map((r) => r.id as string) };
+  });
+
 export const addContactFromEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { emailId: string }) => z.object({ emailId: z.string().uuid() }).parse(d))

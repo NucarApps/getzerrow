@@ -36,6 +36,11 @@ type Props = {
   displayName: string;
   email?: string | null;
   website?: string | null;
+  /** Preferred logo domain from the contact's linked company record.
+   * When present it wins over the email/website heuristic so contacts
+   * inherit their company's chosen logo domain (e.g. `nissanusa.com`)
+   * rather than falling back to their personal email domain. */
+  companyDomain?: string | null;
   onChanged: () => void;
 };
 
@@ -45,7 +50,7 @@ type Props = {
  * `contact-photos` bucket and marked dirty for Google/CardDAV sync so the
  * change propagates to iPhone and Google Contacts on their next tick.
  */
-export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, onChanged }: Props) {
+export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, companyDomain, onChanged }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const upload = useServerFn(uploadContactPhoto);
@@ -113,7 +118,9 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
     }
   };
 
-  const logoDomain = !displaySrc ? contactLogoDomain(website ?? null, email ?? null) : null;
+  const logoDomain = !displaySrc
+    ? (companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null))
+    : null;
   const logoChoice = logoDomain
     ? (logoChoicesQuery.data ?? []).find((c) => c.domain === logoDomain)
     : undefined;

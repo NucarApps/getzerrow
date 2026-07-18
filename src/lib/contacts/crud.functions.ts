@@ -79,26 +79,48 @@ export const getContact = createServerFn({ method: "POST" })
           .order("received_at", { ascending: false })
           .limit(10)
       : Promise.resolve({ data: [] });
-    const [{ data: emails }, { data: phones }, { data: emailRows }] = await Promise.all([
-      emailsQuery,
-      supabase
-        .from("contact_phones")
-        .select("id,label,number,is_primary,position")
-        .eq("contact_id", data.id)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("contact_emails")
-        .select("id,label,address,is_primary,position")
-        .eq("contact_id", data.id)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true }),
-    ]);
+    // company_id isn't returned by the decrypt RPC; fetch it separately so
+    // we can resolve the company's primary domain for the logo fallback.
+    const { data: companyLink } = await supabase
+      .from("contacts")
+      .select("company_id")
+      .eq("id", data.id)
+      .maybeSingle();
+    const linkedCompanyId = companyLink?.company_id ?? null;
+    const companyDomainQuery = linkedCompanyId
+      ? supabase
+          .from("company_domains")
+          .select("domain,source,member_count,created_at")
+          .eq("company_id", linkedCompanyId)
+          .order("source", { ascending: false }) // manual > auto
+          .order("member_count", { ascending: false })
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null as { domain: string } | null });
+    const [{ data: emails }, { data: phones }, { data: emailRows }, { data: companyDomain }] =
+      await Promise.all([
+        emailsQuery,
+        supabase
+          .from("contact_phones")
+          .select("id,label,number,is_primary,position")
+          .eq("contact_id", data.id)
+          .order("position", { ascending: true })
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("contact_emails")
+          .select("id,label,address,is_primary,position")
+          .eq("contact_id", data.id)
+          .order("position", { ascending: true })
+          .order("created_at", { ascending: true }),
+        companyDomainQuery,
+      ]);
     return {
       contact,
       recentEmails: emails ?? [],
       phones: phones ?? [],
       emails: emailRows ?? [],
+      companyDomain: companyDomain?.domain ?? null,
     };
 
   });

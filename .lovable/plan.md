@@ -1,74 +1,35 @@
-## Goal
+# Bulk enrichment rerun + contact avatar company-logo fallback
 
-Make **Company** a first-class entity in Zerrow. A company owns its own detail page (logo, domains, website, phone, address, industry/tags, description, optional linked contact group). Contacts pick from an existing company (combobox) or type a new one (creates on save). Every domain a member uses is auto-attached to the company — editable — and drives the logo fallback everywhere.
+## Issue 1 — "Load failed" on bulk rerun
 
-## Data model
+**Why it fails.** The current entry point in Settings → "Resync summaries now" only bumps `updated_at` so iOS/Google pick up the *existing* summary text — it does not actually rerun the AI. The path that does regenerate AI (`scanContactEnrichment`) tries to process up to 200 contacts (with up to 40 AI extractions) in a single HTTP call, and Safari kills the request at ~15–30s with the "Load failed" message.
 
-New tables (all `user_id`-scoped, RLS to `authenticated` only, GRANTs included):
+**What we'll build.**
 
-- `companies` — `id`, `user_id`, `name`, `name_key` (normalized for uniqueness), `website`, `phone`, `address_line1/2`, `city`, `region`, `postal_code`, `country`, `industry`, `description`, `linked_group_id → contact_groups.id`, `created_at`, `updated_at`. Unique `(user_id, name_key)`.
-- `company_domains` — `id`, `user_id`, `company_id`, `domain`, `source` (`auto`|`manual`), `created_at`. Unique `(user_id, domain)` so a domain maps to exactly one company.
-- `company_tags` — `id`, `user_id`, `company_id`, `tag`. Unique `(company_id, lower(tag))`.
+1. Rename the existing settings button to "Push existing summaries to devices" so its true behavior is obvious.
+2. Add a new **"Rerun AI enrichment + summaries for everyone"** flow in Contacts settings that:
+   - Loads the list of every contact id up front (one cheap query).
+   - Processes them in small client-driven chunks of ~10 contacts per call, using a new `rerunEnrichmentBatch({ ids, force: true })` server fn. Each call stays well under Safari's wall-clock, so nothing gets dropped.
+   - For each contact it runs the existing `enrichContact` logic with `force: true` (refreshes `relationship_summary` and any patchable fields), then queues a `scanContactEnrichment` pass at the end for suggestion rows.
+   - Shows live progress ("142 / 380 contacts…"), lets the user cancel, and stores the last completed index so a refresh resumes rather than restarts.
+   - After the last chunk, bumps the CardDAV resync nonce once so iOS pulls the new summaries.
+3. Toast the failure count at the end and leave a "Retry failed" button that re-runs only the ids that errored.
 
-Migrations to existing tables:
+## Issue 2 — Aditya's Nissan logo doesn't show on his contact card
 
-- `contacts` gains `company_id uuid REFERENCES companies(id) ON DELETE SET NULL` (nullable). The free-text `contacts.company` stays for display/back-compat; it's kept in sync when a company is linked.
-- `contact_emails` trigger: on insert/update of a non-personal domain email, if the contact has `company_id`, upsert into `company_domains` with `source='auto'`.
-- Data backfill in the migration:
-  - For each distinct `(user_id, normalize(contacts.company))`, insert a `companies` row (name = most common casing).
-  - Set `contacts.company_id` on every contact whose company matches.
-  - Seed `company_domains` from members' `contact_emails` domains (skipping personal domains).
-  - Seed `companies.website` from any member's `website` when unambiguous.
-  - Merge existing `company_aliases` — every alias domain becomes a `company_domains` row on the same company as the primary.
-  - Copy `company_profiles.description` (by name or domain key) into `companies.description`.
-  - Backfill logo: `company_logo_choices` stays as-is, keyed by domain — every domain a company owns now resolves to the same choice via `company_domains`.
+**Why it doesn't show.** Aditya has `company_id` set to a Nissan company row that already has `nissanusa.com` in `company_domains`. The contact list correctly resolves the company's primary domain and renders the Nissan mark. The **contact detail avatar** (`ContactPhotoUploader`) does not — it only looks at the contact's own `website` / `email` fields to pick a logo domain, so a contact whose personal email isn't `@nissanusa.com` gets no logo fallback.
 
-Deprecations left in place for one release: `company_aliases`, `company_profiles`. Reads switch to `companies` + `company_domains`; old tables become append-only mirrors so uninstalled clients don't break.
+**What we'll build.**
 
-## Server functions (`src/lib/companies/`)
+1. Pass the linked company's primary domain (and the aliased/preferred logo domain) into `ContactPhotoUploader` from the contact detail drawer, using the same `companyDomainById` map the list already builds.
+2. In `ContactPhotoUploader`, resolve the logo domain in this priority when there is no uploaded photo: linked company's primary domain → website domain → email domain. The existing `logoChoicesQuery` already covers the manual/auto provider mapping.
+3. Do the same fallback in any other contact-card surfaces that currently pass only `website`/`email` (Contact drawer header, share preview) so behavior is consistent.
+4. Do **not** override an uploaded `avatar_url` — the person's real photo still wins over the company logo.
 
-- `listCompanies` — id, name, domain count, contact count.
-- `getCompany` — full row + domains + tags + members (id, name, email, avatar_url).
-- `createCompany({ name })` — normalize, dedupe, return id. Used by the contact form on save.
-- `updateCompany({ id, patch })` — website/phone/address/industry/description/linked_group_id.
-- `renameCompany({ id, name })` — recomputes `name_key`; blocks on collision.
-- `addCompanyDomain({ id, domain })` / `removeCompanyDomain({ id, domain })` — manual edits (`source='manual'` on add).
-- `mergeCompanies({ sourceId, targetId })` — reassigns contacts, moves domains/tags, deletes source. Bumps CardDAV `resync_nonce` and `photo_etag` so iPhone refreshes logos.
-- `setCompanyTags({ id, tags[] })`.
-- `setContactCompany({ contactId, companyId | null | { newName } })` — the picker's save call. Auto-attaches the contact's non-personal email domains to the company.
+## Technical notes
 
-## UI
-
-- **Contact form (`ContactDetailView.tsx`, `contacts.scan.tsx`, new-contact drawer)**: replace the plain text input with a `CompanyCombobox` (shadcn Command + Popover). Shows existing companies with logo + domain count, keyboard-selectable; typing a novel name reveals a "Create ‘Foo’" row. On save we call `setContactCompany`.
-- **Companies list** at `/contacts/companies` — searchable list with logo, name, domain count, contact count. "New company" button.
-- **Company detail** at `/contacts/companies/$companyId` — header with logo (uses existing `CompanyLogo` + primary domain), inline-editable name/website/phone/address/industry, tags editor, domains list (add/remove chips, `auto`/`manual` badge), description textarea, linked contact group picker, members list linking to each contact. Actions: **Merge into…**, **Delete** (unassigns contacts, keeps them).
-- **Contacts list**: existing company buckets now key off `company_id` when present (falls back to derived logic for legacy rows). Bucket header click opens the company detail page. `CompanyAliasesDialog` is superseded by the company detail Domains tab; existing button on the bucket header routes to `/contacts/companies/$id`.
-- **CompanyLogo fallback**: `contactLogoDomain` prefers the contact's linked company's primary domain over the personal-email path, so an Aditya @gmail.com linked to Nissan resolves the Nissan logo (fixes today's "N" issue as a side effect).
-
-## Sync side-effects
-
-When a company's domains/logo change, bump `carddav_settings.resync_nonce` and clear `photo_etag` for every linked contact — reuses the existing helper. Google Contacts uses `updated_at` bumps on affected `contacts` rows the same way.
-
-## Out of scope for this pass
-
-- Sharing companies across users / team CRM.
-- AI-driven company enrichment (already partly exists via `enrich-suggest`; not touching here).
-- Public company profile pages (`/c/...`).
-
-## Verify
-
-- Old contacts with `company = 'Nissan'` all resolve to one Company row after migration; deleting a member does not drop the domain from the company.
-- Creating a new contact with `company = 'Foo Corp'` (novel) creates the row and links it in one save.
-- Editing a domain on the company page updates the logo for every member on the next contacts list render.
-- Renaming a company cascades: contact rows show the new name, CardDAV bumps, iPhone pulls fresh cards on next sync.
-- Merge combines two companies without losing any contacts, domains, tags, or description.
-- Existing tests pass; add unit tests for `normalizeCompanyName`, the trigger that auto-attaches domains, and `mergeCompanies`.
-
-## Rollout order
-
-1. Migration (tables + backfill + trigger).
-2. Server functions + tests.
-3. `CompanyCombobox` + wire into the contact form.
-4. Companies list + detail routes.
-5. Switch contacts-list bucketing and logo fallback to `company_id`.
-6. Deprecate `CompanyAliasesDialog` entry point (redirect to detail page).
+- New server fn: `rerunEnrichmentBatch` in `src/lib/contacts/enrich.functions.ts` — `.middleware([requireSupabaseAuth])`, input `{ ids: string[] (max 15), force: boolean }`. Iterates and calls the existing enrich helper per id inside a `Promise.allSettled`, returning `{ ok, failed: [{ id, error }] }`.
+- Client driver in a new `useBulkEnrichmentRun` hook (React Query mutation queue) so progress state lives in one place and both the settings row and a toast can subscribe.
+- Progress cursor stored in `localStorage` under `zerrow.bulkEnrich.cursor:<userId>` so a refresh resumes.
+- Contact detail passes `companyDomain={companyDomainById.get(c.company_id)}` down to `ContactPhotoUploader`; the uploader accepts an optional `companyDomain` prop and uses it as the top-priority fallback.
+- No schema changes.

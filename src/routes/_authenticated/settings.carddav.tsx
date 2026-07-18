@@ -24,6 +24,10 @@ import {
   type GroupNameStyle,
 } from "@/lib/carddav/settings.functions";
 import {
+  rerunEnrichmentBatch,
+  listContactIdsForRerun,
+} from "@/lib/contacts/enrich.functions";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -59,8 +63,60 @@ function CardDavSettings() {
   const updateSettings = useServerFn(updateCardDavSettings);
   const forceResync = useServerFn(forceCarddavResync);
   const resyncSummaries = useServerFn(resyncSummaryContacts);
+  const rerunBatch = useServerFn(rerunEnrichmentBatch);
+  const listIdsForRerun = useServerFn(listContactIdsForRerun);
   const [label, setLabel] = useState("iPhone");
   const [freshToken, setFreshToken] = useState<string | null>(null);
+  const [rerunState, setRerunState] = useState<{
+    running: boolean;
+    total: number;
+    done: number;
+    processed: number;
+    skipped: number;
+    failed: number;
+  }>({ running: false, total: 0, done: 0, processed: 0, skipped: 0, failed: 0 });
+
+  // Chunk the "rerun for everyone" work client-side so each request stays
+  // well under the Safari wall-clock (which surfaces long fetches as the
+  // "Load failed" toast the user saw). We fetch the id list once, then
+  // walk it in small groups; failures inside a chunk don't stop the run.
+  const runRerunAll = async () => {
+    setRerunState({ running: true, total: 0, done: 0, processed: 0, skipped: 0, failed: 0 });
+    try {
+      const { ids } = await listIdsForRerun();
+      if (ids.length === 0) {
+        toast.info("No contacts to enrich yet");
+        setRerunState((s) => ({ ...s, running: false }));
+        return;
+      }
+      setRerunState((s) => ({ ...s, total: ids.length }));
+      const CHUNK = 10;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        try {
+          const res = await rerunBatch({ data: { ids: slice } });
+          setRerunState((s) => ({
+            ...s,
+            done: s.done + slice.length,
+            processed: s.processed + res.processed,
+            skipped: s.skipped + res.skipped,
+            failed: s.failed + res.failed.length,
+          }));
+        } catch (e) {
+          setRerunState((s) => ({
+            ...s,
+            done: s.done + slice.length,
+            failed: s.failed + slice.length,
+          }));
+          // eslint-disable-next-line no-console
+          console.error("[rerun-enrichment] chunk failed", e);
+        }
+      }
+      toast.success("Enrichment rerun complete");
+    } finally {
+      setRerunState((s) => ({ ...s, running: false }));
+    }
+  };
 
   const settingsQuery = useQuery({
     queryKey: ["carddav-settings"],
@@ -341,6 +397,35 @@ function CardDavSettings() {
           >
             {resyncSummariesMut.isPending ? "Queueing…" : "Resync summaries now"}
           </Button>
+        </div>
+
+        <div className="border-t pt-4">
+          <p className="text-sm font-medium">Rerun AI enrichment for every contact</p>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Walks every contact, re-scans matching email signatures, and
+            regenerates the AI relationship summary. Runs in small batches
+            in the background so the browser tab stays responsive — safe to
+            leave open, safe to close (the tab has to stay open to keep
+            processing; closing pauses until you click again).
+          </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={runRerunAll}
+              disabled={rerunState.running}
+            >
+              {rerunState.running
+                ? `Rerunning… ${rerunState.done}/${rerunState.total}`
+                : "Rerun for everyone"}
+            </Button>
+            {(rerunState.running || rerunState.done > 0) && (
+              <p className="text-xs text-muted-foreground">
+                {rerunState.processed} enriched · {rerunState.skipped} skipped ·{" "}
+                {rerunState.failed} failed
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="border-t pt-4">
