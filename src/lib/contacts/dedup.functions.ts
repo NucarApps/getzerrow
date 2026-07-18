@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import { normalizePhone } from "./phone";
+import { emailLocalPart, firstLastTokens, normalizeNameLoose } from "./name-match";
 
 type ContactRow = {
   id: string;
@@ -21,27 +22,50 @@ type PhoneRow = { contact_id: string; number: string };
 
 type ContactWithPhones = ContactRow & { phones: string[] };
 
-const MAX_CLUSTERS = 50; // safety cap for AI credits per scan
+const MAX_CLUSTERS = 80; // safety cap for AI credits per scan
 const MAX_CLUSTER_SIZE = 6; // clusters bigger than this are truncated for the prompt
+
+type ClusterSignal =
+  | "exact_phone"
+  | "name_phone"
+  | "name_company"
+  | "name_only"
+  | "email_localpart"
+  | "name_email_local"
+  | "loose_name";
 
 type Cluster = {
   key: string;
   contacts: ContactWithPhones[];
-  signal: "exact_phone" | "name_phone" | "name_company" | "name_only";
+  signal: ClusterSignal;
 };
 
 function normName(s: string | null | undefined): string {
-  return (s ?? "").trim().toLowerCase();
+  return normalizeNameLoose(s);
+}
+
+function firstLastKey(name: string | null | undefined): string | null {
+  const tokens = firstLastTokens(name);
+  if (!tokens) return null;
+  const [f, l] = tokens;
+  if (!f && !l) return null;
+  return `${f}|${l}`;
 }
 
 function buildClusters(all: ContactWithPhones[]): Cluster[] {
   const byPhone = new Map<string, ContactWithPhones[]>();
   const byNameCompany = new Map<string, ContactWithPhones[]>();
   const byName = new Map<string, ContactWithPhones[]>();
+  const byLooseName = new Map<string, ContactWithPhones[]>();
+  const byEmailLocal = new Map<string, ContactWithPhones[]>();
+  const byNameEmailLocal = new Map<string, ContactWithPhones[]>();
 
   for (const c of all) {
     const name = normName(c.name);
     const company = normName(c.company);
+    const loose = firstLastKey(c.name);
+    const local = emailLocalPart(c.email);
+
     for (const raw of c.phones) {
       const n = normalizePhone(raw);
       if (!n) continue;
@@ -60,14 +84,29 @@ function buildClusters(all: ContactWithPhones[]): Cluster[] {
       list.push(c);
       byName.set(name, list);
     }
+    if (loose) {
+      const list = byLooseName.get(loose) ?? [];
+      list.push(c);
+      byLooseName.set(loose, list);
+    }
+    if (local && local.length >= 3) {
+      const list = byEmailLocal.get(local) ?? [];
+      list.push(c);
+      byEmailLocal.set(local, list);
+    }
+    if (loose && local && local.length >= 3) {
+      const k = `${loose}|${local}`;
+      const list = byNameEmailLocal.get(k) ?? [];
+      list.push(c);
+      byNameEmailLocal.set(k, list);
+    }
   }
 
   const clusters: Cluster[] = [];
   const seen = new Set<string>();
 
-  function pushCluster(members: ContactWithPhones[], signal: Cluster["signal"], key: string) {
+  function pushCluster(members: ContactWithPhones[], signal: ClusterSignal, key: string) {
     if (members.length < 2) return;
-    // Dedup by ids in the cluster so the same person isn't listed twice.
     const uniq = new Map<string, ContactWithPhones>();
     for (const m of members) uniq.set(m.id, m);
     if (uniq.size < 2) return;
@@ -77,13 +116,26 @@ function buildClusters(all: ContactWithPhones[]): Cluster[] {
     clusters.push({ key, contacts: Array.from(uniq.values()), signal });
   }
 
+  // Strong signals first so overlapping id-sets get the higher-priority label.
   for (const [k, list] of byPhone) pushCluster(list, "exact_phone", `phone:${k}`);
+  for (const [k, list] of byNameEmailLocal) pushCluster(list, "name_email_local", `nel:${k}`);
+  for (const [k, list] of byEmailLocal) {
+    // Only interesting if the local-part appears on ≥2 different domains.
+    const domains = new Set(
+      list.map((c) => (c.email ?? "").split("@")[1]?.toLowerCase()).filter(Boolean),
+    );
+    if (domains.size >= 2) pushCluster(list, "email_localpart", `elp:${k}`);
+  }
   for (const [k, list] of byNameCompany) pushCluster(list, "name_company", `nc:${k}`);
   for (const [k, list] of byName) {
-    // Skip name-only when everyone in the group shares an email — those are
-    // usually the same person already keyed properly.
     const uniqEmails = new Set(list.map((c) => (c.email ?? "").toLowerCase()).filter(Boolean));
-    if (uniqEmails.size > 1) pushCluster(list, "name_only", `name:${k}`);
+    if (uniqEmails.size > 1 || list.some((c) => !c.email)) {
+      pushCluster(list, "name_only", `name:${k}`);
+    }
+  }
+  for (const [k, list] of byLooseName) {
+    // Loose name (first+last tokens) catches "John A Smith" vs "John Smith".
+    pushCluster(list, "loose_name", `ln:${k}`);
   }
   return clusters;
 }
