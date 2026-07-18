@@ -258,7 +258,7 @@ Return JSON matching the schema.`;
     const parsedCount = parsed.suggestions.length;
     let droppedMissingIds = 0;
 
-    const validContactIds = new Set(contacts.map((c) => c.id));
+    
     const groupByLowerName = new Map(
       (groups ?? []).map((g) => [g.name.toLowerCase(), g] as const),
     );
