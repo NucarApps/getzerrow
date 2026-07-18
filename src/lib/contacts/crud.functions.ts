@@ -136,7 +136,12 @@ export const getContact = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .maybeSingle();
     const linkedCompanyId = companyLink?.company_id ?? null;
-    const companyDomainQuery = linkedCompanyId
+    // Pull *all* of the company's domains so we can prefer whichever one has a
+    // saved logo choice attached (that's the domain the user actually taught
+    // us to render for this company). Without this, a "manual" duplicate
+    // domain with no logo choice can win the primary sort and the UI falls
+    // back to logo.dev's generic monogram.
+    const companyDomainsQuery = linkedCompanyId
       ? supabase
           .from("company_domains")
           .select("domain,source,member_count,created_at")
@@ -144,10 +149,8 @@ export const getContact = createServerFn({ method: "POST" })
           .order("source", { ascending: false }) // manual > auto
           .order("member_count", { ascending: false })
           .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null as { domain: string } | null });
-    const [{ data: emails }, { data: phones }, { data: emailRows }, { data: companyDomain }] =
+      : Promise.resolve({ data: [] as Array<{ domain: string }> });
+    const [{ data: emails }, { data: phones }, { data: emailRows }, { data: companyDomains }] =
       await Promise.all([
         emailsQuery,
         supabase
@@ -162,14 +165,26 @@ export const getContact = createServerFn({ method: "POST" })
           .eq("contact_id", data.id)
           .order("position", { ascending: true })
           .order("created_at", { ascending: true }),
-        companyDomainQuery,
+        companyDomainsQuery,
       ]);
+    const domainList = (companyDomains ?? []).map((d) => d.domain);
+    let companyDomain: string | null = domainList[0] ?? null;
+    if (linkedCompanyId && domainList.length > 0) {
+      const { data: choices } = await supabase
+        .from("company_logo_choices")
+        .select("domain,source_domain")
+        .in("domain", domainList);
+      const chosen = (choices ?? [])[0];
+      if (chosen) {
+        companyDomain = chosen.source_domain ?? chosen.domain ?? companyDomain;
+      }
+    }
     return {
       contact,
       recentEmails: emails ?? [],
       phones: phones ?? [],
       emails: emailRows ?? [],
-      companyDomain: companyDomain?.domain ?? null,
+      companyDomain,
       companyId: linkedCompanyId,
     };
 
