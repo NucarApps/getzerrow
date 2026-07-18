@@ -11,6 +11,13 @@ export type PhoneRow = {
   is_primary: boolean | null;
 };
 
+export type EmailRow = {
+  label: string | null;
+  address: string;
+  is_primary: boolean | null;
+};
+
+
 // Escape a text value for a vCard property field.
 function esc(v: string | null | undefined): string {
   if (!v) return "";
