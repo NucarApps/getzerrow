@@ -483,8 +483,13 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       </div>
 
       <div className="mt-6">
+        <EmailsEditor value={emails} onChange={setEmails} />
+      </div>
+
+      <div className="mt-6">
         <PhonesEditor value={phones} onChange={setPhones} />
       </div>
+
 
       <div className="mt-6">
         <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
