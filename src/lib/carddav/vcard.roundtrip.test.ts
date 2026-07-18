@@ -154,10 +154,12 @@ describe("AI summary in NOTE", () => {
       notes: "Prefers email.",
     });
     const vcard = contactToVCard(c);
-    expect(vcard).toMatch(/NOTE[:;]/);
-    expect(vcard).toContain("Head of design.");
-    expect(vcard).toContain("Prefers email.");
+    const unfolded = vcard.replace(/\r\n /g, "");
+    expect(unfolded).toMatch(/NOTE[:;]/);
+    expect(unfolded).toContain("Head of design.");
+    expect(unfolded).toContain("Prefers email.");
   });
+
 
   it("omits summary when includeSummary=false", () => {
     const c = buildContact({
