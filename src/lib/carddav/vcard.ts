@@ -80,6 +80,26 @@ function phoneTypeParam(label: string | null): string {
   return ";TYPE=VOICE";
 }
 
+function emailTypeParam(label: string | null): string {
+  const l = (label ?? "").toLowerCase();
+  if (l.includes("work")) return ";TYPE=INTERNET,WORK";
+  if (l.includes("home")) return ";TYPE=INTERNET,HOME";
+  return ";TYPE=INTERNET";
+}
+
+function emailLabelFromTypes(types: string[]): string {
+  const set = new Set(types.map((t) => t.toUpperCase()));
+  if (set.has("WORK")) return "Work";
+  if (set.has("HOME")) return "Home";
+  return "Other";
+}
+
+/** Case-insensitive key for email dedupe. */
+export function emailKey(s: string | null | undefined): string {
+  return (s ?? "").trim().toLowerCase();
+}
+
+
 /**
  * Contact -> vCard 3.0 text. `phones` is optional; when omitted we skip TEL
  * lines from the phones table and only emit the encrypted `phone` field on
