@@ -109,6 +109,7 @@ export function contactToVCard(
   contact: DecryptedContact,
   phones: PhoneRow[] = [],
   _categories: string[] = [],
+  emails: EmailRow[] = [],
 ): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
 
@@ -131,13 +132,34 @@ export function contactToVCard(
     if (contact.title) out.push(line("TITLE", esc(contact.title)));
   }
 
-  // Skip legacy placeholder emails so iOS stops displaying them as the
-  // contact's real address. Rows are migrated to NULL separately, but a
-  // stale echo can otherwise round-trip until every cache invalidates.
-  const isPlaceholderEmail = !!contact.email && /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(contact.email);
-  if (contact.email && !isPlaceholderEmail) {
-    out.push(line("EMAIL;TYPE=INTERNET,WORK,pref", esc(contact.email)));
+  // Emit all EMAIL entries from contact_emails (fall back to the single
+  // legacy contact.email column when no rows exist). Legacy placeholder
+  // addresses are filtered so iOS stops caching them.
+  const isPlaceholderEmail = (v: string): boolean =>
+    /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(v);
+  const emittedEmailKeys = new Set<string>();
+  const emailList: EmailRow[] = emails.length
+    ? emails
+    : contact.email && !isPlaceholderEmail(contact.email)
+      ? [{ label: "Work", address: contact.email, is_primary: true }]
+      : [];
+  // Ensure the primary comes first so iOS renders it as the default.
+  const sortedEmails = [...emailList].sort((a, b) => {
+    const ap = a.is_primary ? 0 : 1;
+    const bp = b.is_primary ? 0 : 1;
+    return ap - bp;
+  });
+  for (const em of sortedEmails) {
+    const addr = em.address?.trim();
+    if (!addr) continue;
+    if (isPlaceholderEmail(addr)) continue;
+    const key = emailKey(addr);
+    if (key && emittedEmailKeys.has(key)) continue;
+    const params = emailTypeParam(em.label) + (em.is_primary ? ",pref;PREF=1" : "");
+    out.push(line(`EMAIL${params}`, esc(addr)));
+    if (key) emittedEmailKeys.add(key);
   }
+
 
   // Structured phones from contact_phones plus the legacy encrypted phone field.
   const emittedPhoneKeys = new Set<string>();
