@@ -45,7 +45,7 @@ export type Person = {
 /** Local Zerrow contact projection used by the sync layer. */
 export type LocalContact = {
   id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   title: string | null;
   company: string | null;
@@ -105,13 +105,16 @@ export function contactToPerson(
   const nm = splitName(contact.name);
   if (nm) person.names = [nm];
 
-  person.emailAddresses = [
-    {
-      value: contact.email,
-      type: "work",
-      metadata: { primary: primaryEmailPrevious !== false },
-    },
-  ];
+  const email = contact.email?.trim();
+  if (email) {
+    person.emailAddresses = [
+      {
+        value: email,
+        type: "work",
+        metadata: { primary: primaryEmailPrevious !== false },
+      },
+    ];
+  }
 
   const phoneList: PersonPhone[] = [];
   const seen = new Set<string>();

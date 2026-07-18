@@ -248,16 +248,21 @@ export function ContactDetailView({ id, onDeleted }: Props) {
 
   async function send() {
     if (!q.data?.contact) return;
+    if (!q.data.contact.email) {
+      toast.error("Add an email before sending this contact card.");
+      return;
+    }
+    const contactEmail = q.data.contact.email;
     setSending(true);
     try {
       await sendCard({
         data: {
-          toEmail: q.data.contact.email,
+          toEmail: contactEmail,
           contactId: id,
           publicBaseUrl: window.location.origin,
         },
       });
-      toast.success(`Card sent to ${q.data.contact.email}`);
+      toast.success(`Card sent to ${contactEmail}`);
     } catch (e: unknown) {
       toast.error(errorMessage(e) ?? "Failed to send card");
     } finally {
@@ -288,16 +293,17 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   if (!q.data?.contact) return <div className="p-8 text-sm text-muted-foreground">Not found.</div>;
 
   const c = q.data.contact;
+  const displayName = c.name || c.email || "Unnamed contact";
 
   return (
     <div>
       <header className="mb-6 flex items-start gap-4">
         <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-primary/15 text-2xl font-semibold text-primary">
-          {(c.name || c.email).slice(0, 1).toUpperCase()}
+          {displayName.slice(0, 1).toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="font-display text-2xl text-foreground">{c.name || c.email}</h1>
-          <p className="text-sm text-muted-foreground">{c.title || c.company || c.email}</p>
+          <h1 className="font-display text-2xl text-foreground">{displayName}</h1>
+          <p className="text-sm text-muted-foreground">{c.title || c.company || c.email || "No email"}</p>
           <p className="text-xs text-muted-foreground mt-1">
             Source: {c.source}
             {c.enriched_at
@@ -644,7 +650,7 @@ function ShareContactDialog({
   contactId: string;
   contact: {
     name: string | null;
-    email: string;
+    email: string | null;
     title: string | null;
     company: string | null;
     phone: string | null;
@@ -657,7 +663,7 @@ function ShareContactDialog({
   const [toPhone, setToPhone] = useState("");
   const [sending, setSending] = useState(false);
 
-  const displayName = contact.name || contact.email;
+  const displayName = contact.name || contact.email || "this contact";
   const smsBody = [
     `${displayName}${contact.title || contact.company ? ` — ${[contact.title, contact.company].filter(Boolean).join(", ")}` : ""}`,
     contact.email ? `Email: ${contact.email}` : "",

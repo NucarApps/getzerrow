@@ -15,6 +15,7 @@ import {
 } from "./people-client.server";
 import { contactToPerson, groupToLabel } from "./mapper";
 import { loadLocalContact } from "./state.server";
+import { isLocalGoogleContactDirty } from "./dirty";
 import type { ProgressReporter } from "./progress.server";
 
 type Ids = { userId: string; gmailAccountId: string; runId: string };
@@ -110,7 +111,7 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
 
 type ContactRow = {
   id: string;
-  email: string;
+  email: string | null;
   updated_at: string;
 };
 
@@ -139,8 +140,9 @@ async function pushContacts(
   let count = 0;
   for (const c of contacts as ContactRow[]) {
     const link = byLocal.get(c.id);
-    // Skip if remote is fresher than local (nothing to push).
-    if (link?.last_synced_at && new Date(c.updated_at) <= new Date(link.last_synced_at)) continue;
+    // Skip only when this linked local row is not dirty. CardDAV saves mark
+    // the link stale, so an iPhone edit survives the pull-before-push cycle.
+    if (link && !isLocalGoogleContactDirty(c.updated_at, link.last_synced_at)) continue;
 
     try {
       const local = await loadLocalContact(c.id);

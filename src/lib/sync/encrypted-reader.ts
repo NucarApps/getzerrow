@@ -62,7 +62,7 @@ export async function getEmailsDecrypted(
 export type DecryptedContact = {
   id: string;
   user_id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   avatar_url: string | null;
   title: string | null;

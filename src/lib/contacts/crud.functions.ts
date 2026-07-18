@@ -66,13 +66,16 @@ export const getContact = createServerFn({ method: "POST" })
     if (error || !row) throw new Error("Contact not found");
     if (row.user_id !== userId) throw new Error("Forbidden");
     const contact = row;
+    const emailsQuery = contact.email
+      ? supabase
+          .from("emails")
+          .select("id,received_at")
+          .eq("from_addr", contact.email)
+          .order("received_at", { ascending: false })
+          .limit(10)
+      : Promise.resolve({ data: [] });
     const [{ data: emails }, { data: phones }] = await Promise.all([
-      supabase
-        .from("emails")
-        .select("id,received_at")
-        .eq("from_addr", contact.email)
-        .order("received_at", { ascending: false })
-        .limit(10),
+      emailsQuery,
       supabase
         .from("contact_phones")
         .select("id,label,number,is_primary,position")
