@@ -186,6 +186,19 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
           <Trash2 className="h-3 w-3" />
         </Button>
       ) : null}
+      {avatarUrl && companyId && !busy ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="secondary"
+          onClick={onResetToCompany}
+          aria-label="Reset to company logo"
+          title="Reset to company logo"
+          className="absolute -left-1 -bottom-1 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100"
+        >
+          <Building2 className="h-3 w-3" />
+        </Button>
+      ) : null}
       <input
         ref={fileRef}
         type="file"
