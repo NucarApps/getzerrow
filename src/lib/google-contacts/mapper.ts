@@ -64,6 +64,9 @@ export type LocalContact = {
 
 export type LocalPhone = { label: string; number: string; is_primary: boolean };
 
+export type LocalEmail = { label: string; address: string; is_primary: boolean };
+
+
 /** Split a display name into given/family. Best-effort — Google is forgiving. */
 export function splitName(name: string | null): PersonName | null {
   if (!name) return null;
