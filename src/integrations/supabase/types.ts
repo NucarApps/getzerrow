@@ -379,6 +379,59 @@ export type Database = {
           },
         ]
       }
+      contact_enrichment_suggestions: {
+        Row: {
+          confidence: string
+          contact_id: string
+          created_at: string
+          evidence: string | null
+          field: string
+          id: string
+          run_id: string
+          source: string
+          status: string
+          updated_at: string
+          user_id: string
+          value: string
+        }
+        Insert: {
+          confidence: string
+          contact_id: string
+          created_at?: string
+          evidence?: string | null
+          field: string
+          id?: string
+          run_id: string
+          source: string
+          status?: string
+          updated_at?: string
+          user_id: string
+          value: string
+        }
+        Update: {
+          confidence?: string
+          contact_id?: string
+          created_at?: string
+          evidence?: string | null
+          field?: string
+          id?: string
+          run_id?: string
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_enrichment_suggestions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_group_members: {
         Row: {
           auto_added: boolean
