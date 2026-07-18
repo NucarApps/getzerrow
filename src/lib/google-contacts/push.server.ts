@@ -11,9 +11,10 @@ import {
   updateContactGroup,
   deleteContactGroup,
   modifyGroupMembers,
+  getPerson,
   PeopleApiError,
 } from "./people-client.server";
-import { contactToPerson, groupToLabel } from "./mapper";
+import { contactToPerson, groupToLabel, personToContact } from "./mapper";
 import { loadLocalContact } from "./state.server";
 import { isLocalGoogleContactDirty } from "./dirty";
 import type { ProgressReporter } from "./progress.server";
