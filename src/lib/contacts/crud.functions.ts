@@ -25,6 +25,7 @@ import {
 
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 import { resolveContactCompany } from "@/lib/companies/companies.functions";
+import { applyRulesForContact } from "./group-rules.functions";
 
 /**
  * Fields we treat as "user-owned once you edit them". Enrichment reads this
