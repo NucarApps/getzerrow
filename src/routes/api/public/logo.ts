@@ -38,19 +38,108 @@ function providersFor(domain: string, size: number): string[] {
 
 const MIN_BYTES = 600;
 
+// Trusted, provider-controlled hosts we always allow without DNS re-checks.
+// User-controlled hostnames (the raw `${domain}` fetches) still get resolved
+// and validated against private/reserved IP ranges to prevent SSRF.
+const TRUSTED_HOSTS = new Set([
+  "img.logo.dev",
+  "logo.clearbit.com",
+  "icons.duckduckgo.com",
+  "www.google.com",
+]);
+
+function ipv4IsPrivate(ip: string): boolean {
+  const parts = ip.split(".").map((n) => Number(n));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+    return true; // malformed -> treat as unsafe
+  }
+  const [a, b] = parts;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 0) return true;
+  if (a === 169 && b === 254) return true; // link-local (incl. 169.254.169.254 metadata)
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a >= 224) return true; // multicast / reserved
+  return false;
+}
+
+function ipv6IsPrivate(ip: string): boolean {
+  const s = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  if (s === "::1" || s === "::") return true;
+  if (s.startsWith("fc") || s.startsWith("fd")) return true; // ULA
+  if (s.startsWith("fe80")) return true; // link-local
+  if (s.startsWith("ff")) return true; // multicast
+  // IPv4-mapped ::ffff:a.b.c.d
+  const mapped = s.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return ipv4IsPrivate(mapped[1]);
+  return false;
+}
+
+type DohAnswer = { name: string; type: number; data: string };
+
+async function dohResolve(host: string, type: "A" | "AAAA"): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=${type}`,
+      {
+        headers: { accept: "application/dns-json" },
+        signal: AbortSignal.timeout(2500),
+      },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { Answer?: DohAnswer[] };
+    const wanted = type === "A" ? 1 : 28;
+    return (body.Answer ?? []).filter((a) => a.type === wanted).map((a) => a.data);
+  } catch {
+    return [];
+  }
+}
+
+async function hostResolvesToPublicIp(host: string): Promise<boolean> {
+  if (TRUSTED_HOSTS.has(host.toLowerCase())) return true;
+  const [a, aaaa] = await Promise.all([dohResolve(host, "A"), dohResolve(host, "AAAA")]);
+  const all = [...a, ...aaaa];
+  if (all.length === 0) return false;
+  for (const ip of all) {
+    if (ip.includes(":") ? ipv6IsPrivate(ip) : ipv4IsPrivate(ip)) return false;
+  }
+  return true;
+}
+
 async function tryFetch(url: string): Promise<Response | null> {
   try {
-    const res = await fetch(url, {
-      redirect: "follow",
-      headers: { "user-agent": "Mozilla/5.0 ZerrowLogoBot" },
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!res.ok) return null;
-    const ct = res.headers.get("content-type") || "";
-    if (!ct.startsWith("image/")) return null;
-    const len = Number(res.headers.get("content-length") || "0");
-    if (len && len < MIN_BYTES) return null;
-    return res;
+    let current = url;
+    // Manually follow up to 3 redirects, re-validating the host on each hop
+    // so an attacker cannot 302 us into a private-network address after
+    // passing the initial DNS check.
+    for (let hop = 0; hop < 4; hop++) {
+      const parsed = new URL(current);
+      if (parsed.protocol !== "https:") return null;
+      const host = parsed.hostname.toLowerCase();
+      if (isBlockedDomain(host)) return null;
+      if (!(await hostResolvesToPublicIp(host))) return null;
+
+      const res = await fetch(current, {
+        redirect: "manual",
+        headers: { "user-agent": "Mozilla/5.0 ZerrowLogoBot" },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location");
+        if (!loc) return null;
+        current = new URL(loc, current).toString();
+        continue;
+      }
+      if (!res.ok) return null;
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.startsWith("image/")) return null;
+      const len = Number(res.headers.get("content-length") || "0");
+      if (len && len < MIN_BYTES) return null;
+      return res;
+    }
+    return null;
   } catch {
     return null;
   }
