@@ -188,7 +188,9 @@ async function pushContacts(
         memberResourceNames,
         undefined,
         (emails ?? []).map((e) => ({ label: e.label, address: e.address, is_primary: e.is_primary })),
+        { includeSummary },
       );
+
 
 
       if (!link) {
