@@ -181,23 +181,46 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
 
     // Compact prompt payload — reference contacts by a short `i` index instead
     // of UUID. Models reliably echo small integers back; UUIDs get hallucinated.
-    const idByIndex = new Map<number, string>();
-    const contactLines = contacts.map((c, idx) => {
-      const i = idx + 1;
-      idByIndex.set(i, c.id);
-      const domain = emailDomain(c.email);
-      const groupNames = (memberGroupsByContact.get(c.id) ?? [])
+    // Sort ungrouped contacts first so the model sees them at the top of the
+    // list and biases suggestions toward covering them.
+    const withGroups = (contacts ?? []).map((c) => ({
+      c,
+      groupNames: (memberGroupsByContact.get(c.id) ?? [])
         .map((gid) => groupsById.get(gid)?.name)
-        .filter((v): v is string => !!v);
+        .filter((v): v is string => !!v),
+    }));
+    withGroups.sort((a, b) => {
+      const au = a.groupNames.length === 0 ? 0 : 1;
+      const bu = b.groupNames.length === 0 ? 0 : 1;
+      return au - bu;
+    });
+
+    // Cap payload: keep every ungrouped contact plus a sample of grouped ones.
+    const MAX_PAYLOAD = 800;
+    const ungrouped = withGroups.filter((w) => w.groupNames.length === 0);
+    const grouped = withGroups.filter((w) => w.groupNames.length > 0);
+    const ungroupedTotal = ungrouped.length;
+    const groupedSample = grouped.slice(
+      0,
+      Math.max(0, MAX_PAYLOAD - ungrouped.length),
+    );
+    const payload = [...ungrouped, ...groupedSample];
+
+    const idByIndex = new Map<number, string>();
+    const contactLines = payload.map((w, idx) => {
+      const i = idx + 1;
+      idByIndex.set(i, w.c.id);
+      const domain = emailDomain(w.c.email);
       return {
         i,
-        n: firstNonEmpty(c.name),
-        co: firstNonEmpty(c.company),
-        t: firstNonEmpty(c.title),
+        n: firstNonEmpty(w.c.name),
+        co: firstNonEmpty(w.c.company),
+        t: firstNonEmpty(w.c.title),
         d: domain,
-        city: firstNonEmpty(c.city),
-        src: c.source ?? null,
-        g: groupNames,
+        city: firstNonEmpty(w.c.city),
+        src: w.c.source ?? null,
+        g: w.groupNames,
+        u: w.groupNames.length === 0 ? 1 : 0,
       };
     });
 
@@ -215,16 +238,19 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
 Existing groups (do not duplicate):
 ${JSON.stringify(existingGroupsPayload)}
 
-Contacts (i=short id, n=name, co=company, t=title, d=email domain, city, src=source, g=current groups):
+Contacts (i=short id, n=name, co=company, t=title, d=email domain, city, src=source, g=current groups, u=1 when the contact has NO groups):
 ${JSON.stringify(contactLines)}
 
-Task: propose between 3 and 15 new groups (or subgroups) that would help the user organize this list.
+There are ${ungroupedTotal} ungrouped contacts (u=1) in this list. Your top priority is to propose groups that cover as many of them as possible.
+
+Task: propose between 3 and 20 groups (new, subgroup, or merge_into_existing).
 Rules:
 - Reference contacts by their "i" field. Return contact_ids as an array of those integers (e.g. [3, 7, 12]). Never invent an "i" that isn't in the list above.
-- Each suggestion must include at least 3 contact_ids for "new"/"subgroup", or at least 2 for "merge_into_existing".
-- Prefer clustering by company/employer, then by industry/domain, role, or city.
-- Use "subgroup" kind and set parent_group_name to an EXISTING group name when the cluster fits under one (e.g., a company inside a broader group), especially when that parent has more than 25 members.
-- Use "merge_into_existing" kind with existing_group_name when the suggestion is really about adding contacts to an already-present group.
+- Each suggestion must include at least 2 contact_ids.
+- Aim to have at least half your suggested members be ungrouped (u=1) contacts.
+- Group by shared company (co), email domain (d), city, or role (t) — whichever is strongest for that cluster.
+- Use "subgroup" kind with parent_group_name = an EXISTING group name when the cluster fits under one (e.g., a company inside a broader group).
+- Use "merge_into_existing" with existing_group_name when you're really adding contacts to a present group.
 - Otherwise use "new".
 - Do not repeat an existing group name.
 - Keep names concise (1-4 words), no emoji.
