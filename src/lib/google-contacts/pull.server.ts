@@ -254,7 +254,7 @@ async function applyPersonChanges(
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
-    .select("contact_id, resource_name, etag")
+    .select("contact_id, resource_name, etag, last_synced_at")
     .eq("gmail_account_id", ids.gmailAccountId);
   const byResource = new Map<string, { contact_id: string; last_synced_at: string | null }>(
     (links ?? []).map((l) => [
@@ -376,6 +376,10 @@ async function applyPersonChanges(
         { onConflict: "gmail_account_id,contact_id" },
       );
     } else {
+      if (!link) {
+        await progress?.increment(1);
+        continue;
+      }
       const { data: localBeforePull } = await supabaseAdmin
         .from("contacts")
         .select("updated_at")
