@@ -280,6 +280,25 @@ export function CompanyAliasesDialog({
     }
   }
 
+  async function saveName() {
+    const next = nameDraft.trim();
+    if (!next || next === companyName) return;
+    setBusy(true);
+    try {
+      const res = await renameFn({ data: { contactIds, newName: next } });
+      toast.success(
+        `Renamed ${res.updated} ${res.updated === 1 ? "contact" : "contacts"} to ${next}`,
+      );
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["company-aliases"] });
+      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't rename company");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function toggleGroup(id: string) {
     setSelectedGroupIds((prev) => {
       const next = new Set(prev);
