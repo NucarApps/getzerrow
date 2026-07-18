@@ -453,6 +453,13 @@ export const updateContact = createServerFn({ method: "POST" })
       await reconcileAutoParentsForContacts(supabase, userId, [id]);
     }
 
+    // Evaluate per-label auto-assignment rules against the updated contact.
+    try {
+      await applyRulesForContact(supabase, userId, id);
+    } catch {
+      // rule evaluation is best-effort; never block a save.
+    }
+
     // Return the decrypted view so the UI re-renders with the new
     // phone/notes/address values written through the encrypted RPC.
     const { row: decRow } = await getContactDecrypted(id);
