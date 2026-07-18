@@ -397,9 +397,16 @@ export const renameCompanyForContacts = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .in("id", data.contactIds);
     if (error) throw new Error(error.message);
+    // Bulk rename is an explicit user edit — lock `company` on every affected
+    // contact so enrichment won't overwrite the new name later.
+    await supabase.rpc("add_manual_overrides", {
+      p_ids: data.contactIds,
+      p_fields: ["company"],
+    });
     await reconcileAutoParentsForContacts(supabase, userId, data.contactIds);
     return { updated: count ?? 0 };
   });
+
 
 /**
  * Set (or clear) the `website` field on every contact in a bucket. Used by
