@@ -215,11 +215,12 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
     const payload = [...ungrouped, ...groupedSample];
 
     const idByIndex = new Map<number, string>();
-    const contactLines = payload.map((w, idx) => {
+    const baseLines = payload.map((w, idx) => {
       const i = idx + 1;
       idByIndex.set(i, w.c.id);
       const domain = emailDomain(w.c.email);
       return {
+        w,
         i,
         n: firstNonEmpty(w.c.name),
         co: firstNonEmpty(w.c.company),
@@ -231,6 +232,82 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
         u: w.groupNames.length === 0 ? 1 : 0,
       };
     });
+
+    // Fetch inbox topics so the model can cluster by relationship (vendor,
+    // recruiter, investor, personal, etc.), not just shared company/domain.
+    // Prioritize ungrouped contacts with an email, dedupe by normalized
+    // company so all Honda contacts share one topic blob.
+    const topicsByContactIndex = new Map<number, string[]>();
+    const topicsByCompanyKey = new Map<string, string[]>();
+    const topicCandidates = baseLines
+      .filter((l) => l.w.c.email && l.u === 1)
+      .concat(baseLines.filter((l) => l.w.c.email && l.u === 0))
+      .slice(0, MAX_CONTACTS_FOR_TOPICS);
+
+    const CONCURRENCY = 10;
+    let topicsScanned = 0;
+    for (let i = 0; i < topicCandidates.length; i += CONCURRENCY) {
+      const batch = topicCandidates.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(async (line) => {
+          const email = (line.w.c.email ?? "").toLowerCase();
+          if (!email) return;
+          const coKey = normalizeCompanyName(line.w.c.company) ?? `d:${line.d ?? ""}`;
+          const cached = topicsByCompanyKey.get(coKey);
+          if (cached) {
+            topicsByContactIndex.set(line.i, cached);
+            return;
+          }
+          try {
+            const { rows: hits } = await searchEmailsParticipantsDecrypted({
+              userId,
+              from: email,
+              to: null,
+              rest: "",
+              limit: EMAILS_PER_CONTACT_FOR_TOPICS,
+              offset: 0,
+              accountId: null,
+            });
+            if (!hits || hits.length === 0) return;
+            const subjects = hits
+              .map((h) => (h.subject ?? "").trim())
+              .filter((s) => s.length > 0)
+              .slice(0, 3);
+            const ids = hits.slice(0, 1).map((h) => h.id);
+            let snippet = "";
+            if (ids.length > 0) {
+              const { rows: bodies } = await getEmailsDecrypted(ids);
+              const body = bodies[0];
+              snippet = (body?.snippet ?? body?.body_text ?? "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, TOPIC_SNIPPET_CHARS);
+            }
+            const topics = [...subjects];
+            if (snippet) topics.push(snippet);
+            if (topics.length === 0) return;
+            topicsByCompanyKey.set(coKey, topics);
+            topicsByContactIndex.set(line.i, topics);
+            topicsScanned++;
+          } catch {
+            /* best-effort */
+          }
+        }),
+      );
+    }
+
+    const contactLines = baseLines.map((l) => ({
+      i: l.i,
+      n: l.n,
+      co: l.co,
+      t: l.t,
+      d: l.d,
+      city: l.city,
+      src: l.src,
+      g: l.g,
+      u: l.u,
+      topics: topicsByContactIndex.get(l.i) ?? null,
+    }));
 
     const existingGroupsPayload = (groups ?? []).map((g) => ({
       name: g.name,
@@ -246,23 +323,22 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
 Existing groups (do not duplicate):
 ${JSON.stringify(existingGroupsPayload)}
 
-Contacts (i=short id, n=name, co=company, t=title, d=email domain, city, src=source, g=current groups, u=1 when the contact has NO groups):
+Contacts (i=short id, n=name, co=company, t=title, d=email domain, city, src=source, g=current groups, u=1 when ungrouped, topics=recent email subjects/snippets this person is involved in):
 ${JSON.stringify(contactLines)}
 
-There are ${ungroupedTotal} ungrouped contacts (u=1) in this list. Your top priority is to propose groups that cover as many of them as possible.
+There are ${ungroupedTotal} ungrouped contacts (u=1). ${topicsScanned} contacts have inbox topics attached — use them to infer RELATIONSHIP TYPE (client, vendor/supplier, recruiter, investor, lawyer/accountant, family/personal, service provider, partner, etc.), not just industry.
 
 Task: propose between 3 and 20 groups (new, subgroup, or merge_into_existing).
 Rules:
-- Reference contacts by their "i" field. Return contact_ids as an array of those integers (e.g. [3, 7, 12]). Never invent an "i" that isn't in the list above.
+- Reference contacts by their "i" field. Return contact_ids as integers (e.g. [3, 7, 12]). Never invent an "i" that isn't in the list.
 - Each suggestion must include at least 2 contact_ids.
 - Aim to have at least half your suggested members be ungrouped (u=1) contacts.
-- Group by shared company (co), email domain (d), city, or role (t) — whichever is strongest for that cluster.
-- Use "subgroup" kind with parent_group_name = an EXISTING group name when the cluster fits under one (e.g., a company inside a broader group).
-- Use "merge_into_existing" with existing_group_name when you're really adding contacts to a present group.
+- Prefer clusters where the topics agree (e.g. multiple people all sending invoices → "Vendors"; recruiter outreach → "Recruiters"). Fall back to shared company (co), email domain (d), city, or role (t) when topics are sparse.
+- Use "subgroup" with parent_group_name = an EXISTING group name when the cluster fits under one (e.g., a company inside a broader relationship group).
+- Use "merge_into_existing" with existing_group_name when you're adding contacts to a present group whose theme matches.
 - Otherwise use "new".
-- Do not repeat an existing group name.
-- Keep names concise (1-4 words), no emoji.
-- rationale: one short sentence explaining the cluster.
+- Do not repeat an existing group name. Keep names concise (1-4 words), no emoji.
+- rationale: one short sentence explaining WHY these contacts belong together (cite topic keywords when relevant).
 Return JSON matching the schema.`;
 
     let parsed: z.infer<typeof AiOutput> = { suggestions: [] };
