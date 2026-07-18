@@ -41,6 +41,7 @@ import {
   setAutoCompanySubgroups,
   reconcileAutoCompanySubgroups,
   pruneAutoCompanySubgroups,
+  reconcileAllAutoGroups,
 } from "@/lib/contacts/auto-company-subgroups.functions";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -126,6 +127,34 @@ function ContactsPage() {
   const [dupesOpen, setDupesOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const bulkAddToGroups = useServerFn(addContactsToGroups);
+  const backfillAutoGroups = useServerFn(reconcileAllAutoGroups);
+
+  // One-time per browser: reconcile every auto-company-subgroup parent so
+  // existing groups pick up contacts that were added later or came in
+  // via Google sync after the feature was enabled.
+  useEffect(() => {
+    const KEY = "zerrow.auto-groups.backfilled.v1";
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem(KEY)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await backfillAutoGroups({});
+        if (cancelled) return;
+        window.localStorage.setItem(KEY, "1");
+        if (res.membershipsAdded > 0 || res.membershipsRemoved > 0) {
+          qc.invalidateQueries({ queryKey: ["contacts"] });
+          qc.invalidateQueries({ queryKey: ["contact-groups"] });
+        }
+      } catch {
+        // Best-effort; will retry on next mount if it failed.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [aliasDialog, setAliasDialog] = useState<null | {
     domain: string;
     name: string;
