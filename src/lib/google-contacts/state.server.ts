@@ -87,6 +87,8 @@ export async function loadLocalContact(contactId: string): Promise<LocalContact 
     postal_code: row.postal_code,
     country: row.country,
     notes: row.notes,
+    relationship_summary: row.relationship_summary,
     primary_phone: row.phone,
   };
 }
+
