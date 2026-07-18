@@ -37,6 +37,7 @@ function CompaniesListPage() {
   });
   const [search, setSearch] = useState("");
   const [newName, setNewName] = useState("");
+  const [dupOpen, setDupOpen] = useState(false);
 
   const createMut = useMutation({
     mutationFn: (name: string) => createFn({ data: { name } }),
