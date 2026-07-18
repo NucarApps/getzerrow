@@ -102,22 +102,35 @@ export function contactToPerson(
   phones: LocalPhone[],
   memberships: string[], // Google contactGroups/xxx resource names
   primaryEmailPrevious?: boolean,
+  emails: LocalEmail[] = [],
 ): Partial<Person> {
   const person: Partial<Person> = {};
 
   const nm = splitName(contact.name);
   if (nm) person.names = [nm];
 
-  const email = contact.email?.trim();
-  if (email) {
-    person.emailAddresses = [
-      {
-        value: email,
-        type: "work",
-        metadata: { primary: primaryEmailPrevious !== false },
-      },
-    ];
+  // Emit every email row. Fall back to the single contact.email column when
+  // the caller didn't provide the multi-email list (keeps older tests working).
+  const emailList: LocalEmail[] = emails.length
+    ? emails
+    : contact.email?.trim()
+      ? [{ label: "work", address: contact.email.trim(), is_primary: primaryEmailPrevious !== false }]
+      : [];
+  if (emailList.length) {
+    const seen = new Set<string>();
+    const rows: PersonEmail[] = [];
+    for (const em of emailList) {
+      const v = em.address.trim().toLowerCase();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      rows.push({ value: em.address.trim(), type: em.label || "other", metadata: { primary: em.is_primary } });
+    }
+    if (rows.length && !rows.some((r) => r.metadata?.primary)) {
+      rows[0] = { ...rows[0], metadata: { primary: true } };
+    }
+    if (rows.length) person.emailAddresses = rows;
   }
+
 
   const phoneList: PersonPhone[] = [];
   const seen = new Set<string>();
