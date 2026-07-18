@@ -963,3 +963,117 @@ function RepullFromGoogleButton({ contactId }: { contactId: string }) {
   );
 }
 
+const LOCKED_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  title: "Title",
+  company: "Company",
+  phone: "Phone",
+  website: "Website",
+  linkedin: "LinkedIn",
+  twitter: "Twitter",
+  notes: "Notes",
+  address_line1: "Address line 1",
+  address_line2: "Address line 2",
+  city: "City",
+  region: "Region",
+  postal_code: "Postal code",
+  country: "Country",
+};
+
+type LockedField =
+  | "name" | "title" | "company" | "phone" | "website" | "linkedin"
+  | "twitter" | "notes" | "address_line1" | "address_line2" | "city"
+  | "region" | "postal_code" | "country";
+
+function LockedFieldsSection({
+  contactId,
+  overrides,
+  companyLinked,
+}: {
+  contactId: string;
+  overrides: string[];
+  companyLinked: boolean;
+}) {
+  const qc = useQueryClient();
+  const clearFn = useServerFn(clearContactManualOverrides);
+  const [pending, setPending] = useState<string | null>(null);
+
+  const overrideSet = new Set(overrides);
+  // Company is implicitly locked whenever a company is linked, even without an
+  // override entry — surface that so users understand why enrichment leaves it
+  // alone.
+  const companyImplicit = companyLinked && !overrideSet.has("company");
+  const items: Array<{ field: LockedField | "company"; implicit: boolean }> = [];
+  for (const f of Object.keys(LOCKED_FIELD_LABELS) as LockedField[]) {
+    if (overrideSet.has(f)) items.push({ field: f, implicit: false });
+  }
+  if (companyImplicit) items.push({ field: "company", implicit: true });
+
+  async function unlock(field: LockedField) {
+    setPending(field);
+    try {
+      await clearFn({ data: { id: contactId, fields: [field] } });
+      toast.success(`${LOCKED_FIELD_LABELS[field]} unlocked`);
+      await qc.invalidateQueries({ queryKey: ["contact", contactId] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to unlock");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-md border bg-muted/30 p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+        <Lock className="h-3.5 w-3.5" />
+        Locked from enrichment
+      </div>
+      {items.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No fields are locked. AI enrichment can update any field on this contact.
+        </p>
+      ) : (
+        <>
+          <p className="mb-2 text-xs text-muted-foreground">
+            These fields were set by you and won't be overwritten by AI enrichment.
+            Click a tag to unlock and allow enrichment to fill it again.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {items.map(({ field, implicit }) => {
+              const label = LOCKED_FIELD_LABELS[field];
+              if (implicit) {
+                return (
+                  <span
+                    key={field}
+                    className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs text-muted-foreground"
+                    title="Locked because a company is linked. Remove the linked company to unlock."
+                  >
+                    <Lock className="h-3 w-3" />
+                    {label}
+                    <span className="text-[10px] uppercase tracking-wide">Linked</span>
+                  </span>
+                );
+              }
+              const isPending = pending === field;
+              return (
+                <button
+                  key={field}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => unlock(field as LockedField)}
+                  className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs hover:bg-accent disabled:opacity-50"
+                  title="Unlock so AI enrichment can update this field"
+                >
+                  <Lock className="h-3 w-3" />
+                  {label}
+                  <X className="h-3 w-3 text-muted-foreground" />
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
