@@ -1231,7 +1231,12 @@ export async function handlePut(
           incoming_sha: incomingSha.slice(0, 16),
         });
       } else {
-        await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime, "carddav");
+        // Treat a CardDAV PUT that survived the echo guards as an intentional
+        // user-chosen picture: the human explicitly set it in the iOS Contacts
+        // app. Persist with source="user_upload" so the getContact self-heal
+        // (which strips non-user photos matching a company logo) never wipes
+        // it out from under the user.
+        await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime, "user_upload");
       }
 
     } catch (err) {
