@@ -176,6 +176,19 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const backfillPhotosMut = useMutation({
+    mutationFn: () => backfillPhotos({ data: { accountId: account.id } }),
+    onSuccess: (res) => {
+      toast.success(
+        res.cleared === 0
+          ? "No contacts missing photos"
+          : `Queued ${res.cleared} contact${res.cleared === 1 ? "" : "s"} — Google photos will pull in on next sync`,
+      );
+      qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
 
   async function handleReconnect() {
     setReconnecting(true);
