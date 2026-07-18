@@ -24,6 +24,7 @@ import {
 } from "../contacts-helpers.server";
 
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
+import { resolveContactCompany } from "@/lib/companies/companies.functions";
 
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -164,7 +165,15 @@ export const updateContact = createServerFn({ method: "POST" })
       patch.email = primary?.address?.trim().toLowerCase() || null;
     }
 
-
+    // Resolve company text → company_id (find-or-create).
+    if ("company" in patch) {
+      const { companyId, canonicalName } = await resolveContactCompany(
+        { supabase, userId },
+        patch.company ?? null,
+      );
+      (patch as Record<string, unknown>).company_id = companyId;
+      if (canonicalName) patch.company = canonicalName;
+    }
 
     // Split: sensitive fields go through the encrypted RPC only; their
     // plaintext columns no longer exist (Phase 3 Migration B).
