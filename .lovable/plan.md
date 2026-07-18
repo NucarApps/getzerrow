@@ -1,40 +1,33 @@
-# Stop enrichment from overwriting fields you manually edited
+## What's going wrong
 
-## Problem
-When you edit a contact's name or company and later run "Enrich" (single or the batch "Rerun for everyone"), the AI can replace your edit:
-- `enrichContact` picks a "better" name via `pickBetterName(contact.name, fromNameCandidate)` — a signature-derived name can beat yours.
-- Batch/force runs use `data.force`, which flips the "only fill empty fields" guard off and lets AI overwrite `company`, `title`, `website`, etc. even when you've set them.
-- Nothing today records that a field was set by *you* vs. by AI, so enrichment can't tell the difference.
+Aditya's avatar is a white circle with a black "N" — that's logo.dev's generic monogram placeholder, not the Nissan logo. Confirmed from the DB:
+
+- Contact linked to company **Nissan Northeast Region** (`272ff8eb…`).
+- That company has two domains: `nissanusa.com` (source=manual, 1 member) and `nissan-usa.com` (source=auto, 32 members).
+- `getContact` orders domains by `source DESC, member_count DESC`, so it returns `nissanusa.com` as the effective logo domain.
+- You already picked a logo for this company — `company_logo_choices` has a row with `domain='nissan-usa.com'`, `source_domain='nissanusa.com'`, `provider=0`. That row is what tells the UI "when rendering `nissan-usa.com`, fetch the logo from `nissanusa.com` via logo.dev."
+- `ContactPhotoUploader` looks up the choice with `choices.find(c => c.domain === logoDomain)`. Since `logoDomain` is `nissanusa.com` but the choice is keyed by `nissan-usa.com`, the lookup **misses**, no `provider`/`sourceDomain` is passed, and `CompanyLogo` falls back to the default provider fanout against `nissanusa.com` — logo.dev doesn't index that host and serves the "N" placeholder.
+
+The "Fix company logo photos" button only clears personal `avatar_url` rows so the company logo can show through; it doesn't touch this choice/domain mismatch, which is why running it changed nothing.
 
 ## Fix
 
-Track which fields are user-owned and treat them as locked during enrichment.
+Make the saved logo choice authoritative for the whole company, regardless of which of the company's domains "wins" the primary sort.
 
-1. **Schema** — add `contacts.manual_overrides text[] not null default '{}'`. Values are field names like `name`, `company`, `title`, `phone`, `website`, `linkedin`, `twitter`, `address_line1`, `city`, `region`, `postal_code`, `country`.
+1. **`getContact` (`src/lib/contacts/crud.functions.ts`)** — after resolving `linkedCompanyId`, join `company_logo_choices` for the current user against every domain of that company. If any of the company's domains has a choice, return that choice's `source_domain` (falling back to `domain`) as `companyDomain`. Only when no choice exists do we fall back to the current manual > auto > member_count ordering.
 
-2. **Mark on user edits** (`src/lib/contacts/crud.functions.ts`):
-   - In `updateContact`, for every key present in the incoming patch with a non-empty value, union it into `manual_overrides`. Empty/null clears that key from the array (so a user blanking a field re-opens it to enrichment).
-   - In `createContact`, seed `manual_overrides` with the non-empty fields the user typed.
-   - In `renameCompanyBucket` / `setCompanyWebsite` / bulk edit paths, add `company` / `website` similarly.
-   - Do this atomically in the same `update` call.
+2. **`ContactPhotoUploader` (`src/components/contacts/ContactPhotoUploader.tsx`)** — broaden the match so a choice is picked when *either* `c.domain === logoDomain` *or* `c.source_domain === logoDomain`. Defence-in-depth for callers that don't go through the new server-side resolution.
 
-3. **Honor on enrichment** (`src/lib/contacts/enrich.functions.ts`, both `enrichContact` and the batch `rerunEnrichmentBatch` path around line 485–615):
-   - Load `manual_overrides` with the contact.
-   - Before assigning any field to `patch`, skip if the field is in `manual_overrides` — regardless of `force`.
-   - For `name`, wrap the `pickBetterName` logic in the same guard: if `name` is locked, keep `contact.name` as-is.
-   - `company` gets an extra guard: if `contact.company_id` is set (user explicitly linked a company via the combobox), treat `company` as locked even if not in `manual_overrides` — linking a company is an unambiguous user action.
-   - `relationship_summary` and `enriched_at` are AI-owned and stay writeable.
+3. **Consistency for other surfaces** — apply the same broadened match in `CompanyBucketHeader.tsx` (contacts list header) and anywhere else that keys off `logoChoicesQuery.data.find(c => c.domain === …)`. Grep confirms these are the only two call sites.
 
-4. **Client** — no UI change required. Enrichment silently respects the lock. (Optional: a small "edited by you" hint next to locked fields is out of scope for this fix.)
+4. **Small back-fill of ordering signal** — no schema change. When a `company_logo_choices` row exists whose `source_domain` matches one of the company's `company_domains.domain`, we still let `getContact` short-circuit to that source domain, so the "manual" duplicate `nissanusa.com` row doesn't need to be deleted.
 
-## Technical notes
+## Verification
 
-- Field list to track lives in one constant `MANUAL_TRACKED_FIELDS` in `crud.functions.ts`, reused by enrichment via import so the two lists can't drift.
-- Use `array_append` / `array_remove` in SQL via a small helper (compute the next array in JS from the loaded row + patch, then include it in the same `.update()` — avoids a race with the plaintext `.update` already running there).
-- Encrypted fields (`phone`, `address_line1`, `address_line2`, `relationship_summary`) still route through the encrypted RPC; the lock check happens before we build the encrypted patch so locked encrypted fields are also skipped.
-- No data backfill: existing contacts start with an empty `manual_overrides`, so the first future edit is what locks a field. That matches user intent ("if I edited it, it should stay") without guessing about historical rows.
+- Reload Aditya's contact drawer: the `nissanusa.com` logo should now be served via logo.dev's `?token=` route (`provider=0`, `sourceDomain='nissanusa.com'`) and render the red Nissan mark.
+- Erica (Fenway Sports Group) and any other contact whose saved logo choice used a different `source_domain` than the company's top-sorted primary domain should also self-heal on next render.
+- Contacts with no `company_logo_choices` row keep today's behaviour (manual > auto > member_count).
 
 ## Out of scope
 
-- Undoing past bad overwrites (revisions table already exists if you want to roll one back manually).
-- A UI badge showing which fields are locked.
+No new tables/columns; no changes to the "Fix company logo photos" cleanup; no changes to the logo proxy or CardDAV echo guard.
