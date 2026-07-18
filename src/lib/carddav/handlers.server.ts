@@ -1038,7 +1038,7 @@ export async function handlePut(
     address_line2?: string | null;
     phone?: string | null;
   } = { contact_id: contactId };
-  if (present.has("NOTE")) encPatch.notes = parsed.notes ?? "";
+  if (present.has("NOTE")) encPatch.notes = stripSummaryFromNote(parsed.notes);
   if (present.has("ADR")) {
     encPatch.address_line1 = parsed.address_line1 ?? "";
     encPatch.address_line2 = parsed.address_line2 ?? "";
