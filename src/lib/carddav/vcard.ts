@@ -270,7 +270,8 @@ export type PresentField =
   | "LINKEDIN"
   | "TWITTER"
   | "NOTE"
-  | "CATEGORIES";
+  | "CATEGORIES"
+  | "PHOTO";
 
 export type ParsedVCard = {
   uid: string | null;
