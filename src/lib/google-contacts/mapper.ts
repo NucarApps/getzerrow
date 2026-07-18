@@ -264,7 +264,7 @@ export function personToContact(person: Person): {
     name: joinName(person.names?.[0]),
     company: person.organizations?.[0]?.name?.trim() || null,
     title: person.organizations?.[0]?.title?.trim() || null,
-    notes: person.biographies?.[0]?.value?.trim() || null,
+    notes: stripSummaryFromNote(person.biographies?.[0]?.value ?? null) || null,
   };
 
   const addr = person.addresses?.[0];
