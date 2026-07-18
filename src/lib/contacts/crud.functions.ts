@@ -142,12 +142,13 @@ export const updateContact = createServerFn({ method: "POST" })
           .nullable()
           .optional(),
         phones: z.array(phoneEntrySchema).max(20).optional(),
+        emails: z.array(emailEntrySchema).max(20).optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { id, phones, ...patch } = data;
+    const { id, phones, emails, ...patch } = data;
     if ("name" in patch) patch.name = normalizeName(patch.name ?? null);
 
     // If phones provided, sync the primary into the legacy contacts.phone mirror.
@@ -155,6 +156,15 @@ export const updateContact = createServerFn({ method: "POST" })
       const primary = phones.find((p) => p.is_primary) ?? phones[0];
       patch.phone = primary?.number?.trim() || null;
     }
+
+    // If emails provided, sync the primary into the legacy contacts.email
+    // column so existing lookups and unique constraints stay consistent.
+    if (emails) {
+      const primary = emails.find((e) => e.is_primary) ?? emails[0];
+      patch.email = primary?.address?.trim().toLowerCase() || null;
+    }
+
+
 
     // Split: sensitive fields go through the encrypted RPC only; their
     // plaintext columns no longer exist (Phase 3 Migration B).
