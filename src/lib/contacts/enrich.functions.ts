@@ -22,13 +22,24 @@ import {
   phoneEntrySchema,
 } from "../contacts-helpers.server";
 
-export const enrichContact = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; force?: boolean }) =>
-    z.object({ id: z.string().uuid(), force: z.boolean().optional() }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
+type EnrichSupabase = Parameters<Parameters<typeof requireSupabaseAuth.server>[0]>[0] extends {
+  context: infer C;
+}
+  ? C extends { supabase: infer S }
+    ? S
+    : never
+  : never;
+
+/** Shared enrichment core so both the single-contact server fn and the
+ * bulk "rerun for everyone" batch can reuse the same logic without one
+ * server fn calling another. */
+async function runEnrichForContact(
+  supabase: EnrichSupabase,
+  contactId: string,
+  force: boolean,
+): Promise<{ contact: unknown; skipped: boolean }> {
+  const data = { id: contactId, force };
+  {
     const { data: contact, error } = await supabase
       .from("contacts")
       .select("*")
