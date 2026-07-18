@@ -244,12 +244,19 @@ Return JSON matching the schema.`;
         try {
           parsed = AiOutput.parse(JSON.parse(error.text ?? "{}"));
         } catch {
-          return { suggestions: [] as SuggestionView[] };
+          logInfo("contact_group_suggestions.parse_failed", { userId });
+          return {
+            suggestions: [] as SuggestionView[],
+            stats: { parsed: 0, kept: 0, inserted: 0 },
+          };
         }
       } else {
         throw error;
       }
     }
+
+    const parsedCount = parsed.suggestions.length;
+    let droppedMissingIds = 0;
 
     const validContactIds = new Set(contacts.map((c) => c.id));
     const groupByLowerName = new Map(
