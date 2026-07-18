@@ -73,20 +73,18 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
 
-    // Candidate contacts: named contacts that are missing email OR company OR title.
+    // Candidate contacts: anything with an email (we may still find a better
+    // name, alt emails, phones, company, or title from their signature), plus
+    // named contacts missing an email so we can match by name against inbox
+    // senders further down.
     const { data: rawCandidates, error: cErr } = await supabase
       .from("contacts")
       .select("id, name, email, company, title, updated_at")
-      .not("name", "is", null)
       .order("updated_at", { ascending: false })
       .limit(MAX_CONTACTS_PER_RUN * 3);
     if (cErr) throw new Error(cErr.message);
     const candidates: CandidateRow[] = (rawCandidates ?? [])
-      .filter(
-        (c) =>
-          (c.name ?? "").trim().length > 1 &&
-          (!c.email || !c.company || !c.title),
-      )
+      .filter((c) => !!c.email || (c.name ?? "").trim().length > 1)
       .slice(0, MAX_CONTACTS_PER_RUN);
 
     if (candidates.length === 0) {
