@@ -462,7 +462,14 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         </Button>
       </div>
 
+      <LockedFieldsSection
+        contactId={id}
+        overrides={(c as { manual_overrides?: string[] | null }).manual_overrides ?? []}
+        companyLinked={Boolean(q.data?.companyId)}
+      />
+
       <div className="grid gap-4 sm:grid-cols-2">
+
         <Field label="Name" icon={null}>
           <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </Field>
