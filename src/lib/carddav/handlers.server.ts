@@ -82,7 +82,10 @@ async function computeBookCTag(userId: string): Promise<string> {
   ]);
   const style = await getGroupNameStyle(userId);
   const nonce = await getResyncNonce(userId);
-  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}-${style}-${nonce}"`;
+  // "v2" bump: shipped with the fix that stops emitting CATEGORIES on contact
+  // vCards. Forces every iPhone to do a full compare on next poll so stale
+  // duplicate CATEGORIES-derived groups get cleaned up.
+  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}-${style}-${nonce}-v2"`;
 }
 
 /** Manually bumped counter that participates in the book CTag. Users hit
