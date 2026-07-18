@@ -20,7 +20,11 @@ import {
   clearCompanyAliases,
   promoteAliasToPrimary,
 } from "@/lib/company-aliases.functions";
-import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
+import {
+  renameCompanyForContacts,
+  setCompanyWebsiteForContacts,
+} from "@/lib/contacts/crud.functions";
+
 import {
   listCompanyLogoChoices,
   setCompanyLogoChoice,
@@ -63,9 +67,12 @@ export function CompanyAliasesDialog({
   const setGroupsFn = useServerFn(setCompanyGroups);
   const searchBrandsFn = useServerFn(searchLogoBrands);
   const renameFn = useServerFn(renameCompanyForContacts);
+  const setWebsiteFn = useServerFn(setCompanyWebsiteForContacts);
 
   const [newDomain, setNewDomain] = useState("");
+  const [primaryDraft, setPrimaryDraft] = useState("");
   const [busy, setBusy] = useState(false);
+
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [brandQuery, setBrandQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -127,12 +134,15 @@ export function CompanyAliasesDialog({
     if (open) {
       setBrandQuery(companyName ?? "");
       setNameDraft(companyName ?? "");
+      setPrimaryDraft("");
     } else {
       setNewDomain("");
+      setPrimaryDraft("");
       setBrandQuery("");
       setDebouncedQuery("");
     }
   }, [open, companyName]);
+
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(brandQuery.trim()), 300);
@@ -146,7 +156,34 @@ export function CompanyAliasesDialog({
     staleTime: 60_000,
   });
 
-  if (!primaryDomain) return null;
+  const hasPrimary = !!primaryDomain;
+
+  async function savePrimary() {
+    const d = primaryDraft
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .replace(/\/.*$/, "");
+    if (!d) return;
+    if (!/^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(d)) {
+      toast.error("Enter a valid domain (e.g. acme.com)");
+      return;
+    }
+    setBusy(true);
+    try {
+      await setWebsiteFn({ data: { contactIds, website: `https://${d}` } });
+      toast.success(`Set ${d} as the primary domain`);
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      setPrimaryDraft("");
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't set domain");
+    } finally {
+      setBusy(false);
+    }
+  }
+
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: ["company-aliases"] });
@@ -369,12 +406,45 @@ export function CompanyAliasesDialog({
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">
               Primary domain
             </Label>
-            <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
-              {primaryDomain}
-            </div>
+            {hasPrimary ? (
+              <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
+                {primaryDomain}
+              </div>
+            ) : (
+              <div className="mt-1 space-y-1.5">
+                <div className="flex gap-2">
+                  <Input
+                    value={primaryDraft}
+                    onChange={(e) => setPrimaryDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void savePrimary();
+                      }
+                    }}
+                    placeholder="acme.com"
+                    disabled={busy}
+                  />
+                  <Button onClick={savePrimary} disabled={busy || !primaryDraft.trim()} size="sm">
+                    Save
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Sets the website on all {contactIds.length}{" "}
+                  {contactIds.length === 1 ? "contact" : "contacts"} in this bucket, which enables
+                  logo and group assignments below.
+                </p>
+              </div>
+            )}
           </div>
 
+
+
+          {hasPrimary && (
+          <>
           <div>
+
+
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">Logo</Label>
             <div className="mt-2 rounded-md border border-border bg-card/40 p-2.5">
               <Input
@@ -598,7 +668,11 @@ export function CompanyAliasesDialog({
               If that domain is already its own company, it will be merged in.
             </p>
           </div>
+          </>
+          )}
         </div>
+
+
 
         <DialogFooter className="gap-2 sm:gap-0">
           {aliases.length > 0 && (

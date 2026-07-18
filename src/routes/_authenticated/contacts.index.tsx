@@ -157,10 +157,11 @@ function ContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [aliasDialog, setAliasDialog] = useState<null | {
-    domain: string;
+    domain: string | null;
     name: string;
     contactIds: string[];
   }>(null);
+
 
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
@@ -395,17 +396,10 @@ function ContactsPage() {
       map.set(key, bucket);
     }
     const arr = Array.from(map.values());
-    // Collapse name-keyed buckets whose members share a website/email domain
-    // with an existing domain bucket (e.g. contacts with no email but a
-    // website pointing to nucar.com should merge into the nucar.com bucket).
-    const byDomain = new Map<string, Bucket>();
+    // For name-keyed buckets (no email domain), derive a domain from the
+    // dominant contact website so the edit dialog can key off it.
     for (const b of arr) {
-      if (b.kind === "company" && b.domain) byDomain.set(b.domain, b);
-    }
-    const collapsed: Bucket[] = [];
-    for (const b of arr) {
-      if (b.kind === "company" && b.key.startsWith("name:")) {
-        // Determine dominant domain among this bucket's contacts (via website).
+      if (b.kind === "company" && !b.domain && b.key.startsWith("name:")) {
         const domCounts = new Map<string, number>();
         for (const c of b.contacts) {
           const wd = contactLogoDomain(c.website, c.email);
@@ -414,22 +408,34 @@ function ContactsPage() {
             domCounts.set(rd, (domCounts.get(rd) ?? 0) + 1);
           }
         }
-        let target: string | null = null;
         let best = 0;
         for (const [d, n] of domCounts) {
-          if (n > best && byDomain.has(d)) {
+          if (n > best) {
             best = n;
-            target = d;
+            b.domain = d;
           }
         }
-        if (target) {
-          const dst = byDomain.get(target)!;
-          dst.contacts.push(...b.contacts);
-          continue;
-        }
+      }
+    }
+    // Collapse name-keyed buckets whose members share a website/email domain
+    // with an existing domain bucket (e.g. contacts with no email but a
+    // website pointing to nucar.com should merge into the nucar.com bucket).
+    const byDomain = new Map<string, Bucket>();
+    for (const b of arr) {
+      if (b.kind === "company" && b.domain && !b.key.startsWith("name:")) {
+        byDomain.set(b.domain, b);
+      }
+    }
+    const collapsed: Bucket[] = [];
+    for (const b of arr) {
+      if (b.kind === "company" && b.key.startsWith("name:") && b.domain && byDomain.has(b.domain)) {
+        const dst = byDomain.get(b.domain)!;
+        dst.contacts.push(...b.contacts);
+        continue;
       }
       collapsed.push(b);
     }
+
     const companies = collapsed
       .filter((b) => b.kind === "company")
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
@@ -854,15 +860,16 @@ function ContactsPage() {
                             : null
                         }
                         onEdit={
-                          b.kind === "company" && b.domain
+                          b.kind === "company"
                             ? () =>
                                 setAliasDialog({
-                                  domain: b.domain!,
+                                  domain: b.domain,
                                   name: b.name,
                                   contactIds: b.contacts.map((c) => c.id),
                                 })
                             : undefined
                         }
+
                         selectable
                         selectionState={(() => {
                           const ids = b.contacts.map((c) => c.id);
@@ -1085,7 +1092,7 @@ function ContactsPage() {
         onOpenChange={(v) => !v && setAliasDialog(null)}
         primaryDomain={aliasDialog?.domain ?? null}
         companyName={aliasDialog?.name ?? ""}
-        aliases={aliasDialog ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
+        aliases={aliasDialog?.domain ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
         contactIds={aliasDialog?.contactIds ?? []}
       />
      </div>
