@@ -34,7 +34,7 @@ async function runEnrichForContact(
   supabase: EnrichSupabase,
   contactId: string,
   force: boolean,
-): Promise<{ contact: Record<string, unknown>; skipped: boolean }> {
+): Promise<{ contact: Database["public"]["Tables"]["contacts"]["Row"]; skipped: boolean }> {
   const data = { id: contactId, force };
   {
     const { data: contact, error } = await supabase
