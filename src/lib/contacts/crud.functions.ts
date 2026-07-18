@@ -234,7 +234,11 @@ export const getContact = createServerFn({ method: "POST" })
               // If the storage object is already gone, just null the column.
               await supabaseAdmin
                 .from("contacts")
-                .update({ avatar_url: null, updated_at: new Date().toISOString() })
+                .update({
+                  avatar_url: null,
+                  avatar_source: "unknown",
+                  updated_at: new Date().toISOString(),
+                })
                 .eq("id", data.id)
                 .eq("user_id", userId);
             }
