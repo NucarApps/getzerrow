@@ -99,6 +99,32 @@ export function emailKey(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
 }
 
+function mimeForPhotoType(types: string[]): string {
+  const t = types.map((x) => x.toUpperCase()).join(",");
+  if (t.includes("PNG")) return "image/png";
+  if (t.includes("GIF")) return "image/gif";
+  if (t.includes("WEBP")) return "image/webp";
+  return "image/jpeg";
+}
+
+function photoTypeParam(mime: string): string {
+  const m = mime.toLowerCase();
+  if (m.includes("png")) return "PNG";
+  if (m.includes("gif")) return "GIF";
+  if (m.includes("webp")) return "WEBP";
+  return "JPEG";
+}
+
+/** Base64-encode raw photo bytes without going through Node Buffer (Worker-safe). */
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
 
 /**
  * Contact -> vCard 3.0 text. `phones` is optional; when omitted we skip TEL
