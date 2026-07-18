@@ -341,6 +341,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           contactId={c.id}
           avatarUrl={c.avatar_url ?? null}
           displayName={displayName}
+          email={c.email ?? null}
+          website={c.website ?? null}
           onChanged={() => qc.invalidateQueries({ queryKey: ["contact", c.id] })}
         />
         <div className="flex-1 min-w-0">
