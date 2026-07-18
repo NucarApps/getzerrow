@@ -73,6 +73,7 @@ import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.funct
 import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
 import { normalizeCompanyName } from "@/lib/contacts/company-name";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
+import { listCompanies } from "@/lib/companies/companies.functions";
 import { listMeetingPeople } from "@/lib/calendar.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -114,6 +115,7 @@ function ContactsPage() {
   const listGroups = useServerFn(listContactGroups);
   const listAliases = useServerFn(listCompanyAliases);
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
+  const listCompaniesFn = useServerFn(listCompanies);
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
@@ -171,6 +173,17 @@ function ContactsPage() {
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
   const aq = useQuery({ queryKey: ["company-aliases"], queryFn: () => listAliases() });
   const lq = useQuery({ queryKey: ["company-logo-choices"], queryFn: () => listLogoChoices() });
+  const cq = useQuery({ queryKey: ["companies"], queryFn: () => listCompaniesFn() });
+
+  // company_id -> preferred logo domain (first company_domain, auto or manual).
+  const companyDomainById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of cq.data?.companies ?? []) {
+      const primary = c.domains?.[0]?.domain;
+      if (primary) m.set(c.id, primary);
+    }
+    return m;
+  }, [cq.data]);
 
   const logoProviderByDomain = useMemo(() => {
     const m = new Map<string, number>();
@@ -1012,7 +1025,14 @@ function ContactsPage() {
               <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
                 {filtered.map((c) => {
                   const gids = contactGroupMap.get(c.id) ?? [];
-                  const dom = contactLogoDomain(c.website, c.email);
+                  // Prefer the linked company's primary domain. This ensures
+                  // Aditya @ Nissan uses Nissan's logo, and personal-email
+                  // contacts don't accidentally borrow another company's icon.
+                  const companyDom = c.company_id
+                    ? (companyDomainById.get(c.company_id) ?? null)
+                    : null;
+                  const fallbackDom = contactLogoDomain(c.website, c.email);
+                  const dom = companyDom ?? fallbackDom;
                   const resolvedDom = resolveCompanyDomain(dom, aliasMap);
                   const logoProv = resolvedDom
                     ? (logoProviderByDomain.get(resolvedDom) ?? null)
@@ -1021,6 +1041,12 @@ function ContactsPage() {
                     ? (logoSourceByDomain.get(resolvedDom) ?? null)
                     : null;
                   const showLogo = !!dom;
+                  // Personal initial when no company link — never a company's
+                  // initial (which produced the stray "N" for Nissan before).
+                  const personInitial = (c.name || c.email || "?")
+                    .trim()
+                    .charAt(0)
+                    .toUpperCase();
                   return (
                     <li key={c.id}>
                       <button
@@ -1037,7 +1063,7 @@ function ContactsPage() {
                         {showLogo ? (
                           <CompanyLogo
                             domain={resolvedDom ?? dom}
-                            name={c.company ?? prettyCompanyName(dom!)}
+                            name={personInitial}
                             size={40}
                             className="rounded-full"
                             provider={logoProv}
@@ -1045,7 +1071,7 @@ function ContactsPage() {
                           />
                         ) : (
                           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
-                            {(c.name || c.email || "?").slice(0, 1).toUpperCase()}
+                            {personInitial}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">

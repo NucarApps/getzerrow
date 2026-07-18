@@ -32,7 +32,9 @@ export const listContacts = createServerFn({ method: "GET" })
     const { supabase } = context;
     const { data, error } = await supabase
       .from("contacts")
-      .select("id,email,name,title,company,website,avatar_url,source,enriched_at,created_at")
+      .select(
+        "id,email,name,title,company,company_id,website,avatar_url,source,enriched_at,created_at",
+      )
       .limit(2000);
     if (error) throw new Error(error.message);
     const rows = (data ?? []).slice().sort((a, b) => {
