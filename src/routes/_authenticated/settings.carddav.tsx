@@ -257,7 +257,7 @@ function CardDavSettings() {
           <Label className="mb-1 block text-sm">Display format</Label>
           <Select
             value={settingsQuery.data?.group_name_style ?? "path_slash"}
-            onValueChange={(v) => settingsMut.mutate(v as GroupNameStyle)}
+            onValueChange={(v) => settingsMut.mutate({ group_name_style: v as GroupNameStyle })}
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           >
             <SelectTrigger>
