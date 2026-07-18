@@ -42,6 +42,9 @@ type Props = {
    * inherit their company's chosen logo domain (e.g. `nissanusa.com`)
    * rather than falling back to their personal email domain. */
   companyDomain?: string | null;
+  /** When set, enables the "Reset to company logo" action, which clears the
+   * stored personal avatar so the live company logo shows through again. */
+  companyId?: string | null;
   onChanged: () => void;
 };
 
@@ -51,13 +54,14 @@ type Props = {
  * `contact-photos` bucket and marked dirty for Google/CardDAV sync so the
  * change propagates to iPhone and Google Contacts on their next tick.
  */
-export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, companyDomain, onChanged }: Props) {
+export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, companyDomain, companyId, onChanged }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const upload = useServerFn(uploadContactPhoto);
   const remove = useServerFn(removeContactPhoto);
   const signUrl = useServerFn(getContactPhotoSignedUrl);
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
+  const resetToCompany = useServerFn(resetContactToCompanyLogo);
 
   // Shares its cache key with the contacts list page so the network hit is
   // deduped when the drawer opens over the list.
