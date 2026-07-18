@@ -252,16 +252,17 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       toast.error("Add an email before sending this contact card.");
       return;
     }
+    const contactEmail = q.data.contact.email;
     setSending(true);
     try {
       await sendCard({
         data: {
-          toEmail: q.data.contact.email,
+          toEmail: contactEmail,
           contactId: id,
           publicBaseUrl: window.location.origin,
         },
       });
-      toast.success(`Card sent to ${q.data.contact.email}`);
+      toast.success(`Card sent to ${contactEmail}`);
     } catch (e: unknown) {
       toast.error(errorMessage(e) ?? "Failed to send card");
     } finally {
