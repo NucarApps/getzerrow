@@ -537,3 +537,37 @@ export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { created: count ?? rows.length };
   });
+
+/**
+ * Unlock one or more fields for enrichment. Removes the named entries from
+ * `contacts.manual_overrides` so the next enrichment run is allowed to fill
+ * them again. RLS scopes the update to the caller's own contact.
+ */
+export const clearContactManualOverrides = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        fields: z.array(z.enum(MANUAL_TRACKED_FIELDS)).min(1),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: row, error: readErr } = await supabase
+      .from("contacts")
+      .select("manual_overrides")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (!row) throw new Error("Contact not found");
+    const drop = new Set<string>(data.fields);
+    const next = (row.manual_overrides ?? []).filter((f) => !drop.has(f));
+    const { error: updErr } = await supabase
+      .from("contacts")
+      .update({ manual_overrides: next })
+      .eq("id", data.id);
+    if (updErr) throw new Error(updErr.message);
+    return { manual_overrides: next };
+  });
