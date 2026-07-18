@@ -12,6 +12,10 @@ import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
 import { snapshotContact } from "@/lib/contacts/revisions.server";
 import { logInfo } from "@/lib/log.server";
 import { buildCardDavContactPatch } from "./merge";
+import {
+  saveContactPhoto,
+  loadContactPhotoBytes,
+} from "@/lib/contacts/photos.server";
 
 import {
   buildGroupVCard,
@@ -403,12 +407,13 @@ async function buildContactResponse(
       `</D:response>`
     );
   }
-  const [phones, categories, emails] = await Promise.all([
+  const [phones, categories, emails, photo] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
+    includeVcard ? loadContactPhotoBytes(row.avatar_url ?? null) : Promise.resolve(null),
   ]);
-  const vcard = contactToVCard(row, phones, categories, emails);
+  const vcard = contactToVCard(row, phones, categories, emails, photo);
 
   const etag = contactETag(row.id, row.updated_at);
   const props =
@@ -718,12 +723,13 @@ export async function handleGet(
 
   const { row } = await getContactDecrypted(contactId);
   if (!row) return new Response("Not found", { status: 404 });
-  const [phones, categories, emails] = await Promise.all([
+  const [phones, categories, emails, photo] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
+    loadContactPhotoBytes(row.avatar_url ?? null),
   ]);
-  const vcard = contactToVCard(row, phones, categories, emails);
+  const vcard = contactToVCard(row, phones, categories, emails, photo);
 
 
   return new Response(method === "HEAD" ? null : vcard, {
@@ -1086,6 +1092,23 @@ export async function handlePut(
   // running it unconditionally erased group membership.
   if (present.has("CATEGORIES")) {
     await reconcileContactCategories(userId, contactId, parsed.categories);
+  }
+
+  // PHOTO: iOS uploads a fresh contact photo inline as base64. We accept
+  // non-empty photos as "set to this picture" and skip empty PHOTO slots
+  // to preserve the existing avatar during partial edits (matches the
+  // conservative merge policy for the other fields). Google-linked
+  // contacts get flagged dirty right after so the picture also flows
+  // upstream.
+  if (present.has("PHOTO") && parsed.photo && parsed.photo.bytes.length > 0) {
+    try {
+      await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime);
+    } catch (err) {
+      logInfo("carddav.put.photo_save_failed", {
+        contact_id: contactId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   // A CardDAV edit is a local source of truth. If this contact is linked to

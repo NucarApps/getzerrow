@@ -1635,6 +1635,7 @@ export type Database = {
           gmail_account_id: string
           id: string
           last_synced_at: string
+          photo_etag: string | null
           resource_name: string
           updated_at: string
           user_id: string
@@ -1646,6 +1647,7 @@ export type Database = {
           gmail_account_id: string
           id?: string
           last_synced_at?: string
+          photo_etag?: string | null
           resource_name: string
           updated_at?: string
           user_id: string
@@ -1657,6 +1659,7 @@ export type Database = {
           gmail_account_id?: string
           id?: string
           last_synced_at?: string
+          photo_etag?: string | null
           resource_name?: string
           updated_at?: string
           user_id?: string

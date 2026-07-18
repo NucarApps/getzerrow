@@ -137,6 +137,61 @@ export async function deletePerson(accountId: string, resourceName: string): Pro
   await call(accountId, `/${resourceName}:deleteContact`, { method: "DELETE" });
 }
 
+/**
+ * Upload a fresh photo for a Google contact. `bytes` is the raw image
+ * payload; People API expects base64 in the request body and returns the
+ * updated Person (with a fresh photos URL).
+ */
+export async function updateContactPhoto(
+  accountId: string,
+  resourceName: string,
+  bytes: Uint8Array,
+): Promise<Person> {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  const b64 = btoa(bin);
+  return call<Person>(accountId, `/${resourceName}:updateContactPhoto`, {
+    method: "PATCH",
+    body: { photoBytes: b64, personFields: READ_PERSON_FIELDS },
+  });
+}
+
+/**
+ * Remove a Google contact's photo (leaves the contact itself intact).
+ * Google returns the mutated Person on success.
+ */
+export async function deleteContactPhoto(
+  accountId: string,
+  resourceName: string,
+): Promise<Person> {
+  return call<Person>(accountId, `/${resourceName}:deleteContactPhoto`, {
+    method: "DELETE",
+    query: { personFields: READ_PERSON_FIELDS },
+  });
+}
+
+/** Fetch the raw bytes of a Google contact photo by URL (Google's short-lived
+ * signed URL from person.photos[].url). Returns null if the URL is missing
+ * or the download fails so callers can no-op quietly. */
+export async function fetchPhotoBytes(
+  url: string | null | undefined,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) return null;
+    const mime = res.headers.get("content-type") ?? "image/jpeg";
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.length === 0) return null;
+    return { bytes: buf, mime };
+  } catch {
+    return null;
+  }
+}
+
 export type ContactGroup = {
   resourceName?: string;
   etag?: string;

@@ -36,6 +36,7 @@ import { repullContactFromGoogle } from "@/lib/google-contacts.functions";
 import { listMeetingsForContact } from "@/lib/meetings.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { listContactRevisions, restoreContactRevision } from "@/lib/contacts/revisions.functions";
+import { ContactPhotoUploader } from "@/components/contacts/ContactPhotoUploader";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { EmailsEditor, type EmailEntry } from "@/components/contacts/EmailsEditor";
 
@@ -336,9 +337,12 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   return (
     <div>
       <header className="mb-6 flex items-start gap-4">
-        <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-primary/15 text-2xl font-semibold text-primary">
-          {displayName.slice(0, 1).toUpperCase()}
-        </div>
+        <ContactPhotoUploader
+          contactId={c.id}
+          avatarUrl={c.avatar_url ?? null}
+          displayName={displayName}
+          onChanged={() => qc.invalidateQueries({ queryKey: ["contact", c.id] })}
+        />
         <div className="flex-1 min-w-0">
           <h1 className="font-display text-2xl text-foreground">{displayName}</h1>
           <p className="text-sm text-muted-foreground">{c.title || c.company || c.email || "No email"}</p>

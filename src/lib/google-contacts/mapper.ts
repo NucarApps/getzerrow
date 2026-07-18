@@ -25,6 +25,8 @@ export type PersonAddress = {
 
 export type PersonMembership = { contactGroupMembership?: { contactGroupResourceName?: string } };
 
+export type PersonPhoto = { url?: string; default?: boolean; metadata?: { primary?: boolean } };
+
 export type Person = {
   resourceName?: string;
   etag?: string;
@@ -40,6 +42,7 @@ export type Person = {
   addresses?: PersonAddress[];
   urls?: Array<{ value?: string; type?: string }>;
   memberships?: PersonMembership[];
+  photos?: PersonPhoto[];
 };
 
 /** Local Zerrow contact projection used by the sync layer. */
@@ -204,7 +207,7 @@ export const UPDATE_PERSON_FIELDS =
 
 /** `personFields` mask for reads (connections.list, batchGet, createContact). */
 export const READ_PERSON_FIELDS =
-  "names,emailAddresses,phoneNumbers,organizations,biographies,addresses,urls,memberships,metadata";
+  "names,emailAddresses,phoneNumbers,organizations,biographies,addresses,urls,memberships,photos,metadata";
 
 /** Parse Google's Person into the writable subset of a Zerrow contact. */
 export function personToContact(person: Person): {
@@ -214,6 +217,10 @@ export function personToContact(person: Person): {
   phones: LocalPhone[];
   membershipResourceNames: string[];
   updateTime: string | null;
+  /** URL to Google's copy of the contact photo (short-lived signed URL from
+   * the People API). Present only when the user has actually attached a
+   * picture — Google auto-generates a "silhouette" default that we skip. */
+  photoUrl: string | null;
 } {
   const rawEmails = person.emailAddresses ?? [];
   const primaryEmailIdx = rawEmails.findIndex((e) => e.metadata?.primary && e.value);
@@ -282,7 +289,16 @@ export function personToContact(person: Person): {
 
   const updateTime = person.metadata?.sources?.[0]?.updateTime ?? null;
 
-  return { email: primaryEmail, emails, patch, phones, membershipResourceNames, updateTime };
+  // Prefer the primary photo (Google marks the user-uploaded one); fall
+  // back to the first non-default entry so we still pick up photos on
+  // People API rows that omit the primary flag.
+  const photoRow =
+    (person.photos ?? []).find((p) => p.metadata?.primary && p.url && !p.default) ??
+    (person.photos ?? []).find((p) => p.url && !p.default) ??
+    null;
+  const photoUrl = photoRow?.url ?? null;
+
+  return { email: primaryEmail, emails, patch, phones, membershipResourceNames, updateTime, photoUrl };
 }
 
 /** Zerrow group → Google contactGroups payload. */

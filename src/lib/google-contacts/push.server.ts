@@ -132,7 +132,7 @@ async function pushContacts(
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
-    .select("contact_id, resource_name, etag, last_synced_at")
+    .select("contact_id, resource_name, etag, last_synced_at, photo_etag")
     .eq("gmail_account_id", ids.gmailAccountId);
   const byLocal = new Map(
     (links ?? []).map((l) => [l.contact_id, l]),
@@ -285,6 +285,40 @@ async function pushContacts(
           }
           throw e;
         }
+      }
+
+      // Photo push: upload the local avatar bytes to Google whenever the
+      // avatar_url on record differs from the last URL we pushed
+      // (`photo_etag`). Runs after the person body update so the People API
+      // has a fresh Person to attach the photo to. Fails are non-fatal —
+      // the picture will retry on the next dirty cycle.
+      try {
+        const linkRow = link as (typeof link & { photo_etag?: string | null }) | undefined;
+        const { data: contactRow } = await supabaseAdmin
+          .from("contacts")
+          .select("avatar_url")
+          .eq("id", c.id)
+          .maybeSingle();
+        const avatarUrl = contactRow?.avatar_url ?? null;
+        const previousUrl = linkRow?.photo_etag ?? null;
+        const currentLink =
+          linkRow ?? byLocal.get(c.id) ?? undefined;
+        const resource = currentLink?.resource_name ?? null;
+        if (resource && avatarUrl && avatarUrl !== previousUrl) {
+          const { loadContactPhotoBytes } = await import("@/lib/contacts/photos.server");
+          const { updateContactPhoto } = await import("./people-client.server");
+          const photo = await loadContactPhotoBytes(avatarUrl);
+          if (photo) {
+            await updateContactPhoto(ids.gmailAccountId, resource, photo.bytes);
+            await supabaseAdmin
+              .from("google_contact_links")
+              .update({ photo_etag: avatarUrl })
+              .eq("contact_id", c.id)
+              .eq("gmail_account_id", ids.gmailAccountId);
+          }
+        }
+      } catch (photoErr) {
+        logError("google_contacts.push.photo_failed", { ...ids, contact_id: c.id }, photoErr);
       }
     } catch (e) {
       logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);

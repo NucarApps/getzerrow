@@ -99,17 +99,45 @@ export function emailKey(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
 }
 
+function mimeForPhotoType(types: string[]): string {
+  const t = types.map((x) => x.toUpperCase()).join(",");
+  if (t.includes("PNG")) return "image/png";
+  if (t.includes("GIF")) return "image/gif";
+  if (t.includes("WEBP")) return "image/webp";
+  return "image/jpeg";
+}
+
+function photoTypeParam(mime: string): string {
+  const m = mime.toLowerCase();
+  if (m.includes("png")) return "PNG";
+  if (m.includes("gif")) return "GIF";
+  if (m.includes("webp")) return "WEBP";
+  return "JPEG";
+}
+
+/** Base64-encode raw photo bytes without going through Node Buffer (Worker-safe). */
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
 
 /**
  * Contact -> vCard 3.0 text. `phones` is optional; when omitted we skip TEL
  * lines from the phones table and only emit the encrypted `phone` field on
- * the contact itself.
+ * the contact itself. When `photo` is provided we inline it as base64 so
+ * iOS renders the picture in the contact card.
  */
 export function contactToVCard(
   contact: DecryptedContact,
   phones: PhoneRow[] = [],
   _categories: string[] = [],
   emails: EmailRow[] = [],
+  photo: { bytes: Uint8Array; mime: string } | null = null,
 ): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
 
@@ -213,6 +241,13 @@ export function contactToVCard(
 
   if (contact.notes) out.push(line("NOTE", esc(contact.notes)));
 
+  if (photo && photo.bytes.length > 0) {
+    // vCard 3.0 form Apple's Contacts app expects. The base64 payload gets
+    // line-folded by `line()` at 75 octets, matching what iOS emits itself.
+    out.push(line(`PHOTO;ENCODING=b;TYPE=${photoTypeParam(photo.mime)}`, bytesToBase64(photo.bytes)));
+  }
+
+
   // Intentionally NOT emitting CATEGORIES for group membership. iOS Contacts
   // materializes both KIND:group vCards AND CATEGORIES tags into separate
   // visible groups, so shipping both duplicates every group on the phone
@@ -270,7 +305,8 @@ export type PresentField =
   | "LINKEDIN"
   | "TWITTER"
   | "NOTE"
-  | "CATEGORIES";
+  | "CATEGORIES"
+  | "PHOTO";
 
 export type ParsedVCard = {
   uid: string | null;
@@ -303,6 +339,11 @@ export type ParsedVCard = {
   isGroup: boolean;
   /** Member contact UIDs for a group vCard. Empty for individuals. */
   memberUids: string[];
+  /** Decoded PHOTO bytes if the vCard carried an inline base64 photo, plus
+   * the declared mime type. Null when the vCard had no PHOTO line, an
+   * empty PHOTO slot (iOS partial PUTs), or an unsupported PHOTO;VALUE=URI
+   * reference we don't try to fetch. */
+  photo: { bytes: Uint8Array; mime: string } | null;
   /** Set of top-level properties that actually appeared in the vCard body.
    * Used by CardDAV PUT to merge instead of replace — iOS routinely uploads
    * partial vCards for single-field edits and we must not clobber the
@@ -392,7 +433,7 @@ export function parseVCard(text: string): ParsedVCard | null {
     phones: [], address_line1: null, address_line2: null, city: null,
     region: null, postal_code: null, country: null, website: null,
     linkedin: null, twitter: null, notes: null,
-    categories: [], isGroup: false, memberUids: [],
+    categories: [], isGroup: false, memberUids: [], photo: null,
     presentFields: new Set<PresentField>(),
   };
 
@@ -546,6 +587,34 @@ export function parseVCard(text: string): ParsedVCard | null {
         // Format: urn:uuid:<uid>
         const m = v.trim().match(/urn:uuid:([0-9a-f-]{36})/i);
         if (m) out.memberUids.push(m[1].toLowerCase());
+        break;
+      }
+      case "PHOTO": {
+        // iOS emits `PHOTO;ENCODING=b;TYPE=JPEG:<base64>` (vCard 3.0) or
+        // `PHOTO;VALUE=uri:<https-url>`. Only the inline base64 form is
+        // decoded — external URIs are ignored (they're rare from iOS and
+        // would need a network round-trip we don't want inside a PUT).
+        const enc = (p.params.ENCODING ?? []).join(",").toUpperCase();
+        const valueParam = (p.params.VALUE ?? []).join(",").toUpperCase();
+        if (valueParam === "URI") break;
+        const raw = p.value.replace(/\s+/g, "");
+        if (!raw || !enc.includes("B")) {
+          // Empty PHOTO slot from a partial PUT — mark it present so a
+          // handler can distinguish "photo cleared" from "photo untouched"
+          // if it wants, but do NOT clobber the existing photo bytes.
+          break;
+        }
+        try {
+          const bin = atob(raw);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const typeParams = p.params.TYPE ?? [];
+          const mime = mimeForPhotoType(typeParams);
+          out.photo = { bytes, mime };
+          out.presentFields.add("PHOTO");
+        } catch {
+          // Malformed base64 — treat as no photo rather than failing the PUT.
+        }
         break;
       }
       default:
