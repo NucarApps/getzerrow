@@ -450,7 +450,6 @@ async function applyPersonChanges(
         .eq("contact_id", contactId)
         .in("group_id", toRemove);
     }
-    }
     if (contactId) touchedContactIds.add(contactId);
     await progress?.increment(1);
   }
