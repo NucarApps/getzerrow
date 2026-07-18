@@ -39,11 +39,13 @@ async function buildKnownCompanyLogoShaSet(
 
   const { data: choices } = await supabaseAdmin
     .from("company_logo_choices")
-    .select("domain")
+    .select("domain,source_domain")
     .eq("user_id", userId);
   for (const row of choices ?? []) {
-    const d = (row as { domain?: string | null }).domain;
+    const choice = row as { domain?: string | null; source_domain?: string | null };
+    const d = choice.domain;
     if (d) domains.add(d.toLowerCase());
+    if (choice.source_domain) domains.add(choice.source_domain.toLowerCase());
   }
 
   // Also cover companies with a domain but no explicit choice — the fallback
@@ -82,7 +84,7 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
       deleteContactPhoto,
       sha256Hex,
     } = await import("@/lib/contacts/photos.server");
-    const { fetchChosenCompanyLogoBytes, logoDomainForContact } = await import(
+    const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } = await import(
       "@/lib/contacts/logo-photo.server"
     );
 
@@ -117,9 +119,10 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
       const ownSha = await sha256Hex(own.bytes);
 
       // Current-company logo SHA (may be null if provider failed).
+      const logoDomain = await resolveCompanyLogoDomainForContact(context.userId, r);
       const currentLogo = await fetchChosenCompanyLogoBytes(
         context.userId,
-        logoDomainForContact(r),
+        logoDomain,
       );
       const currentLogoSha = currentLogo
         ? await sha256Hex(currentLogo.bytes)
@@ -182,7 +185,7 @@ export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
     const { deleteContactPhoto, sha256Hex } = await import(
       "@/lib/contacts/photos.server"
     );
-    const { fetchChosenCompanyLogoBytes, logoDomainForContact } = await import(
+    const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } = await import(
       "@/lib/contacts/logo-photo.server"
     );
 
@@ -207,9 +210,10 @@ export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
       await deleteContactPhoto(context.userId, r.id);
     }
 
+    const logoDomain = await resolveCompanyLogoDomainForContact(context.userId, r);
     const logo = await fetchChosenCompanyLogoBytes(
       context.userId,
-      logoDomainForContact(r),
+      logoDomain,
     );
     const logoSha = logo ? await sha256Hex(logo.bytes) : null;
     if (logoSha) {

@@ -125,12 +125,22 @@ export async function fetchChosenCompanyLogoBytes(
   if (!isValidDomainShape(d) || isBlockedDomain(d)) return null;
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: choice } = await supabaseAdmin
+  const { data: choices } = await supabaseAdmin
     .from("company_logo_choices")
-    .select("provider, source_domain")
+    .select("domain, provider, source_domain")
     .eq("user_id", userId)
-    .eq("domain", d)
-    .maybeSingle();
+    .or(`domain.eq.${d},source_domain.eq.${d}`);
+  const choice = ((choices ?? []) as Array<{
+    domain?: string | null;
+    provider?: number | null;
+    source_domain?: string | null;
+  }>).find((row) => row.domain?.toLowerCase() === d) ??
+    ((choices ?? []) as Array<{
+      domain?: string | null;
+      provider?: number | null;
+      source_domain?: string | null;
+    }>).find((row) => row.source_domain?.toLowerCase() === d) ??
+    null;
 
   if (!choice) return fetchCompanyLogoBytes(d);
 
@@ -150,6 +160,82 @@ export async function fetchChosenCompanyLogoBytes(
   // If the exact pick failed (dead provider), don't strand the contact — fall
   // through to the generic walker so the phone still gets some logo.
   return hit ?? (await fetchCompanyLogoBytes(d));
+}
+
+type ContactLogoRow = {
+  id?: string | null;
+  company_id?: string | null;
+  website?: string | null;
+  email?: string | null;
+};
+
+type CompanyDomainRow = {
+  domain: string;
+  source?: string | null;
+  member_count?: number | null;
+  created_at?: string | null;
+};
+
+type LogoChoiceRow = {
+  domain: string;
+  source_domain: string | null;
+};
+
+function sortedCompanyDomains(rows: CompanyDomainRow[]): string[] {
+  return rows
+    .slice()
+    .sort((a, b) => {
+      const sourceRank = (b.source === "manual" ? 1 : 0) - (a.source === "manual" ? 1 : 0);
+      if (sourceRank !== 0) return sourceRank;
+      const memberRank = (b.member_count ?? 0) - (a.member_count ?? 0);
+      if (memberRank !== 0) return memberRank;
+      return (a.created_at ?? "").localeCompare(b.created_at ?? "");
+    })
+    .map((row) => row.domain.toLowerCase());
+}
+
+/** Resolve the logo domain from the linked company record, not just the
+ * contact's own email/website. This covers companies with both a manual domain
+ * and an auto-discovered email domain where the saved logo choice may be keyed
+ * to either side of the alias pair. */
+export async function resolveCompanyLogoDomainForContact(
+  userId: string,
+  row: ContactLogoRow,
+): Promise<string | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  let companyId = row.company_id ?? null;
+  if (!companyId && row.id) {
+    const { data } = await supabaseAdmin
+      .from("contacts")
+      .select("company_id")
+      .eq("id", row.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    companyId = (data as { company_id?: string | null } | null)?.company_id ?? null;
+  }
+
+  if (!companyId) return logoDomainForContact(row);
+
+  const { data: domainRows } = await supabaseAdmin
+    .from("company_domains")
+    .select("domain,source,member_count,created_at")
+    .eq("company_id", companyId)
+    .eq("user_id", userId);
+
+  const domainList = sortedCompanyDomains((domainRows ?? []) as CompanyDomainRow[]);
+  if (domainList.length === 0) return logoDomainForContact(row);
+
+  const { data: choices } = await supabaseAdmin
+    .from("company_logo_choices")
+    .select("domain,source_domain")
+    .eq("user_id", userId);
+  const domainSet = new Set(domainList);
+  const choice = ((choices ?? []) as LogoChoiceRow[]).find((candidate) =>
+    domainSet.has(candidate.domain.toLowerCase()) ||
+    (candidate.source_domain ? domainSet.has(candidate.source_domain.toLowerCase()) : false),
+  );
+
+  return choice?.source_domain?.toLowerCase() ?? choice?.domain?.toLowerCase() ?? domainList[0] ?? null;
 }
 
 /** Best-guess logo domain for a contact row (website beats email). Returns

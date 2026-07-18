@@ -170,10 +170,11 @@ async function loadContactPhotoOrLogo(
   const own = await loadContactPhotoBytes(row.avatar_url ?? null);
   if (own) return own;
   if (!(await getUseCompanyLogoFallback(userId))) return null;
-  const { fetchChosenCompanyLogoBytes, logoDomainForContact } = await import(
+  const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } = await import(
     "@/lib/contacts/logo-photo.server"
   );
-  const fallback = await fetchChosenCompanyLogoBytes(userId, logoDomainForContact(row));
+  const logoDomain = await resolveCompanyLogoDomainForContact(userId, row);
+  const fallback = await fetchChosenCompanyLogoBytes(userId, logoDomain);
   if (fallback) {
     try {
       const { sha256Hex } = await import("@/lib/contacts/photos.server");
@@ -1195,6 +1196,12 @@ export async function handlePut(
           const currentSha = await sha256Hex(currentBytes.bytes);
           if (currentSha === incomingSha) skip = true;
         }
+      }
+      if (!skip) {
+        const { buildKnownCompanyLogoShaSet } = await import(
+          "@/lib/contacts/known-logos.server"
+        );
+        skip = (await buildKnownCompanyLogoShaSet(userId)).has(incomingSha);
       }
       if (skip) {
         logInfo("carddav.put.photo_fallback_echo_ignored", {

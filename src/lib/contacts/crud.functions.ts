@@ -132,25 +132,11 @@ export const getContact = createServerFn({ method: "POST" })
     // we can resolve the company's primary domain for the logo fallback.
     const { data: companyLink } = await supabase
       .from("contacts")
-      .select("company_id")
+      .select("company_id,company_logo_photo_sha")
       .eq("id", data.id)
       .maybeSingle();
     const linkedCompanyId = companyLink?.company_id ?? null;
-    // Pull *all* of the company's domains so we can prefer whichever one has a
-    // saved logo choice attached (that's the domain the user actually taught
-    // us to render for this company). Without this, a "manual" duplicate
-    // domain with no logo choice can win the primary sort and the UI falls
-    // back to logo.dev's generic monogram.
-    const companyDomainsQuery = linkedCompanyId
-      ? supabase
-          .from("company_domains")
-          .select("domain,source,member_count,created_at")
-          .eq("company_id", linkedCompanyId)
-          .order("source", { ascending: false }) // manual > auto
-          .order("member_count", { ascending: false })
-          .order("created_at", { ascending: true })
-      : Promise.resolve({ data: [] as Array<{ domain: string }> });
-    const [{ data: emails }, { data: phones }, { data: emailRows }, { data: companyDomains }] =
+    const [{ data: emails }, { data: phones }, { data: emailRows }] =
       await Promise.all([
         emailsQuery,
         supabase
@@ -165,18 +151,32 @@ export const getContact = createServerFn({ method: "POST" })
           .eq("contact_id", data.id)
           .order("position", { ascending: true })
           .order("created_at", { ascending: true }),
-        companyDomainsQuery,
       ]);
-    const domainList = (companyDomains ?? []).map((d) => d.domain);
-    let companyDomain: string | null = domainList[0] ?? null;
-    if (linkedCompanyId && domainList.length > 0) {
-      const { data: choices } = await supabase
-        .from("company_logo_choices")
-        .select("domain,source_domain")
-        .in("domain", domainList);
-      const chosen = (choices ?? [])[0];
-      if (chosen) {
-        companyDomain = chosen.source_domain ?? chosen.domain ?? companyDomain;
+    const { resolveCompanyLogoDomainForContact } = await import("@/lib/contacts/logo-photo.server");
+    const companyDomain = await resolveCompanyLogoDomainForContact(userId, {
+      id: data.id,
+      company_id: linkedCompanyId,
+      website: contact.website,
+      email: contact.email,
+    });
+    let avatarIsCompanyLogoSnapshot = false;
+    if (contact.avatar_url && linkedCompanyId) {
+      try {
+        const [{ loadContactPhotoBytes, sha256Hex }, { buildKnownCompanyLogoShaSet }] =
+          await Promise.all([
+            import("@/lib/contacts/photos.server"),
+            import("@/lib/contacts/known-logos.server"),
+          ]);
+        const own = await loadContactPhotoBytes(contact.avatar_url);
+        if (own) {
+          const ownSha = await sha256Hex(own.bytes);
+          const storedLogoSha = companyLink?.company_logo_photo_sha ?? null;
+          avatarIsCompanyLogoSnapshot =
+            (storedLogoSha !== null && storedLogoSha === ownSha) ||
+            (await buildKnownCompanyLogoShaSet(userId)).has(ownSha);
+        }
+      } catch {
+        avatarIsCompanyLogoSnapshot = false;
       }
     }
     return {
@@ -186,6 +186,7 @@ export const getContact = createServerFn({ method: "POST" })
       emails: emailRows ?? [],
       companyDomain,
       companyId: linkedCompanyId,
+      avatarIsCompanyLogoSnapshot,
     };
 
   });
