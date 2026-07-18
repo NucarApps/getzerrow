@@ -108,7 +108,9 @@ export function contactToPerson(
   memberships: string[], // Google contactGroups/xxx resource names
   primaryEmailPrevious?: boolean,
   emails: LocalEmail[] = [],
+  options: { includeSummary?: boolean } = {},
 ): Partial<Person> {
+
   const person: Partial<Person> = {};
 
   const nm = splitName(contact.name);
