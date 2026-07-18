@@ -120,6 +120,11 @@ describe("contactToPerson", () => {
     expect(minimal.phoneNumbers).toBeUndefined();
     expect(minimal.memberships).toBeUndefined();
   });
+
+  it("omits emailAddresses when the local contact has no email", () => {
+    const p = contactToPerson({ ...baseContact, email: null }, [], []);
+    expect(p.emailAddresses).toBeUndefined();
+  });
 });
 
 describe("personToContact", () => {

@@ -15,6 +15,7 @@ import {
 } from "./people-client.server";
 import { personToContact, labelToGroupName, type Person } from "./mapper";
 import { loadSyncState, updateSyncState, ensureSyncState } from "./state.server";
+import { isLocalGoogleContactDirty } from "./dirty";
 import type { ProgressReporter } from "./progress.server";
 
 type Ids = { userId: string; gmailAccountId: string; runId: string };
@@ -255,8 +256,11 @@ async function applyPersonChanges(
     .from("google_contact_links")
     .select("contact_id, resource_name, etag")
     .eq("gmail_account_id", ids.gmailAccountId);
-  const byResource = new Map<string, { contact_id: string }>(
-    (links ?? []).map((l) => [l.resource_name, { contact_id: l.contact_id }]),
+  const byResource = new Map<string, { contact_id: string; last_synced_at: string | null }>(
+    (links ?? []).map((l) => [
+      l.resource_name,
+      { contact_id: l.contact_id, last_synced_at: l.last_synced_at ?? null },
+    ]),
   );
 
   // Existing group links for membership diffing.
@@ -372,8 +376,25 @@ async function applyPersonChanges(
         { onConflict: "gmail_account_id,contact_id" },
       );
     } else {
+      const { data: localBeforePull } = await supabaseAdmin
+        .from("contacts")
+        .select("updated_at")
+        .eq("id", contactId)
+        .eq("user_id", ids.userId)
+        .maybeSingle();
+      if (isLocalGoogleContactDirty(localBeforePull?.updated_at ?? null, link.last_synced_at)) {
+        await supabaseAdmin
+          .from("google_contact_links")
+          .update({ etag: p.etag ?? null })
+          .eq("gmail_account_id", ids.gmailAccountId)
+          .eq("resource_name", p.resourceName);
+        await progress?.increment(1);
+        continue;
+      }
+
       // Update plaintext fields.
       const plainPatch = {
+        email: parsed.email ? parsed.email.toLowerCase() : null,
         name: parsed.patch.name ?? null,
         company: parsed.patch.company ?? null,
         title: parsed.patch.title ?? null,
@@ -386,11 +407,6 @@ async function applyPersonChanges(
         country: parsed.patch.country ?? null,
       };
       await supabaseAdmin.from("contacts").update(plainPatch).eq("id", contactId);
-      await supabaseAdmin
-        .from("google_contact_links")
-        .update({ etag: p.etag ?? null, last_synced_at: new Date().toISOString() })
-        .eq("gmail_account_id", ids.gmailAccountId)
-        .eq("resource_name", p.resourceName);
     }
 
     if (didCreate) breakdown.created++;
@@ -450,6 +466,17 @@ async function applyPersonChanges(
         .eq("contact_id", contactId)
         .in("group_id", toRemove);
     }
+    await supabaseAdmin.from("google_contact_links").upsert(
+      {
+        user_id: ids.userId,
+        gmail_account_id: ids.gmailAccountId,
+        contact_id: contactId,
+        resource_name: p.resourceName,
+        etag: p.etag ?? null,
+        last_synced_at: new Date().toISOString(),
+      },
+      { onConflict: "gmail_account_id,contact_id" },
+    );
     if (contactId) touchedContactIds.add(contactId);
     await progress?.increment(1);
   }

@@ -30,6 +30,7 @@ import {
 
 
 const BASE = "/api/public/carddav";
+const GOOGLE_SYNC_DIRTY_SENTINEL = "1970-01-01T00:00:00.000Z";
 
 function principalHref(email: string): string {
   return `${BASE}/${encodeURIComponent(email)}/`;
@@ -239,6 +240,14 @@ async function fetchPhones(contactId: string): Promise<PhoneRow[]> {
     number: r.number,
     is_primary: r.is_primary,
   }));
+}
+
+async function markGoogleContactLinkDirty(userId: string, contactId: string): Promise<void> {
+  await supabaseAdmin
+    .from("google_contact_links")
+    .update({ last_synced_at: GOOGLE_SYNC_DIRTY_SENTINEL })
+    .eq("user_id", userId)
+    .eq("contact_id", contactId);
 }
 
 // -----------------------------------------------------------------------------
@@ -1056,6 +1065,11 @@ export async function handlePut(
   if (present.has("CATEGORIES")) {
     await reconcileContactCategories(userId, contactId, parsed.categories);
   }
+
+  // A CardDAV edit is a local source of truth. If this contact is linked to
+  // Google Contacts, force the next two-way run to push it instead of letting
+  // a just-pulled remote snapshot mark it as already synced.
+  await markGoogleContactLinkDirty(userId, contactId);
 
   const newEtag = contactETag(contactId, nowIso);
   return new Response(null, {
