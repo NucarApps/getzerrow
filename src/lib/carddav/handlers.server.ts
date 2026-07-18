@@ -247,6 +247,18 @@ async function fetchPhones(contactId: string): Promise<PhoneRow[]> {
   }));
 }
 
+async function fetchEmails(contactId: string): Promise<EmailRow[]> {
+  const { data } = await supabaseAdmin
+    .from("contact_emails")
+    .select("label,address,is_primary,position")
+    .eq("contact_id", contactId)
+    .order("position", { ascending: true });
+  return ((data as Array<{ label: string; address: string; is_primary: boolean }> | null) ?? []).map(
+    (r) => ({ label: r.label, address: r.address, is_primary: r.is_primary }),
+  );
+}
+
+
 async function markGoogleContactLinkDirty(userId: string, contactId: string): Promise<void> {
   await supabaseAdmin
     .from("google_contact_links")
