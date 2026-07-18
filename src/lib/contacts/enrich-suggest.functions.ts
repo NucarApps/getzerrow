@@ -296,11 +296,11 @@ export const applyContactEnrichmentSuggestion = createServerFn({ method: "POST" 
     if (sug.field === "phone") {
       const normalized = normalizePhone(sug.value) || sug.value;
       await setContactEncryptedFields({
-        contactId: sug.contact_id,
+        contact_id: sug.contact_id,
         phone: normalized,
       });
     } else {
-      const patch: Record<string, string> = {};
+      const patch: { email?: string; company?: string; title?: string } = {};
       if (sug.field === "email") patch.email = sug.value.toLowerCase();
       if (sug.field === "company") patch.company = sug.value;
       if (sug.field === "title") patch.title = sug.value;
