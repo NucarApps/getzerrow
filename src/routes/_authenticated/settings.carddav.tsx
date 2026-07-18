@@ -20,6 +20,7 @@ import {
   getCardDavSettings,
   updateCardDavSettings,
   forceCarddavResync,
+  resyncSummaryContacts,
   type GroupNameStyle,
 } from "@/lib/carddav/settings.functions";
 import {
@@ -57,6 +58,7 @@ function CardDavSettings() {
   const getSettings = useServerFn(getCardDavSettings);
   const updateSettings = useServerFn(updateCardDavSettings);
   const forceResync = useServerFn(forceCarddavResync);
+  const resyncSummaries = useServerFn(resyncSummaryContacts);
   const [label, setLabel] = useState("iPhone");
   const [freshToken, setFreshToken] = useState<string | null>(null);
 
@@ -80,6 +82,19 @@ function CardDavSettings() {
       toast.success(
         "Address book tag bumped — iPhone will pull a fresh copy on next sync",
       ),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const resyncSummariesMut = useMutation({
+    mutationFn: () => resyncSummaries(),
+    onSuccess: (res) => {
+      const n = res.count ?? 0;
+      toast.success(
+        n === 0
+          ? "No contacts with AI summaries yet"
+          : `Queued ${n} contact${n === 1 ? "" : "s"} — iPhone and Google will pick them up on next sync`,
+      );
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -289,6 +304,22 @@ function CardDavSettings() {
 
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           />
+        </div>
+        <div className="border-t pt-4">
+          <p className="text-sm font-medium">Resync existing AI summaries</p>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Summaries generated before this feature won't push to iPhone or
+            Google until their contact record changes. Click to re-emit every
+            contact that already has an AI summary.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => resyncSummariesMut.mutate()}
+            disabled={resyncSummariesMut.isPending}
+          >
+            {resyncSummariesMut.isPending ? "Queueing…" : "Resync summaries now"}
+          </Button>
         </div>
 
         <div className="border-t pt-4">
