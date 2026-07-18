@@ -295,8 +295,21 @@ Return JSON matching the schema.`;
     for (const s of parsed.suggestions) {
       const cleanName = (s.name ?? "").trim();
       if (!cleanName) continue;
-      const ids = (s.contact_ids ?? []).filter((id) => validContactIds.has(id));
-      if (ids.length < 3) continue;
+
+      // Map short indices back to real UUIDs; drop any index the model invented.
+      const rawIds = s.contact_ids ?? [];
+      const mappedIds: string[] = [];
+      const seen = new Set<string>();
+      for (const i of rawIds) {
+        const cid = idByIndex.get(i);
+        if (!cid) {
+          droppedMissingIds++;
+          continue;
+        }
+        if (seen.has(cid)) continue;
+        seen.add(cid);
+        mappedIds.push(cid);
+      }
 
       let kind: SuggestionKind = s.kind ?? "new";
       let existingGroupId: string | null = null;
@@ -321,13 +334,17 @@ Return JSON matching the schema.`;
         existingGroupId = g.id;
       }
 
+      // Merges are useful with as few as 2 new members; new groups still need 3.
+      const minMembers = kind === "merge_into_existing" ? 2 : 3;
+      if (mappedIds.length < minMembers) continue;
+
       rowsToInsert.push({
         user_id: userId,
         run_id: runId,
         name: cleanName.slice(0, 60),
         parent_group_id: parentGroupId,
         existing_group_id: existingGroupId,
-        contact_ids: ids,
+        contact_ids: mappedIds,
         rationale: (s.rationale ?? "").trim().slice(0, 500) || null,
         kind,
         status: "pending",
@@ -341,8 +358,24 @@ Return JSON matching the schema.`;
       if (insErr) throw new Error(insErr.message);
     }
 
+    logInfo("contact_group_suggestions.run_complete", {
+      userId,
+      run_id: runId,
+      parsed_count: parsedCount,
+      kept_count: rowsToInsert.length,
+      dropped_missing_ids: droppedMissingIds,
+      contact_pool: contacts.length,
+    });
+
     const suggestions = await loadLatestSuggestions(supabase, userId);
-    return { suggestions };
+    return {
+      suggestions,
+      stats: {
+        parsed: parsedCount,
+        kept: rowsToInsert.length,
+        inserted: rowsToInsert.length,
+      },
+    };
   });
 
 /** Apply a suggestion: create the group (or use existing) and add contacts. */
