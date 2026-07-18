@@ -286,7 +286,12 @@ function parseLine(raw: string): ParsedLine | null {
   const head = raw.slice(0, colonIdx);
   const value = raw.slice(colonIdx + 1);
   const parts = head.split(";");
-  const name = parts[0].toUpperCase();
+  // iOS groups properties with an `itemN.` prefix whenever they have an
+  // associated X-ABLabel (custom labels), and often for the first
+  // EMAIL/TEL/URL/ADR on a newly created contact. Strip the prefix so
+  // downstream switches on the base property name still match.
+  const rawName = parts[0].replace(/^item\d+\./i, "");
+  const name = rawName.toUpperCase();
   const params: Record<string, string[]> = {};
   for (let i = 1; i < parts.length; i++) {
     const p = parts[i];
