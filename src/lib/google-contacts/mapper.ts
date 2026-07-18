@@ -62,8 +62,10 @@ export type LocalContact = {
   postal_code: string | null;
   country: string | null;
   notes: string | null;
+  relationship_summary?: string | null;
   primary_phone: string | null;
 };
+
 
 export type LocalPhone = { label: string; number: string; is_primary: boolean };
 
