@@ -932,22 +932,39 @@ export async function handlePut(
     `carddav+${contactId}@local.zerrow`;
 
   const nowIso = new Date().toISOString();
-  const plaintextPatch = {
+
+  // Snapshot the previous state BEFORE we touch anything so a bad iOS PUT
+  // that wipes fields can be restored from the Contact drawer. iOS routinely
+  // uploads partial vCards for single-field edits; even with the merge logic
+  // below, the safety net is cheap and user-visible.
+  if (existing) {
+    await snapshotContact(userId, contactId, "carddav_put").catch(() => {
+      // Non-fatal: never block the sync on snapshot bookkeeping.
+    });
+  }
+
+  // Merge, don't replace. Only overwrite plaintext fields whose vCard
+  // property actually appeared in this PUT — iOS sends partial vCards for
+  // single-field edits and any unspecified field must survive.
+  const present = parsed.presentFields;
+  const plaintextPatch: Record<string, unknown> = {
     user_id: userId,
     email: emailForRow,
-    name: parsed.name,
-    company: parsed.company,
-    title: parsed.title,
-    website: parsed.website,
-    city: parsed.city,
-    region: parsed.region,
-    postal_code: parsed.postal_code,
-    country: parsed.country,
-    linkedin: parsed.linkedin,
-    twitter: parsed.twitter,
     source: existing?.source ?? "carddav",
     updated_at: nowIso,
   };
+  if (present.has("FN")) plaintextPatch.name = parsed.name;
+  if (present.has("ORG")) plaintextPatch.company = parsed.company;
+  if (present.has("TITLE")) plaintextPatch.title = parsed.title;
+  if (present.has("URL")) plaintextPatch.website = parsed.website;
+  if (present.has("ADR")) {
+    plaintextPatch.city = parsed.city;
+    plaintextPatch.region = parsed.region;
+    plaintextPatch.postal_code = parsed.postal_code;
+    plaintextPatch.country = parsed.country;
+  }
+  if (present.has("LINKEDIN")) plaintextPatch.linkedin = parsed.linkedin;
+  if (present.has("TWITTER")) plaintextPatch.twitter = parsed.twitter;
 
   if (existing) {
     const { error: upErr } = await supabaseAdmin
@@ -963,43 +980,66 @@ export async function handlePut(
     if (insErr) return new Response(insErr.message, { status: 500 });
   }
 
-  // Encrypted fields. The RPC treats NULL as "leave unchanged", so use "" to
-  // clear a value the user wiped on the phone.
-  const primaryPhone = parsed.phones.find((p) => p.is_primary)?.number ?? parsed.phones[0]?.number ?? "";
-  const encErr = await setContactEncryptedFields({
-    contact_id: contactId,
-    notes: parsed.notes ?? "",
-    address_line1: parsed.address_line1 ?? "",
-    address_line2: parsed.address_line2 ?? "",
-    phone: primaryPhone,
-  });
-  if (encErr.error) return new Response(encErr.error, { status: 500 });
-
-  // Replace-all phones. RLS scopes to the caller via user_id filter.
-  const { error: delPhoneErr } = await supabaseAdmin
-    .from("contact_phones")
-    .delete()
-    .eq("contact_id", contactId)
-    .eq("user_id", userId);
-  if (delPhoneErr) return new Response(delPhoneErr.message, { status: 500 });
-
-  if (parsed.phones.length > 0) {
-    const hasPrimary = parsed.phones.some((p) => p.is_primary);
-    const rows = parsed.phones.map((p, idx) => ({
-      user_id: userId,
-      contact_id: contactId,
-      label: p.label.toLowerCase(),
-      number: p.number,
-      is_primary: hasPrimary ? p.is_primary : idx === 0,
-      position: idx,
-    }));
-    const { error: insPhoneErr } = await supabaseAdmin.from("contact_phones").insert(rows);
-    if (insPhoneErr) return new Response(insPhoneErr.message, { status: 500 });
+  // Encrypted fields. The RPC treats NULL as "leave unchanged" and "" as
+  // "clear". Only send fields whose vCard property was actually present so
+  // an iOS edit that omits NOTE/ADR/TEL doesn't erase the stored value.
+  const encPatch: {
+    contact_id: string;
+    notes?: string | null;
+    address_line1?: string | null;
+    address_line2?: string | null;
+    phone?: string | null;
+  } = { contact_id: contactId };
+  if (present.has("NOTE")) encPatch.notes = parsed.notes ?? "";
+  if (present.has("ADR")) {
+    encPatch.address_line1 = parsed.address_line1 ?? "";
+    encPatch.address_line2 = parsed.address_line2 ?? "";
+  }
+  if (present.has("TEL")) {
+    const primaryPhone =
+      parsed.phones.find((p) => p.is_primary)?.number ?? parsed.phones[0]?.number ?? "";
+    encPatch.phone = primaryPhone;
+  }
+  if (
+    encPatch.notes !== undefined ||
+    encPatch.address_line1 !== undefined ||
+    encPatch.phone !== undefined
+  ) {
+    const encErr = await setContactEncryptedFields(encPatch);
+    if (encErr.error) return new Response(encErr.error, { status: 500 });
   }
 
-  // CATEGORIES → contact_group_members reconciliation. Groups are created
-  // on demand so the phone can name them freely without pre-configuration.
-  await reconcileContactCategories(userId, contactId, parsed.categories);
+  // Replace-all phones — but only when TEL was actually present in the PUT.
+  // Otherwise iOS's partial vCard would wipe every saved phone.
+  if (present.has("TEL")) {
+    const { error: delPhoneErr } = await supabaseAdmin
+      .from("contact_phones")
+      .delete()
+      .eq("contact_id", contactId)
+      .eq("user_id", userId);
+    if (delPhoneErr) return new Response(delPhoneErr.message, { status: 500 });
+
+    if (parsed.phones.length > 0) {
+      const hasPrimary = parsed.phones.some((p) => p.is_primary);
+      const rows = parsed.phones.map((p, idx) => ({
+        user_id: userId,
+        contact_id: contactId,
+        label: p.label.toLowerCase(),
+        number: p.number,
+        is_primary: hasPrimary ? p.is_primary : idx === 0,
+        position: idx,
+      }));
+      const { error: insPhoneErr } = await supabaseAdmin.from("contact_phones").insert(rows);
+      if (insPhoneErr) return new Response(insPhoneErr.message, { status: 500 });
+    }
+  }
+
+  // CATEGORIES → contact_group_members reconciliation. Only when the vCard
+  // actually included a CATEGORIES line — iOS omits it for most edits and
+  // running it unconditionally erased group membership.
+  if (present.has("CATEGORIES")) {
+    await reconcileContactCategories(userId, contactId, parsed.categories);
+  }
 
   const newEtag = contactETag(contactId, nowIso);
   return new Response(null, {
