@@ -104,7 +104,11 @@ export function contactToVCard(
     if (contact.title) out.push(line("TITLE", esc(contact.title)));
   }
 
-  if (contact.email) {
+  // Skip legacy placeholder emails so iOS stops displaying them as the
+  // contact's real address. Rows are migrated to NULL separately, but a
+  // stale echo can otherwise round-trip until every cache invalidates.
+  const isPlaceholderEmail = !!contact.email && /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(contact.email);
+  if (contact.email && !isPlaceholderEmail) {
     out.push(line("EMAIL;TYPE=INTERNET,WORK,pref", esc(contact.email)));
   }
 
