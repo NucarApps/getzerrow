@@ -81,3 +81,17 @@ export const removeContactPhoto = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+/** Mint a short-lived signed URL for a contact's stored photo. The bucket is
+ * private, so the browser can't hit `avatar_url` directly — call this after
+ * verifying the caller owns the contact. Returns `{ url: null }` when the
+ * contact has no stored photo. */
+export const getContactPhotoSignedUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }): Promise<{ url: string | null }> => {
+    await assertOwnsContact(context.userId, data.contactId);
+    const { signContactPhotoUrl } = await import("@/lib/contacts/photos.server");
+    const url = await signContactPhotoUrl(context.userId, data.contactId);
+    return { url };
+  });
