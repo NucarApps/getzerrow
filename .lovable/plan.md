@@ -1,46 +1,54 @@
-## Problems
 
-1. **Enrichment re-suggests dismissed items**: `scanContactEnrichment` only dedupes against `status = 'pending'` suggestions. Dismissed rows (and cleared fields) get re-proposed every run — especially the domain-derived company fallback, which fires whenever `contact.company` is empty.
-2. **No way to see/restore declines**: Dismissed suggestions disappear from the drawer, so accidental dismisses are unrecoverable.
-3. **AI group suggestions feel shallow**: The prompt only sees name/company/title/domain/city. It never sees what the person actually emails about, so it can't cluster by real relationship (e.g. "Vendors — auto parts", "Recruiters", "Investors"). It also doesn't cross-reference existing contact groups' rationales.
+## What went wrong
 
-## Plan
+When iOS sends an edited contact back over CardDAV, it can PUT a **partial vCard** that only contains the properties it cares about. Our `handlePut` in `src/lib/carddav/handlers.server.ts` treats every field returned by `parseVCard` as authoritative:
 
-### 1. Remember declines in enrichment (`src/lib/contacts/enrich-suggest.functions.ts`)
+- `parseVCard` initializes every field to `null` and only fills in properties it saw. Any property iOS omits (ORG, TITLE, URL, ADR, X-SOCIALPROFILE, NOTE, TEL, CATEGORIES…) comes back `null` / `[]`.
+- `handlePut` then does a full `UPDATE` with those nulls (company, title, website, city, region, postal_code, country, linkedin, twitter) — silently overwriting whatever the user had saved on the web.
+- `setContactEncryptedFields` is called with `""` for missing `notes`, `address_line1/2`, and primary phone. The RPC docstring says empty string = "clear", so notes and address get erased.
+- `contact_phones` is unconditionally deleted then re-inserted. If iOS omitted TEL lines, phones vanish.
+- CATEGORIES reconciliation runs even when no CATEGORIES line was present, wiping group membership.
 
-- Load BOTH pending and dismissed suggestions into the `existing` dedupe set, keyed by `contact_id|field|value`. A dismissed `company = "Acme"` on contact X will never be re-suggested for X.
-- For the low-confidence **domain-derived company** fallback, add a second guard: skip if ANY dismissed suggestion exists for `(contact_id, field='company', source='domain_derived')`, regardless of value — so clearing the company field doesn't re-trigger the same domain guess.
-- Add an `undismissContactEnrichmentSuggestion` server fn that flips `status` back to `pending` (for the "restore" action).
+Then the next Google Contacts push cycle propagates the wiped values upstream because `updated_at` moved forward.
 
-### 2. Show dismissed list in the drawer (`src/components/contacts/EnrichmentSuggestionsDrawer.tsx`)
+## Fix — merge semantics for CardDAV PUT
 
-- Extend `listContactEnrichmentSuggestions` with an optional `{ status: 'pending' | 'dismissed' }` filter (default pending, preserves current behavior).
-- Add a small tab / toggle in the drawer header: **Pending · Dismissed**. Dismissed tab shows the same rows with a "Restore" button (calls the new undismiss fn) instead of Apply/Dismiss.
-- Keep grouping-by-contact identical.
+Update the parser and PUT handler so we only touch fields the client actually sent.
 
-### 3. Make AI group suggestions actually read the inbox (`src/lib/contacts/suggest-groups.functions.ts`)
+### 1. `src/lib/carddav/vcard.ts` — track which properties were present
 
-- For each ungrouped (or lightly grouped) contact with an email, pull a compact **topic signal** from their recent inbox threads: top 3 subjects + a 200-char snippet of the most recent body, via the existing `searchEmailsParticipantsDecrypted` + `getEmailsDecrypted` helpers. Cap to ~60 contacts per run to bound cost.
-- Bucket by `normalizeCompanyName(company)` first (so all Honda contacts share one signal blob), then attach an aggregated `topics` array to those `contactLines` entries.
-- Also pass the **existing groups' rationales** (currently only names) so the model can suggest subgroups that fit the user's mental model.
-- Rewrite the prompt to instruct the model to cluster by **relationship type inferred from topics** (vendor, client, recruiter, investor, personal, etc.), not just shared company/domain, and to prefer `subgroup` under an existing group when topics align.
-- Log `contact_group_suggestions.topics_attached` count to confirm the enrichment ran.
+- Add `presentFields: Set<string>` (or a typed flag object) to `ParsedVCard`.
+- Populate it as each property is parsed: `FN/N`, `EMAIL`, `ORG`, `TITLE`, `ADR`, `URL`, `URL;LINKEDIN`, `URL;TWITTER`, `TEL`, `NOTE`, `CATEGORIES`, `X-SOCIALPROFILE`.
+- Keep existing shape backward-compatible; only add the new field.
+- Add/extend tests in `vcard.parse.test.ts` and `vcard.roundtrip.test.ts` to assert that a partial vCard produces a partial `presentFields` set.
 
-### 4. UI feedback
+### 2. `src/lib/carddav/handlers.server.ts` `handlePut` — patch, don't replace
 
-- Group drawer toast already shows counts; append `topics_scanned: N` when >0 so the user can see the inbox scan happened.
-- No schema changes. No migrations.
+- Build `plaintextPatch` dynamically: for each of `name, company, title, website, city, region, postal_code, country, linkedin, twitter`, include the key **only if** `presentFields.has(...)`. Never write `null` for a field the vCard didn't mention.
+- For encrypted fields (`notes`, `address_line1/2`, primary phone), skip the call entirely when none of those properties were present; when some were present, send `""` only for the ones the client actually included and omit the rest (extend `setContactEncryptedFields` to treat `undefined` as "leave unchanged" if it doesn't already).
+- Phones: only run the delete + re-insert when `presentFields.has("TEL")`. Otherwise leave `contact_phones` untouched.
+- Group membership (`reconcileContactCategories`): only run when `presentFields.has("CATEGORIES")`. iOS routinely omits it for single-field edits.
+- Keep `updated_at = now()` only when at least one column actually changed (compute from the patch) so a no-op PUT doesn't churn the Google push loop.
+
+### 3. Safety net — snapshot before overwrite
+
+- Add a lightweight `contact_revisions` table (`id, contact_id, user_id, snapshot jsonb, source text, created_at`) with RLS scoped to `auth.uid()` and standard GRANTs.
+- In `handlePut`, before the update, insert a snapshot of the existing contact + phones + group memberships when we're about to change anything (source=`carddav`). Cap at ~20 rows per contact via a trim.
+- Expose a minimal server fn `restoreContactRevision(revisionId)` and a "Restore previous version" action in `ContactDetailView.tsx` so a bad iOS sync is one click to undo.
+
+### 4. Regression tests
+
+- Extend `src/lib/carddav/sync.test.ts` with a "partial PUT preserves untouched fields" case: seed a contact with company/title/notes/phones/groups, PUT a vCard containing only `FN` + `EMAIL`, assert every other field survives.
+- Add a case where iOS PUTs a vCard with an empty `NOTE:` line — that should clear notes (property present, value empty), distinguishing it from the "not sent" case.
 
 ## Technical notes
 
-- `contact_enrichment_suggestions` already has `status` with `dismissed`; no DB change needed for #1/#2.
-- The domain-derived guard uses `source = 'domain_derived'` which is already written on the row.
-- Topic extraction reuses the same encrypted-reader helpers as `enrich-suggest`; keep the per-contact fetch behind `Promise.all` with a small concurrency cap (10) to stay under the 30s server-fn window.
-- Keep the AI model (`google/gemini-3.1-flash-lite`) and structured `Output.object` schema; only the prompt content and payload shape change.
+- No schema change to `contacts`; only the new `contact_revisions` table.
+- No change to `pushToGoogle` — once local data stops being wiped, upstream stays correct.
+- `parseVCard`'s public shape gains one optional field, so `handleGroupPut` and callers keep working.
+- Bump the address-book CTag after deploying so iOS refetches and any locally-cached bad state on the device gets corrected on next sync.
 
-## Files touched
+## Out of scope
 
-- `src/lib/contacts/enrich-suggest.functions.ts` — dismissed-aware dedupe, domain-derived hard-mute, new `undismissContactEnrichmentSuggestion`, `status` param on list fn.
-- `src/components/contacts/EnrichmentSuggestionsDrawer.tsx` — Pending / Dismissed tabs, Restore action.
-- `src/lib/contacts/suggest-groups.functions.ts` — inbox topic signals, richer prompt, group rationales in payload.
-- `src/components/contacts/GroupSuggestionsDrawer.tsx` — surface `topics_scanned` in toast (small).
+- Changing Google Contacts pull/push semantics.
+- CardDAV group PUT path (already replaces membership from an explicit MEMBER list, which is correct for Apple group vCards).
