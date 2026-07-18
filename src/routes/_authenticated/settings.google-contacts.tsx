@@ -75,6 +75,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const setInterval = useServerFn(setGoogleContactsSyncInterval);
   const forceFull = useServerFn(forceFullGoogleContactsResync);
   const backfillEmails = useServerFn(backfillMultiEmailsFromGoogle);
+  const backfillPhotos = useServerFn(backfillGoogleContactPhotos);
   const connect = useServerFn(startConnectGmail);
   const [reconnecting, setReconnecting] = useState(false);
   const [confirmUpgrade, setConfirmUpgrade] = useState(false);
