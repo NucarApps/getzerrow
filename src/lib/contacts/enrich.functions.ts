@@ -293,6 +293,7 @@ ${sample}`,
       "twitter",
       ...ADDRESS_FIELDS,
     ] as const) {
+      if (locked.has(k)) continue; // user-owned — never overwrite
       const v = extracted[k];
       if (k === "name") {
         let best = pickBetterName(contact.name, fromNameCandidate);
@@ -302,6 +303,7 @@ ${sample}`,
       }
       if (v && (!(contact as Record<string, unknown>)[k] || data.force)) patch[k] = v;
     }
+
     // Fields persisted only via the encrypted RPC — strip from the
     // plaintext patch since the columns are gone post-Migration B.
     const ENCRYPTED_ONLY = ["phone", "address_line1", "address_line2"] as const;
