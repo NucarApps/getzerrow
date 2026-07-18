@@ -461,15 +461,8 @@ export function ContactDetailView({ id, onDeleted }: Props) {
             onChange={(e) => setForm({ ...form, company: e.target.value })}
           />
         </Field>
-        <Field label="Email" icon={<Mail className="h-3.5 w-3.5" />}>
-          <Input
-            type="email"
-            placeholder="name@example.com"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
-        </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
+
           <Input
             value={form.website}
             onChange={(e) => setForm({ ...form, website: e.target.value })}
