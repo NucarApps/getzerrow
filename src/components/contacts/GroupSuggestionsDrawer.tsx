@@ -47,11 +47,15 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
       const kept = res?.stats?.kept ?? 0;
       const pool = res?.stats?.contactPool ?? 0;
       const ungrouped = res?.stats?.ungroupedTotal ?? 0;
+      const topics = res?.stats?.topicsScanned ?? 0;
+      const topicsSuffix = topics > 0 ? ` · read ${topics} inbox` : "";
       if (kept > 0) {
-        toast.success(`Found ${kept} suggestion${kept === 1 ? "" : "s"}`);
+        toast.success(
+          `Found ${kept} suggestion${kept === 1 ? "" : "s"}${topicsSuffix}`,
+        );
       } else {
         toast.message(
-          `Scanned ${pool} contacts (${ungrouped} ungrouped) — no new suggestions`,
+          `Scanned ${pool} contacts (${ungrouped} ungrouped)${topicsSuffix} — no new suggestions`,
         );
       }
     },
