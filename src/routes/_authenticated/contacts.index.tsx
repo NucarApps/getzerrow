@@ -770,6 +770,44 @@ function ContactsPage() {
                         onToggleSelectAll={() => toggleBucketSelection(b.contacts.map((c) => c.id))}
                       />
 
+                      {(() => {
+                        const s = mergeSuggestions.get(b.key);
+                        if (!s) return null;
+                        const isPrimary = s.primaryBucketKey === b.key;
+                        return (
+                          <div className="flex flex-wrap items-center gap-2 border-x border-border bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+                            <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                            <span className="flex-1 min-w-0">
+                              {s.otherCount + 1} companies share the name{" "}
+                              <strong>&ldquo;{s.displayName}&rdquo;</strong> on different
+                              domains.{" "}
+                              {isPrimary
+                                ? `Merge the other ${s.otherCount} into this one?`
+                                : `Merge into ${s.primaryDomain}?`}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="h-7"
+                              disabled={mergingKey === s.normalizedName}
+                              onClick={() => performMerge(s)}
+                            >
+                              {mergingKey === s.normalizedName ? "Merging…" : "Merge"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7"
+                              onClick={() => dismissMerge(s.normalizedName)}
+                            >
+                              Dismiss
+                            </Button>
+                          </div>
+                        );
+                      })()}
+
+
+
                       {!isCollapsed && (
                         <ul className="divide-y divide-border border-x border-b border-border bg-card/40">
                           {b.contacts.map((c) => {
