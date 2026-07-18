@@ -305,6 +305,22 @@ function CardDavSettings() {
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           />
         </div>
+        <div className="border-t pt-4">
+          <p className="text-sm font-medium">Resync existing AI summaries</p>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Summaries generated before this feature won't push to iPhone or
+            Google until their contact record changes. Click to re-emit every
+            contact that already has an AI summary.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => resyncSummariesMut.mutate()}
+            disabled={resyncSummariesMut.isPending}
+          >
+            {resyncSummariesMut.isPending ? "Queueing…" : "Resync summaries now"}
+          </Button>
+        </div>
 
         <div className="border-t pt-4">
           <p className="text-sm font-medium">Force iPhone resync</p>
