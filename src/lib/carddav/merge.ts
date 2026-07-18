@@ -40,6 +40,10 @@ function normalizeEmail(value: string | null | undefined): string | null {
   return trimmed ? trimmed.toLowerCase() : null;
 }
 
+function isLegacyPlaceholderEmail(value: string): boolean {
+  return /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(value);
+}
+
 /**
  * Build the plaintext contact patch for a CardDAV PUT. This is intentionally
  * conservative: iOS can send follow-up partial cards that omit or blank EMAIL,
@@ -64,7 +68,7 @@ export function buildCardDavContactPatch(input: {
 
   if (present.has("EMAIL")) {
     const incomingEmail = normalizeEmail(parsed.email);
-    if (incomingEmail) {
+    if (incomingEmail && !isLegacyPlaceholderEmail(incomingEmail)) {
       patch.email = incomingEmail;
       emailDecision = "accepted_value";
     } else if (existing?.email) {
