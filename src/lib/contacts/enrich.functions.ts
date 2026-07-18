@@ -287,8 +287,7 @@ ${sample}`,
     for (const [k, v] of Object.entries(fieldPatch) as [EnrichableField, string][]) {
       (patch as Record<string, unknown>)[k] = v;
     }
-    // Locked set is still needed below for the summary short-circuit logic.
-    void locked;
+    }
 
     // Fields persisted only via the encrypted RPC — strip from the
     // plaintext patch since the columns are gone post-Migration B.
