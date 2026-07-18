@@ -135,6 +135,7 @@ export type Database = {
         Row: {
           created_at: string
           group_name_style: string
+          include_summary_in_notes: boolean
           resync_nonce: number
           updated_at: string
           user_id: string
@@ -142,6 +143,7 @@ export type Database = {
         Insert: {
           created_at?: string
           group_name_style?: string
+          include_summary_in_notes?: boolean
           resync_nonce?: number
           updated_at?: string
           user_id: string
@@ -149,6 +151,7 @@ export type Database = {
         Update: {
           created_at?: string
           group_name_style?: string
+          include_summary_in_notes?: boolean
           resync_nonce?: number
           updated_at?: string
           user_id?: string
