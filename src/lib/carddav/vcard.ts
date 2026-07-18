@@ -282,7 +282,12 @@ export function contactToVCard(
     out.push(line("URL;TYPE=Twitter", esc(contact.twitter)));
   }
 
-  if (contact.notes) out.push(line("NOTE", esc(contact.notes)));
+  const noteValue = buildMergedNote(
+    options.includeSummary !== false ? contact.relationship_summary : null,
+    contact.notes,
+  );
+  if (noteValue) out.push(line("NOTE", esc(noteValue)));
+
 
   if (photo && photo.bytes.length > 0) {
     // vCard 3.0 form Apple's Contacts app expects. The base64 payload gets
