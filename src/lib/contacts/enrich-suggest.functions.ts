@@ -569,3 +569,20 @@ export const dismissContactEnrichmentSuggestion = createServerFn({ method: "POST
     if (error) throw new Error(error.message);
     return { dismissed: true as const };
   });
+
+/** Restore a dismissed suggestion back to pending (for accidental dismisses). */
+export const undismissContactEnrichmentSuggestion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { suggestionId: string }) =>
+    z.object({ suggestionId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase
+      .from("contact_enrichment_suggestions")
+      .update({ status: "pending" })
+      .eq("id", data.suggestionId)
+      .eq("status", "dismissed");
+    if (error) throw new Error(error.message);
+    return { restored: true as const };
+  });
