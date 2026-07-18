@@ -103,15 +103,28 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       confidence: Confidence;
     }[] = [];
 
-    // Existing pending suggestions we should not duplicate.
+    // Existing pending + dismissed suggestions we should not duplicate.
+    // Dismissed rows count too — the user already said no; don't re-propose them.
     const { data: pendingRows } = await supabase
       .from("contact_enrichment_suggestions")
-      .select("contact_id, field, value")
-      .eq("status", "pending");
+      .select("contact_id, field, value, source, status")
+      .in("status", ["pending", "dismissed"]);
     const existing = new Set(
       (pendingRows ?? []).map(
         (r) => `${r.contact_id}|${r.field}|${(r.value ?? "").toLowerCase()}`,
       ),
+    );
+    // Hard-mute the domain-derived company guess per contact once dismissed —
+    // clearing `contacts.company` would otherwise re-trigger the same guess.
+    const dismissedDomainCompany = new Set(
+      (pendingRows ?? [])
+        .filter(
+          (r) =>
+            r.status === "dismissed" &&
+            r.field === "company" &&
+            r.source === "domain_derived",
+        )
+        .map((r) => r.contact_id),
     );
 
     // Existing phones per contact so we don't re-suggest numbers already on file.
