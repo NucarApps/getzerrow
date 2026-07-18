@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { DuplicateSuggestionsDrawer } from "@/components/contacts/DuplicateSuggestionsDrawer";
+import { LabelDuplicatesDrawer } from "@/components/contacts/LabelDuplicatesDrawer";
 import { EnrichmentSuggestionsDrawer } from "@/components/contacts/EnrichmentSuggestionsDrawer";
 import { GroupRulesSection } from "@/components/contacts/GroupRulesSection";
 import { Button } from "@/components/ui/button";
@@ -131,6 +132,7 @@ function ContactsPage() {
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [dupesOpen, setDupesOpen] = useState(false);
   const [enrichOpen, setEnrichOpen] = useState(false);
+  const [labelDupesOpen, setLabelDupesOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const bulkAddToGroups = useServerFn(addContactsToGroups);
   const backfillAutoGroups = useServerFn(reconcileAllAutoGroups);
@@ -809,6 +811,16 @@ function ContactsPage() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setLabelDupesOpen(true)}
+                title="Find duplicate labels"
+                className="shrink-0 px-2 sm:px-3"
+              >
+                <Sparkles className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Dedupe labels</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setEnrichOpen(true)}
                 title="Enrich contacts from your inbox"
                 className="shrink-0 px-2 sm:px-3"
@@ -1154,6 +1166,7 @@ function ContactsPage() {
       <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
       <DuplicateSuggestionsDrawer open={dupesOpen} onOpenChange={setDupesOpen} />
       <EnrichmentSuggestionsDrawer open={enrichOpen} onOpenChange={setEnrichOpen} />
+      <LabelDuplicatesDrawer open={labelDupesOpen} onOpenChange={setLabelDupesOpen} />
     </>
   );
 }
