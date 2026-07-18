@@ -67,8 +67,11 @@ function CardDavSettings() {
     queryFn: () => getSettings(),
   });
   const settingsMut = useMutation({
-    mutationFn: (patch: { group_name_style?: GroupNameStyle; include_summary_in_notes?: boolean }) =>
-      updateSettings({ data: patch }),
+    mutationFn: (patch: {
+      group_name_style?: GroupNameStyle;
+      include_summary_in_notes?: boolean;
+      use_company_logo_fallback?: boolean;
+    }) => updateSettings({ data: patch }),
     onSuccess: () => {
       toast.success("iPhone will refresh on next sync");
       qc.invalidateQueries({ queryKey: ["carddav-settings"] });
