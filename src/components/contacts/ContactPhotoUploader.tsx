@@ -51,6 +51,15 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
   const upload = useServerFn(uploadContactPhoto);
   const remove = useServerFn(removeContactPhoto);
   const signUrl = useServerFn(getContactPhotoSignedUrl);
+  const listLogoChoices = useServerFn(listCompanyLogoChoices);
+
+  // Shares its cache key with the contacts list page so the network hit is
+  // deduped when the drawer opens over the list.
+  const logoChoicesQuery = useQuery({
+    queryKey: ["company-logo-choices"],
+    queryFn: () => listLogoChoices(),
+    staleTime: 5 * 60 * 1000,
+  });
 
   // The bucket is private, so we mint a short-lived signed URL after
   // server-side ownership check. `avatarUrl` from the DB just tells us
