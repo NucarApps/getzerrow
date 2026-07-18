@@ -41,6 +41,7 @@ import {
   setAutoCompanySubgroups,
   reconcileAutoCompanySubgroups,
   pruneAutoCompanySubgroups,
+  reconcileAllAutoGroups,
 } from "@/lib/contacts/auto-company-subgroups.functions";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
