@@ -283,9 +283,10 @@ function CardDavSettings() {
           </div>
           <Switch
             checked={settingsQuery.data?.include_summary_in_notes ?? true}
-            onCheckedChange={(v) =>
+            onCheckedChange={(v: boolean) =>
               settingsMut.mutate({ include_summary_in_notes: v })
             }
+
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           />
         </div>
