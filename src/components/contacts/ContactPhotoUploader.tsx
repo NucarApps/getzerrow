@@ -4,6 +4,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { contactLogoDomain } from "@/lib/company-domains";
 import {
   uploadContactPhoto,
   removeContactPhoto,
