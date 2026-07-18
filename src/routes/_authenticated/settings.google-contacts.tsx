@@ -244,6 +244,16 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${forceMut.isPending ? "animate-spin" : ""}`} />
                 Force full re-pull
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => backfillMut.mutate()}
+                disabled={!enabled || backfillMut.isPending}
+                title="Scan every linked contact and additively import any emails/phones that exist in Google but not in Zerrow"
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${backfillMut.isPending ? "animate-spin" : ""}`} />
+                Recover missing emails
+              </Button>
             </div>
           )}
         </div>
