@@ -606,6 +606,13 @@ export const createContactManual = createServerFn({ method: "POST" })
       const { supabase } = context;
       await reconcileAutoParentsForContacts(supabase, userId, [row.id]);
     }
+    if (row?.id) {
+      try {
+        await applyRulesForContact(supabase, userId, row.id);
+      } catch {
+        // best-effort
+      }
+    }
     return { contact: row };
   });
 
