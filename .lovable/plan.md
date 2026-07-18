@@ -1,41 +1,46 @@
-# Sync existing AI summaries to iPhone and Google Contacts
+# Contact photo fallback + backfill
 
-## The problem
+Two related gaps:
 
-New summaries sync fine because writing a fresh `relationship_summary` bumps `contacts.updated_at`. That bump is what both sync paths key off:
+1. **No fallback picture.** When a contact has no `avatar_url`, the app renders the orange initials tile and CardDAV emits no `PHOTO`, so iOS also has nothing. We should fall back to the company logo we already resolve for the contact.
+2. **Chanell case: iOS has a photo, Zerrow doesn't.** Photo sync only fires when a picture is *changed after* the feature shipped. Contacts whose photo predates it never re-push from iOS and (if unlinked to Google) never get pulled. We need a way to backfill those.
 
-- **CardDAV**: `contactETag(id, updated_at)` — iOS only re-fetches vCards whose ETag changed (`src/lib/carddav/handlers.server.ts:437`).
-- **Google Contacts push**: skips contacts unless `contact.updated_at > link.last_synced_at` (`src/lib/google-contacts/push.server.ts:157`).
+## What to build
 
-Contacts whose summary was written *before* the "merge summary into NOTE" feature shipped already had their `updated_at` synced downstream without the summary. Nothing bumps them now, so they stay stale on iOS/Google even though the vCard/Person mapper would happily include the summary if asked. The `resync_nonce` bump moves the book CTag, but iOS still short-circuits per-contact refetch on the unchanged ETag.
+### A. Company-logo fallback (display + push)
 
-## Fix
+- New helper `resolveContactPhoto(contact)` that returns, in order:
+  1. `avatar_url` (real user photo) — unchanged.
+  2. A *derived* company-logo photo — the same logo `CompanyLogo` shows in the UI, resolved from the contact's email domain / `company_logo_choices`.
+  3. `null` → initials tile stays.
+- Store the derived source as a **virtual** photo, not written back into `contacts.avatar_url`, so a real user photo added later always wins and clearing the company never leaves stale bytes. Track it via a new nullable `contacts.logo_photo_domain` + `logo_photo_etag` (etag = provider+domain hash) so we know when to re-push.
+- **UI (`ContactPhotoUploader`, contact list avatars):** when `avatar_url` is null but `logo_photo_domain` is set, render `<CompanyLogo domain=... />` instead of initials. Uploader "Remove" only clears the real photo; the logo fallback then reappears automatically.
+- **CardDAV push (`vcard.ts` / `handlers.server.ts` GET):** when no real photo, fetch the logo bytes server-side (reuse `/api/public/logo` guards for SSRF safety), inline as `PHOTO;ENCODING=b`. Cache bytes in the `contact-photos` bucket under a `logo/<domain>/<provider>.jpg` key so we don't re-fetch per contact.
+- **Google push:** same fallback — upload the logo bytes via `updateContactPhoto` when no real photo exists. Guard with the etag so we don't re-upload every sync.
+- **Settings toggle** on `settings.carddav.tsx`: "Use company logo when a contact has no photo" (default on). Toggling off bumps `resync_nonce` and strips the fallback on next sync.
 
-When `include_summary_in_notes` flips from off → on (and as a manual "resync summaries" action), touch every contact that has a non-null `relationship_summary` so both sync paths see them as changed.
+### B. Backfill existing iOS-only photos (fix Chanell)
 
-### Changes
+Root cause: photo sync fires on iOS `PUT` after the feature shipped or on Google pull. Chanell's photo was set on iOS before that, and CardDAV has no way for the server to *ask* iOS for a specific contact's photo — iOS only pushes on user edit.
 
-1. **`src/lib/carddav/settings.functions.ts`** — in `updateCardDavSettings`, when the new value of `include_summary_in_notes` differs from the previous value, run:
-   ```sql
-   UPDATE contacts
-   SET updated_at = now()
-   WHERE user_id = $1 AND relationship_summary IS NOT NULL
-   ```
-   Keep the existing `resync_nonce` bump so the book CTag also moves (belt + suspenders for iOS).
+Two-pronged fix:
 
-2. **`src/routes/_authenticated/settings.carddav.tsx`** — next to the toggle, add a small "Resync summaries now" button that calls a new server fn (below). Useful when the toggle was already on before this feature existed, or after regenerating summaries in bulk.
+1. **Google pull sweep (immediate for Google-linked contacts):** add a one-shot "Backfill contact photos from Google" server fn that ignores the `photo_etag` short-circuit and re-fetches photo bytes for every linked contact whose `avatar_url` is null. Runs in the existing pull lease. Button on `settings.google-contacts.tsx`. This alone likely fixes Chanell if she's in Google Contacts.
+2. **CardDAV nudge for the rest:** add a per-contact "Request photo from iPhone" action in the contact drawer that (a) bumps `updated_at` + per-contact ETag, (b) writes a marker so the next `PUT` that arrives without a `PHOTO` line is treated as "iOS still hasn't sent it" (no-op) but a `PUT` *with* `PHOTO` overwrites as normal. Combined with a settings note explaining iOS only pushes photos when the user opens & edits the card, this gives you a clear manual recovery.
 
-3. **New server fn `resyncSummaryContacts` in `src/lib/carddav/settings.functions.ts`** — auth-gated, runs the same `UPDATE ... WHERE relationship_summary IS NOT NULL` and bumps `resync_nonce`. Returns the affected row count so the UI can toast "Queued N contacts for resync".
+### C. Diagnostics
 
-4. **Google Contacts** needs no code change: bumping `contacts.updated_at` makes `pushLocalChanges` pick them up on the next push tick (5-min cron or manual "Sync now"). Mention in the toast that Google will catch up on the next sync cycle.
+Small drawer entry under contact → "Photo status": shows source (`user` / `logo:acme.com` / `none`), last pulled from Google, last pushed to iOS/Google. Makes future "why is X not showing" trivial.
 
-### Not changing
+## Technical notes
 
-- vCard/Person mapper logic — already correct, summary merges in when the setting is on.
-- `stripSummaryFromNote` on inbound PUT/pull — already prevents the AI text from being persisted back into `contacts.notes`.
-- Group/CTag logic — the per-contact ETag bump is what iOS actually needs.
+- Schema: `ALTER TABLE contacts ADD COLUMN logo_photo_domain text, ADD COLUMN logo_photo_etag text;` — no RLS change needed.
+- Logo fetch reuses `src/lib/logo-guards.ts` + provider list in `src/lib/logo-providers.ts`. Cache in `contact-photos` bucket at `logo/<domain>/<providerIdx>` and serve via signed URL for the UI (matches the private-bucket pattern we just landed).
+- Google push: `updateContactPhoto` already accepts bytes; add an `if (fallbackLogo && !avatar_url)` branch in `push.server.ts`, gated on etag change.
+- Backfill fn adds one flag `{ mode: "force_photos" }` to the existing pull loop rather than a whole new path.
+- No changes to encryption or existing RLS.
 
-## Verification
+## Out of scope
 
-- Unit: extend `src/lib/carddav/vcard.roundtrip.test.ts` (or a new settings test) to confirm toggling on flips `updated_at` for summary contacts only, and toggling off with no change is a no-op.
-- Manual: with the setting already on, click "Resync summaries now", pull-to-refresh Contacts on iPhone, confirm the AI summary appears in Notes for a contact whose summary predates the feature.
+- Auto-generating a stylized initials avatar when there's no company either (still shows the orange C).
+- Watching Google for photo changes in near-real-time (still on the 5-min cron).
