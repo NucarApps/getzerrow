@@ -319,6 +319,92 @@ export const setCompanyTags = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+export const previewMergeCompanies = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({ sourceId: z.string().uuid(), targetId: z.string().uuid() })
+      .refine((v) => v.sourceId !== v.targetId, {
+        message: "Cannot merge a company into itself",
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const [srcCo, tgtCo] = await Promise.all([
+      supabase
+        .from("companies")
+        .select("id,name")
+        .eq("id", data.sourceId)
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase
+        .from("companies")
+        .select("id,name")
+        .eq("id", data.targetId)
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+    if (srcCo.error) throw new Error(srcCo.error.message);
+    if (tgtCo.error) throw new Error(tgtCo.error.message);
+    if (!srcCo.data) throw new Error("Source company not found");
+    if (!tgtCo.data) throw new Error("Target company not found");
+
+    const [contacts, srcDomains, tgtDomains, srcTags, tgtTags] = await Promise.all([
+      supabase
+        .from("contacts")
+        .select("id,name,email")
+        .eq("user_id", userId)
+        .eq("company_id", data.sourceId)
+        .order("name", { ascending: true })
+        .limit(500),
+      supabase
+        .from("company_domains")
+        .select("domain,source")
+        .eq("user_id", userId)
+        .eq("company_id", data.sourceId),
+      supabase
+        .from("company_domains")
+        .select("domain")
+        .eq("user_id", userId)
+        .eq("company_id", data.targetId),
+      supabase
+        .from("company_tags")
+        .select("tag")
+        .eq("user_id", userId)
+        .eq("company_id", data.sourceId),
+      supabase
+        .from("company_tags")
+        .select("tag")
+        .eq("user_id", userId)
+        .eq("company_id", data.targetId),
+    ]);
+
+    const tgtDomainSet = new Set((tgtDomains.data ?? []).map((d) => d.domain));
+    const tgtTagSet = new Set((tgtTags.data ?? []).map((t) => t.tag));
+
+    const domains = (srcDomains.data ?? []).map((d) => ({
+      domain: d.domain,
+      source: d.source,
+      // The upsert on (user_id, domain) collapses duplicates onto the target,
+      // so surface that in the preview instead of pretending it will be added.
+      conflict: tgtDomainSet.has(d.domain),
+    }));
+    const tags = (srcTags.data ?? []).map((t) => ({
+      tag: t.tag,
+      conflict: tgtTagSet.has(t.tag),
+    }));
+
+    return {
+      source: srcCo.data,
+      target: tgtCo.data,
+      contacts: contacts.data ?? [],
+      contactCount: contacts.data?.length ?? 0,
+      domains,
+      tags,
+    };
+  });
+
 export const mergeCompanies = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>

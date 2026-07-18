@@ -31,10 +31,21 @@ import {
   removeCompanyDomain,
   setCompanyTags,
   mergeCompanies,
+  previewMergeCompanies,
   deleteCompany,
   listCompanies,
   discoverCompanyDomains,
 } from "@/lib/companies/companies.functions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 
 export const Route = createFileRoute(
@@ -61,6 +72,7 @@ function CompanyDetailPage() {
   const discoverFn = useServerFn(discoverCompanyDomains);
   const tagsFn = useServerFn(setCompanyTags);
   const mergeFn = useServerFn(mergeCompanies);
+  const previewMergeFn = useServerFn(previewMergeCompanies);
   const deleteFn = useServerFn(deleteCompany);
 
   const q = useQuery({
@@ -84,6 +96,7 @@ function CompanyDetailPage() {
   const [tagInput, setTagInput] = useState("");
   const [newDomain, setNewDomain] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
+  const [mergePreviewOpen, setMergePreviewOpen] = useState(false);
 
   useEffect(() => {
     if (q.data?.company) {
@@ -179,12 +192,23 @@ function CompanyDetailPage() {
     queryFn: () => fetchList(),
   });
 
+  // Only runs when a target is selected AND the confirmation dialog is open.
+  // Prevents preloading previews for every dropdown flicker.
+  const preview = useQuery({
+    queryKey: ["company", companyId, "merge-preview", mergeTargetId],
+    queryFn: () =>
+      previewMergeFn({ data: { sourceId: companyId, targetId: mergeTargetId } }),
+    enabled: mergePreviewOpen && !!mergeTargetId,
+    staleTime: 0,
+  });
+
   const mergeMut = useMutation({
     mutationFn: (targetId: string) =>
       mergeFn({ data: { sourceId: companyId, targetId } }),
     onSuccess: (_, targetId) => {
       toast.success("Companies merged");
       qc.invalidateQueries({ queryKey: ["companies"] });
+      setMergePreviewOpen(false);
       nav({ to: "/contacts/companies/$companyId", params: { companyId: targetId } });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
@@ -462,12 +486,143 @@ function CompanyDetailPage() {
           </Select>
           <Button
             variant="outline"
-            onClick={() => mergeTargetId && mergeMut.mutate(mergeTargetId)}
+            onClick={() => mergeTargetId && setMergePreviewOpen(true)}
             disabled={!mergeTargetId || mergeMut.isPending}
           >
-            <Merge className="mr-2 h-4 w-4" /> Merge
+            <Merge className="mr-2 h-4 w-4" /> Preview merge…
           </Button>
         </div>
+
+        <AlertDialog open={mergePreviewOpen} onOpenChange={setMergePreviewOpen}>
+          <AlertDialogContent className="max-w-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Merge "{form.name || "this company"}" into "
+                {preview.data?.target.name ?? "…"}"?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Everything below moves to the target. The source company is then deleted.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="max-h-[50vh] space-y-4 overflow-y-auto text-sm">
+              {preview.isLoading && (
+                <p className="text-muted-foreground">Loading preview…</p>
+              )}
+              {preview.error && (
+                <p className="text-destructive">
+                  {preview.error instanceof Error
+                    ? preview.error.message
+                    : "Failed to load preview"}
+                </p>
+              )}
+              {preview.data && (
+                <>
+                  <div>
+                    <div className="mb-1 font-medium">
+                      Contacts to reassign ({preview.data.contactCount})
+                    </div>
+                    {preview.data.contacts.length === 0 ? (
+                      <p className="text-muted-foreground">No contacts linked.</p>
+                    ) : (
+                      <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded border p-2">
+                        {preview.data.contacts.slice(0, 100).map((c) => (
+                          <li key={c.id} className="truncate">
+                            {c.name || c.email || "(unnamed)"}
+                            {c.name && c.email && (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                {c.email}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                        {preview.data.contacts.length > 100 && (
+                          <li className="text-xs text-muted-foreground">
+                            …and {preview.data.contacts.length - 100} more
+                          </li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="mb-1 font-medium">
+                      Domains to move ({preview.data.domains.length})
+                    </div>
+                    {preview.data.domains.length === 0 ? (
+                      <p className="text-muted-foreground">No domains on source.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {preview.data.domains.map((d) => (
+                          <Badge
+                            key={d.domain}
+                            variant={d.conflict ? "outline" : "secondary"}
+                            title={
+                              d.conflict
+                                ? "Target already has this domain — the duplicate will be dropped"
+                                : undefined
+                            }
+                          >
+                            {d.domain}
+                            {d.conflict && (
+                              <span className="ml-1 text-[10px] uppercase text-muted-foreground">
+                                dup
+                              </span>
+                            )}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {preview.data.tags.length > 0 && (
+                    <div>
+                      <div className="mb-1 font-medium">
+                        Tags to move ({preview.data.tags.length})
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {preview.data.tags.map((t) => (
+                          <Badge
+                            key={t.tag}
+                            variant={t.conflict ? "outline" : "secondary"}
+                          >
+                            {t.tag}
+                            {t.conflict && (
+                              <span className="ml-1 text-[10px] uppercase text-muted-foreground">
+                                dup
+                              </span>
+                            )}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={mergeMut.isPending}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={
+                  !mergeTargetId ||
+                  mergeMut.isPending ||
+                  preview.isLoading ||
+                  !!preview.error
+                }
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (mergeTargetId) mergeMut.mutate(mergeTargetId);
+                }}
+              >
+                <Merge className="mr-2 h-4 w-4" />
+                {mergeMut.isPending ? "Merging…" : "Confirm merge"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <Button
           variant="destructive"
           onClick={() => {
