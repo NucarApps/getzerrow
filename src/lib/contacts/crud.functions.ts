@@ -261,12 +261,28 @@ export const updateContact = createServerFn({ method: "POST" })
       delete (patch as Record<string, unknown>)[k];
     }
 
+    // Merge tracked fields the user just set into `manual_overrides` so
+    // enrichment leaves them alone next time. Use the full user-supplied
+    // patch (plaintext + encrypted + `data`) so encrypted fields lock too.
+    const { data: existingOverridesRow } = await supabase
+      .from("contacts")
+      .select("manual_overrides")
+      .eq("id", id)
+      .maybeSingle();
+    const nextOverrides = computeManualOverrides(
+      (existingOverridesRow as { manual_overrides?: string[] | null } | null)
+        ?.manual_overrides ?? [],
+      { ...data, ...encryptedPatch } as Record<string, unknown>,
+    );
+    (patch as Record<string, unknown>).manual_overrides = nextOverrides;
+
     const { data: updated, error } = await supabase
       .from("contacts")
       .update(patch as never)
       .eq("id", id)
       .select("*")
       .single();
+
     if (error) {
       const code = (error as { code?: string }).code;
       if (code === "23505") {
