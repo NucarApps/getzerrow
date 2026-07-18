@@ -445,17 +445,24 @@ function deriveCompanyFromDomain(domain: string): string | null {
   return capped.length > 40 ? null : capped;
 }
 
-/** List latest pending suggestions grouped by contact. */
+/** List suggestions grouped by contact. Defaults to pending; pass status='dismissed' for the declines tab. */
 export const listContactEnrichmentSuggestions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d: { status?: "pending" | "dismissed" } | undefined) =>
+    z
+      .object({ status: z.enum(["pending", "dismissed"]).optional() })
+      .default({})
+      .parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { data, error } = await supabase
+    const status = data.status ?? "pending";
+    const { data: rows, error } = await supabase
       .from("contact_enrichment_suggestions")
       .select(
         "id, contact_id, field, value, source, evidence, confidence, created_at, contacts!inner(id, name, email, company, title)",
       )
-      .eq("status", "pending")
+      .eq("status", status)
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw new Error(error.message);
@@ -483,7 +490,7 @@ export const listContactEnrichmentSuggestions = createServerFn({ method: "GET" }
       string,
       { contact: ContactMini; suggestions: Array<Omit<Row, "contacts">> }
     >();
-    for (const r of (data as Row[] | null) ?? []) {
+    for (const r of (rows as Row[] | null) ?? []) {
       const c = Array.isArray(r.contacts) ? r.contacts[0] : r.contacts;
       if (!c) continue;
       const bucket = grouped.get(r.contact_id) ?? { contact: c, suggestions: [] };
