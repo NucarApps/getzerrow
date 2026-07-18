@@ -45,6 +45,7 @@ type Props = {
   /** When set, enables the "Reset to company logo" action, which clears the
    * stored personal avatar so the live company logo shows through again. */
   companyId?: string | null;
+  avatarIsCompanyLogoSnapshot?: boolean;
   onChanged: () => void;
 };
 
@@ -54,7 +55,7 @@ type Props = {
  * `contact-photos` bucket and marked dirty for Google/CardDAV sync so the
  * change propagates to iPhone and Google Contacts on their next tick.
  */
-export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, companyDomain, companyId, onChanged }: Props) {
+export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, companyDomain, companyId, avatarIsCompanyLogoSnapshot = false, onChanged }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const upload = useServerFn(uploadContactPhoto);
@@ -77,10 +78,10 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
   const signedQuery = useQuery({
     queryKey: ["contact-photo-signed", contactId, avatarUrl],
     queryFn: async () => (await signUrl({ data: { contactId } })).url,
-    enabled: !!avatarUrl,
+    enabled: !!avatarUrl && !avatarIsCompanyLogoSnapshot,
     staleTime: 50 * 60 * 1000, // refresh well before the 1h signed-URL expiry
   });
-  const displaySrc = avatarUrl ? signedQuery.data ?? null : null;
+  const displaySrc = avatarUrl && !avatarIsCompanyLogoSnapshot ? signedQuery.data ?? null : null;
 
 
   const openPicker = () => fileRef.current?.click();
@@ -176,7 +177,7 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
       >
         {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
       </button>
-      {avatarUrl && !busy ? (
+      {avatarUrl && !avatarIsCompanyLogoSnapshot && !busy ? (
         <Button
           type="button"
           size="icon"
