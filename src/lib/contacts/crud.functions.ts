@@ -433,8 +433,17 @@ export const setCompanyWebsiteForContacts = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .in("id", data.contactIds);
     if (error) throw new Error(error.message);
+    if (value) {
+      // Only lock when the user set a website. Clearing it should re-open
+      // the field to enrichment.
+      await supabase.rpc("add_manual_overrides", {
+        p_ids: data.contactIds,
+        p_fields: ["website"],
+      });
+    }
     return { updated: count ?? 0 };
   });
+
 
 /** Manually create a contact. */
 export const createContactManual = createServerFn({ method: "POST" })
