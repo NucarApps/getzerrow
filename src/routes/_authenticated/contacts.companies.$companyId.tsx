@@ -192,12 +192,23 @@ function CompanyDetailPage() {
     queryFn: () => fetchList(),
   });
 
+  // Only runs when a target is selected AND the confirmation dialog is open.
+  // Prevents preloading previews for every dropdown flicker.
+  const preview = useQuery({
+    queryKey: ["company", companyId, "merge-preview", mergeTargetId],
+    queryFn: () =>
+      previewMergeFn({ data: { sourceId: companyId, targetId: mergeTargetId } }),
+    enabled: mergePreviewOpen && !!mergeTargetId,
+    staleTime: 0,
+  });
+
   const mergeMut = useMutation({
     mutationFn: (targetId: string) =>
       mergeFn({ data: { sourceId: companyId, targetId } }),
     onSuccess: (_, targetId) => {
       toast.success("Companies merged");
       qc.invalidateQueries({ queryKey: ["companies"] });
+      setMergePreviewOpen(false);
       nav({ to: "/contacts/companies/$companyId", params: { companyId: targetId } });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
