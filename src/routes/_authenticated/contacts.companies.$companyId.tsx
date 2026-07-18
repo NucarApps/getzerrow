@@ -9,6 +9,7 @@ import {
   Trash2,
   X,
   Merge,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import {
   mergeCompanies,
   deleteCompany,
   listCompanies,
+  discoverCompanyDomains,
 } from "@/lib/companies/companies.functions";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 
@@ -56,6 +58,7 @@ function CompanyDetailPage() {
   const updateFn = useServerFn(updateCompany);
   const addDomainFn = useServerFn(addCompanyDomain);
   const removeDomainFn = useServerFn(removeCompanyDomain);
+  const discoverFn = useServerFn(discoverCompanyDomains);
   const tagsFn = useServerFn(setCompanyTags);
   const mergeFn = useServerFn(mergeCompanies);
   const deleteFn = useServerFn(deleteCompany);
@@ -146,6 +149,25 @@ function CompanyDetailPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
+  const discoverMut = useMutation({
+    mutationFn: () => discoverFn({ data: { id: companyId } }),
+    onSuccess: (r) => {
+      const parts: string[] = [];
+      if (r.added) parts.push(`${r.added} new`);
+      if (r.updated) parts.push(`${r.updated} refreshed`);
+      toast.success(
+        parts.length
+          ? `Discovered domains: ${parts.join(", ")}`
+          : "No new domains found",
+      );
+      // Refresh both this company detail and the companies list so the logo
+      // in every list view updates immediately.
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["companies"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
   const tagsMut = useMutation({
     mutationFn: (tags: string[]) => tagsFn({ data: { id: companyId, tags } }),
     onSuccess: () => invalidate(),
@@ -212,29 +234,63 @@ function CompanyDetailPage() {
       </div>
 
       <section className="mb-6 rounded-lg border p-4">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Domains
-        </h2>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Domains
+          </h2>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => discoverMut.mutate()}
+            disabled={discoverMut.isPending}
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            {discoverMut.isPending ? "Scanning members…" : "Discover from members"}
+          </Button>
+        </div>
         <div className="mb-3 flex flex-wrap gap-2">
           {q.data.domains.length === 0 && (
             <span className="text-sm text-muted-foreground">No domains yet.</span>
           )}
-          {q.data.domains.map((d) => (
-            <Badge key={d.id} variant="secondary" className="flex items-center gap-1.5">
-              {d.domain}
-              <span className="text-[10px] uppercase text-muted-foreground">
-                {d.source}
-              </span>
-              <button
-                type="button"
-                onClick={() => removeDomainMut.mutate(d.id)}
-                className="ml-1 rounded hover:bg-muted-foreground/20"
-                aria-label={`Remove ${d.domain}`}
+          {q.data.domains.map((d) => {
+            const intro = d.discovered_from;
+            const introLabel = intro?.name || intro?.email || null;
+            return (
+              <Badge
+                key={d.id}
+                variant="secondary"
+                className="flex items-center gap-1.5"
+                title={
+                  introLabel
+                    ? `${d.member_count} member${d.member_count === 1 ? "" : "s"} · introduced by ${introLabel}`
+                    : `${d.member_count} member${d.member_count === 1 ? "" : "s"}`
+                }
               >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
+                {d.domain}
+                <span className="text-[10px] uppercase text-muted-foreground">
+                  {d.source}
+                </span>
+                {d.source === "auto" && d.member_count > 0 && (
+                  <span className="text-[10px] text-muted-foreground">
+                    · {d.member_count}
+                  </span>
+                )}
+                {d.source === "auto" && introLabel && (
+                  <span className="max-w-[140px] truncate text-[10px] text-muted-foreground">
+                    · from {introLabel}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeDomainMut.mutate(d.id)}
+                  className="ml-1 rounded hover:bg-muted-foreground/20"
+                  aria-label={`Remove ${d.domain}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            );
+          })}
         </div>
         <div className="flex gap-2">
           <Input

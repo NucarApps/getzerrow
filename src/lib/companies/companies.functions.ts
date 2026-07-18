@@ -72,14 +72,28 @@ export const listCompanies = createServerFn({ method: "GET" })
     const [{ data: doms }, { data: mems }] = await Promise.all([
       supabase
         .from("company_domains")
-        .select("company_id,domain,source")
-        .in("company_id", ids),
+        .select("company_id,domain,source,member_count,discovered_from_contact_id")
+        .in("company_id", ids)
+        .order("source", { ascending: false }) // manual > auto
+        .order("member_count", { ascending: false })
+        .order("created_at", { ascending: true }),
       supabase.from("contacts").select("company_id").in("company_id", ids),
     ]);
-    const domainMap = new Map<string, { domain: string; source: string }[]>();
+    type DomainRow = {
+      domain: string;
+      source: string;
+      member_count: number;
+      discovered_from_contact_id: string | null;
+    };
+    const domainMap = new Map<string, DomainRow[]>();
     for (const d of doms ?? []) {
       const arr = domainMap.get(d.company_id) ?? [];
-      arr.push({ domain: d.domain, source: d.source });
+      arr.push({
+        domain: d.domain,
+        source: d.source,
+        member_count: d.member_count,
+        discovered_from_contact_id: d.discovered_from_contact_id,
+      });
       domainMap.set(d.company_id, arr);
     }
     const memberMap = new Map<string, number>();
@@ -112,10 +126,12 @@ export const getCompany = createServerFn({ method: "POST" })
     const [{ data: domains }, { data: tags }, { data: members }] = await Promise.all([
       supabase
         .from("company_domains")
-        .select("id,domain,source,created_at")
+        .select("id,domain,source,member_count,discovered_from_contact_id,created_at")
         .eq("company_id", data.id)
-        .order("source", { ascending: true })
-        .order("domain", { ascending: true }),
+        // Manual pins beat auto; then most-shared; then oldest.
+        .order("source", { ascending: false })
+        .order("member_count", { ascending: false })
+        .order("created_at", { ascending: true }),
       supabase
         .from("company_tags")
         .select("id,tag")
@@ -128,11 +144,52 @@ export const getCompany = createServerFn({ method: "POST" })
         .order("name", { ascending: true })
         .limit(500),
     ]);
+    // Resolve introducer display name for each auto domain.
+    const introducerIds = Array.from(
+      new Set(
+        (domains ?? [])
+          .map((d) => d.discovered_from_contact_id)
+          .filter((v): v is string => !!v),
+      ),
+    );
+    const introducerMap = new Map<string, { name: string | null; email: string | null }>();
+    if (introducerIds.length > 0) {
+      const { data: intros } = await supabase
+        .from("contacts")
+        .select("id,name,email")
+        .in("id", introducerIds);
+      for (const c of intros ?? []) {
+        introducerMap.set(c.id, { name: c.name, email: c.email });
+      }
+    }
     return {
       company,
-      domains: domains ?? [],
+      domains: (domains ?? []).map((d) => ({
+        ...d,
+        discovered_from: d.discovered_from_contact_id
+          ? (introducerMap.get(d.discovered_from_contact_id) ?? null)
+          : null,
+      })),
       tags: tags ?? [],
       members: members ?? [],
+    };
+  });
+
+export const discoverCompanyDomains = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: rows, error } = await supabase.rpc("discover_company_domains", {
+      p_company_id: data.id,
+      p_user_id: userId,
+    });
+    if (error) throw new Error(error.message);
+    const row = (rows as { added: number; updated: number; total_auto: number }[] | null)?.[0];
+    return {
+      added: row?.added ?? 0,
+      updated: row?.updated ?? 0,
+      total: row?.total_auto ?? 0,
     };
   });
 

@@ -311,24 +311,30 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          discovered_from_contact_id: string | null
           domain: string
           id: string
+          member_count: number
           source: string
           user_id: string
         }
         Insert: {
           company_id: string
           created_at?: string
+          discovered_from_contact_id?: string | null
           domain: string
           id?: string
+          member_count?: number
           source?: string
           user_id: string
         }
         Update: {
           company_id?: string
           created_at?: string
+          discovered_from_contact_id?: string | null
           domain?: string
           id?: string
+          member_count?: number
           source?: string
           user_id?: string
         }
@@ -338,6 +344,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_domains_discovered_from_contact_id_fkey"
+            columns: ["discovered_from_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
             referencedColumns: ["id"]
           },
         ]
@@ -2890,6 +2903,14 @@ export type Database = {
       delete_gmail_account_content: {
         Args: { p_account_id: string; p_user_id: string }
         Returns: number
+      }
+      discover_company_domains: {
+        Args: { p_company_id: string; p_user_id: string }
+        Returns: {
+          added: number
+          total_auto: number
+          updated: number
+        }[]
       }
       email_domain: { Args: { p_email: string }; Returns: string }
       get_contact_decrypted: {
