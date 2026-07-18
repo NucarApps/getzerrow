@@ -619,7 +619,9 @@ ${body}`,
       "postal_code",
       "country",
     ] as const;
+    const baseLocked = buildLockedFieldSet(base);
     for (const k of plaintextFields) {
+      if (baseLocked.has(k)) continue;
       const v = extracted[k];
       if (k === "name") {
         const better = pickBetterName(base.name, v);
@@ -629,9 +631,11 @@ ${body}`,
       if (v && !base[k]) patch[k] = v;
     }
     for (const k of ENCRYPTED_ONLY) {
+      if (baseLocked.has(k)) continue;
       const v = extracted[k];
       if (v) encPatch[k] = v;
     }
+
 
     const { error: updErr } = await supabase.from("contacts").update(patch).eq("id", base.id);
     if (updErr) throw new Error(updErr.message);
