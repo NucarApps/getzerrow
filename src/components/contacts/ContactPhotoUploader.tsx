@@ -36,6 +36,11 @@ type Props = {
   displayName: string;
   email?: string | null;
   website?: string | null;
+  /** Preferred logo domain from the contact's linked company record.
+   * When present it wins over the email/website heuristic so contacts
+   * inherit their company's chosen logo domain (e.g. `nissanusa.com`)
+   * rather than falling back to their personal email domain. */
+  companyDomain?: string | null;
   onChanged: () => void;
 };
 
