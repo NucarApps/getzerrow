@@ -606,18 +606,22 @@ function ContactsPage() {
                 count={ungroupedCount}
                 onClick={() => setFilter("ungrouped")}
               />
-              {groupTree.map(({ group: g, depth }) => (
-                <div key={g.id} style={{ paddingLeft: depth * 12 }}>
-                  <GroupChip
-                    active={filter === g.id}
-                    color={g.color}
-                    label={g.name}
-                    count={g.count}
-                    onClick={() => setFilter(g.id)}
-                    onEdit={() => setGroupDialog({ mode: "edit", group: g })}
-                  />
-                </div>
-              ))}
+              {groupTree.map(({ group: g, depth }) => {
+                const isAuto = !!g.auto_generated_from_group_id;
+                return (
+                  <div key={g.id} style={{ paddingLeft: depth * 12 }}>
+                    <GroupChip
+                      active={filter === g.id}
+                      color={g.color}
+                      label={g.name}
+                      count={g.count}
+                      onClick={() => setFilter(g.id)}
+                      onEdit={isAuto ? undefined : () => setGroupDialog({ mode: "edit", group: g })}
+                      locked={isAuto}
+                    />
+                  </div>
+                );
+              })}
               {groupTree.length === 0 && (
                 <p className="px-3 py-3 text-xs text-muted-foreground">
                   No groups yet. Click + to add one like “Work” or “Personal”.
