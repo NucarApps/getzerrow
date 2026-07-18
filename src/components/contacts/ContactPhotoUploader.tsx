@@ -123,6 +123,19 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
     }
   };
 
+  const onResetToCompany = async () => {
+    setBusy(true);
+    try {
+      await resetToCompany({ data: { contactId } });
+      toast.success("Reset to company logo");
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const logoDomain = !displaySrc
     ? (companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null))
     : null;
