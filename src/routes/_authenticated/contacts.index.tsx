@@ -1092,7 +1092,7 @@ function ContactsPage() {
         onOpenChange={(v) => !v && setAliasDialog(null)}
         primaryDomain={aliasDialog?.domain ?? null}
         companyName={aliasDialog?.name ?? ""}
-        aliases={aliasDialog ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
+        aliases={aliasDialog?.domain ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
         contactIds={aliasDialog?.contactIds ?? []}
       />
      </div>
