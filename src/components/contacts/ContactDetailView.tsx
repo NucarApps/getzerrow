@@ -487,7 +487,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
 
       <div className="mt-6">
         <EmailsEditor value={emails} onChange={setEmails} />
+        <RepullFromGoogleButton contactId={id} />
       </div>
+
 
       <div className="mt-6">
         <PhonesEditor value={phones} onChange={setPhones} />
