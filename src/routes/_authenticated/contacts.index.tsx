@@ -362,6 +362,116 @@ function ContactsPage() {
     return [...companies, ...personal, ...other];
   }, [filtered, aliasMap]);
 
+  // Same-name merge suggestions: buckets that share a normalized company name
+  // but live on different domains. Persisted dismissals live in localStorage.
+  const addAlias = useServerFn(addCompanyAlias);
+  const [mergeDismissed, setMergeDismissed] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem("zerrow.mergeDismissed");
+      return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const [mergingKey, setMergingKey] = useState<string | null>(null);
+
+  type MergeSuggestion = {
+    normalizedName: string;
+    displayName: string;
+    primaryBucketKey: string;
+    primaryDomain: string;
+    aliasDomains: string[];
+    otherCount: number;
+  };
+  const mergeSuggestions = useMemo(() => {
+    const byName = new Map<
+      string,
+      { displayName: string; buckets: { key: string; domain: string; contacts: Contact[] }[] }
+    >();
+    for (const b of companyBuckets) {
+      if (b.kind !== "company" || !b.domain) continue;
+      // Pick dominant `company` field for this bucket (fallback to display name).
+      const counts = new Map<string, number>();
+      for (const c of b.contacts) {
+        const name = (c.company ?? "").trim();
+        if (!name) continue;
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      }
+      let dominant = b.name;
+      let best = 0;
+      for (const [name, n] of counts) {
+        if (n > best) {
+          best = n;
+          dominant = name;
+        }
+      }
+      const norm = normalizeCompanyName(dominant);
+      if (!norm) continue;
+      const entry = byName.get(norm) ?? { displayName: dominant, buckets: [] };
+      entry.buckets.push({ key: b.key, domain: b.domain, contacts: b.contacts });
+      byName.set(norm, entry);
+    }
+    const out = new Map<string, MergeSuggestion>();
+    for (const [norm, entry] of byName) {
+      if (entry.buckets.length < 2) continue;
+      if (mergeDismissed.has(norm)) continue;
+      // Primary = most contacts, tiebreak alphabetical by domain.
+      const sorted = [...entry.buckets].sort(
+        (a, b) => b.contacts.length - a.contacts.length || a.domain.localeCompare(b.domain),
+      );
+      const primary = sorted[0];
+      const aliases = sorted.slice(1).map((s) => s.domain);
+      const suggestion: MergeSuggestion = {
+        normalizedName: norm,
+        displayName: entry.displayName,
+        primaryBucketKey: primary.key,
+        primaryDomain: primary.domain,
+        aliasDomains: aliases,
+        otherCount: aliases.length,
+      };
+      for (const b of entry.buckets) out.set(b.key, suggestion);
+    }
+    return out;
+  }, [companyBuckets, mergeDismissed]);
+
+  function dismissMerge(normalizedName: string) {
+    setMergeDismissed((prev) => {
+      const next = new Set(prev);
+      next.add(normalizedName);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(
+            "zerrow.mergeDismissed",
+            JSON.stringify(Array.from(next)),
+          );
+        } catch {
+          // ignore quota errors
+        }
+      }
+      return next;
+    });
+  }
+
+  async function performMerge(s: MergeSuggestion) {
+    setMergingKey(s.normalizedName);
+    try {
+      for (const alias of s.aliasDomains) {
+        await addAlias({ data: { primaryDomain: s.primaryDomain, aliasDomain: alias } });
+      }
+      await qc.invalidateQueries({ queryKey: ["company-aliases"] });
+      toast.success(
+        `Merged ${s.aliasDomains.length + 1} companies into "${s.displayName}".`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Merge failed");
+    } finally {
+      setMergingKey(null);
+    }
+  }
+
+
+
   function toggleBucket(key: string) {
     setCollapsed((prev) => {
       const next = new Set(prev);
