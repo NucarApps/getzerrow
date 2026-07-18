@@ -173,6 +173,17 @@ function ContactsPage() {
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
   const aq = useQuery({ queryKey: ["company-aliases"], queryFn: () => listAliases() });
   const lq = useQuery({ queryKey: ["company-logo-choices"], queryFn: () => listLogoChoices() });
+  const cq = useQuery({ queryKey: ["companies"], queryFn: () => listCompaniesFn() });
+
+  // company_id -> preferred logo domain (first company_domain, auto or manual).
+  const companyDomainById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of cq.data?.companies ?? []) {
+      const primary = c.domains?.[0]?.domain;
+      if (primary) m.set(c.id, primary);
+    }
+    return m;
+  }, [cq.data]);
 
   const logoProviderByDomain = useMemo(() => {
     const m = new Map<string, number>();
