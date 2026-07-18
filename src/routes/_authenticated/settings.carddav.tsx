@@ -308,6 +308,24 @@ function CardDavSettings() {
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           />
         </div>
+        <div className="flex items-start justify-between gap-4 border-t pt-4">
+          <div className="flex-1">
+            <p className="text-sm font-medium">Use company logo when no photo</p>
+            <p className="text-sm text-muted-foreground">
+              When a contact doesn't have their own picture, Zerrow inlines
+              their company logo (from their email domain or website) so
+              iPhone shows a logo instead of the initials tile. Real photos
+              always win.
+            </p>
+          </div>
+          <Switch
+            checked={settingsQuery.data?.use_company_logo_fallback ?? true}
+            onCheckedChange={(v: boolean) =>
+              settingsMut.mutate({ use_company_logo_fallback: v })
+            }
+            disabled={settingsQuery.isLoading || settingsMut.isPending}
+          />
+        </div>
         <div className="border-t pt-4">
           <p className="text-sm font-medium">Resync existing AI summaries</p>
           <p className="mb-2 text-sm text-muted-foreground">
