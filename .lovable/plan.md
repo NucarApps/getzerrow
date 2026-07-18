@@ -1,35 +1,30 @@
-# Bulk enrichment rerun + contact avatar company-logo fallback
+# Refocus relationship summary on "who is this person"
 
-## Issue 1 — "Load failed" on bulk rerun
+Right now the AI briefing in `src/lib/contacts/enrich.functions.ts` (lines ~290–376) reads the last ~30 emails with the contact and writes a 3–5 sentence recap that includes *the nature of your relationship* and *the main topics/projects you've discussed*. You want to drop the "past conversations" angle and have the AI infer identity only: who they are, who they work for, and what they do.
 
-**Why it fails.** The current entry point in Settings → "Resync summaries now" only bumps `updated_at` so iOS/Google pick up the *existing* summary text — it does not actually rerun the AI. The path that does regenerate AI (`scanContactEnrichment`) tries to process up to 200 contacts (with up to 40 AI extractions) in a single HTTP call, and Safari kills the request at ~15–30s with the "Load failed" message.
+## Change
 
-**What we'll build.**
+Rewrite the summary prompt (and its inputs) so it produces an identity briefing, not a relationship recap.
 
-1. Rename the existing settings button to "Push existing summaries to devices" so its true behavior is obvious.
-2. Add a new **"Rerun AI enrichment + summaries for everyone"** flow in Contacts settings that:
-   - Loads the list of every contact id up front (one cheap query).
-   - Processes them in small client-driven chunks of ~10 contacts per call, using a new `rerunEnrichmentBatch({ ids, force: true })` server fn. Each call stays well under Safari's wall-clock, so nothing gets dropped.
-   - For each contact it runs the existing `enrichContact` logic with `force: true` (refreshes `relationship_summary` and any patchable fields), then queues a `scanContactEnrichment` pass at the end for suggestion rows.
-   - Shows live progress ("142 / 380 contacts…"), lets the user cancel, and stores the last completed index so a refresh resumes rather than restarts.
-   - After the last chunk, bumps the CardDAV resync nonce once so iOS pulls the new summaries.
-3. Toast the failure count at the end and leave a "Retry failed" button that re-runs only the ids that errored.
+- Keep the email sampling as the source material (signatures, domains, and body context are still the best signal), but bias what we send to the model toward identity-bearing content:
+  - Prefer inbound emails (`THEY SENT`) so we lean on their own signatures/self-descriptions.
+  - Extract the signature block / tail of each inbound email (already partially done via `cleanTail`) and pass those, plus `from_addr` domain, rather than back-and-forth threads.
+- Replace the prompt with an identity-only instruction:
+  1. Who they are (name + likely role/title).
+  2. Who they work for (company, inferred from signature, email domain, or explicit mentions — ignore generic domains like gmail.com).
+  3. What they do (their function/industry, in one line).
+  - 2–4 sentences, plain prose, no relationship framing, no "we discussed…", no project recaps. If signal is thin, say so briefly. Do not invent facts.
+- Keep the persisted field name (`relationship_summary` / `summary_generated_at`) and the encrypted-write path unchanged so existing storage, CardDAV NOTE sync, and the "Rerun for everyone" driver keep working — only the content of the string changes.
+- Leave name/title/company extraction logic above this block alone; it already sets those structured fields and the new prompt still benefits from them as `Known details`.
 
-## Issue 2 — Aditya's Nissan logo doesn't show on his contact card
+## Out of scope
 
-**Why it doesn't show.** Aditya has `company_id` set to a Nissan company row that already has `nissanusa.com` in `company_domains`. The contact list correctly resolves the company's primary domain and renders the Nissan mark. The **contact detail avatar** (`ContactPhotoUploader`) does not — it only looks at the contact's own `website` / `email` fields to pick a logo domain, so a contact whose personal email isn't `@nissanusa.com` gets no logo fallback.
-
-**What we'll build.**
-
-1. Pass the linked company's primary domain (and the aliased/preferred logo domain) into `ContactPhotoUploader` from the contact detail drawer, using the same `companyDomainById` map the list already builds.
-2. In `ContactPhotoUploader`, resolve the logo domain in this priority when there is no uploaded photo: linked company's primary domain → website domain → email domain. The existing `logoChoicesQuery` already covers the manual/auto provider mapping.
-3. Do the same fallback in any other contact-card surfaces that currently pass only `website`/`email` (Contact drawer header, share preview) so behavior is consistent.
-4. Do **not** override an uploaded `avatar_url` — the person's real photo still wins over the company logo.
+- No schema changes, no new columns, no UI changes.
+- No changes to the enrichment scheduler, batch runner, or CardDAV sync.
+- Signature/relationship extraction into structured fields (title/company) already happens earlier in `enrichContact` and stays as-is.
 
 ## Technical notes
 
-- New server fn: `rerunEnrichmentBatch` in `src/lib/contacts/enrich.functions.ts` — `.middleware([requireSupabaseAuth])`, input `{ ids: string[] (max 15), force: boolean }`. Iterates and calls the existing enrich helper per id inside a `Promise.allSettled`, returning `{ ok, failed: [{ id, error }] }`.
-- Client driver in a new `useBulkEnrichmentRun` hook (React Query mutation queue) so progress state lives in one place and both the settings row and a toast can subscribe.
-- Progress cursor stored in `localStorage` under `zerrow.bulkEnrich.cursor:<userId>` so a refresh resumes.
-- Contact detail passes `companyDomain={companyDomainById.get(c.company_id)}` down to `ContactPhotoUploader`; the uploader accepts an optional `companyDomain` prop and uses it as the top-priority fallback.
-- No schema changes.
+- File: `src/lib/contacts/enrich.functions.ts`, the block starting at `// === Relationship summary` (~line 290) through the `generateText` call (~line 370).
+- Model stays `google/gemini-2.5-flash`.
+- After shipping, a one-time "Rerun for everyone" from Settings → iPhone contacts will regenerate summaries in the new style; no migration needed.

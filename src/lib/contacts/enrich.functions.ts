@@ -331,12 +331,20 @@ ${sample}`,
         }
       }
 
-      const convoSample = convo
+      // Bias toward inbound messages — their own signatures/self-descriptions
+      // are the strongest identity signal.
+      const inboundFirst = [...convo].sort((a, b) => {
+        const ai = (a.from_addr || "").toLowerCase() === addr.toLowerCase() ? 0 : 1;
+        const bi = (b.from_addr || "").toLowerCase() === addr.toLowerCase() ? 0 : 1;
+        return ai - bi;
+      });
+      const convoSample = inboundFirst
+        .slice(0, 15)
         .map((e, i) => {
           const inbound = (e.from_addr || "").toLowerCase() === addr.toLowerCase();
-          const tail = cleanTail(e.body_text || e.snippet || "").slice(-600);
+          const tail = cleanTail(e.body_text || e.snippet || "").slice(-800);
           const when = e.received_at ? new Date(e.received_at).toISOString().slice(0, 10) : "";
-          return `--- ${i + 1} [${inbound ? "THEY SENT" : "YOU SENT"}] ${when} ---\nSubject: ${e.subject ?? ""}\n${tail}`;
+          return `--- ${i + 1} [${inbound ? "FROM THEM" : "FROM YOU"}] ${when} ---\nSubject: ${e.subject ?? ""}\n${tail}`;
         })
         .join("\n\n");
 
@@ -344,30 +352,33 @@ ${sample}`,
         const mergedName = patch.name ?? contact.name ?? null;
         const mergedTitle = patch.title ?? contact.title ?? null;
         const mergedCompany = patch.company ?? contact.company ?? null;
+        const emailDomain = addr.split("@")[1] ?? "";
         const knownBits = [
           mergedName ? `Name: ${mergedName}` : null,
           mergedTitle ? `Title: ${mergedTitle}` : null,
           mergedCompany ? `Company: ${mergedCompany}` : null,
           `Email: ${addr}`,
+          emailDomain ? `Email domain: ${emailDomain}` : null,
         ]
           .filter(Boolean)
           .join("\n");
 
         const { text: summary } = await generateText({
           model: getModel("google/gemini-2.5-flash"),
-          prompt: `Write a concise 3-5 sentence briefing about this contact for the account owner ("you"). Cover:
-1) Who they are — name, role, company if known.
-2) The nature of your relationship (client, vendor, colleague, recruiter, friend, etc.) — infer from tone and content.
-3) The main topics, projects, or recurring threads you've discussed.
+          prompt: `Write a short identity briefing (2-4 sentences, plain prose) about this person. Focus ONLY on who they are:
+1) Their name and likely role or title.
+2) Who they work for — the company or organization. Infer from their email signature, email domain, or explicit mentions. Ignore generic providers (gmail.com, yahoo.com, outlook.com, icloud.com, hotmail.com) as company signal.
+3) What they do — their function, discipline, or industry, in one line.
 
-Be specific and reference actual topics from the emails. Use plain prose (no bullet points, no headings). If signal is thin, say so briefly. Do not invent facts.
+Do NOT summarize your relationship, past conversations, projects discussed, or communication patterns. Do not use phrases like "you discussed", "your relationship", "has been in touch about". Do not invent facts. If identity signal is thin, say so briefly (e.g. "Limited signal — appears to use a personal Gmail address; role and employer unclear.").
 
 Known details:
 ${knownBits}
 
-Recent correspondence (newest first; both directions):
+Recent emails (their own messages first; use signatures and self-descriptions):
 ${convoSample}`,
         });
+
         const cleaned = (summary || "").trim();
         if (cleaned) {
           patch.relationship_summary = cleaned;
