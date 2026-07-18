@@ -489,6 +489,7 @@ Return JSON matching the schema.`;
       parse_note: parseNote,
       contact_pool: contacts.length,
       ungrouped_total: ungroupedTotal,
+      topics_scanned: topicsScanned,
     });
 
     const suggestions = await loadLatestSuggestions(supabase, userId);
@@ -503,6 +504,7 @@ Return JSON matching the schema.`;
         parseNote,
         contactPool: contacts.length,
         ungroupedTotal,
+        topicsScanned,
       },
     };
   });
