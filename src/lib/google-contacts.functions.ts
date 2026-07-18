@@ -149,3 +149,41 @@ export const setGoogleContactsSyncEnabled = createServerFn({ method: "POST" })
     });
     return { ok: true };
   });
+
+async function assertOwnsContact(userId: string, contactId: string): Promise<void> {
+  const { data, error } = await supabaseAdmin
+    .from("contacts")
+    .select("id")
+    .eq("id", contactId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`Contact lookup failed: ${error.message}`);
+  if (!data) throw new Error("Contact not found");
+}
+
+/** Additively re-pull one contact from Google to recover any missing emails/phones. */
+export const repullContactFromGoogle = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { contactId: string }) =>
+    z.object({ contactId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwnsContact(context.userId, data.contactId);
+    const { repullContact } = await import("@/lib/google-contacts/repair.server");
+    return await repullContact(context.userId, data.contactId);
+  });
+
+/** Scan every linked contact for this account and additively import missing emails/phones. */
+export const backfillMultiEmailsFromGoogle = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { accountId: string }) =>
+    z.object({ accountId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertOwnsAccount(context.userId, data.accountId);
+    const { backfillMultiEmails } = await import(
+      "@/lib/google-contacts/repair.server"
+    );
+    return await backfillMultiEmails(context.userId, data.accountId);
+  });
+
