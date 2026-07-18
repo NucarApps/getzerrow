@@ -285,17 +285,26 @@ export const scanContactDuplicates = createServerFn({ method: "POST" })
       let reason: string;
       let samePerson = true;
 
-      // Exact phone match is high confidence without asking the AI.
+      // Deterministic high-confidence signals bypass the AI cost.
       if (cluster.signal === "exact_phone") {
         confidence = "high";
         reason = "Shared phone number across rows";
+      } else if (cluster.signal === "name_email_local") {
+        confidence = "high";
+        reason = "Same name and email address prefix";
+      } else if (cluster.signal === "email_localpart") {
+        confidence = "medium";
+        reason = "Same email prefix on different domains";
       } else if (!apiKey) {
-        // AI unavailable — still record blocking clusters at medium confidence.
-        confidence = cluster.signal === "name_company" ? "medium" : "low";
+        // AI unavailable — still record blocking clusters at reduced confidence.
+        confidence =
+          cluster.signal === "name_company" ? "medium" : "low";
         reason =
           cluster.signal === "name_company"
             ? "Same name and company"
-            : "Same name across rows";
+            : cluster.signal === "loose_name"
+              ? "Similar first + last name"
+              : "Same name across rows";
       } else {
         const verdict = await judgeCluster(apiKey, {
           ids: members.map((c) => c.id),
