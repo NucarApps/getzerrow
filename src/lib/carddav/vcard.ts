@@ -126,11 +126,52 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 
+/** Marker headings that fence the AI-generated relationship summary inside the
+ * merged NOTE field synced to iOS and Google Contacts. Kept simple and stable
+ * so `stripSummaryFromNote` can reliably peel the AI block back off inbound. */
+export const SUMMARY_HEADING = "🤖 Zerrow summary";
+export const USER_NOTES_HEADING = "— My notes —";
+
+/** Fold the AI relationship summary and the user's own notes into a single
+ * NOTE value. The summary always comes first so iOS shows it at the top of
+ * the contact card. Returns null when both parts are empty. */
+export function buildMergedNote(
+  summary: string | null | undefined,
+  userNotes: string | null | undefined,
+): string | null {
+  const s = (summary ?? "").trim();
+  const n = (userNotes ?? "").trim();
+  if (!s && !n) return null;
+  if (!s) return n;
+  if (!n) return `${SUMMARY_HEADING}\n${s}`;
+  return `${SUMMARY_HEADING}\n${s}\n\n${USER_NOTES_HEADING}\n${n}`;
+}
+
+/** Inverse of `buildMergedNote`. When iOS PUTs a contact back the NOTE still
+ * contains the AI summary block; strip it so we only persist the user's own
+ * notes to `contacts.notes`. Edits to the summary block on the phone are
+ * intentionally discarded — the encrypted `relationship_summary` column stays
+ * the source of truth for AI text. */
+export function stripSummaryFromNote(text: string | null | undefined): string {
+  const raw = (text ?? "").replace(/\r\n/g, "\n");
+  if (!raw) return "";
+  if (!raw.includes(SUMMARY_HEADING)) return raw.trim();
+  const userIdx = raw.indexOf(USER_NOTES_HEADING);
+  if (userIdx === -1) {
+    // Summary-only note: nothing of the user's to keep.
+    return "";
+  }
+  return raw.slice(userIdx + USER_NOTES_HEADING.length).replace(/^\n+/, "").trim();
+}
+
 /**
  * Contact -> vCard 3.0 text. `phones` is optional; when omitted we skip TEL
  * lines from the phones table and only emit the encrypted `phone` field on
  * the contact itself. When `photo` is provided we inline it as base64 so
  * iOS renders the picture in the contact card.
+ *
+ * `options.includeSummary` (default true) merges
+ * `contact.relationship_summary` into NOTE ahead of the user's own notes.
  */
 export function contactToVCard(
   contact: DecryptedContact,
@@ -138,8 +179,10 @@ export function contactToVCard(
   _categories: string[] = [],
   emails: EmailRow[] = [],
   photo: { bytes: Uint8Array; mime: string } | null = null,
+  options: { includeSummary?: boolean } = {},
 ): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
+
 
   // N: split "First Last" heuristically. iOS renders FN so the split just
   // has to be non-empty for the record to save cleanly.
