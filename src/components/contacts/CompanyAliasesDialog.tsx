@@ -134,12 +134,15 @@ export function CompanyAliasesDialog({
     if (open) {
       setBrandQuery(companyName ?? "");
       setNameDraft(companyName ?? "");
+      setPrimaryDraft("");
     } else {
       setNewDomain("");
+      setPrimaryDraft("");
       setBrandQuery("");
       setDebouncedQuery("");
     }
   }, [open, companyName]);
+
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(brandQuery.trim()), 300);
