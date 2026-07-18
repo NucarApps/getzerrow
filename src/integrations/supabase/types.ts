@@ -639,6 +639,33 @@ export type Database = {
           },
         ]
       }
+      contact_revisions: {
+        Row: {
+          contact_id: string
+          created_at: string
+          id: string
+          snapshot: Json
+          source: string
+          user_id: string
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          id?: string
+          snapshot: Json
+          source: string
+          user_id: string
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          id?: string
+          snapshot?: Json
+          source?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       contacts: {
         Row: {
           address_line1_enc: string | null
