@@ -1202,9 +1202,9 @@ export async function handlePut(
           incoming_sha: incomingSha.slice(0, 16),
         });
       } else {
-        const { saveContactPhoto } = await import("@/lib/contacts/photos.server");
         await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime);
       }
+
     } catch (err) {
       logInfo("carddav.put.photo_save_failed", {
         contact_id: contactId,
