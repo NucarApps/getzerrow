@@ -28,9 +28,6 @@ export async function autoClearMissingPhotoEtags(
   userId: string,
   gmailAccountId: string,
 ): Promise<void> {
-  userId: string,
-  gmailAccountId: string,
-): Promise<void> {
   try {
     const { data: links } = await supabaseAdmin
       .from("google_contact_links")
