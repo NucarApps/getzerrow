@@ -90,5 +90,40 @@ describe("parseVCard", () => {
     expect(p.linkedin).toContain("linkedin.com/in/person");
     expect(p.presentFields.has("LINKEDIN")).toBe(true);
   });
+
+  it("does not mark EMAIL present when the value is empty", () => {
+    // iOS partial syncs sometimes include an empty EMAIL slot. Honoring it
+    // as `present` would let handlePut null the saved address.
+    const emptyEmail =
+      "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:x\r\nFN:X\r\n" +
+      "EMAIL;TYPE=INTERNET;TYPE=pref:\r\n" +
+      "END:VCARD\r\n";
+    const p = parseVCard(emptyEmail)!;
+    expect(p.email).toBeNull();
+    expect(p.presentFields.has("EMAIL")).toBe(false);
+  });
+
+  it("keeps the real EMAIL when a later PREF EMAIL is blank", () => {
+    const mixed =
+      "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:x\r\nFN:X\r\n" +
+      "EMAIL;TYPE=INTERNET;TYPE=WORK:jane@acme.com\r\n" +
+      "EMAIL;TYPE=INTERNET;TYPE=pref:\r\n" +
+      "END:VCARD\r\n";
+    const p = parseVCard(mixed)!;
+    expect(p.email).toBe("jane@acme.com");
+    expect(p.presentFields.has("EMAIL")).toBe(true);
+  });
+
+  it("does not mark TEL/ORG present when their values are empty", () => {
+    const blanks =
+      "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:x\r\nFN:X\r\n" +
+      "TEL:\r\nORG:\r\nEND:VCARD\r\n";
+    const p = parseVCard(blanks)!;
+    expect(p.phones).toHaveLength(0);
+    expect(p.presentFields.has("TEL")).toBe(false);
+    expect(p.presentFields.has("ORG")).toBe(false);
+    expect(p.company).toBeNull();
+  });
 });
+
 
