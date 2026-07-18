@@ -187,13 +187,21 @@ function ContactsPage() {
 
   const logoProviderByDomain = useMemo(() => {
     const m = new Map<string, number>();
-    for (const r of lq.data ?? []) m.set(r.domain, r.provider);
+    for (const r of lq.data ?? []) {
+      m.set(r.domain, r.provider);
+      if (r.source_domain) m.set(r.source_domain, r.provider);
+    }
     return m;
   }, [lq.data]);
 
   const logoSourceByDomain = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of lq.data ?? []) if (r.source_domain) m.set(r.domain, r.source_domain);
+    for (const r of lq.data ?? []) {
+      if (r.source_domain) {
+        m.set(r.domain, r.source_domain);
+        m.set(r.source_domain, r.source_domain);
+      }
+    }
     return m;
   }, [lq.data]);
 
