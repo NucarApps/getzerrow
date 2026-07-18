@@ -20,6 +20,7 @@ import {
   clearCompanyAliases,
   promoteAliasToPrimary,
 } from "@/lib/company-aliases.functions";
+import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
 import {
   listCompanyLogoChoices,
   setCompanyLogoChoice,
@@ -61,12 +62,14 @@ export function CompanyAliasesDialog({
   const listGroups = useServerFn(listContactGroups);
   const setGroupsFn = useServerFn(setCompanyGroups);
   const searchBrandsFn = useServerFn(searchLogoBrands);
+  const renameFn = useServerFn(renameCompanyForContacts);
 
   const [newDomain, setNewDomain] = useState("");
   const [busy, setBusy] = useState(false);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [brandQuery, setBrandQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [nameDraft, setNameDraft] = useState(companyName);
 
   const choicesQ = useQuery({
     queryKey: ["company-logo-choices"],
@@ -121,8 +124,10 @@ export function CompanyAliasesDialog({
 
 
   useEffect(() => {
-    if (open) setBrandQuery(companyName ?? "");
-    else {
+    if (open) {
+      setBrandQuery(companyName ?? "");
+      setNameDraft(companyName ?? "");
+    } else {
       setNewDomain("");
       setBrandQuery("");
       setDebouncedQuery("");
@@ -275,6 +280,25 @@ export function CompanyAliasesDialog({
     }
   }
 
+  async function saveName() {
+    const next = nameDraft.trim();
+    if (!next || next === companyName) return;
+    setBusy(true);
+    try {
+      const res = await renameFn({ data: { contactIds, newName: next } });
+      toast.success(
+        `Renamed ${res.updated} ${res.updated === 1 ? "contact" : "contacts"} to ${next}`,
+      );
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["company-aliases"] });
+      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't rename company");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function toggleGroup(id: string) {
     setSelectedGroupIds((prev) => {
       const next = new Set(prev);
@@ -301,10 +325,42 @@ export function CompanyAliasesDialog({
               provider={currentProvider}
               sourceDomain={currentSource}
             />
-            <span className="truncate">{companyName}</span>
+            <Input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void saveName();
+                } else if (e.key === "Escape") {
+                  setNameDraft(companyName);
+                }
+              }}
+              disabled={busy}
+              placeholder="Company name"
+              className="h-8 flex-1 text-base font-semibold"
+              aria-label="Company name"
+            />
+            {nameDraft.trim() && nameDraft.trim() !== companyName && (
+              <>
+                <Button size="sm" onClick={saveName} disabled={busy}>
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setNameDraft(companyName)}
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+              </>
+            )}
           </DialogTitle>
           <DialogDescription>
-            Merge multiple email domains under this company and pick which logo to show.
+            Rename the company (applies to all {contactIds.length}{" "}
+            {contactIds.length === 1 ? "contact" : "contacts"} in this bucket), merge domains, and
+            pick which logo to show.
           </DialogDescription>
         </DialogHeader>
 

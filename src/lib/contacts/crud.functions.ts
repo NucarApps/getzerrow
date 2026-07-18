@@ -220,6 +220,29 @@ export const deleteContact = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/** Rename the `company` field on a set of contacts (used by the company bucket editor). */
+export const renameCompanyForContacts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        contactIds: z.array(z.string().uuid()).min(1).max(1000),
+        newName: z.string().trim().min(1).max(200),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { error, count } = await supabase
+      .from("contacts")
+      .update({ company: data.newName }, { count: "exact" })
+      .eq("user_id", userId)
+      .in("id", data.contactIds);
+    if (error) throw new Error(error.message);
+    await reconcileAutoParentsForContacts(supabase, userId, data.contactIds);
+    return { updated: count ?? 0 };
+  });
 /** Manually create a contact. */
 export const createContactManual = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

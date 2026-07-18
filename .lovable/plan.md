@@ -1,33 +1,33 @@
-## Problem
+# Editable company name in the company dialog
 
-When a contact was created from a phone-only source (e.g. Google Contacts with no email), the email field in the contact detail edit view is rendered `disabled`, so there's no way to add or correct an email address for that contact.
+Today the pencil on a company bucket opens `CompanyAliasesDialog`, which shows the company name as static title text. Add an inline edit so renaming it updates every contact currently grouped under that company.
 
-Two blockers:
+## Behavior
 
-1. `src/components/contacts/ContactDetailView.tsx` (line 420) hardcodes `<Input value={c.email} disabled />` — the email is always read-only.
-2. `updateContact` in `src/lib/contacts/crud.functions.ts` does not accept an `email` field, so even if the UI were editable the server would silently drop it.
+- In the dialog header, replace the static `{companyName}` span with an inline editable field (click to edit, or a small pencil next to it) that seeds from the current bucket name.
+- Save button appears when the name is changed and non-empty. Cancel reverts.
+- On save: every contact in `contactIds` (already passed into the dialog — that's the full bucket, aliases included) gets `contacts.company` set to the new name. Auto-generated company subgroups reconcile so the subgroup name follows the rename.
+- Toast: "Renamed N contacts to <new name>". Dialog stays open; header reflects the new name.
+- Empty / whitespace-only name is rejected client-side.
 
-## Fix
+## Files
 
-1. **Server (`src/lib/contacts/crud.functions.ts`)**
-   - Add `email` to the `updateContact` Zod schema: accept `string` or `null`, trim + lowercase + `.email()` when non-empty, treat empty string as `null`, max 255.
-   - Include `email` in the update payload when the caller sent the key.
-   - Wrap the update in a try/catch that translates Postgres unique-violation `23505` on `contacts_user_email_unique` (or the partial index) into a friendly error: "Another contact already uses this email."
+1. `src/lib/contacts/crud.functions.ts` — add `renameCompanyForContacts` server fn.
+   - Input: `{ contactIds: string[], newName: string }`, Zod-validated (trim, 1–200 chars).
+   - `context.supabase.from("contacts").update({ company: newName }).eq("user_id", context.userId).in("id", contactIds)` (RLS also enforces ownership).
+   - After update, call `reconcileAutoParentsForContacts(supabase, userId, contactIds)` from `@/lib/contacts/auto-company-subgroups.functions` so any auto-company subgroups rebuild to the new name.
+   - Return `{ updated: <count> }`.
 
-2. **UI (`src/components/contacts/ContactDetailView.tsx`)**
-   - Replace the disabled email input with an editable one that lives in the same edit-mode state pattern used by name/title/company (existing pencil-toggled edit flow).
-   - In view mode: show the email (or a muted "Add email" affordance when null).
-   - In edit mode: an `<Input type="email">` bound to a local `emailDraft` state; on save, include `email` (nulled out when blank) in the `update({ data: { id, ...patch, email } })` call.
-   - Optimistic invalidate as with the other fields; on error, show the toast returned from the server (covers the duplicate-email case).
+2. `src/components/contacts/CompanyAliasesDialog.tsx`
+   - Add `useServerFn(renameCompanyForContacts)`.
+   - Local state `nameDraft` seeded from `companyName` on open.
+   - Header title becomes: logo + `<Input>` (compact, borderless-until-focus) + save/cancel buttons that show only when `nameDraft.trim() !== companyName && nameDraft.trim().length > 0`.
+   - On save: call server fn, toast success, invalidate `["contacts"]` and `["company-aliases"]` and `["company-group-assignments"]` so the contacts list re-buckets under the new name.
 
-No schema migration is needed — the `contacts` table already allows nullable email with a partial unique index on `(user_id, email) WHERE email IS NOT NULL`.
+3. `src/routes/_authenticated/contacts.index.tsx` — no logic change; the existing `queryClient.invalidateQueries({ queryKey: ["contacts"] })` triggered by the dialog will re-fetch and re-bucket. Verify the invalidation key matches what this page uses; adjust the invalidation keys in step 2 to match if different.
 
 ## Out of scope
 
-- No changes to Google Contacts push/pull mapping (email round-trip already works there).
-- No changes to CardDAV mapping.
-- No changes to the bulk contacts list, only the single-contact detail view where the pencil icon lives.
-
-## Verification
-
-Open a phone-only contact, click the pencil next to email, type an address, save. Row updates; reload shows the new email; entering a duplicate shows the friendly error instead of a raw Postgres message; clearing the field saves as null.
+- Renaming does **not** touch `company_aliases` domain mappings — those are keyed by domain, not name. Future emails from the same domain will still land in the (renamed) bucket.
+- Auto-subgroups already use `normalizeCompanyName`; the rename flows through naturally on reconcile.
+- No change to Google Contacts push in this step. If two-way sync is on, the next push will send the new `company` value up to Google per existing push logic.
