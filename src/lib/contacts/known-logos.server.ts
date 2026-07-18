@@ -35,11 +35,13 @@ export async function buildKnownCompanyLogoShaSet(
 
   const { data: choices } = await supabaseAdmin
     .from("company_logo_choices")
-    .select("domain")
+    .select("domain,source_domain")
     .eq("user_id", userId);
   for (const row of choices ?? []) {
-    const d = (row as { domain?: string | null }).domain;
+    const choice = row as { domain?: string | null; source_domain?: string | null };
+    const d = choice.domain;
     if (d) domains.add(d.toLowerCase());
+    if (choice.source_domain) domains.add(choice.source_domain.toLowerCase());
   }
 
   const { data: cdomains } = await supabaseAdmin
