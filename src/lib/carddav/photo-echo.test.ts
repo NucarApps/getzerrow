@@ -94,6 +94,7 @@ describe("PHOTO parsing (parseVCard)", () => {
       mime: "image/png",
     });
     const parsed = parseVCard(vcard);
+    if (!parsed) throw new Error("parse failed");
     expect(parsed.photo).not.toBeNull();
     expect(parsed.photo!.mime).toBe("image/png");
     expect(parsed.photo!.bytes.length).toBe(original.length);
@@ -115,6 +116,7 @@ describe("PHOTO parsing (parseVCard)", () => {
       mime: "image/jpeg",
     });
     const parsed = parseVCard(vcard);
+    if (!parsed) throw new Error("parse failed");
     const shaAfter = await sha256Hex(parsed.photo!.bytes);
     expect(shaAfter).toBe(shaBefore);
   });
@@ -133,6 +135,7 @@ describe("PHOTO parsing (parseVCard)", () => {
       "END:VCARD",
     ].join("\r\n");
     const parsed = parseVCard(vcard);
+    if (!parsed) throw new Error("parse failed");
     expect(parsed.photo).toBeNull();
   });
 
@@ -147,6 +150,7 @@ describe("PHOTO parsing (parseVCard)", () => {
       "END:VCARD",
     ].join("\r\n");
     const parsed = parseVCard(vcard);
+    if (!parsed) throw new Error("parse failed");
     expect(parsed.photo).toBeNull();
   });
 
@@ -162,6 +166,7 @@ describe("PHOTO parsing (parseVCard)", () => {
     ].join("\r\n");
     expect(() => parseVCard(vcard)).not.toThrow();
     const parsed = parseVCard(vcard);
+    if (!parsed) throw new Error("parse failed");
     expect(parsed.photo).toBeNull();
   });
 });
