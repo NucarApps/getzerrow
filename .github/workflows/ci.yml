@@ -44,6 +44,14 @@ jobs:
       # mangled). Update intentionally with: bun run test:meetings-transcript:update
       - name: Meetings transcript regression
         run: bun run test:meetings-transcript
+      # Regression gate for the CardDAV iOS sync loop. Replays the exact PUT
+      # shapes iOS sends (empty EMAIL, blank PREF EMAIL, grouped item labels,
+      # missing EMAIL, legacy placeholders) through the parser + merge pipeline
+      # and asserts the server never nulls a saved email. Required check —
+      # failures block the PR so we can't regress the "iPhone wiped my email"
+      # bug again.
+      - name: CardDAV sync regression
+        run: bun run test:carddav
       # Enforced: the codebase is ESLint-clean (0 errors, 0 warnings). Keep it
       # that way — lint failures block the PR.
       - name: Lint
