@@ -997,6 +997,7 @@ function GroupChip({
   count,
   onClick,
   onEdit,
+  locked,
 }: {
   active: boolean;
   color: string;
@@ -1004,6 +1005,7 @@ function GroupChip({
   count?: number;
   onClick: () => void;
   onEdit?: () => void;
+  locked?: boolean;
 }) {
   return (
     <div
@@ -1027,8 +1029,16 @@ function GroupChip({
           )}
         </span>
       </button>
-      {/* Always reserve the pencil slot so count badges line up across rows. */}
-      {onEdit ? (
+      {/* Always reserve the trailing slot so count badges line up across rows. */}
+      {locked ? (
+        <span
+          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground/70"
+          title="Auto-generated from the parent group's contacts. Edit contacts' company to change this."
+          aria-label="Managed automatically"
+        >
+          <Lock className="h-3 w-3" />
+        </span>
+      ) : onEdit ? (
         <button
           onClick={(e) => {
             e.stopPropagation();
