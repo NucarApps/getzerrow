@@ -571,8 +571,26 @@ export function parseVCard(text: string): ParsedVCard | null {
   }
   out.phones = Array.from(seen.values());
 
+  // Dedupe emails case-insensitively; keep the PREF entry when both exist.
+  const seenEmails = new Map<string, ParsedEmail>();
+  for (const e of out.emails) {
+    const k = emailKey(e.address);
+    if (!k) continue;
+    const existing = seenEmails.get(k);
+    if (!existing) seenEmails.set(k, e);
+    else if (e.is_primary && !existing.is_primary) seenEmails.set(k, e);
+  }
+  // Ensure exactly one primary and sort primary-first.
+  let emailsArr = Array.from(seenEmails.values());
+  if (emailsArr.length && !emailsArr.some((e) => e.is_primary)) {
+    emailsArr[0] = { ...emailsArr[0], is_primary: true };
+  }
+  emailsArr = emailsArr.sort((a, b) => (a.is_primary === b.is_primary ? 0 : a.is_primary ? -1 : 1));
+  out.emails = emailsArr;
+
   return out;
 }
+
 
 // ---------------------------------------------------------------------------
 // GROUP vCARDS — Apple's Contacts app publishes groups as separate vCards
