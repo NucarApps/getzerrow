@@ -1248,6 +1248,21 @@ export async function handlePut(
   // a just-pulled remote snapshot mark it as already synced.
   await markGoogleContactLinkDirty(userId, contactId);
 
+  // Recompute auto-company subgroup labels for this contact so an ORG/company
+  // change from iOS never leaves the previous company's subgroup label behind
+  // as a duplicate. No-op when the contact isn't in an auto subgroup.
+  try {
+    const { reconcileAutoParentsForContacts } = await import(
+      "@/lib/contacts/auto-company-subgroups.functions"
+    );
+    await reconcileAutoParentsForContacts(supabaseAdmin, userId, [contactId]);
+  } catch (err) {
+    logInfo("carddav.put.auto_subgroup_reconcile_failed", {
+      contact_id: contactId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const { data: updatedContact } = await supabaseAdmin
     .from("contacts")
     .select("updated_at")
