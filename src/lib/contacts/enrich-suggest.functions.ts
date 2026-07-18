@@ -27,7 +27,7 @@ const PERSONAL_DOMAINS = new Set([
   "msn.com", "pm.me", "mac.com",
 ]);
 
-type SuggestionField = "email" | "phone" | "company" | "title";
+type SuggestionField = "email" | "phone" | "company" | "title" | "name";
 type Confidence = "high" | "medium" | "low";
 
 type CandidateRow = {
