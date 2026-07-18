@@ -138,6 +138,7 @@ export type Database = {
           include_summary_in_notes: boolean
           resync_nonce: number
           updated_at: string
+          use_company_logo_fallback: boolean
           user_id: string
         }
         Insert: {
@@ -146,6 +147,7 @@ export type Database = {
           include_summary_in_notes?: boolean
           resync_nonce?: number
           updated_at?: string
+          use_company_logo_fallback?: boolean
           user_id: string
         }
         Update: {
@@ -154,6 +156,7 @@ export type Database = {
           include_summary_in_notes?: boolean
           resync_nonce?: number
           updated_at?: string
+          use_company_logo_fallback?: boolean
           user_id?: string
         }
         Relationships: []
