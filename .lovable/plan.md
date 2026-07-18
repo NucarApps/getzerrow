@@ -1,30 +1,46 @@
-# Refocus relationship summary on "who is this person"
+# Stop CardDAV company-logo fallback from becoming a real photo
 
-Right now the AI briefing in `src/lib/contacts/enrich.functions.ts` (lines ~290–376) reads the last ~30 emails with the contact and writes a 3–5 sentence recap that includes *the nature of your relationship* and *the main topics/projects you've discussed*. You want to drop the "past conversations" angle and have the AI infer identity only: who they are, who they work for, and what they do.
+## Root cause
+
+`src/lib/carddav/handlers.server.ts` (~line 148–174) sends the chosen company logo as the vCard `PHOTO` when the contact has no personal `avatar_url` and `use_company_logo_fallback` is on. iOS treats that inlined photo as the contact's picture and echoes it back on the next PUT. The PUT branch at ~line 1153 sees `parsed.photo.bytes.length > 0`, calls `saveContactPhoto`, and permanently writes those company-logo bytes into `contacts.avatar_url` (verified for Erica Roy — her `avatar_url` points to a file in `contact-photos` even though she never had a personal photo). After that:
+
+- The app UI (`ContactPhotoUploader`, list rows) prefers `avatar_url` over the live company logo, so changing the company logo has no visible effect on her.
+- The stored file is a frozen snapshot of the *old* logo, which is exactly what the user is seeing.
 
 ## Change
 
-Rewrite the summary prompt (and its inputs) so it produces an identity briefing, not a relationship recap.
+Track the exact bytes we inline as a company-logo fallback, and refuse to promote a round-tripped copy into a real avatar. Then clean up already-affected contacts.
 
-- Keep the email sampling as the source material (signatures, domains, and body context are still the best signal), but bias what we send to the model toward identity-bearing content:
-  - Prefer inbound emails (`THEY SENT`) so we lean on their own signatures/self-descriptions.
-  - Extract the signature block / tail of each inbound email (already partially done via `cleanTail`) and pass those, plus `from_addr` domain, rather than back-and-forth threads.
-- Replace the prompt with an identity-only instruction:
-  1. Who they are (name + likely role/title).
-  2. Who they work for (company, inferred from signature, email domain, or explicit mentions — ignore generic domains like gmail.com).
-  3. What they do (their function/industry, in one line).
-  - 2–4 sentences, plain prose, no relationship framing, no "we discussed…", no project recaps. If signal is thin, say so briefly. Do not invent facts.
-- Keep the persisted field name (`relationship_summary` / `summary_generated_at`) and the encrypted-write path unchanged so existing storage, CardDAV NOTE sync, and the "Rerun for everyone" driver keep working — only the content of the string changes.
-- Leave name/title/company extraction logic above this block alone; it already sets those structured fields and the new prompt still benefits from them as `Known details`.
+### 1. Record what we sent as a fallback
+
+- Add a `company_logo_photo_sha` `text` column to `contacts` (nullable) via migration. GRANTs identical to existing contacts grants; no policy changes.
+- In `handlers.server.ts` `getContactPhotoWithFallback` (~line 166), when we return company-logo bytes (i.e. `own` is null and we fell back), compute `sha256(bytes)` and upsert it into the contact row before returning. Cheap, one small update per fallback GET.
+
+### 2. Ignore inbound PHOTOs that match the fallback we sent
+
+- In the PUT PHOTO branch (~line 1153), before calling `saveContactPhoto`, compute `sha256(parsed.photo.bytes)`. If it equals the contact's `company_logo_photo_sha`, treat it as a no-op (log at info level, skip the save). Only genuinely new photos become the personal avatar.
+- Belt-and-suspenders: also skip if the incoming bytes exactly match `loadContactPhotoBytes(current avatar_url)` — iOS sometimes re-uploads unchanged existing photos.
+
+### 3. One-time cleanup for Erica and anyone else already tainted
+
+- Add a small `createServerFn` `cleanupCompanyLogoPhotos` in `src/lib/contacts/photos.functions.ts` that, for the calling user:
+  1. Loads every contact with `avatar_url IS NOT NULL AND company_id IS NOT NULL`.
+  2. For each, fetches the currently chosen company logo bytes (`fetchChosenCompanyLogoBytes`) and compares sha256 to the stored avatar bytes.
+  3. On match, calls `deleteContactPhoto` (already exists in `photos.server.ts`) so the row falls back to the live company logo.
+- Surface it as a "Fix contacts showing an old company logo" button in Settings → iPhone contacts (same panel that hosts "Rerun for everyone" / "Force iPhone resync"). Chunk in the client the same way, with live progress.
+
+### 4. Bump CardDAV resync nonce
+
+- When cleanup clears any avatars, bump the user's `resync_nonce` (same helper the logo-choice flow uses) so iPhone re-pulls fresh vCards and picks up the current company logo.
 
 ## Out of scope
 
-- No schema changes, no new columns, no UI changes.
-- No changes to the enrichment scheduler, batch runner, or CardDAV sync.
-- Signature/relationship extraction into structured fields (title/company) already happens earlier in `enrichContact` and stays as-is.
+- No changes to the app UI's photo-priority order (personal photo still wins over company logo — that's still correct now that the personal photo will actually be personal).
+- No changes to Google Contacts pull/push photo behavior.
+- No schema change to `company_logo_choices` or company logo picker UI.
 
 ## Technical notes
 
-- File: `src/lib/contacts/enrich.functions.ts`, the block starting at `// === Relationship summary` (~line 290) through the `generateText` call (~line 370).
-- Model stays `google/gemini-2.5-flash`.
-- After shipping, a one-time "Rerun for everyone" from Settings → iPhone contacts will regenerate summaries in the new style; no migration needed.
+- Files touched: `src/lib/carddav/handlers.server.ts`, `src/lib/contacts/photos.functions.ts`, `src/lib/contacts/photos.server.ts` (small hash helper), `src/routes/_authenticated/settings.carddav.tsx` (button + progress), new migration for `company_logo_photo_sha`.
+- Use Web Crypto `crypto.subtle.digest("SHA-256", …)` for hashing — already available in the Workers runtime.
+- Cleanup is idempotent and per-user; safe to re-run.
