@@ -164,9 +164,14 @@ export function contactToPerson(
     ];
   }
 
-  if (contact.notes && contact.notes.trim()) {
-    person.biographies = [{ value: contact.notes.trim(), contentType: "TEXT_PLAIN" }];
+  const mergedNote = buildMergedNote(
+    options.includeSummary !== false ? contact.relationship_summary ?? null : null,
+    contact.notes,
+  );
+  if (mergedNote) {
+    person.biographies = [{ value: mergedNote, contentType: "TEXT_PLAIN" }];
   }
+
 
   const addrLine =
     [contact.address_line1, contact.address_line2].filter(Boolean).join(", ").trim() || undefined;
