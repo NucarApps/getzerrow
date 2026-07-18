@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, ChevronsUpDown, Building2, Plus } from "lucide-react";
+import { z } from "zod";
+import { Check, ChevronsUpDown, Building2, Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -13,7 +14,8 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { listCompanies } from "@/lib/companies/companies.functions";
+import { createCompany, listCompanies } from "@/lib/companies/companies.functions";
+import { toast } from "sonner";
 
 type Props = {
   value: string;
@@ -22,10 +24,22 @@ type Props = {
   className?: string;
 };
 
+// Same bounds as the server-side createCompany validator so users see
+// inline errors before hitting the network.
+const nameSchema = z
+  .string()
+  .trim()
+  .min(1, "Company name is required")
+  .max(200, "Company name must be under 200 characters");
+
 export function CompanyCombobox({ value, onChange, placeholder, className }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const fetchCompanies = useServerFn(listCompanies);
+  const createFn = useServerFn(createCompany);
+  const qc = useQueryClient();
+
   const q = useQuery({
     queryKey: ["companies", "picker"],
     queryFn: () => fetchCompanies(),
@@ -36,19 +50,61 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
     const list = q.data?.companies ?? [];
     const term = query.trim().toLowerCase();
     if (!term) return list.slice(0, 200);
-    return list
-      .filter((c) => c.name.toLowerCase().includes(term))
-      .slice(0, 200);
+    return list.filter((c) => c.name.toLowerCase().includes(term)).slice(0, 200);
   }, [q.data, query]);
 
   const exactMatch = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return null;
-    return (q.data?.companies ?? []).find((c) => c.name.toLowerCase() === term) ?? null;
+    return (
+      (q.data?.companies ?? []).find((c) => c.name.toLowerCase() === term) ?? null
+    );
   }, [q.data, query]);
 
+  const createMut = useMutation({
+    mutationFn: (name: string) => createFn({ data: { name } }),
+    onSuccess: (c) => {
+      // Refresh both the picker and any list views so the new company
+      // shows up immediately and gets bound on the next contact save.
+      qc.invalidateQueries({ queryKey: ["companies"] });
+      onChange(c.name);
+      toast.success(`Created "${c.name}"`);
+      setOpen(false);
+      setQuery("");
+      setError(null);
+    },
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message : "Failed to create company";
+      setError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const handleCreate = () => {
+    const parsed = nameSchema.safeParse(query);
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "Invalid name");
+      return;
+    }
+    // Avoid duplicate create if user typed an existing name.
+    if (exactMatch) {
+      onChange(exactMatch.name);
+      setOpen(false);
+      setQuery("");
+      setError(null);
+      return;
+    }
+    createMut.mutate(parsed.data);
+  };
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) setError(null);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -71,7 +127,10 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
           <CommandInput
             placeholder="Search or type new…"
             value={query}
-            onValueChange={setQuery}
+            onValueChange={(v) => {
+              setQuery(v);
+              if (error) setError(null);
+            }}
           />
           <CommandList>
             <CommandEmpty>No companies yet.</CommandEmpty>
@@ -83,6 +142,7 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
                     onChange("");
                     setOpen(false);
                     setQuery("");
+                    setError(null);
                   }}
                 >
                   Clear company
@@ -93,13 +153,14 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
               <CommandGroup heading="Create">
                 <CommandItem
                   value={`__create:${query}`}
-                  onSelect={() => {
-                    onChange(query.trim());
-                    setOpen(false);
-                    setQuery("");
-                  }}
+                  disabled={createMut.isPending}
+                  onSelect={handleCreate}
                 >
-                  <Plus className="mr-2 h-4 w-4" />
+                  {createMut.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="mr-2 h-4 w-4" />
+                  )}
                   Create "{query.trim()}"
                 </CommandItem>
               </CommandGroup>
@@ -114,6 +175,7 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
                       onChange(c.name);
                       setOpen(false);
                       setQuery("");
+                      setError(null);
                     }}
                   >
                     <Check
@@ -135,6 +197,11 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
               </CommandGroup>
             )}
           </CommandList>
+          {error && (
+            <div className="border-t px-3 py-2 text-xs text-destructive">
+              {error}
+            </div>
+          )}
         </Command>
       </PopoverContent>
     </Popover>
