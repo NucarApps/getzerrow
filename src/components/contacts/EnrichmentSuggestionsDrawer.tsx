@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, Loader2, Sparkles, X } from "lucide-react";
+import { Check, Loader2, RotateCcw, Sparkles, X } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,17 +12,21 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   applyContactEnrichmentSuggestion,
   dismissContactEnrichmentSuggestion,
   listContactEnrichmentSuggestions,
   scanContactEnrichment,
+  undismissContactEnrichmentSuggestion,
 } from "@/lib/contacts/enrich-suggest.functions";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
+
+type Tab = "pending" | "dismissed";
 
 const confidenceStyles: Record<string, string> = {
   high: "bg-emerald-100 text-emerald-800 border-emerald-300",
@@ -43,12 +48,19 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
   const scan = useServerFn(scanContactEnrichment);
   const apply = useServerFn(applyContactEnrichmentSuggestion);
   const dismiss = useServerFn(dismissContactEnrichmentSuggestion);
+  const undismiss = useServerFn(undismissContactEnrichmentSuggestion);
+
+  const [tab, setTab] = useState<Tab>("pending");
 
   const query = useQuery({
-    queryKey: ["contact-enrichment-suggestions"],
-    queryFn: () => list(),
+    queryKey: ["contact-enrichment-suggestions", tab],
+    queryFn: () => list({ data: { status: tab } }),
     enabled: open,
   });
+
+  const invalidateBoth = () => {
+    void qc.invalidateQueries({ queryKey: ["contact-enrichment-suggestions"] });
+  };
 
   const scanMutation = useMutation({
     mutationFn: () => scan({ data: { strictness: 3 } }),
@@ -60,7 +72,7 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
           `Scanned ${res.scanned} contacts — ${res.created} new suggestion${res.created === 1 ? "" : "s"}`,
         );
       }
-      void qc.invalidateQueries({ queryKey: ["contact-enrichment-suggestions"] });
+      invalidateBoth();
     },
     onError: (err: Error) => toast.error(err.message || "Scan failed"),
   });
@@ -69,7 +81,7 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
     mutationFn: (id: string) => apply({ data: { suggestionId: id } }),
     onSuccess: () => {
       toast.success("Applied");
-      void qc.invalidateQueries({ queryKey: ["contact-enrichment-suggestions"] });
+      invalidateBoth();
       void qc.invalidateQueries({ queryKey: ["contacts"] });
     },
     onError: (err: Error) => toast.error(err.message || "Apply failed"),
@@ -77,12 +89,20 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
 
   const dismissMutation = useMutation({
     mutationFn: (id: string) => dismiss({ data: { suggestionId: id } }),
+    onSuccess: () => invalidateBoth(),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => undismiss({ data: { suggestionId: id } }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["contact-enrichment-suggestions"] });
+      toast.success("Restored to pending");
+      invalidateBoth();
     },
+    onError: (err: Error) => toast.error(err.message || "Restore failed"),
   });
 
   const groups = query.data ?? [];
+  const isDismissed = tab === "dismissed";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -93,7 +113,7 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
           </SheetTitle>
           <SheetDescription>
             Reads recent messages from each contact to extract company, title, and phone from
-            email signatures. For contacts without an email, matches names against inbox senders.
+            email signatures. Dismissed items are remembered so they won't be suggested again.
           </SheetDescription>
         </SheetHeader>
 
@@ -115,12 +135,25 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
           </span>
         </div>
 
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as Tab)}
+          className="mt-4"
+        >
+          <TabsList className="grid grid-cols-2 w-full">
+            <TabsTrigger value="pending">Pending</TabsTrigger>
+            <TabsTrigger value="dismissed">Dismissed</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         <div className="mt-4 space-y-3">
           {query.isLoading ? (
             <div className="text-sm text-muted-foreground">Loading…</div>
           ) : groups.length === 0 ? (
             <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              No pending suggestions. Run a scan to look for enrichments across your contacts.
+              {isDismissed
+                ? "No dismissed suggestions yet."
+                : "No pending suggestions. Run a scan to look for enrichments across your contacts."}
             </div>
           ) : (
             groups.map((g) => (
@@ -162,26 +195,41 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
                         ) : null}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={() => applyMutation.mutate(s.id)}
-                          disabled={applyMutation.isPending}
-                          title="Apply"
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={() => dismissMutation.mutate(s.id)}
-                          disabled={dismissMutation.isPending}
-                          title="Dismiss"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                        {isDismissed ? (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() => restoreMutation.mutate(s.id)}
+                            disabled={restoreMutation.isPending}
+                            title="Restore to pending"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => applyMutation.mutate(s.id)}
+                              disabled={applyMutation.isPending}
+                              title="Apply"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => dismissMutation.mutate(s.id)}
+                              disabled={dismissMutation.isPending}
+                              title="Dismiss"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </li>
                   ))}
