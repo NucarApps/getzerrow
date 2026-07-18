@@ -718,11 +718,13 @@ export async function handleGet(
 
   const { row } = await getContactDecrypted(contactId);
   if (!row) return new Response("Not found", { status: 404 });
-  const [phones, categories] = await Promise.all([
+  const [phones, categories, emails] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
+    fetchEmails(contactId),
   ]);
-  const vcard = contactToVCard(row, phones, categories);
+  const vcard = contactToVCard(row, phones, categories, emails);
+
 
   return new Response(method === "HEAD" ? null : vcard, {
     status: 200,
