@@ -63,8 +63,60 @@ function CardDavSettings() {
   const updateSettings = useServerFn(updateCardDavSettings);
   const forceResync = useServerFn(forceCarddavResync);
   const resyncSummaries = useServerFn(resyncSummaryContacts);
+  const rerunBatch = useServerFn(rerunEnrichmentBatch);
+  const listIdsForRerun = useServerFn(listContactIdsForRerun);
   const [label, setLabel] = useState("iPhone");
   const [freshToken, setFreshToken] = useState<string | null>(null);
+  const [rerunState, setRerunState] = useState<{
+    running: boolean;
+    total: number;
+    done: number;
+    processed: number;
+    skipped: number;
+    failed: number;
+  }>({ running: false, total: 0, done: 0, processed: 0, skipped: 0, failed: 0 });
+
+  // Chunk the "rerun for everyone" work client-side so each request stays
+  // well under the Safari wall-clock (which surfaces long fetches as the
+  // "Load failed" toast the user saw). We fetch the id list once, then
+  // walk it in small groups; failures inside a chunk don't stop the run.
+  const runRerunAll = async () => {
+    setRerunState({ running: true, total: 0, done: 0, processed: 0, skipped: 0, failed: 0 });
+    try {
+      const { ids } = await listIdsForRerun();
+      if (ids.length === 0) {
+        toast.info("No contacts to enrich yet");
+        setRerunState((s) => ({ ...s, running: false }));
+        return;
+      }
+      setRerunState((s) => ({ ...s, total: ids.length }));
+      const CHUNK = 10;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        try {
+          const res = await rerunBatch({ data: { ids: slice } });
+          setRerunState((s) => ({
+            ...s,
+            done: s.done + slice.length,
+            processed: s.processed + res.processed,
+            skipped: s.skipped + res.skipped,
+            failed: s.failed + res.failed.length,
+          }));
+        } catch (e) {
+          setRerunState((s) => ({
+            ...s,
+            done: s.done + slice.length,
+            failed: s.failed + slice.length,
+          }));
+          // eslint-disable-next-line no-console
+          console.error("[rerun-enrichment] chunk failed", e);
+        }
+      }
+      toast.success("Enrichment rerun complete");
+    } finally {
+      setRerunState((s) => ({ ...s, running: false }));
+    }
+  };
 
   const settingsQuery = useQuery({
     queryKey: ["carddav-settings"],
