@@ -23,9 +23,11 @@ import {
   contactToVCard,
   groupETag,
   parseVCard,
+  stripSummaryFromNote,
   type EmailRow,
   type PhoneRow,
 } from "./vcard";
+
 
 import {
   davResponse,
