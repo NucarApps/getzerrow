@@ -48,9 +48,11 @@ const EMAILS_PER_CONTACT = 6;
 const MAX_BODY_CHARS = 1200;
 
 const SignatureExtraction = z.object({
+  name: z.string().nullable(),
   company: z.string().nullable(),
   title: z.string().nullable(),
   phones: z.array(z.string()).nullable(),
+  emails: z.array(z.string()).nullable(),
 });
 type SignatureExtraction = z.infer<typeof SignatureExtraction>;
 
