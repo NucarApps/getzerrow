@@ -66,7 +66,8 @@ import {
   resolveCompanyDomain,
 } from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
-import { listCompanyAliases } from "@/lib/company-aliases.functions";
+import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.functions";
+import { normalizeCompanyName } from "@/lib/contacts/company-name";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 import { listMeetingPeople } from "@/lib/calendar.functions";
 
