@@ -406,10 +406,39 @@ export function CompanyAliasesDialog({
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">
               Primary domain
             </Label>
-            <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
-              {primaryDomain}
-            </div>
+            {hasPrimary ? (
+              <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1 text-sm">
+                {primaryDomain}
+              </div>
+            ) : (
+              <div className="mt-1 space-y-1.5">
+                <div className="flex gap-2">
+                  <Input
+                    value={primaryDraft}
+                    onChange={(e) => setPrimaryDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void savePrimary();
+                      }
+                    }}
+                    placeholder="acme.com"
+                    disabled={busy}
+                  />
+                  <Button onClick={savePrimary} disabled={busy || !primaryDraft.trim()} size="sm">
+                    Save
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Sets the website on all {contactIds.length}{" "}
+                  {contactIds.length === 1 ? "contact" : "contacts"} in this bucket, which enables
+                  logo and group assignments below.
+                </p>
+              </div>
+            )}
           </div>
+
+
 
           <div>
             <Label className="text-xs uppercase tracking-widest text-muted-foreground">Logo</Label>
