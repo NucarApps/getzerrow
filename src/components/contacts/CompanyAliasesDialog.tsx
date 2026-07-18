@@ -124,8 +124,10 @@ export function CompanyAliasesDialog({
 
 
   useEffect(() => {
-    if (open) setBrandQuery(companyName ?? "");
-    else {
+    if (open) {
+      setBrandQuery(companyName ?? "");
+      setNameDraft(companyName ?? "");
+    } else {
       setNewDomain("");
       setBrandQuery("");
       setDebouncedQuery("");
