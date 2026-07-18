@@ -1,45 +1,43 @@
 ## Goal
-In the Contacts "By company" view, when two or more buckets share the same normalized company name but live on different email domains (e.g. two Honda dealers), surface a "Merge N companies?" suggestion in each affected bucket header. Clicking it collapses them into one bucket by writing the extra domains to `company_aliases`, so all downstream logic (tags, logos, sync) treats them as one company. No automatic writes.
+Make auto company subgroups behave as a truly derived, read-only projection of the parent group's members' `company` values. Editing a contact's company (e.g. cleaning "Hyundai North America" → "Hyundai America") should automatically collapse/rename/split the affected subgroups, and users should not be able to edit auto-generated subgroups directly.
 
-## What changes
+## Changes
 
-### 1. Company-name normalizer
-Add `src/lib/contacts/company-name.ts` exporting `normalizeCompanyName(raw)`:
-- Lowercase, trim, collapse whitespace.
-- Strip trailing legal suffixes: `inc`, `inc.`, `llc`, `l.l.c.`, `ltd`, `co`, `co.`, `corp`, `corporation`, `gmbh`, `s.a.`, `s.a.s`, `pty`, `plc`, `bv`, `ag`, `kg`.
-- Strip punctuation (`.,'"&/`), collapse multiple spaces.
-- Return `null` for empty/1-char results (so we don't merge on garbage).
+### 1. Reactively reconcile on company changes
+Right now `reconcileIfAuto` only runs when membership changes. If a contact's `company` string is edited, no reconcile fires and subgroups drift.
 
-### 2. Suggest merges in the contacts view
+Add a small helper in `src/lib/contacts/auto-company-subgroups.functions.ts`:
+
+- `reconcileAutoParentsForContact(supabase, userId, contactId)` — finds every parent group where (a) the contact is a direct member and (b) `auto_company_subgroups = true`, then calls `reconcileAutoCompanySubgroupsImpl` on each. Wrapped in try/catch per-parent so a failure never blocks the primary write.
+
+Trigger it from:
+
+- `updateContact` in `src/lib/contacts/crud.functions.ts` — only when the payload includes `company` (or when `name` changes and no company is set, since display can shift). Runs after the update succeeds.
+- `bulkUpdateContacts` / merge paths in `src/lib/contacts/` (dedup merge, alias merge). Any code path that mutates `contacts.company` calls the helper for the merged/kept contact ids.
+- Google Contacts pull (`src/lib/google-contacts/pull.server.ts`) after a batch, batched by touched contact id (deduped set → one call per parent group).
+
+### 2. Loosen the group key to match the app's normalizer
+Reuse `normalizeCompanyName` from `src/lib/contacts/company-name.ts` (already used for the merge-suggestion banner) instead of the local `companyKey` lowercaser. This way "Hyundai America", "Hyundai America, Inc.", "Hyundai America LLC" collapse into one subgroup automatically. The display name for the subgroup uses the most frequent raw variant among its members (tie → longest → alphabetical) so the label reads naturally.
+
+### 3. Lock auto-generated subgroups in the UI
 In `src/routes/_authenticated/contacts.index.tsx`:
-- Keep existing domain-keyed `companyBuckets` as-is.
-- Add a new `useMemo` that walks `companyBuckets` (kind === "company"), derives the dominant `company` string per bucket (mode of `c.company` values, fallback to `bucket.name`), normalizes it, and groups bucket keys by that normalized name.
-- Produce a `mergeSuggestions: Map<bucketKey, { normalizedName; displayName; otherBuckets: Bucket[] }>` for any name shared by ≥2 buckets.
 
-### 3. Bucket header UI
-Where each company bucket row is rendered (around lines 620–690), if `mergeSuggestions.has(b.key)`:
-- Show a small inline chip: `Merge {N} "{displayName}" companies?` with a `Merge` button and a `Dismiss` button.
-- Merge picks the bucket with the most contacts as primary (tiebreak: most emails, then alphabetical domain) and calls a new server fn `mergeCompaniesByName` with `{ primaryDomain, aliasDomains[] }`.
-- Dismiss stores the normalized name in `localStorage` under `zerrow.mergeDismissed` so it stops nagging.
+- In the groups sidebar row: when `group.auto_generated_from_group_id` is set, hide the rename / color / delete / drag-reparent affordances and render a small lock icon with tooltip "Auto-generated from {parent name}. Edit the parent group's contacts to change this."
+- In `GroupEditorDialog` (line 1092): if opened against an auto-generated group, render a read-only view (name + parent + member count + "Managed automatically" note) instead of the editable form. No save button.
+- Server-side guard in `contact-groups.functions.ts` for `updateContactGroup` / `deleteContactGroup` / `addContactsToGroup` / `removeContactsFromGroup`: reject with "This subgroup is managed automatically" when the target has `auto_generated_from_group_id` set. Deletion is only allowed through the parent's toggle-off / prune path.
 
-### 4. Server function
-Add `mergeCompaniesByName` in `src/lib/contacts/company-merge.functions.ts` (auth-required via `requireSupabaseAuth`):
-- Validate inputs (Zod: primary domain + non-empty aliases, all lowercase hostnames).
-- For each alias domain, upsert into `company_aliases` (`user_id`, `alias_domain`, `primary_domain`) — reuses the existing table already read by `aliasMap`.
-- Return `{ inserted: n }`.
-Client-side: `useMutation` invalidates the `company_aliases` query so the buckets recollapse via the existing `aliasMap` path.
+### 4. Small UX affordance
+On the parent group row, keep the existing "Re-scan now" button but also surface a subtle "Updated Xs ago" so the user sees that subgroups are live. No new tables, no schema changes.
 
-### 5. Nothing else changes
-- Pencil / tags dialog, logos, filters, and Google/CardDAV sync all continue to work because they read `company_aliases`. No schema migration needed — the table exists.
-
-## Technical notes
-- Normalizer lives in `src/lib/contacts/` (pure, unit-testable). Add `company-name.test.ts` covering "Honda Inc.", "honda", "Honda  Motor Co", "Honda, LLC".
-- Dominant name per bucket: iterate `bucket.contacts`, count non-empty `c.company` occurrences (case-insensitive), pick the highest; ignore buckets whose normalized name is `null`.
-- Don't suggest merges across `kind !== "company"` (skip Personal / Other).
-- Dismissed set is client-only (localStorage); persistence across devices isn't needed for a nudge.
-- Keep `companyBuckets`'s existing memo dependency list intact; add the new memo separately so re-renders stay cheap.
+## Files touched
+- `src/lib/contacts/auto-company-subgroups.functions.ts` — new helper, switch to `normalizeCompanyName`, display-name picker.
+- `src/lib/contacts/crud.functions.ts` — trigger reconcile on company/name change.
+- `src/lib/contacts/` merge/dedup functions — trigger reconcile after merges.
+- `src/lib/google-contacts/pull.server.ts` — batched trigger after import.
+- `src/lib/contact-groups.functions.ts` — server-side write guards.
+- `src/routes/_authenticated/contacts.index.tsx` — sidebar lock UI + read-only editor branch.
 
 ## Out of scope
-- No auto-merge, no writes without user click.
-- No changes to the aliases dialog (existing pencil flow already lets users manage aliases manually).
-- No changes to CardDAV/Google sync — they pick up merges via `company_aliases` automatically on next sync.
+- No schema migrations.
+- No changes to CardDAV group-display-style logic.
+- No changes to Google Contacts group push mapping.

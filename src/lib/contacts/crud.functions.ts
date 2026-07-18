@@ -21,6 +21,7 @@ import {
   pickBetterName,
   phoneEntrySchema,
 } from "../contacts-helpers.server";
+import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -174,6 +175,12 @@ export const updateContact = createServerFn({ method: "POST" })
       .eq("contact_id", id)
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
+
+    // If company changed, reconcile any auto-company-subgroup parents this
+    // contact belongs to so subgroups collapse/rename/split immediately.
+    if ("company" in data) {
+      await reconcileAutoParentsForContacts(supabase, userId, [id]);
+    }
 
     // Return the decrypted view so the UI re-renders with the new
     // phone/notes/address values written through the encrypted RPC.

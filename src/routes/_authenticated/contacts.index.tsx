@@ -9,6 +9,7 @@ import {
   IdCard,
   Plus,
   Pencil,
+  Lock,
   Trash2,
   UserPlus,
   Inbox,
@@ -551,17 +552,21 @@ function ContactsPage() {
               count={ungroupedCount}
               onClick={() => setFilter("ungrouped")}
             />
-            {groupTree.map(({ group: g, depth }) => (
-              <GroupPill
-                key={g.id}
-                active={filter === g.id}
-                color={g.color}
-                label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
-                count={g.count}
-                onClick={() => setFilter(g.id)}
-                onEdit={() => setGroupDialog({ mode: "edit", group: g })}
-              />
-            ))}
+            {groupTree.map(({ group: g, depth }) => {
+              const isAuto = !!g.auto_generated_from_group_id;
+              return (
+                <GroupPill
+                  key={g.id}
+                  active={filter === g.id}
+                  color={g.color}
+                  label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
+                  count={g.count}
+                  onClick={() => setFilter(g.id)}
+                  onEdit={isAuto ? undefined : () => setGroupDialog({ mode: "edit", group: g })}
+                  locked={isAuto}
+                />
+              );
+            })}
             <button
               onClick={() => setGroupDialog({ mode: "create" })}
               className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground"
@@ -601,18 +606,22 @@ function ContactsPage() {
                 count={ungroupedCount}
                 onClick={() => setFilter("ungrouped")}
               />
-              {groupTree.map(({ group: g, depth }) => (
-                <div key={g.id} style={{ paddingLeft: depth * 12 }}>
-                  <GroupChip
-                    active={filter === g.id}
-                    color={g.color}
-                    label={g.name}
-                    count={g.count}
-                    onClick={() => setFilter(g.id)}
-                    onEdit={() => setGroupDialog({ mode: "edit", group: g })}
-                  />
-                </div>
-              ))}
+              {groupTree.map(({ group: g, depth }) => {
+                const isAuto = !!g.auto_generated_from_group_id;
+                return (
+                  <div key={g.id} style={{ paddingLeft: depth * 12 }}>
+                    <GroupChip
+                      active={filter === g.id}
+                      color={g.color}
+                      label={g.name}
+                      count={g.count}
+                      onClick={() => setFilter(g.id)}
+                      onEdit={isAuto ? undefined : () => setGroupDialog({ mode: "edit", group: g })}
+                      locked={isAuto}
+                    />
+                  </div>
+                );
+              })}
               {groupTree.length === 0 && (
                 <p className="px-3 py-3 text-xs text-muted-foreground">
                   No groups yet. Click + to add one like “Work” or “Personal”.
@@ -996,6 +1005,7 @@ function GroupChip({
   count,
   onClick,
   onEdit,
+  locked,
 }: {
   active: boolean;
   color: string;
@@ -1003,6 +1013,7 @@ function GroupChip({
   count?: number;
   onClick: () => void;
   onEdit?: () => void;
+  locked?: boolean;
 }) {
   return (
     <div
@@ -1026,8 +1037,16 @@ function GroupChip({
           )}
         </span>
       </button>
-      {/* Always reserve the pencil slot so count badges line up across rows. */}
-      {onEdit ? (
+      {/* Always reserve the trailing slot so count badges line up across rows. */}
+      {locked ? (
+        <span
+          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground/70"
+          title="Auto-generated from the parent group's contacts. Edit contacts' company to change this."
+          aria-label="Managed automatically"
+        >
+          <Lock className="h-3 w-3" />
+        </span>
+      ) : onEdit ? (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1052,6 +1071,7 @@ function GroupPill({
   count,
   onClick,
   onEdit,
+  locked,
 }: {
   active: boolean;
   color: string;
@@ -1059,6 +1079,7 @@ function GroupPill({
   count?: number;
   onClick: () => void;
   onEdit?: () => void;
+  locked?: boolean;
 }) {
   return (
     <div
@@ -1073,7 +1094,16 @@ function GroupPill({
           </span>
         )}
       </button>
-      {onEdit && active && (
+      {locked && active && (
+        <span
+          className="mr-1 grid h-5 w-5 place-items-center rounded-full text-muted-foreground/70"
+          title="Managed automatically from the parent group"
+          aria-label="Managed automatically"
+        >
+          <Lock className="h-3 w-3" />
+        </span>
+      )}
+      {!locked && onEdit && active && (
         <button
           onClick={(e) => {
             e.stopPropagation();
