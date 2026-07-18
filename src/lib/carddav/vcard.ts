@@ -304,6 +304,11 @@ export type ParsedVCard = {
   isGroup: boolean;
   /** Member contact UIDs for a group vCard. Empty for individuals. */
   memberUids: string[];
+  /** Decoded PHOTO bytes if the vCard carried an inline base64 photo, plus
+   * the declared mime type. Null when the vCard had no PHOTO line, an
+   * empty PHOTO slot (iOS partial PUTs), or an unsupported PHOTO;VALUE=URI
+   * reference we don't try to fetch. */
+  photo: { bytes: Uint8Array; mime: string } | null;
   /** Set of top-level properties that actually appeared in the vCard body.
    * Used by CardDAV PUT to merge instead of replace — iOS routinely uploads
    * partial vCards for single-field edits and we must not clobber the
