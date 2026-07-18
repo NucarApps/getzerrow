@@ -10,6 +10,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getContactDecrypted } from "@/lib/sync/encrypted-reader";
 import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
 import { snapshotContact } from "@/lib/contacts/revisions.server";
+import { logInfo } from "@/lib/log.server";
+
 import {
   buildGroupVCard,
   contactETag,
@@ -970,14 +972,32 @@ export async function handlePut(
     source: existing?.source ?? "carddav",
     updated_at: nowIso,
   };
+  logInfo("carddav.put.received", {
+    contact_id: contactId,
+    present_fields: [...present].sort(),
+    has_email_value: !!parsed.email,
+    body_len: body.length,
+    existing: !!existing,
+  });
   // Email is now nullable in the schema; only touch it when the vCard
-  // actually carried an EMAIL line. Never synthesize a placeholder — that
-  // was the source of `carddav+<uuid>@local.zerrow` overwrites.
+  // actually carried an EMAIL line WITH a value. The parser now strips
+  // empty EMAIL slots from presentFields, but keep a belt-and-suspenders
+  // guard here: never null a saved email over a blank iOS partial PUT.
   if (present.has("EMAIL")) {
-    plaintextPatch.email = parsed.email ? parsed.email.trim().toLowerCase() : null;
+    if (parsed.email) {
+      plaintextPatch.email = parsed.email.trim().toLowerCase();
+    } else if (existing?.email) {
+      logInfo("carddav.put.email_preserved_over_blank", {
+        contact_id: contactId,
+        body_len: body.length,
+      });
+    } else {
+      plaintextPatch.email = null;
+    }
   } else if (!existing) {
     plaintextPatch.email = null;
   }
+
   if (present.has("FN")) plaintextPatch.name = parsed.name;
   if (present.has("ORG")) plaintextPatch.company = parsed.company;
   if (present.has("TITLE")) plaintextPatch.title = parsed.title;

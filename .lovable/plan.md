@@ -1,39 +1,51 @@
-## Plan: stop iPhone contact email edits from being wiped
+## Plan: stop iOS PUTs with an empty EMAIL line from clearing the saved address
 
-### Goal
-Make an email added or edited on iPhone persist on the server and not get reverted by the next CardDAV/Google Contacts sync cycle.
+### What the DB shows
+Ten `carddav_put` revisions for Chanell in the last 40 min. Every "before-PUT" snapshot has `email = null`, yet Google's `last_synced_at = 1970` (dirty sentinel) and Google sync is `pull_only` and hasn't run in 13 hours. So Google is not the culprit — iOS's own PUTs are wiping the email between edits.
 
-### What I found
-- The CardDAV `PUT` handler now parses grouped iOS email fields and only updates `contacts.email` when an `EMAIL` field is present.
-- The Google Contacts pull path updates other contact fields but does not currently update `contacts.email` for an existing linked contact.
-- The Google Contacts push path skips pushing local changes when `contacts.updated_at <= google_contact_links.last_synced_at`; because the pull path updates `last_synced_at` after pulling, a recent CardDAV edit can be treated as already synced and never pushed upstream.
-- The app currently stores one primary email on `contacts`; there is no separate multi-email table yet.
+### Root cause
+1. `src/lib/carddav/vcard.ts` `parseVCard()` case `"EMAIL"` calls `out.presentFields.add("EMAIL")` unconditionally, even when the EMAIL line has an empty value. It also has this branch:
+   ```
+   else if ((p.params.TYPE ?? []).includes("PREF")) out.email = v.trim() || null;
+   ```
+   A later, blank `EMAIL;TYPE=pref:` overwrites the previously-parsed real address with `null`.
+2. `src/lib/carddav/handlers.server.ts` `handlePut` then does:
+   ```
+   if (present.has("EMAIL")) {
+     plaintextPatch.email = parsed.email ? … : null;
+   }
+   ```
+   → writes `email = null` on any PUT that contains an EMAIL line with no value.
 
-### Changes to implement
-1. **Make CardDAV saves mark linked Google contacts as locally changed**
-   - After a successful CardDAV save, if the contact has a Google contact link, set that link’s `last_synced_at` to a safe older value or otherwise mark it as pending so the two-way sync push lane does not skip it.
-   - Keep this scoped to the saved contact only.
+Result: user saves email on iPhone → server stores it. iOS's next background PUT (a partial vCard containing an empty EMAIL slot) marks EMAIL "present" with value null → server overwrites to `null` → iOS re-pulls and shows blank.
 
-2. **Preserve and push the new email before any pull can overwrite it**
-   - Update Google Contacts push logic so an edited local email is included in the People API payload.
-   - Ensure the push skip check treats CardDAV-updated contacts as dirty even if a recent pull touched `last_synced_at`.
+### Changes
 
-3. **Prevent stale Google pull data from clearing the local email**
-   - In the Google Contacts pull path, update `contacts.email` for existing contacts only when the remote person actually has an email and it differs, or when conflict rules say remote should win.
-   - Avoid replacing a newly added local email with `null` from an older/empty Google record.
+1. **Parser: only count EMAIL as present when a real value arrived** (`src/lib/carddav/vcard.ts`)
+   - Track `sawEmailValue` locally in the EMAIL case. Only call `presentFields.add("EMAIL")` when the trimmed value is non-empty.
+   - Fix the PREF-overwrite branch so an empty PREF EMAIL never nulls a previously-parsed non-empty one.
+   - Apply the same "only present when non-empty" rule to TEL, URL, ORG, TITLE, ADR, NOTE — any of these can arrive blank from iOS on partial syncs, and unconditionally marking them present risks the same class of bug for other fields.
 
-4. **Fix nullable email typing in the mapper**
-   - Adjust the local contact type and `contactToPerson` mapper so contacts without an email do not generate invalid Google email payloads.
-   - Add coverage for “email added locally after Google link exists”.
+2. **Handler: defensive non-destructive email merge** (`src/lib/carddav/handlers.server.ts`, `handlePut`)
+   - When `present.has("EMAIL")` but `parsed.email` is null AND `existing?.email` is set, do NOT overwrite. Log a `carddav.put.email_preserved_over_blank` info line with `contact_id` and body length so we can spot future occurrences.
+   - Only allow clearing email to null via CardDAV when the contact previously had no email (new contact) or the caller explicitly sent an empty EMAIL AND had no other identifying fields removed.
 
-5. **Add regression tests**
-   - CardDAV parser test for iOS `itemN.EMAIL` with labels remains covered.
-   - Add Google mapper/sync-level tests proving:
-     - local email edits are included in push payloads,
-     - an empty remote email does not wipe a newer local email,
-     - linked contacts with CardDAV changes are not skipped as already synced.
+3. **Diagnostic breadcrumb**
+   - Add a lightweight `logInfo("carddav.put.received", { contact_id, present_fields, has_email_value, body_len })` at the top of `handlePut` (after parse). Cheap, no PII, will make the next report diagnosable without new tooling.
+
+4. **Regression tests**
+   - `src/lib/carddav/vcard.parse.test.ts`: PUT with `EMAIL;TYPE=INTERNET;TYPE=pref:` (empty value) must NOT mark EMAIL present and must leave `parsed.email` null.
+   - PUT with two EMAIL lines where the second (PREF) is blank must keep the first real address in `parsed.email`.
+   - Same for `TEL:` empty and `ORG:` empty — presentFields must NOT include them.
+   - New `handlers.server` test (or extend existing carddav sync test): existing contact with `email = "jane@acme.com"`; PUT a vCard containing an empty EMAIL line; assert the row's email is unchanged after handlePut.
+
+5. **Bump CTag** so iPhone re-fetches once the fix is live (increment `carddav_settings.resync_nonce` for this user, as we've done for prior CardDAV fixes).
 
 ### Validation
-- Run the focused CardDAV and Google Contacts tests.
-- Verify no placeholder `carddav+...@local.zerrow` email can be re-emitted.
-- Confirm the save path returns a fresh ETag so iPhone sees the server-side saved version instead of reverting.
+- Run `bunx vitest run src/lib/carddav`
+- Re-check `contact_revisions` for Chanell after the next round of iOS PUTs — snapshots should now show the real email as the pre-PUT state instead of null.
+- Confirm the new `carddav.put.received` log fires with `has_email_value: false` on the PUTs that used to wipe the field.
+
+### Out of scope
+- Google Contacts push/pull (`sync_mode = pull_only`, last run 13h ago — not involved).
+- Broader multi-email support; single primary email only, matching current schema.
