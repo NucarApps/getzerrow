@@ -136,6 +136,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         name: c.name ?? "",
         title: c.title ?? "",
         company: c.company ?? "",
+        email: c.email ?? "",
         website: c.website ?? "",
         linkedin: c.linkedin ?? "",
         twitter: c.twitter ?? "",
