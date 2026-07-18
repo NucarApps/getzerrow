@@ -1074,6 +1074,7 @@ function GroupPill({
   count?: number;
   onClick: () => void;
   onEdit?: () => void;
+  locked?: boolean;
 }) {
   return (
     <div
@@ -1088,7 +1089,16 @@ function GroupPill({
           </span>
         )}
       </button>
-      {onEdit && active && (
+      {locked && active && (
+        <span
+          className="mr-1 grid h-5 w-5 place-items-center rounded-full text-muted-foreground/70"
+          title="Managed automatically from the parent group"
+          aria-label="Managed automatically"
+        >
+          <Lock className="h-3 w-3" />
+        </span>
+      )}
+      {!locked && onEdit && active && (
         <button
           onClick={(e) => {
             e.stopPropagation();
