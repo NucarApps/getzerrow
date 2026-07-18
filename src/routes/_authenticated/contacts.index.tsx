@@ -73,6 +73,7 @@ import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.funct
 import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
 import { normalizeCompanyName } from "@/lib/contacts/company-name";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
+import { listCompanies } from "@/lib/companies/companies.functions";
 import { listMeetingPeople } from "@/lib/calendar.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
