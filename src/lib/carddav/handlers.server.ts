@@ -775,7 +775,7 @@ export async function handleGet(
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
-    loadContactPhotoBytes(row.avatar_url ?? null),
+    loadContactPhotoOrLogo(userId, row),
     getIncludeSummaryInNotes(userId),
   ]);
   const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
