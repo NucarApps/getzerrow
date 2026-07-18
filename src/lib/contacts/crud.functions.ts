@@ -157,7 +157,13 @@ export const updateContact = createServerFn({ method: "POST" })
       .eq("id", id)
       .select("*")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "23505") {
+        throw new Error("Another contact already uses this email address.");
+      }
+      throw new Error(error.message);
+    }
     await setContactEncryptedFields({
       contact_id: id,
       phone: encryptedPatch.phone ?? undefined,
