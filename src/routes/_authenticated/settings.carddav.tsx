@@ -400,6 +400,35 @@ function CardDavSettings() {
         </div>
 
         <div className="border-t pt-4">
+          <p className="text-sm font-medium">Rerun AI enrichment for every contact</p>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Walks every contact, re-scans matching email signatures, and
+            regenerates the AI relationship summary. Runs in small batches
+            in the background so the browser tab stays responsive — safe to
+            leave open, safe to close (the tab has to stay open to keep
+            processing; closing pauses until you click again).
+          </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={runRerunAll}
+              disabled={rerunState.running}
+            >
+              {rerunState.running
+                ? `Rerunning… ${rerunState.done}/${rerunState.total}`
+                : "Rerun for everyone"}
+            </Button>
+            {(rerunState.running || rerunState.done > 0) && (
+              <p className="text-xs text-muted-foreground">
+                {rerunState.processed} enriched · {rerunState.skipped} skipped ·{" "}
+                {rerunState.failed} failed
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t pt-4">
           <p className="text-sm font-medium">Force iPhone resync</p>
           <p className="mb-2 text-sm text-muted-foreground">
             Bumps the address-book tag so your iPhone pulls a fresh copy on
