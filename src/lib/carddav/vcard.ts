@@ -129,13 +129,15 @@ function bytesToBase64(bytes: Uint8Array): string {
 /**
  * Contact -> vCard 3.0 text. `phones` is optional; when omitted we skip TEL
  * lines from the phones table and only emit the encrypted `phone` field on
- * the contact itself.
+ * the contact itself. When `photo` is provided we inline it as base64 so
+ * iOS renders the picture in the contact card.
  */
 export function contactToVCard(
   contact: DecryptedContact,
   phones: PhoneRow[] = [],
   _categories: string[] = [],
   emails: EmailRow[] = [],
+  photo: { bytes: Uint8Array; mime: string } | null = null,
 ): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
 
