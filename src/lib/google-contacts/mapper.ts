@@ -1,6 +1,9 @@
 // Pure mapping between Zerrow's internal contact shape and Google People API
 // `Person` resources. No I/O, no Supabase — safe to unit test in isolation.
 
+import { buildMergedNote, stripSummaryFromNote } from "@/lib/carddav/vcard";
+
+
 export type PersonName = {
   givenName?: string;
   familyName?: string;
