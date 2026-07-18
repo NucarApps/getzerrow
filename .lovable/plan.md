@@ -1,70 +1,41 @@
-## Goal
+# Sync existing AI summaries to iPhone and Google Contacts
 
-When Zerrow generates a relationship summary for a contact, include that
-summary at the top of the NOTE field synced to iOS (and Google) so it shows
-up in the notes area of the contact card on the iPhone.
+## The problem
 
-## How it will work
+New summaries sync fine because writing a fresh `relationship_summary` bumps `contacts.updated_at`. That bump is what both sync paths key off:
 
-The AI summary lives in `contacts.relationship_summary` (encrypted). The
-user's own notes live in `contacts.notes`. iOS only shows one Notes field on
-a contact, so we merge the two when we build the vCard and split them apart
-again when iOS sends changes back.
+- **CardDAV**: `contactETag(id, updated_at)` — iOS only re-fetches vCards whose ETag changed (`src/lib/carddav/handlers.server.ts:437`).
+- **Google Contacts push**: skips contacts unless `contact.updated_at > link.last_synced_at` (`src/lib/google-contacts/push.server.ts:157`).
 
-Merged NOTE shape sent to iOS:
+Contacts whose summary was written *before* the "merge summary into NOTE" feature shipped already had their `updated_at` synced downstream without the summary. Nothing bumps them now, so they stay stale on iOS/Google even though the vCard/Person mapper would happily include the summary if asked. The `resync_nonce` bump moves the book CTag, but iOS still short-circuits per-contact refetch on the unchanged ETag.
 
-```text
-🤖 Zerrow summary
-{relationship_summary text}
+## Fix
 
-— My notes —
-{user notes text}
-```
+When `include_summary_in_notes` flips from off → on (and as a manual "resync summaries" action), touch every contact that has a non-null `relationship_summary` so both sync paths see them as changed.
 
-Rules:
-- If there is no AI summary, the NOTE is just the user's notes (today's behavior).
-- If there is no user note, only the summary block is sent.
-- Order is fixed (summary on top) so it's always in the same place on the phone.
+### Changes
 
-## Round-trip safety
+1. **`src/lib/carddav/settings.functions.ts`** — in `updateCardDavSettings`, when the new value of `include_summary_in_notes` differs from the previous value, run:
+   ```sql
+   UPDATE contacts
+   SET updated_at = now()
+   WHERE user_id = $1 AND relationship_summary IS NOT NULL
+   ```
+   Keep the existing `resync_nonce` bump so the book CTag also moves (belt + suspenders for iOS).
 
-When iOS PUTs the contact back, `handlePut` currently writes the whole NOTE
-into `contacts.notes`. That would swallow the AI summary into the user
-notes column and cause it to keep appending on the next sync.
+2. **`src/routes/_authenticated/settings.carddav.tsx`** — next to the toggle, add a small "Resync summaries now" button that calls a new server fn (below). Useful when the toggle was already on before this feature existed, or after regenerating summaries in bulk.
 
-Fix: before writing to `notes`, strip the leading `🤖 Zerrow summary … —
-My notes —` block using a marker. Only the trailing user portion is saved
-to `contacts.notes`. If the user edits the summary block itself on their
-phone, those edits are ignored (the summary column stays as the source of
-truth for AI text). This keeps behavior deterministic and matches how
-Google Contacts handles it too, since we reuse the same vCard/patch path.
+3. **New server fn `resyncSummaryContacts` in `src/lib/carddav/settings.functions.ts`** — auth-gated, runs the same `UPDATE ... WHERE relationship_summary IS NOT NULL` and bumps `resync_nonce`. Returns the affected row count so the UI can toast "Queued N contacts for resync".
 
-## User control
+4. **Google Contacts** needs no code change: bumping `contacts.updated_at` makes `pushLocalChanges` pick them up on the next push tick (5-min cron or manual "Sync now"). Mention in the toast that Google will catch up on the next sync cycle.
 
-Add a toggle in **Settings → iPhone contacts** (`settings.carddav.tsx`):
-"Include Zerrow's relationship summary in iPhone notes" — default ON.
+### Not changing
 
-Stored on `public.carddav_settings` as a new `include_summary_in_notes`
-boolean column. Bumps `resync_nonce` when toggled so iPhone re-pulls
-without re-adding the account.
+- vCard/Person mapper logic — already correct, summary merges in when the setting is on.
+- `stripSummaryFromNote` on inbound PUT/pull — already prevents the AI text from being persisted back into `contacts.notes`.
+- Group/CTag logic — the per-contact ETag bump is what iOS actually needs.
 
-Google Contacts sync (`push.server.ts`, `contactToPerson`) uses the same
-merged NOTE so the summary shows up in Google Contacts too, respecting the
-same toggle.
+## Verification
 
-## Files to change
-
-- `supabase/migrations/*` — add `include_summary_in_notes boolean not null default true` to `public.carddav_settings`.
-- `src/lib/carddav/vcard.ts` — add a `buildMergedNote(summary, notes)` helper and a `stripSummaryFromNote(text)` inverse; use them in `contactToVCard` and expose them for parse callers.
-- `src/lib/carddav/handlers.server.ts` — pass `relationship_summary` + setting into `contactToVCard`; in `handlePut` run `stripSummaryFromNote` before persisting `notes`.
-- `src/lib/carddav/settings.functions.ts` — surface `include_summary_in_notes` in `get`/`update`.
-- `src/routes/_authenticated/settings.carddav.tsx` — add the toggle UI.
-- `src/lib/google-contacts/mapper.ts` (`contactToPerson`) — feed the merged NOTE into `biographies[0].value`, and strip on inbound too so pulls don't duplicate.
-- `src/lib/carddav/merge.test.ts` + `src/lib/carddav/sync.regression.test.ts` — add cases: summary+notes builds correctly; iOS PUT of merged NOTE saves only user notes; empty user notes stays empty after PUT.
-
-## Not doing
-
-- No new AI generation — this feature only surfaces the summary that
-  already gets generated during enrichment.
-- No edit-summary-from-iPhone flow — the summary block on iOS is
-  read-only; edits there are discarded when we split the NOTE.
+- Unit: extend `src/lib/carddav/vcard.roundtrip.test.ts` (or a new settings test) to confirm toggling on flips `updated_at` for summary contacts only, and toggling off with no change is a no-op.
+- Manual: with the setting already on, click "Resync summaries now", pull-to-refresh Contacts on iPhone, confirm the AI summary appears in Notes for a contact whose summary predates the feature.
