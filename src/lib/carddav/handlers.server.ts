@@ -1197,6 +1197,12 @@ export async function handlePut(
           if (currentSha === incomingSha) skip = true;
         }
       }
+      if (!skip) {
+        const { buildKnownCompanyLogoShaSet } = await import(
+          "@/lib/contacts/known-logos.server"
+        );
+        skip = (await buildKnownCompanyLogoShaSet(userId)).has(incomingSha);
+      }
       if (skip) {
         logInfo("carddav.put.photo_fallback_echo_ignored", {
           contact_id: contactId,
