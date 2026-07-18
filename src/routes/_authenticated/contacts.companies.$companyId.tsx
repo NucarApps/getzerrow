@@ -58,6 +58,7 @@ function CompanyDetailPage() {
   const updateFn = useServerFn(updateCompany);
   const addDomainFn = useServerFn(addCompanyDomain);
   const removeDomainFn = useServerFn(removeCompanyDomain);
+  const discoverFn = useServerFn(discoverCompanyDomains);
   const tagsFn = useServerFn(setCompanyTags);
   const mergeFn = useServerFn(mergeCompanies);
   const deleteFn = useServerFn(deleteCompany);
