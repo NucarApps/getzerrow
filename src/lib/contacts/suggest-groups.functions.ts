@@ -179,14 +179,18 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
       groupSizes.set(m.group_id, (groupSizes.get(m.group_id) ?? 0) + 1);
     }
 
-    // Compact prompt payload — minimal PII.
-    const contactLines = contacts.map((c) => {
+    // Compact prompt payload — reference contacts by a short `i` index instead
+    // of UUID. Models reliably echo small integers back; UUIDs get hallucinated.
+    const idByIndex = new Map<number, string>();
+    const contactLines = contacts.map((c, idx) => {
+      const i = idx + 1;
+      idByIndex.set(i, c.id);
       const domain = emailDomain(c.email);
       const groupNames = (memberGroupsByContact.get(c.id) ?? [])
         .map((gid) => groupsById.get(gid)?.name)
         .filter((v): v is string => !!v);
       return {
-        id: c.id,
+        i,
         n: firstNonEmpty(c.name),
         co: firstNonEmpty(c.company),
         t: firstNonEmpty(c.title),
