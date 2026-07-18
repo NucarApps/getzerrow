@@ -24,17 +24,11 @@ import {
   phoneEntrySchema,
 } from "../contacts-helpers.server";
 
-/** Fields the user has locked in — enrichment must never overwrite them. */
-function buildLockedFieldSet(contact: {
-  manual_overrides?: string[] | null;
-  company_id?: string | null;
-}): Set<string> {
-  const locked = new Set<string>(contact.manual_overrides ?? []);
-  // Explicitly linking a company via the combobox is an unambiguous user
-  // action, so treat the company text as locked even without an override.
-  if (contact.company_id) locked.add("company");
-  return locked;
-}
+import {
+  buildLockedFieldSet,
+  computeEnrichmentFieldPatch,
+  type EnrichableField,
+} from "./enrich-locks";
 
 
 
