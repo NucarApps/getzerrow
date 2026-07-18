@@ -42,9 +42,14 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
 
   const rescan = useMutation({
     mutationFn: () => runScan(),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["contact-group-suggestions"] });
-      toast.success("AI suggestions ready");
+      const kept = res?.stats?.kept ?? 0;
+      if (kept > 0) {
+        toast.success(`Found ${kept} suggestion${kept === 1 ? "" : "s"}`);
+      } else {
+        toast.message("AI didn't find anything new to suggest");
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
