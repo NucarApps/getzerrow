@@ -9,6 +9,7 @@ import {
   IdCard,
   Plus,
   Pencil,
+  Lock,
   Trash2,
   UserPlus,
   Inbox,
