@@ -1,7 +1,7 @@
 // Round-trip guards: iOS → parse → server model → serialize → parse must
 // preserve phone, email, and notes without duplicating or corrupting them.
 import { describe, it, expect } from "vitest";
-import { parseVCard, contactToVCard, phoneKey, type PhoneRow } from "./vcard";
+import { parseVCard, contactToVCard, phoneKey, buildMergedNote, stripSummaryFromNote, type PhoneRow } from "./vcard";
 import type { DecryptedContact } from "@/lib/sync/encrypted-reader";
 
 function buildContact(overrides: Partial<DecryptedContact> = {}): DecryptedContact {
