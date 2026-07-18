@@ -34,6 +34,7 @@ import {
 import { listContactGroups, setContactGroups } from "@/lib/contact-groups.functions";
 import { listMeetingsForContact } from "@/lib/meetings.functions";
 import { sendMyCard } from "@/lib/cards.functions";
+import { listContactRevisions, restoreContactRevision } from "@/lib/contacts/revisions.functions";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { toast } from "sonner";
 import {
@@ -591,6 +592,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
 
       <ContactMeetings contactId={id} />
 
+      <ContactRevisions contactId={id} />
+
+
       <ShareContactDialog open={shareOpen} onOpenChange={setShareOpen} contactId={id} contact={c} />
     </div>
   );
@@ -792,5 +796,64 @@ function Field({
       </Label>
       {children}
     </div>
+  );
+}
+
+function ContactRevisions({ contactId }: { contactId: string }) {
+  const qc = useQueryClient();
+  const list = useServerFn(listContactRevisions);
+  const restore = useServerFn(restoreContactRevision);
+  const [busy, setBusy] = useState<string | null>(null);
+  const q = useQuery({
+    queryKey: ["contact-revisions", contactId],
+    queryFn: () => list({ data: { contactId } }),
+  });
+
+  if (!q.data || q.data.length === 0) return null;
+
+  async function onRestore(id: string) {
+    setBusy(id);
+    try {
+      await restore({ data: { revisionId: id } });
+      toast.success("Contact restored");
+      qc.invalidateQueries({ queryKey: ["contact", contactId] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["contact-revisions", contactId] });
+    } catch (e) {
+      toast.error(errorMessage(e) ?? "Restore failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="mt-10">
+      <h2 className="mb-3 text-xs uppercase tracking-widest text-muted-foreground">
+        History
+      </h2>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Snapshots taken before syncs from iPhone. Restore if a sync wiped something you'd saved.
+      </p>
+      <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
+        {q.data.map((r) => (
+          <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+            <div className="min-w-0">
+              <div className="truncate text-xs text-muted-foreground">
+                {new Date(r.created_at).toLocaleString()} · {r.source}
+              </div>
+              <div className="truncate">{r.contact_name ?? r.contact_email ?? "(unnamed)"}</div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy === r.id}
+              onClick={() => onRestore(r.id)}
+            >
+              {busy === r.id ? "Restoring..." : "Restore"}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

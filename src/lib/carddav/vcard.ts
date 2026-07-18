@@ -200,6 +200,19 @@ export type ParsedPhone = {
   is_primary: boolean;
 };
 
+export type PresentField =
+  | "FN"
+  | "ORG"
+  | "TITLE"
+  | "EMAIL"
+  | "TEL"
+  | "ADR"
+  | "URL"
+  | "LINKEDIN"
+  | "TWITTER"
+  | "NOTE"
+  | "CATEGORIES";
+
 export type ParsedVCard = {
   uid: string | null;
   name: string | null;
@@ -225,6 +238,11 @@ export type ParsedVCard = {
   isGroup: boolean;
   /** Member contact UIDs for a group vCard. Empty for individuals. */
   memberUids: string[];
+  /** Set of top-level properties that actually appeared in the vCard body.
+   * Used by CardDAV PUT to merge instead of replace — iOS routinely uploads
+   * partial vCards for single-field edits and we must not clobber the
+   * fields it omitted. */
+  presentFields: Set<PresentField>;
 };
 
 function unescapeValue(v: string): string {
@@ -305,6 +323,7 @@ export function parseVCard(text: string): ParsedVCard | null {
     region: null, postal_code: null, country: null, website: null,
     linkedin: null, twitter: null, notes: null,
     categories: [], isGroup: false, memberUids: [],
+    presentFields: new Set<PresentField>(),
   };
 
   let fn: string | null = null;
@@ -319,24 +338,30 @@ export function parseVCard(text: string): ParsedVCard | null {
         break;
       case "FN":
         fn = v.trim() || null;
+        out.presentFields.add("FN");
         break;
       case "N": {
         const segs = p.value.split(";").map(unescapeValue);
         nFamily = segs[0]?.trim() || null;
         nGiven = segs[1]?.trim() || null;
+        out.presentFields.add("FN");
         break;
       }
       case "ORG":
         out.company = unescapeValue(p.value.split(";")[0] ?? "").trim() || null;
+        out.presentFields.add("ORG");
         break;
       case "TITLE":
         out.title = v.trim() || null;
+        out.presentFields.add("TITLE");
         break;
       case "EMAIL":
         if (!out.email) out.email = v.trim() || null;
         else if ((p.params.TYPE ?? []).includes("PREF")) out.email = v.trim() || null;
+        out.presentFields.add("EMAIL");
         break;
       case "TEL": {
+        out.presentFields.add("TEL");
         const num = v.trim();
         if (!num) break;
         const types = p.params.TYPE ?? [];
@@ -360,21 +385,31 @@ export function parseVCard(text: string): ParsedVCard | null {
         out.region = (segs[4] ?? "").trim() || null;
         out.postal_code = (segs[5] ?? "").trim() || null;
         out.country = (segs[6] ?? "").trim() || null;
+        out.presentFields.add("ADR");
         break;
       }
       case "URL": {
         const url = v.trim();
         if (!url) break;
         const joined = (p.params.TYPE ?? []).join(",").toUpperCase();
-        if (joined.includes("LINKEDIN") || /linkedin\.com/i.test(url)) out.linkedin = url;
-        else if (joined.includes("TWITTER") || /twitter\.com|x\.com/i.test(url)) out.twitter = url;
-        else if (!out.website) out.website = url;
+        if (joined.includes("LINKEDIN") || /linkedin\.com/i.test(url)) {
+          out.linkedin = url;
+          out.presentFields.add("LINKEDIN");
+        } else if (joined.includes("TWITTER") || /twitter\.com|x\.com/i.test(url)) {
+          out.twitter = url;
+          out.presentFields.add("TWITTER");
+        } else if (!out.website) {
+          out.website = url;
+          out.presentFields.add("URL");
+        }
         break;
       }
       case "NOTE":
         out.notes = v || null;
+        out.presentFields.add("NOTE");
         break;
       case "CATEGORIES": {
+        out.presentFields.add("CATEGORIES");
         // Commas separate values; already-escaped commas were resolved by
         // unescapeValue, so re-split on unescaped commas via the raw value.
         const raw = p.value;
