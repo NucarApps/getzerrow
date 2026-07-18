@@ -60,8 +60,7 @@ export const uploadContactPhoto = createServerFn({ method: "POST" })
 
     // Nudge Google sync to push the new picture upstream on next run.
     try {
-      const { markGoogleContactLinkDirty } = await import("@/lib/google-contacts/dirty");
-      await markGoogleContactLinkDirty(context.userId, data.contactId);
+      await markGoogleContactDirty(context.userId, data.contactId);
     } catch {
       // Not linked to Google — no-op.
     }
@@ -76,8 +75,7 @@ export const removeContactPhoto = createServerFn({ method: "POST" })
     const { deleteContactPhoto } = await import("@/lib/contacts/photos.server");
     await deleteContactPhoto(context.userId, data.contactId);
     try {
-      const { markGoogleContactLinkDirty } = await import("@/lib/google-contacts/dirty");
-      await markGoogleContactLinkDirty(context.userId, data.contactId);
+      await markGoogleContactDirty(context.userId, data.contactId);
     } catch {
       // ignore
     }
