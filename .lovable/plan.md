@@ -1,54 +1,58 @@
-## What's happening
+# Sync contact photos across iPhone, Zerrow, and Google
 
-Chanell Dagesse (`a4a43ddb…`) has one email in Zerrow (`chanelldagesse@gmail.com`) and two on iOS. The DB shows a single `contact_emails` row for her, backfilled at the exact moment the `contact_emails` migration ran — meaning the second email never made it into the new table.
+Right now the vCard builder and parser skip `PHOTO` entirely, and the Google People sync ignores photos too. So if you set a picture on your iPhone contact, iOS uploads it in the vCard `PUT`, we discard it, and on the next refresh iOS sees no photo and clears its own. This plan makes photos a first-class synced field the same way emails and phones are.
 
-Two facts explain why:
+## What you'll see
+- Add or change a contact photo on iPhone → shows up on Zerrow within seconds.
+- Add or change a photo in Zerrow (existing avatar picker) → shows up on iPhone on next sync and pushes to Google Contacts.
+- Photos survive partial iOS `PUT`s the same way emails do — a vCard without `PHOTO` won't wipe an existing picture.
 
-1. **When the `contact_emails` table shipped, the backfill only copied the single legacy `contacts.email` column.** There was nowhere else to source secondary emails from at that point, so any "extras" that existed only on iOS or Google were not created.
-2. **Since the multi-email CardDAV/Google code landed, no fresh sync has actually brought the second email in yet.** iOS only sends a `PUT` for a contact when the user edits it. Chanell hasn't been touched on iOS since the fix, so iOS still hasn't re-sent her full vCard with both emails. Meanwhile her Google link is marked *dirty* (`last_synced_at = 1970`) from the earlier CardDAV edit, which means the next Google sync will **push** her (one-email) local record **up** to Google — and if Google has the second email, that push would erase it before we ever pulled it.
+## Scope
+- iPhone ⇄ Zerrow via CardDAV (embedded base64 PHOTO in vCard).
+- Zerrow ⇄ Google Contacts via People API (photo upload/download).
+- Existing `contacts.avatar_url` column stays the single source of truth; new photos are stored in a private `contact-photos` Storage bucket and `avatar_url` points at a signed URL.
 
-So the second email is stranded on iOS/Google, and the current sync direction is set up to overwrite it, not import it.
+## Technical details
 
-## What to do
+### 1. Storage
+- New private bucket `contact-photos`, path `{user_id}/{contact_id}.jpg`.
+- RLS: owner-only read/write via storage.objects policies keyed on the folder prefix.
+- Helper `setContactPhoto(contactId, bytes, mime)` in `src/lib/contacts/photos.server.ts` — writes bytes, updates `contacts.avatar_url`, bumps `updated_at`, records a `contact_revisions` entry (so the existing 20-deep undo covers photo changes too).
 
-Two independent fixes: one to recover Chanell right now, one so no other contact silently loses a secondary email.
+### 2. CardDAV (iPhone ⇄ Zerrow)
+- `src/lib/carddav/vcard.ts`
+  - Parser: recognize `PHOTO;ENCODING=b;TYPE=JPEG:…` and vCard 4-style `PHOTO:data:image/jpeg;base64,…`; return `{ mime, bytes }`. Track `PHOTO` in `presentFields` only when a real value was present (empty PHOTO line is ignored, same rule as EMAIL).
+  - Builder: when `avatar_url` is set, fetch the bytes and inline as `PHOTO;ENCODING=b;TYPE=JPEG:<base64>` with the 75-char line folding we already use.
+- `src/lib/carddav/merge.ts` + `handlers.server.ts`
+  - Treat photo like emails: only overwrite when the incoming vCard actually carried a PHOTO value; blank/missing PHOTO leaves the server photo untouched.
+  - On PUT with a photo, call `setContactPhoto` and set `google_contact_links.last_synced_at = 1970-01-01` so the change gets pushed to Google on the next tick.
+- Bump `carddav_settings.resync_nonce` in the migration so iPhones re-pull and pick up embedded photos.
 
-### 1. Recover the missing email(s) safely
+### 3. Google Contacts (Zerrow ⇄ Google)
+- `src/lib/google-contacts/people-client.server.ts`: add `getContactPhoto(resourceName)` (uses `photos.default` URL from person payload) and `updateContactPhoto(resourceName, bytes)` (People `people:updateContactPhoto`).
+- `src/lib/google-contacts/mapper.ts` + `pull.server.ts`: when a person has a non-default photo and Zerrow's copy is missing or hash-differs, download and store via `setContactPhoto`.
+- `src/lib/google-contacts/push.server.ts`: when a dirty contact has a photo we haven't pushed (track via a new `contact_emails`-style hash column `google_contact_links.photo_etag`), call `updateContactPhoto`.
+- Conflict guard already added for emails is reused: pull first if Google's photo is newer than our `last_synced_at`.
 
-- Add a "Re-pull from Google" action on the contact drawer (and a bulk version in Settings → Google Contacts sync) that:
-  - Clears the dirty flag on `google_contact_links` for the selected contact(s) (`last_synced_at = now()` sentinel that means "trust remote"), then
-  - Runs a **pull-only** fetch of just those `resource_name`s from People API and writes results through the updated `personToContact` mapper (which already handles multi-email).
-  - Never pushes during this action, so if Google has more than we do, we import it instead of clobbering it.
-- Show the user a one-line result: "Imported N additional emails / phones from Google."
-- For iOS-only extras (email exists only on iPhone, not in Google): show a small inline hint in the contact drawer when `contact_emails` has fewer rows than we've seen in past vCards, telling the user "open this contact on iPhone and tap Done to resync." That's the only reliable way to get iOS to re-`PUT`.
+### 4. UI
+- `ContactDetailView.tsx`: the avatar area already displays `avatar_url`; add an "Upload photo" / "Remove photo" control wired to `setContactPhoto` and a delete server fn. No new component needed beyond a small `PhotoEditor.tsx`.
 
-### 2. Backfill scan across all contacts
+### 5. Migration
+```sql
+-- storage bucket via supabase--storage_create_bucket (private)
+alter table public.google_contact_links add column if not exists photo_etag text;
+update public.carddav_settings set resync_nonce = gen_random_uuid();
+```
+Storage RLS: standard "owner folder" pattern on `storage.objects` for `contact-photos`.
 
-- One-shot server function `backfillMultiEmailsFromGoogle`, runnable from the admin/sync settings page, that:
-  - Iterates every `google_contact_links` row for the user,
-  - For each, pulls the current Google Person,
-  - If Google's email list has any address not present in `contact_emails` for that contact, inserts the missing rows (never deletes, never touches the primary flag).
-- Runs in batches with the existing lease/progress reporter so a large address book doesn't stall.
-- Logs a summary: `{ contacts_scanned, emails_added, contacts_updated }`.
+### 6. Tests
+- Extend `src/lib/carddav/sync.regression.test.ts`:
+  - iOS PUT with new PHOTO stores bytes and sets avatar_url.
+  - iOS PUT without PHOTO leaves an existing photo alone (mirrors the empty-EMAIL regression).
+  - iOS PUT with explicitly cleared PHOTO (empty value) is ignored (photos never get nulled by a partial PUT).
+- New `src/lib/carddav/vcard.photo.test.ts` for parse/build round-trip of base64 PHOTO with line folding.
 
-### 3. Prevent this from happening again on the next dirty push
-
-- In `push.server.ts`, before pushing a "dirty" contact to Google, do a lightweight `people.get` first and compare email sets. If Google has any email address we don't have locally, **abort the push for that contact** and mark it for pull instead (flip `last_synced_at` back to a pull sentinel and log a warning). This turns a silent overwrite into a caught conflict.
-
-### Technical notes
-
-- No schema changes. `contact_emails` already exists with the correct shape and RLS.
-- Reuses `personToContact` (already returns `emails: LocalEmail[]`) and the existing `contact_emails` upsert path from `pull.server.ts`.
-- New server functions live in `src/lib/google-contacts/repair.functions.ts` behind `requireSupabaseAuth`, scoped by `userId`.
-- UI additions: one button in `ContactDetailView.tsx`, one button + result panel in the Google Contacts settings section.
-
-### What to verify after implementing
-
-- Run "Re-pull from Google" on Chanell → `contact_emails` should have both addresses, primary preserved.
-- Trigger CardDAV `GET` for Chanell (or refresh on iPhone) → vCard contains both `EMAIL` lines.
-- Confirm no other contact regressed (spot-check 3 random contacts).
-- Confirm the push-conflict guard fires for a synthetic case where Google has an extra email.
-
-## Open question
-
-Do you want the pull-only recovery to be automatic on next sync for every dirty contact (safer, slower), or only on-demand via the button (faster, requires you to click)? I'd default to on-demand plus the push-time conflict guard, but let me know if you'd rather have the automatic sweep.
+## Out of scope
+- HEIC → JPEG conversion (iOS already sends JPEG for contact photos).
+- Photo cropping UI beyond the existing avatar picker.
+- CalDAV / meeting attendee photos.
