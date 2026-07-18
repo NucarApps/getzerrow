@@ -323,6 +323,7 @@ export function parseVCard(text: string): ParsedVCard | null {
     region: null, postal_code: null, country: null, website: null,
     linkedin: null, twitter: null, notes: null,
     categories: [], isGroup: false, memberUids: [],
+    presentFields: new Set<PresentField>(),
   };
 
   let fn: string | null = null;
