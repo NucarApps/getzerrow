@@ -395,11 +395,46 @@ function ContactsPage() {
       map.set(key, bucket);
     }
     const arr = Array.from(map.values());
-    const companies = arr
+    // Collapse name-keyed buckets whose members share a website/email domain
+    // with an existing domain bucket (e.g. contacts with no email but a
+    // website pointing to nucar.com should merge into the nucar.com bucket).
+    const byDomain = new Map<string, Bucket>();
+    for (const b of arr) {
+      if (b.kind === "company" && b.domain) byDomain.set(b.domain, b);
+    }
+    const collapsed: Bucket[] = [];
+    for (const b of arr) {
+      if (b.kind === "company" && b.key.startsWith("name:")) {
+        // Determine dominant domain among this bucket's contacts (via website).
+        const domCounts = new Map<string, number>();
+        for (const c of b.contacts) {
+          const wd = contactLogoDomain(c.website, c.email);
+          const rd = wd ? resolveCompanyDomain(wd, aliasMap) : null;
+          if (rd && !isPersonalDomain(rd)) {
+            domCounts.set(rd, (domCounts.get(rd) ?? 0) + 1);
+          }
+        }
+        let target: string | null = null;
+        let best = 0;
+        for (const [d, n] of domCounts) {
+          if (n > best && byDomain.has(d)) {
+            best = n;
+            target = d;
+          }
+        }
+        if (target) {
+          const dst = byDomain.get(target)!;
+          dst.contacts.push(...b.contacts);
+          continue;
+        }
+      }
+      collapsed.push(b);
+    }
+    const companies = collapsed
       .filter((b) => b.kind === "company")
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-    const personal = arr.filter((b) => b.kind === "personal");
-    const other = arr.filter((b) => b.kind === "other");
+    const personal = collapsed.filter((b) => b.kind === "personal");
+    const other = collapsed.filter((b) => b.kind === "other");
     return [...companies, ...personal, ...other];
   }, [filtered, aliasMap]);
 
