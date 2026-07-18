@@ -400,6 +400,47 @@ export type Database = {
         }
         Relationships: []
       }
+      company_logo_hashes: {
+        Row: {
+          company_id: string
+          domain: string | null
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          sha256: string
+          source: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          domain?: string | null
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          sha256: string
+          source?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          domain?: string | null
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          sha256?: string
+          source?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_logo_hashes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_profiles: {
         Row: {
           created_at: string
@@ -868,6 +909,7 @@ export type Database = {
         Row: {
           address_line1_enc: string | null
           address_line2_enc: string | null
+          avatar_source: string
           avatar_url: string | null
           card_image_url: string | null
           city: string | null
@@ -899,6 +941,7 @@ export type Database = {
         Insert: {
           address_line1_enc?: string | null
           address_line2_enc?: string | null
+          avatar_source?: string
           avatar_url?: string | null
           card_image_url?: string | null
           city?: string | null
@@ -930,6 +973,7 @@ export type Database = {
         Update: {
           address_line1_enc?: string | null
           address_line2_enc?: string | null
+          avatar_source?: string
           avatar_url?: string | null
           card_image_url?: string | null
           city?: string | null
