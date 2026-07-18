@@ -114,6 +114,9 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
   };
 
   const logoDomain = !displaySrc ? contactLogoDomain(website ?? null, email ?? null) : null;
+  const logoChoice = logoDomain
+    ? (logoChoicesQuery.data ?? []).find((c) => c.domain === logoDomain)
+    : undefined;
 
   return (
     <div className="group relative h-16 w-16 shrink-0">
@@ -124,7 +127,14 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
           className="h-16 w-16 rounded-full object-cover"
         />
       ) : logoDomain ? (
-        <CompanyLogo domain={logoDomain} name={displayName} size={64} className="!rounded-full" />
+        <CompanyLogo
+          domain={logoDomain}
+          name={displayName}
+          size={64}
+          className="!rounded-full"
+          provider={logoChoice?.provider}
+          sourceDomain={logoChoice?.source_domain ?? null}
+        />
       ) : (
         <div className="grid h-16 w-16 place-items-center rounded-full bg-primary/15 text-2xl font-semibold text-primary">
           {displayName.slice(0, 1).toUpperCase()}
