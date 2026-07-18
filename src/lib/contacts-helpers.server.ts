@@ -56,6 +56,29 @@ export const EXTRACT_SCHEMA = z.object({
   region: z.string().nullable(),
   postal_code: z.string().nullable(),
   country: z.string().nullable(),
+  // Best-guess industry / category for the contact's employer, drawn from
+  // a fixed vocabulary. Used by contact_group_rules to auto-route contacts
+  // into labels like "Software" or "Automotive". null when unclear.
+  ai_category: z
+    .enum([
+      "software",
+      "automotive",
+      "finance",
+      "legal",
+      "media",
+      "healthcare",
+      "retail",
+      "manufacturing",
+      "consulting",
+      "real_estate",
+      "education",
+      "nonprofit",
+      "government",
+      "hospitality",
+      "energy",
+      "other",
+    ])
+    .nullable(),
 });
 
 export const ADDRESS_FIELDS = [

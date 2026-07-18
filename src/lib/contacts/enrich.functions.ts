@@ -227,6 +227,7 @@ async function runEnrichForContact(
       region: null,
       postal_code: null,
       country: null,
+      ai_category: null,
     };
     try {
       const { output } = await generateText({
@@ -250,6 +251,7 @@ Fields:
 - region: state / province / region
 - postal_code: ZIP / postal code
 - country: country
+- ai_category: one industry slug for the person's employer, from this fixed set — software, automotive, finance, legal, media, healthcare, retail, manufacturing, consulting, real_estate, education, nonprofit, government, hospitality, energy, other. null if unclear.
 
 Emails (most-signature-likely first):
 ${sample}`,
@@ -286,6 +288,11 @@ ${sample}`,
     });
     for (const [k, v] of Object.entries(fieldPatch) as [EnrichableField, string][]) {
       (patch as Record<string, unknown>)[k] = v;
+    }
+    // ai_category isn't a locked/enrichable field — always overwrite when
+    // the model returns one; leave the previous value when it doesn't.
+    if (extracted.ai_category) {
+      (patch as Record<string, unknown>).ai_category = extracted.ai_category;
     }
 
     // Fields persisted only via the encrypted RPC — strip from the
@@ -539,6 +546,7 @@ export const addContactFromEmail = createServerFn({ method: "POST" })
       region: null,
       postal_code: null,
       country: null,
+      ai_category: null,
     };
     if (body.trim()) {
       try {

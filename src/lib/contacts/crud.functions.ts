@@ -25,6 +25,7 @@ import {
 
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 import { resolveContactCompany } from "@/lib/companies/companies.functions";
+import { applyRulesForContact } from "./group-rules.functions";
 
 /**
  * Fields we treat as "user-owned once you edit them". Enrichment reads this
@@ -452,6 +453,13 @@ export const updateContact = createServerFn({ method: "POST" })
       await reconcileAutoParentsForContacts(supabase, userId, [id]);
     }
 
+    // Evaluate per-label auto-assignment rules against the updated contact.
+    try {
+      await applyRulesForContact(supabase, userId, id);
+    } catch {
+      // rule evaluation is best-effort; never block a save.
+    }
+
     // Return the decrypted view so the UI re-renders with the new
     // phone/notes/address values written through the encrypted RPC.
     const { row: decRow } = await getContactDecrypted(id);
@@ -597,6 +605,13 @@ export const createContactManual = createServerFn({ method: "POST" })
     if (row?.id && row.company) {
       const { supabase } = context;
       await reconcileAutoParentsForContacts(supabase, userId, [row.id]);
+    }
+    if (row?.id) {
+      try {
+        await applyRulesForContact(supabase, userId, row.id);
+      } catch {
+        // best-effort
+      }
     }
     return { contact: row };
   });

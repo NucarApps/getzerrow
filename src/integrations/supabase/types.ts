@@ -742,6 +742,47 @@ export type Database = {
           },
         ]
       }
+      contact_group_rules: {
+        Row: {
+          auto_apply: boolean
+          created_at: string
+          group_id: string
+          id: string
+          rule_type: string
+          updated_at: string
+          user_id: string
+          value: string
+        }
+        Insert: {
+          auto_apply?: boolean
+          created_at?: string
+          group_id: string
+          id?: string
+          rule_type: string
+          updated_at?: string
+          user_id: string
+          value: string
+        }
+        Update: {
+          auto_apply?: boolean
+          created_at?: string
+          group_id?: string
+          id?: string
+          rule_type?: string
+          updated_at?: string
+          user_id?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_group_rules_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "contact_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_group_suggestions: {
         Row: {
           contact_ids: string[]
@@ -941,6 +982,7 @@ export type Database = {
         Row: {
           address_line1_enc: string | null
           address_line2_enc: string | null
+          ai_category: string | null
           avatar_source: string
           avatar_url: string | null
           card_image_url: string | null
@@ -973,6 +1015,7 @@ export type Database = {
         Insert: {
           address_line1_enc?: string | null
           address_line2_enc?: string | null
+          ai_category?: string | null
           avatar_source?: string
           avatar_url?: string | null
           card_image_url?: string | null
@@ -1005,6 +1048,7 @@ export type Database = {
         Update: {
           address_line1_enc?: string | null
           address_line2_enc?: string | null
+          ai_category?: string | null
           avatar_source?: string
           avatar_url?: string | null
           card_image_url?: string | null
