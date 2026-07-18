@@ -8,6 +8,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
+
 import { Copy, Smartphone, Trash2 } from "lucide-react";
 import {
   createCardDavToken,
