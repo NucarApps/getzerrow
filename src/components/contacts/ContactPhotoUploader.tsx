@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { contactLogoDomain } from "@/lib/company-domains";
+import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 import {
   uploadContactPhoto,
   removeContactPhoto,
