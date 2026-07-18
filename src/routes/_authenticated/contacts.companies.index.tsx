@@ -63,7 +63,13 @@ function CompaniesListPage() {
           </Link>
         </Button>
         <h1 className="text-2xl font-semibold">Companies</h1>
+        <div className="ml-auto">
+          <Button variant="outline" size="sm" onClick={() => setDupOpen(true)}>
+            <Sparkles className="mr-2 h-4 w-4" /> Find duplicates
+          </Button>
+        </div>
       </div>
+      <CompanyDuplicatesDrawer open={dupOpen} onOpenChange={setDupOpen} />
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
