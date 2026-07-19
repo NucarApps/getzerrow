@@ -165,8 +165,6 @@ async function pushContacts(
       avatarByContact.set(r.id, r.avatar_url ?? null);
     }
   }
-  const MAX_PHOTO_PUSH_ATTEMPTS = 5;
-
   let count = 0;
   for (const c of contacts as ContactRow[]) {
     const link = byLocal.get(c.id);
@@ -175,10 +173,11 @@ async function pushContacts(
     const linkPhotoAttempts =
       (link as { photo_push_attempts?: number | null } | undefined)?.photo_push_attempts ?? 0;
     const currentAvatar = avatarByContact.get(c.id) ?? null;
-    const photoIsDirty =
-      currentAvatar !== null &&
-      currentAvatar !== linkPhotoEtag &&
-      linkPhotoAttempts < MAX_PHOTO_PUSH_ATTEMPTS;
+    const photoIsDirty = isGooglePhotoPushDirty({
+      avatarUrl: currentAvatar,
+      photoEtag: linkPhotoEtag,
+      photoPushAttempts: linkPhotoAttempts,
+    });
     // Skip only when neither the person body nor the photo needs updating.
     if (
       link &&
@@ -186,6 +185,7 @@ async function pushContacts(
       !photoIsDirty
     )
       continue;
+
 
 
     try {
