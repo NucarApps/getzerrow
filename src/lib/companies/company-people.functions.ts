@@ -87,7 +87,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
     ] = await Promise.all([
       supabase
         .from("emails")
-        .select("from_addr,received_at")
+        .select("from_addr,from_name,received_at")
         .eq("user_id", userId)
         .not("from_addr", "is", null)
         .or(emailOr)
@@ -95,66 +95,243 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
         .limit(5000),
       supabase
         .from("calendar_contacts")
-        .select("email_address,last_seen_at")
+        .select("email_address,display_name,last_seen_at")
         .eq("user_id", userId)
         .or(calOr)
         .limit(5000),
-      supabase.from("contacts").select("email").eq("user_id", userId),
-      supabase.from("contact_emails").select("address").eq("user_id", userId),
+      supabase
+        .from("contacts")
+        .select("id,name,email,company_id")
+        .eq("user_id", userId),
+      supabase
+        .from("contact_emails")
+        .select("contact_id,address")
+        .eq("user_id", userId),
       supabase.from("gmail_accounts").select("email_address").eq("user_id", userId),
     ]);
 
-    // Addresses to exclude: already a contact (primary or secondary) or one of
-    // the user's own connected accounts.
+    type ContactRow = {
+      id: string;
+      name: string | null;
+      email: string | null;
+      company_id: string | null;
+    };
+    const contactsById = new Map<string, ContactRow>();
     const exclude = new Set<string>();
-    for (const c of existing ?? []) {
-      const e = ((c as { email: string | null }).email || "").toLowerCase();
+    for (const c of (existing ?? []) as ContactRow[]) {
+      contactsById.set(c.id, c);
+      const e = (c.email || "").toLowerCase();
       if (e) exclude.add(e);
     }
-    for (const c of extraEmails ?? []) {
-      const e = ((c as { address: string | null }).address || "").toLowerCase();
-      if (e) exclude.add(e);
+    // Aggregate all emails per contact (primary + secondary) for local-part matching.
+    const emailsByContact = new Map<string, string[]>();
+    for (const c of contactsById.values()) {
+      if (c.email) emailsByContact.set(c.id, [c.email.toLowerCase()]);
+    }
+    for (const r of (extraEmails ?? []) as Array<{ contact_id: string; address: string | null }>) {
+      const addr = (r.address || "").toLowerCase();
+      if (!addr) continue;
+      exclude.add(addr);
+      const arr = emailsByContact.get(r.contact_id) ?? [];
+      if (!arr.includes(addr)) arr.push(addr);
+      emailsByContact.set(r.contact_id, arr);
     }
     for (const a of accts ?? []) {
       const e = ((a as { email_address: string | null }).email_address || "").toLowerCase();
       if (e) exclude.add(e);
     }
 
+    // Match indexes: normalized full name → contactIds; localPart → contactIds.
+    const byName = new Map<string, string[]>();
+    const byLocal = new Map<string, string[]>();
+    for (const c of contactsById.values()) {
+      const norm = normalizeNameLoose(c.name);
+      if (norm) {
+        const arr = byName.get(norm) ?? [];
+        arr.push(c.id);
+        byName.set(norm, arr);
+      }
+      for (const addr of emailsByContact.get(c.id) ?? []) {
+        const lp = emailLocalPart(addr);
+        if (!lp) continue;
+        const arr = byLocal.get(lp) ?? [];
+        if (!arr.includes(c.id)) arr.push(c.id);
+        byLocal.set(lp, arr);
+      }
+    }
+
+    // Track the best from_name/display_name we've seen for each candidate email.
+    const bestNameByEmail = new Map<string, string>();
     const agg = new Map<string, FoundPerson>();
-    const consider = (addr: string, source: "email" | "calendar", at: string | null) => {
+    const consider = (
+      addr: string,
+      source: "email" | "calendar",
+      at: string | null,
+      displayName: string | null,
+    ) => {
       const email = addr.trim().toLowerCase();
       if (!email || exclude.has(email) || !isLikelyHuman(email)) return;
       const dom = extractDomain(email);
       if (!dom || !domainSet.has(dom)) return; // exact-domain guard (no subdomains)
+      if (displayName && displayName.trim() && !bestNameByEmail.has(email)) {
+        bestNameByEmail.set(email, displayName.trim());
+      }
       const cur = agg.get(email);
       if (!cur) {
         agg.set(email, {
           email,
-          name: nameFromLocalPart(email),
+          name: displayName?.trim() || nameFromLocalPart(email),
           sources: [source],
           count: 1,
           lastSeenAt: at,
+          possibleMatches: [],
         });
       } else {
         cur.count++;
+        if (!cur.name && displayName?.trim()) cur.name = displayName.trim();
         if (!cur.sources.includes(source)) cur.sources.push(source);
         if (at && (!cur.lastSeenAt || at > cur.lastSeenAt)) cur.lastSeenAt = at;
       }
     };
 
     for (const r of mailRows ?? []) {
-      consider(
-        (r as { from_addr: string }).from_addr,
-        "email",
-        (r as { received_at: string | null }).received_at,
-      );
+      const row = r as { from_addr: string; from_name: string | null; received_at: string | null };
+      consider(row.from_addr, "email", row.received_at, row.from_name);
     }
     for (const r of calRows ?? []) {
-      consider(
-        (r as { email_address: string }).email_address,
-        "calendar",
-        (r as { last_seen_at: string | null }).last_seen_at,
+      const row = r as {
+        email_address: string;
+        display_name: string | null;
+        last_seen_at: string | null;
+      };
+      consider(row.email_address, "calendar", row.last_seen_at, row.display_name);
+    }
+
+    // Score possible matches for each candidate against existing contacts.
+    for (const person of agg.values()) {
+      const candidateName = bestNameByEmail.get(person.email) ?? person.name;
+      const candidateLocal = emailLocalPart(person.email);
+      const candidateDom = extractDomain(person.email);
+      const seen = new Map<string, PossibleMatch>();
+      const upsertMatch = (m: PossibleMatch) => {
+        const prev = seen.get(m.contactId);
+        if (!prev || m.score > prev.score) seen.set(m.contactId, m);
+      };
+
+      // Name-based matches.
+      if (candidateName) {
+        const nn = normalizeNameLoose(candidateName);
+        for (const id of byName.get(nn) ?? []) {
+          const c = contactsById.get(id);
+          if (!c) continue;
+          upsertMatch({
+            contactId: id,
+            contactName: c.name,
+            contactEmail: c.email,
+            reason: "name_exact",
+            score: 0.95,
+            sameCompanyId: c.company_id === data.companyId,
+            differentDomain: !c.email || extractDomain(c.email) !== candidateDom,
+          });
+        }
+        // Loose name matches across all contacts (bounded scan).
+        for (const c of contactsById.values()) {
+          if (seen.has(c.id)) continue;
+          const conf = nameMatchConfidence(candidateName, c.name, 3);
+          if (!conf) continue;
+          upsertMatch({
+            contactId: c.id,
+            contactName: c.name,
+            contactEmail: c.email,
+            reason: "loose_tokens",
+            score: conf === "high" ? 0.9 : conf === "medium" ? 0.7 : 0.5,
+            sameCompanyId: c.company_id === data.companyId,
+            differentDomain: !c.email || extractDomain(c.email) !== candidateDom,
+          });
+        }
+      }
+
+      // Local-part matches on a different domain.
+      if (candidateLocal) {
+        for (const id of byLocal.get(candidateLocal) ?? []) {
+          const c = contactsById.get(id);
+          if (!c) continue;
+          const contactAddrs = emailsByContact.get(id) ?? [];
+          const sameLocalDifferentDomain = contactAddrs.every(
+            (a) => extractDomain(a) !== candidateDom,
+          );
+          if (!sameLocalDifferentDomain) continue;
+          upsertMatch({
+            contactId: id,
+            contactName: c.name,
+            contactEmail: c.email,
+            reason: "localpart_diff_domain",
+            score: 0.75,
+            sameCompanyId: c.company_id === data.companyId,
+            differentDomain: true,
+          });
+        }
+      }
+
+      person.possibleMatches = [...seen.values()]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+    }
+
+    // Optional AI disambiguation when the top two matches tie on score. Best-effort.
+    const key = process.env.LOVABLE_API_KEY;
+    if (key) {
+      const needsAI = [...agg.values()].filter(
+        (p) =>
+          p.possibleMatches.length >= 2 &&
+          p.possibleMatches[0].score === p.possibleMatches[1].score,
       );
+      if (needsAI.length > 0 && needsAI.length <= 20) {
+        try {
+          const model = createLovableAiGatewayProvider(key)("google/gemini-3.1-flash-lite");
+          const schema = z.object({
+            picks: z.array(
+              z.object({
+                email: z.string(),
+                bestContactId: z.string().nullable(),
+              }),
+            ),
+          });
+          const prompt = `For each candidate email, choose the best matching existing contact by identity (same real person), or null if none clearly match. Return one entry per candidate.\n\nCandidates:\n${needsAI
+            .map((p) => {
+              const cands = p.possibleMatches
+                .map(
+                  (m) =>
+                    `    - id=${m.contactId} name=${JSON.stringify(m.contactName)} email=${JSON.stringify(m.contactEmail)}`,
+                )
+                .join("\n");
+              return `- email=${p.email} candidateName=${JSON.stringify(bestNameByEmail.get(p.email) ?? p.name)}\n  possible:\n${cands}`;
+            })
+            .join("\n")}`;
+          const { output } = await generateText({
+            model,
+            output: Output.object({ schema }),
+            prompt,
+          });
+          const pickByEmail = new Map(
+            output.picks.map((p) => [p.email.toLowerCase(), p.bestContactId]),
+          );
+          for (const p of needsAI) {
+            const pick = pickByEmail.get(p.email);
+            if (!pick) continue;
+            const idx = p.possibleMatches.findIndex((m) => m.contactId === pick);
+            if (idx > 0) {
+              const [chosen] = p.possibleMatches.splice(idx, 1);
+              chosen.score = Math.max(chosen.score, 0.92);
+              p.possibleMatches.unshift(chosen);
+            }
+          }
+        } catch (e) {
+          if (!NoObjectGeneratedError.isInstance(e)) {
+            console.error("AI tie-break failed", (e as Error).message);
+          }
+        }
+      }
     }
 
     const people = [...agg.values()].sort(
@@ -162,6 +339,146 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
     );
     return { people: people.slice(0, 200), domains };
   });
+
+export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        contactId: z.string().uuid(),
+        companyId: z.string().uuid(),
+        email: z.string().trim().toLowerCase().email().max(255),
+        name: z.string().trim().max(200).nullable().optional(),
+        mode: z.enum(["replace_primary", "add_secondary"]).default("add_secondary"),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    const { data: contact, error: cErr } = await supabase
+      .from("contacts")
+      .select("id,email,name,company,company_id")
+      .eq("id", data.contactId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (cErr) throw new Error(cErr.message);
+    if (!contact) throw new Error("Contact not found");
+
+    const { data: company } = await supabase
+      .from("companies")
+      .select("id,name")
+      .eq("id", data.companyId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!company) throw new Error("Company not found");
+    const companyName = (company as { name: string }).name;
+
+    // Make sure the new email isn't already a different contact.
+    const { data: clash } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("email", data.email)
+      .neq("id", data.contactId)
+      .maybeSingle();
+    if (clash) throw new Error("Another contact already uses that email");
+
+    const row = contact as {
+      id: string;
+      email: string | null;
+      name: string | null;
+      company: string | null;
+      company_id: string | null;
+    };
+
+    if (data.mode === "replace_primary") {
+      // Preserve the old primary as a secondary so history isn't lost.
+      const oldPrimary = (row.email || "").toLowerCase();
+      const patch: Record<string, unknown> = {
+        email: data.email,
+        company: companyName,
+        company_id: data.companyId,
+      };
+      if (!row.name && data.name) patch.name = data.name;
+      const { error: upErr } = await supabase
+        .from("contacts")
+        .update(patch)
+        .eq("id", row.id)
+        .eq("user_id", userId);
+      if (upErr) throw new Error(upErr.message);
+      if (oldPrimary && oldPrimary !== data.email) {
+        await supabase
+          .from("contact_emails")
+          .insert({
+            user_id: userId,
+            contact_id: row.id,
+            address: oldPrimary,
+            is_primary: false,
+          });
+      }
+    } else {
+      // Add-as-secondary. If contact has no primary, promote this to primary.
+      if (!row.email) {
+        const patch: Record<string, unknown> = {
+          email: data.email,
+          company: companyName,
+          company_id: data.companyId,
+        };
+        if (!row.name && data.name) patch.name = data.name;
+        const { error: upErr } = await supabase
+          .from("contacts")
+          .update(patch)
+          .eq("id", row.id)
+          .eq("user_id", userId);
+        if (upErr) throw new Error(upErr.message);
+      } else {
+        // Attach secondary + link company if missing.
+        if (!row.company_id) {
+          await supabase
+            .from("contacts")
+            .update({ company: companyName, company_id: data.companyId })
+            .eq("id", row.id)
+            .eq("user_id", userId);
+        }
+        const { error: seErr } = await supabase.from("contact_emails").insert({
+          user_id: userId,
+          contact_id: row.id,
+          address: data.email,
+          is_primary: false,
+        });
+        // Ignore duplicate-key collisions from a re-run.
+        if (seErr && !/duplicate|unique/i.test(seErr.message)) {
+          throw new Error(seErr.message);
+        }
+      }
+    }
+
+    // Converge label rules + auto-subgroups just like addCompanyPeople.
+    try {
+      const { syncCompanyRuleMemberships } = await import(
+        "@/lib/contacts/group-rules.functions"
+      );
+      await syncCompanyRuleMemberships(supabase, userId, {
+        companyIds: [data.companyId],
+        contactIds: [row.id],
+        bumpResync: true,
+      });
+    } catch {
+      // Non-fatal.
+    }
+    try {
+      const { reconcileAutoParentsForContacts } = await import(
+        "@/lib/contacts/auto-company-subgroups.functions"
+      );
+      await reconcileAutoParentsForContacts(supabase, userId, [row.id]);
+    } catch {
+      // Non-fatal.
+    }
+
+    return { contactId: row.id };
+  });
+
 
 export const addCompanyPeople = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
