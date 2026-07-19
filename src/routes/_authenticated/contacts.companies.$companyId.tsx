@@ -910,70 +910,77 @@ function CompanyLabelsSection({ companyId }: { companyId: string }) {
   }
 
   const addRow = (
-    <div className="mt-3 flex items-center gap-2">
-      <Input
-        value={newLabel}
-        onChange={(e) => setNewLabel(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            submitNew();
-          }
-        }}
-        placeholder="New label name"
-        maxLength={60}
-        disabled={createMut.isPending}
-        className="h-8 max-w-xs text-sm"
-      />
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        onClick={submitNew}
-        disabled={!newLabel.trim() || createMut.isPending}
-      >
-        {createMut.isPending ? "Adding…" : "Add"}
-      </Button>
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-muted-foreground">Create new label</p>
+      <div className="flex items-center gap-2">
+        <Input
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submitNew();
+            }
+          }}
+          placeholder="e.g. Vendors"
+          maxLength={60}
+          disabled={createMut.isPending}
+          className="h-9 flex-1 text-sm sm:max-w-xs"
+        />
+        <Button
+          type="button"
+          size="sm"
+          onClick={submitNew}
+          disabled={!newLabel.trim() || createMut.isPending}
+        >
+          {createMut.isPending ? "Adding…" : "Add"}
+        </Button>
+      </div>
     </div>
   );
 
   return (
-    <div>
+    <div className="space-y-4">
+      {addRow}
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No labels yet — create your first one below.
+          No labels yet — create your first one above.
         </p>
       ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {groups.map((g) => {
-            const active = selected.has(g.id);
-            return (
-              <button
-                key={g.id}
-                type="button"
-                disabled={saveMut.isPending}
-                aria-pressed={active}
-                onClick={() => {
-                  const next = new Set(selected);
-                  if (next.has(g.id)) next.delete(g.id);
-                  else next.add(g.id);
-                  saveMut.mutate([...next]);
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
-                  active
-                    ? "border-primary bg-primary/10 text-foreground"
-                    : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
-                <span className="max-w-[12rem] truncate">{g.name}</span>
-                {active && <Check className="h-3 w-3" />}
-              </button>
-            );
-          })}
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+            Tap to toggle for this company
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {groups.map((g) => {
+              const active = selected.has(g.id);
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  disabled={saveMut.isPending}
+                  aria-pressed={active}
+                  onClick={() => {
+                    const next = new Set(selected);
+                    if (next.has(g.id)) next.delete(g.id);
+                    else next.add(g.id);
+                    saveMut.mutate([...next]);
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
+                    active
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
+                  <span className="max-w-[12rem] truncate">{g.name}</span>
+                  {active && <Check className="h-3 w-3" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
-      {addRow}
     </div>
   );
 }
