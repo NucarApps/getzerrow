@@ -31,6 +31,13 @@ export type Folder = {
   emails_since_learn?: number;
 };
 
+// Columns backing the Folder type above. Used instead of select("*") by the
+// shared "folders-full" queries so Gmail backfill bookkeeping columns (page
+// tokens, oldest-received cursors) never ship to the client.
+// (Kept as one string literal so supabase-js can type the select statically.)
+export const FOLDER_COLUMNS =
+  "id,name,color,gmail_label_id,ai_rule,learned_profile,last_learned_at,auto_archive,auto_mark_read,priority,gmail_account_id,filter_logic,auto_star,hide_from_inbox,skip_ai,filter_tree,forward_to,min_ai_confidence,snooze_hours,overrides_inbox_override,is_cold_email,surface_ai_rule,surface_names,auto_relearn,relearn_threshold,emails_since_learn" as const;
+
 export type Filter = {
   id: string;
   folder_id: string;

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -96,6 +97,7 @@ export const Route = createFileRoute("/_authenticated/meetings")({
     ],
   }),
   component: MeetingsPage,
+  errorComponent: RouteErrorFallback,
 });
 
 const STATUS_LABEL: Record<string, string> = {
@@ -273,6 +275,18 @@ function MeetingsPage() {
           <TabsContent value="past">
             {meetingsQ.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading meetings…</p>
+            ) : meetingsQ.isError ? (
+              <Card className="p-8 text-center">
+                <p className="text-sm text-muted-foreground">Couldn't load meetings.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => meetingsQ.refetch()}
+                >
+                  Retry
+                </Button>
+              </Card>
             ) : pastRows.length === 0 ? (
               <Card className="p-8 text-center">
                 <Video className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
