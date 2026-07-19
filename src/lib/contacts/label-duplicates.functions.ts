@@ -2,49 +2,101 @@
 // (a.k.a. contact_groups). Mirrors the pattern in companies.functions.ts
 // (findDuplicateCompanies / mergeCluster) but operates on contact_groups.
 //
-// A "duplicate" is a cluster of labels whose normalized display name
-// collides (per user, per parent scope). Optional AI review can further
-// fold near-matches like "Volkswagen" ↔ "VW".
+// A "duplicate" is a cluster of labels that resolve to the same company
+// (via their members' company links), the same alias-resolved company
+// name, or the same aggressively-normalized name — per user, per parent
+// scope (see label-clusters.ts). Optional AI review can further fold
+// near-matches like "Volkswagen" ↔ "VW".
 
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { normalizeCompanyName } from "@/lib/companies/normalize";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import {
+  clusterLabels,
+  sortCanonicalFirst,
+  dominantCompany,
+  CLUSTER_RATIONALE,
+  type LabelClusterInput,
+} from "./label-clusters";
+import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
+import { bumpResyncNonce } from "@/lib/carddav/settings.functions";
 
 type DB = SupabaseClient<Database>;
 
-type LabelLite = {
-  id: string;
-  name: string;
-  parent_group_id: string | null;
-  auto_generated_from_group_id: string | null;
+type LabelLite = LabelClusterInput & {
   color: string | null;
   carddav_uid: string | null;
-  member_count: number;
 };
 
 const PARENT_ROOT = "__root__";
 
-function normalizeKey(name: string | null | undefined): string | null {
-  return normalizeCompanyName(name ?? "");
-}
+/** Load every label with member counts, its dominant member company, and
+ *  the user's merged-name aliases — the inputs the pure clusterer needs. */
+async function loadLabelClusterInputs(
+  supabase: DB,
+  userId: string,
+): Promise<{ lite: LabelLite[]; nameAliases: Map<string, string> }> {
+  const [
+    { data: groups, error },
+    { data: members },
+    { data: contacts },
+    { data: aliasRows },
+    { data: companyRows },
+  ] = await Promise.all([
+    supabase
+      .from("contact_groups")
+      .select("id,name,parent_group_id,auto_generated_from_group_id,color,carddav_uid")
+      .eq("user_id", userId)
+      .limit(5000),
+    supabase.from("contact_group_members").select("group_id,contact_id"),
+    supabase.from("contacts").select("id,company_id").eq("user_id", userId),
+    supabase.from("company_name_aliases").select("name_key,company_id").eq("user_id", userId),
+    supabase.from("companies").select("id,name").eq("user_id", userId),
+  ]);
+  if (error) throw new Error(error.message);
 
-/** Group labels into duplicate clusters. Deterministic pass: same
- *  normalized name within the same parent scope. */
-function clusterLabels(labels: LabelLite[]): LabelLite[][] {
-  const buckets = new Map<string, LabelLite[]>();
-  for (const l of labels) {
-    const key = normalizeKey(l.name);
-    if (!key) continue;
-    const scope = `${l.parent_group_id ?? PARENT_ROOT}::${key}`;
-    const arr = buckets.get(scope) ?? [];
-    arr.push(l);
-    buckets.set(scope, arr);
+  const companyByContact = new Map<string, string | null>(
+    ((contacts ?? []) as Array<{ id: string; company_id: string | null }>).map((c) => [
+      c.id,
+      c.company_id ?? null,
+    ]),
+  );
+  const membersByGroup = new Map<string, string[]>();
+  for (const m of (members ?? []) as Array<{ group_id: string; contact_id: string }>) {
+    const arr = membersByGroup.get(m.group_id) ?? [];
+    arr.push(m.contact_id);
+    membersByGroup.set(m.group_id, arr);
   }
-  return [...buckets.values()].filter((c) => c.length >= 2);
+
+  const companyNameById = new Map(
+    ((companyRows ?? []) as Array<{ id: string; name: string }>).map((c) => [c.id, c.name]),
+  );
+  const nameAliases = new Map<string, string>();
+  for (const a of (aliasRows ?? []) as Array<{
+    name_key: string;
+    company_id: string | null;
+  }>) {
+    const canonical = a.company_id ? companyNameById.get(a.company_id) : null;
+    if (a.name_key && canonical) nameAliases.set(a.name_key, canonical);
+  }
+
+  const lite: LabelLite[] = (groups ?? []).map((g) => {
+    const memberIds = membersByGroup.get(g.id) ?? [];
+    return {
+      id: g.id,
+      name: g.name,
+      parent_group_id: g.parent_group_id ?? null,
+      auto_generated_from_group_id: g.auto_generated_from_group_id ?? null,
+      color: g.color ?? null,
+      carddav_uid: g.carddav_uid ?? null,
+      member_count: memberIds.length,
+      company_id: dominantCompany(memberIds, companyByContact),
+    };
+  });
+  return { lite, nameAliases };
 }
 
 export const findDuplicateLabels = createServerFn({ method: "POST" })
@@ -54,49 +106,17 @@ export const findDuplicateLabels = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const [{ data: groups, error }, { data: members }] = await Promise.all([
-      supabase
-        .from("contact_groups")
-        .select(
-          "id,name,parent_group_id,auto_generated_from_group_id,color,carddav_uid",
-        )
-        .eq("user_id", userId)
-        .limit(5000),
-      supabase.from("contact_group_members").select("group_id"),
-    ]);
-    if (error) throw new Error(error.message);
-    const counts = new Map<string, number>();
-    for (const m of members ?? [])
-      counts.set(m.group_id, (counts.get(m.group_id) ?? 0) + 1);
-    const lite: LabelLite[] = (groups ?? []).map((g) => ({
-      id: g.id,
-      name: g.name,
-      parent_group_id: g.parent_group_id ?? null,
-      auto_generated_from_group_id: g.auto_generated_from_group_id ?? null,
-      color: g.color ?? null,
-      carddav_uid: g.carddav_uid ?? null,
-      member_count: counts.get(g.id) ?? 0,
-    }));
-    const deterministic = clusterLabels(lite);
+    const { lite, nameAliases } = await loadLabelClusterInputs(supabase, userId);
+    const deterministic = clusterLabels(lite, nameAliases);
 
-    // Pick canonical: most members, tie-break by shortest name (usually the
-    // umbrella brand). Prefer non-auto rows over auto-generated ones when
-    // ties remain so the manual label survives the merge.
-    let clusters = deterministic.map((cluster) => {
-      const sorted = [...cluster].sort((a, b) => {
-        if (b.member_count !== a.member_count)
-          return b.member_count - a.member_count;
-        const aAuto = a.auto_generated_from_group_id ? 1 : 0;
-        const bAuto = b.auto_generated_from_group_id ? 1 : 0;
-        if (aAuto !== bAuto) return aAuto - bAuto;
-        return a.name.length - b.name.length;
-      });
+    const clusters = deterministic.map(({ labels: cluster, reason }) => {
+      const sorted = sortCanonicalFirst(cluster);
       const canonical = sorted[0];
       return {
         canonicalId: canonical.id,
         canonicalName: canonical.name,
         parentGroupId: canonical.parent_group_id,
-        rationale: "Same normalized name within the same parent label.",
+        rationale: CLUSTER_RATIONALE[reason],
         members: cluster.map((c) => ({
           id: c.id,
           name: c.name,
@@ -123,9 +143,7 @@ export const findDuplicateLabels = createServerFn({ method: "POST" })
       try {
         const apiKey = process.env.LOVABLE_API_KEY;
         if (apiKey) {
-          const { generateText, Output, NoObjectGeneratedError } = await import(
-            "ai"
-          );
+          const { generateText, Output, NoObjectGeneratedError } = await import("ai");
           const gateway = createLovableAiGatewayProvider(apiKey);
           const model = gateway("google/gemini-3.1-flash-lite");
           const AiSchema = z.object({
@@ -195,12 +213,16 @@ async function mergeLabelPair(
   userId: string,
   sourceId: string,
   targetId: string,
-): Promise<{ movedMembers: number; reparentedChildren: number }> {
-  if (sourceId === targetId) return { movedMembers: 0, reparentedChildren: 0 };
+): Promise<{
+  movedMembers: number;
+  reparentedChildren: number;
+  movedContactIds: string[];
+}> {
+  if (sourceId === targetId) return { movedMembers: 0, reparentedChildren: 0, movedContactIds: [] };
   // Verify ownership of both.
   const { data: rows, error } = await supabase
     .from("contact_groups")
-    .select("id,user_id")
+    .select("id,user_id,auto_generated_from_group_id")
     .in("id", [sourceId, targetId]);
   if (error) throw new Error(error.message);
   const map = new Map((rows ?? []).map((r) => [r.id, r]));
@@ -212,25 +234,27 @@ async function mergeLabelPair(
   ) {
     throw new Error("Label not found");
   }
+  // Auto-generated survivors are fully server-managed: moved members join
+  // as auto rows so the reconciler owns them instead of manual leftovers.
+  const targetIsAuto = !!map.get(targetId)!.auto_generated_from_group_id;
   // Move members (idempotent).
   const { data: srcMembers } = await supabase
     .from("contact_group_members")
     .select("contact_id")
     .eq("group_id", sourceId);
-  const movedMembers = (srcMembers ?? []).length;
+  const movedContactIds = (srcMembers ?? []).map((m) => m.contact_id);
+  const movedMembers = movedContactIds.length;
   if (movedMembers > 0) {
     await supabase.from("contact_group_members").upsert(
-      (srcMembers ?? []).map((m) => ({
+      movedContactIds.map((contact_id) => ({
         user_id: userId,
         group_id: targetId,
-        contact_id: m.contact_id,
+        contact_id,
+        auto_added: targetIsAuto,
       })),
       { onConflict: "group_id,contact_id", ignoreDuplicates: true },
     );
-    await supabase
-      .from("contact_group_members")
-      .delete()
-      .eq("group_id", sourceId);
+    await supabase.from("contact_group_members").delete().eq("group_id", sourceId);
   }
   // Reparent children groups (both structural parent and auto-parent
   // pointers) so nested subgroups follow the survivor.
@@ -281,7 +305,26 @@ async function mergeLabelPair(
     .eq("id", sourceId)
     .eq("user_id", userId);
   if (dErr) throw new Error(dErr.message);
-  return { movedMembers, reparentedChildren: reparented };
+  return { movedMembers, reparentedChildren: reparented, movedContactIds };
+}
+
+/** Post-merge convergence: let the auto-subgroup reconciler settle the
+ *  moved contacts, and bump the CardDAV nonce so iPhones notice deleted
+ *  groups promptly. Best-effort — a merge that already committed should
+ *  never surface as failed because of follow-up work. */
+async function convergeAfterMerges(
+  supabase: DB,
+  userId: string,
+  movedContactIds: string[],
+): Promise<void> {
+  try {
+    if (movedContactIds.length > 0) {
+      await reconcileAutoParentsForContacts(supabase, userId, [...new Set(movedContactIds)]);
+    }
+    await bumpResyncNonce(supabase, userId);
+  } catch {
+    // Non-fatal.
+  }
 }
 
 export const mergeLabelCluster = createServerFn({ method: "POST" })
@@ -299,16 +342,19 @@ export const mergeLabelCluster = createServerFn({ method: "POST" })
     let merged = 0;
     let failed = 0;
     let totalMoved = 0;
+    const movedContactIds: string[] = [];
     for (const sourceId of data.foldIds) {
       if (sourceId === data.canonicalId) continue;
       try {
         const r = await mergeLabelPair(supabase, userId, sourceId, data.canonicalId);
         totalMoved += r.movedMembers;
+        movedContactIds.push(...r.movedContactIds);
         merged++;
       } catch {
         failed++;
       }
     }
+    if (merged > 0) await convergeAfterMerges(supabase, userId, movedContactIds);
     return { merged, failed, movedMembers: totalMoved };
   });
 
@@ -319,44 +365,18 @@ export const consolidateLabelDuplicates = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const [{ data: groups, error }, { data: members }] = await Promise.all([
-      supabase
-        .from("contact_groups")
-        .select(
-          "id,name,parent_group_id,auto_generated_from_group_id,color,carddav_uid",
-        )
-        .eq("user_id", userId),
-      supabase.from("contact_group_members").select("group_id"),
-    ]);
-    if (error) throw new Error(error.message);
-    const counts = new Map<string, number>();
-    for (const m of members ?? [])
-      counts.set(m.group_id, (counts.get(m.group_id) ?? 0) + 1);
-    const lite: LabelLite[] = (groups ?? []).map((g) => ({
-      id: g.id,
-      name: g.name,
-      parent_group_id: g.parent_group_id ?? null,
-      auto_generated_from_group_id: g.auto_generated_from_group_id ?? null,
-      color: g.color ?? null,
-      carddav_uid: g.carddav_uid ?? null,
-      member_count: counts.get(g.id) ?? 0,
-    }));
-    const clusters = clusterLabels(lite);
+    const { lite, nameAliases } = await loadLabelClusterInputs(supabase, userId);
+    const clusters = clusterLabels(lite, nameAliases);
     let mergedClusters = 0;
     let mergedLabels = 0;
-    for (const cluster of clusters) {
-      const sorted = [...cluster].sort((a, b) => {
-        if (b.member_count !== a.member_count)
-          return b.member_count - a.member_count;
-        const aAuto = a.auto_generated_from_group_id ? 1 : 0;
-        const bAuto = b.auto_generated_from_group_id ? 1 : 0;
-        if (aAuto !== bAuto) return aAuto - bAuto;
-        return a.name.length - b.name.length;
-      });
+    const movedContactIds: string[] = [];
+    for (const { labels: cluster } of clusters) {
+      const sorted = sortCanonicalFirst(cluster);
       const canonical = sorted[0];
       for (const src of sorted.slice(1)) {
         try {
-          await mergeLabelPair(supabase, userId, src.id, canonical.id);
+          const r = await mergeLabelPair(supabase, userId, src.id, canonical.id);
+          movedContactIds.push(...r.movedContactIds);
           mergedLabels++;
         } catch {
           // skip on error, keep going
@@ -364,5 +384,6 @@ export const consolidateLabelDuplicates = createServerFn({ method: "POST" })
       }
       mergedClusters++;
     }
+    if (mergedLabels > 0) await convergeAfterMerges(supabase, userId, movedContactIds);
     return { mergedClusters, mergedLabels };
   });

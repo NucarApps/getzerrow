@@ -1,9 +1,31 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const STYLES = ["leaf", "path_slash", "path_dash"] as const;
 export type GroupNameStyle = (typeof STYLES)[number];
+
+/** Bump the resync nonce (feeds the address-book CTag) so CardDAV clients
+ * pull a fresh copy on their next sync. Shared by the settings handlers and
+ * any flow that deletes/renames groups behind iOS's back (label merges). */
+export async function bumpResyncNonce(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+): Promise<number> {
+  const { data: existing } = await supabase
+    .from("carddav_settings")
+    .select("resync_nonce")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const next = ((existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
+  const { error } = await supabase
+    .from("carddav_settings")
+    .upsert({ user_id: userId, resync_nonce: next }, { onConflict: "user_id" });
+  if (error) throw new Error(error.message);
+  return next;
+}
 
 export type CardDavSettings = {
   group_name_style: GroupNameStyle;
@@ -23,13 +45,11 @@ export const getCardDavSettings = createServerFn({ method: "GET" })
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    const row = data as
-      | {
-          group_name_style?: string;
-          include_summary_in_notes?: boolean;
-          use_company_logo_fallback?: boolean;
-        }
-      | null;
+    const row = data as {
+      group_name_style?: string;
+      include_summary_in_notes?: boolean;
+      use_company_logo_fallback?: boolean;
+    } | null;
     const style: GroupNameStyle =
       row?.group_name_style === "leaf" || row?.group_name_style === "path_dash"
         ? row.group_name_style
@@ -43,18 +63,19 @@ export const getCardDavSettings = createServerFn({ method: "GET" })
 
 export const updateCardDavSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    group_name_style?: GroupNameStyle;
-    include_summary_in_notes?: boolean;
-    use_company_logo_fallback?: boolean;
-  }) =>
-    z
-      .object({
-        group_name_style: z.enum(STYLES).optional(),
-        include_summary_in_notes: z.boolean().optional(),
-        use_company_logo_fallback: z.boolean().optional(),
-      })
-      .parse(d),
+  .inputValidator(
+    (d: {
+      group_name_style?: GroupNameStyle;
+      include_summary_in_notes?: boolean;
+      use_company_logo_fallback?: boolean;
+    }) =>
+      z
+        .object({
+          group_name_style: z.enum(STYLES).optional(),
+          include_summary_in_notes: z.boolean().optional(),
+          use_company_logo_fallback: z.boolean().optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -65,13 +86,11 @@ export const updateCardDavSettings = createServerFn({ method: "POST" })
       .select("resync_nonce, include_summary_in_notes, use_company_logo_fallback")
       .eq("user_id", userId)
       .maybeSingle();
-    const prev = existing as
-      | {
-          resync_nonce?: number;
-          include_summary_in_notes?: boolean;
-          use_company_logo_fallback?: boolean;
-        }
-      | null;
+    const prev = existing as {
+      resync_nonce?: number;
+      include_summary_in_notes?: boolean;
+      use_company_logo_fallback?: boolean;
+    } | null;
     const nextNonce = (prev?.resync_nonce ?? 0) + 1;
     const patch: {
       user_id: string;
@@ -127,14 +146,10 @@ export const resyncSummaryContacts = createServerFn({ method: "POST" })
       .select("resync_nonce")
       .eq("user_id", userId)
       .maybeSingle();
-    const nextNonce =
-      ((existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
+    const nextNonce = ((existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
     await supabase
       .from("carddav_settings")
-      .upsert(
-        { user_id: userId, resync_nonce: nextNonce },
-        { onConflict: "user_id" },
-      );
+      .upsert({ user_id: userId, resync_nonce: nextNonce }, { onConflict: "user_id" });
 
     const { data: touched, error } = await supabase
       .from("contacts")
@@ -153,20 +168,6 @@ export const forceCarddavResync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const { data: existing } = await supabase
-      .from("carddav_settings")
-      .select("resync_nonce")
-      .eq("user_id", userId)
-      .maybeSingle();
-    const current =
-      (existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0;
-    const next = current + 1;
-    const { error } = await supabase
-      .from("carddav_settings")
-      .upsert(
-        { user_id: userId, resync_nonce: next },
-        { onConflict: "user_id" },
-      );
-    if (error) throw new Error(error.message);
+    const next = await bumpResyncNonce(supabase, userId);
     return { ok: true, resync_nonce: next };
   });
