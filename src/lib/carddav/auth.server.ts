@@ -21,8 +21,7 @@ export function unauthorizedResponse(): Response {
 }
 
 export type AuthResult =
-  | { ok: true; userId: string; email: string }
-  | { ok: false; response: Response };
+  { ok: true; userId: string; email: string } | { ok: false; response: Response };
 
 export async function verifyCardDavAuth(request: Request): Promise<AuthResult> {
   const header = request.headers.get("authorization") ?? "";
