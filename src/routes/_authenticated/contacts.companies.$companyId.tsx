@@ -111,6 +111,10 @@ function CompanyDetailPage() {
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
   const [mergePreviewOpen, setMergePreviewOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [domainConflict, setDomainConflict] = useState<
+    { companyId: string; companyName: string; domain: string } | null
+  >(null);
+
 
   useEffect(() => {
     if (q.data?.company) {
@@ -163,12 +167,40 @@ function CompanyDetailPage() {
 
   const addDomainMut = useMutation({
     mutationFn: (domain: string) => addDomainFn({ data: { id: companyId, domain } }),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      if (res && res.ok === false) {
+        setDomainConflict(res.conflict);
+        return;
+      }
       setNewDomain("");
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
+
+  const mergeConflictMut = useMutation({
+    mutationFn: async () => {
+      if (!domainConflict) return null;
+      // Merge the other (conflicting) company INTO this one so the current
+      // page stays valid and the domain lands here.
+      await mergeFn({
+        data: { sourceId: domainConflict.companyId, targetId: companyId },
+      });
+      return domainConflict.domain;
+    },
+    onSuccess: (domain) => {
+      toast.success("Companies merged");
+      setDomainConflict(null);
+      setNewDomain("");
+      if (domain) {
+        // Domain now belongs to this company via the merge — no extra insert.
+      }
+      qc.invalidateQueries({ queryKey: ["companies"] });
+      invalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Merge failed"),
+  });
+
 
   const removeDomainMut = useMutation({
     mutationFn: (id: string) => removeDomainFn({ data: { id } }),
@@ -696,7 +728,40 @@ function CompanyDetailPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+              <AlertDialog
+                open={!!domainConflict}
+                onOpenChange={(o) => !o && setDomainConflict(null)}
+              >
+                <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Domain already in use</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      <span className="font-mono">{domainConflict?.domain}</span> is already
+                      assigned to{" "}
+                      <span className="font-medium">{domainConflict?.companyName}</span>. Two
+                      companies can't share a domain. Merge{" "}
+                      <span className="font-medium">{domainConflict?.companyName}</span> into{" "}
+                      <span className="font-medium">{form.name || "this company"}</span>?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={mergeConflictMut.isPending}>
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={(e) => {
+                        e.preventDefault();
+                        mergeConflictMut.mutate();
+                      }}
+                    >
+                      <Merge className="mr-2 h-4 w-4" />
+                      {mergeConflictMut.isPending ? "Merging…" : "Merge companies"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
               <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete “{form.name || "this company"}”?</AlertDialogTitle>

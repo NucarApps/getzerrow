@@ -1,37 +1,48 @@
 ## Goal
-Make sure photos we hold locally (Zerrow uploads, iPhone/CardDAV uploads, company‑logo resets) reliably reach Google Contacts on the next sync.
 
-## What's actually broken today
+Two changes so companies can't quietly share a domain, and so any collision becomes a merge prompt instead of a silent takeover:
 
-I traced the local → Google push in `src/lib/google-contacts/push.server.ts`:
+1. Reject exact-domain collisions when adding a domain to a company, and surface the conflicting company.
+2. Let the user merge the two companies in one click from that prompt, using the existing merge flow.
 
-1. **New Google contacts never get their photo.** In `pushContacts`, we look up `link` from `google_contact_links` *before* the loop. When `!link` we call `createPerson` and insert a fresh link row, but the local `link` / `linkRow` variables aren't refreshed. The photo block at line ~301 then reads `currentLink?.resource_name`, gets `undefined`, and silently skips. Because the contact's `updated_at` won't bump again by itself, the photo is effectively never pushed for any contact created via Zerrow.
-2. **Photo‑only edits don't push unless something re‑dirties the link.** `uploadContactPhoto` / `removeContactPhoto` in `src/lib/contacts/photos.functions.ts` and CardDAV PUT in `handlers.server.ts` set `last_synced_at = 1970` so they're dirty — good. But `resetContactToCompanyLogo` in `src/lib/contacts/crud.functions.ts` and the `company-logo-cleanup` path don't call `markGoogleContactDirty`, so switching a contact back to a company logo never propagates.
-3. **Photo push failures are swallowed and never retried.** The `catch (photoErr)` logs and moves on, and because we only re‑attempt when `avatar_url !== photo_etag`, a transient Google 5xx leaves `photo_etag` at its old value; next cycle the URLs still differ but the contact is no longer dirty, so we don't even enter the loop body.
+## Current state (verified)
 
-## Fix
+- DB already has `UNIQUE (user_id, domain)` on `company_domains`, so two companies literally cannot both own `nissan.com`. `psql` shows zero duplicate rows today.
+- `addCompanyDomain` in `src/lib/companies/companies.functions.ts` does `upsert(..., { onConflict: "user_id,domain" })`. That means if the domain is already on another company, the upsert **reassigns it silently** — the exact "two companies with the same domain" case the user wants blocked, plus a stealth data-loss risk.
+- `findDuplicateCompanies` + `clusterCompanies` already unites companies by shared root domain, and `CompanyDuplicatesDrawer` + `mergeCluster` / `mergeCompanies` already do the merge. Nothing to build there — just plug the new flow into the same server fn.
 
-### `src/lib/google-contacts/push.server.ts`
-- After `createPerson` succeeds, hydrate a local `linkRow` with the new `resource_name` and set a synthetic `photo_etag: null` so the photo block below runs in the same iteration.
-- Change the outer skip at line 154 so that a contact with a non‑null `avatar_url` and `avatar_url !== link.photo_etag` counts as dirty even when body fields aren't. This makes retries actually retry.
-- On photo push failure, clear `photo_etag` to `null` (not the current `avatar_url`) so the next cycle re‑enters the branch, and bump a small `photo_push_attempts` counter (add column) to cap retries at ~5 before giving up with a logged alert.
+## Changes
 
-### `src/lib/contacts/photos.functions.ts`
-- Extract `markGoogleContactDirty` into a shared helper `src/lib/google-contacts/mark-dirty.server.ts` and reuse it.
+### 1. `addCompanyDomain` — return a structured conflict instead of stealing
 
-### `src/lib/contacts/crud.functions.ts`
-- Call the shared `markGoogleContactDirty` from `resetContactToCompanyLogo` and from the self‑heal path that nulls `avatar_url`, so company‑logo changes flow to Google.
+- Look up any existing `company_domains` row for `(user_id, domain)` first.
+- If it belongs to a **different** company: return `{ ok: false, conflict: { companyId, companyName, domain } }` without writing. No upsert.
+- If it belongs to the **same** company: no-op success.
+- Otherwise: plain insert with `source: 'manual'`.
+- Same guard applied to the inline "create company" flow that also attaches a domain (`upsertBucketCompany` path around lines 186–210) — resolve to the existing company id when the domain is taken, or return the conflict so the caller can prompt.
 
-### `src/lib/companies/company-photo.functions.ts`
-- Already marks members dirty on company‑photo change; keep as‑is, just switch to the shared helper.
+### 2. UI: domain-conflict → merge prompt
 
-### Migration
-- Add `photo_push_attempts int not null default 0` to `google_contact_links` (with grants unchanged — table already has service_role access).
+In the company detail page's Domains section (`src/routes/_authenticated/contacts.companies.$companyId.tsx`):
 
-## Tests
-- Extend `src/lib/google-contacts/push.server.ts` coverage with a unit test that: (a) creates a new contact with an avatar and asserts `updateContactPhoto` is called in the same run; (b) simulates a transient photo error and asserts the next run retries; (c) after 5 failures, asserts we stop retrying and log the alert.
-- Add a test for `resetContactToCompanyLogo` verifying it marks the Google link dirty.
+- On `addCompanyDomain` success with `conflict`, open an `AlertDialog`:
+  - "`example.com` is already assigned to **{other company}**. Two companies can't share a domain."
+  - Primary action: "Merge {other} into {this}" → calls existing `previewMergeCompanies` for the diff summary, then `mergeCompanies({ sourceId: conflict.companyId, targetId: currentId })`, then invalidates queries.
+  - Secondary: "Cancel" (leaves both untouched).
+- Same dialog wired into `CompanyCombobox` inline-create when the domain path returns a conflict, so users hit the same merge affordance from the contact form.
+
+### 3. No schema change
+
+The existing unique constraint already enforces "one company per domain per user"; the fix is code + UX around it. No migration.
+
+## Files touched
+
+- `src/lib/companies/companies.functions.ts` — rewrite `addCompanyDomain` (and the inline attach path) to detect conflict instead of upserting.
+- `src/routes/_authenticated/contacts.companies.$companyId.tsx` — wire the conflict dialog into the Domains section.
+- `src/components/contacts/CompanyCombobox.tsx` — surface the same conflict → merge dialog when inline creation collides.
+- `src/lib/companies/companies.functions.test.ts` (new small test) — unit-cover the "same company", "different company conflict", and "new insert" branches of `addCompanyDomain`.
 
 ## Out of scope
-- Pull direction (Google → local) — that path already handles photos correctly per `photo-pull-decision.ts` and the user asked to focus on push.
-- CardDAV photo flow — unchanged.
+
+- Root-domain overlaps (parent vs subsidiary sharing `nissan.com` root but not the exact host) — already surfaced by the existing duplicate drawer; leaving alone since these are sometimes legitimate.
+- Any change to `mergeCompanies` internals — it already handles domain, tag, contact, and label reconciliation.
