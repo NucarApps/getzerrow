@@ -1200,6 +1200,16 @@ function ContactsPage() {
       <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
       <DuplicateSuggestionsDrawer open={dupesOpen} onOpenChange={setDupesOpen} />
       <EnrichmentSuggestionsDrawer open={enrichOpen} onOpenChange={setEnrichOpen} />
+      <MergeContactsDialog
+        open={mergeOpen}
+        onOpenChange={setMergeOpen}
+        contactIds={Array.from(selectedIds)}
+        onMerged={(survivorId) => {
+          setSelectedIds(new Set());
+          setSelectionMode(false);
+          setDrawerId(survivorId);
+        }}
+      />
       <LabelDuplicatesDrawer open={labelDupesOpen} onOpenChange={setLabelDupesOpen} />
     </>
   );
