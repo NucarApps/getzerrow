@@ -10,7 +10,9 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 
-import { Copy, Smartphone, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, Smartphone, Trash2, Wrench } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { CardDavGroupPreview } from "@/components/settings/CardDavGroupPreview";
 import {
   createCardDavToken,
   listCardDavTokens,
@@ -23,10 +25,7 @@ import {
   resyncSummaryContacts,
   type GroupNameStyle,
 } from "@/lib/carddav/settings.functions";
-import {
-  rerunEnrichmentBatch,
-  listContactIdsForRerun,
-} from "@/lib/contacts/enrich.functions";
+import { rerunEnrichmentBatch, listContactIdsForRerun } from "@/lib/contacts/enrich.functions";
 import {
   listContactsForLogoCleanup,
   cleanupCompanyLogoPhotosBatch,
@@ -111,7 +110,7 @@ function CardDavSettings() {
           }));
         } catch (e) {
           setLogoCleanupState((s) => ({ ...s, done: s.done + slice.length }));
-          // eslint-disable-next-line no-console
+
           console.error("[logo-cleanup] chunk failed", e);
         }
       }
@@ -120,7 +119,6 @@ function CardDavSettings() {
       setLogoCleanupState((s) => ({ ...s, running: false }));
     }
   };
-
 
   // Chunk the "rerun for everyone" work client-side so each request stays
   // well under the Safari wall-clock (which surfaces long fetches as the
@@ -154,7 +152,7 @@ function CardDavSettings() {
             done: s.done + slice.length,
             failed: s.failed + slice.length,
           }));
-          // eslint-disable-next-line no-console
+
           console.error("[rerun-enrichment] chunk failed", e);
         }
       }
@@ -184,9 +182,7 @@ function CardDavSettings() {
   const resyncMut = useMutation({
     mutationFn: () => forceResync(),
     onSuccess: () =>
-      toast.success(
-        "Address book tag bumped — iPhone will pull a fresh copy on next sync",
-      ),
+      toast.success("Address book tag bumped — iPhone will pull a fresh copy on next sync"),
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -228,7 +224,9 @@ function CardDavSettings() {
   });
 
   const serverUrl =
-    typeof window !== "undefined" ? `${window.location.origin}/api/public/carddav/` : "/api/public/carddav/";
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/public/carddav/`
+      : "/api/public/carddav/";
 
   const copy = async (value: string, note: string) => {
     try {
@@ -244,11 +242,10 @@ function CardDavSettings() {
       <div>
         <h2 className="text-xl font-semibold">iPhone contacts</h2>
         <p className="text-sm text-muted-foreground">
-          Two-way sync between Zerrow and your iPhone over CardDAV. Edits, adds, and deletes on your phone
-          push back to Zerrow — deleting a contact on iPhone removes it here too. iOS uses incremental
-          sync (RFC 6578), so refreshes only fetch what actually changed.
+          Two-way sync between Zerrow and your iPhone over CardDAV. Edits, adds, and deletes on your
+          phone push back to Zerrow — deleting a contact on iPhone removes it here too. iOS uses
+          incremental sync (RFC 6578), so refreshes only fetch what actually changed.
         </p>
-
       </div>
 
       <Card className="space-y-4 p-5">
@@ -261,17 +258,14 @@ function CardDavSettings() {
                 Each iPhone uses its own password. You'll only see the value once.
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="Device label (e.g. iPhone 15)"
                 maxLength={60}
               />
-              <Button
-                onClick={() => createMut.mutate()}
-                disabled={createMut.isPending}
-              >
+              <Button onClick={() => createMut.mutate()} disabled={createMut.isPending}>
                 {createMut.isPending ? "Creating…" : "Create password"}
               </Button>
             </div>
@@ -310,7 +304,7 @@ function CardDavSettings() {
             Settings → Contacts → Accounts → Add Account → Other → Add CardDAV Account.
           </p>
         </div>
-        <dl className="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
+        <dl className="grid grid-cols-[90px_1fr] gap-y-2 text-sm sm:grid-cols-[110px_1fr]">
           <dt className="text-muted-foreground">Server</dt>
           <dd className="flex items-center gap-2">
             <code className="truncate rounded bg-muted px-2 py-0.5">{serverUrl}</code>
@@ -369,10 +363,9 @@ function CardDavSettings() {
         <div>
           <p className="font-medium">Group names on iPhone</p>
           <p className="text-sm text-muted-foreground">
-            iOS Contacts only shows a flat list of groups, so nested Zerrow
-            groups (like Factory → Toyota) need a display style. Changing this
-            triggers a group-name refresh on next sync — no need to remove
-            the account.
+            iOS Contacts only shows a flat list of groups, so nested Zerrow groups (like Factory →
+            Toyota) need a display style. Changing this triggers a group-name refresh on next sync —
+            no need to remove the account.
           </p>
         </div>
         <div className="max-w-sm">
@@ -392,21 +385,22 @@ function CardDavSettings() {
             </SelectContent>
           </Select>
         </div>
+        <div>
+          <p className="mb-1.5 text-sm font-medium">Groups on your iPhone</p>
+          <CardDavGroupPreview style={settingsQuery.data?.group_name_style ?? "path_slash"} />
+        </div>
         <div className="flex items-start justify-between gap-4 border-t pt-4">
           <div className="flex-1">
             <p className="text-sm font-medium">Include AI relationship summary in notes</p>
             <p className="text-sm text-muted-foreground">
-              Zerrow adds the "who is this?" summary it generates for a
-              contact into the Notes field on your iPhone and Google Contacts,
-              above your own notes. Turn off to keep Notes user-only.
+              Zerrow adds the "who is this?" summary it generates for a contact into the Notes field
+              on your iPhone and Google Contacts, above your own notes. Turn off to keep Notes
+              user-only.
             </p>
           </div>
           <Switch
             checked={settingsQuery.data?.include_summary_in_notes ?? true}
-            onCheckedChange={(v: boolean) =>
-              settingsMut.mutate({ include_summary_in_notes: v })
-            }
-
+            onCheckedChange={(v: boolean) => settingsMut.mutate({ include_summary_in_notes: v })}
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           />
         </div>
@@ -414,113 +408,124 @@ function CardDavSettings() {
           <div className="flex-1">
             <p className="text-sm font-medium">Use company logo when no photo</p>
             <p className="text-sm text-muted-foreground">
-              When a contact doesn't have their own picture, Zerrow inlines
-              their company logo (from their email domain or website) so
-              iPhone shows a logo instead of the initials tile. Real photos
-              always win.
+              When a contact doesn't have their own picture, Zerrow inlines their company logo (from
+              their email domain or website) so iPhone shows a logo instead of the initials tile.
+              Real photos always win.
             </p>
           </div>
           <Switch
             checked={settingsQuery.data?.use_company_logo_fallback ?? true}
-            onCheckedChange={(v: boolean) =>
-              settingsMut.mutate({ use_company_logo_fallback: v })
-            }
+            onCheckedChange={(v: boolean) => settingsMut.mutate({ use_company_logo_fallback: v })}
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           />
         </div>
-        <div className="border-t pt-4">
-          <p className="text-sm font-medium">Resync existing AI summaries</p>
-          <p className="mb-2 text-sm text-muted-foreground">
-            Summaries generated before this feature won't push to iPhone or
-            Google until their contact record changes. Click to re-emit every
-            contact that already has an AI summary.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => resyncSummariesMut.mutate()}
-            disabled={resyncSummariesMut.isPending}
-          >
-            {resyncSummariesMut.isPending ? "Queueing…" : "Resync summaries now"}
-          </Button>
-        </div>
-
-        <div className="border-t pt-4">
-          <p className="text-sm font-medium">Rerun AI enrichment for every contact</p>
-          <p className="mb-2 text-sm text-muted-foreground">
-            Walks every contact, re-scans matching email signatures, and
-            regenerates the AI relationship summary. Runs in small batches
-            in the background so the browser tab stays responsive — safe to
-            leave open, safe to close (the tab has to stay open to keep
-            processing; closing pauses until you click again).
-          </p>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={runRerunAll}
-              disabled={rerunState.running}
-            >
-              {rerunState.running
-                ? `Rerunning… ${rerunState.done}/${rerunState.total}`
-                : "Rerun for everyone"}
-            </Button>
-            {(rerunState.running || rerunState.done > 0) && (
-              <p className="text-xs text-muted-foreground">
-                {rerunState.processed} enriched · {rerunState.skipped} skipped ·{" "}
-                {rerunState.failed} failed
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="border-t pt-4">
-          <p className="text-sm font-medium">Force iPhone resync</p>
-          <p className="mb-2 text-sm text-muted-foreground">
-            Bumps the address-book tag so your iPhone pulls a fresh copy on
-            its next sync (usually within 15 min, or immediately if you open
-            Contacts and pull to refresh). Use this after group changes that
-            aren't showing up.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => resyncMut.mutate()}
-            disabled={resyncMut.isPending}
-          >
-            {resyncMut.isPending ? "Bumping…" : "Force iPhone resync"}
-          </Button>
-        </div>
-
-        <div className="border-t pt-4">
-          <p className="text-sm font-medium">
-            Fix contacts showing an old company logo
-          </p>
-          <p className="mb-2 text-sm text-muted-foreground">
-            Scans every contact whose stored photo is really a snapshot of an
-            earlier company logo (from an iPhone round-trip) and clears it so
-            the current company logo shows again. Safe to re-run.
-          </p>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={runLogoCleanup}
-              disabled={logoCleanupState.running}
-            >
-              {logoCleanupState.running
-                ? `Scanning… ${logoCleanupState.done}/${logoCleanupState.total}`
-                : "Fix company logo photos"}
-            </Button>
-            {(logoCleanupState.running || logoCleanupState.done > 0) && (
-              <p className="text-xs text-muted-foreground">
-                {logoCleanupState.cleared} cleared
-              </p>
-            )}
-          </div>
-        </div>
       </Card>
 
+      <Card className="p-5">
+        <Collapsible>
+          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 text-left">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Maintenance &amp; troubleshooting</p>
+                <p className="text-sm text-muted-foreground">
+                  Resync tools and one-off fixes. You rarely need these.
+                </p>
+              </div>
+            </div>
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-4 pt-4">
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium">Resync existing AI summaries</p>
+              <p className="mb-2 text-sm text-muted-foreground">
+                Summaries generated before this feature won't push to iPhone or Google until their
+                contact record changes. Click to re-emit every contact that already has an AI
+                summary.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => resyncSummariesMut.mutate()}
+                disabled={resyncSummariesMut.isPending}
+              >
+                {resyncSummariesMut.isPending ? "Queueing…" : "Resync summaries now"}
+              </Button>
+            </div>
+
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium">Rerun AI enrichment for every contact</p>
+              <p className="mb-2 text-sm text-muted-foreground">
+                Walks every contact, re-scans matching email signatures, and regenerates the AI
+                relationship summary. Runs in small batches in the background so the browser tab
+                stays responsive — safe to leave open, safe to close (the tab has to stay open to
+                keep processing; closing pauses until you click again).
+              </p>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={runRerunAll}
+                  disabled={rerunState.running}
+                >
+                  {rerunState.running
+                    ? `Rerunning… ${rerunState.done}/${rerunState.total}`
+                    : "Rerun for everyone"}
+                </Button>
+                {(rerunState.running || rerunState.done > 0) && (
+                  <p className="text-xs text-muted-foreground">
+                    {rerunState.processed} enriched · {rerunState.skipped} skipped ·{" "}
+                    {rerunState.failed} failed
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium">Force iPhone resync</p>
+              <p className="mb-2 text-sm text-muted-foreground">
+                Bumps the address-book tag so your iPhone pulls a fresh copy on its next sync
+                (usually within 15 min, or immediately if you open Contacts and pull to refresh).
+                Use this after group changes that aren't showing up.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => resyncMut.mutate()}
+                disabled={resyncMut.isPending}
+              >
+                {resyncMut.isPending ? "Bumping…" : "Force iPhone resync"}
+              </Button>
+            </div>
+
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium">Fix contacts showing an old company logo</p>
+              <p className="mb-2 text-sm text-muted-foreground">
+                Scans every contact whose stored photo is really a snapshot of an earlier company
+                logo (from an iPhone round-trip) and clears it so the current company logo shows
+                again. Safe to re-run.
+              </p>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={runLogoCleanup}
+                  disabled={logoCleanupState.running}
+                >
+                  {logoCleanupState.running
+                    ? `Scanning… ${logoCleanupState.done}/${logoCleanupState.total}`
+                    : "Fix company logo photos"}
+                </Button>
+                {(logoCleanupState.running || logoCleanupState.done > 0) && (
+                  <p className="text-xs text-muted-foreground">
+                    {logoCleanupState.cleared} cleared
+                  </p>
+                )}
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
     </div>
   );
 }
