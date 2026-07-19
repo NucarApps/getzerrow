@@ -520,3 +520,352 @@ export const dismissContactDuplicate = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/* -------------------------------------------------------------------------- */
+/* Manual merge (user-driven, per-field primary picker)                        */
+/* -------------------------------------------------------------------------- */
+
+const SCALAR_FIELDS = [
+  "name",
+  "email",
+  "title",
+  "company",
+  "company_id",
+  "avatar_url",
+  "avatar_source",
+  "website",
+  "linkedin",
+  "twitter",
+  "city",
+  "region",
+  "postal_code",
+  "country",
+] as const;
+type ScalarField = (typeof SCALAR_FIELDS)[number];
+
+export const getContactsMergePayload = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ ids: z.array(z.string().uuid()).min(2).max(6) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: rows, error } = await supabase
+      .from("contacts")
+      .select(
+        "id,user_id,name,email,title,company,company_id,avatar_url,avatar_source,website,linkedin,twitter,city,region,postal_code,country,created_at,manual_overrides,source",
+      )
+      .in("id", data.ids);
+    if (error) throw new Error(error.message);
+    if (!rows || rows.length !== data.ids.length) throw new Error("Some contacts not found");
+    if (rows.some((r) => r.user_id !== userId)) throw new Error("Forbidden");
+
+    const { getContactDecrypted } = await import("@/lib/sync/encrypted-reader");
+    const decrypted = await Promise.all(data.ids.map((id) => getContactDecrypted(id)));
+    const notesById = new Map<string, string | null>();
+    decrypted.forEach((r, i) => notesById.set(data.ids[i], r.row?.notes ?? null));
+
+    const [{ data: phones }, { data: emails }, { data: memberships }, { data: groupRows }] =
+      await Promise.all([
+        supabase
+          .from("contact_phones")
+          .select("id,contact_id,label,number,is_primary,position")
+          .in("contact_id", data.ids),
+        supabase
+          .from("contact_emails")
+          .select("id,contact_id,label,address,is_primary,position")
+          .in("contact_id", data.ids),
+        supabase
+          .from("contact_group_members")
+          .select("contact_id,group_id")
+          .in("contact_id", data.ids),
+        supabase.from("contact_groups").select("id,name,color").eq("user_id", userId),
+      ]);
+
+    return {
+      contacts: rows.map((r) => ({ ...r, notes: notesById.get(r.id) ?? null })),
+      phones: phones ?? [],
+      emails: emails ?? [],
+      memberships: memberships ?? [],
+      groups: groupRows ?? [],
+    };
+  });
+
+const ManualMergeInput = z.object({
+  primaryId: z.string().uuid(),
+  loserIds: z.array(z.string().uuid()).min(1).max(5),
+  fields: z.record(z.string(), z.union([z.string(), z.null()])).default({}),
+  notesSource: z.string().uuid().nullable().default(null),
+  emails: z
+    .array(
+      z.object({
+        label: z.string().max(40),
+        address: z.string().max(320),
+        is_primary: z.boolean().default(false),
+      }),
+    )
+    .max(20),
+  phones: z
+    .array(
+      z.object({
+        label: z.string().max(40),
+        number: z.string().max(64),
+        is_primary: z.boolean().default(false),
+      }),
+    )
+    .max(20),
+  excludedGroupIds: z.array(z.string().uuid()).default([]),
+  manualLockFields: z.array(z.string()).default([]),
+});
+
+export type ManualMergeInputType = z.infer<typeof ManualMergeInput>;
+
+export const mergeContactsManual = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => ManualMergeInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    if (data.loserIds.includes(data.primaryId)) {
+      throw new Error("Primary cannot also be a loser");
+    }
+    const allIds = [data.primaryId, ...data.loserIds];
+
+    // Verify ownership of all contacts.
+    const { data: ownershipRows, error: ownErr } = await supabase
+      .from("contacts")
+      .select("id,user_id,manual_overrides")
+      .in("id", allIds);
+    if (ownErr) throw new Error(ownErr.message);
+    if (!ownershipRows || ownershipRows.length !== allIds.length) {
+      throw new Error("Some contacts not found");
+    }
+    if (ownershipRows.some((r) => r.user_id !== userId)) throw new Error("Forbidden");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 1) Build survivor scalar patch from `fields`.
+    const patch: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(data.fields)) {
+      if (!SCALAR_FIELDS.includes(k as ScalarField)) continue;
+      patch[k] = v ?? null;
+    }
+
+    // Merge manual_overrides so enrichment respects the user's picks.
+    const primaryOverridesRow = ownershipRows.find((r) => r.id === data.primaryId) as {
+      manual_overrides?: string[] | null;
+    };
+    const prevOverrides = new Set(primaryOverridesRow?.manual_overrides ?? []);
+    for (const f of data.manualLockFields) prevOverrides.add(f);
+    if ("company" in patch || "company_id" in patch) {
+      prevOverrides.add("company");
+    }
+    patch.manual_overrides = Array.from(prevOverrides);
+
+    if (Object.keys(patch).length > 0) {
+      const { error: updErr } = await supabaseAdmin
+        .from("contacts")
+        .update(patch as never)
+        .eq("id", data.primaryId);
+      if (updErr) throw new Error(`Failed to update survivor: ${updErr.message}`);
+    }
+
+    // 2) Notes — pull from chosen source and re-encrypt onto survivor.
+    if (data.notesSource && data.notesSource !== data.primaryId) {
+      const { getContactDecrypted } = await import("@/lib/sync/encrypted-reader");
+      const src = await getContactDecrypted(data.notesSource);
+      if (src.row) {
+        const { setContactEncryptedFields } = await import("@/lib/sync/encrypted-writer");
+        await setContactEncryptedFields({
+          contact_id: data.primaryId,
+          notes: src.row.notes ?? null,
+        });
+      }
+    }
+
+    // 3) Emails / phones — replace-all on survivor with user-chosen set.
+    {
+      const { error: delErr } = await supabaseAdmin
+        .from("contact_emails")
+        .delete()
+        .eq("user_id", userId)
+        .in("contact_id", allIds);
+      if (delErr) throw new Error(`Failed to clear emails: ${delErr.message}`);
+      if (data.emails.length > 0) {
+        const hasPrimary = data.emails.some((e) => e.is_primary);
+        const rows = data.emails.map((e, idx) => ({
+          user_id: userId,
+          contact_id: data.primaryId,
+          label: e.label.trim().toLowerCase() || "other",
+          address: e.address.trim().toLowerCase(),
+          is_primary: hasPrimary ? e.is_primary : idx === 0,
+          position: idx,
+        }));
+        const { error: insErr } = await supabaseAdmin.from("contact_emails").insert(rows);
+        if (insErr) throw new Error(`Failed to insert emails: ${insErr.message}`);
+      }
+    }
+    {
+      const { error: delErr } = await supabaseAdmin
+        .from("contact_phones")
+        .delete()
+        .eq("user_id", userId)
+        .in("contact_id", allIds);
+      if (delErr) throw new Error(`Failed to clear phones: ${delErr.message}`);
+      if (data.phones.length > 0) {
+        const hasPrimary = data.phones.some((p) => p.is_primary);
+        const rows = data.phones.map((p, idx) => ({
+          user_id: userId,
+          contact_id: data.primaryId,
+          label: p.label.trim().toLowerCase() || "other",
+          number: p.number.trim(),
+          is_primary: hasPrimary ? p.is_primary : idx === 0,
+          position: idx,
+        }));
+        const { error: insErr } = await supabaseAdmin.from("contact_phones").insert(rows);
+        if (insErr) throw new Error(`Failed to insert phones: ${insErr.message}`);
+      }
+    }
+
+    // Reflect primary email onto contacts.email for legacy queries.
+    const primaryEmail = data.emails.find((e) => e.is_primary)?.address ?? data.emails[0]?.address;
+    if (primaryEmail !== undefined) {
+      await supabaseAdmin
+        .from("contacts")
+        .update({ email: primaryEmail ?? null } as never)
+        .eq("id", data.primaryId);
+    }
+
+    // 4) Group memberships — union losers → survivor, minus excludes.
+    const excluded = new Set(data.excludedGroupIds);
+    const { data: dupMemberships } = await supabaseAdmin
+      .from("contact_group_members")
+      .select("group_id, contact_id")
+      .in("contact_id", data.loserIds);
+    if (dupMemberships && dupMemberships.length > 0) {
+      const toAdd = Array.from(
+        new Set(dupMemberships.map((m) => m.group_id).filter((g) => !excluded.has(g))),
+      );
+      if (toAdd.length > 0) {
+        const { error: insErr } = await supabaseAdmin.from("contact_group_members").upsert(
+          toAdd.map((g) => ({ group_id: g, contact_id: data.primaryId, user_id: userId })),
+          { onConflict: "group_id,contact_id", ignoreDuplicates: true },
+        );
+        if (insErr) throw new Error(`Failed to move memberships: ${insErr.message}`);
+      }
+    }
+    // Also drop any excluded groups from the survivor itself.
+    if (excluded.size > 0) {
+      await supabaseAdmin
+        .from("contact_group_members")
+        .delete()
+        .eq("contact_id", data.primaryId)
+        .in("group_id", Array.from(excluded));
+    }
+
+    // 5) Reassign non-cascaded contact_id references to survivor.
+    for (const table of ["contact_revisions", "contact_cards_sent"] as const) {
+      const { error: reErr } = await supabaseAdmin
+        .from(table)
+        .update({ contact_id: data.primaryId } as never)
+        .in("contact_id", data.loserIds);
+      if (reErr) throw new Error(`Failed to reassign ${table}: ${reErr.message}`);
+    }
+
+    // 6) Google links — reassign to survivor, drop collisions.
+    const { data: dupLinks } = await supabaseAdmin
+      .from("google_contact_links")
+      .select("gmail_account_id, contact_id, resource_name")
+      .in("contact_id", data.loserIds);
+    const loserGoogleResources: Array<{ gmail_account_id: string; resource_name: string }> = [];
+    if (dupLinks && dupLinks.length > 0) {
+      const { data: primaryLinks } = await supabaseAdmin
+        .from("google_contact_links")
+        .select("gmail_account_id")
+        .eq("contact_id", data.primaryId);
+      const already = new Set((primaryLinks ?? []).map((l) => l.gmail_account_id));
+      for (const l of dupLinks) {
+        loserGoogleResources.push({
+          gmail_account_id: l.gmail_account_id,
+          resource_name: l.resource_name,
+        });
+        if (already.has(l.gmail_account_id)) {
+          // Collision — this link would be redundant; drop it so the merge
+          // deletes cleanly and tombstone push handles the Google side.
+          await supabaseAdmin
+            .from("google_contact_links")
+            .delete()
+            .eq("gmail_account_id", l.gmail_account_id)
+            .eq("resource_name", l.resource_name);
+        } else {
+          await supabaseAdmin
+            .from("google_contact_links")
+            .update({ contact_id: data.primaryId } as never)
+            .eq("gmail_account_id", l.gmail_account_id)
+            .eq("resource_name", l.resource_name);
+          already.add(l.gmail_account_id);
+        }
+      }
+    }
+
+    // 7) Tombstones — CardDAV per loser id, Google per loser resource.
+    if (data.loserIds.length > 0) {
+      await supabaseAdmin.from("carddav_tombstones").insert(
+        data.loserIds.map((id) => ({
+          user_id: userId,
+          resource_type: "contact",
+          resource_id: id,
+          deleted_at: new Date().toISOString(),
+        })),
+      );
+    }
+    if (loserGoogleResources.length > 0) {
+      await supabaseAdmin.from("google_contact_tombstones").insert(
+        loserGoogleResources.map((r) => ({
+          user_id: userId,
+          gmail_account_id: r.gmail_account_id,
+          kind: "person",
+          resource_name: r.resource_name,
+        })),
+      );
+    }
+
+    // 8) Delete losers.
+    const { error: delErr } = await supabaseAdmin
+      .from("contacts")
+      .delete()
+      .in("id", data.loserIds);
+    if (delErr) throw new Error(`Failed to delete losers: ${delErr.message}`);
+
+    // 9) Bump CardDAV resync so iOS pulls the change.
+    await supabaseAdmin.rpc("increment_carddav_resync_nonce", { p_user_id: userId } as never).then(
+      () => undefined,
+      async () => {
+        // Fallback if RPC absent: increment via update.
+        const { data: s } = await supabaseAdmin
+          .from("carddav_settings")
+          .select("resync_nonce")
+          .eq("user_id", userId)
+          .maybeSingle();
+        const next = ((s as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
+        await supabaseAdmin
+          .from("carddav_settings")
+          .upsert({ user_id: userId, resync_nonce: next } as never, { onConflict: "user_id" });
+      },
+    );
+
+    // 10) Reconcile subgroups; mark related suggestions as merged.
+    await reconcileAutoParentsForContacts(supabaseAdmin, userId, [data.primaryId]);
+
+    await supabaseAdmin
+      .from("contact_duplicate_suggestions")
+      .update({ status: "merged" })
+      .eq("user_id", userId)
+      .eq("primary_contact_id", data.primaryId);
+    await supabaseAdmin
+      .from("contact_duplicate_suggestions")
+      .update({ status: "merged" })
+      .eq("user_id", userId)
+      .in("primary_contact_id", data.loserIds);
+
+    return { survivorId: data.primaryId, deletedCount: data.loserIds.length };
+  });
