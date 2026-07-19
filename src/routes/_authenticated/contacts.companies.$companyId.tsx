@@ -47,6 +47,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
 
 export const Route = createFileRoute(
   "/_authenticated/contacts/companies/$companyId",
@@ -97,6 +98,7 @@ function CompanyDetailPage() {
   const [newDomain, setNewDomain] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
   const [mergePreviewOpen, setMergePreviewOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (q.data?.company) {
@@ -240,25 +242,31 @@ function CompanyDetailPage() {
         </Button>
       </div>
 
-      <div className="mb-6 flex items-center gap-4">
-        <CompanyLogo domain={primaryDomain} name={form.name} size={64} />
-        <div className="flex-1">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Building2 className="h-4 w-4" /> Company
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <CompanyLogo domain={primaryDomain} name={form.name} size={64} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Building2 className="h-4 w-4" /> Company
+            </div>
+            <Input
+              className="mt-1 text-xl font-semibold"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </div>
-          <Input
-            className="mt-1 text-xl font-semibold"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-          />
         </div>
-        <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+        <Button
+          onClick={() => saveMut.mutate()}
+          disabled={saveMut.isPending}
+          className="self-end sm:self-auto"
+        >
           Save
         </Button>
       </div>
 
       <section className="mb-6 rounded-lg border p-4">
-        <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Domains
           </h2>
@@ -316,7 +324,7 @@ function CompanyDetailPage() {
             );
           })}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             placeholder="example.com"
             value={newDomain}
@@ -336,6 +344,19 @@ function CompanyDetailPage() {
           </Button>
         </div>
       </section>
+
+      {primaryDomain && (
+        <section className="mb-6 rounded-lg border p-4">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Logo
+          </h2>
+          <CompanyLogoPicker
+            primaryDomain={primaryDomain}
+            aliases={q.data.domains.slice(1).map((d) => d.domain)}
+            initialQuery={form.name}
+          />
+        </section>
+      )}
 
       <section className="mb-6 grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
         <Labelled label="Website">
@@ -469,9 +490,9 @@ function CompanyDetailPage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Danger zone
         </h2>
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row">
           <Select value={mergeTargetId} onValueChange={setMergeTargetId}>
-            <SelectTrigger className="max-w-sm">
+            <SelectTrigger className="w-full sm:max-w-sm">
               <SelectValue placeholder="Merge into another company…" />
             </SelectTrigger>
             <SelectContent>
@@ -494,7 +515,7 @@ function CompanyDetailPage() {
         </div>
 
         <AlertDialog open={mergePreviewOpen} onOpenChange={setMergePreviewOpen}>
-          <AlertDialogContent className="max-w-2xl">
+          <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-2xl">
             <AlertDialogHeader>
               <AlertDialogTitle>
                 Merge "{form.name || "this company"}" into "
@@ -623,13 +644,32 @@ function CompanyDetailPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete “{form.name || "this company"}”?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Linked contacts keep their data — they just lose the company link.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteMut.isPending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={(e) => {
+                  e.preventDefault();
+                  deleteMut.mutate();
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                {deleteMut.isPending ? "Deleting…" : "Delete company"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <Button
           variant="destructive"
-          onClick={() => {
-            if (confirm("Delete this company? Linked contacts keep their data.")) {
-              deleteMut.mutate();
-            }
-          }}
+          onClick={() => setConfirmDelete(true)}
           disabled={deleteMut.isPending}
         >
           <Trash2 className="mr-2 h-4 w-4" /> Delete company

@@ -1125,6 +1125,19 @@ function ContactsPage() {
         companyName={aliasDialog?.name ?? ""}
         aliases={aliasDialog?.domain ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
         contactIds={aliasDialog?.contactIds ?? []}
+        companyId={
+          aliasDialog
+            ? ((aliasDialog.domain
+                ? (cq.data?.companies ?? []).find((c) =>
+                    c.domains?.some((d) => d.domain === aliasDialog.domain),
+                  )?.id
+                : undefined) ??
+              (cq.data?.companies ?? []).find(
+                (c) => c.name.toLowerCase() === aliasDialog.name.toLowerCase(),
+              )?.id ??
+              null)
+            : null
+        }
       />
      </div>
       <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />

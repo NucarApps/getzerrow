@@ -56,7 +56,7 @@ function CompaniesListPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" asChild>
           <Link to="/contacts">
             <ArrowLeft className="mr-2 h-4 w-4" /> Contacts
