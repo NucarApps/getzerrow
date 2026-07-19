@@ -220,9 +220,13 @@ async function pushContacts(
         { includeSummary },
       );
 
+      // Track the resource_name of a freshly-created Google contact so the
+      // photo push below can attach the avatar in the same iteration.
+      let createdResourceName: string | null = null;
       if (!link) {
         const created = await createPerson(ids.gmailAccountId, body);
         if (created.resourceName) {
+          createdResourceName = created.resourceName;
           await supabaseAdmin.from("google_contact_links").upsert(
             {
               user_id: ids.userId,
@@ -237,6 +241,7 @@ async function pushContacts(
           count++;
         }
       } else if (link.etag) {
+
         try {
           // Conflict guard: if Google has emails we don't, abort the push
           // and flip the link back to "trust remote" so the next pull will
