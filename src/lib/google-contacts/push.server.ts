@@ -16,7 +16,12 @@ import {
 } from "./people-client.server";
 import { contactToPerson, groupToLabel, personToContact } from "./mapper";
 import { loadLocalContact } from "./state.server";
-import { isLocalGoogleContactDirty } from "./dirty";
+import {
+  isLocalGoogleContactDirty,
+  isGooglePhotoPushDirty,
+  MAX_PHOTO_PUSH_ATTEMPTS,
+} from "./dirty";
+
 import type { ProgressReporter } from "./progress.server";
 
 type Ids = { userId: string; gmailAccountId: string; runId: string };
