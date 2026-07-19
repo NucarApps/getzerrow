@@ -19,6 +19,8 @@ import {
   CalendarClock,
   Sparkles,
   Settings2,
+  ChevronsDownUp,
+  ChevronsUpDown,
 } from "lucide-react";
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { GroupEditorDialog, type GroupRow } from "@/components/contacts/GroupEditorDialog";
@@ -655,6 +657,14 @@ function ContactsPage() {
       return next;
     });
   }
+  // True when every visible company bucket is collapsed — drives the
+  // Expand-all / Collapse-all toolbar toggle.
+  const allBucketsCollapsed =
+    companyBuckets.length > 0 && companyBuckets.every((b) => collapsed.has(b.key));
+  function toggleAllBuckets() {
+    if (allBucketsCollapsed) setCollapsed(new Set());
+    else setCollapsed(new Set(companyBuckets.map((b) => b.key)));
+  }
   // Auto-collapse all buckets when toggling "By company" on, and again the
   // first time buckets become available (initial load races contacts query).
   const initialCollapseDoneRef = useRef(false);
@@ -852,6 +862,27 @@ function ContactsPage() {
                   <Building2 className="h-4 w-4 sm:mr-2" />
                   <span className="hidden sm:inline">By company</span>
                 </Button>
+                {groupByCompany && companyBuckets.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleAllBuckets}
+                    title={allBucketsCollapsed ? "Expand all companies" : "Collapse all companies"}
+                    aria-label={
+                      allBucketsCollapsed ? "Expand all companies" : "Collapse all companies"
+                    }
+                    className="shrink-0 px-2 sm:px-3"
+                  >
+                    {allBucketsCollapsed ? (
+                      <ChevronsUpDown className="h-4 w-4 sm:mr-2" />
+                    ) : (
+                      <ChevronsDownUp className="h-4 w-4 sm:mr-2" />
+                    )}
+                    <span className="hidden sm:inline">
+                      {allBucketsCollapsed ? "Expand all" : "Collapse all"}
+                    </span>
+                  </Button>
+                )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
