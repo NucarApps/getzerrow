@@ -56,7 +56,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
-import { listContactGroups } from "@/lib/contact-groups.functions";
+import { createContactGroup, listContactGroups } from "@/lib/contact-groups.functions";
 import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
 import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-photo.functions";
 import {
