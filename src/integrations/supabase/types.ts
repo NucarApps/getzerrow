@@ -709,6 +709,7 @@ export type Database = {
           contact_id: string
           created_at: string
           group_id: string
+          source: string | null
           user_id: string
         }
         Insert: {
@@ -716,6 +717,7 @@ export type Database = {
           contact_id: string
           created_at?: string
           group_id: string
+          source?: string | null
           user_id: string
         }
         Update: {
@@ -723,6 +725,7 @@ export type Database = {
           contact_id?: string
           created_at?: string
           group_id?: string
+          source?: string | null
           user_id?: string
         }
         Relationships: [
