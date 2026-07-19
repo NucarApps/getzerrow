@@ -76,10 +76,14 @@ export const removeContactPhoto = createServerFn({ method: "POST" })
     const { deleteContactPhoto } = await import("@/lib/contacts/photos.server");
     await deleteContactPhoto(context.userId, data.contactId);
     try {
+      const { markGoogleContactDirty } = await import(
+        "@/lib/google-contacts/mark-dirty.server"
+      );
       await markGoogleContactDirty(context.userId, data.contactId);
     } catch {
       // ignore
     }
+
     return { ok: true };
   });
 
