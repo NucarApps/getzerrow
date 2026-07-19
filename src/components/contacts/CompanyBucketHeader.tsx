@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, Pencil } from "lucide-react";
+import { ChevronDown, ArrowUpRight, Loader2 } from "lucide-react";
 import { CompanyLogo } from "./CompanyLogo";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -9,7 +9,9 @@ type Props = {
   count: number;
   collapsed: boolean;
   onToggle: () => void;
-  onEdit?: () => void;
+  /** Navigate to (or create then open) this company's page. */
+  onOpen?: () => void;
+  opening?: boolean;
   aliasCount?: number;
   logoProvider?: number | null;
   logoSourceDomain?: string | null;
@@ -24,7 +26,8 @@ export function CompanyBucketHeader({
   count,
   collapsed,
   onToggle,
-  onEdit,
+  onOpen,
+  opening = false,
   aliasCount = 0,
   logoProvider = null,
   logoSourceDomain = null,
@@ -76,17 +79,22 @@ export function CompanyBucketHeader({
           </div>
         </div>
       </button>
-      {onEdit && (
+      {onOpen && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onEdit();
+            if (!opening) onOpen();
           }}
-          aria-label={`Edit ${name} domains`}
-          title="Edit company domains"
-          className="grid h-7 w-7 place-items-center rounded text-muted-foreground hover:bg-background/40 hover:text-foreground"
+          disabled={opening}
+          aria-label={`Open ${name}`}
+          title="Open company page"
+          className="grid h-7 w-7 place-items-center rounded text-muted-foreground hover:bg-background/40 hover:text-foreground disabled:opacity-50"
         >
-          <Pencil className="h-3.5 w-3.5" />
+          {opening ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          )}
         </button>
       )}
       <button

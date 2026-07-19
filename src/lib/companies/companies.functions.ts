@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./normalize";
-import { isPersonalDomain, extractDomain } from "@/lib/company-domains";
+import { isPersonalDomain, extractDomain, prettyCompanyName } from "@/lib/company-domains";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 
 type Ctx = { supabase: import("@supabase/supabase-js").SupabaseClient; userId: string };
@@ -156,6 +156,100 @@ export const createCompany = createServerFn({ method: "POST" })
     const c = await findOrCreateCompanyByName(context, data.name);
     if (!c) throw new Error("Invalid company name");
     return { id: c.id, name: c.name };
+  });
+
+/** Resolve a company-grouped contact bucket to a real Company entity and open
+ *  it. Buckets keyed by free-text name or bare email domain have no company
+ *  row yet; this finds-or-creates one, attaches the domain, links the bucket's
+ *  contacts to it (so the group folds into the linked-company bucket on next
+ *  render), and converges domains/labels/auto-subgroups. Returns the id so the
+ *  client can navigate to the company page — the single company-management
+ *  surface now that the standalone list is gone. */
+export const openOrCreateCompanyForBucket = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        name: z.string().trim().max(200).nullable().optional(),
+        domain: z.string().trim().max(253).nullable().optional(),
+        contactIds: z.array(z.string().uuid()).min(1).max(2000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const domain = data.domain && !isPersonalDomain(data.domain) ? data.domain.toLowerCase() : null;
+
+    // 1. Resolve the company: prefer a domain that already belongs to one,
+    //    then the free-text name, then mint one named from the domain.
+    let companyId: string | null = null;
+    if (domain) {
+      const { data: dom } = await supabase
+        .from("company_domains")
+        .select("company_id")
+        .eq("user_id", userId)
+        .eq("domain", domain)
+        .maybeSingle();
+      companyId = (dom as { company_id?: string } | null)?.company_id ?? null;
+    }
+    if (!companyId && data.name) {
+      const c = await findOrCreateCompanyByName(context, data.name);
+      companyId = c?.id ?? null;
+    }
+    if (!companyId && domain) {
+      const c = await findOrCreateCompanyByName(context, prettyCompanyName(domain));
+      companyId = c?.id ?? null;
+    }
+    if (!companyId) throw new Error("Could not resolve a company for this group");
+
+    // 2. Attach the domain (manual, idempotent).
+    if (domain) {
+      const { error: domErr } = await supabase
+        .from("company_domains")
+        .upsert(
+          { user_id: userId, company_id: companyId, domain, source: "manual" },
+          { onConflict: "user_id,domain", ignoreDuplicates: true },
+        );
+      if (domErr) throw new Error(domErr.message);
+    }
+
+    // 3. Link the bucket's contacts to the company.
+    const { error: linkErr } = await supabase
+      .from("contacts")
+      .update({ company_id: companyId })
+      .eq("user_id", userId)
+      .in("id", data.contactIds);
+    if (linkErr) throw new Error(linkErr.message);
+
+    // 4. Converge domains / labels / auto-subgroups (best-effort, mirrors
+    //    the tail of mergeCompaniesImpl).
+    try {
+      await supabase.rpc("discover_company_domains", {
+        p_company_id: companyId,
+        p_user_id: userId,
+      });
+    } catch {
+      // Non-fatal.
+    }
+    try {
+      const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
+      await syncCompanyRuleMemberships(supabase, userId, {
+        companyIds: [companyId],
+        contactIds: data.contactIds,
+        bumpResync: true,
+      });
+    } catch {
+      // Non-fatal.
+    }
+    try {
+      const { reconcileAutoParentsForContacts } =
+        await import("@/lib/contacts/auto-company-subgroups.functions");
+      await reconcileAutoParentsForContacts(supabase, userId, data.contactIds);
+    } catch {
+      // Non-fatal.
+    }
+
+    return { companyId };
   });
 
 export const updateCompany = createServerFn({ method: "POST" })
