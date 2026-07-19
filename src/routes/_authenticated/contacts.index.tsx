@@ -931,7 +931,6 @@ function ContactsPage() {
                                   })
                               : undefined
                           }
-
                           selectable
                           selectionState={(() => {
                             const ids = b.contacts.map((c) => c.id);

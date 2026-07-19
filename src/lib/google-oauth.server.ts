@@ -1,6 +1,11 @@
 // Per-user Google OAuth — token exchange, refresh, state signing.
 // Used by /api/public/google-oauth-callback and gmail.server.ts.
-import { createHmac, timingSafeEqual } from "crypto";
+//
+// Uses Web Crypto (crypto.subtle), NOT node:crypto: several *.functions.ts
+// modules that client components import re-export server fns from files that
+// reach this module, so it ends up in the client bundle graph. A node
+// builtin import here breaks `vite build` outright ("crypto" is externalized
+// for the browser); Web Crypto builds everywhere and runs on Workers.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
@@ -32,38 +37,58 @@ function requireEnv(name: string): string {
   return v;
 }
 
-function b64url(input: Buffer | string): string {
-  return Buffer.from(input)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+function b64urlFromBytes(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function b64urlDecode(s: string): Buffer {
+function b64urlFromString(s: string): string {
+  return b64urlFromBytes(new TextEncoder().encode(s));
+}
+
+function b64urlDecodeToString(s: string): string {
   const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
-  return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64");
+  const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+}
+
+async function hmacSha256(secret: string, payload: string): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)));
+}
+
+/** Constant-time string comparison (both inputs are same-alphabet b64url). */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 /** Sign { user_id, exp } with HMAC using the service role key as secret. Stateless OAuth state. */
-export function signState(userId: string, ttlSeconds = 600): string {
+export async function signState(userId: string, ttlSeconds = 600): Promise<string> {
   const secret = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const payload = b64url(
+  const payload = b64urlFromString(
     JSON.stringify({ u: userId, e: Math.floor(Date.now() / 1000) + ttlSeconds }),
   );
-  const sig = b64url(createHmac("sha256", secret).update(payload).digest());
+  const sig = b64urlFromBytes(await hmacSha256(secret, payload));
   return `${payload}.${sig}`;
 }
 
-export function verifyState(state: string): string {
+export async function verifyState(state: string): Promise<string> {
   const secret = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
   const [payload, sig] = state.split(".");
   if (!payload || !sig) throw new Error("Malformed state");
-  const expected = b64url(createHmac("sha256", secret).update(payload).digest());
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) throw new Error("Invalid state signature");
-  const parsed = JSON.parse(b64urlDecode(payload).toString("utf-8")) as { u: string; e: number };
+  const expected = b64urlFromBytes(await hmacSha256(secret, payload));
+  if (!timingSafeStringEqual(sig, expected)) throw new Error("Invalid state signature");
+  const parsed = JSON.parse(b64urlDecodeToString(payload)) as { u: string; e: number };
   if (parsed.e < Math.floor(Date.now() / 1000)) throw new Error("State expired");
   return parsed.u;
 }

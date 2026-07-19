@@ -117,7 +117,7 @@ export const startConnectGmail = createServerFn({ method: "POST" })
     const host = getRequestHost();
     const origin = `https://${host}`;
     const redirectUri = getRedirectUri(origin);
-    const state = signState(context.userId);
+    const state = await signState(context.userId);
     return { url: buildAuthorizeUrl(redirectUri, state, data.login_hint) };
   });
 

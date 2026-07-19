@@ -37,7 +37,7 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
 
         let userId: string;
         try {
-          userId = verifyState(state);
+          userId = await verifyState(state);
         } catch (e: unknown) {
           logError("oauth.invalid_state", { run_id: runId }, e);
           return new Response(
