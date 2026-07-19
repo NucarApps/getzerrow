@@ -12,6 +12,8 @@ export type CardDavContactPatch = {
   email?: string | null;
   name?: string | null;
   company?: string | null;
+  /** Resolved Company entity — set by the PUT handler when ORG is present. */
+  company_id?: string | null;
   title?: string | null;
   website?: string | null;
   city?: string | null;

@@ -500,10 +500,49 @@ async function mergeCompaniesImpl(
         .upsert(aliasRows, { onConflict: "user_id,name_key" });
     }
   }
+  // Re-point company-in-label rules at the survivor (delete the source rule
+  // when the target already has one — UNIQUE(group_id, rule_type, value)).
+  const { data: srcRules } = await supabase
+    .from("contact_group_rules")
+    .select("id,group_id")
+    .eq("user_id", userId)
+    .eq("rule_type", "company_id")
+    .eq("value", sourceId);
+  for (const r of srcRules ?? []) {
+    const { error: upErr } = await supabase
+      .from("contact_group_rules")
+      .update({ value: targetId })
+      .eq("id", r.id);
+    if (upErr && /duplicate|unique/i.test(upErr.message)) {
+      await supabase.from("contact_group_rules").delete().eq("id", r.id);
+    }
+  }
+  // Re-derive the survivor's domains from ALL members' emails (secondary
+  // addresses of moved contacts aren't covered by the row-level triggers).
+  try {
+    await supabase.rpc("discover_company_domains", {
+      p_company_id: targetId,
+      p_user_id: userId,
+    });
+  } catch {
+    // Best-effort.
+  }
   if (movedIds.length > 0) {
     const { reconcileAutoParentsForContacts } =
       await import("@/lib/contacts/auto-company-subgroups.functions");
     await reconcileAutoParentsForContacts(supabase, userId, movedIds);
+    // Target's company-in-label rules now apply to the moved contacts (and
+    // source-rule rows re-justify under the re-pointed rules).
+    try {
+      const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
+      await syncCompanyRuleMemberships(supabase, userId, {
+        companyIds: [targetId],
+        contactIds: movedIds,
+        bumpResync: true,
+      });
+    } catch {
+      // Best-effort.
+    }
   }
   await supabase.from("companies").delete().eq("id", sourceId).eq("user_id", userId);
   return { ok: true, movedContacts: movedIds.length };
@@ -532,6 +571,13 @@ export const deleteCompany = createServerFn({ method: "POST" })
       .select("id")
       .eq("user_id", userId)
       .eq("company_id", data.id);
+    // Its company-in-label rules go with it (value is text, no FK cascade).
+    await supabase
+      .from("contact_group_rules")
+      .delete()
+      .eq("user_id", userId)
+      .eq("rule_type", "company_id")
+      .eq("value", data.id);
     // company_id on contacts is ON DELETE SET NULL, so contacts are preserved.
     const { error } = await supabase
       .from("companies")
@@ -544,6 +590,16 @@ export const deleteCompany = createServerFn({ method: "POST" })
       const { reconcileAutoParentsForContacts } =
         await import("@/lib/contacts/auto-company-subgroups.functions");
       await reconcileAutoParentsForContacts(supabase, userId, ids);
+      // Remove memberships the deleted company's rules justified.
+      try {
+        const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
+        await syncCompanyRuleMemberships(supabase, userId, {
+          contactIds: ids,
+          bumpResync: true,
+        });
+      } catch {
+        // Best-effort.
+      }
     }
     return { ok: true as const };
   });

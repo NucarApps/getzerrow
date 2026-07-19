@@ -1104,6 +1104,24 @@ export async function handlePut(
   const present = parsed.presentFields;
   const merge = buildCardDavContactPatch({ userId, existing, parsed, nowIso });
   const plaintextPatch = merge.patch;
+  // Resolve ORG to a Company entity so the domain-autolink triggers and
+  // company-in-label rules cover iPhone edits too. Best-effort: a failed
+  // resolution must never fail the PUT.
+  if (present.has("ORG")) {
+    try {
+      const { resolveContactCompany } = await import("@/lib/companies/resolve.server");
+      const { companyId } = await resolveContactCompany(
+        { supabase: supabaseAdmin, userId },
+        plaintextPatch.company ?? null,
+      );
+      plaintextPatch.company_id = companyId;
+    } catch (err) {
+      logInfo("carddav.put.company_resolve_failed", {
+        contact_id: contactId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   logInfo("carddav.put.received", {
     contact_id: contactId,
     present_fields: [...present].sort(),
@@ -1300,6 +1318,17 @@ export async function handlePut(
     await reconcileAutoParentsForContacts(supabaseAdmin, userId, [contactId]);
   } catch (err) {
     logInfo("carddav.put.auto_subgroup_reconcile_failed", {
+      contact_id: contactId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Company-in-label rules follow the (possibly changed) company link.
+  try {
+    const { applyRulesForContact } = await import("@/lib/contacts/group-rules.functions");
+    await applyRulesForContact(supabaseAdmin, userId, contactId);
+  } catch (err) {
+    logInfo("carddav.put.rule_sync_failed", {
       contact_id: contactId,
       error: err instanceof Error ? err.message : String(err),
     });
