@@ -1034,15 +1034,30 @@ export const mergeCluster = createServerFn({ method: "POST" })
     let merged = 0;
     let failed = 0;
     let totalMovedContacts = 0;
+    const errors: Array<{ sourceId: string; message: string }> = [];
     for (const sourceId of data.foldIds) {
       if (sourceId === data.canonicalId) continue;
       try {
         const r = await mergeCompaniesImpl(context, sourceId, data.canonicalId);
         totalMovedContacts += r.movedContacts;
         merged++;
-      } catch {
+      } catch (err) {
         failed++;
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({ sourceId, message });
+        console.warn("[mergeCluster] merge failed", {
+          sourceId,
+          targetId: data.canonicalId,
+          message,
+        });
       }
     }
-    return { merged, failed, movedContacts: totalMovedContacts };
+    if (merged === 0 && failed > 0) {
+      throw new Error(
+        `Merge failed: ${errors[0]?.message ?? "unknown error"}${
+          errors.length > 1 ? ` (and ${errors.length - 1} more)` : ""
+        }`,
+      );
+    }
+    return { merged, failed, movedContacts: totalMovedContacts, errors };
   });
