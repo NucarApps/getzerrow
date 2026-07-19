@@ -1,35 +1,35 @@
-## Why the labels differ even though the contacts "look" like Nissan
+## Problem
 
-I checked the actual data for those 7 Nissan contacts. Two separate things are going on:
+"Add people to company" (and the second-attempt add) fails with:
 
-**1. There are 4 different Nissan *company records* under the hood, and the contacts point to different ones.**
+> there is no unique or exclusion constraint matching the ON CONFLICT specification
 
-The Company dropdown shows a name, but the underlying `company_id` on each contact can point to any of these:
+Root cause (verified via `pg_indexes`): `contacts` has no plain unique constraint on `(user_id, email)`. The only uniqueness on email is a partial functional index:
 
-| Contact | Free-text `company` field | Linked `company_id` → record |
-|---|---|---|
-| Aditya Jairaj | Nissan North America | **Nissan Northeast Region** |
-| Chad Faith | Nissan North America | **Nissan Motor Acceptance Company** |
-| Julie Caltabiano | Nissan North America | **Nissan** |
-| Gary / Joe / Katrina / Lou | Nissan North America | **Nissan North America** |
+```
+CREATE UNIQUE INDEX contacts_user_email_unique
+  ON public.contacts (user_id, lower(email)) WHERE email IS NOT NULL;
+```
 
-So even though every card *displays* "Nissan North America" in the company field, the linked entity is one of four different Nissan company rows. The auto-subgroup pass creates a label per linked company, hence 4 different Nissan child labels under the parent "Nissan" label.
+PostgREST / supabase-js `upsert({ onConflict: "user_id,email" })` requires an index whose target list is exactly the named columns. Functional/partial indexes don't match, so every call throws — including the first "Find people" add and the retry after merging.
 
-**2. Historical labels never got cleaned up.**
+## Fix
 
-Every one of those 7 contacts is currently a member of *all four* Nissan child labels (Nissan, Nissan Motor Acceptance Company, Nissan North America, Nissan-usa.com). Earlier reconcile passes added each contact to whichever label matched at the time (company name, then company_id, then raw email domain) but never removed them from the previous one. So the labels multiplied and every contact stayed pinned to the old ones.
+Update `addCompanyPeople` in `src/lib/companies/company-people.functions.ts` to stop relying on `onConflict` and instead:
 
-## Fix plan
+1. Normalize the incoming emails (already lowercased by Zod).
+2. `SELECT id, email FROM contacts WHERE user_id = ? AND lower(email) IN (...)` to find which already exist.
+3. For existing rows: `UPDATE` to set `company_id` and `company` (and `name` if currently null) — only for rows that don't already belong to another company (respect manual overrides / existing links, matching how the rest of the codebase treats company assignment).
+4. For missing rows: plain `INSERT` (no upsert) with `user_id, email, name, company, company_id, source: 'email'`.
+5. Collect all affected `contactIds` (inserted + updated) and pass them into the existing `syncCompanyRuleMemberships` and `reconcileAutoParentsForContacts` calls so labels/subgroups still converge.
 
-**Step A — Merge the underlying company records (root cause).**
-Go to Contacts → Companies → "Find duplicates". Pick **Nissan North America** as canonical and fold Nissan, Nissan Motor Acceptance Company, and Nissan Northeast Region into it (keep Boch Nissan South and Nissan Of Keene — those are separate dealerships). Merging reassigns every contact's `company_id` to the survivor and re-runs the subgroup reconcile against the single canonical company.
+This matches the existing partial-index semantics (case-insensitive email dedupe) and eliminates the ON CONFLICT dependency entirely — no schema migration needed.
 
-**Step B — Clear the stale label memberships.**
-After the merge, the reconcile only adds contacts to the canonical label; it does not delete their membership in the retired labels. So we add a one-shot "prune stale auto-subgroups" pass that, for each contact, removes it from any auto-generated sibling subgroup whose `company_id` no longer matches the contact's current `company_id`. Then the retired empty labels are deleted.
+## Files
 
-**Step C — Fix the domain-string label ("Nissan-usa.com").**
-Add `nissan-usa.com` to the surviving Nissan company's domains so that label never gets recreated on the next reconcile.
+- `src/lib/companies/company-people.functions.ts` — rewrite the `addCompanyPeople` handler body only. Public signature and validators unchanged.
 
-The pruning in Step B is a small code change to `reconcileAutoParentsForContacts` (about 30 lines). Steps A and C are data cleanup you can do from the UI once the pruning ships.
+## Out of scope
 
-Want me to build the Step B pruner? That's the piece that actually stops this from re-happening after future merges.
+- No change to the schema or the partial unique index.
+- No change to `findCompanyPeopleByDomain` or UI.
