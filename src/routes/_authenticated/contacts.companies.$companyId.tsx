@@ -205,7 +205,7 @@ function CompanyDetailPage() {
     mutationFn: () => deleteFn({ data: { id: companyId } }),
     onSuccess: () => {
       toast.success("Company deleted");
-      nav({ to: "/contacts/companies" });
+      nav({ to: "/contacts" });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -222,8 +222,8 @@ function CompanyDetailPage() {
       <div className="mx-auto max-w-4xl px-4 py-6">
         <div className="mb-6 flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild>
-            <Link to="/contacts/companies">
-              <ArrowLeft className="mr-2 h-4 w-4" /> All companies
+            <Link to="/contacts">
+              <ArrowLeft className="mr-2 h-4 w-4" /> Contacts
             </Link>
           </Button>
         </div>

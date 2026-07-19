@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -71,7 +71,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
-import { CompanyAliasesDialog } from "@/components/contacts/CompanyAliasesDialog";
 import {
   extractDomain,
   isPersonalDomain,
@@ -84,7 +83,7 @@ import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.funct
 import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
 import { normalizeCompanyName } from "@/lib/contacts/company-name";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
-import { listCompanies } from "@/lib/companies/companies.functions";
+import { listCompanies, openOrCreateCompanyForBucket } from "@/lib/companies/companies.functions";
 import { listMeetingPeople } from "@/lib/calendar.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -101,11 +100,14 @@ export const Route = createFileRoute("/_authenticated/contacts/")({
 
 function ContactsPage() {
   const qc = useQueryClient();
+  const nav = useNavigate();
   const list = useServerFn(listContacts);
   const listGroups = useServerFn(listContactGroups);
   const listAliases = useServerFn(listCompanyAliases);
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
   const listCompaniesFn = useServerFn(listCompanies);
+  const openCompanyFn = useServerFn(openOrCreateCompanyForBucket);
+  const [openingBucketKey, setOpeningBucketKey] = useState<string | null>(null);
 
   const search = Route.useSearch();
   const [query, setQuery] = useState("");
@@ -159,12 +161,6 @@ function ContactsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [aliasDialog, setAliasDialog] = useState<null | {
-    domain: string | null;
-    name: string;
-    contactIds: string[];
-  }>(null);
-
   const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
   const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
   const aq = useQuery({ queryKey: ["company-aliases"], queryFn: () => listAliases() });
@@ -305,6 +301,8 @@ function ContactsPage() {
     name: string;
     kind: "company" | "personal" | "other";
     contacts: Contact[];
+    /** Resolved Company entity id, when the bucket is a linked company. */
+    companyId?: string;
   };
 
   const aliasMap = useMemo(() => {
@@ -374,6 +372,7 @@ function ContactsPage() {
           name: company.name,
           kind: "company",
           contacts: [],
+          companyId: linkedCompanyId,
         };
       } else if (!d && manualCompany) {
         key = `name:${normalizeCompanyName(manualCompany)}`;
@@ -601,6 +600,29 @@ function ContactsPage() {
     }
   }
 
+  // Open a company group's page. Linked-company buckets navigate straight to
+  // the detail page; name/domain-only groups first materialize a real Company
+  // (and link their contacts to it) so there's a page to open.
+  async function openBucketCompany(b: Bucket) {
+    if (b.companyId) {
+      nav({ to: "/contacts/companies/$companyId", params: { companyId: b.companyId } });
+      return;
+    }
+    setOpeningBucketKey(b.key);
+    try {
+      const { companyId } = await openCompanyFn({
+        data: { name: b.name, domain: b.domain, contactIds: b.contacts.map((c) => c.id) },
+      });
+      await qc.invalidateQueries({ queryKey: ["companies"] });
+      await qc.invalidateQueries({ queryKey: ["contacts"] });
+      nav({ to: "/contacts/companies/$companyId", params: { companyId } });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not open company");
+    } finally {
+      setOpeningBucketKey(null);
+    }
+  }
+
   function toggleBucket(key: string) {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -652,12 +674,6 @@ function ContactsPage() {
               <Link to="/my-card" aria-label="My card" title="My card">
                 <IdCard className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">My card</span>
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild className="px-2 sm:px-3">
-              <Link to="/contacts/companies" aria-label="Companies" title="Companies">
-                <Building2 className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Companies</span>
               </Link>
             </Button>
             <Button variant="outline" size="sm" asChild className="px-2 sm:px-3">
@@ -921,16 +937,8 @@ function ContactsPage() {
                               ? (logoSourceByDomain.get(b.domain) ?? null)
                               : null
                           }
-                          onEdit={
-                            b.kind === "company"
-                              ? () =>
-                                  setAliasDialog({
-                                    domain: b.domain,
-                                    name: b.name,
-                                    contactIds: b.contacts.map((c) => c.id),
-                                  })
-                              : undefined
-                          }
+                          onOpen={b.kind === "company" ? () => openBucketCompany(b) : undefined}
+                          opening={openingBucketKey === b.key}
                           selectable
                           selectionState={(() => {
                             const ids = b.contacts.map((c) => c.id);
@@ -1156,28 +1164,6 @@ function ContactsPage() {
           contactId={drawerId}
           open={!!drawerId}
           onOpenChange={(v) => !v && setDrawerId(null)}
-        />
-
-        <CompanyAliasesDialog
-          open={!!aliasDialog}
-          onOpenChange={(v) => !v && setAliasDialog(null)}
-          primaryDomain={aliasDialog?.domain ?? null}
-          companyName={aliasDialog?.name ?? ""}
-          aliases={aliasDialog?.domain ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
-          contactIds={aliasDialog?.contactIds ?? []}
-          companyId={
-            aliasDialog
-              ? ((aliasDialog.domain
-                  ? (cq.data?.companies ?? []).find((c) =>
-                      c.domains?.some((d) => d.domain === aliasDialog.domain),
-                    )?.id
-                  : undefined) ??
-                (cq.data?.companies ?? []).find(
-                  (c) => c.name.toLowerCase() === aliasDialog.name.toLowerCase(),
-                )?.id ??
-                null)
-              : null
-          }
         />
       </div>
       <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
