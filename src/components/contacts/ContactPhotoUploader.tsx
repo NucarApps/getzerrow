@@ -45,6 +45,9 @@ type Props = {
   /** When set, enables the "Reset to company logo" action, which clears the
    * stored personal avatar so the live company logo shows through again. */
   companyId?: string | null;
+  /** Custom uploaded company photo — shown as the fallback (wins over the
+   *  domain brand logo) when the contact has no photo of their own. */
+  companyPhotoUrl?: string | null;
   avatarIsCompanyLogoSnapshot?: boolean;
   onChanged: () => void;
 };
@@ -63,6 +66,7 @@ export function ContactPhotoUploader({
   website,
   companyDomain,
   companyId,
+  companyPhotoUrl = null,
   avatarIsCompanyLogoSnapshot = false,
   onChanged,
 }: Props) {
@@ -159,7 +163,7 @@ export function ContactPhotoUploader({
     <div className="group relative h-16 w-16 shrink-0">
       {displaySrc ? (
         <img src={displaySrc} alt={displayName} className="h-16 w-16 rounded-full object-cover" />
-      ) : logoDomain ? (
+      ) : logoDomain || companyPhotoUrl ? (
         <CompanyLogo
           domain={logoDomain}
           name={displayName}
@@ -167,6 +171,7 @@ export function ContactPhotoUploader({
           className="!rounded-full"
           provider={logoChoice?.provider}
           sourceDomain={logoChoice?.source_domain ?? null}
+          photoUrl={companyPhotoUrl}
         />
       ) : (
         <div className="grid h-16 w-16 place-items-center rounded-full bg-primary/15 text-2xl font-semibold text-primary">

@@ -162,6 +162,18 @@ export const getContact = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .maybeSingle();
     const linkedCompanyId = companyLink?.company_id ?? null;
+    // Custom uploaded company photo (if any) so the drawer avatar fallback
+    // shows it — matching the contacts list, company page, and iPhone.
+    let companyPhotoUrl: string | null = null;
+    if (linkedCompanyId) {
+      const { data: companyRow } = await supabase
+        .from("companies")
+        .select("logo_url")
+        .eq("id", linkedCompanyId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      companyPhotoUrl = (companyRow as { logo_url?: string | null } | null)?.logo_url ?? null;
+    }
     const [{ data: emails }, { data: phones }, { data: emailRows }] = await Promise.all([
       emailsQuery,
       supabase
@@ -305,6 +317,7 @@ export const getContact = createServerFn({ method: "POST" })
       emails: emailRows ?? [],
       companyDomain,
       companyId: linkedCompanyId,
+      companyPhotoUrl,
       avatarIsCompanyLogoSnapshot,
     };
   });

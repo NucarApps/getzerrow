@@ -348,6 +348,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           website={c.website ?? null}
           companyDomain={q.data?.companyDomain ?? null}
           companyId={q.data?.companyId ?? null}
+          companyPhotoUrl={q.data?.companyPhotoUrl ?? null}
           avatarIsCompanyLogoSnapshot={q.data?.avatarIsCompanyLogoSnapshot ?? false}
           onChanged={() => qc.invalidateQueries({ queryKey: ["contact", c.id] })}
         />
