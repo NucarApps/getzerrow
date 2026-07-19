@@ -19,10 +19,219 @@ import {
   type ContactSignals,
   type GroupRule,
 } from "./group-rules";
+import { pairKey, planRuleMembershipSync } from "./company-label-sync";
+import { reconcileIfAuto } from "./auto-company-subgroups.functions";
+import { bumpResyncNonce } from "@/lib/carddav/settings.functions";
 
 type DB = SupabaseClient<Database>;
 
 const RULE_TYPE = z.enum(["domain", "company_id", "ai_category"]);
+
+// ─── Membership sync engine ─────────────────────────────────────────
+//
+// Materializes rule-derived memberships (source='rule') and keeps them in
+// sync: contacts gain labels their rules justify and lose rule rows no rule
+// justifies anymore ("company is in label" semantics — new hires inherit,
+// leavers drop). Only touches source='rule' rows; see company-label-sync.ts.
+
+const CHUNK = 500;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+export async function syncCompanyRuleMemberships(
+  supabase: DB,
+  userId: string,
+  opts: {
+    /** Narrow scope: all contacts linked to these companies. */
+    companyIds?: string[];
+    /** Narrow scope: exactly these contacts. */
+    contactIds?: string[];
+    /** Broad scope: rules changed for these groups — scans all contacts. */
+    groupIds?: string[];
+    /** Re-evaluate every contact. */
+    full?: boolean;
+    /** Bump the CardDAV resync nonce when memberships changed (bulk ops). */
+    bumpResync?: boolean;
+  },
+): Promise<{ scanned: number; added: number; removed: number }> {
+  const rules = await loadUserRules(supabase, userId);
+
+  // Resolve the contact scope. Group-scoped changes (rule added/removed)
+  // need a full scan to find NEW matches; company/contact scopes stay narrow.
+  const scanAll = !!opts.full || (opts.groupIds?.length ?? 0) > 0;
+  const scopeIds = new Set<string>(opts.contactIds ?? []);
+  if (!scanAll && (opts.companyIds?.length ?? 0) > 0) {
+    const { data } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId)
+      .in("company_id", opts.companyIds!);
+    for (const r of data ?? []) scopeIds.add(r.id);
+    // Contacts that LEFT these companies still hold rule rows in the
+    // companies' labels — include current rule-row holders of those labels.
+    const ruleGroupIds = rules
+      .filter((r) => r.rule_type === "company_id" && opts.companyIds!.includes(r.value))
+      .map((r) => r.group_id);
+    if (ruleGroupIds.length > 0) {
+      const { data: holders } = await supabase
+        .from("contact_group_members")
+        .select("contact_id")
+        .eq("user_id", userId)
+        .eq("source", "rule")
+        .in("group_id", ruleGroupIds);
+      for (const r of holders ?? []) scopeIds.add(r.contact_id);
+    }
+  }
+
+  // Load signals in bulk.
+  let contactRows: Array<{
+    id: string;
+    company_id: string | null;
+    ai_category: string | null;
+    email: string | null;
+  }> = [];
+  if (scanAll) {
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("id,company_id,ai_category,email")
+      .eq("user_id", userId)
+      .limit(20000);
+    if (error) throw new Error(error.message);
+    contactRows = (data ?? []) as typeof contactRows;
+  } else {
+    if (scopeIds.size === 0) return { scanned: 0, added: 0, removed: 0 };
+    for (const ids of chunk([...scopeIds], CHUNK)) {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("id,company_id,ai_category,email")
+        .eq("user_id", userId)
+        .in("id", ids);
+      if (error) throw new Error(error.message);
+      contactRows.push(...((data ?? []) as typeof contactRows));
+    }
+  }
+  const contactIds = contactRows.map((c) => c.id);
+
+  const emailsByContact = new Map<string, Array<{ address: string | null }>>();
+  if (scanAll) {
+    const { data } = await supabase
+      .from("contact_emails")
+      .select("contact_id,address")
+      .eq("user_id", userId);
+    for (const r of (data ?? []) as Array<{ contact_id: string; address: string | null }>) {
+      const arr = emailsByContact.get(r.contact_id) ?? [];
+      arr.push({ address: r.address });
+      emailsByContact.set(r.contact_id, arr);
+    }
+  } else {
+    for (const ids of chunk(contactIds, CHUNK)) {
+      const { data } = await supabase
+        .from("contact_emails")
+        .select("contact_id,address")
+        .in("contact_id", ids);
+      for (const r of (data ?? []) as Array<{ contact_id: string; address: string | null }>) {
+        const arr = emailsByContact.get(r.contact_id) ?? [];
+        arr.push({ address: r.address });
+        emailsByContact.set(r.contact_id, arr);
+      }
+    }
+  }
+
+  const signalsByContact = new Map<string, ContactSignals>();
+  for (const c of contactRows) {
+    signalsByContact.set(c.id, {
+      companyId: c.company_id ?? null,
+      aiCategory: c.ai_category ?? null,
+      emailDomains: collectEmailDomains([
+        { address: c.email },
+        ...(emailsByContact.get(c.id) ?? []),
+      ]),
+    });
+  }
+
+  // Existing memberships for the scope (any source) + current rule rows.
+  const existingMemberPairs = new Set<string>();
+  const currentRuleRows: Array<{ group_id: string; contact_id: string }> = [];
+  for (const ids of chunk(contactIds, CHUNK)) {
+    const { data } = await supabase
+      .from("contact_group_members")
+      .select("group_id,contact_id,source")
+      .eq("user_id", userId)
+      .in("contact_id", ids);
+    for (const r of (data ?? []) as Array<{
+      group_id: string;
+      contact_id: string;
+      source: string | null;
+    }>) {
+      existingMemberPairs.add(pairKey(r.group_id, r.contact_id));
+      if (r.source === "rule") {
+        currentRuleRows.push({ group_id: r.group_id, contact_id: r.contact_id });
+      }
+    }
+  }
+
+  const plan = planRuleMembershipSync({
+    rules,
+    signalsByContact,
+    currentRuleRows,
+    existingMemberPairs,
+  });
+
+  for (const rows of chunk(plan.toAdd, CHUNK)) {
+    const { error } = await supabase.from("contact_group_members").upsert(
+      rows.map((p) => ({
+        user_id: userId,
+        group_id: p.group_id,
+        contact_id: p.contact_id,
+        auto_added: true,
+        source: "rule",
+      })),
+      { onConflict: "group_id,contact_id", ignoreDuplicates: true },
+    );
+    if (error) throw new Error(error.message);
+  }
+  const removeByGroup = new Map<string, string[]>();
+  for (const p of plan.toRemove) {
+    const arr = removeByGroup.get(p.group_id) ?? [];
+    arr.push(p.contact_id);
+    removeByGroup.set(p.group_id, arr);
+  }
+  for (const [groupId, cids] of removeByGroup) {
+    for (const ids of chunk(cids, CHUNK)) {
+      const { error } = await supabase
+        .from("contact_group_members")
+        .delete()
+        .eq("user_id", userId)
+        .eq("group_id", groupId)
+        .eq("source", "rule")
+        .in("contact_id", ids);
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  // Let the auto-subgroup reconciler settle any touched auto-parents, and
+  // nudge iPhones when bulk changes happened.
+  const touchedGroups = new Set<string>([
+    ...plan.toAdd.map((p) => p.group_id),
+    ...plan.toRemove.map((p) => p.group_id),
+  ]);
+  for (const gid of touchedGroups) {
+    await reconcileIfAuto(supabase, userId, gid);
+  }
+  if (opts.bumpResync && (plan.toAdd.length > 0 || plan.toRemove.length > 0)) {
+    try {
+      await bumpResyncNonce(supabase, userId);
+    } catch {
+      // Non-fatal.
+    }
+  }
+
+  return { scanned: contactRows.length, added: plan.toAdd.length, removed: plan.toRemove.length };
+}
 
 // ─── Rule CRUD ──────────────────────────────────────────────────────
 
@@ -62,6 +271,25 @@ export const addGroupRule = createServerFn({ method: "POST" })
       if (!(AI_CATEGORIES as readonly string[]).includes(value)) {
         throw new Error("Unknown AI category");
       }
+    } else if (data.ruleType === "company_id") {
+      const { data: co } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("id", value)
+        .maybeSingle();
+      if (!co) throw new Error("Company not found");
+    }
+    // Auto-generated subgroups are reconciler-managed — no direct rules.
+    const { data: g } = await supabase
+      .from("contact_groups")
+      .select("auto_generated_from_group_id")
+      .eq("id", data.groupId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!g) throw new Error("Label not found");
+    if (g.auto_generated_from_group_id) {
+      throw new Error("This subgroup is managed automatically from its parent");
     }
     const { data: row, error } = await supabase
       .from("contact_group_rules")
@@ -78,6 +306,15 @@ export const addGroupRule = createServerFn({ method: "POST" })
       .select("id,group_id,rule_type,value,auto_apply,created_at")
       .single();
     if (error) throw new Error(error.message);
+    // Backfill: materialize memberships the new rule justifies.
+    if (data.autoApply) {
+      await syncCompanyRuleMemberships(supabase, userId, {
+        ...(data.ruleType === "company_id"
+          ? { companyIds: [value] }
+          : { groupIds: [data.groupId] }),
+        bumpResync: true,
+      });
+    }
     return { rule: row };
   });
 
@@ -93,12 +330,24 @@ export const updateGroupRule = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     const patch: { auto_apply?: boolean; value?: string } = {};
     if (data.autoApply !== undefined) patch.auto_apply = data.autoApply;
     if (data.value !== undefined) patch.value = data.value;
-    const { error } = await supabase.from("contact_group_rules").update(patch).eq("id", data.id);
+    const { data: row, error } = await supabase
+      .from("contact_group_rules")
+      .update(patch)
+      .eq("id", data.id)
+      .select("group_id,rule_type,value,auto_apply")
+      .maybeSingle();
     if (error) throw new Error(error.message);
+    // Re-sync: an autoApply flip or value change adds/removes materialized rows.
+    if (row) {
+      await syncCompanyRuleMemberships(supabase, userId, {
+        groupIds: [row.group_id],
+        bumpResync: true,
+      });
+    }
     return { ok: true };
   });
 
@@ -106,9 +355,28 @@ export const deleteGroupRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    const { data: row } = await supabase
+      .from("contact_group_rules")
+      .select("group_id")
+      .eq("id", data.id)
+      .maybeSingle();
     const { error } = await supabase.from("contact_group_rules").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
+    // Cleanup: remove now-unjustified materialized rows. Scope to the
+    // group's current rule-row holders — cheaper than a full scan.
+    if (row) {
+      const { data: holders } = await supabase
+        .from("contact_group_members")
+        .select("contact_id")
+        .eq("user_id", userId)
+        .eq("group_id", row.group_id)
+        .eq("source", "rule");
+      const contactIds = (holders ?? []).map((h) => h.contact_id);
+      if (contactIds.length > 0) {
+        await syncCompanyRuleMemberships(supabase, userId, { contactIds, bumpResync: true });
+      }
+    }
     return { ok: true };
   });
 
@@ -156,9 +424,11 @@ async function loadUserRules(supabase: DB, userId: string): Promise<GroupRule[]>
 
 /**
  * Evaluate rules for a contact and act on matches. Auto-apply matches
- * insert into contact_group_members; suggest-only matches write to
- * contact_group_suggestions (reusing the existing table). Existing
- * memberships are respected — this never removes.
+ * materialize as source='rule' membership rows; rule rows no longer
+ * justified by any auto rule are removed (a contact who leaves a company
+ * drops out of that company's labels). Manual and reconciler-owned rows
+ * are never touched. Suggest-only matches write to
+ * contact_group_suggestions (reusing the existing table).
  */
 export async function applyRulesForContact(
   supabase: DB,
@@ -168,9 +438,7 @@ export async function applyRulesForContact(
   const signals = await loadContactSignals(supabase, userId, contactId);
   if (!signals) return { auto: 0, suggested: 0 };
   const rules = await loadUserRules(supabase, userId);
-  if (rules.length === 0) return { auto: 0, suggested: 0 };
-  const matches = matchRules(signals, rules);
-  if (matches.length === 0) return { auto: 0, suggested: 0 };
+  const matches = rules.length > 0 ? matchRules(signals, rules) : [];
 
   const autoGroupIds = [...new Set(matches.filter((m) => m.autoApply).map((m) => m.groupId))];
   const suggestGroupIds = [...new Set(matches.filter((m) => !m.autoApply).map((m) => m.groupId))];
@@ -181,6 +449,8 @@ export async function applyRulesForContact(
       user_id: userId,
       group_id,
       contact_id: contactId,
+      auto_added: true,
+      source: "rule",
     }));
     const { error, count } = await supabase
       .from("contact_group_members")
@@ -188,6 +458,22 @@ export async function applyRulesForContact(
     if (error) throw new Error(error.message);
     auto = count ?? autoGroupIds.length;
   }
+
+  // Drop rule rows no auto rule justifies anymore.
+  {
+    const q = supabase
+      .from("contact_group_members")
+      .delete()
+      .eq("user_id", userId)
+      .eq("contact_id", contactId)
+      .eq("source", "rule");
+    const { error } =
+      autoGroupIds.length > 0
+        ? await q.not("group_id", "in", `(${autoGroupIds.join(",")})`)
+        : await q;
+    if (error) throw new Error(error.message);
+  }
+  if (matches.length === 0) return { auto, suggested: 0 };
 
   let suggested = 0;
   if (suggestGroupIds.length > 0) {
@@ -336,18 +622,9 @@ export const applyGroupRulesToAllContacts = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const { data: ids, error } = await supabase
-      .from("contacts")
-      .select("id")
-      .eq("user_id", userId)
-      .limit(20000);
-    if (error) throw new Error(error.message);
-    let auto = 0;
-    let suggested = 0;
-    for (const row of ids ?? []) {
-      const r = await applyRulesForContact(supabase, userId, row.id);
-      auto += r.auto;
-      suggested += r.suggested;
-    }
-    return { scanned: (ids ?? []).length, auto, suggested };
+    const r = await syncCompanyRuleMemberships(supabase, userId, {
+      full: true,
+      bumpResync: true,
+    });
+    return { scanned: r.scanned, auto: r.added, suggested: 0, removed: r.removed };
   });
