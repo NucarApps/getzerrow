@@ -470,19 +470,10 @@ async function pruneStaleAutoSubgroupMemberships(
     { data: companyDomainRows },
     { data: contactRows },
   ] = await Promise.all([
-    supabase
-      .from("company_aliases")
-      .select("primary_domain, alias_domain")
-      .eq("user_id", userId),
+    supabase.from("company_aliases").select("primary_domain, alias_domain").eq("user_id", userId),
     supabase.from("companies").select("id,name").eq("user_id", userId),
-    supabase
-      .from("company_name_aliases")
-      .select("name_key,company_id")
-      .eq("user_id", userId),
-    supabase
-      .from("company_domains")
-      .select("domain,company_id")
-      .eq("user_id", userId),
+    supabase.from("company_name_aliases").select("name_key,company_id").eq("user_id", userId),
+    supabase.from("company_domains").select("domain,company_id").eq("user_id", userId),
     supabase
       .from("contacts")
       .select("id, company, email, website, company_id")
@@ -608,11 +599,7 @@ export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
       // Chunk to keep payloads sane.
       const chunkSize = 500;
       for (let i = 0; i < allIds.length; i += chunkSize) {
-        await pruneStaleAutoSubgroupMemberships(
-          supabase,
-          userId,
-          allIds.slice(i, i + chunkSize),
-        );
+        await pruneStaleAutoSubgroupMemberships(supabase, userId, allIds.slice(i, i + chunkSize));
       }
     }
     const { data: parents, error } = await supabase
