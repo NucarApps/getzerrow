@@ -14,6 +14,7 @@ import { isLikelyHuman } from "@/lib/contacts-helpers.server";
 import {
   emailLocalPart,
   firstLastTokens,
+  nameMatchConfidence,
   normalizeNameLoose,
 } from "@/lib/contacts/name-match";
 
