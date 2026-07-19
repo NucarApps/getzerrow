@@ -171,9 +171,9 @@ describe("rowBelongsInList — classification insert shapes", () => {
         key("all"),
       ),
     ).toBe(false);
-    expect(
-      rowBelongsInList(row({ raw_labels: [], classified_by: "pending_ai" }), key("all")),
-    ).toBe(false);
+    expect(rowBelongsInList(row({ raw_labels: [], classified_by: "pending_ai" }), key("all"))).toBe(
+      false,
+    );
   });
 
   it("a pending row is hidden from the inbox until classification settles", () => {

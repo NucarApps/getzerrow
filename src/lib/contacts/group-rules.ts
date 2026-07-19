@@ -37,7 +37,10 @@ export function domainOfEmail(email: string | null | undefined): string | null {
   if (!email) return null;
   const at = email.lastIndexOf("@");
   if (at < 0 || at === email.length - 1) return null;
-  return email.slice(at + 1).trim().toLowerCase();
+  return email
+    .slice(at + 1)
+    .trim()
+    .toLowerCase();
 }
 
 export function collectEmailDomains(
@@ -52,10 +55,7 @@ export function collectEmailDomains(
 }
 
 /** Match a contact's signals against a rule set. */
-export function matchRules(
-  signals: ContactSignals,
-  rules: GroupRule[],
-): RuleMatch[] {
+export function matchRules(signals: ContactSignals, rules: GroupRule[]): RuleMatch[] {
   const out: RuleMatch[] = [];
   const domSet = new Set(signals.emailDomains.map((d) => d.toLowerCase()));
   const cat = signals.aiCategory?.trim().toLowerCase() ?? null;

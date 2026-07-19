@@ -83,12 +83,8 @@ export async function runGoogleContactsSync(
 
   // Always release the lease, even if the pull/push block throws in a place
   // that skips the catch (e.g. a synchronous error inside a helper, or a
-  // secondary throw from the catch itself). Success/failure fields are
-  // written inside try/catch; finally only guarantees the unlock.
-  let result: { ok: boolean; pull?: number; push?: number; error?: string } = {
-    ok: false,
-    error: "unknown",
-  };
+  // secondary throw from the catch itself). Success/failure results return
+  // from try/catch; finally only guarantees the unlock.
   try {
     // Short-circuit if the account is flagged for reconnect. The People API
     // itself returns 403 (isMissingScope) when the contacts scope is absent,
@@ -100,8 +96,7 @@ export async function runGoogleContactsSync(
       .maybeSingle();
     if (acct?.needs_reconnect) {
       await updateSyncState(state.id, { last_error: "needs_reconnect" });
-      result = { ok: false, error: "needs_reconnect" };
-      return result;
+      return { ok: false, error: "needs_reconnect" };
     }
 
     // Auto-backfill missing photos: clear photo_etag for any linked contact
@@ -132,8 +127,7 @@ export async function runGoogleContactsSync(
       last_error: null,
       pending_bump: false,
     });
-    result = { ok: true, pull: pull.pulled, push: push.contactsPushed + push.groupsPushed };
-    return result;
+    return { ok: true, pull: pull.pulled, push: push.contactsPushed + push.groupsPushed };
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
     logError("google_contacts.run.failed", { ...ids }, e);
@@ -141,8 +135,7 @@ export async function runGoogleContactsSync(
     if (e instanceof NeedsReconnectError) errorKey = "needs_reconnect";
     else if (e instanceof PeopleApiError && e.isMissingScope) errorKey = "missing_contacts_scope";
     await updateSyncState(state.id, { last_error: errorKey });
-    result = { ok: false, error: errorKey };
-    return result;
+    return { ok: false, error: errorKey };
   } finally {
     // Belt-and-suspenders: clear the lease + progress regardless of what
     // happened above. Swallow errors here — the caller already has its

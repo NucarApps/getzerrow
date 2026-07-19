@@ -6,10 +6,7 @@ import { ArrowLeft, Plus, Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import {
-  listCompanies,
-  createCompany,
-} from "@/lib/companies/companies.functions";
+import { listCompanies, createCompany } from "@/lib/companies/companies.functions";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyDuplicatesDrawer } from "@/components/contacts/CompanyDuplicatesDrawer";
 

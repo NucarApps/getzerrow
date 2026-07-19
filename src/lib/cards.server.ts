@@ -200,8 +200,7 @@ function getInitials(name?: string | null, fallback?: string | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-const FONT_STACK =
-  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const FONT_STACK = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 function cardRow(glyph: string, valueHtml: string): string {
   return `<tr>
@@ -324,8 +323,6 @@ export function renderCardEmailHtml(opts: CardEmailInput): string {
   </table>
 </div>`;
 }
-
-
 
 export type ContactShareData = {
   name: string | null;

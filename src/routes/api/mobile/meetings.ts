@@ -145,7 +145,6 @@ async function handleCalendar({ supabase, userId }: Auth): Promise<Response> {
   return Response.json({ ok: true, calendar_access: true, events });
 }
 
-
 /** Exclude (or re-include) one calendar event from auto-record. */
 async function handleSetExclusion(
   { supabase, userId }: Auth,

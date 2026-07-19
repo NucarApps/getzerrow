@@ -9,67 +9,10 @@ type Ctx = { supabase: import("@supabase/supabase-js").SupabaseClient; userId: s
 
 const nonEmpty = (max: number) => z.string().trim().min(1).max(max);
 
-async function findOrCreateCompanyByName(
-  ctx: Ctx,
-  rawName: string,
-): Promise<{ id: string; name: string } | null> {
-  const name = rawName.trim();
-  if (!name) return null;
-  const key = normalizeCompanyName(name);
-  if (!key) return null;
-  // 1. Direct name_key match on companies.
-  const { data: existing, error: selErr } = await ctx.supabase
-    .from("companies")
-    .select("id,name")
-    .eq("user_id", ctx.userId)
-    .eq("name_key", key)
-    .maybeSingle();
-  if (selErr) throw new Error(selErr.message);
-  if (existing) return existing;
-  // 2. Alias match: an earlier merge remembered this name pointing at
-  //    the canonical company. Route the new reference to the target
-  //    instead of recreating the duplicate.
-  const { data: alias } = await ctx.supabase
-    .from("company_name_aliases")
-    .select("company_id, companies:companies(id,name)")
-    .eq("user_id", ctx.userId)
-    .eq("name_key", key)
-    .maybeSingle();
-  const aliased = (alias as { companies?: { id: string; name: string } | null } | null)?.companies;
-  if (aliased) return aliased;
-  // 3. Insert.
-  const { data: inserted, error: insErr } = await ctx.supabase
-    .from("companies")
-    .insert({ user_id: ctx.userId, name, name_key: key })
-    .select("id,name")
-    .single();
-  if (insErr) {
-    // Race with a parallel insert — fall back to a re-select.
-    const { data: retry } = await ctx.supabase
-      .from("companies")
-      .select("id,name")
-      .eq("user_id", ctx.userId)
-      .eq("name_key", key)
-      .maybeSingle();
-    if (retry) return retry;
-    throw new Error(insErr.message);
-  }
-  return inserted;
-}
-
-
-export async function resolveContactCompany(
-  ctx: Ctx,
-  companyText: string | null | undefined,
-): Promise<{ companyId: string | null; canonicalName: string | null }> {
-  if (companyText === null) return { companyId: null, canonicalName: null };
-  if (companyText === undefined) return { companyId: null, canonicalName: null };
-  const trimmed = companyText.trim();
-  if (!trimmed) return { companyId: null, canonicalName: null };
-  const found = await findOrCreateCompanyByName(ctx, trimmed);
-  if (!found) return { companyId: null, canonicalName: null };
-  return { companyId: found.id, canonicalName: found.name };
-}
+// Company resolution lives in resolve.server.ts so import paths (Google
+// pull, CardDAV PUT) can use it without server-fn machinery.
+export { findOrCreateCompanyByName, resolveContactCompany } from "./resolve.server";
+import { findOrCreateCompanyByName } from "./resolve.server";
 
 export const listCompanies = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -162,9 +105,7 @@ export const getCompany = createServerFn({ method: "POST" })
     // Resolve introducer display name for each auto domain.
     const introducerIds = Array.from(
       new Set(
-        (domains ?? [])
-          .map((d) => d.discovered_from_contact_id)
-          .filter((v): v is string => !!v),
+        (domains ?? []).map((d) => d.discovered_from_contact_id).filter((v): v is string => !!v),
       ),
     );
     const introducerMap = new Map<string, { name: string | null; email: string | null }>();
@@ -210,9 +151,7 @@ export const discoverCompanyDomains = createServerFn({ method: "POST" })
 
 export const createCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ name: nonEmpty(200) }).parse(d),
-  )
+  .inputValidator((d: unknown) => z.object({ name: nonEmpty(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const c = await findOrCreateCompanyByName(context, data.name);
     if (!c) throw new Error("Invalid company name");
@@ -272,9 +211,8 @@ export const updateCompany = createServerFn({ method: "POST" })
         .select("id");
       const ids = (updated ?? []).map((r) => (r as { id: string }).id);
       if (ids.length > 0) {
-        const { reconcileAutoParentsForContacts } = await import(
-          "@/lib/contacts/auto-company-subgroups.functions"
-        );
+        const { reconcileAutoParentsForContacts } =
+          await import("@/lib/contacts/auto-company-subgroups.functions");
         await reconcileAutoParentsForContacts(supabase, userId, ids);
       }
     }
@@ -284,9 +222,7 @@ export const updateCompany = createServerFn({ method: "POST" })
 export const addCompanyDomain = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z
-      .object({ id: z.string().uuid(), domain: z.string().trim().min(1).max(253) })
-      .parse(d),
+    z.object({ id: z.string().uuid(), domain: z.string().trim().min(1).max(253) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -336,9 +272,9 @@ export const setCompanyTags = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (delErr) throw new Error(delErr.message);
     if (uniq.length > 0) {
-      const { error: insErr } = await supabase.from("company_tags").insert(
-        uniq.map((tag) => ({ user_id: userId, company_id: data.id, tag })),
-      );
+      const { error: insErr } = await supabase
+        .from("company_tags")
+        .insert(uniq.map((tag) => ({ user_id: userId, company_id: data.id, tag })));
       if (insErr) throw new Error(insErr.message);
     }
     return { ok: true as const };
@@ -481,11 +417,7 @@ async function mergeCompaniesImpl(
     .eq("company_id", sourceId)
     .eq("user_id", userId);
   if (srcTags && srcTags.length > 0) {
-    await supabase
-      .from("company_tags")
-      .delete()
-      .eq("company_id", sourceId)
-      .eq("user_id", userId);
+    await supabase.from("company_tags").delete().eq("company_id", sourceId).eq("user_id", userId);
     for (const t of srcTags) {
       await supabase
         .from("company_tags")
@@ -568,17 +500,51 @@ async function mergeCompaniesImpl(
         .upsert(aliasRows, { onConflict: "user_id,name_key" });
     }
   }
-  if (movedIds.length > 0) {
-    const { reconcileAutoParentsForContacts } = await import(
-      "@/lib/contacts/auto-company-subgroups.functions"
-    );
-    await reconcileAutoParentsForContacts(supabase, userId, movedIds);
+  // Re-point company-in-label rules at the survivor (delete the source rule
+  // when the target already has one — UNIQUE(group_id, rule_type, value)).
+  const { data: srcRules } = await supabase
+    .from("contact_group_rules")
+    .select("id,group_id")
+    .eq("user_id", userId)
+    .eq("rule_type", "company_id")
+    .eq("value", sourceId);
+  for (const r of srcRules ?? []) {
+    const { error: upErr } = await supabase
+      .from("contact_group_rules")
+      .update({ value: targetId })
+      .eq("id", r.id);
+    if (upErr && /duplicate|unique/i.test(upErr.message)) {
+      await supabase.from("contact_group_rules").delete().eq("id", r.id);
+    }
   }
-  await supabase
-    .from("companies")
-    .delete()
-    .eq("id", sourceId)
-    .eq("user_id", userId);
+  // Re-derive the survivor's domains from ALL members' emails (secondary
+  // addresses of moved contacts aren't covered by the row-level triggers).
+  try {
+    await supabase.rpc("discover_company_domains", {
+      p_company_id: targetId,
+      p_user_id: userId,
+    });
+  } catch {
+    // Best-effort.
+  }
+  if (movedIds.length > 0) {
+    const { reconcileAutoParentsForContacts } =
+      await import("@/lib/contacts/auto-company-subgroups.functions");
+    await reconcileAutoParentsForContacts(supabase, userId, movedIds);
+    // Target's company-in-label rules now apply to the moved contacts (and
+    // source-rule rows re-justify under the re-pointed rules).
+    try {
+      const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
+      await syncCompanyRuleMemberships(supabase, userId, {
+        companyIds: [targetId],
+        contactIds: movedIds,
+        bumpResync: true,
+      });
+    } catch {
+      // Best-effort.
+    }
+  }
+  await supabase.from("companies").delete().eq("id", sourceId).eq("user_id", userId);
   return { ok: true, movedContacts: movedIds.length };
 }
 
@@ -591,8 +557,6 @@ export const mergeCompanies = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => mergeCompaniesImpl(context, data.sourceId, data.targetId));
-
-
 
 export const deleteCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -607,6 +571,13 @@ export const deleteCompany = createServerFn({ method: "POST" })
       .select("id")
       .eq("user_id", userId)
       .eq("company_id", data.id);
+    // Its company-in-label rules go with it (value is text, no FK cascade).
+    await supabase
+      .from("contact_group_rules")
+      .delete()
+      .eq("user_id", userId)
+      .eq("rule_type", "company_id")
+      .eq("value", data.id);
     // company_id on contacts is ON DELETE SET NULL, so contacts are preserved.
     const { error } = await supabase
       .from("companies")
@@ -616,10 +587,19 @@ export const deleteCompany = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const ids = (affected ?? []).map((r) => (r as { id: string }).id);
     if (ids.length > 0) {
-      const { reconcileAutoParentsForContacts } = await import(
-        "@/lib/contacts/auto-company-subgroups.functions"
-      );
+      const { reconcileAutoParentsForContacts } =
+        await import("@/lib/contacts/auto-company-subgroups.functions");
       await reconcileAutoParentsForContacts(supabase, userId, ids);
+      // Remove memberships the deleted company's rules justified.
+      try {
+        const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
+        await syncCompanyRuleMemberships(supabase, userId, {
+          contactIds: ids,
+          bumpResync: true,
+        });
+      } catch {
+        // Best-effort.
+      }
     }
     return { ok: true as const };
   });
@@ -641,9 +621,7 @@ type CompanyLite = {
 /** Tokenize a normalized company name into significant words. */
 function tokenize(name: string): string[] {
   const key = normalizeCompanyName(name) ?? "";
-  return key
-    .split(/[^a-z0-9]+/i)
-    .filter((t) => t.length >= 3 && !STOP_TOKENS.has(t));
+  return key.split(/[^a-z0-9]+/i).filter((t) => t.length >= 3 && !STOP_TOKENS.has(t));
 }
 
 const STOP_TOKENS = new Set([
@@ -794,11 +772,8 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
           // the brand word — default unchecked so a hasty "merge all" can't
           // fold them into the factory brand. The AI pass / user can still
           // flip them.
-          const sharesRoot = [...rootDomainsOf(c.domains)].some((r) =>
-            canonicalRoots.has(r),
-          );
-          const sameKey =
-            !!canonicalKey && normalizeCompanyName(c.name) === canonicalKey;
+          const sharesRoot = [...rootDomainsOf(c.domains)].some((r) => canonicalRoots.has(r));
+          const sameKey = !!canonicalKey && normalizeCompanyName(c.name) === canonicalKey;
           return {
             id: c.id,
             name: c.name,
@@ -917,5 +892,3 @@ export const mergeCluster = createServerFn({ method: "POST" })
     }
     return { merged, failed, movedContacts: totalMovedContacts };
   });
-
-

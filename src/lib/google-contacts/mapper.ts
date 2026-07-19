@@ -3,7 +3,6 @@
 
 import { buildMergedNote, stripSummaryFromNote } from "@/lib/carddav/vcard";
 
-
 export type PersonName = {
   givenName?: string;
   familyName?: string;
@@ -69,11 +68,9 @@ export type LocalContact = {
   primary_phone: string | null;
 };
 
-
 export type LocalPhone = { label: string; number: string; is_primary: boolean };
 
 export type LocalEmail = { label: string; address: string; is_primary: boolean };
-
 
 /** Split a display name into given/family. Best-effort — Google is forgiving. */
 export function splitName(name: string | null): PersonName | null {
@@ -113,7 +110,6 @@ export function contactToPerson(
   emails: LocalEmail[] = [],
   options: { includeSummary?: boolean } = {},
 ): Partial<Person> {
-
   const person: Partial<Person> = {};
 
   const nm = splitName(contact.name);
@@ -124,7 +120,13 @@ export function contactToPerson(
   const emailList: LocalEmail[] = emails.length
     ? emails
     : contact.email?.trim()
-      ? [{ label: "work", address: contact.email.trim(), is_primary: primaryEmailPrevious !== false }]
+      ? [
+          {
+            label: "work",
+            address: contact.email.trim(),
+            is_primary: primaryEmailPrevious !== false,
+          },
+        ]
       : [];
   if (emailList.length) {
     const seen = new Set<string>();
@@ -133,14 +135,17 @@ export function contactToPerson(
       const v = em.address.trim().toLowerCase();
       if (!v || seen.has(v)) continue;
       seen.add(v);
-      rows.push({ value: em.address.trim(), type: em.label || "other", metadata: { primary: em.is_primary } });
+      rows.push({
+        value: em.address.trim(),
+        type: em.label || "other",
+        metadata: { primary: em.is_primary },
+      });
     }
     if (rows.length && !rows.some((r) => r.metadata?.primary)) {
       rows[0] = { ...rows[0], metadata: { primary: true } };
     }
     if (rows.length) person.emailAddresses = rows;
   }
-
 
   const phoneList: PersonPhone[] = [];
   const seen = new Set<string>();
@@ -165,23 +170,16 @@ export function contactToPerson(
   }
 
   const mergedNote = buildMergedNote(
-    options.includeSummary !== false ? contact.relationship_summary ?? null : null,
+    options.includeSummary !== false ? (contact.relationship_summary ?? null) : null,
     contact.notes,
   );
   if (mergedNote) {
     person.biographies = [{ value: mergedNote, contentType: "TEXT_PLAIN" }];
   }
 
-
   const addrLine =
     [contact.address_line1, contact.address_line2].filter(Boolean).join(", ").trim() || undefined;
-  if (
-    addrLine ||
-    contact.city ||
-    contact.region ||
-    contact.postal_code ||
-    contact.country
-  ) {
+  if (addrLine || contact.city || contact.region || contact.postal_code || contact.country) {
     person.addresses = [
       {
         streetAddress: addrLine,
@@ -259,7 +257,6 @@ export function personToContact(person: Person): {
     emails[0] = { ...emails[0], is_primary: true };
   }
 
-
   const patch: Partial<LocalContact> = {
     name: joinName(person.names?.[0]),
     company: person.organizations?.[0]?.name?.trim() || null,
@@ -310,7 +307,15 @@ export function personToContact(person: Person): {
     null;
   const photoUrl = photoRow?.url ?? null;
 
-  return { email: primaryEmail, emails, patch, phones, membershipResourceNames, updateTime, photoUrl };
+  return {
+    email: primaryEmail,
+    emails,
+    patch,
+    phones,
+    membershipResourceNames,
+    updateTime,
+    photoUrl,
+  };
 }
 
 /** Zerrow group → Google contactGroups payload. */

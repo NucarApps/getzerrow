@@ -64,7 +64,7 @@ export function normalizeCompanyName(raw: string | null | undefined): string | n
   if (!raw) return null;
   let s = raw.toLowerCase();
   // Strip punctuation to spaces
-  s = s.replace(/[.,'"&/\\()\[\]:;!?-]/g, " ");
+  s = s.replace(/[.,'"&/\\()[\]:;!?-]/g, " ");
   // Collapse whitespace
   s = s.replace(/\s+/g, " ").trim();
   if (!s) return null;
@@ -89,4 +89,3 @@ export function normalizeCompanyName(raw: string | null | undefined): string | n
   if (out.length < 2) return null;
   return out;
 }
-

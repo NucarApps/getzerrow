@@ -195,4 +195,3 @@ export const emailEntrySchema = z.object({
   address: z.string().trim().toLowerCase().email().max(255),
   is_primary: z.boolean().optional(),
 });
-

@@ -3,11 +3,7 @@
 // picture. Mirrors the provider/guard logic used by /api/public/logo, and
 // keeps a small in-memory cache so filling a whole address book doesn't
 // hammer upstream providers.
-import {
-  hostResolvesToPublicIp,
-  isBlockedDomain,
-  isValidDomainShape,
-} from "@/lib/logo-guards";
+import { hostResolvesToPublicIp, isBlockedDomain, isValidDomainShape } from "@/lib/logo-guards";
 import { contactLogoDomain } from "@/lib/company-domains";
 
 const MIN_BYTES = 600;
@@ -130,16 +126,21 @@ export async function fetchChosenCompanyLogoBytes(
     .select("domain, provider, source_domain")
     .eq("user_id", userId)
     .or(`domain.eq.${d},source_domain.eq.${d}`);
-  const choice = ((choices ?? []) as Array<{
-    domain?: string | null;
-    provider?: number | null;
-    source_domain?: string | null;
-  }>).find((row) => row.domain?.toLowerCase() === d) ??
-    ((choices ?? []) as Array<{
-      domain?: string | null;
-      provider?: number | null;
-      source_domain?: string | null;
-    }>).find((row) => row.source_domain?.toLowerCase() === d) ??
+  const choice =
+    (
+      (choices ?? []) as Array<{
+        domain?: string | null;
+        provider?: number | null;
+        source_domain?: string | null;
+      }>
+    ).find((row) => row.domain?.toLowerCase() === d) ??
+    (
+      (choices ?? []) as Array<{
+        domain?: string | null;
+        provider?: number | null;
+        source_domain?: string | null;
+      }>
+    ).find((row) => row.source_domain?.toLowerCase() === d) ??
     null;
 
   if (!choice) return fetchCompanyLogoBytes(d);
@@ -208,10 +209,7 @@ export async function getKnownCompanyLogoHashes(
   companyId?: string | null,
 ): Promise<Set<string>> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  let query = supabaseAdmin
-    .from("company_logo_hashes")
-    .select("sha256")
-    .eq("user_id", userId);
+  let query = supabaseAdmin.from("company_logo_hashes").select("sha256").eq("user_id", userId);
   if (companyId) query = query.eq("company_id", companyId);
   const { data } = await query.limit(5000);
   return new Set(((data as Array<{ sha256: string }> | null) ?? []).map((row) => row.sha256));
@@ -266,12 +264,15 @@ export async function resolveCompanyLogoDomainForContact(
     .select("domain,source_domain")
     .eq("user_id", userId);
   const domainSet = new Set(domainList);
-  const choice = ((choices ?? []) as LogoChoiceRow[]).find((candidate) =>
-    domainSet.has(candidate.domain.toLowerCase()) ||
-    (candidate.source_domain ? domainSet.has(candidate.source_domain.toLowerCase()) : false),
+  const choice = ((choices ?? []) as LogoChoiceRow[]).find(
+    (candidate) =>
+      domainSet.has(candidate.domain.toLowerCase()) ||
+      (candidate.source_domain ? domainSet.has(candidate.source_domain.toLowerCase()) : false),
   );
 
-  return choice?.source_domain?.toLowerCase() ?? choice?.domain?.toLowerCase() ?? domainList[0] ?? null;
+  return (
+    choice?.source_domain?.toLowerCase() ?? choice?.domain?.toLowerCase() ?? domainList[0] ?? null
+  );
 }
 
 /** Best-guess logo domain for a contact row (website beats email). Returns
@@ -333,4 +334,3 @@ export async function findMatchingCompanyLogoSha(
   }
   return null;
 }
-

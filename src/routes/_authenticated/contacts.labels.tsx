@@ -257,10 +257,20 @@ function LabelsPage() {
                         />
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                       <span>
+                        {(g.companies?.length ?? 0) > 0 &&
+                          `${g.companies!.length} ${g.companies!.length === 1 ? "company" : "companies"} · `}
                         {g.count} contact{g.count === 1 ? "" : "s"}
                       </span>
+                      {(g.companies ?? []).slice(0, 3).map((c) => (
+                        <Badge key={c.id} variant="secondary" className="h-4 px-1.5 text-[10px]">
+                          {c.name}
+                        </Badge>
+                      ))}
+                      {(g.companies?.length ?? 0) > 3 && (
+                        <span>+{g.companies!.length - 3} more</span>
+                      )}
                       {g.linked_folder && (
                         <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
                           {g.linked_folder.name}

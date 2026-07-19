@@ -11,7 +11,10 @@ const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB — iOS caps around 2 MB anyway
 export type ContactPhotoSource = "unknown" | "user_upload" | "carddav" | "google" | "company_logo";
 
 async function shortHash(bytes: Uint8Array): Promise<string> {
-  const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const buf = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
   const digest = await crypto.subtle.digest("SHA-256", buf);
   const hex = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -120,9 +123,7 @@ export async function loadContactPhotoBytes(
 ): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const key = pathToBucketKey(avatarUrl);
   if (!key) return null;
-  const { data, error } = await supabaseAdmin.storage
-    .from(CONTACT_PHOTO_BUCKET)
-    .download(key);
+  const { data, error } = await supabaseAdmin.storage.from(CONTACT_PHOTO_BUCKET).download(key);
   if (error || !data) return null;
   const buf = new Uint8Array(await data.arrayBuffer());
   const mime = data.type || "image/jpeg";
@@ -148,7 +149,6 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
-
 
 /** Mint a short-lived signed URL for a contact's stored photo. Returns null
  * when the contact has no `avatar_url` on file, when the URL doesn't point

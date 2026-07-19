@@ -207,12 +207,7 @@ const enqueueCalls: Array<{
 }> = [];
 
 vi.mock("./enqueue", () => ({
-  async enqueueMessageJobs(
-    accountId: string,
-    userId: string,
-    ids: string[],
-    priority: number = 0,
-  ) {
+  async enqueueMessageJobs(accountId: string, userId: string, ids: string[], priority: number = 0) {
     enqueueCalls.push({ accountId, userId, ids: [...ids], priority });
   },
 }));

@@ -23,7 +23,6 @@ export function MeetingCalendarSelectCard({ accountId, accountEmail }: Props) {
     enabled: !!accountId,
   });
 
-
   const mutation = useMutation({
     mutationFn: (calendars: AccountCalendar[]) =>
       saveSelections({
@@ -57,7 +56,6 @@ export function MeetingCalendarSelectCard({ accountId, accountEmail }: Props) {
 
   if (!accountId) return null;
 
-
   const calendars = data?.calendars ?? [];
   const noCalendar = !!data && !data.calendarAccess;
 
@@ -80,7 +78,6 @@ export function MeetingCalendarSelectCard({ accountId, accountEmail }: Props) {
             unselected calendars are hidden and never recorded.
           </p>
         </div>
-
       </div>
 
       <div className="p-4 md:p-6">

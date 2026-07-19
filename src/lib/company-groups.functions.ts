@@ -1,89 +1,112 @@
+// Company ↔ label linkage, backed by contact_group_rules
+// (rule_type='company_id'). Putting a company in a label materializes the
+// label onto every contact of that company and keeps it in sync as people
+// join/leave — see syncCompanyRuleMemberships. Replaces the legacy
+// company_group_assignments table (one-shot tagging by primary domain),
+// whose rows were migrated to rules; the table no longer receives writes.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { syncCompanyRuleMemberships } from "@/lib/contacts/group-rules.functions";
 
-const DOMAIN = z
-  .string()
-  .min(1)
-  .max(253)
-  .regex(/^[a-z0-9.-]+$/i);
-
-/** List all company-level group assignments for the current user. */
-export const listCompanyGroupAssignments = createServerFn({ method: "GET" })
+/** Labels a company belongs to (its company_id rules). */
+export const listCompanyLabels = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase } = context;
-    const { data, error } = await supabase
-      .from("company_group_assignments")
-      .select("primary_domain,group_id");
+  .inputValidator((d: { companyId: string }) => z.object({ companyId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: rows, error } = await supabase
+      .from("contact_group_rules")
+      .select("group_id, auto_apply")
+      .eq("user_id", userId)
+      .eq("rule_type", "company_id")
+      .eq("value", data.companyId);
     if (error) throw new Error(error.message);
-    return (data ?? []) as { primary_domain: string; group_id: string }[];
+    return {
+      groupIds: (rows ?? []).filter((r) => r.auto_apply).map((r) => r.group_id),
+    };
   });
 
-/**
- * Save the set of groups attached to a company (by primary domain), and
- * materialize the selected groups onto every contact in `contactIds`.
- * Does not remove memberships when a group is deselected — keeps existing
- * per-contact tags safe.
- */
-export const setCompanyGroups = createServerFn({ method: "POST" })
+/** Replace the set of labels a company belongs to. Adds/removes company_id
+ *  rules and syncs the materialized memberships (contacts of the company
+ *  gain/lose the labels; manual memberships are never touched). */
+export const setCompanyLabels = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { primaryDomain: string; contactIds: string[]; groupIds: string[] }) =>
+  .inputValidator((d: { companyId: string; groupIds: string[] }) =>
     z
       .object({
-        primaryDomain: DOMAIN,
-        contactIds: z.array(z.string().uuid()).max(5000),
+        companyId: z.string().uuid(),
         groupIds: z.array(z.string().uuid()).max(50),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const domain = data.primaryDomain.toLowerCase();
+    const { data: company } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("id", data.companyId)
+      .maybeSingle();
+    if (!company) throw new Error("Company not found");
 
-    // Sync company_group_assignments to exactly match the selection.
-    const { data: existing, error: exErr } = await supabase
-      .from("company_group_assignments")
-      .select("group_id")
-      .eq("primary_domain", domain);
-    if (exErr) throw new Error(exErr.message);
+    const { data: current, error: curErr } = await supabase
+      .from("contact_group_rules")
+      .select("id, group_id")
+      .eq("user_id", userId)
+      .eq("rule_type", "company_id")
+      .eq("value", data.companyId);
+    if (curErr) throw new Error(curErr.message);
 
-    const existingIds = new Set((existing ?? []).map((r) => r.group_id));
+    const currentByGroup = new Map((current ?? []).map((r) => [r.group_id, r.id]));
     const desired = new Set(data.groupIds);
 
-    const toDelete = [...existingIds].filter((g) => !desired.has(g));
-    const toInsert = [...desired].filter((g) => !existingIds.has(g));
+    // Auto-generated subgroups are reconciler-managed — silently skip them.
+    const { data: groups } = await supabase
+      .from("contact_groups")
+      .select("id, auto_generated_from_group_id")
+      .eq("user_id", userId)
+      .in("id", [...desired]);
+    const addable = new Set(
+      (groups ?? []).filter((g) => !g.auto_generated_from_group_id).map((g) => g.id),
+    );
 
-    if (toDelete.length > 0) {
-      const { error } = await supabase
-        .from("company_group_assignments")
-        .delete()
-        .eq("primary_domain", domain)
-        .in("group_id", toDelete);
-      if (error) throw new Error(error.message);
-    }
-    if (toInsert.length > 0) {
-      const rows = toInsert.map((group_id) => ({
-        user_id: userId,
-        primary_domain: domain,
-        group_id,
-      }));
-      const { error } = await supabase.from("company_group_assignments").insert(rows);
-      if (error) throw new Error(error.message);
-    }
+    const toAdd = [...desired].filter((g) => addable.has(g) && !currentByGroup.has(g));
+    const toRemove = [...currentByGroup.keys()].filter((g) => !desired.has(g));
 
-    // Materialize memberships for every contact in the bucket.
-    let tagged = 0;
-    if (data.contactIds.length > 0 && data.groupIds.length > 0) {
-      const rows = data.contactIds.flatMap((contact_id) =>
-        data.groupIds.map((group_id) => ({ user_id: userId, group_id, contact_id })),
+    if (toAdd.length > 0) {
+      const { error } = await supabase.from("contact_group_rules").upsert(
+        toAdd.map((group_id) => ({
+          user_id: userId,
+          group_id,
+          rule_type: "company_id",
+          value: data.companyId,
+          auto_apply: true,
+        })),
+        { onConflict: "group_id,rule_type,value" },
       );
-      const { error } = await supabase
-        .from("contact_group_members")
-        .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
       if (error) throw new Error(error.message);
-      tagged = data.contactIds.length;
+    }
+    if (toRemove.length > 0) {
+      const ids = toRemove.map((g) => currentByGroup.get(g)).filter((v): v is string => !!v);
+      const { error } = await supabase.from("contact_group_rules").delete().in("id", ids);
+      if (error) throw new Error(error.message);
     }
 
-    return { ok: true, tagged };
+    const changed = toAdd.length > 0 || toRemove.length > 0;
+    let synced = { scanned: 0, added: 0, removed: 0 };
+    if (changed) {
+      synced = await syncCompanyRuleMemberships(supabase, userId, {
+        companyIds: [data.companyId],
+        bumpResync: true,
+      });
+    }
+    return {
+      ok: true,
+      rulesAdded: toAdd.length,
+      rulesRemoved: toRemove.length,
+      scanned: synced.scanned,
+      added: synced.added,
+      removed: synced.removed,
+    };
   });

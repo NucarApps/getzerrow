@@ -235,26 +235,38 @@ async function mergeLabelPair(
     throw new Error("Label not found");
   }
   // Auto-generated survivors are fully server-managed: moved members join
-  // as auto rows so the reconciler owns them instead of manual leftovers.
+  // as reconciler-owned rows. Otherwise each row keeps its original
+  // source/auto flags so the owning engine keeps managing it.
   const targetIsAuto = !!map.get(targetId)!.auto_generated_from_group_id;
   // Move members (idempotent).
   const { data: srcMembers } = await supabase
     .from("contact_group_members")
-    .select("contact_id")
+    .select("contact_id, auto_added, source")
     .eq("group_id", sourceId);
-  const movedContactIds = (srcMembers ?? []).map((m) => m.contact_id);
+  const srcRows = (srcMembers ?? []) as Array<{
+    contact_id: string;
+    auto_added: boolean | null;
+    source: string | null;
+  }>;
+  const movedContactIds = srcRows.map((m) => m.contact_id);
   const movedMembers = movedContactIds.length;
   if (movedMembers > 0) {
-    await supabase.from("contact_group_members").upsert(
-      movedContactIds.map((contact_id) => ({
+    const { error: upErr } = await supabase.from("contact_group_members").upsert(
+      srcRows.map((m) => ({
         user_id: userId,
         group_id: targetId,
-        contact_id,
-        auto_added: targetIsAuto,
+        contact_id: m.contact_id,
+        auto_added: targetIsAuto ? true : !!m.auto_added,
+        source: targetIsAuto ? "company_subgroup" : (m.source ?? "manual"),
       })),
       { onConflict: "group_id,contact_id", ignoreDuplicates: true },
     );
-    await supabase.from("contact_group_members").delete().eq("group_id", sourceId);
+    if (upErr) throw new Error(upErr.message);
+    const { error: delErr } = await supabase
+      .from("contact_group_members")
+      .delete()
+      .eq("group_id", sourceId);
+    if (delErr) throw new Error(delErr.message);
   }
   // Reparent children groups (both structural parent and auto-parent
   // pointers) so nested subgroups follow the survivor.
@@ -343,6 +355,7 @@ export const mergeLabelCluster = createServerFn({ method: "POST" })
     let failed = 0;
     let totalMoved = 0;
     const movedContactIds: string[] = [];
+    const errors: string[] = [];
     for (const sourceId of data.foldIds) {
       if (sourceId === data.canonicalId) continue;
       try {
@@ -350,12 +363,13 @@ export const mergeLabelCluster = createServerFn({ method: "POST" })
         totalMoved += r.movedMembers;
         movedContactIds.push(...r.movedContactIds);
         merged++;
-      } catch {
+      } catch (e) {
         failed++;
+        if (errors.length < 3) errors.push(e instanceof Error ? e.message : String(e));
       }
     }
     if (merged > 0) await convergeAfterMerges(supabase, userId, movedContactIds);
-    return { merged, failed, movedMembers: totalMoved };
+    return { merged, failed, movedMembers: totalMoved, errors };
   });
 
 /** One-shot bulk consolidation: run the deterministic clusterer and merge
@@ -369,7 +383,9 @@ export const consolidateLabelDuplicates = createServerFn({ method: "POST" })
     const clusters = clusterLabels(lite, nameAliases);
     let mergedClusters = 0;
     let mergedLabels = 0;
+    let failedLabels = 0;
     const movedContactIds: string[] = [];
+    const errors: string[] = [];
     for (const { labels: cluster } of clusters) {
       const sorted = sortCanonicalFirst(cluster);
       const canonical = sorted[0];
@@ -378,12 +394,13 @@ export const consolidateLabelDuplicates = createServerFn({ method: "POST" })
           const r = await mergeLabelPair(supabase, userId, src.id, canonical.id);
           movedContactIds.push(...r.movedContactIds);
           mergedLabels++;
-        } catch {
-          // skip on error, keep going
+        } catch (e) {
+          failedLabels++;
+          if (errors.length < 3) errors.push(e instanceof Error ? e.message : String(e));
         }
       }
       mergedClusters++;
     }
     if (mergedLabels > 0) await convergeAfterMerges(supabase, userId, movedContactIds);
-    return { mergedClusters, mergedLabels };
+    return { mergedClusters, mergedLabels, failedLabels, errors };
   });

@@ -30,10 +30,7 @@ import {
   type EnrichableField,
 } from "./enrich-locks";
 
-
-
 type EnrichSupabase = SupabaseClient<Database>;
-  
 
 /** Shared enrichment core so both the single-contact server fn and the
  * bulk "rerun for everyone" batch can reuse the same logic without one
@@ -211,7 +208,6 @@ async function runEnrichForContact(
         .single();
       return { contact: updated ?? contact, skipped: false as const };
     }
-
 
     let extracted: z.infer<typeof EXTRACT_SCHEMA> = {
       name: null,
@@ -627,7 +623,6 @@ ${body}`,
       const v = extracted[k];
       if (v) encPatch[k] = v;
     }
-
 
     const { error: updErr } = await supabase.from("contacts").update(patch).eq("id", base.id);
     if (updErr) throw new Error(updErr.message);

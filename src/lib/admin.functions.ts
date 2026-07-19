@@ -382,49 +382,57 @@ export const getSyncJobMetrics = createServerFn({ method: "GET" })
 
     const since24h = new Date(Date.now() - 86_400_000).toISOString();
 
-    const [pendingHead, runningHead, dlqHead, retriesRes, oldestRes, throughputHead, latencyRes, dlqRowsRes] =
-      await Promise.all([
-        supabaseAdmin
-          .from("message_jobs")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "pending"),
-        supabaseAdmin
-          .from("message_jobs")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "running"),
-        supabaseAdmin
-          .from("message_jobs")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "dlq"),
-        supabaseAdmin
-          .from("message_jobs")
-          .select("attempt")
-          .gte("attempt", 1)
-          .neq("status", "dlq")
-          .limit(10000),
-        supabaseAdmin
-          .from("message_jobs")
-          .select("next_run_at")
-          .eq("status", "pending")
-          .order("next_run_at", { ascending: true })
-          .limit(1),
-        supabaseAdmin
-          .from("emails")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", since24h),
-        supabaseAdmin
-          .from("emails")
-          .select("created_at, published_at_ms")
-          .gte("created_at", since24h)
-          .not("published_at_ms", "is", null)
-          .limit(20000),
-        supabaseAdmin
-          .from("message_jobs")
-          .select("id, gmail_message_id, from_addr, subject, attempt, last_error, updated_at")
-          .eq("status", "dlq")
-          .order("updated_at", { ascending: false })
-          .limit(20),
-      ]);
+    const [
+      pendingHead,
+      runningHead,
+      dlqHead,
+      retriesRes,
+      oldestRes,
+      throughputHead,
+      latencyRes,
+      dlqRowsRes,
+    ] = await Promise.all([
+      supabaseAdmin
+        .from("message_jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending"),
+      supabaseAdmin
+        .from("message_jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "running"),
+      supabaseAdmin
+        .from("message_jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "dlq"),
+      supabaseAdmin
+        .from("message_jobs")
+        .select("attempt")
+        .gte("attempt", 1)
+        .neq("status", "dlq")
+        .limit(10000),
+      supabaseAdmin
+        .from("message_jobs")
+        .select("next_run_at")
+        .eq("status", "pending")
+        .order("next_run_at", { ascending: true })
+        .limit(1),
+      supabaseAdmin
+        .from("emails")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since24h),
+      supabaseAdmin
+        .from("emails")
+        .select("created_at, published_at_ms")
+        .gte("created_at", since24h)
+        .not("published_at_ms", "is", null)
+        .limit(20000),
+      supabaseAdmin
+        .from("message_jobs")
+        .select("id, gmail_message_id, from_addr, subject, attempt, last_error, updated_at")
+        .eq("status", "dlq")
+        .order("updated_at", { ascending: false })
+        .limit(20),
+    ]);
 
     if (pendingHead.error) throw new Error(pendingHead.error.message);
     if (runningHead.error) throw new Error(runningHead.error.message);
@@ -442,8 +450,7 @@ export const getSyncJobMetrics = createServerFn({ method: "GET" })
     const attempts = (retriesRes.data ?? []).map((r) => Number(r.attempt) || 0);
     const withAttempts = attempts.length;
     const maxAttempt = attempts.reduce((m, a) => (a > m ? a : m), 0);
-    const avgAttempt =
-      withAttempts === 0 ? 0 : attempts.reduce((s, a) => s + a, 0) / withAttempts;
+    const avgAttempt = withAttempts === 0 ? 0 : attempts.reduce((s, a) => s + a, 0) / withAttempts;
 
     const oldest = oldestRes.data?.[0]?.next_run_at ?? null;
     const oldestAgeSec = oldest

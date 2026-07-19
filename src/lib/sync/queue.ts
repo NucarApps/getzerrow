@@ -341,7 +341,6 @@ async function reclaimStuckJobs(stuckMs: number) {
   }
 }
 
-
 async function handleError(job: ClaimedJob, e: unknown, results: ProcessResult[]): Promise<void> {
   const msg = (e as Error)?.message ?? String(e);
   const status: number | undefined = e instanceof GmailApiError ? e.status : undefined;

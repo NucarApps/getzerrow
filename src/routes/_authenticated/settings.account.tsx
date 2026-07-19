@@ -22,10 +22,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/settings/account")({
   head: () => ({
-    meta: [
-      { title: "Account — Settings — Zerrow" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "Account — Settings — Zerrow" }, { name: "robots", content: "noindex" }],
   }),
   component: AccountSettings,
 });

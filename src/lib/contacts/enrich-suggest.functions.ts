@@ -4,27 +4,30 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
-import {
-  getEmailsDecrypted,
-  searchEmailsParticipantsDecrypted,
-} from "../sync/encrypted-reader";
+import { getEmailsDecrypted, searchEmailsParticipantsDecrypted } from "../sync/encrypted-reader";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
 import { normalizePhone } from "./phone";
-import {
-  firstLastTokens,
-  nameMatchConfidence,
-  type NameMatchConfidence,
-} from "./name-match";
+import { firstLastTokens, nameMatchConfidence, type NameMatchConfidence } from "./name-match";
 
 const logInfo = (event: string, payload: Record<string, unknown>) => {
-  // eslint-disable-next-line no-console
   console.info(JSON.stringify({ event, ...payload }));
 };
 
 const PERSONAL_DOMAINS = new Set([
-  "gmail.com", "googlemail.com", "yahoo.com", "outlook.com", "hotmail.com",
-  "icloud.com", "me.com", "aol.com", "protonmail.com", "proton.me", "live.com",
-  "msn.com", "pm.me", "mac.com",
+  "gmail.com",
+  "googlemail.com",
+  "yahoo.com",
+  "outlook.com",
+  "hotmail.com",
+  "icloud.com",
+  "me.com",
+  "aol.com",
+  "protonmail.com",
+  "proton.me",
+  "live.com",
+  "msn.com",
+  "pm.me",
+  "mac.com",
 ]);
 
 type SuggestionField = "email" | "phone" | "company" | "title" | "name";
@@ -110,19 +113,14 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       .select("contact_id, field, value, source, status")
       .in("status", ["pending", "dismissed"]);
     const existing = new Set(
-      (pendingRows ?? []).map(
-        (r) => `${r.contact_id}|${r.field}|${(r.value ?? "").toLowerCase()}`,
-      ),
+      (pendingRows ?? []).map((r) => `${r.contact_id}|${r.field}|${(r.value ?? "").toLowerCase()}`),
     );
     // Hard-mute the domain-derived company guess per contact once dismissed —
     // clearing `contacts.company` would otherwise re-trigger the same guess.
     const dismissedDomainCompany = new Set(
       (pendingRows ?? [])
         .filter(
-          (r) =>
-            r.status === "dismissed" &&
-            r.field === "company" &&
-            r.source === "domain_derived",
+          (r) => r.status === "dismissed" && r.field === "company" && r.source === "domain_derived",
         )
         .map((r) => r.contact_id),
     );
@@ -152,9 +150,7 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
       .select("email")
       .not("email", "is", null);
     const knownEmails = new Set(
-      (allContactEmails ?? [])
-        .map((r) => (r.email ?? "").toLowerCase())
-        .filter(Boolean),
+      (allContactEmails ?? []).map((r) => (r.email ?? "").toLowerCase()).filter(Boolean),
     );
 
     const gateway = createLovableAiGatewayProvider(apiKey);
@@ -210,7 +206,7 @@ Only extract facts that clearly belong to THIS sender's own signature (bottom-of
 Messages:
 ${corpus}`;
 
-      let extracted: SignatureExtraction | null = null;
+      let extracted: SignatureExtraction | null;
       try {
         const { output } = await generateText({
           model,
@@ -435,7 +431,11 @@ function rank(c: NameMatchConfidence): number {
 }
 
 function deriveCompanyFromDomain(domain: string): string | null {
-  const trimmed = domain.replace(/^www\./, "").split(".").slice(0, -1).join(" ");
+  const trimmed = domain
+    .replace(/^www\./, "")
+    .split(".")
+    .slice(0, -1)
+    .join(" ");
   if (!trimmed) return null;
   const capped = trimmed
     .split(/[\s-]+/)

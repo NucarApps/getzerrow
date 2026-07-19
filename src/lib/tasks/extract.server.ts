@@ -21,7 +21,10 @@ const ExtractedTaskSchema = z.object({
     .max(10),
 });
 
-async function callExtractor(system: string, user: string): Promise<z.infer<typeof ExtractedTaskSchema>> {
+async function callExtractor(
+  system: string,
+  user: string,
+): Promise<z.infer<typeof ExtractedTaskSchema>> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
   const gateway = createLovableAiGatewayProvider(apiKey);
@@ -33,7 +36,11 @@ async function callExtractor(system: string, user: string): Promise<z.infer<type
     ],
   });
   // Model asked to return raw JSON; be tolerant to fenced blocks.
-  const cleaned = text.trim().replace(/^```json\n?/i, "").replace(/^```\n?/, "").replace(/```$/, "");
+  const cleaned = text
+    .trim()
+    .replace(/^```json\n?/i, "")
+    .replace(/^```\n?/, "")
+    .replace(/```$/, "");
   try {
     return ExtractedTaskSchema.parse(JSON.parse(cleaned));
   } catch {
@@ -98,7 +105,10 @@ export async function extractTasksFromMeetingTranscript(input: {
   }));
   const { error } = await supabaseAdmin.from("tasks").insert(rows);
   if (error) {
-    logError("tasks_extract_meeting_insert_failed", { meetingId: input.meetingId, err: error.message });
+    logError("tasks_extract_meeting_insert_failed", {
+      meetingId: input.meetingId,
+      err: error.message,
+    });
     return 0;
   }
   logInfo("tasks_extract_meeting_ok", { meetingId: input.meetingId, count: rows.length });
@@ -146,7 +156,10 @@ export async function extractTasksFromIncomingEmail(input: {
   }));
   const { error } = await supabaseAdmin.from("tasks").insert(rows);
   if (error) {
-    logError("tasks_extract_email_in_insert_failed", { emailId: input.emailId, err: error.message });
+    logError("tasks_extract_email_in_insert_failed", {
+      emailId: input.emailId,
+      err: error.message,
+    });
     return 0;
   }
   return rows.length;
@@ -193,7 +206,10 @@ export async function extractTasksFromOutgoingEmail(input: {
   }));
   const { error } = await supabaseAdmin.from("tasks").insert(rows);
   if (error) {
-    logError("tasks_extract_email_out_insert_failed", { emailId: input.emailId, err: error.message });
+    logError("tasks_extract_email_out_insert_failed", {
+      emailId: input.emailId,
+      err: error.message,
+    });
     return 0;
   }
   return rows.length;

@@ -25,10 +25,12 @@ export const extractTasksFromMeeting = createServerFn({ method: "POST" })
 
     type Seg = { speaker?: string | null; text?: string | null };
     const segs = (meeting.transcript ?? []) as Seg[];
-    const transcriptText = segs
-      .map((s) => `${s.speaker ? `${s.speaker}: ` : ""}${s.text ?? ""}`)
-      .join("\n")
-      .trim() || (meeting.summary ?? "");
+    const transcriptText =
+      segs
+        .map((s) => `${s.speaker ? `${s.speaker}: ` : ""}${s.text ?? ""}`)
+        .join("\n")
+        .trim() ||
+      (meeting.summary ?? "");
 
     const { extractTasksFromMeetingTranscript } = await import("./extract.server");
     const count = await extractTasksFromMeetingTranscript({

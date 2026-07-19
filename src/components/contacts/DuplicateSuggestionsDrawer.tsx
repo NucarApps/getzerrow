@@ -81,17 +81,13 @@ export function DuplicateSuggestionsDrawer({ open, onOpenChange }: Props) {
             <Sparkles className="h-4 w-4" /> Duplicate contacts
           </SheetTitle>
           <SheetDescription>
-            AI-assisted review of contacts that look like the same person. Phone-match
-            clusters are auto-marked high confidence.
+            AI-assisted review of contacts that look like the same person. Phone-match clusters are
+            auto-marked high confidence.
           </SheetDescription>
         </SheetHeader>
 
         <div className="mt-4 flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={() => scanMutation.mutate()}
-            disabled={scanMutation.isPending}
-          >
+          <Button size="sm" onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending}>
             {scanMutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
@@ -120,10 +116,7 @@ export function DuplicateSuggestionsDrawer({ open, onOpenChange }: Props) {
               return (
                 <div key={s.id} className="rounded-md border p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <Badge
-                      variant="outline"
-                      className={confidenceStyles[s.confidence] ?? ""}
-                    >
+                    <Badge variant="outline" className={confidenceStyles[s.confidence] ?? ""}>
                       {s.confidence} confidence
                     </Badge>
                     <div className="flex items-center gap-1">
@@ -145,9 +138,7 @@ export function DuplicateSuggestionsDrawer({ open, onOpenChange }: Props) {
                       </Button>
                     </div>
                   </div>
-                  {s.reason && (
-                    <p className="text-xs text-muted-foreground italic">{s.reason}</p>
-                  )}
+                  {s.reason && <p className="text-xs text-muted-foreground italic">{s.reason}</p>}
                   <div className="text-sm">
                     <div className="font-medium">
                       Keep: {primary?.name ?? "Unnamed"}

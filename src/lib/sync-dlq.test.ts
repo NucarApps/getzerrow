@@ -34,7 +34,6 @@ describe("isTransientDlqError", () => {
     expect(isTransientDlqError("stuck (worker timeout — exceeded max attempts)")).toBe(true);
   });
 
-
   it("matches Google 'unavailable' responses regardless of case", () => {
     expect(isTransientDlqError("Service Unavailable")).toBe(true);
     expect(isTransientDlqError("service unavailable")).toBe(true);

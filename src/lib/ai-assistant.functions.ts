@@ -172,8 +172,7 @@ export const proposeAssistantChanges = createServerFn({ method: "POST" })
     // 3. If the user names a folder, sample its recent mail so the model can
     //    see the misfiling pattern even without hand-picked emails.
     let folderSample:
-      | { folderId: string; folderName: string; emails: AssistantContextEmail[] }
-      | undefined;
+      { folderId: string; folderName: string; emails: AssistantContextEmail[] } | undefined;
     const referencedFolderId = matchFolderByName(data.user_message, folderRows ?? []);
     if (referencedFolderId) {
       const { data: sampleRows } = await supabaseAdmin

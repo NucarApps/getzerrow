@@ -69,11 +69,7 @@ export async function snapshotContact(
     .range(MAX_REVISIONS_PER_CONTACT, MAX_REVISIONS_PER_CONTACT + 100);
   const toDelete = (extra ?? []).map((r) => r.id);
   if (toDelete.length > 0) {
-    await supabaseAdmin
-      .from("contact_revisions")
-      .delete()
-      .in("id", toDelete)
-      .eq("user_id", userId);
+    await supabaseAdmin.from("contact_revisions").delete().in("id", toDelete).eq("user_id", userId);
   }
 }
 

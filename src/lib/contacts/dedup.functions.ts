@@ -167,7 +167,11 @@ const AiSchema = z.object({
 
 type ClusterInput = {
   ids: string[];
-  contacts: Array<Pick<ContactWithPhones, "id" | "name" | "email" | "company" | "title" | "city"> & { phones: string[] }>;
+  contacts: Array<
+    Pick<ContactWithPhones, "id" | "name" | "email" | "company" | "title" | "city"> & {
+      phones: string[];
+    }
+  >;
 };
 
 async function judgeCluster(
@@ -231,10 +235,7 @@ export const scanContactDuplicates = createServerFn({ method: "POST" })
         .from("contacts")
         .select("id, name, email, company, title, city, source, created_at")
         .eq("user_id", userId),
-      supabase
-        .from("contact_phones")
-        .select("contact_id, number")
-        .eq("user_id", userId),
+      supabase.from("contact_phones").select("contact_id, number").eq("user_id", userId),
     ]);
 
     if (!contacts || contacts.length < 2) {
@@ -297,8 +298,7 @@ export const scanContactDuplicates = createServerFn({ method: "POST" })
         reason = "Same email prefix on different domains";
       } else if (!apiKey) {
         // AI unavailable — still record blocking clusters at reduced confidence.
-        confidence =
-          cluster.signal === "name_company" ? "medium" : "low";
+        confidence = cluster.signal === "name_company" ? "medium" : "low";
         reason =
           cluster.signal === "name_company"
             ? "Same name and company"
@@ -325,20 +325,18 @@ export const scanContactDuplicates = createServerFn({ method: "POST" })
 
       if (!samePerson) continue;
 
-      const { error: insErr } = await supabaseAdmin
-        .from("contact_duplicate_suggestions")
-        .upsert(
-          {
-            user_id: userId,
-            primary_contact_id: primary.id,
-            duplicate_contact_ids: duplicates.map((c) => c.id),
-            confidence,
-            reason,
-            signals: { blocking: cluster.signal, key: cluster.key },
-            status: "pending",
-          },
-          { onConflict: "user_id,primary_contact_id" },
-        );
+      const { error: insErr } = await supabaseAdmin.from("contact_duplicate_suggestions").upsert(
+        {
+          user_id: userId,
+          primary_contact_id: primary.id,
+          duplicate_contact_ids: duplicates.map((c) => c.id),
+          confidence,
+          reason,
+          signals: { blocking: cluster.signal, key: cluster.key },
+          status: "pending",
+        },
+        { onConflict: "user_id,primary_contact_id" },
+      );
       if (!insErr) created++;
     }
 
@@ -351,7 +349,9 @@ export const listContactDuplicateSuggestions = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: rows } = await supabase
       .from("contact_duplicate_suggestions")
-      .select("id, primary_contact_id, duplicate_contact_ids, confidence, reason, signals, status, created_at")
+      .select(
+        "id, primary_contact_id, duplicate_contact_ids, confidence, reason, signals, status, created_at",
+      )
       .eq("user_id", userId)
       .eq("status", "pending")
       .order("confidence", { ascending: true })
@@ -450,21 +450,14 @@ export const mergeContactDuplicate = createServerFn({ method: "POST" })
         .eq("contact_id", primaryId);
       const already = new Set((primaryMembers ?? []).map((m) => m.group_id));
       const toAdd = Array.from(
-        new Set(
-          dupMemberships
-            .map((m) => m.group_id)
-            .filter((g) => !already.has(g)),
-        ),
+        new Set(dupMemberships.map((m) => m.group_id).filter((g) => !already.has(g))),
       );
       if (toAdd.length > 0) {
         await supabaseAdmin
           .from("contact_group_members")
           .insert(toAdd.map((g) => ({ group_id: g, contact_id: primaryId, user_id: userId })));
       }
-      await supabaseAdmin
-        .from("contact_group_members")
-        .delete()
-        .in("contact_id", dupIds);
+      await supabaseAdmin.from("contact_group_members").delete().in("contact_id", dupIds);
     }
 
     // Google links: repoint to primary. Uniqueness is (gmail_account_id,

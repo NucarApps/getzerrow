@@ -25,7 +25,6 @@ const TRANSIENT_DLQ_PATTERNS = [
   /stuck \(worker timeout/i,
 ];
 
-
 /** Pure: does this DLQ `last_error` string look transient enough to
  * auto-replay? Permanent failures (4xx, parse errors, classifier
  * failures) are excluded — operators investigate those manually. */

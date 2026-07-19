@@ -25,9 +25,7 @@ export type DupInput = {
  *
  * Returns the contact id to merge into, or null when nothing safe matches.
  */
-export async function findEmaillessDuplicate(
-  input: DupInput,
-): Promise<string | null> {
+export async function findEmaillessDuplicate(input: DupInput): Promise<string | null> {
   const normPhones = normalizePhones(input.phones);
   const name = (input.name ?? "").trim().toLowerCase();
   const company = (input.company ?? "").trim().toLowerCase();
@@ -52,9 +50,7 @@ export async function findEmaillessDuplicate(
       const emailless = (candidates ?? []).filter((c) => !c.email);
       if (emailless.length === 1) return emailless[0].id;
       if (emailless.length > 1 && name) {
-        const nameHit = emailless.find(
-          (c) => (c.name ?? "").trim().toLowerCase() === name,
-        );
+        const nameHit = emailless.find((c) => (c.name ?? "").trim().toLowerCase() === name);
         if (nameHit) return nameHit.id;
         // Fall back to the first match — better than making yet another dupe.
         return emailless[0].id;

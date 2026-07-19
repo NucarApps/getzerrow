@@ -54,10 +54,17 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
   };
 
   const mergeMut = useMutation({
-    mutationFn: (vars: { canonicalId: string; foldIds: string[] }) =>
-      mergeFn({ data: vars }),
+    mutationFn: (vars: { canonicalId: string; foldIds: string[] }) => mergeFn({ data: vars }),
     onSuccess: (r) => {
-      toast.success(`Merged ${r.merged} labels · moved ${r.movedMembers} members`);
+      if (r.failed > 0) {
+        toast.error(
+          `${r.failed} label${r.failed === 1 ? "" : "s"} could not be merged` +
+            (r.errors?.[0] ? `: ${r.errors[0]}` : ""),
+        );
+      }
+      if (r.merged > 0) {
+        toast.success(`Merged ${r.merged} labels · moved ${r.movedMembers} members`);
+      }
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Merge failed"),
@@ -66,9 +73,17 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
   const bulkMut = useMutation({
     mutationFn: () => bulkFn(),
     onSuccess: (r) => {
-      toast.success(
-        `Auto-merged ${r.mergedLabels} label${r.mergedLabels === 1 ? "" : "s"} across ${r.mergedClusters} cluster${r.mergedClusters === 1 ? "" : "s"}`,
-      );
+      if (r.failedLabels > 0) {
+        toast.error(
+          `${r.failedLabels} label${r.failedLabels === 1 ? "" : "s"} could not be merged` +
+            (r.errors?.[0] ? `: ${r.errors[0]}` : ""),
+        );
+      }
+      if (r.mergedLabels > 0 || r.failedLabels === 0) {
+        toast.success(
+          `Auto-merged ${r.mergedLabels} label${r.mergedLabels === 1 ? "" : "s"} across ${r.mergedClusters} cluster${r.mergedClusters === 1 ? "" : "s"}`,
+        );
+      }
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk merge failed"),
@@ -110,12 +125,7 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
                 </>
               )}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => q.refetch()}
-              disabled={q.isFetching}
-            >
+            <Button size="sm" variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
               {q.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rescan"}
             </Button>
           </div>
@@ -138,13 +148,10 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
             const clusterKey = `${cluster.canonicalId}-${idx}`;
             const ov = overrides[clusterKey] ?? {};
             const canonicalId = ov.canonicalId ?? cluster.canonicalId;
-            const includes = cluster.members.reduce<Record<string, boolean>>(
-              (acc, m) => {
-                acc[m.id] = ov.includes?.[m.id] ?? m.include;
-                return acc;
-              },
-              {},
-            );
+            const includes = cluster.members.reduce<Record<string, boolean>>((acc, m) => {
+              acc[m.id] = ov.includes?.[m.id] ?? m.include;
+              return acc;
+            }, {});
             const foldIds = cluster.members
               .filter((m) => m.id !== canonicalId && includes[m.id])
               .map((m) => m.id);

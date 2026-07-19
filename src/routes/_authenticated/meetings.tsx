@@ -141,7 +141,6 @@ const SKIP_REASON_LABEL: Record<string, string> = {
   blocked: "Blocked contact",
 };
 
-
 function MeetingsPage() {
   const qc = useQueryClient();
   const isMobile = useIsMobile();
@@ -165,8 +164,8 @@ function MeetingsPage() {
   // in-person recorder with the meeting name pre-filled and the recording
   // linked back to that calendar event.
   const [inPersonPrefill, setInPersonPrefill] = useState<InPersonRecordPrefill | null>(null);
-  const meetings = meetingsQ.data?.meetings ?? [];
-  const unrecorded = recentUnrecordedQ.data?.events ?? [];
+  const meetings = useMemo(() => meetingsQ.data?.meetings ?? [], [meetingsQ.data]);
+  const unrecorded = useMemo(() => recentUnrecordedQ.data?.events ?? [], [recentUnrecordedQ.data]);
 
   // Merge recorded meetings with recent calendar meetings that were never
   // recorded, newest first, so the past list shows everything that happened.
@@ -189,7 +188,6 @@ function MeetingsPage() {
     rows.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
     return rows;
   }, [meetings, unrecorded]);
-
 
   // Best-effort: pull live status for any non-terminal meetings so the list
   // badges advance without opening each one, then refresh the list once.
@@ -220,7 +218,6 @@ function MeetingsPage() {
       toast.error(err instanceof Error ? err.message : "Couldn't resend the notetaker.");
     },
   });
-
 
   return (
     <div className="h-full overflow-y-auto">
@@ -310,7 +307,9 @@ function MeetingsPage() {
                           <StatusBadge status={row.meeting.status} />
                         </div>
                         <div className="mt-1 truncate text-xs text-muted-foreground">
-                          {row.meeting.platform ? `${row.meeting.platform.replace("_", " ")} · ` : ""}
+                          {row.meeting.platform
+                            ? `${row.meeting.platform.replace("_", " ")} · `
+                            : ""}
                           {row.meeting.source === "calendar" ? "From calendar · " : ""}
                           {formatWhen(row.meeting.scheduled_start ?? row.meeting.created_at)}
                         </div>
@@ -335,8 +334,7 @@ function MeetingsPage() {
                             }}
                           >
                             <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                            {resendMutation.isPending &&
-                            resendMutation.variables === row.meeting.id
+                            {resendMutation.isPending && resendMutation.variables === row.meeting.id
                               ? "Sending…"
                               : "Resend notetaker"}
                           </Button>
@@ -371,7 +369,6 @@ function MeetingsPage() {
               </div>
             )}
           </TabsContent>
-
 
           <TabsContent value="upcoming">
             <UpcomingMeetingsCard onRecordInPerson={setInPersonPrefill} />
@@ -516,7 +513,6 @@ function InPersonRecordDialog({
   const [blocked, setBlocked] = useState(false);
   const [iframeBlocked, setIframeBlocked] = useState(false);
 
-
   // A "Record now" tap on an upcoming meeting opens the recorder with the
   // meeting's name pre-filled; the recording stays linked to that event.
   useEffect(() => {
@@ -580,8 +576,9 @@ function InPersonRecordDialog({
       if (typeof window === "undefined") return false;
       const inIframe = window.self !== window.top;
       if (!inIframe) return false;
-      const fp = (document as unknown as { featurePolicy?: { allowsFeature?: (f: string) => boolean } })
-        .featurePolicy;
+      const fp = (
+        document as unknown as { featurePolicy?: { allowsFeature?: (f: string) => boolean } }
+      ).featurePolicy;
       if (fp?.allowsFeature && !fp.allowsFeature("microphone")) return true;
       // If we're in an iframe and permissions-policy status is unknown, assume blocked.
       return true;
@@ -589,7 +586,6 @@ function InPersonRecordDialog({
       return false;
     }
   }
-
 
   async function startRecording() {
     setError(null);
@@ -669,7 +665,6 @@ function InPersonRecordDialog({
         setError("Couldn't start recording. Please try again.");
       }
     }
-
   }
 
   function stopRecording() {
@@ -811,7 +806,6 @@ function InPersonRecordDialog({
                   <RefreshCw className="mr-1.5 h-4 w-4" /> Reload page
                 </Button>
               )}
-
             </div>
           )}
         </div>
@@ -1280,7 +1274,6 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     setRegeneratingSummary(false);
   }
 
-
   async function onDelete() {
     if (!id) return;
     setBusy(true);
@@ -1310,7 +1303,6 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
       setConfirmStopOpen(false);
     }
   }
-
 
   function startEditTitle() {
     if (!meeting) return;
@@ -1582,7 +1574,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                             onClick={() => setConfirmStopOpen(true)}
                             disabled={stopping}
                           >
-                            <Square className={`mr-1.5 h-4 w-4 ${stopping ? "animate-pulse" : ""}`} />
+                            <Square
+                              className={`mr-1.5 h-4 w-4 ${stopping ? "animate-pulse" : ""}`}
+                            />
                             {stopping ? "Stopping…" : "Stop recording"}
                           </Button>
                         )}

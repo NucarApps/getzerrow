@@ -26,13 +26,9 @@ export const listContactsForLogoCleanup = createServerFn({ method: "GET" })
 /** Build a set of SHA-256 hashes for every company logo the user has
  * currently chosen. Used by the cleanup to detect stale historical logo
  * snapshots (e.g. a Nissan logo pinned onto a contact now under Fenway). */
-async function buildKnownCompanyLogoShaSet(
-  userId: string,
-): Promise<Set<string>> {
+async function buildKnownCompanyLogoShaSet(userId: string): Promise<Set<string>> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { fetchChosenCompanyLogoBytes } = await import(
-    "@/lib/contacts/logo-photo.server"
-  );
+  const { fetchChosenCompanyLogoBytes } = await import("@/lib/contacts/logo-photo.server");
   const { sha256Hex } = await import("@/lib/contacts/photos.server");
 
   const domains = new Set<string>();
@@ -79,14 +75,10 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const {
-      loadContactPhotoBytes,
-      deleteContactPhoto,
-      sha256Hex,
-    } = await import("@/lib/contacts/photos.server");
-    const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } = await import(
-      "@/lib/contacts/logo-photo.server"
-    );
+    const { loadContactPhotoBytes, deleteContactPhoto, sha256Hex } =
+      await import("@/lib/contacts/photos.server");
+    const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } =
+      await import("@/lib/contacts/logo-photo.server");
 
     const { data: rows, error } = await supabaseAdmin
       .from("contacts")
@@ -120,20 +112,13 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
 
       // Current-company logo SHA (may be null if provider failed).
       const logoDomain = await resolveCompanyLogoDomainForContact(context.userId, r);
-      const currentLogo = await fetchChosenCompanyLogoBytes(
-        context.userId,
-        logoDomain,
-      );
-      const currentLogoSha = currentLogo
-        ? await sha256Hex(currentLogo.bytes)
-        : null;
+      const currentLogo = await fetchChosenCompanyLogoBytes(context.userId, logoDomain);
+      const currentLogoSha = currentLogo ? await sha256Hex(currentLogo.bytes) : null;
 
       // Clear if the stored avatar matches THIS contact's current logo, OR
       // matches any other known company-logo the user has picked (a stale
       // snapshot from a previous mis-association).
-      const matches =
-        (currentLogoSha && ownSha === currentLogoSha) ||
-        knownLogoShas.has(ownSha);
+      const matches = (currentLogoSha && ownSha === currentLogoSha) || knownLogoShas.has(ownSha);
 
       if (matches) {
         await deleteContactPhoto(context.userId, r.id);
@@ -159,14 +144,10 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
         .select("resync_nonce")
         .eq("user_id", context.userId)
         .maybeSingle();
-      const next =
-        ((existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
+      const next = ((existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
       await supabaseAdmin
         .from("carddav_settings")
-        .upsert(
-          { user_id: context.userId, resync_nonce: next },
-          { onConflict: "user_id" },
-        );
+        .upsert({ user_id: context.userId, resync_nonce: next }, { onConflict: "user_id" });
     }
 
     return { cleared, kept: kept.length };
@@ -177,17 +158,12 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
  * logo. Requires the contact to have a linked company. */
 export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ contactId: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { deleteContactPhoto, sha256Hex } = await import(
-      "@/lib/contacts/photos.server"
-    );
-    const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } = await import(
-      "@/lib/contacts/logo-photo.server"
-    );
+    const { deleteContactPhoto, sha256Hex } = await import("@/lib/contacts/photos.server");
+    const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } =
+      await import("@/lib/contacts/logo-photo.server");
 
     const { data: row, error } = await supabaseAdmin
       .from("contacts")
@@ -211,10 +187,7 @@ export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
     }
 
     const logoDomain = await resolveCompanyLogoDomainForContact(context.userId, r);
-    const logo = await fetchChosenCompanyLogoBytes(
-      context.userId,
-      logoDomain,
-    );
+    const logo = await fetchChosenCompanyLogoBytes(context.userId, logoDomain);
     const logoSha = logo ? await sha256Hex(logo.bytes) : null;
     if (logoSha) {
       await supabaseAdmin
@@ -230,14 +203,10 @@ export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
       .select("resync_nonce")
       .eq("user_id", context.userId)
       .maybeSingle();
-    const next =
-      ((existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
+    const next = ((existing as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
     await supabaseAdmin
       .from("carddav_settings")
-      .upsert(
-        { user_id: context.userId, resync_nonce: next },
-        { onConflict: "user_id" },
-      );
+      .upsert({ user_id: context.userId, resync_nonce: next }, { onConflict: "user_id" });
 
     return { ok: true as const };
   });

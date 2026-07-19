@@ -6,10 +6,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import { logInfo } from "@/lib/log.server";
-import {
-  getEmailsDecrypted,
-  searchEmailsParticipantsDecrypted,
-} from "@/lib/sync/encrypted-reader";
+import { getEmailsDecrypted, searchEmailsParticipantsDecrypted } from "@/lib/sync/encrypted-reader";
 import { normalizeCompanyName } from "./company-name";
 
 type DB = SupabaseClient<Database>;
@@ -71,10 +68,7 @@ function emailDomain(email: string | null | undefined): string | null {
   return email.slice(at + 1).toLowerCase();
 }
 
-async function loadLatestSuggestions(
-  supabase: DB,
-  userId: string,
-): Promise<SuggestionView[]> {
+async function loadLatestSuggestions(supabase: DB, userId: string): Promise<SuggestionView[]> {
   const { data: latest, error: latestErr } = await supabase
     .from("contact_group_suggestions")
     .select("run_id,created_at")
@@ -96,9 +90,7 @@ async function loadLatestSuggestions(
   if (rowsErr) throw new Error(rowsErr.message);
   const suggestions = (rows ?? []) as SuggestionRow[];
 
-  const allIds = Array.from(
-    new Set(suggestions.flatMap((s) => (s.contact_ids ?? []).slice(0, 5))),
-  );
+  const allIds = Array.from(new Set(suggestions.flatMap((s) => (s.contact_ids ?? []).slice(0, 5))));
   const previewsById = new Map<string, ContactPreview>();
   if (allIds.length > 0) {
     const { data: contacts } = await supabase
@@ -146,9 +138,7 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
       const age = Date.now() - new Date(last[0].created_at).getTime();
       if (age < RESCAN_COOLDOWN_MS) {
         const wait = Math.ceil((RESCAN_COOLDOWN_MS - age) / 1000);
-        throw new Error(
-          `Please wait ${wait}s before running another AI scan.`,
-        );
+        throw new Error(`Please wait ${wait}s before running another AI scan.`);
       }
     }
 
@@ -163,9 +153,7 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
           .select("id,name,email,company,title,city,source")
           .order("created_at", { ascending: false })
           .limit(1500),
-        supabase
-          .from("contact_groups")
-          .select("id,name,parent_group_id"),
+        supabase.from("contact_groups").select("id,name,parent_group_id"),
         supabase.from("contact_group_members").select("contact_id,group_id"),
       ]);
     if (cErr) throw new Error(cErr.message);
@@ -173,9 +161,7 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
       return { suggestions: [] as SuggestionView[] };
     }
 
-    const groupsById = new Map(
-      (groups ?? []).map((g) => [g.id, g] as const),
-    );
+    const groupsById = new Map((groups ?? []).map((g) => [g.id, g] as const));
     const memberGroupsByContact = new Map<string, string[]>();
     for (const m of memberships ?? []) {
       const arr = memberGroupsByContact.get(m.contact_id) ?? [];
@@ -208,10 +194,7 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
     const ungrouped = withGroups.filter((w) => w.groupNames.length === 0);
     const grouped = withGroups.filter((w) => w.groupNames.length > 0);
     const ungroupedTotal = ungrouped.length;
-    const groupedSample = grouped.slice(
-      0,
-      Math.max(0, MAX_PAYLOAD - ungrouped.length),
-    );
+    const groupedSample = grouped.slice(0, Math.max(0, MAX_PAYLOAD - ungrouped.length));
     const payload = [...ungrouped, ...groupedSample];
 
     const idByIndex = new Map<number, string>();
@@ -311,7 +294,7 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
 
     const existingGroupsPayload = (groups ?? []).map((g) => ({
       name: g.name,
-      parent: g.parent_group_id ? groupsById.get(g.parent_group_id)?.name ?? null : null,
+      parent: g.parent_group_id ? (groupsById.get(g.parent_group_id)?.name ?? null) : null,
       size: groupSizes.get(g.id) ?? 0,
     }));
 
@@ -370,12 +353,9 @@ Return JSON matching the schema.`;
     const parsedCount = parsed.suggestions.length;
     let droppedMissingIds = 0;
     let droppedTooSmall = 0;
-    let droppedDuplicateName = 0;
+    const droppedDuplicateName = 0;
 
-    
-    const groupByLowerName = new Map(
-      (groups ?? []).map((g) => [g.name.toLowerCase(), g] as const),
-    );
+    const groupByLowerName = new Map((groups ?? []).map((g) => [g.name.toLowerCase(), g] as const));
 
     // Depth calculation for parent validation.
     const depthOf = (gid: string | null): number => {
@@ -472,9 +452,7 @@ Return JSON matching the schema.`;
     const capped = rowsToInsert.slice(0, 20);
 
     if (capped.length > 0) {
-      const { error: insErr } = await supabase
-        .from("contact_group_suggestions")
-        .insert(capped);
+      const { error: insErr } = await supabase.from("contact_group_suggestions").insert(capped);
       if (insErr) throw new Error(insErr.message);
     }
 
@@ -512,14 +490,15 @@ Return JSON matching the schema.`;
 /** Apply a suggestion: create the group (or use existing) and add contacts. */
 export const applyContactGroupSuggestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; group_name_override?: string; target_group_id?: string | null }) =>
-    z
-      .object({
-        id: z.string().uuid(),
-        group_name_override: z.string().min(1).max(60).optional(),
-        target_group_id: z.string().uuid().nullable().optional(),
-      })
-      .parse(d),
+  .inputValidator(
+    (d: { id: string; group_name_override?: string; target_group_id?: string | null }) =>
+      z
+        .object({
+          id: z.string().uuid(),
+          group_name_override: z.string().min(1).max(60).optional(),
+          target_group_id: z.string().uuid().nullable().optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;

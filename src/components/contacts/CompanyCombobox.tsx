@@ -56,9 +56,7 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
   const exactMatch = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return null;
-    return (
-      (q.data?.companies ?? []).find((c) => c.name.toLowerCase() === term) ?? null
-    );
+    return (q.data?.companies ?? []).find((c) => c.name.toLowerCase() === term) ?? null;
   }, [q.data, query]);
 
   const createMut = useMutation({
@@ -181,27 +179,19 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
                     <Check
                       className={cn(
                         "mr-2 h-4 w-4",
-                        value.toLowerCase() === c.name.toLowerCase()
-                          ? "opacity-100"
-                          : "opacity-0",
+                        value.toLowerCase() === c.name.toLowerCase() ? "opacity-100" : "opacity-0",
                       )}
                     />
                     <span className="flex-1 truncate">{c.name}</span>
                     {c.member_count > 0 && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {c.member_count}
-                      </span>
+                      <span className="ml-2 text-xs text-muted-foreground">{c.member_count}</span>
                     )}
                   </CommandItem>
                 ))}
               </CommandGroup>
             )}
           </CommandList>
-          {error && (
-            <div className="border-t px-3 py-2 text-xs text-destructive">
-              {error}
-            </div>
-          )}
+          {error && <div className="border-t px-3 py-2 text-xs text-destructive">{error}</div>}
         </Command>
       </PopoverContent>
     </Popover>

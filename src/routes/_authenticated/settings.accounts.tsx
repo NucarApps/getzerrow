@@ -21,10 +21,7 @@ import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react
 
 export const Route = createFileRoute("/_authenticated/settings/accounts")({
   head: () => ({
-    meta: [
-      { title: "Accounts — Settings — Zerrow" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "Accounts — Settings — Zerrow" }, { name: "robots", content: "noindex" }],
   }),
   component: AccountsSettings,
 });
@@ -260,7 +257,11 @@ function AccountsSettings() {
                   size="sm"
                   variant="ghost"
                   onClick={() =>
-                    run(`watch-${a.id}`, () => renew({ data: { account_id: a.id } }), "Watch renewed")
+                    run(
+                      `watch-${a.id}`,
+                      () => renew({ data: { account_id: a.id } }),
+                      "Watch renewed",
+                    )
                   }
                   disabled={busy !== null}
                 >
