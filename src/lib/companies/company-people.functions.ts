@@ -5,10 +5,27 @@
 // filtered by domain directly; email recipients (to/cc) are encrypted and not
 // covered here.
 import { createServerFn } from "@tanstack/react-start";
+import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import { extractDomain, isPersonalDomain } from "@/lib/company-domains";
 import { isLikelyHuman } from "@/lib/contacts-helpers.server";
+import {
+  emailLocalPart,
+  firstLastTokens,
+  normalizeNameLoose,
+} from "@/lib/contacts/name-match";
+
+type PossibleMatch = {
+  contactId: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  reason: "name_exact" | "localpart_diff_domain" | "loose_tokens";
+  score: number; // 0..1
+  sameCompanyId: boolean;
+  differentDomain: boolean;
+};
 
 type FoundPerson = {
   email: string;
@@ -16,6 +33,7 @@ type FoundPerson = {
   sources: ("email" | "calendar")[];
   count: number;
   lastSeenAt: string | null;
+  possibleMatches: PossibleMatch[];
 };
 
 /** Title-case a plausible name from an email local part ("john.doe" →
