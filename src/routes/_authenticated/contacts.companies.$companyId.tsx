@@ -62,6 +62,7 @@ import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-
 import {
   findCompanyPeopleByDomain,
   addCompanyPeople,
+  enhanceContactWithNewEmail,
 } from "@/lib/companies/company-people.functions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
