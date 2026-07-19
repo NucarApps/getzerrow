@@ -9,7 +9,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
-const GOOGLE_SYNC_DIRTY_SENTINEL = "1970-01-01T00:00:00.000Z";
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -33,19 +32,18 @@ async function assertOwnsCompany(userId: string, companyId: string): Promise<voi
  *  company, so the change reaches Google People too (best-effort). */
 async function markCompanyContactsDirty(userId: string, companyId: string): Promise<void> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { markGoogleContactsDirty } = await import(
+    "@/lib/google-contacts/mark-dirty.server"
+  );
   const { data: contacts } = await supabaseAdmin
     .from("contacts")
     .select("id")
     .eq("user_id", userId)
     .eq("company_id", companyId);
   const ids = (contacts ?? []).map((c) => (c as { id: string }).id);
-  if (ids.length === 0) return;
-  await supabaseAdmin
-    .from("google_contact_links")
-    .update({ last_synced_at: GOOGLE_SYNC_DIRTY_SENTINEL })
-    .eq("user_id", userId)
-    .in("contact_id", ids);
+  await markGoogleContactsDirty(userId, ids);
 }
+
 
 export const uploadCompanyPhoto = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

@@ -169,10 +169,20 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
             .eq("id", r.id)
             .eq("user_id", context.userId);
         }
+        // Nudge Google sync so the corrected logo repushes.
+        try {
+          const { markGoogleContactDirty } = await import(
+            "@/lib/google-contacts/mark-dirty.server"
+          );
+          await markGoogleContactDirty(context.userId, r.id);
+        } catch {
+          // ignore
+        }
         cleared += 1;
       } else {
         kept.push(r.id);
       }
+
     }
 
     if (cleared > 0) {
@@ -235,6 +245,17 @@ export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
         .eq("user_id", context.userId);
     }
 
+    // Nudge Google sync so the freshly-selected company logo repushes to
+    // Google People (best-effort — no-op if the contact isn't linked).
+    try {
+      const { markGoogleContactDirty } = await import(
+        "@/lib/google-contacts/mark-dirty.server"
+      );
+      await markGoogleContactDirty(context.userId, r.id);
+    } catch {
+      // ignore
+    }
+
     // Bump resync nonce so iPhone re-pulls.
     const { data: existing } = await supabaseAdmin
       .from("carddav_settings")
@@ -248,3 +269,4 @@ export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
 
     return { ok: true as const };
   });
+

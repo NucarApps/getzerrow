@@ -16,7 +16,12 @@ import {
 } from "./people-client.server";
 import { contactToPerson, groupToLabel, personToContact } from "./mapper";
 import { loadLocalContact } from "./state.server";
-import { isLocalGoogleContactDirty } from "./dirty";
+import {
+  isLocalGoogleContactDirty,
+  isGooglePhotoPushDirty,
+  MAX_PHOTO_PUSH_ATTEMPTS,
+} from "./dirty";
+
 import type { ProgressReporter } from "./progress.server";
 
 type Ids = { userId: string; gmailAccountId: string; runId: string };
@@ -142,16 +147,46 @@ async function pushContacts(
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
-    .select("contact_id, resource_name, etag, last_synced_at, photo_etag")
+    .select("contact_id, resource_name, etag, last_synced_at, photo_etag, photo_push_attempts")
     .eq("gmail_account_id", ids.gmailAccountId);
   const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
 
+  // Load avatar_url per contact so we can also treat a photo-only change as
+  // dirty (avatar_url !== photo_etag) even when the person body is in sync.
+  const contactIds = (contacts as ContactRow[]).map((c) => c.id);
+  const avatarByContact = new Map<string, string | null>();
+  if (contactIds.length > 0) {
+    const { data: avatarRows } = await supabaseAdmin
+      .from("contacts")
+      .select("id, avatar_url")
+      .in("id", contactIds);
+    for (const row of avatarRows ?? []) {
+      const r = row as { id: string; avatar_url: string | null };
+      avatarByContact.set(r.id, r.avatar_url ?? null);
+    }
+  }
   let count = 0;
   for (const c of contacts as ContactRow[]) {
     const link = byLocal.get(c.id);
-    // Skip only when this linked local row is not dirty. CardDAV saves mark
-    // the link stale, so an iPhone edit survives the pull-before-push cycle.
-    if (link && !isLocalGoogleContactDirty(c.updated_at, link.last_synced_at)) continue;
+    const linkPhotoEtag =
+      (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
+    const linkPhotoAttempts =
+      (link as { photo_push_attempts?: number | null } | undefined)?.photo_push_attempts ?? 0;
+    const currentAvatar = avatarByContact.get(c.id) ?? null;
+    const photoIsDirty = isGooglePhotoPushDirty({
+      avatarUrl: currentAvatar,
+      photoEtag: linkPhotoEtag,
+      photoPushAttempts: linkPhotoAttempts,
+    });
+    // Skip only when neither the person body nor the photo needs updating.
+    if (
+      link &&
+      !isLocalGoogleContactDirty(c.updated_at, link.last_synced_at) &&
+      !photoIsDirty
+    )
+      continue;
+
+
 
     try {
       const local = await loadLocalContact(c.id);
@@ -190,9 +225,13 @@ async function pushContacts(
         { includeSummary },
       );
 
+      // Track the resource_name of a freshly-created Google contact so the
+      // photo push below can attach the avatar in the same iteration.
+      let createdResourceName: string | null = null;
       if (!link) {
         const created = await createPerson(ids.gmailAccountId, body);
         if (created.resourceName) {
+          createdResourceName = created.resourceName;
           await supabaseAdmin.from("google_contact_links").upsert(
             {
               user_id: ids.userId,
@@ -207,6 +246,7 @@ async function pushContacts(
           count++;
         }
       } else if (link.etag) {
+
         try {
           // Conflict guard: if Google has emails we don't, abort the push
           // and flip the link back to "trust remote" so the next pull will
@@ -295,30 +335,51 @@ async function pushContacts(
       // Photo push: upload the local avatar bytes to Google whenever the
       // avatar_url on record differs from the last URL we pushed
       // (`photo_etag`). Runs after the person body update so the People API
-      // has a fresh Person to attach the photo to. Fails are non-fatal —
-      // the picture will retry on the next dirty cycle.
+      // has a fresh Person to attach the photo to. Failures leave photo_etag
+      // untouched and bump photo_push_attempts; after MAX_PHOTO_PUSH_ATTEMPTS
+      // we stop retrying and log a give-up alert.
       try {
-        const linkRow = link as (typeof link & { photo_etag?: string | null }) | undefined;
-        const { data: contactRow } = await supabaseAdmin
-          .from("contacts")
-          .select("avatar_url")
-          .eq("id", c.id)
-          .maybeSingle();
-        const avatarUrl = contactRow?.avatar_url ?? null;
-        const previousUrl = linkRow?.photo_etag ?? null;
-        const currentLink = linkRow ?? byLocal.get(c.id) ?? undefined;
-        const resource = currentLink?.resource_name ?? null;
-        if (resource && avatarUrl && avatarUrl !== previousUrl) {
+        const avatarUrl = currentAvatar;
+        const previousUrl = linkPhotoEtag;
+        const resource = link?.resource_name ?? createdResourceName;
+        if (
+          resource &&
+          avatarUrl &&
+          avatarUrl !== previousUrl &&
+          linkPhotoAttempts < MAX_PHOTO_PUSH_ATTEMPTS
+        ) {
           const { loadContactPhotoBytes } = await import("@/lib/contacts/photos.server");
           const { updateContactPhoto } = await import("./people-client.server");
-          const photo = await loadContactPhotoBytes(avatarUrl);
-          if (photo) {
-            await updateContactPhoto(ids.gmailAccountId, resource, photo.bytes);
+          try {
+            const photo = await loadContactPhotoBytes(avatarUrl);
+            if (photo) {
+              await updateContactPhoto(ids.gmailAccountId, resource, photo.bytes);
+              await supabaseAdmin
+                .from("google_contact_links")
+                .update({ photo_etag: avatarUrl, photo_push_attempts: 0 })
+                .eq("contact_id", c.id)
+                .eq("gmail_account_id", ids.gmailAccountId);
+            }
+          } catch (uploadErr) {
+            const nextAttempts = linkPhotoAttempts + 1;
             await supabaseAdmin
               .from("google_contact_links")
-              .update({ photo_etag: avatarUrl })
+              .update({ photo_push_attempts: nextAttempts })
               .eq("contact_id", c.id)
               .eq("gmail_account_id", ids.gmailAccountId);
+            if (nextAttempts >= MAX_PHOTO_PUSH_ATTEMPTS) {
+              logError(
+                "google_contacts.push.photo_gave_up",
+                { ...ids, contact_id: c.id, attempts: nextAttempts },
+                uploadErr,
+              );
+            } else {
+              logError(
+                "google_contacts.push.photo_failed",
+                { ...ids, contact_id: c.id, attempts: nextAttempts },
+                uploadErr,
+              );
+            }
           }
         }
       } catch (photoErr) {
@@ -328,6 +389,7 @@ async function pushContacts(
       logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
     }
     await progress?.increment(1);
+
   }
   return count;
 }

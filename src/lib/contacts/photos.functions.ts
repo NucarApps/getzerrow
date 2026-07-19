@@ -9,16 +9,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
-const GOOGLE_SYNC_DIRTY_SENTINEL = "1970-01-01T00:00:00.000Z";
 
-async function markGoogleContactDirty(userId: string, contactId: string): Promise<void> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  await supabaseAdmin
-    .from("google_contact_links")
-    .update({ last_synced_at: GOOGLE_SYNC_DIRTY_SENTINEL })
-    .eq("user_id", userId)
-    .eq("contact_id", contactId);
-}
 
 async function assertOwnsContact(userId: string, contactId: string): Promise<void> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -66,10 +57,14 @@ export const uploadContactPhoto = createServerFn({ method: "POST" })
 
     // Nudge Google sync to push the new picture upstream on next run.
     try {
+      const { markGoogleContactDirty } = await import(
+        "@/lib/google-contacts/mark-dirty.server"
+      );
       await markGoogleContactDirty(context.userId, data.contactId);
     } catch {
       // Not linked to Google — no-op.
     }
+
     return { avatarUrl };
   });
 
@@ -81,10 +76,14 @@ export const removeContactPhoto = createServerFn({ method: "POST" })
     const { deleteContactPhoto } = await import("@/lib/contacts/photos.server");
     await deleteContactPhoto(context.userId, data.contactId);
     try {
+      const { markGoogleContactDirty } = await import(
+        "@/lib/google-contacts/mark-dirty.server"
+      );
       await markGoogleContactDirty(context.userId, data.contactId);
     } catch {
       // ignore
     }
+
     return { ok: true };
   });
 

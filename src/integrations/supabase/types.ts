@@ -1933,6 +1933,7 @@ export type Database = {
           id: string
           last_synced_at: string
           photo_etag: string | null
+          photo_push_attempts: number
           resource_name: string
           updated_at: string
           user_id: string
@@ -1945,6 +1946,7 @@ export type Database = {
           id?: string
           last_synced_at?: string
           photo_etag?: string | null
+          photo_push_attempts?: number
           resource_name: string
           updated_at?: string
           user_id: string
@@ -1957,6 +1959,7 @@ export type Database = {
           id?: string
           last_synced_at?: string
           photo_etag?: string | null
+          photo_push_attempts?: number
           resource_name?: string
           updated_at?: string
           user_id?: string
