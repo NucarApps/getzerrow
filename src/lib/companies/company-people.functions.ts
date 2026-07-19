@@ -207,14 +207,10 @@ export const addCompanyPeople = createServerFn({ method: "POST" })
     // Update contacts that already exist but aren't linked to a company yet.
     const toUpdate = [...existingByEmail.entries()].filter(([, r]) => !r.company_id);
     for (const [email, row] of toUpdate) {
-      const patch: Record<string, unknown> = {
-        company: companyName,
-        company_id: data.companyId,
-      };
-      if (!row.name) {
-        const n = nameByEmail.get(email);
-        if (n) patch.name = n;
-      }
+      const n = !row.name ? nameByEmail.get(email) ?? null : null;
+      const patch = n
+        ? { company: companyName, company_id: data.companyId, name: n }
+        : { company: companyName, company_id: data.companyId };
       const { error: upErr } = await supabase
         .from("contacts")
         .update(patch)
@@ -223,6 +219,7 @@ export const addCompanyPeople = createServerFn({ method: "POST" })
       if (upErr) throw new Error(upErr.message);
       contactIds.push(row.id);
     }
+
     // Existing rows already assigned to another company are left alone.
 
     // Insert net-new contacts.
