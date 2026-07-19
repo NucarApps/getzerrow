@@ -372,35 +372,46 @@ export const mergeLabelCluster = createServerFn({ method: "POST" })
     return { merged, failed, movedMembers: totalMoved, errors };
   });
 
+/** Core of the bulk consolidation, callable with any client (user-scoped
+ *  server fn below, or supabaseAdmin from the one-time backfill cron hook). */
+export async function consolidateLabelDuplicatesImpl(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{
+  mergedClusters: number;
+  mergedLabels: number;
+  failedLabels: number;
+  errors: string[];
+}> {
+  const { lite, nameAliases } = await loadLabelClusterInputs(supabase, userId);
+  const clusters = clusterLabels(lite, nameAliases);
+  let mergedClusters = 0;
+  let mergedLabels = 0;
+  let failedLabels = 0;
+  const movedContactIds: string[] = [];
+  const errors: string[] = [];
+  for (const { labels: cluster } of clusters) {
+    const sorted = sortCanonicalFirst(cluster);
+    const canonical = sorted[0];
+    for (const src of sorted.slice(1)) {
+      try {
+        const r = await mergeLabelPair(supabase, userId, src.id, canonical.id);
+        movedContactIds.push(...r.movedContactIds);
+        mergedLabels++;
+      } catch (e) {
+        failedLabels++;
+        if (errors.length < 3) errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+    mergedClusters++;
+  }
+  if (mergedLabels > 0) await convergeAfterMerges(supabase, userId, movedContactIds);
+  return { mergedClusters, mergedLabels, failedLabels, errors };
+}
+
 /** One-shot bulk consolidation: run the deterministic clusterer and merge
  *  every cluster automatically into its default canonical. Used by the
  *  "Auto-merge duplicates" button when the user trusts the picks. */
 export const consolidateLabelDuplicates = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { lite, nameAliases } = await loadLabelClusterInputs(supabase, userId);
-    const clusters = clusterLabels(lite, nameAliases);
-    let mergedClusters = 0;
-    let mergedLabels = 0;
-    let failedLabels = 0;
-    const movedContactIds: string[] = [];
-    const errors: string[] = [];
-    for (const { labels: cluster } of clusters) {
-      const sorted = sortCanonicalFirst(cluster);
-      const canonical = sorted[0];
-      for (const src of sorted.slice(1)) {
-        try {
-          const r = await mergeLabelPair(supabase, userId, src.id, canonical.id);
-          movedContactIds.push(...r.movedContactIds);
-          mergedLabels++;
-        } catch (e) {
-          failedLabels++;
-          if (errors.length < 3) errors.push(e instanceof Error ? e.message : String(e));
-        }
-      }
-      mergedClusters++;
-    }
-    if (mergedLabels > 0) await convergeAfterMerges(supabase, userId, movedContactIds);
-    return { mergedClusters, mergedLabels, failedLabels, errors };
-  });
+  .handler(async ({ context }) => consolidateLabelDuplicatesImpl(context.supabase, context.userId));

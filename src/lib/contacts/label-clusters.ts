@@ -13,8 +13,7 @@
  * Kept pure (no supabase) so it's unit-testable; the server functions load
  * the inputs.
  */
-import { normalizeCompanyName } from "./company-name";
-import { normalizeCompanyName as mildNormalizeCompanyName } from "@/lib/companies/normalize";
+import { deriveLabelKey } from "./label-resolve";
 
 export type LabelClusterInput = {
   id: string;
@@ -33,19 +32,9 @@ export type LabelCluster<L extends LabelClusterInput> = {
 
 const PARENT_ROOT = "__root__";
 
-/** Resolve a label name to its clustering key: alias-canonicalized, then
- *  aggressively normalized (falling back to the mild key). Also reports
- *  whether an alias was involved. */
-function nameKeyFor(
-  name: string,
-  nameAliases: Map<string, string>,
-): { key: string | null; viaAlias: boolean } {
-  const mild = mildNormalizeCompanyName(name);
-  const canonical = mild ? nameAliases.get(mild) : undefined;
-  const base = canonical ?? name;
-  const key = normalizeCompanyName(base) ?? mildNormalizeCompanyName(base);
-  return { key, viaAlias: !!canonical };
-}
+// Clustering key now shared with every label-create path — see
+// label-resolve.ts. Kept as a local alias so call sites below read the same.
+const nameKeyFor = deriveLabelKey;
 
 export function clusterLabels<L extends LabelClusterInput>(
   labels: L[],

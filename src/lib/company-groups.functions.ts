@@ -93,6 +93,30 @@ export const setCompanyLabels = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
 
+    // Keep companies.linked_group_id — THE label that represents this
+    // company (used by the shared label resolver to short-circuit) — in
+    // sync with the selection: keep the current link while still selected,
+    // else adopt the first selected label, else clear.
+    const { data: linkRow } = await supabase
+      .from("companies")
+      .select("linked_group_id")
+      .eq("id", data.companyId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    const currentLinked =
+      (linkRow as { linked_group_id: string | null } | null)?.linked_group_id ?? null;
+    const nextLinked =
+      currentLinked && desired.has(currentLinked)
+        ? currentLinked
+        : ([...desired].find((g) => addable.has(g)) ?? null);
+    if (nextLinked !== currentLinked) {
+      await supabase
+        .from("companies")
+        .update({ linked_group_id: nextLinked })
+        .eq("id", data.companyId)
+        .eq("user_id", userId);
+    }
+
     const changed = toAdd.length > 0 || toRemove.length > 0;
     let synced = { scanned: 0, added: 0, removed: 0 };
     if (changed) {

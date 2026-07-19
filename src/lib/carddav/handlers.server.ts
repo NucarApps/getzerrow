@@ -908,25 +908,24 @@ async function reconcileContactCategories(
     nameAliases,
   });
 
-  // Create only genuinely new groups, each with a stable CardDAV UID so
-  // iOS sees it on next PROPFIND.
+  // Create only genuinely new groups — through the shared resolver so an
+  // inbound category still can't mint a near-duplicate of a label another
+  // path created between our snapshot and now.
+  const { resolveOrCreateCompanyLabel } = await import("@/lib/contacts/label-resolve.server");
   const createdIds: string[] = [];
   for (const spec of resolution.toCreate) {
-    const uid =
-      "group-" +
-      (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const { data: created, error } = await supabaseAdmin
-      .from("contact_groups")
-      .insert({
-        user_id: userId,
+    try {
+      const resolved = await resolveOrCreateCompanyLabel(
+        { supabase: supabaseAdmin, userId },
+        { rawName: spec.name, parentGroupId: spec.parentGroupId, nameAliases },
+      );
+      if (resolved) createdIds.push(resolved.id);
+    } catch (err) {
+      logInfo("carddav.categories.group_create_failed", {
         name: spec.name,
-        color: "#6366f1",
-        carddav_uid: uid,
-        parent_group_id: spec.parentGroupId,
-      })
-      .select("id")
-      .single();
-    if (!error && created) createdIds.push(created.id);
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   const plan = planCategoryMembership({

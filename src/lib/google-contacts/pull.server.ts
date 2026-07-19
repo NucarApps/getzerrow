@@ -197,6 +197,9 @@ async function applyGroupChanges(
     ]),
   );
 
+  // Lazily loaded once per pull for the label resolver.
+  let groupAliasMap: Map<string, string> | null = null;
+
   for (const g of groups) {
     const name = labelToGroupName(g);
     if (!name || !g.resourceName) continue;
@@ -213,27 +216,41 @@ async function applyGroupChanges(
         .eq("gmail_account_id", ids.gmailAccountId)
         .eq("resource_name", g.resourceName);
     } else {
-      // Create a Zerrow group and link.
-      const { data: created, error: cErr } = await supabaseAdmin
-        .from("contact_groups")
-        .insert({
-          user_id: ids.userId,
-          name,
-          carddav_uid: crypto.randomUUID(),
-        })
-        .select("id")
-        .single();
-      if (cErr || !created) {
-        logError("google_contacts.pull.group_create_failed", { ...ids, name }, cErr);
+      // Resolve-or-create through the shared label resolver so a Google
+      // label "Nissan, Inc." folds into an existing "Nissan" instead of
+      // spawning a local duplicate.
+      const { resolveOrCreateCompanyLabel, loadNameAliasMap } =
+        await import("@/lib/contacts/label-resolve.server");
+      let resolved: Awaited<ReturnType<typeof resolveOrCreateCompanyLabel>>;
+      try {
+        groupAliasMap ??= await loadNameAliasMap({ supabase: supabaseAdmin, userId: ids.userId });
+        resolved = await resolveOrCreateCompanyLabel(
+          { supabase: supabaseAdmin, userId: ids.userId },
+          { rawName: name, nameAliases: groupAliasMap },
+        );
+      } catch (err) {
+        logError("google_contacts.pull.group_create_failed", { ...ids, name }, err);
         continue;
       }
-      await supabaseAdmin.from("google_group_links").insert({
+      if (!resolved) continue;
+      const { error: linkErr } = await supabaseAdmin.from("google_group_links").insert({
         user_id: ids.userId,
         gmail_account_id: ids.gmailAccountId,
-        contact_group_id: created.id,
+        contact_group_id: resolved.id,
         resource_name: g.resourceName,
         etag: g.etag ?? null,
       });
+      if (linkErr) {
+        // Two Google labels resolving to one local group violate the
+        // (gmail_account_id, contact_group_id) unique link. The remote dup
+        // label stays on Google's side but stops spawning local dups.
+        logInfo("google_contacts.pull.group_link_conflict", {
+          ...ids,
+          name,
+          contact_group_id: resolved.id,
+          resource_name: g.resourceName,
+        });
+      }
     }
   }
 

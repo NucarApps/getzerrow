@@ -66,6 +66,20 @@ describe("resolveCategoryTargets", () => {
     expect(res.toCreate).toEqual([]);
   });
 
+  it("matches brand variants via the aggressive shared key (no alias needed)", () => {
+    // Mild normalization can't strip "North America" — the shared
+    // deriveLabelKey brand key is what folds these onto the existing group.
+    const res = resolveCategoryTargets(["Nissan North America"], GROUPS, NO_MEMBERS);
+    expect(res.matchedGroupIds).toEqual(["n"]);
+    expect(res.toCreate).toEqual([]);
+  });
+
+  it("still creates a genuinely distinct brand exactly once", () => {
+    const res = resolveCategoryTargets(["Rivian", "Rivian"], GROUPS, NO_MEMBERS);
+    expect(res.matchedGroupIds).toEqual([]);
+    expect(res.toCreate).toEqual([{ name: "Rivian", parentGroupId: null }]);
+  });
+
   it("never re-creates an aliased name whose group is gone", () => {
     const res = resolveCategoryTargets(["Kia America Inc"], GROUPS, {
       ...NO_MEMBERS,

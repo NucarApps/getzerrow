@@ -289,27 +289,28 @@ export async function reconcileAutoCompanySubgroupsImpl(
       }
       continue;
     }
-    const uid =
-      "group-" +
-      (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const { data: ins, error: iErr } = await supabase
-      .from("contact_groups")
-      .insert({
-        user_id: userId,
-        name: display,
-        color: "#6366f1",
-        carddav_uid: uid,
-        parent_group_id: parentGroupId,
-        auto_generated_from_group_id: parentGroupId,
-      })
-      .select("id,name")
-      .single();
-    if (iErr) {
-      if (!/duplicate|unique/i.test(iErr.message)) throw new Error(iErr.message);
+    // Shared resolver: reuses any sibling label with the same brand key
+    // (including a manually created "Nissan") instead of minting a
+    // near-duplicate subgroup.
+    const { resolveOrCreateCompanyLabel } = await import("./label-resolve.server");
+    let resolved: Awaited<ReturnType<typeof resolveOrCreateCompanyLabel>>;
+    try {
+      resolved = await resolveOrCreateCompanyLabel(
+        { supabase, userId },
+        {
+          rawName: display,
+          parentGroupId,
+          extraInsert: { auto_generated_from_group_id: parentGroupId },
+          nameAliases: keyCtx.nameAliases ?? undefined,
+        },
+      );
+    } catch (err) {
+      if (!/duplicate|unique/i.test(err instanceof Error ? err.message : String(err))) throw err;
       continue;
     }
-    existingByKey.set(key, ins);
-    created++;
+    if (!resolved) continue;
+    existingByKey.set(key, { id: resolved.id, name: resolved.name });
+    if (resolved.created) created++;
   }
 
   // 6. Delete stale auto subgroups + legacy duplicates.

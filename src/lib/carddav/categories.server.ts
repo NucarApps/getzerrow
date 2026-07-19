@@ -8,6 +8,7 @@
  * exact name — is what stops merged duplicates from resurrecting forever.
  */
 import { normalizeCompanyName } from "@/lib/companies/normalize";
+import { deriveLabelKey } from "@/lib/contacts/label-resolve";
 
 export type CategoryGroupInfo = {
   id: string;
@@ -78,6 +79,8 @@ export function resolveCategoryTargets(
   const byLeaf = new Map<string, CategoryGroupInfo[]>();
   const byPath = new Map<string, CategoryGroupInfo[]>();
   const byNorm = new Map<string, CategoryGroupInfo[]>();
+  const byBrand = new Map<string, CategoryGroupInfo[]>();
+  const aliasMap = opts.nameAliases ?? new Map<string, string>();
   for (const g of groups) {
     const leaf = g.name.toLowerCase();
     byLeaf.set(leaf, [...(byLeaf.get(leaf) ?? []), g]);
@@ -86,6 +89,8 @@ export function resolveCategoryTargets(
     }
     const norm = normalizeCompanyName(g.name);
     if (norm) byNorm.set(norm, [...(byNorm.get(norm) ?? []), g]);
+    const brand = deriveLabelKey(g.name, aliasMap).key;
+    if (brand) byBrand.set(brand, [...(byBrand.get(brand) ?? []), g]);
   }
 
   const matchedGroupIds = new Set<string>();
@@ -125,6 +130,17 @@ export function resolveCategoryTargets(
         // owns it — never re-create.
         return "skip";
       }
+    }
+    // 5. Aggressive shared brand key ("Nissan North America" ≈ "Nissan") —
+    // the same key every label-create path uses (deriveLabelKey), so a
+    // category echo can never mint a variant an existing label would have
+    // absorbed.
+    const brand = deriveLabelKey(name, aliasMap).key;
+    if (brand) {
+      const cands = byBrand.get(brand) ?? [];
+      const brandHit = pickPreferred(cands, opts.memberGroupIds);
+      if (brandHit) return brandHit;
+      if (cands.length > 1) return "skip";
     }
     return null;
   };

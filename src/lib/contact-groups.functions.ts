@@ -124,38 +124,54 @@ export const createContactGroup = createServerFn({ method: "POST" })
         throw new Error(`Groups can only nest ${MAX_DEPTH} levels deep`);
       }
     }
-    // Choke point: before inserting, look for an existing group in the
-    // same parent scope whose normalized name matches. This prevents new
-    // duplicate labels from being created via the UI ("Nissan" vs
-    // "Nissan Inc") and from any code path that reuses createContactGroup.
-    const { normalizeCompanyName } = await import("@/lib/companies/normalize");
-    const key = normalizeCompanyName(data.name);
-    if (key) {
-      const q = supabase.from("contact_groups").select(GROUP_SELECT).eq("user_id", userId);
-      const scoped = data.parent_group_id
-        ? q.eq("parent_group_id", data.parent_group_id)
-        : q.is("parent_group_id", null);
-      const { data: candidates } = await scoped;
-      const hit = (candidates ?? []).find((g) => normalizeCompanyName(g.name) === key);
-      if (hit) return { group: hit };
+    // Choke point: resolve against existing labels in the same parent scope
+    // via the shared alias-aware brand key ("Nissan" ≈ "Nissan Inc" ≈ a
+    // merged-away "Nissan Motor Acceptance Company") before inserting.
+    const { pickExistingLabel } = await import("@/lib/contacts/label-resolve");
+    const { loadNameAliasMap, newGroupCardDavUid } =
+      await import("@/lib/contacts/label-resolve.server");
+    const aliases = await loadNameAliasMap({ supabase, userId });
+    const q = supabase.from("contact_groups").select(GROUP_SELECT).eq("user_id", userId);
+    const scoped = data.parent_group_id
+      ? q.eq("parent_group_id", data.parent_group_id)
+      : q.is("parent_group_id", null);
+    const { data: candidates } = await scoped;
+    const hit = pickExistingLabel(
+      data.name,
+      data.parent_group_id ?? null,
+      (candidates ?? []) as Array<{ id: string; name: string; parent_group_id: string | null }>,
+      aliases,
+    );
+    if (hit) {
+      const full = (candidates ?? []).find((g) => g.id === hit.id);
+      if (full) return { group: full };
     }
     // Generate a stable CardDAV UID up-front so a group created in the
     // web app is immediately visible/syncable to iPhones on next PROPFIND.
-    const uid =
-      "group-" +
-      (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const { data: row, error } = await supabase
       .from("contact_groups")
       .insert({
         user_id: userId,
         name: data.name.trim(),
         color: data.color ?? "#6366f1",
-        carddav_uid: uid,
+        carddav_uid: newGroupCardDavUid(),
         parent_group_id: data.parent_group_id ?? null,
       })
       .select(GROUP_SELECT)
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      // Unique-name race (the (user_id, lower(name)) index is global):
+      // return the winner instead of failing the user's create.
+      const { data: winner } = await supabase
+        .from("contact_groups")
+        .select(GROUP_SELECT)
+        .eq("user_id", userId)
+        .ilike("name", data.name.trim())
+        .limit(1)
+        .maybeSingle();
+      if (winner) return { group: winner };
+      throw new Error(error.message);
+    }
     return { group: row };
   });
 
