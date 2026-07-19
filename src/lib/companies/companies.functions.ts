@@ -341,15 +341,47 @@ export const addCompanyDomain = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const domain = extractDomain(data.domain) ?? data.domain.trim().toLowerCase();
     if (!domain) throw new Error("Invalid domain");
+
+    // Two companies can't own the same domain. Instead of the previous
+    // silent upsert (which would reassign a domain out from under another
+    // company), detect the collision and hand the caller the conflicting
+    // company so the UI can offer a merge.
+    const { data: existing, error: exErr } = await supabase
+      .from("company_domains")
+      .select("company_id")
+      .eq("user_id", userId)
+      .eq("domain", domain)
+      .maybeSingle();
+    if (exErr) throw new Error(exErr.message);
+
+    if (existing?.company_id && existing.company_id !== data.id) {
+      const { data: other } = await supabase
+        .from("companies")
+        .select("id,name")
+        .eq("id", existing.company_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      return {
+        ok: false as const,
+        conflict: {
+          companyId: existing.company_id,
+          companyName: (other as { name?: string } | null)?.name ?? "another company",
+          domain,
+        },
+      };
+    }
+
+    if (existing?.company_id === data.id) {
+      return { ok: true as const, domain, alreadyAttached: true as const };
+    }
+
     const { error } = await supabase
       .from("company_domains")
-      .upsert(
-        { user_id: userId, company_id: data.id, domain, source: "manual" },
-        { onConflict: "user_id,domain" },
-      );
+      .insert({ user_id: userId, company_id: data.id, domain, source: "manual" });
     if (error) throw new Error(error.message);
     return { ok: true as const, domain };
   });
+
 
 export const removeCompanyDomain = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
