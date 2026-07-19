@@ -91,6 +91,7 @@ import {
   openOrCreateCompanyForBucket,
   convergeBucketCompany,
   mergeCompanies,
+  updateCompany,
 } from "@/lib/companies/companies.functions";
 import {
   buildInlineCompanyMergeSuggestions,
@@ -121,6 +122,7 @@ function ContactsPage() {
   const openCompanyFn = useServerFn(openOrCreateCompanyForBucket);
   const convergeCompanyFn = useServerFn(convergeBucketCompany);
   const mergeCompanyFn = useServerFn(mergeCompanies);
+  const updateCompanyFn = useServerFn(updateCompany);
   const [openingBucketKey, setOpeningBucketKey] = useState<string | null>(null);
 
   const search = Route.useSearch();
@@ -538,6 +540,7 @@ function ContactsPage() {
     try {
       if (s.kind === "company") {
         if (!s.primaryCompanyId) throw new Error("Target company not found");
+        await updateCompanyFn({ data: { id: s.primaryCompanyId, name: s.displayName } });
         for (const sourceId of s.sourceCompanyIds) {
           await mergeCompanyFn({ data: { sourceId, targetId: s.primaryCompanyId } });
         }
