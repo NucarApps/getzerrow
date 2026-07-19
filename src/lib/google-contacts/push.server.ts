@@ -142,16 +142,46 @@ async function pushContacts(
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
-    .select("contact_id, resource_name, etag, last_synced_at, photo_etag")
+    .select("contact_id, resource_name, etag, last_synced_at, photo_etag, photo_push_attempts")
     .eq("gmail_account_id", ids.gmailAccountId);
   const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
+
+  // Load avatar_url per contact so we can also treat a photo-only change as
+  // dirty (avatar_url !== photo_etag) even when the person body is in sync.
+  const contactIds = (contacts as ContactRow[]).map((c) => c.id);
+  const avatarByContact = new Map<string, string | null>();
+  if (contactIds.length > 0) {
+    const { data: avatarRows } = await supabaseAdmin
+      .from("contacts")
+      .select("id, avatar_url")
+      .in("id", contactIds);
+    for (const row of avatarRows ?? []) {
+      const r = row as { id: string; avatar_url: string | null };
+      avatarByContact.set(r.id, r.avatar_url ?? null);
+    }
+  }
+  const MAX_PHOTO_PUSH_ATTEMPTS = 5;
 
   let count = 0;
   for (const c of contacts as ContactRow[]) {
     const link = byLocal.get(c.id);
-    // Skip only when this linked local row is not dirty. CardDAV saves mark
-    // the link stale, so an iPhone edit survives the pull-before-push cycle.
-    if (link && !isLocalGoogleContactDirty(c.updated_at, link.last_synced_at)) continue;
+    const linkPhotoEtag =
+      (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
+    const linkPhotoAttempts =
+      (link as { photo_push_attempts?: number | null } | undefined)?.photo_push_attempts ?? 0;
+    const currentAvatar = avatarByContact.get(c.id) ?? null;
+    const photoIsDirty =
+      currentAvatar !== null &&
+      currentAvatar !== linkPhotoEtag &&
+      linkPhotoAttempts < MAX_PHOTO_PUSH_ATTEMPTS;
+    // Skip only when neither the person body nor the photo needs updating.
+    if (
+      link &&
+      !isLocalGoogleContactDirty(c.updated_at, link.last_synced_at) &&
+      !photoIsDirty
+    )
+      continue;
+
 
     try {
       const local = await loadLocalContact(c.id);
