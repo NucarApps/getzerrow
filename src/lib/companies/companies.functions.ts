@@ -649,15 +649,21 @@ async function mergeCompaniesImpl(
       p_company_id: targetId,
       p_user_id: userId,
     });
-  } catch {
-    // Best-effort.
+  } catch (err) {
+    console.warn("[mergeCompanies] discover_company_domains failed", {
+      sourceId, targetId, error: err instanceof Error ? err.message : String(err),
+    });
   }
   if (movedIds.length > 0) {
-    const { reconcileAutoParentsForContacts } =
-      await import("@/lib/contacts/auto-company-subgroups.functions");
-    await reconcileAutoParentsForContacts(supabase, userId, movedIds);
-    // Target's company-in-label rules now apply to the moved contacts (and
-    // source-rule rows re-justify under the re-pointed rules).
+    try {
+      const { reconcileAutoParentsForContacts } =
+        await import("@/lib/contacts/auto-company-subgroups.functions");
+      await reconcileAutoParentsForContacts(supabase, userId, movedIds);
+    } catch (err) {
+      console.warn("[mergeCompanies] reconcileAutoParentsForContacts failed", {
+        sourceId, targetId, error: err instanceof Error ? err.message : String(err),
+      });
+    }
     try {
       const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
       await syncCompanyRuleMemberships(supabase, userId, {
@@ -665,8 +671,10 @@ async function mergeCompaniesImpl(
         contactIds: movedIds,
         bumpResync: true,
       });
-    } catch {
-      // Best-effort.
+    } catch (err) {
+      console.warn("[mergeCompanies] syncCompanyRuleMemberships failed", {
+        sourceId, targetId, error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   const { error: srcDelErr } = await supabase
@@ -674,9 +682,25 @@ async function mergeCompaniesImpl(
     .delete()
     .eq("id", sourceId)
     .eq("user_id", userId);
-  if (srcDelErr) throw new Error(srcDelErr.message);
+  if (srcDelErr) throw new Error(`Merge cleanup failed: ${srcDelErr.message}`);
+  // Verify: if the source row still exists after delete (RLS mask, race, or
+  // silent no-op) we must not report success — the caller decides that both
+  // rows still visible = merge failed.
+  const { data: stillThere, error: verifyErr } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("id", sourceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (verifyErr) throw new Error(`Merge verify failed: ${verifyErr.message}`);
+  if (stillThere) {
+    throw new Error(
+      `Merge did not delete source company (id=${sourceId}). It may still be referenced or blocked by a policy.`,
+    );
+  }
   return { ok: true, movedContacts: movedIds.length };
 }
+
 
 export const mergeCompanies = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
