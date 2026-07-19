@@ -1,50 +1,35 @@
-## Goal
-Clean up the duplicate contact labels once and stop new ones from being created going forward, with the same UX pattern we already use for company duplicates.
+## Why the labels differ even though the contacts "look" like Nissan
 
-## 1. One-time "Find duplicate labels" drawer
-- New `src/components/contacts/LabelDuplicatesDrawer.tsx` modeled on `CompanyDuplicatesDrawer`.
-- Server functions in a new `src/lib/contacts/label-duplicates.functions.ts`:
-  - `findDuplicateLabels({ useAi })` — clusters `contact_groups` by:
-    - Identical `normalize_company_name(name)`
-    - Same `company_id` (labels auto-created for the same company)
-    - Name matches a `company_name_aliases` entry that resolves to the same company
-    - If `useAi` on: pass remaining fuzzy candidates through Gemini for near-match clustering (same toggle UX as company drawer).
-  - `mergeLabelCluster({ canonicalId, foldIds })` — moves `contact_group_members` (dedupe on `(group_id, contact_id)`), moves `contact_group_rules` (dedupe on `(group_id, rule_type, value)`), reparents children whose `parent_group_id` is in `foldIds`, deletes the losers, then calls the existing `reconcileAutoParentsForContacts` so CardDAV/labels update.
-- Add "Find duplicate labels" button on `src/routes/_authenticated/contacts.index.tsx` next to the existing labels UI.
+I checked the actual data for those 7 Nissan contacts. Two separate things are going on:
 
-## 2. Auto-merge legacy auto-company subgroups
-- One-shot server function `consolidateCompanyLabels()`:
-  - Groups all `contact_groups` where `company_id IS NOT NULL` by `company_id`, keeps the oldest (or the one whose name matches the company's canonical name), folds the rest via `mergeLabelCluster`.
-  - Also folds labels whose free-text name matches a `company_name_aliases.alias` for a company that already has a canonical label.
-- Runs automatically once after this deploy (idempotent). Exposed as a "Consolidate now" button in the drawer for future runs.
+**1. There are 4 different Nissan *company records* under the hood, and the contacts point to different ones.**
 
-## 3. Block new duplicates going forward
-Single choke point: a new helper `findOrCreateContactGroup(userId, { name, companyId, parentId })` in `src/lib/contacts/group-resolve.server.ts`:
-- If `companyId` provided → return existing label for that `company_id` (create only if none).
-- Else normalize name via `normalize_company_name`; look up existing label by normalized name; check `company_name_aliases` to redirect variants ("VW" → Volkswagen's canonical label).
-- Only insert when no match found.
+The Company dropdown shows a name, but the underlying `company_id` on each contact can point to any of these:
 
-Route every current call site through it:
-- `src/lib/contacts/auto-company-subgroups.functions.ts` (main offender)
-- `src/lib/carddav/handlers.server.ts` (iPhone-created groups)
-- `src/lib/google-contacts/*` (Google Contacts pulls)
-- `src/lib/contacts/group-rules.functions.ts` and any group-suggestion apply paths
-- Any AI enrichment path that touches labels
+| Contact | Free-text `company` field | Linked `company_id` → record |
+|---|---|---|
+| Aditya Jairaj | Nissan North America | **Nissan Northeast Region** |
+| Chad Faith | Nissan North America | **Nissan Motor Acceptance Company** |
+| Julie Caltabiano | Nissan North America | **Nissan** |
+| Gary / Joe / Katrina / Lou | Nissan North America | **Nissan North America** |
 
-DB safety net: add a partial unique index on `contact_groups (user_id, company_id)` where `company_id IS NOT NULL` so two labels can never point at the same company again.
+So even though every card *displays* "Nissan North America" in the company field, the linked entity is one of four different Nissan company rows. The auto-subgroup pass creates a label per linked company, hence 4 different Nissan child labels under the parent "Nissan" label.
 
-## 4. Bulk actions on the labels list
-On `contacts.index.tsx` labels section:
-- Multi-select checkboxes per label.
-- Bulk bar: **Merge into…** (picker of remaining labels, calls `mergeLabelCluster`), **Rename**, **Delete** (with member-count confirmation).
+**2. Historical labels never got cleaned up.**
 
-## Out of scope
-- Rule engine changes (rules keep working; they're just moved during merges).
-- Company merging (already handled by the company duplicates drawer).
-- Any change to CardDAV group-display style settings.
+Every one of those 7 contacts is currently a member of *all four* Nissan child labels (Nissan, Nissan Motor Acceptance Company, Nissan North America, Nissan-usa.com). Earlier reconcile passes added each contact to whichever label matched at the time (company name, then company_id, then raw email domain) but never removed them from the previous one. So the labels multiplied and every contact stayed pinned to the old ones.
 
-## Technical notes
-- Reuse `normalize_company_name` SQL function and `company_name_aliases` for matching so labels and companies stay aligned.
-- Merges are transactional at the RPC level per cluster; UI shows count of members/rules moved.
-- After every merge/consolidate, invalidate `["contact-groups"]`, `["contacts"]`, and bump the CardDAV `resync_nonce` so iPhone re-pulls clean labels.
-- AI clustering uses the existing Lovable AI gateway with Gemini, same prompt shape as `findDuplicateCompanies`.
+## Fix plan
+
+**Step A — Merge the underlying company records (root cause).**
+Go to Contacts → Companies → "Find duplicates". Pick **Nissan North America** as canonical and fold Nissan, Nissan Motor Acceptance Company, and Nissan Northeast Region into it (keep Boch Nissan South and Nissan Of Keene — those are separate dealerships). Merging reassigns every contact's `company_id` to the survivor and re-runs the subgroup reconcile against the single canonical company.
+
+**Step B — Clear the stale label memberships.**
+After the merge, the reconcile only adds contacts to the canonical label; it does not delete their membership in the retired labels. So we add a one-shot "prune stale auto-subgroups" pass that, for each contact, removes it from any auto-generated sibling subgroup whose `company_id` no longer matches the contact's current `company_id`. Then the retired empty labels are deleted.
+
+**Step C — Fix the domain-string label ("Nissan-usa.com").**
+Add `nissan-usa.com` to the surviving Nissan company's domains so that label never gets recreated on the next reconcile.
+
+The pruning in Step B is a small code change to `reconcileAutoParentsForContacts` (about 30 lines). Steps A and C are data cleanup you can do from the UI once the pruning ships.
+
+Want me to build the Step B pruner? That's the piece that actually stops this from re-happening after future merges.
