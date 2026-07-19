@@ -26,6 +26,7 @@ import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDr
 import { GroupEditorDialog, type GroupRow } from "@/components/contacts/GroupEditorDialog";
 import { buildDescendantsById, buildGroupTree } from "@/lib/contacts/group-tree";
 import { DuplicateSuggestionsDrawer } from "@/components/contacts/DuplicateSuggestionsDrawer";
+import { MergeContactsDialog } from "@/components/contacts/MergeContactsDialog";
 import { LabelDuplicatesDrawer } from "@/components/contacts/LabelDuplicatesDrawer";
 import { EnrichmentSuggestionsDrawer } from "@/components/contacts/EnrichmentSuggestionsDrawer";
 import { GroupRulesSection } from "@/components/contacts/GroupRulesSection";
@@ -146,6 +147,7 @@ function ContactsPage() {
   const [enrichOpen, setEnrichOpen] = useState(false);
   const [labelDupesOpen, setLabelDupesOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [mergeOpen, setMergeOpen] = useState(false);
   const bulkAddToGroups = useServerFn(addContactsToGroups);
   const backfillAutoGroups = useServerFn(reconcileAllAutoGroups);
 
@@ -901,6 +903,21 @@ function ContactsPage() {
                     </button>
                   )}
                   <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={selectedIds.size < 2 || selectedIds.size > 6}
+                      onClick={() => setMergeOpen(true)}
+                      title={
+                        selectedIds.size < 2
+                          ? "Select 2–6 contacts to merge"
+                          : selectedIds.size > 6
+                            ? "Merge up to 6 at a time"
+                            : "Merge selected contacts"
+                      }
+                    >
+                      Merge…
+                    </Button>
                     <GroupPickerPopover
                       disabled={selectedIds.size === 0}
                       groupTree={groupTree}
@@ -1183,6 +1200,16 @@ function ContactsPage() {
       <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
       <DuplicateSuggestionsDrawer open={dupesOpen} onOpenChange={setDupesOpen} />
       <EnrichmentSuggestionsDrawer open={enrichOpen} onOpenChange={setEnrichOpen} />
+      <MergeContactsDialog
+        open={mergeOpen}
+        onOpenChange={setMergeOpen}
+        contactIds={Array.from(selectedIds)}
+        onMerged={(survivorId) => {
+          setSelectedIds(new Set());
+          setSelectionMode(false);
+          setDrawerId(survivorId);
+        }}
+      />
       <LabelDuplicatesDrawer open={labelDupesOpen} onOpenChange={setLabelDupesOpen} />
     </>
   );
