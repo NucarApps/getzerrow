@@ -1,56 +1,75 @@
-## Manual contact merge with per-field primary picker
+## Goal
 
-Extend the existing dedup infrastructure so a user can hand-pick a merge, choose exactly which values survive, and delete the losers cleanly across CardDAV/Google.
+On a company's "Find people from email & calendar" list, when a candidate looks like a person you already have (same name, just a new email domain — e.g. the company rebranded), surface that match and let you enhance the existing contact instead of creating a duplicate.
 
-### Entry points
+## What changes
 
-1. **Contacts list multi-select** — when 2+ contacts are checked, show a "Merge…" action that opens the merge dialog with those contacts preloaded.
-2. **Contact detail** — new "Merge with…" menu item opens a contact-search combobox, then launches the merge dialog with the current + picked contact.
-3. **Duplicate suggestions drawer** — replace one-click "Merge" with a "Review & merge" button that opens the same dialog preloaded with the suggested pair. The one-click path stays for AI-high-confidence auto-accept only.
+### 1. Server: match candidates against existing contacts
 
-### Merge dialog UX
+Extend `findCompanyPeopleByDomain` in `src/lib/companies/company-people.functions.ts` so each returned person can carry up to 3 `possibleMatches`.
 
-`MergeContactsDialog.tsx` — one shared dialog for all three entry points.
+For each candidate email at the company's domain:
 
-- **Primary selector** at top: radio row of avatars/names; picking one sets it as the survivor (its id, source system link, and revision history are kept).
-- **Scalar fields table** (display_name, first/last, title, company (+ company_id), notes, birthday, avatar_url + avatar_source): one row per field, each source contact is a radio column, "Custom…" input as a fourth column. Non-empty sources are preselected; primary wins ties.
-- **Multi-value lists** (emails, phones): checkbox per value across all sources with dedupe by normalized form. Show label/type badges. User picks which to keep; one can be marked "primary" for each list.
-- **Groups/labels**: shown as read-only "will be merged (union)" chip list, with an "Exclude" X per group for opt-out.
-- **Company link**: if sources point at different company_id, radio-pick; if one is null, prefer the non-null.
-- **Manual-override lock preservation**: any field the user explicitly picks becomes a `manual_overrides` entry on the survivor so enrichment won't overwrite it.
-- Footer shows "N contacts will be deleted" and a Merge button.
+- Derive the candidate's likely name (existing `nameFromLocalPart`, or the name we've seen in headers/calendar).
+- Look up existing contacts by:
+  - Exact normalized full-name match (reuse `normalizeNameLoose` from `name-match.ts`).
+  - Same local part on a **different** domain (john@old.com ↔ john@new.com).
+  - Loose first+last token match against `firstLastTokens`.
+- Score each candidate (name-exact > local-part-exact > loose), keep top 3 with score ≥ threshold.
+- For each match, also flag:
+  - `sameCompanyId`: match is already linked to this company (strong "yes, enhance").
+  - `differentDomain`: match's current email is on a domain other than any of this company's — this is the "company changed domain" signal.
 
-### Server function
+Ambiguous top-2 candidates (score tie among multiple people) go through a single Lovable AI Gateway call using `google/gemini-3.1-flash-lite` with a strict `Output.object` schema returning `{ pick: contactId | null, confidence }` per candidate. AI is only invoked to break ties, not on every row, to keep this cheap. Guarded with `NoObjectGeneratedError` fallback per gateway rules.
 
-New `mergeContactsManual` in `src/lib/contacts/dedup.functions.ts`:
+### 2. Server: enhance existing contact
 
-- Input (Zod): `{ primaryId, loserIds[], fields: { [key]: value }, emails: [{value,label,is_primary}], phones: [...], excludedGroupIds[], manualLockFields[] }`.
-- Auth via `requireSupabaseAuth`; verifies all contacts belong to `userId`.
-- In a single logical pass:
-  1. Update survivor row with chosen scalar fields + merged `manual_overrides`.
-  2. Replace `contact_emails` / `contact_phones` for survivor with the chosen deduped set (preserving existing rows where possible to keep google resource ids intact).
-  3. Union `contact_group_members` from losers into survivor, minus excluded groups.
-  4. Reassign FK references from losers → survivor: `contact_revisions`, `google_contact_links`, `contact_duplicate_suggestions`, `contact_enrichment_suggestions`, `task_completion_suggestions`, `meeting_participants`, `calendar_contacts`, `email_search_index` (any table with contact_id — enumerate from schema in one migration-free code pass).
-  5. For each loser: insert `carddav_tombstones` + `google_contact_tombstones` rows (so iPhone/Google sync deletions), then `DELETE` the contact row. RLS cascades handle child rows.
-  6. Bump CardDAV CTag + `resync_nonce` once at the end so iOS pulls the change in one shot.
-  7. Reconcile auto-company subgroups for the survivor.
-  8. Mark related pending `contact_duplicate_suggestions` as `merged`.
-- Returns `{ survivorId, deletedCount }`.
+New server function `enhanceContactWithNewEmail` in `src/lib/companies/company-people.functions.ts`:
 
-### Wiring
+Input:
+```
+{ companyId, contactId, newEmail, mode: "replace_primary" | "add_secondary" }
+```
 
-- `src/routes/_authenticated/contacts.index.tsx`: add bucket-level "Merge selected" button when ≥2 contacts are checked; opens dialog.
-- `src/components/contacts/ContactDetailView.tsx`: overflow-menu "Merge with…" launches a `ContactPickerCombobox` (search by name/email/phone via existing contacts query) then dialog.
-- `src/components/contacts/DuplicateSuggestionsDrawer.tsx`: swap the "Merge" button for "Review & merge" that opens the dialog; keep AI dismiss/ignore actions as-is.
+Behavior (ownership-checked, uses `supabaseAdmin` after check):
+- Verify contact and company both belong to `userId`.
+- Insert/update `contact_emails`:
+  - `add_secondary`: insert new email as non-primary (uniqueness handled like current select-then-insert path).
+  - `replace_primary`: demote the current primary to secondary, insert new email as primary, and mirror onto `contacts.email`.
+- Set `contacts.company_id = companyId` and add `"company"` to `manual_overrides` so enrichment doesn't undo it.
+- Fire `reconcileAutoParentsForContacts` for that contact.
+- Bump `carddav_settings.resync_nonce` so iPhone picks it up.
+- Return `{ ok: true, contactId }`.
 
-### Safety / tests
+### 3. UI: show match + choices in CompanyPeopleFinder
 
-- `dedup.functions.ts` test: verify emails/phones dedupe, group union w/ exclusions, tombstones written, losers deleted, manual_overrides recorded.
-- Guard: reject merge if `primaryId ∈ loserIds`, if any contact is not owned by user, or if list is <2.
-- Wrap the reassignment + delete in try/catch that surfaces the failing table to the toast (mirrors the hardened company-merge pattern).
+In `src/routes/_authenticated/contacts.companies.$companyId.tsx`, for any row where `possibleMatches.length > 0`:
 
-### Non-goals
+- Under the row, render a subtle banner: **"Looks like [Contact Name] — company domain change?"** (with each match's current email in muted text).
+- Row-level actions become a small menu:
+  - **Enhance existing → Replace email** (uses `replace_primary`)
+  - **Enhance existing → Add as secondary email** (uses `add_secondary`)
+  - **Add as new person** (current path — `addCompanyPeople`)
+- When multiple matches, show a compact picker so the user chooses which existing contact.
+- Bulk "Add selected" continues to work for candidates with no match; a candidate with an accepted enhancement is removed from the bulk-add set and processed via the new function instead.
 
-- No bulk 3+ automated merges via AI (already covered by existing suggestions flow).
-- No soft-archive mode (user chose hard delete + tombstones).
-- No changes to company-merge logic — this is contacts only.
+Confirmation toast summarizes: "Updated Jane Doe with jane@new-domain.com" / "Added jane@new-domain.com as secondary to Jane Doe".
+
+### 4. Cache invalidation
+
+After enhance:
+- Invalidate `["company-people", companyId]`, `["company", companyId]`, `["contact", contactId]`, `["contacts"]`, `["contact-duplicates"]`.
+
+## Non-goals for this change
+
+- No automatic (no-confirmation) enhancement — user always confirms per row.
+- No changes to the `addCompanyPeople` path itself.
+- No cross-company detection beyond what's needed to flag "different domain" — full cross-company merge already lives in the company merge tools.
+- No changes to Google Contacts push here; the existing tombstone/sync loop handles the follow-up automatically once `contacts.email` and `contact_emails` change.
+
+## Technical notes
+
+- Reuse `normalizeNameLoose`, `firstLastTokens`, `emailLocalPart` from `src/lib/contacts/name-match.ts` — no new matching utilities.
+- Keep the AI call gated behind a `TIE_ONLY` code path so most searches don't hit the gateway.
+- Reuse the select-then-insert pattern already in `company-people.functions.ts` to avoid `ON CONFLICT` issues with case-insensitive emails.
+- No new tables or migrations.
