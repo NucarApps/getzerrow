@@ -991,6 +991,7 @@ function CompanyLabelsSection({ companyId }: { companyId: string }) {
 function CompanyPeopleFinder({ companyId, onAdded }: { companyId: string; onAdded: () => void }) {
   const findFn = useServerFn(findCompanyPeopleByDomain);
   const addFn = useServerFn(addCompanyPeople);
+  const enhanceFn = useServerFn(enhanceContactWithNewEmail);
   const [ran, setRan] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -1016,6 +1017,39 @@ function CompanyPeopleFinder({ companyId, onAdded }: { companyId: string; onAdde
       q.refetch();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to add"),
+  });
+
+  const enhanceMut = useMutation({
+    mutationFn: (input: {
+      contactId: string;
+      email: string;
+      name: string | null;
+      mode: "replace_primary" | "add_secondary";
+    }) =>
+      enhanceFn({
+        data: {
+          contactId: input.contactId,
+          companyId,
+          email: input.email,
+          name: input.name,
+          mode: input.mode,
+        },
+      }),
+    onSuccess: (_res, vars) => {
+      toast.success(
+        vars.mode === "replace_primary"
+          ? "Replaced primary email on existing contact"
+          : "Added as secondary email",
+      );
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(vars.email);
+        return next;
+      });
+      onAdded();
+      q.refetch();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to enhance"),
   });
 
   const toggle = (email: string) =>
