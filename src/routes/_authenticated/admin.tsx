@@ -671,8 +671,7 @@ function SyncMetricsSection({
             <thead className="text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-2 py-1 text-left">When</th>
-                <th className="px-2 py-1 text-left">From</th>
-                <th className="px-2 py-1 text-left">Subject</th>
+                <th className="px-2 py-1 text-left">Message ID</th>
                 <th className="px-2 py-1 text-right">Attempts</th>
                 <th className="px-2 py-1 text-left">Last error</th>
               </tr>
@@ -680,14 +679,14 @@ function SyncMetricsSection({
             <tbody className="divide-y divide-border">
               {q.isLoading && (
                 <tr>
-                  <td colSpan={5} className="px-2 py-6 text-center text-muted-foreground">
+                  <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
                     Loading…
                   </td>
                 </tr>
               )}
               {!q.isLoading && dlqRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-2 py-6 text-center text-muted-foreground">
+                  <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
                     No jobs in the dead-letter queue.
                   </td>
                 </tr>
@@ -697,8 +696,9 @@ function SyncMetricsSection({
                   <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
                     {fmtDateTime(r.updated_at)}
                   </td>
-                  <td className="px-2 py-1 text-foreground">{truncate(r.from_addr, 32)}</td>
-                  <td className="px-2 py-1 text-foreground">{truncate(r.subject, 48)}</td>
+                  <td className="px-2 py-1 font-mono text-xs text-foreground">
+                    {truncate(r.gmail_message_id, 32)}
+                  </td>
                   <td className="px-2 py-1 text-right tabular-nums">{r.attempt}</td>
                   <td className="px-2 py-1 font-mono text-xs text-destructive">
                     {truncate(r.last_error, 96)}

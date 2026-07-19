@@ -17,7 +17,7 @@
 // we reclaim it, and only count it as a failed attempt on the SECOND
 // reclaim (so one accidental worker kill doesn't burn a retry).
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMessageMetadata, parseMessage, GmailApiError } from "../gmail.server";
+import { GmailApiError } from "../gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "../ai.server";
 import { logError, logInfo, newRunId } from "../log.server";
 import { MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS, computeBackoffSeconds } from "./backoff";
@@ -305,16 +305,11 @@ export async function runMessageJobs(
       retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS ? currentAttempt : currentAttempt + 1;
 
     if (terminal || nextAttempt >= MAX_JOB_ATTEMPTS) {
-      let from_addr: string | null = null;
-      let subject: string | null = null;
-      try {
-        const meta = await getMessageMetadata(job.gmail_account_id, job.gmail_message_id);
-        const p = parseMessage(meta);
-        from_addr = p.from_addr ?? null;
-        subject = p.subject ?? null;
-      } catch {
-        /* best-effort */
-      }
+      // Do NOT persist the decrypted subject/sender into message_jobs — the
+      // emails table keeps subjects encrypted at rest, and writing them here
+      // in plaintext defeats that control (a DB snapshot would expose email
+      // content). gmail_message_id is retained, so an operator can resolve
+      // the subject on demand via the decrypt RPC when actually triaging.
       await supabaseAdmin
         .from("message_jobs")
         .update({
@@ -322,8 +317,6 @@ export async function runMessageJobs(
           attempt: nextAttempt,
           last_error: msg.slice(0, 1000),
           locked_at: null,
-          from_addr,
-          subject,
         })
         .eq("id", job.id);
       logInfo("queue.job.dlq", {

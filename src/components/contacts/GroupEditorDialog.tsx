@@ -62,9 +62,7 @@ export type GroupRow = {
 };
 
 export type GroupEditorState =
-  | null
-  | { mode: "create"; parentId?: string | null }
-  | { mode: "edit"; group: GroupRow };
+  null | { mode: "create"; parentId?: string | null } | { mode: "edit"; group: GroupRow };
 
 // Radix Select can't represent an empty-string item value.
 const NONE = "__none__";

@@ -181,38 +181,23 @@ export const promoteAliasToPrimary = createServerFn({ method: "POST" })
 
     // Migrate company_logo_choices keyed on currentPrimary -> newPrimary.
     // Drop any conflicting row for newPrimary first.
-    await supabase
+    const { error: logoDelErr } = await supabase
       .from("company_logo_choices")
       .delete()
       .eq("user_id", userId)
       .eq("domain", newPrimary);
-    await supabase
+    if (logoDelErr) throw new Error(logoDelErr.message);
+    const { error: logoUpErr } = await supabase
       .from("company_logo_choices")
       .update({ domain: newPrimary })
       .eq("user_id", userId)
       .eq("domain", currentPrimary);
+    if (logoUpErr) throw new Error(logoUpErr.message);
 
-    // Migrate company_group_assignments keyed on currentPrimary -> newPrimary.
-    const { data: oldAssignments } = await supabase
-      .from("company_group_assignments")
-      .select("group_id")
-      .eq("user_id", userId)
-      .eq("primary_domain", currentPrimary);
-    if (oldAssignments && oldAssignments.length > 0) {
-      await supabase
-        .from("company_group_assignments")
-        .delete()
-        .eq("user_id", userId)
-        .eq("primary_domain", currentPrimary);
-      const rows = oldAssignments.map((r) => ({
-        user_id: userId,
-        primary_domain: newPrimary,
-        group_id: r.group_id,
-      }));
-      await supabase
-        .from("company_group_assignments")
-        .upsert(rows, { onConflict: "user_id,primary_domain,group_id", ignoreDuplicates: true });
-    }
+    // (Company↔label linkage keyed on domain used to live in
+    // company_group_assignments; that table was retired in favor of
+    // contact_group_rules keyed by company_id, so there's nothing to migrate
+    // here anymore.)
 
     const { data: rows, error: listErr } = await supabase
       .from("company_aliases")

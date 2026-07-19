@@ -76,12 +76,33 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
 
           if (bearer) {
             // Accept any of: webhook URL (with or without query) as audience.
-            // Optional GMAIL_PUBSUB_SERVICE_ACCOUNT pins the signer's email.
+            // GMAIL_PUBSUB_SERVICE_ACCOUNT pins the signer's email and is
+            // REQUIRED: without it, verification only checks that the token is
+            // Google-signed with a matching audience, which any Google service
+            // account (in any project) can mint — so an attacker could forge
+            // push notifications. Fail closed when it's unset.
             const audiences = [
               `${url.origin}${url.pathname}`,
               `${url.origin}${url.pathname}${url.search}`,
             ];
             const expectedEmail = process.env.GMAIL_PUBSUB_SERVICE_ACCOUNT || undefined;
+            if (!expectedEmail) {
+              try {
+                await supabaseAdmin.from("pubsub_events").insert({
+                  event_type: "push_unauthorized",
+                  subscription: redactedEndpoint(url),
+                  details:
+                    "OIDC bearer rejected: GMAIL_PUBSUB_SERVICE_ACCOUNT is not configured, so the signer's identity cannot be pinned",
+                });
+              } catch (logErr) {
+                logError(
+                  "webhook.pubsub_log_failed",
+                  { run_id: runId, kind: "push_unauthorized_no_pin" },
+                  logErr,
+                );
+              }
+              return new Response("Unauthorized", { status: 401 });
+            }
             const result = await verifyGoogleJwt(bearer, { audiences, expectedEmail });
             if (result.ok) {
               authMode = "jwt";

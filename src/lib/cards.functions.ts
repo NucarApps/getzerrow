@@ -218,19 +218,22 @@ export const submitCardLead = createServerFn({ method: "POST" })
         p_key: process.env.EMAIL_ENC_KEY!,
       });
       const prevNotes = (fullRows?.[0] as { notes?: string | null } | undefined)?.notes ?? null;
-      const merged = prevNotes ? `${prevNotes}\n\n${note}` : note;
+      // The lead message (with submitted name/company/phone inlined) is
+      // appended to notes so the owner sees who reached out — but we do NOT
+      // overwrite the existing contact's name/company/phone/source. This is a
+      // public, unauthenticated endpoint: anyone who knows an owner's
+      // contact's email could otherwise clobber that real contact's identity
+      // fields with arbitrary input.
+      const detailLines = [
+        `Name given: ${data.name}`,
+        data.company ? `Company given: ${data.company}` : null,
+        data.phone ? `Phone given: ${data.phone}` : null,
+      ].filter(Boolean);
+      const leadBlock = `${note}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`;
+      const merged = prevNotes ? `${prevNotes}\n\n${leadBlock}` : leadBlock;
       void existingNotes;
-      await supabaseAdmin
-        .from("contacts")
-        .update({
-          name: data.name,
-          company: data.company || null,
-          source: "card_lead",
-        })
-        .eq("id", existing.id);
       await setContactEncryptedFields({
         contact_id: existing.id,
-        phone: data.phone || undefined,
         notes: merged,
       });
     } else {

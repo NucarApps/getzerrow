@@ -507,6 +507,7 @@ async function buildGroupResponse(
   groupId: string,
   includeVcard: boolean,
   style: GroupNameStyle,
+  treeMap?: GroupTreeMap,
 ): Promise<string> {
   const { data: group } = await supabaseAdmin
     .from("contact_groups")
@@ -523,7 +524,7 @@ async function buildGroupResponse(
     );
   }
   const members = await fetchGroupMembers(group.id);
-  const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style);
+  const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style, treeMap);
   const vcard = buildGroupVCard({
     uid: group.carddav_uid ?? `group-${group.id}`,
     name: displayName,
@@ -541,19 +542,30 @@ async function buildGroupResponse(
  * ("Clients / VIPs") so iOS can distinguish nested Zerrow groups. Apple's
  * KIND:group vCard has no native parent field. Formatting itself lives in
  * the pure `formatGroupDisplayName` shared with the settings preview. */
+type GroupTreeMap = Map<string, { name: string; parent: string | null }>;
+
+/** Load the user's whole group tree once (id → name/parent). Pass the result
+ * into resolveGroupDisplayName/buildGroupResponse across a REPORT or sync so
+ * the path lookup doesn't re-query every group once per group (was O(n²)). */
+async function loadGroupTreeMap(userId: string): Promise<GroupTreeMap> {
+  const { data } = await supabaseAdmin
+    .from("contact_groups")
+    .select("id,name,parent_group_id")
+    .eq("user_id", userId);
+  const byId: GroupTreeMap = new Map();
+  for (const g of data ?? []) byId.set(g.id, { name: g.name, parent: g.parent_group_id ?? null });
+  return byId;
+}
+
 async function resolveGroupDisplayName(
   userId: string,
   groupId: string,
   ownName: string,
   style: GroupNameStyle,
+  treeMap?: GroupTreeMap,
 ): Promise<string> {
   if (style === "leaf") return ownName;
-  const { data } = await supabaseAdmin
-    .from("contact_groups")
-    .select("id,name,parent_group_id")
-    .eq("user_id", userId);
-  const byId = new Map<string, { name: string; parent: string | null }>();
-  for (const g of data ?? []) byId.set(g.id, { name: g.name, parent: g.parent_group_id ?? null });
+  const byId = treeMap ?? (await loadGroupTreeMap(userId));
   return formatGroupDisplayName(byId, groupId, ownName, style);
 }
 
@@ -622,13 +634,14 @@ async function handleSyncCollection(raw: string, userId: string, email: string):
   ]);
 
   const style = await getGroupNameStyle(userId);
+  const treeMap = style === "leaf" ? undefined : await loadGroupTreeMap(userId);
   let body = MULTISTATUS_OPEN;
 
   for (const row of (cRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
     body += await buildContactResponse(userId, email, row.id, includeVcard);
   }
   for (const row of (gRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
-    body += await buildGroupResponse(userId, email, row.id, includeVcard, style);
+    body += await buildGroupResponse(userId, email, row.id, includeVcard, style, treeMap);
   }
   for (const t of (tRows as Array<{ resource_type: string; resource_id: string }> | null) ?? []) {
     const href =
@@ -674,10 +687,17 @@ export async function handleReport(
       const c = h.match(/([0-9a-f-]{36})\.vcf$/i);
       if (c) contactIds.push(c[1]);
     }
-  } else {
+  } else if (lower.includes("addressbook-query")) {
+    // A full-collection query legitimately returns everything.
     const [rows, groups] = await Promise.all([listContactRows(userId), listGroupRows(userId)]);
     contactIds.push(...rows.map((r) => r.id));
     groupIds.push(...groups.map((g) => g.id));
+  } else {
+    // Empty or unrecognized REPORT body: do NOT fall through to a full
+    // decrypted address-book dump (+ per-contact logo fetches). Return an
+    // empty multistatus so a malformed/probing request can't force the
+    // expensive path.
+    return davResponse(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
   }
 
   let body = MULTISTATUS_OPEN;
@@ -701,9 +721,10 @@ export async function handleReport(
       .in("id", groupIds);
     const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
     const style = await getGroupNameStyle(userId);
+    const treeMap = style === "leaf" ? undefined : await loadGroupTreeMap(userId);
     for (const id of groupIds) {
       if (!owned.has(id)) continue;
-      body += await buildGroupResponse(userId, email, id, includeVcard, style);
+      body += await buildGroupResponse(userId, email, id, includeVcard, style, treeMap);
     }
   }
   body += MULTISTATUS_CLOSE;

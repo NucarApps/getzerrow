@@ -6,6 +6,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import { normalizePhone } from "./phone";
 import { emailLocalPart, firstLastTokens, normalizeNameLoose } from "./name-match";
+import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 
 type ContactRow = {
   id: string;
@@ -438,26 +439,33 @@ export const mergeContactDuplicate = createServerFn({ method: "POST" })
       .update({ contact_id: primaryId })
       .in("contact_id", dupIds);
 
-    // Move group memberships (skip conflicts on unique (group_id, contact_id))
+    // Move group memberships onto the primary, then drop the duplicates'.
+    // The insert must succeed before the delete — otherwise a failed transfer
+    // followed by an unconditional delete silently erases the user's labels.
+    // Upsert with ignoreDuplicates so a row the primary already has (or a
+    // concurrent writer added) can't fail the whole batch on the PK.
     const { data: dupMemberships } = await supabaseAdmin
       .from("contact_group_members")
       .select("group_id, contact_id")
       .in("contact_id", dupIds);
     if (dupMemberships && dupMemberships.length > 0) {
-      const { data: primaryMembers } = await supabaseAdmin
-        .from("contact_group_members")
-        .select("group_id")
-        .eq("contact_id", primaryId);
-      const already = new Set((primaryMembers ?? []).map((m) => m.group_id));
-      const toAdd = Array.from(
-        new Set(dupMemberships.map((m) => m.group_id).filter((g) => !already.has(g))),
-      );
+      const toAdd = Array.from(new Set(dupMemberships.map((m) => m.group_id)));
       if (toAdd.length > 0) {
-        await supabaseAdmin
-          .from("contact_group_members")
-          .insert(toAdd.map((g) => ({ group_id: g, contact_id: primaryId, user_id: userId })));
+        const { error: insErr } = await supabaseAdmin.from("contact_group_members").upsert(
+          toAdd.map((g) => ({ group_id: g, contact_id: primaryId, user_id: userId })),
+          { onConflict: "group_id,contact_id", ignoreDuplicates: true },
+        );
+        if (insErr) {
+          throw new Error(`Failed to move group memberships during merge: ${insErr.message}`);
+        }
       }
-      await supabaseAdmin.from("contact_group_members").delete().in("contact_id", dupIds);
+      const { error: delErr } = await supabaseAdmin
+        .from("contact_group_members")
+        .delete()
+        .in("contact_id", dupIds);
+      if (delErr) {
+        throw new Error(`Failed to clear duplicate memberships during merge: ${delErr.message}`);
+      }
     }
 
     // Google links: repoint to primary. Uniqueness is (gmail_account_id,
@@ -489,6 +497,10 @@ export const mergeContactDuplicate = createServerFn({ method: "POST" })
       .from("contact_duplicate_suggestions")
       .update({ status: "merged" })
       .eq("id", data.suggestionId);
+
+    // Converge auto company subgroups for the survivor — the merge may have
+    // moved it into new company buckets (best-effort, mirrors crud.functions).
+    await reconcileAutoParentsForContacts(supabaseAdmin, userId, [primaryId]);
 
     return { ok: true, merged: dupIds.length };
   });
