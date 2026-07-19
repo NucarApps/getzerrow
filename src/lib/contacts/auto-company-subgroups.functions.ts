@@ -615,6 +615,24 @@ export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    // Prune stale auto-memberships across every contact first, so leftover
+    // pins to since-merged company variants don't survive the reconcile.
+    const { data: allContactRows } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId);
+    const allIds = (allContactRows ?? []).map((r) => r.id);
+    if (allIds.length > 0) {
+      // Chunk to keep payloads sane.
+      const chunkSize = 500;
+      for (let i = 0; i < allIds.length; i += chunkSize) {
+        await pruneStaleAutoSubgroupMemberships(
+          supabase,
+          userId,
+          allIds.slice(i, i + chunkSize),
+        );
+      }
+    }
     const { data: parents, error } = await supabase
       .from("contact_groups")
       .select("id")
@@ -634,6 +652,7 @@ export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
         // Skip failing parents; keep going.
       }
     }
+    await dropEmptyAutoSubgroups(supabase, userId);
     return { reconciled, membershipsAdded: totalAdded, membershipsRemoved: totalRemoved };
   });
 
