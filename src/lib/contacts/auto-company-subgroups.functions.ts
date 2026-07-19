@@ -4,12 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./company-name";
-import {
-  contactLogoDomain,
-  isPersonalDomain,
-  prettyCompanyName,
-  resolveCompanyDomain,
-} from "@/lib/company-domains";
+import { deriveCompanyKey, type CompanyKeyContext } from "./company-key";
 
 type ContactShape = {
   id: string;
@@ -19,36 +14,6 @@ type ContactShape = {
   company_id: string | null;
 };
 
-/** Derive a normalized company key + display name from a contact. Prefers
- *  `company_id` when the contact is linked to a Company entity so all
- *  contacts on the same Company collapse into one bucket regardless of the
- *  free-text `company` value. Falls back to `company` string, then to the
- *  non-personal email/website domain. */
-function deriveCompanyKey(
-  contact: Pick<ContactShape, "company" | "email" | "website" | "company_id">,
-  aliasMap: Map<string, string> | null,
-  companyMap: Map<string, string> | null,
-): { key: string; displayName: string; rawCompany: string | null } | null {
-  if (contact.company_id && companyMap) {
-    const name = companyMap.get(contact.company_id);
-    if (name) {
-      return { key: "cid:" + contact.company_id, displayName: name, rawCompany: name };
-    }
-  }
-  const rawCompany = (contact.company ?? "").trim() || null;
-  if (rawCompany) {
-    const key = normalizeCompanyName(rawCompany);
-    if (key) return { key, displayName: rawCompany, rawCompany };
-  }
-  const raw = contactLogoDomain(contact.website, contact.email);
-  const resolved = resolveCompanyDomain(raw, aliasMap);
-  if (resolved && !isPersonalDomain(resolved)) {
-    const pretty = prettyCompanyName(resolved);
-    const key = normalizeCompanyName(pretty);
-    if (key) return { key, displayName: pretty, rawCompany: null };
-  }
-  return null;
-}
 
 
 type DB = SupabaseClient<Database>;
@@ -127,15 +92,58 @@ export async function reconcileAutoCompanySubgroupsImpl(
   membershipsAdded: number;
   membershipsRemoved: number;
 }> {
-  // 0. Load alias map so alias domains collapse to their primary.
-  const { data: aliasRows } = await supabase
-    .from("company_aliases")
-    .select("primary_domain, alias_domain")
-    .eq("user_id", userId);
+  // 0. Load lookup maps: domain aliases, every company name, merged-name
+  //    aliases, and domain→company links, so all key derivations resolve
+  //    fragmented/merged company variants to one canonical bucket.
+  const [
+    { data: aliasRows },
+    { data: allCompanyRows },
+    { data: nameAliasRows },
+    { data: companyDomainRows },
+  ] = await Promise.all([
+    supabase
+      .from("company_aliases")
+      .select("primary_domain, alias_domain")
+      .eq("user_id", userId),
+    supabase.from("companies").select("id,name").eq("user_id", userId),
+    supabase
+      .from("company_name_aliases")
+      .select("name_key,company_id")
+      .eq("user_id", userId),
+    supabase
+      .from("company_domains")
+      .select("domain,company_id")
+      .eq("user_id", userId),
+  ]);
   const aliasMap = new Map<string, string>();
   for (const r of aliasRows ?? []) {
     if (r.alias_domain && r.primary_domain) aliasMap.set(r.alias_domain, r.primary_domain);
   }
+  const companyMap = new Map<string, string>();
+  for (const c of allCompanyRows ?? []) {
+    if (c.id && c.name) companyMap.set(c.id, c.name);
+  }
+  const nameAliases = new Map<string, string>();
+  for (const r of (nameAliasRows ?? []) as Array<{
+    name_key: string;
+    company_id: string | null;
+  }>) {
+    const canonical = r.company_id ? companyMap.get(r.company_id) : null;
+    if (r.name_key && canonical) nameAliases.set(r.name_key, canonical);
+  }
+  const companyIdByDomain = new Map<string, string>();
+  for (const r of (companyDomainRows ?? []) as Array<{
+    domain: string;
+    company_id: string;
+  }>) {
+    if (r.domain && r.company_id) companyIdByDomain.set(r.domain, r.company_id);
+  }
+  const keyCtx: CompanyKeyContext = {
+    domainAliases: aliasMap,
+    companiesById: companyMap,
+    nameAliases,
+    companyIdByDomain,
+  };
 
   // 1. Load direct members of the parent, split by auto/manual.
   const { data: members, error: mErr } = await supabase
@@ -159,30 +167,12 @@ export async function reconcileAutoCompanySubgroupsImpl(
     if (r.contacts) manualContacts.push(r.contacts);
   }
 
-  // 1b. Load company_id → name map for every company referenced by manual
-  //     members (used both here and when we bucket all-user contacts).
-  const manualCompanyIds = new Set<string>();
-  for (const c of manualContacts) {
-    if (c.company_id) manualCompanyIds.add(c.company_id);
-  }
-  const companyMap = new Map<string, string>();
-  if (manualCompanyIds.size > 0) {
-    const { data: companyRows, error: coErr } = await supabase
-      .from("companies")
-      .select("id,name")
-      .in("id", [...manualCompanyIds]);
-    if (coErr) throw new Error(coErr.message);
-    for (const c of companyRows ?? []) {
-      if (c.id && c.name) companyMap.set(c.id, c.name);
-    }
-  }
-
   // 2. Represented-companies = distinct normalized key across manual members,
   //    derived from `company_id` (preferred), then `company`, then domain.
   const repKeys = new Set<string>();
   const fallbackDisplayNames = new Map<string, string>();
   for (const c of manualContacts) {
-    const derived = deriveCompanyKey(c, aliasMap, companyMap);
+    const derived = deriveCompanyKey(c, keyCtx);
     if (!derived) continue;
     repKeys.add(derived.key);
     if (!derived.rawCompany && !fallbackDisplayNames.has(derived.key)) {
@@ -191,7 +181,10 @@ export async function reconcileAutoCompanySubgroupsImpl(
   }
 
   // 3. Load every user contact and bucket by derived key.
-  const byKey = new Map<string, { rawValues: string[]; contactIds: Set<string>; displayName: string }>();
+  const byKey = new Map<
+    string,
+    { rawValues: string[]; companyNames: string[]; contactIds: Set<string> }
+  >();
   if (repKeys.size > 0) {
     const { data: allContacts, error: cErr } = await supabase
       .from("contacts")
@@ -199,24 +192,21 @@ export async function reconcileAutoCompanySubgroupsImpl(
       .eq("user_id", userId);
     if (cErr) throw new Error(cErr.message);
     for (const c of (allContacts ?? []) as ContactShape[]) {
-      const derived = deriveCompanyKey(c, aliasMap, companyMap);
+      const derived = deriveCompanyKey(c, keyCtx);
       if (!derived || !repKeys.has(derived.key)) continue;
       let bucket = byKey.get(derived.key);
       if (!bucket) {
-        bucket = { rawValues: [], contactIds: new Set(), displayName: derived.displayName };
+        bucket = { rawValues: [], companyNames: [], contactIds: new Set() };
         byKey.set(derived.key, bucket);
       }
-      if (derived.rawCompany) bucket.rawValues.push(derived.rawCompany);
+      if (derived.fromCompany) bucket.companyNames.push(derived.displayName);
+      else if (derived.rawCompany) bucket.rawValues.push(derived.rawCompany);
       bucket.contactIds.add(c.id);
     }
     // Ensure every represented key exists, even if no candidate matched.
     for (const key of repKeys) {
       if (!byKey.has(key)) {
-        byKey.set(key, {
-          rawValues: [],
-          contactIds: new Set(),
-          displayName: fallbackDisplayNames.get(key) ?? key,
-        });
+        byKey.set(key, { rawValues: [], companyNames: [], contactIds: new Set() });
       }
     }
   }
@@ -256,19 +246,20 @@ export async function reconcileAutoCompanySubgroupsImpl(
     const existingById = new Map((existing ?? []).map((group) => [group.id, group]));
     for (const row of (subgroupMembers ?? []) as unknown as SubgroupMemberRow[]) {
       if (!row.contacts) continue;
-      const derived = deriveCompanyKey(row.contacts, aliasMap, companyMap);
+      const derived = deriveCompanyKey(row.contacts, keyCtx);
       const existingGroup = existingById.get(row.group_id);
       if (!derived || !existingGroup || !wantedKeys.has(derived.key)) continue;
       if (!existingByKey.has(derived.key)) existingByKey.set(derived.key, existingGroup);
     }
   }
 
-  // 5. Create/rename subgroups for each represented key.
+  // 5. Create/rename subgroups for each represented key. Company-entity
+  //    names win over raw free-text values when naming the subgroup.
   let created = 0;
   let renamed = 0;
   for (const [key, info] of byKey) {
     const display =
-      (key.startsWith("cid:") ? trimRaw(info.displayName) : "") ||
+      pickDisplayName(info.companyNames) ||
       pickDisplayName(info.rawValues) ||
       fallbackDisplayNames.get(key) ||
       key;

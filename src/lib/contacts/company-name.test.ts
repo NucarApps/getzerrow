@@ -6,14 +6,23 @@ describe("normalizeCompanyName", () => {
     expect(normalizeCompanyName("Honda")).toBe("honda");
     expect(normalizeCompanyName("  honda  ")).toBe("honda");
     expect(normalizeCompanyName("HONDA")).toBe("honda");
-    expect(normalizeCompanyName("Honda  Motor  Co")).toBe("honda motor");
+    expect(normalizeCompanyName("Honda  Motor  Co")).toBe("honda");
   });
 
   it("strips legal suffixes", () => {
     expect(normalizeCompanyName("Honda Inc.")).toBe("honda");
     expect(normalizeCompanyName("Honda, LLC")).toBe("honda");
-    expect(normalizeCompanyName("Honda Motor Co Ltd")).toBe("honda motor");
+    expect(normalizeCompanyName("Honda Motor Co Ltd")).toBe("honda");
     expect(normalizeCompanyName("Acme Corporation")).toBe("acme");
+  });
+
+  it("strips corporate qualifiers so brand variants collapse", () => {
+    expect(normalizeCompanyName("Nissan North America")).toBe("nissan");
+    expect(normalizeCompanyName("Nissan-USA")).toBe("nissan");
+    expect(normalizeCompanyName("The Honda Company")).toBe("honda");
+    // Distinct businesses sharing the brand token stay distinct.
+    expect(normalizeCompanyName("Nissan Of Keene")).toBe("nissan of keene");
+    expect(normalizeCompanyName("Boch Nissan South")).toBe("boch nissan");
   });
 
   it("returns null for empty or too-short inputs", () => {
