@@ -1,35 +1,37 @@
-## Problem
 
-"Add people to company" (and the second-attempt add) fails with:
+## What I found
 
-> there is no unique or exclusion constraint matching the ON CONFLICT specification
+- Both companies still exist for your user: **DHG** (`c1ee3cd9…`) and **Forvis** (`3b6e9a05…`), each with `updated_at = created_at` (never touched since creation).
+- Buddy Dearman's contact still has `company_id = DHG` (with the free-text `company` field oddly set to "Forvis").
+- If `mergeCompaniesImpl` had actually run for DHG → Forvis (or vice versa), the very first step re-points contacts' `company_id`, so Buddy would no longer be linked to DHG. That step never ran.
 
-Root cause (verified via `pg_indexes`): `contacts` has no plain unique constraint on `(user_id, email)`. The only uniqueness on email is a partial functional index:
+So one of two things happened:
+1. The merge server function threw partway through (e.g., in `reconcileAutoParentsForContacts` or `syncCompanyRuleMemberships`) and the error toast was misread as success, **or**
+2. Only the "Preview merge…" dialog opened and "Confirm merge" was never actually clicked / never resolved.
 
-```
-CREATE UNIQUE INDEX contacts_user_email_unique
-  ON public.contacts (user_id, lower(email)) WHERE email IS NOT NULL;
-```
+I need to fix your data now, and instrument the merge so we can see why it silently failed next time.
 
-PostgREST / supabase-js `upsert({ onConflict: "user_id,email" })` requires an index whose target list is exactly the named columns. Functional/partial indexes don't match, so every call throws — including the first "Find people" add and the retry after merging.
+## Plan
 
-## Fix
+### 1. Clean up your data (one-off)
+- Merge DHG into Forvis directly:
+  - Re-point `contacts.company_id` from DHG → Forvis (also set `company = 'Forvis'`).
+  - Move any `company_domains`, `company_tags`, `company_logo_hashes`, `company_name_aliases` rows from DHG → Forvis (dedup on the existing unique constraints).
+  - Add `DHG` / `dhg` as a `company_name_aliases` row pointing to Forvis so any future free-text "DHG" contact snaps to Forvis.
+  - Re-point any `contact_group_rules` with `rule_type='company_id'` and `value=DHG` to Forvis (or delete if Forvis already has one).
+  - Delete the DHG company row.
+- Run `reconcileAutoParentsForContacts` on the moved contacts so their auto-company subgroup labels update.
 
-Update `addCompanyPeople` in `src/lib/companies/company-people.functions.ts` to stop relying on `onConflict` and instead:
+### 2. Make the merge failure visible so we can fix root cause
+- Wrap the post-move reconcile steps (`reconcileAutoParentsForContacts`, `syncCompanyRuleMemberships`, `discover_company_domains`) in `mergeCompaniesImpl` so that a failure there is **logged with structured detail** and does not swallow the reason — but still lets the delete step run when the failure is in a best-effort cleanup, so the source row is actually removed.
+- After the source-delete, re-select the source id and if it still exists, throw a clear error like `"Merge did not delete DHG (id=…): <reason>"` instead of returning `ok: true`.
+- In the UI mutation (`contacts.companies.$companyId.tsx`), on `onSuccess` also verify (via the invalidated `companies` list) that the source no longer exists before showing the success toast; otherwise show the returned message.
 
-1. Normalize the incoming emails (already lowercased by Zod).
-2. `SELECT id, email FROM contacts WHERE user_id = ? AND lower(email) IN (...)` to find which already exist.
-3. For existing rows: `UPDATE` to set `company_id` and `company` (and `name` if currently null) — only for rows that don't already belong to another company (respect manual overrides / existing links, matching how the rest of the codebase treats company assignment).
-4. For missing rows: plain `INSERT` (no upsert) with `user_id, email, name, company, company_id, source: 'email'`.
-5. Collect all affected `contactIds` (inserted + updated) and pass them into the existing `syncCompanyRuleMemberships` and `reconcileAutoParentsForContacts` calls so labels/subgroups still converge.
+### 3. Verify
+- Reload the Contacts / Companies list — confirm DHG is gone and Buddy Dearman shows Forvis with the correct logo.
+- Re-run a merge on any other duplicate to confirm the new error path surfaces real reasons instead of silently leaving both rows behind.
 
-This matches the existing partial-index semantics (case-insensitive email dedupe) and eliminates the ON CONFLICT dependency entirely — no schema migration needed.
-
-## Files
-
-- `src/lib/companies/company-people.functions.ts` — rewrite the `addCompanyPeople` handler body only. Public signature and validators unchanged.
-
-## Out of scope
-
-- No change to the schema or the partial unique index.
-- No change to `findCompanyPeopleByDomain` or UI.
+### Technical notes
+- Data cleanup runs via the insert-tool (UPDATE/DELETE) inside a single transactional SQL block; nothing in schema needs to change.
+- Server change is confined to `src/lib/companies/companies.functions.ts` (`mergeCompaniesImpl` return + logging). UI change is confined to the merge mutation's `onSuccess` handler in `src/routes/_authenticated/contacts.companies.$companyId.tsx`.
+- No RLS or grants change.
