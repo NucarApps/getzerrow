@@ -62,6 +62,7 @@ import { Route as AuthenticatedSettingsActivityRouteImport } from './routes/_aut
 import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_authenticated/settings.accounts'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings.account'
 import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
+import { Route as AuthenticatedContactsLabelsRouteImport } from './routes/_authenticated/contacts.labels'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
 import { Route as AuthenticatedContactsCompaniesIndexRouteImport } from './routes/_authenticated/contacts.companies.index'
 import { Route as ApiPublicHooksTasksCompletionScanRouteImport } from './routes/api/public/hooks/tasks-completion-scan'
@@ -365,6 +366,12 @@ const AuthenticatedContactsScanRoute =
     path: '/contacts/scan',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedContactsLabelsRoute =
+  AuthenticatedContactsLabelsRouteImport.update({
+    id: '/contacts/labels',
+    path: '/contacts/labels',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
   id: '/contacts/$id',
   path: '/contacts/$id',
@@ -483,6 +490,7 @@ export interface FileRoutesByFullPath {
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/contacts/labels': typeof AuthenticatedContactsLabelsRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
@@ -553,6 +561,7 @@ export interface FileRoutesByTo {
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/contacts/labels': typeof AuthenticatedContactsLabelsRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
@@ -626,6 +635,7 @@ export interface FileRoutesById {
   '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/_authenticated/contacts/labels': typeof AuthenticatedContactsLabelsRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
@@ -699,6 +709,7 @@ export interface FileRouteTypes {
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/contacts/$id'
+    | '/contacts/labels'
     | '/contacts/scan'
     | '/settings/account'
     | '/settings/accounts'
@@ -769,6 +780,7 @@ export interface FileRouteTypes {
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/contacts/$id'
+    | '/contacts/labels'
     | '/contacts/scan'
     | '/settings/account'
     | '/settings/accounts'
@@ -841,6 +853,7 @@ export interface FileRouteTypes {
     | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/_authenticated/contacts/$id'
+    | '/_authenticated/contacts/labels'
     | '/_authenticated/contacts/scan'
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/accounts'
@@ -1317,6 +1330,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsScanRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/contacts/labels': {
+      id: '/_authenticated/contacts/labels'
+      path: '/contacts/labels'
+      fullPath: '/contacts/labels'
+      preLoaderRoute: typeof AuthenticatedContactsLabelsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/contacts/$id': {
       id: '/_authenticated/contacts/$id'
       path: '/contacts/$id'
@@ -1481,6 +1501,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
+  AuthenticatedContactsLabelsRoute: typeof AuthenticatedContactsLabelsRoute
   AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
   AuthenticatedContactsCompaniesCompanyIdRoute: typeof AuthenticatedContactsCompaniesCompanyIdRoute
@@ -1497,6 +1518,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedTasksRoute: AuthenticatedTasksRoute,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
+  AuthenticatedContactsLabelsRoute: AuthenticatedContactsLabelsRoute,
   AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
   AuthenticatedContactsCompaniesCompanyIdRoute:
@@ -1569,3 +1591,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

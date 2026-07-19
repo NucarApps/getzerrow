@@ -17,6 +17,7 @@ import {
   Building2,
   CalendarClock,
   Sparkles,
+  Settings2,
 } from "lucide-react";
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import {
@@ -90,6 +91,8 @@ export const Route = createFileRoute("/_authenticated/contacts/")({
       { name: "description", content: "People you've emailed with, enriched from signatures." },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): { group?: string } =>
+    typeof search.group === "string" && search.group ? { group: search.group } : {},
   component: ContactsPage,
 });
 
@@ -102,8 +105,14 @@ function ContactsPage() {
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
   const listCompaniesFn = useServerFn(listCompanies);
 
+  const search = Route.useSearch();
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
+  const [filter, setFilter] = useState<"all" | "ungrouped" | string>(search.group ?? "all");
+
+  // Deep link from the Labels page ("View contacts"): follow ?group= changes.
+  useEffect(() => {
+    if (search.group) setFilter(search.group);
+  }, [search.group]);
   const [groupDialog, setGroupDialog] = useState<
     null | { mode: "create" } | { mode: "edit"; group: GroupRow }
   >(null);
@@ -638,7 +647,6 @@ function ContactsPage() {
                   label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
                   count={g.count}
                   onClick={() => setFilter(g.id)}
-                  onEdit={isAuto ? undefined : () => setGroupDialog({ mode: "edit", group: g })}
                   locked={isAuto}
                 />
               );
@@ -649,6 +657,12 @@ function ContactsPage() {
             >
               <Plus className="h-3.5 w-3.5" /> New
             </button>
+            <Link
+              to="/contacts/labels"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+            >
+              <Settings2 className="h-3.5 w-3.5" /> Manage
+            </Link>
           </div>
         </div>
 
@@ -659,13 +673,22 @@ function ContactsPage() {
               <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
                 Groups
               </span>
-              <button
-                onClick={() => setGroupDialog({ mode: "create" })}
-                className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                title="New group"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <Link
+                  to="/contacts/labels"
+                  className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  title="Manage labels"
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                </Link>
+                <button
+                  onClick={() => setGroupDialog({ mode: "create" })}
+                  className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  title="New group"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
             <div className="flex flex-col gap-0.5">
               <GroupChip
