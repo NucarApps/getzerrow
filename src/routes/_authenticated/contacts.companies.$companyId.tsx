@@ -279,12 +279,12 @@ function CompanyDetailPage() {
         </div>
 
         <Tabs defaultValue="people">
-          <TabsList className="mb-4 flex w-full flex-wrap justify-start gap-1">
-            <TabsTrigger value="people">People</TabsTrigger>
-            <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="domains">Domains</TabsTrigger>
-            <TabsTrigger value="logo">Logo</TabsTrigger>
-            <TabsTrigger value="labels">Labels</TabsTrigger>
+          <TabsList className="mb-4 flex w-full gap-1 overflow-x-auto whitespace-nowrap">
+            <TabsTrigger value="people" className="flex-shrink-0">People</TabsTrigger>
+            <TabsTrigger value="details" className="flex-shrink-0">Details</TabsTrigger>
+            <TabsTrigger value="domains" className="flex-shrink-0">Domains</TabsTrigger>
+            <TabsTrigger value="logo" className="flex-shrink-0">Logo</TabsTrigger>
+            <TabsTrigger value="labels" className="flex-shrink-0">Labels</TabsTrigger>
           </TabsList>
 
           <TabsContent value="people">
