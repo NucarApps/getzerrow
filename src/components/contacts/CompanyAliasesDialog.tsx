@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { X, Plus, Trash2, Check, Star } from "lucide-react";
+import { X, Plus, Trash2, Check, Star, ExternalLink } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogFooter,
+  ResponsiveDialogDescription,
+} from "@/components/ui/responsive-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,21 +27,12 @@ import {
   renameCompanyForContacts,
   setCompanyWebsiteForContacts,
 } from "@/lib/contacts/crud.functions";
-import {
-  listCompanyLogoChoices,
-  setCompanyLogoChoice,
-  clearCompanyLogoChoice,
-} from "@/lib/company-logo.functions";
+import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 import { listCompanyGroupAssignments, setCompanyGroups } from "@/lib/company-groups.functions";
 import { listContactGroups } from "@/lib/contact-groups.functions";
-import { searchLogoBrands, type LogoBrand } from "@/lib/logo-search.functions";
-import { LOGO_PROVIDER_LABELS } from "@/lib/logo-providers";
-import { logoCandidates } from "@/lib/company-domains";
 import { normalizeCompanyName } from "@/lib/contacts/company-name";
-import {
-  getCompanyProfile,
-  upsertCompanyProfile,
-} from "@/lib/contacts/company-profile.functions";
+import { CompanyLogoPicker } from "./CompanyLogoPicker";
+import { getCompanyProfile, upsertCompanyProfile } from "@/lib/contacts/company-profile.functions";
 import { CompanyLogo } from "./CompanyLogo";
 
 type Props = {
@@ -50,6 +42,8 @@ type Props = {
   companyName: string;
   aliases: string[];
   contactIds: string[];
+  /** When known, links to the full company page for deep management. */
+  companyId?: string | null;
 };
 
 export function CompanyAliasesDialog({
@@ -59,6 +53,7 @@ export function CompanyAliasesDialog({
   companyName,
   aliases,
   contactIds,
+  companyId,
 }: Props) {
   const qc = useQueryClient();
   const addFn = useServerFn(addCompanyAlias);
@@ -66,12 +61,9 @@ export function CompanyAliasesDialog({
   const clearFn = useServerFn(clearCompanyAliases);
   const promoteFn = useServerFn(promoteAliasToPrimary);
   const listChoices = useServerFn(listCompanyLogoChoices);
-  const setChoiceFn = useServerFn(setCompanyLogoChoice);
-  const clearChoiceFn = useServerFn(clearCompanyLogoChoice);
   const listAssignments = useServerFn(listCompanyGroupAssignments);
   const listGroups = useServerFn(listContactGroups);
   const setGroupsFn = useServerFn(setCompanyGroups);
-  const searchBrandsFn = useServerFn(searchLogoBrands);
   const renameFn = useServerFn(renameCompanyForContacts);
   const setWebsiteFn = useServerFn(setCompanyWebsiteForContacts);
   const getProfileFn = useServerFn(getCompanyProfile);
@@ -82,8 +74,6 @@ export function CompanyAliasesDialog({
   const [busy, setBusy] = useState(false);
 
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
-  const [brandQuery, setBrandQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [nameDraft, setNameDraft] = useState(companyName);
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [savedDescription, setSavedDescription] = useState("");
@@ -167,29 +157,14 @@ export function CompanyAliasesDialog({
 
   useEffect(() => {
     if (open) {
-      setBrandQuery(companyName ?? "");
       setNameDraft(companyName ?? "");
       setPrimaryDraft("");
       setTab("details");
     } else {
       setNewDomain("");
       setPrimaryDraft("");
-      setBrandQuery("");
-      setDebouncedQuery("");
     }
   }, [open, companyName]);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(brandQuery.trim()), 300);
-    return () => clearTimeout(t);
-  }, [brandQuery]);
-
-  const brandsQ = useQuery({
-    queryKey: ["logo-brand-search", debouncedQuery],
-    queryFn: () => searchBrandsFn({ data: { query: debouncedQuery } }),
-    enabled: open && debouncedQuery.length >= 2,
-    staleTime: 60_000,
-  });
 
   const hasPrimary = !!primaryDomain;
 
@@ -297,38 +272,6 @@ export function CompanyAliasesDialog({
     }
   }
 
-  async function pickLogo(provider: number | null, sourceDomain: string) {
-    setBusy(true);
-    try {
-      if (provider === null && sourceDomain === primaryDomain) {
-        await clearChoiceFn({ data: { domain: primaryDomain! } });
-      } else {
-        const p = provider ?? 0;
-        await setChoiceFn({ data: { domain: primaryDomain!, provider: p, sourceDomain } });
-      }
-      qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't save logo choice");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function pickBrand(brand: LogoBrand) {
-    setBusy(true);
-    try {
-      await setChoiceFn({
-        data: { domain: primaryDomain!, provider: 0, sourceDomain: brand.domain },
-      });
-      toast.success(`Using ${brand.name} logo`);
-      qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't save logo choice");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function promote(alias: string) {
     if (!confirm(`Make ${alias} the primary domain for this company?`)) return;
     setBusy(true);
@@ -407,10 +350,10 @@ export function CompanyAliasesDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="flex max-h-[90vh] flex-col sm:max-w-lg">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle className="flex items-center gap-3">
             <CompanyLogo
               domain={primaryDomain}
               name={companyName}
@@ -419,12 +362,22 @@ export function CompanyAliasesDialog({
               sourceDomain={currentSource}
             />
             <span className="truncate text-base font-semibold">{companyName}</span>
-          </DialogTitle>
-          <DialogDescription>
+          </ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
             Edit details for this company across {contactIds.length}{" "}
             {contactIds.length === 1 ? "contact" : "contacts"}.
-          </DialogDescription>
-        </DialogHeader>
+            {companyId && (
+              <Link
+                to="/contacts/companies/$companyId"
+                params={{ companyId }}
+                onClick={() => onOpenChange(false)}
+                className="ml-2 inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+              >
+                Open company page <ExternalLink className="h-3 w-3" />
+              </Link>
+            )}
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
 
         <Tabs
           value={tab}
@@ -438,7 +391,7 @@ export function CompanyAliasesDialog({
             <TabsTrigger value="groups">Groups</TabsTrigger>
           </TabsList>
 
-          <div className="-mx-6 mt-3 flex-1 overflow-y-auto px-6">
+          <div className="-mx-4 mt-3 flex-1 overflow-y-auto px-4 sm:-mx-6 sm:px-6">
             {/* DETAILS */}
             <TabsContent value="details" className="mt-0 space-y-4">
               <div>
@@ -488,7 +441,13 @@ export function CompanyAliasesDialog({
                     Description
                   </Label>
                   <span className="text-[11px] text-muted-foreground">
-                    {descSaving ? "Saving…" : descDirty ? "Unsaved" : savedDescription ? "Saved" : ""}
+                    {descSaving
+                      ? "Saving…"
+                      : descDirty
+                        ? "Unsaved"
+                        : savedDescription
+                          ? "Saved"
+                          : ""}
                   </span>
                 </div>
                 <Textarea
@@ -505,11 +464,13 @@ export function CompanyAliasesDialog({
                   maxLength={4000}
                 />
                 <div className="mt-1 flex items-center justify-between">
-                  <p className="text-[11px] text-muted-foreground">
-                    Autosaves when you tab away.
-                  </p>
+                  <p className="text-[11px] text-muted-foreground">Autosaves when you tab away.</p>
                   {descDirty && (
-                    <Button size="sm" onClick={saveDescription} disabled={descSaving || !profileKey}>
+                    <Button
+                      size="sm"
+                      onClick={saveDescription}
+                      disabled={descSaving || !profileKey}
+                    >
                       Save
                     </Button>
                   )}
@@ -624,104 +585,12 @@ export function CompanyAliasesDialog({
               {!hasPrimary ? (
                 needsPrimary
               ) : (
-                <>
-                  <div className="rounded-md border border-border bg-card/40 p-2.5">
-                    <Input
-                      value={brandQuery}
-                      onChange={(e) => setBrandQuery(e.target.value)}
-                      placeholder="Search logos by company name"
-                      disabled={busy}
-                    />
-                    {debouncedQuery.length >= 2 && (
-                      <div className="mt-2">
-                        {brandsQ.isFetching ? (
-                          <p className="text-[11px] text-muted-foreground">Searching…</p>
-                        ) : (brandsQ.data?.results.length ?? 0) === 0 ? (
-                          <p className="text-[11px] text-muted-foreground">No matches.</p>
-                        ) : (
-                          <div className="grid grid-cols-5 gap-2">
-                            {brandsQ.data!.results.map((b) => {
-                              const selected =
-                                currentSource === b.domain && currentProvider === 0;
-                              return (
-                                <button
-                                  key={b.domain}
-                                  type="button"
-                                  onClick={() => pickBrand(b)}
-                                  disabled={busy}
-                                  title={`${b.name} (${b.domain})`}
-                                  aria-pressed={selected}
-                                  className={`relative grid aspect-square place-items-center overflow-hidden rounded-md border bg-white p-1.5 transition disabled:opacity-50 ${
-                                    selected
-                                      ? "border-primary ring-2 ring-primary/40"
-                                      : "border-border hover:border-primary/60"
-                                  }`}
-                                >
-                                  <img
-                                    src={logoCandidates(b.domain, 256, 0)[0]}
-                                    alt={b.name}
-                                    loading="lazy"
-                                    referrerPolicy="no-referrer"
-                                    className="h-full w-full object-contain"
-                                  />
-                                  {selected && (
-                                    <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-primary text-primary-foreground">
-                                      <Check className="h-3 w-3" />
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-3">
-                    {[primaryDomain, ...aliases].map((d) => {
-                      const isActiveSource = (currentSource ?? primaryDomain) === d;
-                      return (
-                        <div key={d}>
-                          <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                            <span className="truncate">{d}</span>
-                            {d === primaryDomain && (
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
-                                primary
-                              </span>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-4 gap-2">
-                            {d === primaryDomain && (
-                              <LogoTile
-                                label="Auto"
-                                domain={d as string}
-                                provider={null}
-                                selected={isActiveSource && currentProvider === null}
-                                disabled={busy}
-                                onSelect={() => pickLogo(null, d as string)}
-                              />
-                            )}
-                            {LOGO_PROVIDER_LABELS.map((label, i) => (
-                              <LogoTile
-                                key={`${d}-${i}`}
-                                label={label}
-                                domain={d as string}
-                                provider={i}
-                                selected={isActiveSource && currentProvider === i}
-                                disabled={busy}
-                                onSelect={() => pickLogo(i, d as string)}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Tiles that can't load are hidden. Auto picks the first one that works on the
-                    primary domain.
-                  </p>
-                </>
+                <CompanyLogoPicker
+                  primaryDomain={primaryDomain!}
+                  aliases={aliases}
+                  initialQuery={companyName}
+                  enabled={open && tab === "logo"}
+                />
               )}
             </TabsContent>
 
@@ -805,11 +674,11 @@ export function CompanyAliasesDialog({
           </div>
         </Tabs>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <ResponsiveDialogFooter className="gap-2 sm:gap-0">
           {aliases.length > 0 && (
             <Button
               variant="ghost"
-              className="mr-auto text-destructive"
+              className="text-destructive sm:mr-auto"
               onClick={clearAll}
               disabled={busy}
             >
@@ -819,52 +688,8 @@ export function CompanyAliasesDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             Close
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-type TileProps = {
-  label: string;
-  domain: string;
-  provider: number | null;
-  selected: boolean;
-  disabled: boolean;
-  onSelect: () => void;
-};
-
-function LogoTile({ label, domain, provider, selected, disabled, onSelect }: TileProps) {
-  const [failed, setFailed] = useState(false);
-  if (provider !== null && failed) return null;
-
-  const src =
-    provider === null ? logoCandidates(domain, 256)[0] : logoCandidates(domain, 256, provider)[0];
-
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={disabled}
-      title={label}
-      aria-pressed={selected}
-      className={`relative grid aspect-square place-items-center overflow-hidden rounded-md border bg-white p-1.5 transition disabled:opacity-50 ${
-        selected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/60"
-      }`}
-    >
-      <img
-        src={src}
-        alt={label}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        onError={() => setFailed(true)}
-        className="h-full w-full object-contain"
-      />
-      {selected && (
-        <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-primary text-primary-foreground">
-          <Check className="h-3 w-3" />
-        </span>
-      )}
-    </button>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

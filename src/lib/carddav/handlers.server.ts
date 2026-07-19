@@ -113,13 +113,11 @@ export async function getResyncNonce(userId: string): Promise<number> {
   return (data as { resync_nonce?: number } | null)?.resync_nonce ?? 0;
 }
 
-// User-selectable format for group vCards on iPhone. iOS Contacts only
-// displays a flat group list, so nested Zerrow groups need their display
-// name flattened. Options:
-//   leaf       -> "Toyota"
-//   path_slash -> "Factory / Toyota" (default)
-//   path_dash  -> "Factory - Toyota"
-export type GroupNameStyle = "leaf" | "path_slash" | "path_dash";
+// User-selectable format for group vCards on iPhone — see group-name.ts
+// (shared with the settings-page preview). Re-exported to keep existing
+// imports working.
+export type { GroupNameStyle } from "./group-name";
+import { formatGroupDisplayName, type GroupNameStyle } from "./group-name";
 
 export async function getGroupNameStyle(userId: string): Promise<GroupNameStyle> {
   const { data } = await supabaseAdmin
@@ -541,7 +539,8 @@ async function buildGroupResponse(
 
 /** Resolve a group's display name to its full nested path
  * ("Clients / VIPs") so iOS can distinguish nested Zerrow groups. Apple's
- * KIND:group vCard has no native parent field. */
+ * KIND:group vCard has no native parent field. Formatting itself lives in
+ * the pure `formatGroupDisplayName` shared with the settings preview. */
 async function resolveGroupDisplayName(
   userId: string,
   groupId: string,
@@ -556,20 +555,7 @@ async function resolveGroupDisplayName(
   const byId = new Map<string, { name: string; parent: string | null }>();
   for (const g of data ?? [])
     byId.set(g.id, { name: g.name, parent: g.parent_group_id ?? null });
-  const own = byId.get(groupId);
-  if (!own) return ownName;
-  const parts: string[] = [];
-  let cursor: string | null = groupId;
-  let hops = 0;
-  while (cursor && hops < 8) {
-    const node = byId.get(cursor);
-    if (!node) break;
-    parts.unshift(node.name);
-    cursor = node.parent;
-    hops++;
-  }
-  const sep = style === "path_dash" ? " - " : " / ";
-  return parts.length > 1 ? parts.join(sep) : ownName;
+  return formatGroupDisplayName(byId, groupId, ownName, style);
 }
 
 const TOMBSTONE_PRUNE_DAYS = 90;

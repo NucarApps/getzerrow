@@ -17,8 +17,14 @@ import {
   Building2,
   CalendarClock,
   Sparkles,
+  Settings2,
 } from "lucide-react";
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
+import {
+  GroupEditorDialog,
+  type GroupRow,
+} from "@/components/contacts/GroupEditorDialog";
+import { buildDescendantsById, buildGroupTree } from "@/lib/contacts/group-tree";
 import { DuplicateSuggestionsDrawer } from "@/components/contacts/DuplicateSuggestionsDrawer";
 import { LabelDuplicatesDrawer } from "@/components/contacts/LabelDuplicatesDrawer";
 import { EnrichmentSuggestionsDrawer } from "@/components/contacts/EnrichmentSuggestionsDrawer";
@@ -49,6 +55,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -85,31 +97,11 @@ export const Route = createFileRoute("/_authenticated/contacts/")({
       { name: "description", content: "People you've emailed with, enriched from signatures." },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): { group?: string } =>
+    typeof search.group === "string" && search.group ? { group: search.group } : {},
   component: ContactsPage,
 });
 
-const GROUP_COLORS = [
-  "#6366f1",
-  "#ef4444",
-  "#f59e0b",
-  "#10b981",
-  "#06b6d4",
-  "#8b5cf6",
-  "#ec4899",
-  "#64748b",
-];
-
-type GroupRow = {
-  id: string;
-  name: string;
-  color: string;
-  count: number;
-  folder_id?: string | null;
-  parent_group_id?: string | null;
-  auto_company_subgroups?: boolean;
-  auto_generated_from_group_id?: string | null;
-  linked_folder?: { name: string; color: string | null } | null;
-};
 
 function ContactsPage() {
   const qc = useQueryClient();
@@ -119,8 +111,14 @@ function ContactsPage() {
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
   const listCompaniesFn = useServerFn(listCompanies);
 
+  const search = Route.useSearch();
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "ungrouped" | string>("all");
+  const [filter, setFilter] = useState<"all" | "ungrouped" | string>(search.group ?? "all");
+
+  // Deep link from the Labels page ("View contacts"): follow ?group= changes.
+  useEffect(() => {
+    if (search.group) setFilter(search.group);
+  }, [search.group]);
   const [groupDialog, setGroupDialog] = useState<
     null | { mode: "create" } | { mode: "edit"; group: GroupRow }
   >(null);
@@ -226,55 +224,13 @@ function ContactsPage() {
   }, [gq.data]);
 
   // Tree pre-order + per-group depth for indented sidebar rendering.
-  const groupTree = useMemo(() => {
-    const rows = gq.data?.groups ?? [];
-    const children = new Map<string | null, GroupRow[]>();
-    for (const g of rows) {
-      const key = g.parent_group_id ?? null;
-      const arr = children.get(key) ?? [];
-      arr.push(g);
-      children.set(key, arr);
-    }
-    for (const arr of children.values())
-      arr.sort((a, b) => a.name.localeCompare(b.name));
-    const out: { group: GroupRow; depth: number }[] = [];
-    const walk = (parent: string | null, depth: number) => {
-      for (const g of children.get(parent) ?? []) {
-        out.push({ group: g, depth });
-        walk(g.id, depth + 1);
-      }
-    };
-    walk(null, 0);
-    return out;
-  }, [gq.data]);
+  const groupTree = useMemo(() => buildGroupTree(gq.data?.groups ?? []), [gq.data]);
 
   // groupId -> Set of descendant group ids (including itself) for filtering.
-  const descendantsById = useMemo(() => {
-    const rows = gq.data?.groups ?? [];
-    const kids = new Map<string, string[]>();
-    for (const g of rows) {
-      if (!g.parent_group_id) continue;
-      const arr = kids.get(g.parent_group_id) ?? [];
-      arr.push(g.id);
-      kids.set(g.parent_group_id, arr);
-    }
-    const out = new Map<string, Set<string>>();
-    for (const g of rows) {
-      const set = new Set<string>([g.id]);
-      const stack = [g.id];
-      while (stack.length) {
-        const cur = stack.pop()!;
-        for (const c of kids.get(cur) ?? []) {
-          if (!set.has(c)) {
-            set.add(c);
-            stack.push(c);
-          }
-        }
-      }
-      out.set(g.id, set);
-    }
-    return out;
-  }, [gq.data]);
+  const descendantsById = useMemo(
+    () => buildDescendantsById(gq.data?.groups ?? []),
+    [gq.data],
+  );
 
   const filtered = useMemo(() => {
     const all = q.data?.contacts ?? [];
@@ -697,7 +653,6 @@ function ContactsPage() {
                   label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
                   count={g.count}
                   onClick={() => setFilter(g.id)}
-                  onEdit={isAuto ? undefined : () => setGroupDialog({ mode: "edit", group: g })}
                   locked={isAuto}
                 />
               );
@@ -708,6 +663,12 @@ function ContactsPage() {
             >
               <Plus className="h-3.5 w-3.5" /> New
             </button>
+            <Link
+              to="/contacts/labels"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+            >
+              <Settings2 className="h-3.5 w-3.5" /> Manage
+            </Link>
           </div>
         </div>
 
@@ -718,13 +679,22 @@ function ContactsPage() {
               <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
                 Groups
               </span>
-              <button
-                onClick={() => setGroupDialog({ mode: "create" })}
-                className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                title="New group"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <Link
+                  to="/contacts/labels"
+                  className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  title="Manage labels"
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                </Link>
+                <button
+                  onClick={() => setGroupDialog({ mode: "create" })}
+                  className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  title="New group"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
             <div className="flex flex-col gap-0.5">
               <GroupChip
@@ -788,46 +758,33 @@ function ContactsPage() {
                 <Building2 className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">By company</span>
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSuggestOpen(true)}
-                title="AI group suggestions"
-                className="shrink-0 px-2 sm:px-3"
-              >
-                <Sparkles className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Suggest groups</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDupesOpen(true)}
-                title="Find duplicate contacts"
-                className="shrink-0 px-2 sm:px-3"
-              >
-                <Sparkles className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Find duplicates</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setLabelDupesOpen(true)}
-                title="Find duplicate labels"
-                className="shrink-0 px-2 sm:px-3"
-              >
-                <Sparkles className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Dedupe labels</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEnrichOpen(true)}
-                title="Enrich contacts from your inbox"
-                className="shrink-0 px-2 sm:px-3"
-              >
-                <Sparkles className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Enrich</span>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="AI tools"
+                    className="shrink-0 px-2 sm:px-3"
+                  >
+                    <Sparkles className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">AI tools</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setSuggestOpen(true)}>
+                    Suggest groups
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setDupesOpen(true)}>
+                    Find duplicate contacts
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setLabelDupesOpen(true)}>
+                    Find duplicate labels
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setEnrichOpen(true)}>
+                    Enrich from inbox
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 variant={selectionMode ? "default" : "outline"}
                 size="sm"
@@ -1161,6 +1118,19 @@ function ContactsPage() {
         companyName={aliasDialog?.name ?? ""}
         aliases={aliasDialog?.domain ? (aliasesByPrimary.get(aliasDialog.domain) ?? []) : []}
         contactIds={aliasDialog?.contactIds ?? []}
+        companyId={
+          aliasDialog
+            ? ((aliasDialog.domain
+                ? (cq.data?.companies ?? []).find((c) =>
+                    c.domains?.some((d) => d.domain === aliasDialog.domain),
+                  )?.id
+                : undefined) ??
+              (cq.data?.companies ?? []).find(
+                (c) => c.name.toLowerCase() === aliasDialog.name.toLowerCase(),
+              )?.id ??
+              null)
+            : null
+        }
       />
      </div>
       <GroupSuggestionsDrawer open={suggestOpen} onOpenChange={setSuggestOpen} />
@@ -1289,296 +1259,6 @@ function GroupPill({
         </button>
       )}
     </div>
-  );
-}
-
-function GroupEditorDialog({
-  state,
-  allGroups,
-  onClose,
-  onChanged,
-}: {
-  state: null | { mode: "create" } | { mode: "edit"; group: GroupRow };
-  allGroups: GroupRow[];
-  onClose: () => void;
-  onChanged: () => void;
-}) {
-  const create = useServerFn(createContactGroup);
-  const update = useServerFn(updateContactGroup);
-  const del = useServerFn(deleteContactGroup);
-  const linkFolder = useServerFn(linkContactGroupToFolder);
-  const listFolders = useServerFn(listFoldersForPicker);
-  const setAutoFn = useServerFn(setAutoCompanySubgroups);
-  const rescanAutoFn = useServerFn(reconcileAutoCompanySubgroups);
-  const pruneAutoFn = useServerFn(pruneAutoCompanySubgroups);
-
-  const foldersQ = useQuery({
-    queryKey: ["folders-picker"],
-    queryFn: () => listFolders(),
-    enabled: !!state,
-    staleTime: 60_000,
-  });
-
-  const [name, setName] = useState("");
-  const [color, setColor] = useState(GROUP_COLORS[0]);
-  const [folderId, setFolderId] = useState<string>("");
-  const [parentId, setParentId] = useState<string>("");
-  const [autoSubgroups, setAutoSubgroups] = useState(false);
-  const [autoBusy, setAutoBusy] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!state) return;
-    if (state.mode === "edit") {
-      setName(state.group.name);
-      setColor(state.group.color);
-      setFolderId(state.group.folder_id ?? "");
-      setParentId(state.group.parent_group_id ?? "");
-      setAutoSubgroups(!!state.group.auto_company_subgroups);
-    } else {
-      setName("");
-      setColor(GROUP_COLORS[0]);
-      setFolderId("");
-      setParentId("");
-      setAutoSubgroups(false);
-    }
-  }, [state]);
-
-  if (!state) return null;
-  const s = state;
-  const editing = s.mode === "edit";
-  const editGroup = s.mode === "edit" ? s.group : null;
-
-  async function save() {
-    if (!name.trim()) return;
-    setSaving(true);
-    try {
-      let gid: string | null = editGroup?.id ?? null;
-      const nextParentId = parentId || null;
-      if (editGroup) {
-        await update({
-          data: {
-            id: editGroup.id,
-            name: name.trim(),
-            color,
-            parent_group_id: nextParentId,
-          },
-        });
-      } else {
-        const created = await create({
-          data: { name: name.trim(), color, parent_group_id: nextParentId },
-        });
-        gid = (created as { group?: { id: string } })?.group?.id ?? null;
-      }
-      // Sync folder link (create/remove the sender_in_group filter row).
-      if (gid) {
-        const nextFolderId = folderId || null;
-        const currentFolderId = editGroup?.folder_id ?? null;
-        if (nextFolderId !== currentFolderId) {
-          await linkFolder({ data: { groupId: gid, folderId: nextFolderId } });
-        }
-      }
-      toast.success(editGroup ? "Group updated" : "Group created");
-      onChanged();
-      onClose();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove() {
-    if (!editGroup) return;
-    if (!confirm(`Delete the “${editGroup.name}” group? Contacts won't be deleted.`)) return;
-    setSaving(true);
-    try {
-      await del({ data: { id: editGroup.id } });
-      toast.success("Group deleted");
-      onChanged();
-      onClose();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(v) => {
-        if (!v) onClose();
-      }}
-    >
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>{editing ? "Edit group" : "New group"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs text-muted-foreground">Name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Work, Personal, Investors…"
-              autoFocus
-            />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Color</Label>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {GROUP_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={`h-7 w-7 rounded-full ring-2 ring-offset-2 ring-offset-background transition ${color === c ? "ring-foreground" : "ring-transparent"}`}
-                  style={{ background: c }}
-                  aria-label={c}
-                />
-              ))}
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Parent group</Label>
-            <select
-              value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="">None — top level</option>
-              {allGroups
-                .filter((g) => !editGroup || g.id !== editGroup.id)
-                .map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-            </select>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Nest this group under another to build a subgroup tree.
-            </p>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Linked folder</Label>
-            <select
-              value={folderId}
-              onChange={(e) => setFolderId(e.target.value)}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="">None — group only</option>
-              {(foldersQ.data?.folders ?? []).map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              When linked, senders in this group are auto-filed into the folder.
-            </p>
-          </div>
-          {editing && editGroup && (
-            <div className="rounded-md border border-border/60 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <Label className="text-sm">Auto-create company subgroups</Label>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    Adds one subgroup per company found in this group's members.
-                    Contacts stay in this group too — the subgroups just slice
-                    them by company.
-                  </p>
-                </div>
-                <Switch
-                  checked={autoSubgroups}
-                  disabled={autoBusy}
-                  onCheckedChange={async (v) => {
-                    setAutoBusy(true);
-                    try {
-                      await setAutoFn({ data: { groupId: editGroup.id, enabled: v } });
-                      setAutoSubgroups(v);
-                      onChanged();
-                      toast.success(v ? "Auto subgroups enabled" : "Auto subgroups paused");
-                    } catch (e: unknown) {
-                      toast.error(e instanceof Error ? e.message : "Failed");
-                    } finally {
-                      setAutoBusy(false);
-                    }
-                  }}
-                />
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={autoBusy || !autoSubgroups}
-                  onClick={async () => {
-                    setAutoBusy(true);
-                    try {
-                      const r = (await rescanAutoFn({
-                        data: { groupId: editGroup.id },
-                      })) as { stats?: { created: number; removed: number } };
-                      onChanged();
-                      const c = r.stats?.created ?? 0;
-                      const rm = r.stats?.removed ?? 0;
-                      toast.success(`Re-scanned: +${c} / -${rm} subgroups`);
-                    } catch (e: unknown) {
-                      toast.error(e instanceof Error ? e.message : "Failed");
-                    } finally {
-                      setAutoBusy(false);
-                    }
-                  }}
-                >
-                  Re-scan now
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive"
-                  disabled={autoBusy}
-                  onClick={async () => {
-                    if (!confirm("Remove all auto-created company subgroups under this group?")) return;
-                    setAutoBusy(true);
-                    try {
-                      const r = (await pruneAutoFn({
-                        data: { groupId: editGroup.id },
-                      })) as { removed: number };
-                      onChanged();
-                      toast.success(`Removed ${r.removed} auto subgroup${r.removed === 1 ? "" : "s"}`);
-                    } catch (e: unknown) {
-                      toast.error(e instanceof Error ? e.message : "Failed");
-                    } finally {
-                      setAutoBusy(false);
-                    }
-                  }}
-                >
-                  Remove auto subgroups
-                </Button>
-              </div>
-            </div>
-          )}
-          {editing && editGroup && <GroupRulesSection groupId={editGroup.id} />}
-        </div>
-        <DialogFooter className="gap-2 sm:gap-0">
-          {editing && (
-            <Button
-              variant="ghost"
-              className="text-destructive mr-auto"
-              onClick={remove}
-              disabled={saving}
-            >
-              <Trash2 className="mr-1.5 h-4 w-4" /> Delete
-            </Button>
-          )}
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={save} disabled={saving || !name.trim()}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
