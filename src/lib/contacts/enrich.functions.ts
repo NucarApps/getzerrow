@@ -32,20 +32,24 @@ import {
 
 type EnrichSupabase = SupabaseClient<Database>;
 
-/** Shared enrichment core so both the single-contact server fn and the
- * bulk "rerun for everyone" batch can reuse the same logic without one
- * server fn calling another. */
-async function runEnrichForContact(
-  supabase: EnrichSupabase,
+/** Shared enrichment core so the single-contact server fn, the bulk
+ * "rerun for everyone" batch, and the background enrichment worker can
+ * reuse the same logic. Takes an explicit userId and filters EVERY query
+ * with it — callers may pass supabaseAdmin (which bypasses RLS), so the
+ * user scope must never be implicit. */
+export async function runEnrichForContact(
+  ctx: { supabase: EnrichSupabase; userId: string },
   contactId: string,
   force: boolean,
 ): Promise<{ contact: Database["public"]["Tables"]["contacts"]["Row"]; skipped: boolean }> {
+  const { supabase, userId } = ctx;
   const data = { id: contactId, force };
   {
     const { data: contact, error } = await supabase
       .from("contacts")
       .select("*")
       .eq("id", data.id)
+      .eq("user_id", userId)
       .single();
     if (error || !contact) throw new Error("Contact not found");
 
@@ -74,6 +78,7 @@ async function runEnrichForContact(
     const { data: idRows } = await supabase
       .from("emails")
       .select("id")
+      .eq("user_id", userId)
       .eq("from_addr", contact.email)
       .order("received_at", { ascending: false })
       .limit(40);
@@ -94,6 +99,7 @@ async function runEnrichForContact(
       const { data: accs } = await supabase
         .from("gmail_accounts")
         .select("id")
+        .eq("user_id", userId)
         .order("created_at", { ascending: true });
       gmailAccountIds = (accs ?? []).map((a) => a.id);
       return gmailAccountIds;
@@ -304,6 +310,7 @@ ${sample}`,
       const { data: idRows } = await supabase
         .from("emails")
         .select("id")
+        .eq("user_id", userId)
         .eq("from_addr", addr)
         .order("received_at", { ascending: false })
         .limit(30);
@@ -438,7 +445,11 @@ export const enrichContact = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), force: z.boolean().optional() }).parse(d),
   )
   .handler(async ({ data, context }) =>
-    runEnrichForContact(context.supabase, data.id, data.force ?? false),
+    runEnrichForContact(
+      { supabase: context.supabase, userId: context.userId },
+      data.id,
+      data.force ?? false,
+    ),
   );
 
 /** Batch entrypoint for the "Rerun AI enrichment + summaries for everyone"
@@ -457,9 +468,9 @@ export const rerunEnrichmentBatch = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     const results = await Promise.allSettled(
-      data.ids.map((id) => runEnrichForContact(supabase, id, true)),
+      data.ids.map((id) => runEnrichForContact({ supabase, userId }, id, true)),
     );
     const failed: Array<{ id: string; error: string }> = [];
     let skipped = 0;

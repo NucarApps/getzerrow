@@ -21,6 +21,9 @@ const CRON_ENDPOINTS = [
   "/api/public/gmail-rescue-classify",
   "/api/public/health",
   "/api/public/hooks/run-folder-summaries",
+  "/api/public/hooks/consolidate-label-duplicates",
+  "/api/public/hooks/enqueue-contact-enrichment",
+  "/api/public/hooks/run-contact-enrich-jobs",
 ];
 
 async function post(path: string, init: RequestInit = {}) {

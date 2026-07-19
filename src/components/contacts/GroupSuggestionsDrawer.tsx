@@ -137,6 +137,12 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
               <div key={s.id} className="rounded-lg border border-border bg-card p-4 shadow-sm">
                 <div className="mb-2 flex items-center gap-2">
                   <Badge variant="secondary">{kindLabel}</Badge>
+                  {s.confidence === "high" && (
+                    <Badge variant="outline" className="border-primary/50 text-primary">
+                      High confidence
+                    </Badge>
+                  )}
+                  {s.auto_applied && <Badge variant="outline">Applied automatically</Badge>}
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Users className="h-3 w-3" />
                     {s.total_contacts} contacts

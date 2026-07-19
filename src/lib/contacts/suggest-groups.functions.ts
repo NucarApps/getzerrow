@@ -30,6 +30,8 @@ type SuggestionRow = {
   kind: string;
   status: string;
   created_at: string;
+  confidence: string | null;
+  auto_applied: boolean | null;
 };
 
 type ContactPreview = { id: string; name: string | null; email: string | null };
@@ -50,6 +52,10 @@ const AiOutput = z.object({
       // Contacts are referenced by the short `i` index we send in the prompt,
       // not by UUID — models reliably echo small ints, not long UUIDs.
       contact_ids: z.array(z.number().int().positive()),
+      // Model self-assessment. NEVER sufficient for auto-apply on its own —
+      // the deterministic evidence gate (suggestion-confidence.ts) decides;
+      // AI confidence can only veto.
+      confidence: z.enum(["high", "medium", "low"]).nullish(),
     }),
   ),
 });
@@ -82,13 +88,13 @@ async function loadLatestSuggestions(supabase: DB, userId: string): Promise<Sugg
   const { data: rows, error: rowsErr } = await supabase
     .from("contact_group_suggestions")
     .select(
-      "id,run_id,name,parent_group_id,existing_group_id,contact_ids,rationale,kind,status,created_at",
+      "id,run_id,name,parent_group_id,existing_group_id,contact_ids,rationale,kind,status,created_at,confidence,auto_applied",
     )
     .eq("user_id", userId)
     .eq("run_id", runId)
     .order("created_at", { ascending: true });
   if (rowsErr) throw new Error(rowsErr.message);
-  const suggestions = (rows ?? []) as SuggestionRow[];
+  const suggestions = (rows ?? []) as unknown as SuggestionRow[];
 
   const allIds = Array.from(new Set(suggestions.flatMap((s) => (s.contact_ids ?? []).slice(0, 5))));
   const previewsById = new Map<string, ContactPreview>();
@@ -121,12 +127,11 @@ export const getContactGroupSuggestions = createServerFn({ method: "GET" })
     return { suggestions };
   });
 
-/** Kick off a new AI analysis over the user's contacts. Rate limited. */
-export const runContactGroupSuggestions = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-
+/** Core of the AI grouping scan. Callable with any client (user-scoped
+ * server fn below, or supabaseAdmin from the background enrichment worker),
+ * so EVERY query filters on the explicit userId. Rate limited. */
+export async function runContactGroupSuggestionsImpl(supabase: DB, userId: string) {
+  {
     // Rate limit: at most one scan per 5 minutes.
     const { data: last } = await supabase
       .from("contact_group_suggestions")
@@ -151,10 +156,11 @@ export const runContactGroupSuggestions = createServerFn({ method: "POST" })
         supabase
           .from("contacts")
           .select("id,name,email,company,title,city,source")
+          .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(1500),
-        supabase.from("contact_groups").select("id,name,parent_group_id"),
-        supabase.from("contact_group_members").select("contact_id,group_id"),
+        supabase.from("contact_groups").select("id,name,parent_group_id").eq("user_id", userId),
+        supabase.from("contact_group_members").select("contact_id,group_id").eq("user_id", userId),
       ]);
     if (cErr) throw new Error(cErr.message);
     if (!contacts || contacts.length === 0) {
@@ -322,6 +328,7 @@ Rules:
 - Otherwise use "new".
 - Do not repeat an existing group name. Keep names concise (1-4 words), no emoji.
 - rationale: one short sentence explaining WHY these contacts belong together (cite topic keywords when relevant).
+- confidence: "high" only when the grouping is unambiguous (all members share one company/domain AND the topics agree); "medium" when the pattern is strong but partial; "low" otherwise.
 Return JSON matching the schema.`;
 
     let parsed: z.infer<typeof AiOutput> = { suggestions: [] };
@@ -384,6 +391,7 @@ Return JSON matching the schema.`;
       rationale: string | null;
       kind: SuggestionKind;
       status: string;
+      confidence: string;
     }[] = [];
 
     for (const s of parsed.suggestions) {
@@ -445,6 +453,7 @@ Return JSON matching the schema.`;
         rationale: (s.rationale ?? "").trim().slice(0, 500) || null,
         kind,
         status: "pending",
+        confidence: s.confidence ?? "low",
       });
     }
 
@@ -452,7 +461,9 @@ Return JSON matching the schema.`;
     const capped = rowsToInsert.slice(0, 20);
 
     if (capped.length > 0) {
-      const { error: insErr } = await supabase.from("contact_group_suggestions").insert(capped);
+      const { error: insErr } = await supabase
+        .from("contact_group_suggestions")
+        .insert(capped as never[]);
       if (insErr) throw new Error(insErr.message);
     }
 
@@ -485,9 +496,83 @@ Return JSON matching the schema.`;
         topicsScanned,
       },
     };
-  });
+  }
+}
+
+/** Kick off a new AI analysis over the user's contacts. Rate limited. */
+export const runContactGroupSuggestions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => runContactGroupSuggestionsImpl(context.supabase, context.userId));
 
 /** Apply a suggestion: create the group (or use existing) and add contacts. */
+/** Core of suggestion apply — shared by the user-facing server fn and the
+ * background auto-apply gate. Every query filters on userId (callers may
+ * pass supabaseAdmin). */
+export async function applySuggestionImpl(
+  supabase: DB,
+  userId: string,
+  args: {
+    id: string;
+    group_name_override?: string;
+    target_group_id?: string | null;
+    /** Mark the suggestion as applied by the background gate, with the
+     * deterministic evidence that justified it. */
+    autoApplied?: boolean;
+    evidence?: Record<string, unknown> | null;
+  },
+): Promise<{ ok: true; group_id: string | null; added: number }> {
+  const { data: row, error: rErr } = await supabase
+    .from("contact_group_suggestions")
+    .select("*")
+    .eq("id", args.id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (rErr) throw new Error(rErr.message);
+  if (!row) throw new Error("Suggestion not found");
+  if (row.status !== "pending") throw new Error("Already handled");
+
+  let groupId: string | null = args.target_group_id ?? row.existing_group_id;
+
+  if (!groupId) {
+    // Shared resolver: an accepted suggestion for "Nissan, Inc." lands on
+    // an existing "Nissan" label instead of creating a duplicate.
+    const { resolveOrCreateCompanyLabel } = await import("./label-resolve.server");
+    const resolved = await resolveOrCreateCompanyLabel(
+      { supabase, userId },
+      {
+        rawName: (args.group_name_override ?? row.name).trim(),
+        parentGroupId: row.parent_group_id,
+      },
+    );
+    if (!resolved) throw new Error("Suggestion name is empty");
+    groupId = resolved.id;
+  }
+
+  const ids: string[] = row.contact_ids ?? [];
+  if (ids.length > 0 && groupId) {
+    const rows = ids.map((cid) => ({
+      user_id: userId,
+      group_id: groupId!,
+      contact_id: cid,
+    }));
+    const { error: mErr } = await supabase
+      .from("contact_group_members")
+      .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
+    if (mErr) throw new Error(mErr.message);
+  }
+
+  await supabase
+    .from("contact_group_suggestions")
+    .update({
+      status: "accepted",
+      ...(args.autoApplied ? { auto_applied: true, evidence: args.evidence ?? null } : {}),
+    } as never)
+    .eq("id", args.id)
+    .eq("user_id", userId);
+
+  return { ok: true, group_id: groupId, added: ids.length };
+}
+
 export const applyContactGroupSuggestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -500,60 +585,9 @@ export const applyContactGroupSuggestion = createServerFn({ method: "POST" })
         })
         .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-
-    const { data: row, error: rErr } = await supabase
-      .from("contact_group_suggestions")
-      .select("*")
-      .eq("id", data.id)
-      .maybeSingle();
-    if (rErr) throw new Error(rErr.message);
-    if (!row || row.user_id !== userId) throw new Error("Suggestion not found");
-    if (row.status !== "pending") throw new Error("Already handled");
-
-    let groupId: string | null = data.target_group_id ?? row.existing_group_id;
-
-    if (!groupId) {
-      const uid =
-        "group-" +
-        (globalThis.crypto?.randomUUID?.() ??
-          `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-      const { data: created, error: cErr } = await supabase
-        .from("contact_groups")
-        .insert({
-          user_id: userId,
-          name: (data.group_name_override ?? row.name).trim(),
-          color: "#6366f1",
-          carddav_uid: uid,
-          parent_group_id: row.parent_group_id,
-        })
-        .select("id")
-        .single();
-      if (cErr) throw new Error(cErr.message);
-      groupId = created.id;
-    }
-
-    const ids: string[] = row.contact_ids ?? [];
-    if (ids.length > 0 && groupId) {
-      const rows = ids.map((cid) => ({
-        user_id: userId,
-        group_id: groupId!,
-        contact_id: cid,
-      }));
-      const { error: mErr } = await supabase
-        .from("contact_group_members")
-        .upsert(rows, { onConflict: "group_id,contact_id", ignoreDuplicates: true });
-      if (mErr) throw new Error(mErr.message);
-    }
-
-    await supabase
-      .from("contact_group_suggestions")
-      .update({ status: "accepted" })
-      .eq("id", data.id);
-
-    return { ok: true, group_id: groupId, added: ids.length };
-  });
+  .handler(async ({ data, context }) =>
+    applySuggestionImpl(context.supabase, context.userId, data),
+  );
 
 export const dismissContactGroupSuggestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
