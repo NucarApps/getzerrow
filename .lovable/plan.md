@@ -1,20 +1,25 @@
 ## Problem
-On the company detail page's **Labels** tab, you can only toggle labels that already exist. If none exist (or you want a new one), the current copy says "create one from the Contacts page first" — there's no way to add a label inline.
+On mobile (402px) the company detail → Labels tab has two issues:
+
+1. **The Add-label input is offscreen.** It renders below the existing label chips; when there are many chips, mobile users only see the chip grid at the top, which looks like the "search people" list from the neighboring People tab. The input to create a new label is buried below the fold.
+2. **The tab bar wraps.** `TabsList` uses `flex-wrap`, so on narrow screens "Labels" drops to a second row with a smaller effective tap target, making it easy to miss.
 
 ## Fix
-Add an inline "New label" input inside `CompanyLabelsSection` in `src/routes/_authenticated/contacts.companies.$companyId.tsx`, next to the existing chips.
+Edit only `src/routes/_authenticated/contacts.companies.$companyId.tsx`.
 
-### Behavior
-- Small input + "Add" button (Enter also submits) rendered below the label chips.
-- On submit:
-  1. Call existing `createContactGroup({ name })` server fn to create the label (scoped to the current user, deduped by name).
-  2. Call existing `setCompanyLabels` with the new group id appended to the current selection — so the new label is created *and* immediately applied to this company (and propagated to its contacts, matching current chip-click behavior).
-  3. Invalidate `["contact-groups"]` and `["company-labels", companyId]` so the new chip appears pre-selected.
-- Show toast on success/error using the same pattern already used by `saveMut`.
-- When there are zero labels yet, replace the "create one from the Contacts page first" message with the same inline input so users can create their first label right here.
+### 1. Move the Add-label input to the top of the Labels section
+Inside `CompanyLabelsSection`, render the new-label input row **above** the chip list (with a small "Create new label" label). Keep the existing chip grid and toggle behavior below. Empty-state message stays under the input.
 
-### Files touched
-- `src/routes/_authenticated/contacts.companies.$companyId.tsx` — extend `CompanyLabelsSection` only. No new files, no server-fn changes, no schema changes.
+### 2. Make the tab bar horizontally scrollable on mobile
+Change the `TabsList` on the company page from `flex w-full flex-wrap` to a single-row, horizontally scrollable strip on small screens:
+
+- `flex w-full gap-1 overflow-x-auto whitespace-nowrap` on mobile
+- keep wrapping only from `sm:` up (or leave as single row on all sizes — no wrap needed for 5 short labels)
+- add `flex-shrink-0` to each `TabsTrigger` so they don't compress
+
+This keeps all five tabs (People, Details, Domains, Logo, Labels) on one line and equally tappable on 402px.
 
 ### Out of scope
-- No changes to color picker, rules, or auto-subgroup behavior. New labels use whatever default `createContactGroup` already assigns; you can still edit color/rules from the Contacts page.
+- No server-fn or schema changes.
+- No changes to People, Details, Domains, or Logo tabs.
+- No changes to color, rules, or auto-subgroup behavior.
