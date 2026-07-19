@@ -196,16 +196,12 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
     };
 
     for (const r of mailRows ?? []) {
-      const row = r as { from_addr: string; from_name: string | null; received_at: string | null };
-      consider(row.from_addr, "email", row.received_at, row.from_name);
+      const row = r as { from_addr: string; received_at: string | null };
+      consider(row.from_addr, "email", row.received_at, null);
     }
     for (const r of calRows ?? []) {
-      const row = r as {
-        email_address: string;
-        display_name: string | null;
-        last_seen_at: string | null;
-      };
-      consider(row.email_address, "calendar", row.last_seen_at, row.display_name);
+      const row = r as { email_address: string; last_seen_at: string | null };
+      consider(row.email_address, "calendar", row.last_seen_at, null);
     }
 
     // Score possible matches for each candidate against existing contacts.
