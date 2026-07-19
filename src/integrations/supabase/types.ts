@@ -223,6 +223,7 @@ export type Database = {
           id: string;
           industry: string | null;
           linked_group_id: string | null;
+          logo_url: string | null;
           name: string;
           name_key: string;
           phone: string | null;
@@ -242,6 +243,7 @@ export type Database = {
           id?: string;
           industry?: string | null;
           linked_group_id?: string | null;
+          logo_url?: string | null;
           name: string;
           name_key: string;
           phone?: string | null;
@@ -261,6 +263,7 @@ export type Database = {
           id?: string;
           industry?: string | null;
           linked_group_id?: string | null;
+          logo_url?: string | null;
           name?: string;
           name_key?: string;
           phone?: string | null;

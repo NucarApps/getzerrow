@@ -167,22 +167,29 @@ async function loadContactPhotoOrLogo(
   const own = await loadContactPhotoBytes(row.avatar_url ?? null);
   if (own) return own;
   if (!(await getUseCompanyLogoFallback(userId))) return null;
-  const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } =
-    await import("@/lib/contacts/logo-photo.server");
+  const {
+    fetchCompanyPhotoOrLogoBytes,
+    resolveCompanyLogoDomainForContact,
+    recordCompanyLogoHash,
+  } = await import("@/lib/contacts/logo-photo.server");
+  // Resolve the linked company up front — a custom uploaded company photo
+  // wins over the domain-based brand logo, and we reuse the id to fingerprint.
+  const { data: linked } = await supabaseAdmin
+    .from("contacts")
+    .select("company_id")
+    .eq("id", row.id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const companyId = (linked as { company_id?: string | null } | null)?.company_id ?? null;
   const logoDomain = await resolveCompanyLogoDomainForContact(userId, row);
-  const fallback = await fetchChosenCompanyLogoBytes(userId, logoDomain);
+  const fallback = await fetchCompanyPhotoOrLogoBytes(userId, { companyId, domain: logoDomain });
   if (fallback) {
     try {
+      // Fingerprint whatever we served (custom photo or brand logo) so an iOS
+      // round-trip of it is recognized as an echo, not promoted to a personal
+      // avatar — the echo guard is bytes-based, so this covers both.
       const { sha256Hex } = await import("@/lib/contacts/photos.server");
-      const { recordCompanyLogoHash } = await import("@/lib/contacts/logo-photo.server");
       const sha = await sha256Hex(fallback.bytes);
-      const { data: linked } = await supabaseAdmin
-        .from("contacts")
-        .select("company_id")
-        .eq("id", row.id)
-        .eq("user_id", userId)
-        .maybeSingle();
-      const companyId = (linked as { company_id?: string | null } | null)?.company_id ?? null;
       await supabaseAdmin
         .from("contacts")
         .update({ company_logo_photo_sha: sha })

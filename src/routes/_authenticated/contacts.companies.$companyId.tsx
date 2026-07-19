@@ -1,8 +1,19 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { ArrowLeft, Building2, Check, Plus, Trash2, X, Merge, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  Building2,
+  Camera,
+  Check,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+  Merge,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +53,7 @@ import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
 import { listContactGroups } from "@/lib/contact-groups.functions";
 import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
+import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-photo.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts/companies/$companyId")({
   head: () => ({
@@ -230,7 +242,12 @@ function CompanyDetailPage() {
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-4">
-            <CompanyLogo domain={primaryDomain} name={form.name} size={64} />
+            <CompanyLogo
+              domain={primaryDomain}
+              name={form.name}
+              size={64}
+              photoUrl={(q.data.company as { logo_url?: string | null }).logo_url ?? null}
+            />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Building2 className="h-4 w-4" /> Company
@@ -327,18 +344,31 @@ function CompanyDetailPage() {
           </div>
         </section>
 
-        {primaryDomain && (
-          <section className="mb-6 rounded-lg border p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Logo
-            </h2>
-            <CompanyLogoPicker
-              primaryDomain={primaryDomain}
-              aliases={q.data.domains.slice(1).map((d) => d.domain)}
-              initialQuery={form.name}
-            />
-          </section>
-        )}
+        <section className="mb-6 rounded-lg border p-4">
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Logo
+          </h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Shows for everyone at this company who hasn&apos;t set their own photo. An uploaded
+            image wins over the brand logo below.
+          </p>
+          <CompanyPhotoSection
+            companyId={companyId}
+            name={form.name}
+            primaryDomain={primaryDomain}
+            logoUrl={(q.data.company as { logo_url?: string | null }).logo_url ?? null}
+          />
+          {primaryDomain && (
+            <div className="mt-4 border-t pt-4">
+              <p className="mb-3 text-xs text-muted-foreground">Or pick a brand logo:</p>
+              <CompanyLogoPicker
+                primaryDomain={primaryDomain}
+                aliases={q.data.domains.slice(1).map((d) => d.domain)}
+                initialQuery={form.name}
+              />
+            </div>
+          )}
+        </section>
 
         <section className="mb-6 rounded-lg border p-4">
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -662,6 +692,110 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
     <div>
       <Label className="mb-1 text-xs text-muted-foreground">{label}</Label>
       {children}
+    </div>
+  );
+}
+
+const PHOTO_MIME = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+
+/** Upload / remove a custom company photo. It cascades to every member who
+ *  hasn't set their own photo (web + iPhone) and wins over the brand logo. */
+function CompanyPhotoSection({
+  companyId,
+  name,
+  primaryDomain,
+  logoUrl,
+}: {
+  companyId: string;
+  name: string;
+  primaryDomain: string | null;
+  logoUrl: string | null;
+}) {
+  const qc = useQueryClient();
+  const uploadFn = useServerFn(uploadCompanyPhoto);
+  const removeFn = useServerFn(removeCompanyPhoto);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["company", companyId] });
+    qc.invalidateQueries({ queryKey: ["companies"] });
+    qc.invalidateQueries({ queryKey: ["contacts"] });
+  };
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!PHOTO_MIME.includes(file.type)) {
+      toast.error("Use JPG, PNG, GIF or WebP");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image too large (max 5 MB)");
+      return;
+    }
+    setBusy(true);
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      let bin = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < buf.length; i += chunk) {
+        bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+      }
+      await uploadFn({ data: { companyId, base64: btoa(bin), mime: file.type } });
+      toast.success("Company photo updated");
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onRemove = async () => {
+    setBusy(true);
+    try {
+      await removeFn({ data: { companyId } });
+      toast.success("Company photo removed");
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Remove failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-4">
+      <CompanyLogo domain={primaryDomain} name={name} size={56} photoUrl={logoUrl} />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          {busy ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Camera className="mr-2 h-4 w-4" />
+          )}
+          {logoUrl ? "Replace photo" : "Upload photo"}
+        </Button>
+        {logoUrl && (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>
+            <Trash2 className="mr-2 h-4 w-4" /> Remove
+          </Button>
+        )}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        onChange={onPick}
+        hidden
+      />
     </div>
   );
 }

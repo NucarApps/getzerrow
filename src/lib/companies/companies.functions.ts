@@ -20,7 +20,7 @@ export const listCompanies = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: companies, error } = await supabase
       .from("companies")
-      .select("id,name,website,industry")
+      .select("id,name,website,industry,logo_url")
       .eq("user_id", userId)
       .order("name", { ascending: true })
       .limit(2000);
