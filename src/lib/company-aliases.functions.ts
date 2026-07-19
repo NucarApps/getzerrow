@@ -41,6 +41,19 @@ export const addCompanyAlias = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const { primaryDomain, aliasDomain } = data;
 
+    // If primaryDomain was previously aliased somewhere else, drop that row so
+    // primaryDomain itself isn't also an alias. This must happen BEFORE the
+    // cascading repoint below: a reverse row (primary=aliasDomain,
+    // alias=primaryDomain) would otherwise be rewritten into
+    // (primaryDomain, primaryDomain) and violate the table's
+    // primary<>alias CHECK constraint.
+    const { error: cleanupErr } = await supabase
+      .from("company_aliases")
+      .delete()
+      .eq("user_id", userId)
+      .eq("alias_domain", primaryDomain);
+    if (cleanupErr) throw new Error(cleanupErr.message);
+
     // Cascading merge: if the new alias is itself a primary for other rows,
     // re-point those rows to the new primary.
     const { error: repointErr } = await supabase
@@ -49,15 +62,6 @@ export const addCompanyAlias = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .eq("primary_domain", aliasDomain);
     if (repointErr) throw new Error(repointErr.message);
-
-    // If primaryDomain was previously aliased somewhere else, drop that row so
-    // primaryDomain itself isn't also an alias.
-    const { error: cleanupErr } = await supabase
-      .from("company_aliases")
-      .delete()
-      .eq("user_id", userId)
-      .eq("alias_domain", primaryDomain);
-    if (cleanupErr) throw new Error(cleanupErr.message);
 
     const { error } = await supabase
       .from("company_aliases")
@@ -147,21 +151,24 @@ export const promoteAliasToPrimary = createServerFn({ method: "POST" })
       throw new Error("That domain isn't currently an alias of this company");
     }
 
-    // Repoint every alias of currentPrimary to newPrimary.
-    const { error: rpErr } = await supabase
-      .from("company_aliases")
-      .update({ primary_domain: newPrimary })
-      .eq("user_id", userId)
-      .eq("primary_domain", currentPrimary);
-    if (rpErr) throw new Error(rpErr.message);
-
-    // Drop the row where alias_domain == newPrimary (it's now the primary).
+    // Drop the row where alias_domain == newPrimary FIRST (it's about to be
+    // the primary). Repointing before this delete would rewrite that very row
+    // into (newPrimary, newPrimary) and violate the primary<>alias CHECK
+    // constraint, failing the whole promotion.
     const { error: dropErr } = await supabase
       .from("company_aliases")
       .delete()
       .eq("user_id", userId)
       .eq("alias_domain", newPrimary);
     if (dropErr) throw new Error(dropErr.message);
+
+    // Repoint every remaining alias of currentPrimary to newPrimary.
+    const { error: rpErr } = await supabase
+      .from("company_aliases")
+      .update({ primary_domain: newPrimary })
+      .eq("user_id", userId)
+      .eq("primary_domain", currentPrimary);
+    if (rpErr) throw new Error(rpErr.message);
 
     // Make the old primary an alias of the new primary.
     const { error: insErr } = await supabase
