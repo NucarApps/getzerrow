@@ -1241,47 +1241,71 @@ export async function handlePut(
   // to preserve the existing avatar during partial edits (matches the
   // conservative merge policy for the other fields). Google-linked
   // contacts get flagged dirty right after so the picture also flows
-  // upstream. When the incoming bytes match a company-logo fallback we
-  // inlined on a previous GET (or exactly match the currently stored
-  // avatar), skip the save — otherwise iOS "echoing" a company logo would
-  // freeze it into `avatar_url` and later company-logo changes wouldn't
-  // reach the contact.
+  // upstream. Skips are scoped to THIS contact's own served photos (see
+  // photo-echo-decision.ts): the fallback logo we recorded on a previous
+  // GET, the stored avatar, or the logo a GET would inline today. Matching
+  // some unrelated known logo must NOT skip — that over-match silently
+  // dropped user-chosen photos and made iPhone photo edits revert.
   if (present.has("PHOTO") && parsed.photo && parsed.photo.bytes.length > 0) {
     try {
       const { sha256Hex, loadContactPhotoBytes } = await import("@/lib/contacts/photos.server");
+      const { decideIncomingPhoto } = await import("./photo-echo-decision");
       const incomingSha = await sha256Hex(parsed.photo.bytes);
       const { data: fp } = await supabaseAdmin
         .from("contacts")
-        .select("avatar_url,company_id,company_logo_photo_sha")
+        .select("avatar_url,email,website,company_logo_photo_sha")
         .eq("id", contactId)
         .eq("user_id", userId)
         .maybeSingle();
       const storedFallbackSha =
         (fp as { company_logo_photo_sha?: string | null } | null)?.company_logo_photo_sha ?? null;
-      let skip = storedFallbackSha !== null && storedFallbackSha === incomingSha;
-      const companyId = (fp as { company_id?: string | null } | null)?.company_id ?? null;
-      if (!skip && companyId) {
-        const { getKnownCompanyLogoHashes } = await import("@/lib/contacts/logo-photo.server");
-        skip = (await getKnownCompanyLogoHashes(userId, companyId)).has(incomingSha);
-      }
-      if (!skip) {
-        const currentAvatar = (fp as { avatar_url?: string | null } | null)?.avatar_url ?? null;
+      // Cheap-first: only load avatar bytes / fetch the live logo when the
+      // earlier, cheaper facts weren't enough to skip.
+      let currentAvatarSha: string | null = null;
+      let currentLogoShaForContact: string | null = null;
+      let decision = decideIncomingPhoto({
+        incomingSha,
+        servedFallbackSha: storedFallbackSha,
+        currentAvatarSha,
+        currentLogoShaForContact,
+      });
+      const currentAvatar = (fp as { avatar_url?: string | null } | null)?.avatar_url ?? null;
+      if (decision === "save") {
         const currentBytes = await loadContactPhotoBytes(currentAvatar);
-        if (currentBytes) {
-          const currentSha = await sha256Hex(currentBytes.bytes);
-          if (currentSha === incomingSha) skip = true;
-        }
-      }
-      if (!skip) {
-        const { buildKnownCompanyLogoShaSet } = await import("@/lib/contacts/known-logos.server");
-        skip = (await buildKnownCompanyLogoShaSet(userId)).has(incomingSha);
-      }
-      if (skip) {
-        logInfo("carddav.put.photo_fallback_echo_ignored", {
-          contact_id: contactId,
-          incoming_sha: incomingSha.slice(0, 16),
+        if (currentBytes) currentAvatarSha = await sha256Hex(currentBytes.bytes);
+        decision = decideIncomingPhoto({
+          incomingSha,
+          servedFallbackSha: storedFallbackSha,
+          currentAvatarSha,
+          currentLogoShaForContact,
         });
-      } else {
+      }
+      if (decision === "save" && currentAvatarSha === null) {
+        // No personal avatar: a GET today would inline the company logo, so
+        // an echo can carry bytes newer than the recorded fallback sha.
+        const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } =
+          await import("@/lib/contacts/logo-photo.server");
+        const row = fp as { email?: string | null; website?: string | null } | null;
+        const logoDomain = await resolveCompanyLogoDomainForContact(userId, {
+          id: contactId,
+          email: row?.email ?? null,
+          website: row?.website ?? null,
+        });
+        const logoBytes = await fetchChosenCompanyLogoBytes(userId, logoDomain);
+        if (logoBytes) currentLogoShaForContact = await sha256Hex(logoBytes.bytes);
+        decision = decideIncomingPhoto({
+          incomingSha,
+          servedFallbackSha: storedFallbackSha,
+          currentAvatarSha,
+          currentLogoShaForContact,
+        });
+      }
+      logInfo("carddav.put.photo_decision", {
+        contact_id: contactId,
+        reason: decision,
+        incoming_sha: incomingSha.slice(0, 16),
+      });
+      if (decision === "save") {
         // Treat a CardDAV PUT that survived the echo guards as an intentional
         // user-chosen picture: the human explicitly set it in the iOS Contacts
         // app. Persist with source="user_upload" so the getContact self-heal

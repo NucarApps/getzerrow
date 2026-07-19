@@ -113,6 +113,9 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
         website: string | null;
         company_id: string | null;
       };
+      // Hash-gated, not source-exempted (matches the getContact self-heal):
+      // legacy iOS logo echoes arrive mislabeled user_upload/carddav, and a
+      // genuine portrait can never byte-match a known logo.
       if (!r.avatar_url || !r.company_id) {
         kept.push(r.id);
         continue;

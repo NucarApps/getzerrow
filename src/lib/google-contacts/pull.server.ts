@@ -543,25 +543,50 @@ async function applyPersonChanges(
     // last pull (`photo_etag` stores the previously-seen URL). Google's
     // photos URL is a signed link that changes when the picture changes, so
     // comparing URLs is a cheap change detector; refetch + upload otherwise.
+    // User-chosen photos (iPhone/web) are never overwritten by a Google
+    // refetch — the etag is still recorded so we don't retry forever.
     let nextPhotoEtag: string | null | undefined = undefined;
     if (parsed.photoUrl) {
       const linkRow = link as { photo_etag?: string | null } | undefined;
       const previous = linkRow?.photo_etag ?? null;
       if (previous !== parsed.photoUrl) {
         try {
-          const { fetchPhotoBytes } = await import("./people-client.server");
-          const { saveContactPhoto, sha256Hex } = await import("@/lib/contacts/photos.server");
-          const bytes = await fetchPhotoBytes(parsed.photoUrl);
-          if (bytes) {
-            const incomingSha = await sha256Hex(bytes.bytes);
-            const { buildKnownCompanyLogoShaSet } =
-              await import("@/lib/contacts/known-logos.server");
-            if ((await buildKnownCompanyLogoShaSet(ids.userId)).has(incomingSha)) {
-              nextPhotoEtag = parsed.photoUrl;
-            } else {
-              await saveContactPhoto(ids.userId, contactId!, bytes.bytes, bytes.mime, "google");
+          const { decideGooglePhotoPull } = await import("./photo-pull-decision");
+          const { data: avatarRow } = await supabaseAdmin
+            .from("contacts")
+            .select("avatar_source")
+            .eq("id", contactId)
+            .eq("user_id", ids.userId)
+            .maybeSingle();
+          const avatarSource =
+            (avatarRow as { avatar_source?: string | null } | null)?.avatar_source ?? null;
+          let decision = decideGooglePhotoPull({
+            photoUrlChanged: true,
+            avatarSource,
+            incomingShaIsKnownLogo: null,
+          });
+          if (decision.action === "save") {
+            const { fetchPhotoBytes } = await import("./people-client.server");
+            const { saveContactPhoto, sha256Hex } = await import("@/lib/contacts/photos.server");
+            const bytes = await fetchPhotoBytes(parsed.photoUrl);
+            if (bytes) {
+              const incomingSha = await sha256Hex(bytes.bytes);
+              const { buildKnownCompanyLogoShaSet } =
+                await import("@/lib/contacts/known-logos.server");
+              decision = decideGooglePhotoPull({
+                photoUrlChanged: true,
+                avatarSource,
+                incomingShaIsKnownLogo: (await buildKnownCompanyLogoShaSet(ids.userId)).has(
+                  incomingSha,
+                ),
+              });
+              if (decision.action === "save") {
+                await saveContactPhoto(ids.userId, contactId!, bytes.bytes, bytes.mime, "google");
+              }
               nextPhotoEtag = parsed.photoUrl;
             }
+          } else if (decision.recordEtag) {
+            nextPhotoEtag = parsed.photoUrl;
           }
         } catch (err) {
           logError("google_contacts.pull.photo_failed", { ...ids, contact_id: contactId }, err);
