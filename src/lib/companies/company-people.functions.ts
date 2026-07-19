@@ -174,22 +174,74 @@ export const addCompanyPeople = createServerFn({ method: "POST" })
     if (!company) throw new Error("Company not found");
     const companyName = (company as { name: string }).name;
 
-    const { data: inserted, error } = await supabase
+    // The contacts table has no plain unique constraint on (user_id, email) —
+    // only a partial functional unique index on (user_id, lower(email)) WHERE
+    // email IS NOT NULL. PostgREST's ON CONFLICT can't target that, so we
+    // dedupe explicitly: fetch existing, update those, insert the rest.
+    const emails = Array.from(new Set(data.items.map((it) => it.email)));
+    const nameByEmail = new Map<string, string | null>();
+    for (const it of data.items) {
+      if (!nameByEmail.has(it.email)) nameByEmail.set(it.email, it.name || null);
+    }
+
+    const { data: existingRows, error: exErr } = await supabase
       .from("contacts")
-      .upsert(
-        data.items.map((it) => ({
-          user_id: userId,
-          email: it.email,
-          name: it.name || null,
-          company: companyName,
-          company_id: data.companyId,
-          source: "email",
-        })),
-        { onConflict: "user_id,email" },
-      )
-      .select("id");
-    if (error) throw new Error(error.message);
-    const contactIds = (inserted ?? []).map((r) => (r as { id: string }).id);
+      .select("id,email,company_id,name")
+      .eq("user_id", userId)
+      .in("email", emails);
+    if (exErr) throw new Error(exErr.message);
+
+    const existingByEmail = new Map<string, { id: string; company_id: string | null; name: string | null }>();
+    for (const r of (existingRows ?? []) as Array<{
+      id: string;
+      email: string | null;
+      company_id: string | null;
+      name: string | null;
+    }>) {
+      const e = (r.email || "").toLowerCase();
+      if (e) existingByEmail.set(e, { id: r.id, company_id: r.company_id, name: r.name });
+    }
+
+    const contactIds: string[] = [];
+
+    // Update contacts that already exist but aren't linked to a company yet.
+    const toUpdate = [...existingByEmail.entries()].filter(([, r]) => !r.company_id);
+    for (const [email, row] of toUpdate) {
+      const n = !row.name ? nameByEmail.get(email) ?? null : null;
+      const patch = n
+        ? { company: companyName, company_id: data.companyId, name: n }
+        : { company: companyName, company_id: data.companyId };
+      const { error: upErr } = await supabase
+        .from("contacts")
+        .update(patch)
+        .eq("id", row.id)
+        .eq("user_id", userId);
+      if (upErr) throw new Error(upErr.message);
+      contactIds.push(row.id);
+    }
+
+    // Existing rows already assigned to another company are left alone.
+
+    // Insert net-new contacts.
+    const toInsert = data.items.filter((it) => !existingByEmail.has(it.email));
+    if (toInsert.length > 0) {
+      const { data: inserted, error: insErr } = await supabase
+        .from("contacts")
+        .insert(
+          toInsert.map((it) => ({
+            user_id: userId,
+            email: it.email,
+            name: it.name || null,
+            company: companyName,
+            company_id: data.companyId,
+            source: "email",
+          })),
+        )
+        .select("id");
+      if (insErr) throw new Error(insErr.message);
+      for (const r of (inserted ?? []) as Array<{ id: string }>) contactIds.push(r.id);
+    }
+
 
     // Converge: label rules for the company now apply to the new contacts,
     // domains re-derive, auto-subgroups reconcile. Best-effort.
