@@ -47,8 +47,18 @@ export function CompanyDuplicatesDrawer({ open, onOpenChange }: Props) {
   const mergeMut = useMutation({
     mutationFn: (vars: { canonicalId: string; foldIds: string[] }) => mergeFn({ data: vars }),
     onSuccess: (r) => {
-      toast.success(`Merged ${r.merged} companies · reassigned ${r.movedContacts} contacts`);
+      const errs = (r as { errors?: Array<{ message: string }> }).errors ?? [];
+      if (r.failed > 0 && r.merged > 0) {
+        toast.warning(
+          `Merged ${r.merged}, ${r.failed} failed: ${errs[0]?.message ?? "unknown error"}`,
+        );
+      } else if (r.failed > 0) {
+        toast.error(`Merge failed: ${errs[0]?.message ?? "unknown error"}`);
+      } else {
+        toast.success(`Merged ${r.merged} companies · reassigned ${r.movedContacts} contacts`);
+      }
       qc.invalidateQueries({ queryKey: ["companies"] });
+      qc.invalidateQueries({ queryKey: ["companies", "duplicates"] });
       qc.invalidateQueries({ queryKey: ["contact-groups"] });
       q.refetch();
     },
