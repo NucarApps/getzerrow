@@ -9,66 +9,10 @@ type Ctx = { supabase: import("@supabase/supabase-js").SupabaseClient; userId: s
 
 const nonEmpty = (max: number) => z.string().trim().min(1).max(max);
 
-async function findOrCreateCompanyByName(
-  ctx: Ctx,
-  rawName: string,
-): Promise<{ id: string; name: string } | null> {
-  const name = rawName.trim();
-  if (!name) return null;
-  const key = normalizeCompanyName(name);
-  if (!key) return null;
-  // 1. Direct name_key match on companies.
-  const { data: existing, error: selErr } = await ctx.supabase
-    .from("companies")
-    .select("id,name")
-    .eq("user_id", ctx.userId)
-    .eq("name_key", key)
-    .maybeSingle();
-  if (selErr) throw new Error(selErr.message);
-  if (existing) return existing;
-  // 2. Alias match: an earlier merge remembered this name pointing at
-  //    the canonical company. Route the new reference to the target
-  //    instead of recreating the duplicate.
-  const { data: alias } = await ctx.supabase
-    .from("company_name_aliases")
-    .select("company_id, companies:companies(id,name)")
-    .eq("user_id", ctx.userId)
-    .eq("name_key", key)
-    .maybeSingle();
-  const aliased = (alias as { companies?: { id: string; name: string } | null } | null)?.companies;
-  if (aliased) return aliased;
-  // 3. Insert.
-  const { data: inserted, error: insErr } = await ctx.supabase
-    .from("companies")
-    .insert({ user_id: ctx.userId, name, name_key: key })
-    .select("id,name")
-    .single();
-  if (insErr) {
-    // Race with a parallel insert — fall back to a re-select.
-    const { data: retry } = await ctx.supabase
-      .from("companies")
-      .select("id,name")
-      .eq("user_id", ctx.userId)
-      .eq("name_key", key)
-      .maybeSingle();
-    if (retry) return retry;
-    throw new Error(insErr.message);
-  }
-  return inserted;
-}
-
-export async function resolveContactCompany(
-  ctx: Ctx,
-  companyText: string | null | undefined,
-): Promise<{ companyId: string | null; canonicalName: string | null }> {
-  if (companyText === null) return { companyId: null, canonicalName: null };
-  if (companyText === undefined) return { companyId: null, canonicalName: null };
-  const trimmed = companyText.trim();
-  if (!trimmed) return { companyId: null, canonicalName: null };
-  const found = await findOrCreateCompanyByName(ctx, trimmed);
-  if (!found) return { companyId: null, canonicalName: null };
-  return { companyId: found.id, canonicalName: found.name };
-}
+// Company resolution lives in resolve.server.ts so import paths (Google
+// pull, CardDAV PUT) can use it without server-fn machinery.
+export { findOrCreateCompanyByName, resolveContactCompany } from "./resolve.server";
+import { findOrCreateCompanyByName } from "./resolve.server";
 
 export const listCompanies = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
