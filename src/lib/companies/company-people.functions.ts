@@ -88,7 +88,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
     ] = await Promise.all([
       supabase
         .from("emails")
-        .select("from_addr,from_name,received_at")
+        .select("from_addr,received_at")
         .eq("user_id", userId)
         .not("from_addr", "is", null)
         .or(emailOr)
@@ -96,7 +96,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
         .limit(5000),
       supabase
         .from("calendar_contacts")
-        .select("email_address,display_name,last_seen_at")
+        .select("email_address,last_seen_at")
         .eq("user_id", userId)
         .or(calOr)
         .limit(5000),
