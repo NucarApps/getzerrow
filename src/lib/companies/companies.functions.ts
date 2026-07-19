@@ -221,11 +221,31 @@ export const openOrCreateCompanyForBucket = createServerFn({ method: "POST" })
       .in("id", data.contactIds);
     if (linkErr) throw new Error(linkErr.message);
 
-    // 4. Converge domains / labels / auto-subgroups (best-effort, mirrors
-    //    the tail of mergeCompaniesImpl).
+    // Return as soon as the fast writes are done so the client can navigate
+    // to the company page immediately. The heavy convergence (domain
+    // discovery, rule-membership sync, auto-subgroup reconcile) runs via a
+    // separate `convergeBucketCompany` call the client fires without awaiting.
+    return { companyId };
+  });
+
+/** Deferred, best-effort convergence after linking a bucket's contacts to a
+ *  company. Split out of openOrCreateCompanyForBucket so opening a company is
+ *  instant — the client fires this without awaiting after it navigates. */
+export const convergeBucketCompany = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        companyId: z.string().uuid(),
+        contactIds: z.array(z.string().uuid()).min(1).max(2000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
     try {
       await supabase.rpc("discover_company_domains", {
-        p_company_id: companyId,
+        p_company_id: data.companyId,
         p_user_id: userId,
       });
     } catch {
@@ -234,7 +254,7 @@ export const openOrCreateCompanyForBucket = createServerFn({ method: "POST" })
     try {
       const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
       await syncCompanyRuleMemberships(supabase, userId, {
-        companyIds: [companyId],
+        companyIds: [data.companyId],
         contactIds: data.contactIds,
         bumpResync: true,
       });
@@ -248,8 +268,7 @@ export const openOrCreateCompanyForBucket = createServerFn({ method: "POST" })
     } catch {
       // Non-fatal.
     }
-
-    return { companyId };
+    return { ok: true as const };
   });
 
 export const updateCompany = createServerFn({ method: "POST" })

@@ -14,6 +14,7 @@ import {
   UserPlus,
   Inbox,
   Check,
+  ListChecks,
   Building2,
   CalendarClock,
   Sparkles,
@@ -83,7 +84,11 @@ import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.funct
 import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
 import { normalizeCompanyName } from "@/lib/contacts/company-name";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
-import { listCompanies, openOrCreateCompanyForBucket } from "@/lib/companies/companies.functions";
+import {
+  listCompanies,
+  openOrCreateCompanyForBucket,
+  convergeBucketCompany,
+} from "@/lib/companies/companies.functions";
 import { listMeetingPeople } from "@/lib/calendar.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -107,6 +112,7 @@ function ContactsPage() {
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
   const listCompaniesFn = useServerFn(listCompanies);
   const openCompanyFn = useServerFn(openOrCreateCompanyForBucket);
+  const convergeCompanyFn = useServerFn(convergeBucketCompany);
   const [openingBucketKey, setOpeningBucketKey] = useState<string | null>(null);
 
   const search = Route.useSearch();
@@ -616,13 +622,24 @@ function ContactsPage() {
       return;
     }
     setOpeningBucketKey(b.key);
+    const contactIds = b.contacts.map((c) => c.id);
     try {
+      // Fast path: create the company + link contacts, then navigate right
+      // away. The heavy convergence (domain discovery, label-rule sync,
+      // subgroup reconcile) runs in the background so the arrow doesn't spin.
       const { companyId } = await openCompanyFn({
-        data: { name: b.name, domain: b.domain, contactIds: b.contacts.map((c) => c.id) },
+        data: { name: b.name, domain: b.domain, contactIds },
       });
-      await qc.invalidateQueries({ queryKey: ["companies"] });
-      await qc.invalidateQueries({ queryKey: ["contacts"] });
       nav({ to: "/contacts/companies/$companyId", params: { companyId } });
+      void convergeCompanyFn({ data: { companyId, contactIds } })
+        .then(() => {
+          qc.invalidateQueries({ queryKey: ["companies"] });
+          qc.invalidateQueries({ queryKey: ["contacts"] });
+        })
+        .catch(() => {
+          // Best-effort — domains/labels also converge via other triggers and
+          // the company page's "Discover from members" button.
+        });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not open company");
     } finally {
@@ -870,7 +887,7 @@ function ContactsPage() {
                   aria-pressed={selectionMode}
                   className="shrink-0 px-2 sm:px-3"
                 >
-                  <Check className="h-4 w-4 sm:mr-2" />
+                  <ListChecks className="h-4 w-4 sm:mr-2" />
                   <span className="hidden sm:inline">{selectionMode ? "Done" : "Select"}</span>
                 </Button>
               </div>
@@ -947,7 +964,7 @@ function ContactsPage() {
                           photoUrl={b.companyLogoUrl ?? null}
                           onOpen={b.kind === "company" ? () => openBucketCompany(b) : undefined}
                           opening={openingBucketKey === b.key}
-                          selectable
+                          selectable={selectionMode}
                           selectionState={(() => {
                             const ids = b.contacts.map((c) => c.id);
                             const sel = ids.filter((id) => selectedIds.has(id)).length;
