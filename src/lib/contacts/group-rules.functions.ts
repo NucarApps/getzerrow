@@ -239,14 +239,30 @@ export const listGroupRules = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     const { data: rows, error } = await supabase
       .from("contact_group_rules")
       .select("id,group_id,rule_type,value,auto_apply,created_at")
       .eq("group_id", data.groupId)
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    return { rules: rows ?? [] };
+    // Resolve company_id values to names so the UI shows "Nissan", not a UUID.
+    const companyIds = (rows ?? []).filter((r) => r.rule_type === "company_id").map((r) => r.value);
+    const nameById = new Map<string, string>();
+    if (companyIds.length > 0) {
+      const { data: companies } = await supabase
+        .from("companies")
+        .select("id,name")
+        .eq("user_id", userId)
+        .in("id", companyIds);
+      for (const c of companies ?? []) nameById.set(c.id, c.name);
+    }
+    return {
+      rules: (rows ?? []).map((r) => ({
+        ...r,
+        display: r.rule_type === "company_id" ? (nameById.get(r.value) ?? r.value) : r.value,
+      })),
+    };
   });
 
 export const addGroupRule = createServerFn({ method: "POST" })

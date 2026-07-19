@@ -57,6 +57,8 @@ export type GroupRow = {
   auto_company_subgroups?: boolean;
   auto_generated_from_group_id?: string | null;
   linked_folder?: { name: string; color: string | null } | null;
+  /** Companies placed in this label via company_id rules. */
+  companies?: Array<{ id: string; name: string }>;
 };
 
 export type GroupEditorState =

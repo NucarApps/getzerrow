@@ -25,6 +25,7 @@ import {
   listGroupRules,
   updateGroupRule,
 } from "@/lib/contacts/group-rules.functions";
+import { listCompanies } from "@/lib/companies/companies.functions";
 import { AI_CATEGORIES } from "@/lib/contacts/group-rules";
 
 type RuleType = "domain" | "company_id" | "ai_category";
@@ -36,6 +37,8 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
   const upd = useServerFn(updateGroupRule);
   const del = useServerFn(deleteGroupRule);
 
+  const listCompaniesFn = useServerFn(listCompanies);
+
   const q = useQuery({
     queryKey: ["group-rules", groupId],
     queryFn: () => list({ data: { groupId } }),
@@ -44,6 +47,13 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
   const [ruleType, setRuleType] = useState<RuleType>("domain");
   const [value, setValue] = useState("");
   const [autoApply, setAutoApply] = useState(true);
+
+  const companiesQ = useQuery({
+    queryKey: ["companies", "picker"],
+    queryFn: () => listCompaniesFn(),
+    enabled: ruleType === "company_id",
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     // Reset value when switching rule type; keep sensible default per kind.
@@ -56,6 +66,9 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
     onSuccess: () => {
       setValue(ruleType === "ai_category" ? AI_CATEGORIES[0] : "");
       qc.invalidateQueries({ queryKey: ["group-rules", groupId] });
+      // Rules materialize memberships immediately — refresh the lists.
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
       toast.success("Rule added");
     },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
@@ -63,7 +76,11 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
 
   const delMut = useMutation({
     mutationFn: (id: string) => del({ data: { id } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["group-rules", groupId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["group-rules", groupId] });
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+    },
   });
 
   const toggleMut = useMutation({
@@ -79,8 +96,9 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
       <div className="mb-2">
         <Label className="text-sm">Auto-assign rules</Label>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
-          New contacts that match a rule join this label automatically. Turn a rule off "auto" to
-          only suggest it.
+          Anyone matching a rule joins this label automatically — a Company rule keeps the whole
+          company's people in this label, including future contacts. Turn a rule off "auto" to only
+          suggest it.
         </p>
       </div>
 
@@ -98,7 +116,7 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
                     ? "AI category"
                     : "domain"}
               </Badge>
-              <span className="min-w-0 flex-1 truncate">{r.value}</span>
+              <span className="min-w-0 flex-1 truncate">{r.display ?? r.value}</span>
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-muted-foreground">Auto</span>
                 <Switch
@@ -129,12 +147,28 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
             className="mt-1 h-9 rounded-md border border-input bg-background px-2 text-sm"
           >
             <option value="domain">Email domain</option>
+            <option value="company_id">Company</option>
             <option value="ai_category">AI category</option>
           </select>
         </div>
         <div className="min-w-[10rem] flex-1">
-          <Label className="text-[11px] text-muted-foreground">Value</Label>
-          {ruleType === "ai_category" ? (
+          <Label className="text-[11px] text-muted-foreground">
+            {ruleType === "company_id" ? "Company" : "Value"}
+          </Label>
+          {ruleType === "company_id" ? (
+            <select
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">Choose a company…</option>
+              {(companiesQ.data?.companies ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          ) : ruleType === "ai_category" ? (
             <select
               value={value}
               onChange={(e) => setValue(e.target.value)}

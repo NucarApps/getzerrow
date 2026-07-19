@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Building2, Plus, Trash2, X, Merge, Sparkles } from "lucide-react";
+import { ArrowLeft, Building2, Check, Plus, Trash2, X, Merge, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +40,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
+import { listContactGroups } from "@/lib/contact-groups.functions";
+import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts/companies/$companyId")({
   head: () => ({
@@ -336,6 +338,17 @@ function CompanyDetailPage() {
           />
         </section>
       )}
+
+      <section className="mb-6 rounded-lg border p-4">
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Labels
+        </h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Labels this company belongs to. Everyone at the company gets them — including contacts
+          added later.
+        </p>
+        <CompanyLabelsSection companyId={companyId} />
+      </section>
 
       <section className="mb-6 grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
         <Labelled label="Website">
@@ -640,6 +653,80 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
     <div>
       <Label className="mb-1 text-xs text-muted-foreground">{label}</Label>
       {children}
+    </div>
+  );
+}
+
+/** Toggleable label chips backed by company_id group rules — each click
+ *  saves immediately and syncs memberships for the whole company. */
+function CompanyLabelsSection({ companyId }: { companyId: string }) {
+  const qc = useQueryClient();
+  const listGroups = useServerFn(listContactGroups);
+  const listLabelsFn = useServerFn(listCompanyLabels);
+  const setLabelsFn = useServerFn(setCompanyLabels);
+
+  const groupsQ = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
+  const labelsQ = useQuery({
+    queryKey: ["company-labels", companyId],
+    queryFn: () => listLabelsFn({ data: { companyId } }),
+  });
+
+  const saveMut = useMutation({
+    mutationFn: (groupIds: string[]) => setLabelsFn({ data: { companyId, groupIds } }),
+    onSuccess: (res) => {
+      toast.success(
+        res.added + res.removed > 0
+          ? `Labels updated — ${res.scanned} contact${res.scanned === 1 ? "" : "s"} synced`
+          : "Labels updated",
+      );
+      qc.invalidateQueries({ queryKey: ["company-labels", companyId] });
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  const selected = new Set(labelsQ.data?.groupIds ?? []);
+  const groups = (groupsQ.data?.groups ?? []).filter((g) => !g.auto_generated_from_group_id);
+
+  if (groupsQ.isLoading || labelsQ.isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
+  if (groups.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No labels yet — create one from the Contacts page first.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {groups.map((g) => {
+        const active = selected.has(g.id);
+        return (
+          <button
+            key={g.id}
+            type="button"
+            disabled={saveMut.isPending}
+            aria-pressed={active}
+            onClick={() => {
+              const next = new Set(selected);
+              if (next.has(g.id)) next.delete(g.id);
+              else next.add(g.id);
+              saveMut.mutate([...next]);
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
+              active
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
+            <span className="max-w-[12rem] truncate">{g.name}</span>
+            {active && <Check className="h-3 w-3" />}
+          </button>
+        );
+      })}
     </div>
   );
 }
