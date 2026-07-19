@@ -1125,31 +1125,84 @@ function CompanyPeopleFinder({ companyId, onAdded }: { companyId: string; onAdde
             )}
           </div>
           <ul className="mb-3 divide-y rounded-md border">
-            {people.map((p) => (
-              <li key={p.email}>
-                <button
-                  type="button"
-                  onClick={() => toggle(p.email)}
-                  className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted ${
-                    selected.has(p.email) ? "bg-accent/50" : ""
-                  }`}
-                >
-                  <Checkbox checked={selected.has(p.email)} className="pointer-events-none" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{p.name || p.email}</div>
-                    {p.name && (
-                      <div className="truncate text-xs text-muted-foreground">{p.email}</div>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-                    {p.sources.includes("email") && <Mail className="h-3.5 w-3.5" />}
-                    {p.sources.includes("calendar") && <CalendarClock className="h-3.5 w-3.5" />}
-                    <span className="text-xs tabular-nums">{p.count}</span>
-                  </div>
-                </button>
-              </li>
-            ))}
+            {people.map((p) => {
+              const suggestion = p.possibleMatches[0];
+              const strong = suggestion && suggestion.score >= 0.75;
+              return (
+                <li key={p.email}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(p.email)}
+                    className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted ${
+                      selected.has(p.email) ? "bg-accent/50" : ""
+                    }`}
+                  >
+                    <Checkbox checked={selected.has(p.email)} className="pointer-events-none" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{p.name || p.email}</div>
+                      {p.name && (
+                        <div className="truncate text-xs text-muted-foreground">{p.email}</div>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+                      {p.sources.includes("email") && <Mail className="h-3.5 w-3.5" />}
+                      {p.sources.includes("calendar") && <CalendarClock className="h-3.5 w-3.5" />}
+                      <span className="text-xs tabular-nums">{p.count}</span>
+                    </div>
+                  </button>
+                  {strong && (
+                    <div className="flex flex-wrap items-center gap-2 border-t bg-muted/30 px-3 py-2 text-xs">
+                      <span className="text-muted-foreground">
+                        Looks like{" "}
+                        <span className="font-medium text-foreground">
+                          {suggestion.contactName || suggestion.contactEmail || "existing contact"}
+                        </span>
+                        {suggestion.contactEmail && suggestion.contactName && (
+                          <span className="text-muted-foreground">
+                            {" "}({suggestion.contactEmail})
+                          </span>
+                        )}
+                        {suggestion.sameCompanyId ? " · already at this company" : ""}
+                      </span>
+                      <div className="ml-auto flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={enhanceMut.isPending}
+                          onClick={() =>
+                            enhanceMut.mutate({
+                              contactId: suggestion.contactId,
+                              email: p.email,
+                              name: p.name,
+                              mode: "add_secondary",
+                            })
+                          }
+                        >
+                          Add as secondary
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={enhanceMut.isPending}
+                          onClick={() =>
+                            enhanceMut.mutate({
+                              contactId: suggestion.contactId,
+                              email: p.email,
+                              name: p.name,
+                              mode: "replace_primary",
+                            })
+                          }
+                        >
+                          Replace primary
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
+
           <Button
             size="sm"
             disabled={selected.size === 0 || addMut.isPending}
