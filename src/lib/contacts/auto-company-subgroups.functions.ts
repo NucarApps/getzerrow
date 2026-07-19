@@ -424,6 +424,14 @@ export async function reconcileAutoParentsForContacts(
 ): Promise<void> {
   if (contactIds.length === 0) return;
   try {
+    // First: prune stale auto-added memberships. A contact whose current
+    // company key no longer matches an auto-subgroup they were pinned to
+    // by a previous reconcile (e.g. the subgroup was named after a since-
+    // merged company variant) must be removed before the reconcile below,
+    // otherwise the subgroup lingers with obsolete members and refuses to
+    // die on cleanup.
+    await pruneStaleAutoSubgroupMemberships(supabase, userId, contactIds);
+
     const { data: parents } = await supabase
       .from("contact_groups")
       .select("id,user_id")
@@ -436,9 +444,151 @@ export async function reconcileAutoParentsForContacts(
         // Non-fatal per parent.
       }
     }
+
+    // After reconcile: drop any auto-generated subgroup that is now empty.
+    // reconcileAutoCompanySubgroupsImpl only deletes subgroups whose parent
+    // no longer represents them; empty subgroups whose key still matches
+    // stick around otherwise.
+    await dropEmptyAutoSubgroups(supabase, userId);
   } catch {
     // Non-fatal.
   }
+}
+
+/** For each contact, remove auto-added memberships from any auto-generated
+ *  subgroup whose normalized name doesn't match the contact's current
+ *  derived company key. Best-effort. */
+async function pruneStaleAutoSubgroupMemberships(
+  supabase: DB,
+  userId: string,
+  contactIds: string[],
+): Promise<void> {
+  const [
+    { data: aliasRows },
+    { data: allCompanyRows },
+    { data: nameAliasRows },
+    { data: companyDomainRows },
+    { data: contactRows },
+  ] = await Promise.all([
+    supabase
+      .from("company_aliases")
+      .select("primary_domain, alias_domain")
+      .eq("user_id", userId),
+    supabase.from("companies").select("id,name").eq("user_id", userId),
+    supabase
+      .from("company_name_aliases")
+      .select("name_key,company_id")
+      .eq("user_id", userId),
+    supabase
+      .from("company_domains")
+      .select("domain,company_id")
+      .eq("user_id", userId),
+    supabase
+      .from("contacts")
+      .select("id, company, email, website, company_id")
+      .in("id", contactIds)
+      .eq("user_id", userId),
+  ]);
+
+  const aliasMap = new Map<string, string>();
+  for (const r of aliasRows ?? []) {
+    if (r.alias_domain && r.primary_domain) aliasMap.set(r.alias_domain, r.primary_domain);
+  }
+  const companyMap = new Map<string, string>();
+  for (const c of allCompanyRows ?? []) if (c.id && c.name) companyMap.set(c.id, c.name);
+  const nameAliases = new Map<string, string>();
+  for (const r of (nameAliasRows ?? []) as Array<{
+    name_key: string;
+    company_id: string | null;
+  }>) {
+    const canonical = r.company_id ? companyMap.get(r.company_id) : null;
+    if (r.name_key && canonical) nameAliases.set(r.name_key, canonical);
+  }
+  const companyIdByDomain = new Map<string, string>();
+  for (const r of (companyDomainRows ?? []) as Array<{
+    domain: string;
+    company_id: string;
+  }>) {
+    if (r.domain && r.company_id) companyIdByDomain.set(r.domain, r.company_id);
+  }
+  const keyCtx: CompanyKeyContext = {
+    domainAliases: aliasMap,
+    companiesById: companyMap,
+    nameAliases,
+    companyIdByDomain,
+  };
+
+  const currentKey = new Map<string, string | null>();
+  for (const c of (contactRows ?? []) as ContactShape[]) {
+    const derived = deriveCompanyKey(c, keyCtx);
+    currentKey.set(c.id, derived?.key ?? null);
+  }
+
+  // Load every auto-generated subgroup the affected contacts belong to.
+  const { data: memberships } = await supabase
+    .from("contact_group_members")
+    .select(
+      "contact_id, group_id, auto_added, contact_groups:contact_groups(id,name,auto_generated_from_group_id)",
+    )
+    .in("contact_id", contactIds);
+
+  type Row = {
+    contact_id: string;
+    group_id: string;
+    auto_added: boolean | null;
+    contact_groups: {
+      id: string;
+      name: string;
+      auto_generated_from_group_id: string | null;
+    } | null;
+  };
+
+  const toDelete: { group_id: string; contact_id: string }[] = [];
+  for (const row of (memberships ?? []) as unknown as Row[]) {
+    const g = row.contact_groups;
+    if (!g || !g.auto_generated_from_group_id) continue; // only auto subgroups
+    if (!row.auto_added) continue; // never touch manual memberships
+    const key = currentKey.get(row.contact_id);
+    const subgroupKey = normalizeCompanyName(g.name);
+    if (!subgroupKey) continue;
+    if (key && subgroupKey === key) continue;
+    toDelete.push({ group_id: row.group_id, contact_id: row.contact_id });
+  }
+
+  // Group by group_id for fewer deletes.
+  const byGroup = new Map<string, string[]>();
+  for (const d of toDelete) {
+    const arr = byGroup.get(d.group_id) ?? [];
+    arr.push(d.contact_id);
+    byGroup.set(d.group_id, arr);
+  }
+  for (const [group_id, cids] of byGroup) {
+    await supabase
+      .from("contact_group_members")
+      .delete()
+      .eq("group_id", group_id)
+      .eq("auto_added", true)
+      .in("contact_id", cids);
+  }
+}
+
+/** Delete every auto-generated subgroup with zero members. Best-effort. */
+async function dropEmptyAutoSubgroups(supabase: DB, userId: string): Promise<void> {
+  const { data: autos } = await supabase
+    .from("contact_groups")
+    .select("id")
+    .eq("user_id", userId)
+    .not("auto_generated_from_group_id", "is", null);
+  const ids = (autos ?? []).map((r) => r.id);
+  if (ids.length === 0) return;
+  const { data: memberCounts } = await supabase
+    .from("contact_group_members")
+    .select("group_id")
+    .in("group_id", ids);
+  const hasMember = new Set((memberCounts ?? []).map((r) => r.group_id));
+  const emptyIds = ids.filter((id) => !hasMember.has(id));
+  if (emptyIds.length === 0) return;
+  await supabase.from("contact_groups").delete().in("id", emptyIds);
 }
 
 /** Reconcile every auto-company-subgroup parent for the current user.
@@ -447,6 +597,24 @@ export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    // Prune stale auto-memberships across every contact first, so leftover
+    // pins to since-merged company variants don't survive the reconcile.
+    const { data: allContactRows } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId);
+    const allIds = (allContactRows ?? []).map((r) => r.id);
+    if (allIds.length > 0) {
+      // Chunk to keep payloads sane.
+      const chunkSize = 500;
+      for (let i = 0; i < allIds.length; i += chunkSize) {
+        await pruneStaleAutoSubgroupMemberships(
+          supabase,
+          userId,
+          allIds.slice(i, i + chunkSize),
+        );
+      }
+    }
     const { data: parents, error } = await supabase
       .from("contact_groups")
       .select("id")
@@ -466,6 +634,7 @@ export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
         // Skip failing parents; keep going.
       }
     }
+    await dropEmptyAutoSubgroups(supabase, userId);
     return { reconciled, membershipsAdded: totalAdded, membershipsRemoved: totalRemoved };
   });
 
