@@ -268,6 +268,102 @@ describe("applyPendingOpsToList — coalesced flush", () => {
   });
 });
 
+// When AI classification files a freshly-arrived (pending_ai) email into a
+// hidden/auto-archived folder, the row must not vanish abruptly — it dwells
+// tagged as settled-out so the UI can show "Filed to X" for a beat, then a
+// sweep op removes the batch. User-initiated changes keep instant removal.
+describe("applyPendingOpsToList — pending_ai settle dwell", () => {
+  const KEY = ["emails", "acc-1", "all", "page:1:start"] as const;
+  const pendingRow = (id: string): EmailRow => ({
+    id,
+    user_id: "u1",
+    gmail_message_id: `m-${id}`,
+    received_at: "2024-01-02T00:00:00Z",
+    is_archived: false,
+    folder_id: null,
+    gmail_account_id: "acc-1",
+    raw_labels: ["INBOX"],
+    classified_by: "pending_ai",
+  });
+
+  it("tags (not removes) a pending_ai row classified into a hidden folder", () => {
+    const existing = [pendingRow("a")];
+    const settled: EmailRow = {
+      ...pendingRow("a"),
+      classified_by: "ai",
+      folder_id: "f-hidden",
+      folder: { hide_from_inbox: true },
+    };
+    const { next, hasSettledOut } = applyPendingOpsToList(
+      existing,
+      [{ kind: "update", row: settled }],
+      KEY,
+    );
+    expect(hasSettledOut).toBe(true);
+    expect(next).toHaveLength(1);
+    expect(next?.[0]._settledOut).toBe(true);
+    expect(next?.[0].folder_id).toBe("f-hidden");
+  });
+
+  it("patches in place with no tag when classification lands in a visible folder", () => {
+    const existing = [pendingRow("a")];
+    const settled: EmailRow = {
+      ...pendingRow("a"),
+      classified_by: "ai",
+      folder_id: "f-visible",
+      folder: { hide_from_inbox: false, auto_archive: false },
+    };
+    const { next, hasSettledOut } = applyPendingOpsToList(
+      existing,
+      [{ kind: "update", row: settled }],
+      KEY,
+    );
+    expect(hasSettledOut).toBe(false);
+    expect(next?.[0]._settledOut).toBeUndefined();
+    expect(next?.[0].folder_id).toBe("f-visible");
+  });
+
+  it("removes immediately when a non-pending row is archived (user action)", () => {
+    const existing = [{ ...pendingRow("a"), classified_by: "ai" }];
+    const archived: EmailRow = { ...pendingRow("a"), classified_by: "ai", is_archived: true };
+    const { next, hasSettledOut } = applyPendingOpsToList(
+      existing,
+      [{ kind: "update", row: archived }],
+      KEY,
+    );
+    expect(hasSettledOut).toBe(false);
+    expect(next).toHaveLength(0);
+  });
+
+  it("removes immediately when a still-pending_ai row is archived (user beat the AI)", () => {
+    const existing = [pendingRow("a")];
+    const archived: EmailRow = { ...pendingRow("a"), is_archived: true };
+    const { next } = applyPendingOpsToList(existing, [{ kind: "update", row: archived }], KEY);
+    expect(next).toHaveLength(0);
+  });
+
+  it("delete always removes, even a tagged row", () => {
+    const existing = [{ ...pendingRow("a"), _settledOut: true }];
+    const { next } = applyPendingOpsToList(existing, [{ kind: "delete", row: { id: "a" } }], KEY);
+    expect(next).toHaveLength(0);
+  });
+
+  it("sweep removes tagged rows and leaves the rest", () => {
+    const existing = [
+      { ...pendingRow("a"), classified_by: "ai" as const },
+      { ...pendingRow("b"), _settledOut: true },
+    ];
+    const { next } = applyPendingOpsToList(existing, [{ kind: "sweep" }], KEY);
+    expect(next?.map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("sweep with nothing tagged is a no-op (no spurious render)", () => {
+    const existing = [{ ...pendingRow("a"), classified_by: "ai" as const }];
+    const { next } = applyPendingOpsToList(existing, [{ kind: "sweep" }], KEY);
+    expect(next).toBeNull();
+  });
+});
+
 // A damaged push (the realtime service strips oversized rows or attaches an
 // error notice) must be detected so the hook falls back to a re-fetch instead
 // of splicing a broken row — or worse, silently ignoring a real change.

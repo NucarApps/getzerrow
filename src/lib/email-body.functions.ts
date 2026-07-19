@@ -15,6 +15,8 @@ import {
   searchEmailsDecrypted,
   searchEmailsParticipantsDecrypted,
 } from "./sync/encrypted-reader";
+import { EMAIL_LIST_COLUMNS } from "./email-list-columns";
+import { mergeSearchRows } from "./search-merge";
 
 export const getEmailBody = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -116,26 +118,37 @@ export const searchInbox = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const hasOperator = data.from !== null || data.to !== null;
-    if (hasOperator) {
-      const { rows, error } = await searchEmailsParticipantsDecrypted({
-        userId,
-        from: data.from,
-        to: data.to,
-        rest: data.rest,
-        limit: data.limit,
-        offset: data.offset,
-        accountId: data.account_id,
-      });
-      if (error) return { rows: [], error };
-      return { rows, error: null };
-    }
-    const { rows, error } = await searchEmailsDecrypted({
-      userId,
-      query: data.query,
-      limit: data.limit,
-      offset: data.offset,
-      accountId: data.account_id,
-    });
+    const { rows: hits, error } = hasOperator
+      ? await searchEmailsParticipantsDecrypted({
+          userId,
+          from: data.from,
+          to: data.to,
+          rest: data.rest,
+          limit: data.limit,
+          offset: data.offset,
+          accountId: data.account_id,
+        })
+      : await searchEmailsDecrypted({
+          userId,
+          query: data.query,
+          limit: data.limit,
+          offset: data.offset,
+          accountId: data.account_id,
+        });
     if (error) return { rows: [], error };
-    return { rows, error: null };
+    if (hits.length === 0) return { rows: [], error: null };
+    // Attach the list-view metadata here (one in-region query) instead of a
+    // second client round-trip. The user filter is mandatory — the admin
+    // client bypasses RLS.
+    const { data: metaRows, error: metaErr } = await supabaseAdmin
+      .from("emails")
+      .select(EMAIL_LIST_COLUMNS)
+      .in(
+        "id",
+        hits.map((h) => h.id),
+      )
+      .eq("user_id", userId);
+    if (metaErr) return { rows: [], error: metaErr.message };
+    const merged = mergeSearchRows(hits, (metaRows ?? []) as unknown as Array<{ id: string }>);
+    return { rows: merged, error: null };
   });

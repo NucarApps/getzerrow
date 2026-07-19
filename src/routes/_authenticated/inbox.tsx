@@ -28,6 +28,7 @@ import {
 } from "@/lib/gmail.functions";
 import { BACKGROUND_SYNC_INTERVAL_MS } from "@/lib/sync/config";
 import { matchesSearchScope } from "@/lib/search-scope";
+import { EMAIL_LIST_COLUMNS } from "@/lib/email-list-columns";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -346,15 +347,9 @@ function InboxPage() {
 
   const loadOlderFn = useServerFn(loadOlderFromGmail);
 
-  // Columns selected for any list view. Excludes body_text + body_html
-  // (often multi-MB) — those are fetched on-demand via selectedFullQ when
-  // the user actually opens an email. Keeps both the initial fetch AND
-  // every realtime UPDATE payload small. raw_labels is included because
-  // the "no_rules" filter reads it. snoozed_until is included so local
-  // search results can apply the same visibility filter as normal lists.
-  // forward_* columns are operator-facing, not rendered in the inbox.
-  const LIST_COLUMNS =
-    "id,from_addr,received_at,is_read,is_archived,folder_id,ai_confidence,thread_id,classified_by,matched_filter_ids,matched_folder_ids,has_attachment,processed_at,raw_labels,snoozed_until,gmail_message_id,surfaced_to_inbox";
+  // Columns selected for any list view — shared with the searchInbox server
+  // fn (see email-list-columns.ts for the rationale).
+  const LIST_COLUMNS = EMAIL_LIST_COLUMNS;
 
   // Parse the search query once so both the data fetcher and the local filter
   // agree on what's an operator query vs free-text.
@@ -383,11 +378,13 @@ function InboxPage() {
         : `page:${page}:${cursor ?? "start"}`,
     ],
     enabled: !!accountId && (!isSearching || foldersQ.isSuccess),
-    // Self-heal: realtime is the fast path, but a dropped websocket or a
-    // dropped push must never strand a stale list. A cheap 30s re-check
-    // keeps the open inbox honest (off while searching — search re-runs on
-    // its own key changes; off in background tabs by default).
-    refetchInterval: isSearching ? false : 30_000,
+    // No interval polling: realtime patches the cache directly and its 15s
+    // liveness watchdog rebuilds dead channels (whose resubscribe runs a
+    // catch-up invalidate). The change-gated background sync below is the
+    // self-heal for missed pushes. staleTime keeps the focus refetch from
+    // re-running the decrypt round-trip when realtime just updated us.
+    refetchInterval: false,
+    staleTime: 15_000,
     queryFn: async () => {
       const isNoRules = effectiveFolder === "no_rules";
       const isAllMail = effectiveFolder === "all_mail";
@@ -416,26 +413,9 @@ function InboxPage() {
             offset: (page - 1) * PAGE_SIZE,
           },
         });
-        const hits = res.rows ?? [];
-        if (hits.length === 0) return [];
-        const ids = hits.map((h) => h.id);
-        const { data } = await supabase.from("emails").select(LIST_COLUMNS).in("id", ids);
-        const metaById = new Map<string, Email>();
-        for (const m of (data ?? []) as unknown as Email[]) metaById.set(m.id, m);
-        const rows = hits
-          .map((h) => {
-            const meta = metaById.get(h.id);
-            if (!meta) return null;
-            // Attach the already-decrypted content fields so the row renders
-            // without a second decrypt round-trip (listFieldsQ skips it).
-            return {
-              ...meta,
-              subject: h.subject,
-              snippet: h.snippet,
-              from_name: h.from_name,
-            } as unknown as Email;
-          })
-          .filter((r): r is Email => r !== null);
+        // The server fn already merged list metadata with the decrypted
+        // subject/snippet/from_name — one round-trip, no client follow-up.
+        const rows = (res.rows ?? []) as unknown as Email[];
         // Search spans the whole mailbox — keep archived/filed matches.
         return rows.filter(matchesSearchScope);
       }
@@ -1443,6 +1423,13 @@ function InboxPage() {
               (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
             const rowFolder =
               showFolderPill && e.folder_id ? folderList.find((f) => f.id === e.folder_id) : null;
+            // AI classification just filed this fresh row out of the inbox;
+            // it dwells subdued for a beat (realtime sweep removes it) so
+            // arrivals don't visibly vanish mid-glance.
+            const settledOut = (e as { _settledOut?: boolean })._settledOut === true;
+            const settledFolderName = settledOut
+              ? (folderList.find((f) => f.id === e.folder_id)?.name ?? null)
+              : null;
             const isChecked = selectedIds.has(e.id);
             const toggleCheck = () => {
               setSelectedIds((prev) => {
@@ -1474,7 +1461,7 @@ function InboxPage() {
                         else setSelectedId(e.id);
                       }
                     }}
-                    className={`group relative block w-full pl-9 pr-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""}`}
+                    className={`group relative block w-full pl-9 pr-4 py-2 text-left transition-colors hover:bg-accent/50 ${selectedId === e.id ? "bg-accent" : ""} ${isChecked ? "bg-accent/60" : ""} ${settledOut ? "opacity-50" : ""}`}
                   >
                     <div
                       className={`absolute left-3 top-1/2 -translate-y-1/2 transition-opacity ${isChecked || selectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
@@ -1499,9 +1486,13 @@ function InboxPage() {
                         )}
                       </span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {e.received_at
-                          ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false })
-                          : ""}
+                        {settledOut
+                          ? settledFolderName
+                            ? `Filed to ${settledFolderName}`
+                            : "Filed"
+                          : e.received_at
+                            ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false })
+                            : ""}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">

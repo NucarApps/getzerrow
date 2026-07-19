@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { createCoalescedInvalidator } from "@/lib/coalesced-invalidate";
 
 export type EmailRow = {
   id: string;
@@ -17,6 +18,11 @@ export type EmailRow = {
     auto_archive?: boolean | null;
     hide_from_inbox?: boolean | null;
   } | null;
+  /** Client-only tag: AI classification just filed this row out of the
+   * current view. It dwells briefly (rendered subdued as "Filed") until the
+   * next sweep op removes it, instead of vanishing mid-glance. Never comes
+   * from the server; any refetch naturally clears it. */
+  _settledOut?: boolean;
   [key: string]: unknown;
 };
 
@@ -95,16 +101,20 @@ export function rowBelongsInList(row: EmailRow, queryKey: readonly unknown[]): b
 }
 
 /** Coalesced realtime op buffered before a flush. Later ops for the
- * same id win — the buffer self-deduplicates. */
+ * same id win — the buffer self-deduplicates. "sweep" removes any rows
+ * left dwelling with `_settledOut` (see below). */
 export type PendingRealtimeOp =
   | { kind: "insert"; row: EmailRow }
   | { kind: "update"; row: EmailRow }
-  | { kind: "delete"; row: { id: string } };
+  | { kind: "delete"; row: { id: string } }
+  | { kind: "sweep" };
 
 /** Pure: apply a batch of coalesced ops to one cached list. Returns the
  * next list (sorted) plus whether a refetch is needed for any "row newly
- * belongs but wasn't present" case. Returns null `next` when nothing
- * changed — caller leaves the list untouched (avoids re-renders).
+ * belongs but wasn't present" case, and whether any pending_ai row was
+ * tagged settled-out (caller schedules a delayed sweep). Returns null
+ * `next` when nothing changed — caller leaves the list untouched (avoids
+ * re-renders).
  *
  * Exported so the coalescer logic can be unit-tested without spinning
  * up React or React Query. */
@@ -112,26 +122,41 @@ export function applyPendingOpsToList(
   rows: EmailRow[],
   ops: PendingRealtimeOp[],
   queryKey: readonly unknown[],
-): { next: EmailRow[] | null; needsRefetch: boolean } {
+): { next: EmailRow[] | null; needsRefetch: boolean; hasSettledOut: boolean } {
   let next = rows;
   let mutated = false;
   let needsRefetch = false;
+  let hasSettledOut = false;
   for (const op of ops) {
-    if (op.kind === "insert") {
+    if (op.kind === "sweep") {
+      if (next.some((r) => r._settledOut === true)) {
+        next = next.filter((r) => r._settledOut !== true);
+        mutated = true;
+      }
+    } else if (op.kind === "insert") {
       if (!rowBelongsInList(op.row, queryKey)) continue;
       if (next.some((r) => r.id === op.row.id)) continue;
       next = [op.row, ...next];
       mutated = true;
     } else if (op.kind === "update") {
-      const present = next.some((r) => r.id === op.row.id);
+      const cached = next.find((r) => r.id === op.row.id);
       const belongs = rowBelongsInList(op.row, queryKey);
-      if (present && !belongs) {
-        next = next.filter((r) => r.id !== op.row.id);
+      if (cached && !belongs) {
+        // AI classification just filed a freshly-arrived row out of this
+        // view: let it dwell tagged so the list doesn't yank it mid-glance.
+        // Anything else leaving the view (user archive/move, still-pending
+        // rows) is removed instantly — that's direct feedback to an action.
+        if (isPendingAi(cached) && !isPendingAi(op.row)) {
+          next = next.map((r) => (r.id === op.row.id ? { ...r, ...op.row, _settledOut: true } : r));
+          hasSettledOut = true;
+        } else {
+          next = next.filter((r) => r.id !== op.row.id);
+        }
         mutated = true;
-      } else if (present && belongs) {
+      } else if (cached && belongs) {
         next = next.map((r) => (r.id === op.row.id ? { ...r, ...op.row } : r));
         mutated = true;
-      } else if (!present && belongs) {
+      } else if (!cached && belongs) {
         needsRefetch = true;
       }
     } else if (op.kind === "delete") {
@@ -140,13 +165,13 @@ export function applyPendingOpsToList(
       mutated = true;
     }
   }
-  if (!mutated) return { next: null, needsRefetch };
+  if (!mutated) return { next: null, needsRefetch, hasSettledOut };
   next = next.slice().sort((a, b) => {
     const ta = a.received_at ? new Date(a.received_at).getTime() : 0;
     const tb = b.received_at ? new Date(b.received_at).getTime() : 0;
     return tb - ta;
   });
-  return { next, needsRefetch };
+  return { next, needsRefetch, hasSettledOut };
 }
 
 function matchesScope(row: EmailRow, scope: string): boolean {
@@ -281,6 +306,21 @@ export function useEmailRealtime() {
     // (UPDATE after INSERT, DELETE after either) so it self-deduplicates.
     const pending = new Map<string, PendingRealtimeOp>();
     let rafHandle: number | null = null;
+    // Dwell timer for settled-out rows (AI just filed them out of view).
+    // One shared sweep per batch; a refetch replacing the list wholesale
+    // also clears tags, so a missed sweep can never strand a row.
+    let settleSweepTimer: ReturnType<typeof setTimeout> | null = null;
+    const SETTLED_OUT_DWELL_MS = 4_000;
+    const SWEEP_OP_KEY = " sweep";
+
+    function scheduleSettleSweep() {
+      if (settleSweepTimer !== null) return;
+      settleSweepTimer = setTimeout(() => {
+        settleSweepTimer = null;
+        pending.set(SWEEP_OP_KEY, { kind: "sweep" });
+        scheduleFlush();
+      }, SETTLED_OUT_DWELL_MS);
+    }
 
     function flush() {
       rafHandle = null;
@@ -290,13 +330,20 @@ export function useEmailRealtime() {
 
       const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
       let anyRefetch = false;
+      let anySettledOut = false;
       for (const [key] of entries) {
         patchOneQuery(key as unknown[], (rows) => {
-          const { next, needsRefetch } = applyPendingOpsToList(rows, ops, key as unknown[]);
+          const { next, needsRefetch, hasSettledOut } = applyPendingOpsToList(
+            rows,
+            ops,
+            key as unknown[],
+          );
           if (needsRefetch) anyRefetch = true;
+          if (hasSettledOut) anySettledOut = true;
           return next;
         });
       }
+      if (anySettledOut) scheduleSettleSweep();
       if (anyRefetch) {
         Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
       }
@@ -347,15 +394,14 @@ export function useEmailRealtime() {
 
     // A damaged push tells us SOMETHING changed without saying what (the
     // realtime service strips oversized rows; RLS can withhold fields).
-    // Re-fetch the lists instead of ignoring it — throttled so an error
+    // Re-fetch the lists instead of ignoring it — coalesced so an error
     // burst costs one round-trip, not one per event.
-    let lastDamagedRefetchAt = 0;
+    const damagedPushInvalidator = createCoalescedInvalidator((keys) => {
+      for (const key of keys) qc.invalidateQueries({ queryKey: key as unknown[] });
+    });
     function refetchFromDamagedPush() {
-      const now = Date.now();
-      if (now - lastDamagedRefetchAt < 5000) return;
-      lastDamagedRefetchAt = now;
-      qc.invalidateQueries({ queryKey: ["emails"] });
-      bumpCounts();
+      damagedPushInvalidator.request(["emails"]);
+      damagedPushInvalidator.request(["folder-counts"]);
     }
 
     function scheduleReconnect() {
@@ -376,9 +422,12 @@ export function useEmailRealtime() {
     // rebuilt here, tightening the worst case from the 30s background sync
     // to ~15s. Skipped while hidden (realtime is expected idle) and while a
     // reconnect is already scheduled.
-    function checkRealtimeLiveness() {
-      if (cancelled || reconnectTimer) return;
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    /** Returns true when the channel was stale and had to be rebuilt — the
+     * SUBSCRIBED handler of the new channel then runs the catch-up
+     * invalidate, so callers must not invalidate again themselves. */
+    function checkRealtimeLiveness(): boolean {
+      if (cancelled || reconnectTimer) return false;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return false;
       const state = channel?.state;
       const channelDead = !channel || (state !== "joined" && state !== "joining");
       // The underlying phoenix socket can drop without our channel status
@@ -394,7 +443,9 @@ export function useEmailRealtime() {
       if (channelDead || socketDead) {
         teardown();
         connect();
+        return true;
       }
+      return false;
     }
 
     function startWatchdog() {
@@ -504,12 +555,13 @@ export function useEmailRealtime() {
 
     const onVisible = () => {
       if (document.visibilityState === "visible") {
-        // Rebuild the channel first if it went stale while hidden, then
-        // catch up on anything realtime missed during the gap.
+        // Rebuild the channel if it went stale while hidden. When it was
+        // healthy the whole time, realtime already patched the cache — no
+        // blanket invalidate. (A rebuild's SUBSCRIBED handler catches up;
+        // the emails query's own staleTime-gated focus refetch covers the
+        // rest.) The old unconditional triple-invalidate here was the main
+        // source of the focus-time decrypt burst.
         checkRealtimeLiveness();
-        qc.invalidateQueries({ queryKey: ["emails"] });
-        qc.invalidateQueries({ queryKey: ["folders"] });
-        bumpCounts();
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -524,6 +576,11 @@ export function useEmailRealtime() {
         clearInterval(watchdogTimer);
         watchdogTimer = null;
       }
+      if (settleSweepTimer) {
+        clearTimeout(settleSweepTimer);
+        settleSweepTimer = null;
+      }
+      damagedPushInvalidator.dispose();
       teardown();
       authSub.subscription.unsubscribe();
       document.removeEventListener("visibilitychange", onVisible);
