@@ -90,7 +90,13 @@ import {
   listCompanies,
   openOrCreateCompanyForBucket,
   convergeBucketCompany,
+  mergeCompanies,
+  updateCompany,
 } from "@/lib/companies/companies.functions";
+import {
+  buildInlineCompanyMergeSuggestions,
+  type InlineCompanyMergeSuggestion,
+} from "@/lib/companies/inline-merge";
 import { listMeetingPeople } from "@/lib/calendar.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -115,6 +121,8 @@ function ContactsPage() {
   const listCompaniesFn = useServerFn(listCompanies);
   const openCompanyFn = useServerFn(openOrCreateCompanyForBucket);
   const convergeCompanyFn = useServerFn(convergeBucketCompany);
+  const mergeCompanyFn = useServerFn(mergeCompanies);
+  const updateCompanyFn = useServerFn(updateCompany);
   const [openingBucketKey, setOpeningBucketKey] = useState<string | null>(null);
 
   const search = Route.useSearch();
@@ -506,73 +514,10 @@ function ContactsPage() {
   });
   const [mergingKey, setMergingKey] = useState<string | null>(null);
 
-  type MergeSuggestion = {
-    kind: "alias" | "rename";
-    normalizedName: string;
-    displayName: string;
-    primaryBucketKey: string;
-    primaryDomain: string;
-    aliasDomains: string[];
-    /** Contact IDs from non-primary buckets, used for rename-mode merges. */
-    aliasContactIds: string[];
-    otherCount: number;
-  };
-  const mergeSuggestions = useMemo(() => {
-    const byName = new Map<
-      string,
-      { displayName: string; buckets: { key: string; domain: string; contacts: Contact[] }[] }
-    >();
-    for (const b of companyBuckets) {
-      if (b.kind !== "company" || !b.domain) continue;
-      const counts = new Map<string, number>();
-      for (const c of b.contacts) {
-        const name = (c.company ?? "").trim();
-        if (!name) continue;
-        counts.set(name, (counts.get(name) ?? 0) + 1);
-      }
-      let dominant = b.name;
-      let best = 0;
-      for (const [name, n] of counts) {
-        if (n > best) {
-          best = n;
-          dominant = name;
-        }
-      }
-      const norm = normalizeCompanyName(dominant);
-      if (!norm) continue;
-      const entry = byName.get(norm) ?? { displayName: dominant, buckets: [] };
-      entry.buckets.push({ key: b.key, domain: b.domain, contacts: b.contacts });
-      byName.set(norm, entry);
-    }
-    const out = new Map<string, MergeSuggestion>();
-    for (const [norm, entry] of byName) {
-      if (entry.buckets.length < 2) continue;
-      if (mergeDismissed.has(norm)) continue;
-      const sorted = [...entry.buckets].sort(
-        (a, b) => b.contacts.length - a.contacts.length || a.domain.localeCompare(b.domain),
-      );
-      const primary = sorted[0];
-      const others = sorted.slice(1);
-      // Dedupe alias domains and drop any that equal the primary domain to
-      // avoid the server's "alias must differ from primary" rejection.
-      const aliasDomains = Array.from(
-        new Set(others.map((s) => s.domain).filter((d) => d !== primary.domain)),
-      );
-      const aliasContactIds = others.flatMap((b) => b.contacts.map((c) => c.id));
-      const suggestion: MergeSuggestion = {
-        kind: aliasDomains.length > 0 ? "alias" : "rename",
-        normalizedName: norm,
-        displayName: entry.displayName,
-        primaryBucketKey: primary.key,
-        primaryDomain: primary.domain,
-        aliasDomains,
-        aliasContactIds,
-        otherCount: others.length,
-      };
-      for (const b of entry.buckets) out.set(b.key, suggestion);
-    }
-    return out;
-  }, [companyBuckets, mergeDismissed]);
+  const mergeSuggestions = useMemo(
+    () => buildInlineCompanyMergeSuggestions(companyBuckets, mergeDismissed),
+    [companyBuckets, mergeDismissed],
+  );
 
   function dismissMerge(normalizedName: string) {
     setMergeDismissed((prev) => {
@@ -590,23 +535,36 @@ function ContactsPage() {
   }
 
   const renameCompanyFn = useServerFn(renameCompanyForContacts);
-  async function performMerge(s: MergeSuggestion) {
+  async function performMerge(s: InlineCompanyMergeSuggestion) {
     setMergingKey(s.normalizedName);
     try {
-      // Guard: always skip an alias equal to primary as a belt-and-suspenders check.
-      const cleanAliases = s.aliasDomains.filter((d) => d !== s.primaryDomain);
-      for (const alias of cleanAliases) {
-        await addAlias({ data: { primaryDomain: s.primaryDomain, aliasDomain: alias } });
+      if (s.kind === "company") {
+        if (!s.primaryCompanyId) throw new Error("Target company not found");
+        await updateCompanyFn({ data: { id: s.primaryCompanyId, name: s.displayName } });
+        for (const sourceId of s.sourceCompanyIds) {
+          await mergeCompanyFn({ data: { sourceId, targetId: s.primaryCompanyId } });
+        }
+      } else {
+        // Guard: always skip an alias equal to primary as a belt-and-suspenders check.
+        const cleanAliases = s.aliasDomains.filter((d) => d !== s.primaryDomain);
+        for (const alias of cleanAliases) {
+          await addAlias({ data: { primaryDomain: s.primaryDomain, aliasDomain: alias } });
+        }
+        if (s.kind === "rename" && s.aliasContactIds.length > 0) {
+          // Same domain, different name variants — normalize the company name
+          // on the non-primary contacts so the buckets collapse on next render.
+          await renameCompanyFn({
+            data: { contactIds: s.aliasContactIds, newName: s.displayName },
+          });
+        }
       }
-      if (s.kind === "rename" && s.aliasContactIds.length > 0) {
-        // Same domain, different name variants — normalize the company name
-        // on the non-primary contacts so the buckets collapse on next render.
-        await renameCompanyFn({
-          data: { contactIds: s.aliasContactIds, newName: s.displayName },
-        });
-      }
-      await qc.invalidateQueries({ queryKey: ["company-aliases"] });
-      await qc.invalidateQueries({ queryKey: ["contacts"] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["company-aliases"] }),
+        qc.invalidateQueries({ queryKey: ["companies"] }),
+        qc.invalidateQueries({ queryKey: ["contacts"] }),
+        qc.invalidateQueries({ queryKey: ["contact-groups"] }),
+        qc.invalidateQueries({ queryKey: ["companies", "duplicates"] }),
+      ]);
       toast.success(`Merged ${s.otherCount + 1} companies into "${s.displayName}".`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Merge failed");
