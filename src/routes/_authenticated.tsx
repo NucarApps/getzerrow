@@ -21,8 +21,9 @@ import {
   Menu,
   BarChart3,
   Users,
-  IdCard,
+  Video,
   Shield,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -37,8 +38,12 @@ import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
+import { useContactsRealtime } from "@/lib/use-contacts-realtime";
 import { BackfillBanner } from "@/components/inbox/BackfillBanner";
+import { ReconnectBanner } from "@/components/inbox/ReconnectBanner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+
+const SPECIAL_VIEWS = ["all", "all_mail", "no_rules"];
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
@@ -52,6 +57,7 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthedLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   useEmailRealtime();
+  useContactsRealtime();
 
   return (
     <AccountSelectionProvider>
@@ -69,9 +75,20 @@ function AuthedLayoutInner({
   mobileOpen: boolean;
   setMobileOpen: (v: boolean) => void;
 }) {
+  const { activeAccountId, setActiveAccountId } = useAccountSelection();
+  const { setSelected } = useFolderSelection();
   const listAccounts = useServerFn(listMyGmailAccounts);
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
-  const accounts = accountsQ.data?.accounts ?? [];
+  const accounts = useMemo(() => accountsQ.data?.accounts ?? [], [accountsQ.data]);
+
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    const activeExists =
+      activeAccountId && accounts.some((account) => account.id === activeAccountId);
+    if (activeExists) return;
+    setActiveAccountId(accounts[0].id);
+    setSelected("all");
+  }, [accounts, activeAccountId, setActiveAccountId, setSelected]);
 
   return (
     <div className="relative flex h-[100dvh] overflow-hidden bg-background text-foreground">
@@ -139,9 +156,15 @@ function AuthedLayoutInner({
           </button>
           <img src={zerrowLogo} alt="Zerrow" className="h-12 w-auto" />
           <div className="ml-auto min-w-0 max-w-[60%]">
-            <AccountSwitcher accounts={accounts} loading={accountsQ.isLoading} compact />
+            <AccountSwitcher
+              accounts={accounts}
+              loading={accountsQ.isLoading}
+              failed={accountsQ.isError}
+              compact
+            />
           </div>
         </div>
+        <ReconnectBanner />
         <BackfillBanner />
         <div className="min-h-0 flex-1">
           <Outlet />
@@ -197,6 +220,20 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
       return (data ?? []) as Folder[];
     },
   });
+
+  // Reconcile the selected folder with the current account's folder list.
+  // `selected` is stored globally (not per account), so after the active
+  // account is auto-switched (invalid stored id, fresh load, cross-tab) a
+  // folder id from the *other* account can linger — the inbox then queries a
+  // folder that holds none of this account's mail and shows empty. If the
+  // selection is a folder id that doesn't exist for this account (and isn't
+  // one of the special views), fall back to the Inbox view.
+  useEffect(() => {
+    if (!accountId || !foldersQ.isSuccess) return;
+    if (SPECIAL_VIEWS.includes(selected)) return;
+    const folders = foldersQ.data ?? [];
+    if (!folders.some((f) => f.id === selected)) setSelected("all");
+  }, [accountId, foldersQ.isSuccess, foldersQ.data, selected, setSelected]);
 
   const labelsQ = useQuery({
     queryKey: ["gmail-labels", accountId],
@@ -266,6 +303,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         <AccountSwitcher
           accounts={accounts}
           loading={accountsQ.isLoading}
+          failed={accountsQ.isError}
           onNavigate={onNavigate}
         />
       </div>
@@ -290,6 +328,16 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         </button>
         <button
           type="button"
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname.startsWith("/tasks") ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          onClick={() => {
+            navigate({ to: "/tasks" });
+            onNavigate?.();
+          }}
+        >
+          <CheckCircle2 className="h-4 w-4" /> Tasks
+        </button>
+        <button
+          type="button"
           className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname.startsWith("/contacts") ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
           onClick={() => {
             navigate({ to: "/contacts" });
@@ -300,13 +348,13 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         </button>
         <button
           type="button"
-          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/my-card" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/meetings" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
           onClick={() => {
-            navigate({ to: "/my-card" });
+            navigate({ to: "/meetings" });
             onNavigate?.();
           }}
         >
-          <IdCard className="h-4 w-4" /> My card
+          <Video className="h-4 w-4" /> Meetings
         </button>
         <button
           type="button"

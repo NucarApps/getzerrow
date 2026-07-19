@@ -6,6 +6,19 @@
 // Phase 2 = dual-write: the RPCs populate BOTH plaintext and `*_enc`
 // columns. Phase 3 will stop writing plaintext and drop those columns.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { logError, logInfo, logMetric } from "@/lib/log.server";
+import {
+  backoffDelayMs,
+  isTransientWriteError,
+  resolveRetryConfig,
+  sleep,
+} from "@/lib/folder-write-retry";
+
+/** Postgres SQLSTATE from a Supabase RPC error, if present (e.g. "42703"). */
+function pgErrorCode(err: unknown): string | undefined {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : undefined;
+}
 
 function getKey(): string {
   const key = process.env.EMAIL_ENC_KEY;
@@ -156,17 +169,115 @@ export async function insertFolderExampleEncrypted(input: {
   snippet: string | null;
   source?: string | null;
 }): Promise<{ id: string | null; error: string | null }> {
-  const { data, error } = await supabaseAdmin.rpc("insert_folder_example_encrypted", {
-    p_user_id: input.user_id,
-    p_gmail_account_id: input.gmail_account_id,
-    p_folder_id: input.folder_id,
-    p_gmail_message_id: input.gmail_message_id,
-    p_from_addr: input.from_addr,
-    p_subject: input.subject,
-    p_snippet: input.snippet,
-    p_source: input.source ?? "seed",
-    p_key: getKey(),
-  } as never);
-  if (error) return { id: null, error: error.message };
+  const source = input.source ?? "seed";
+  const t0 = Date.now();
+  // One id per logical folder_example_write, stamped on every retry attempt's
+  // log line plus the terminal metric / error / failure record, so all events
+  // for a single write can be traced end-to-end.
+  const correlation_id = crypto.randomUUID();
+
+  // IDEMPOTENCY / DEDUPLICATION
+  // ---------------------------
+  // (folder_id, gmail_message_id) is the idempotency key for a folder example:
+  // `folder_examples` has a UNIQUE(folder_id, gmail_message_id) constraint and
+  // `insert_folder_example_encrypted` does `ON CONFLICT (folder_id,
+  // gmail_message_id) DO UPDATE`. Every retry below re-sends the SAME natural
+  // key, so a write that actually committed but returned a transient error
+  // (e.g. a dropped connection after commit) is upserted in place on retry —
+  // it can never create a duplicate encrypted example. No separate idempotency
+  // token is needed because the logical identity of an example is fully
+  // captured by (folder_id, gmail_message_id).
+  //
+  // Retry policy is read from the environment at call time so max attempts and
+  // backoff base can be tuned without a redeploy (see resolveRetryConfig).
+  const { maxAttempts, baseMs } = resolveRetryConfig();
+  let data: unknown = null;
+  let error: { message: string; code?: string } | null = null;
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    attempt++;
+    const res = await supabaseAdmin.rpc("insert_folder_example_encrypted", {
+      p_user_id: input.user_id,
+      p_gmail_account_id: input.gmail_account_id,
+      p_folder_id: input.folder_id,
+      p_gmail_message_id: input.gmail_message_id,
+      p_from_addr: input.from_addr,
+      p_subject: input.subject,
+      p_snippet: input.snippet,
+      p_source: source,
+      p_key: getKey(),
+    } as never);
+    data = res.data;
+    error = res.error;
+    if (!error) break;
+    if (attempt >= maxAttempts || !isTransientWriteError(error)) break;
+    const delayMs = backoffDelayMs(attempt, { baseMs });
+    logInfo("folder_example_write.retry", {
+      correlation_id,
+      folder_id: input.folder_id,
+      gmail_account_id: input.gmail_account_id,
+      source,
+      error_code: pgErrorCode(error),
+      attempt,
+      next_delay_ms: delayMs,
+    });
+    await sleep(delayMs);
+  }
+
+  // Metadata-only observability (no email content) so we can alert the moment
+  // folder learning stops persisting examples again. See log.server.logMetric.
+  const dims = {
+    correlation_id,
+    folder_id: input.folder_id,
+    gmail_account_id: input.gmail_account_id,
+    source,
+    duration_ms: Date.now() - t0,
+    attempts: attempt,
+  };
+
+  // Durable retry record (attempt > 1) feeding the retry-rate dashboard and the
+  // check-folder-retry-alerts cron. Only retried writes are recorded — retries
+  // are rare, so this stays small while surfacing instability before learning
+  // fully stops. Best-effort: a logging insert must never mask the write result.
+  if (attempt > 1) {
+    try {
+      await supabaseAdmin.from("folder_write_retries").insert({
+        user_id: input.user_id,
+        gmail_account_id: input.gmail_account_id,
+        folder_id: input.folder_id,
+        correlation_id,
+        source,
+        attempts: attempt,
+        outcome: error ? "failure" : "success",
+        error_code: error ? (pgErrorCode(error) ?? null) : null,
+      });
+    } catch (retryErr) {
+      logError("folder_write_retry.record_failed", { ...dims }, retryErr);
+    }
+  }
+
+  if (error) {
+    const error_code = pgErrorCode(error);
+    logMetric("folder_example_write", { ...dims, outcome: "failure", error_code });
+    logError("folder_example_write.failed", { ...dims, error_code }, error);
+    // Durable failure record so the check-folder-write-alerts cron can detect
+    // spikes by (error_code, folder_id) and page us. Best-effort: a logging
+    // insert must never mask the original write failure.
+    try {
+      await supabaseAdmin.from("folder_write_failures").insert({
+        user_id: input.user_id,
+        gmail_account_id: input.gmail_account_id,
+        folder_id: input.folder_id,
+        error_code: error_code ?? null,
+        source,
+        correlation_id,
+      });
+    } catch (logErr) {
+      logError("folder_write_failure.record_failed", { ...dims, error_code }, logErr);
+    }
+    return { id: null, error: error.message };
+  }
+
+  logMetric("folder_example_write", { ...dims, outcome: "success" });
   return { id: (data as string | null) ?? null, error: null };
 }

@@ -90,6 +90,23 @@ export function logAudit(action: string, fields: LogFields = {}): void {
   emit("info", `audit.${action}`, { audit: true, ...fields });
 }
 
+/**
+ * Emit a counter/gauge-style metric as a single structured log line so
+ * log-based alerting can aggregate it without parsing free-form messages.
+ * Every metric line shares `scope:"metric"` plus a stable `metric` name, so a
+ * dashboard/alert can filter on `scope="metric" AND metric="<name>"` and group
+ * by dimensions such as `outcome` or `error_code`.
+ *
+ * Shape:
+ *   {"ts":…,"level":"info","scope":"metric","metric":"folder_example_write",
+ *    "outcome":"failure","error_code":"42703","folder_id":"…","duration_ms":12}
+ *
+ * Metadata ONLY — pass ids, counts, codes; never email content or secrets.
+ */
+export function logMetric(metric: string, fields: LogFields = {}): void {
+  emit("info", "metric", { metric, ...fields });
+}
+
 // Backward-compatible logger shape used by older call sites.
 export const log = {
   debug: (ctx: LogFields | string, msg?: string) => {

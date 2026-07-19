@@ -60,8 +60,11 @@ export type FloatText = {
 
 // ---------------- Constants ----------------
 export const FIELD_H = 100;
+// Widescreen play field. World is FIELD_W (x) by FIELD_H (y).
+export const FIELD_W = 160;
+export const FIELD_CX = FIELD_W / 2;
 export const PLAYER_Y = 90;
-export const PLAYER_SPEED = 58;
+export const PLAYER_SPEED = 88;
 export const BULLET_SPEED = 110;
 export const ENEMY_BULLET_BASE = 38;
 export const BURST_MS = 600;
@@ -73,7 +76,7 @@ export const SLOW_DURATION = 8000;
 export const PIERCE_DURATION = 8000;
 export const FORMATION_TOP = 14;
 export const ROW_GAP = 6.5;
-export const COL_GAP = 8.5;
+export const COL_GAP = 12.5;
 export const ENEMY_HALF_W = 2.7;
 export const ENEMY_HALF_H = 1.8;
 export const PLAYER_HALF_W = 3.2;
@@ -215,14 +218,22 @@ export function spawnWave(level: number, rand: Rng): Enemy[] {
   return enemies;
 }
 
+// Centered horizontal origin for a freshly-spawned wave, so the formation
+// sits in the middle of the widescreen field regardless of column count.
+export function initialFormationX(enemies: Enemy[]): number {
+  let maxCol = 0;
+  for (const e of enemies) if (e.col > maxCol) maxCol = e.col;
+  return FIELD_CX - (maxCol * COL_GAP) / 2;
+}
+
 export function spawnBoss(level: number): Boss {
   const tier = Math.floor(level / BOSS_LEVEL_INTERVAL);
   const hp = 25 + tier * 15;
-  return { id: 1, x: 50, y: 18, vx: 18, hp, maxHp: hp, fireCooldown: 800 };
+  return { id: 1, x: FIELD_CX, y: 18, vx: 28, hp, maxHp: hp, fireCooldown: 800 };
 }
 
 export function spawnBunkers(): Bunker[] {
-  const xs = [20, 50, 80];
+  const xs = [FIELD_W * 0.16, FIELD_W * 0.38, FIELD_W * 0.62, FIELD_W * 0.84];
   return xs.map((x, i) => {
     const cells: boolean[][] = [];
     for (let r = 0; r < BUNKER_ROWS; r++) {

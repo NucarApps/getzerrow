@@ -1,40 +1,34 @@
-// Background backfill — paginates through older Gmail messages and
-// enqueues them onto the priority=10 lane.
-//
-// THREE ENTRY POINTS
+// Background backfill — three entry points that all funnel into the same
+// message_jobs queue.
 //
 //   backfillRecent(accountId, userId, maxResults=100)
 //     Quick bootstrap. Pulls up to maxResults messages from the last
-//     30 days and enqueues them at priority=0 (live lane) so they
-//     drain immediately. Used by:
-//       - The OAuth-callback flow (first-time connect)
-//       - bootstrapAccount fallback when there's no local email
-//         anchor (sync/history.ts)
+//     30 days and enqueues them at priority=0 (live lane) so they drain
+//     immediately. Used by the OAuth-callback flow (first-time connect)
+//     and by bootstrapAccount's fallback when there's no local email
+//     anchor (sync/history.ts).
 //
 //   backfillWindow(accountId, userId, { query, maxMessages, concurrency })
 //     Synchronous, in-process pagination of a Gmail query. Calls
 //     processGmailMessage directly with bounded concurrency — bypasses
-//     the queue entirely. Used by ad-hoc operator backfills via the
-//     UI's "Catch up last 7 days" button.
+//     the queue entirely. Used by the UI's "Catch up last 7 days"
+//     button.
 //
 //   startBackfillJob / tickBackfillJobs / cancelBackfillJob
-//     Durable background backfill. The "Pull last N months" button
-//     creates a backfill_jobs row, then a cron tick paginates Gmail
-//     in 2000-id batches per call, persisting page tokens between
-//     ticks. Status transitions:
-//       listing  → walking Gmail, enqueueing new ids
-//       processing → waiting for message_jobs to drain
-//       done       → terminal
-//       canceled   → terminal (operator canceled)
+//     Durable multi-tick backfill for deep history (months). Pages Gmail
+//     from a stable "after:YYYY/MM/DD" anchor across cron ticks and
+//     enqueues at priority=10 (backfill lane).
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { listMessages } from "../gmail.server";
-import { enqueueMessageJobs } from "./queue";
+import { logError } from "../log.server";
+import { enqueueMessageJobs } from "./enqueue";
 import { processGmailMessage } from "./process-message";
 
 export async function backfillRecent(accountId: string, userId: string, maxResults = 100) {
-  // Enqueue at priority=0 (live lane) so the dedicated live worker
-  // drains within seconds and we don't block the calling request
-  // (often the Pub/Sub webhook). 30d window covers longer outages.
+  // Used to bootstrap a fresh account / re-bootstrap after a history-too-old
+  // failure. Enqueue at priority=0 (live lane) so the dedicated live worker
+  // drains within seconds and we don't block the calling request (often the
+  // Pub/Sub webhook). Widened window to 30d to cover longer outages.
   const list = await listMessages(accountId, {
     maxResults,
     q: "-in:chats -in:trash -in:spam newer_than:30d",
@@ -43,7 +37,11 @@ export async function backfillRecent(accountId: string, userId: string, maxResul
   try {
     await enqueueMessageJobs(accountId, userId, ids, 0);
   } catch (e) {
-    console.error("backfillRecent bulk enqueue failed", e);
+    logError(
+      "sync.backfill_recent_enqueue_failed",
+      { account_id: accountId, user_id: userId, candidate_count: ids.length },
+      e,
+    );
     return { processed: 0, enqueued: 0, error: (e as Error).message };
   }
   return { processed: ids.length, enqueued: ids.length };
@@ -106,11 +104,15 @@ export async function backfillWindow(
       const i = cursor++;
       if (i >= todo.length) return;
       try {
-        await processGmailMessage(accountId, todo[i], userId);
+        await processGmailMessage(accountId, todo[i], userId, { skipPush: true });
         processed++;
       } catch (e) {
         failed++;
-        console.error("backfillWindow process failed", todo[i], e);
+        logError(
+          "sync.backfill_window_process_failed",
+          { account_id: accountId, user_id: userId, gmail_message_id: todo[i] },
+          e,
+        );
       }
     }
   }
@@ -125,7 +127,7 @@ export async function backfillWindow(
   };
 }
 
-// ─── Deep backfill jobs (background, paginated across cron ticks) ────────
+// ─── Deep backfill jobs (background, paginated across cron ticks) ─────────
 
 type BackfillJob = {
   id: string;
@@ -159,9 +161,8 @@ export async function startBackfillJob(
     .maybeSingle();
   if (existing) return { job_id: existing.id, reused: true };
 
-  // Use a date anchor so the query is stable across ticks
-  // (newer_than:Nd would shift as time passes). Gmail "after:"
-  // accepts YYYY/MM/DD.
+  // Use a date anchor so the query is stable across ticks (newer_than:Nd
+  // would shift as time passes). Gmail "after:" accepts YYYY/MM/DD.
   const since = new Date(Date.now() - months * 30 * 24 * 60 * 60 * 1000);
   const y = since.getUTCFullYear();
   const m = String(since.getUTCMonth() + 1).padStart(2, "0");
@@ -208,12 +209,17 @@ export async function tickBackfillJobs(maxJobs = 2) {
       const r = await tickBackfillJob(job);
       results.push({ job_id: job.id, ...r });
     } catch (e: unknown) {
-      console.error("tickBackfillJob failed", job.id, e);
+      const message = e instanceof Error ? e.message : String(e);
+      logError(
+        "sync.tick_backfill_job_failed",
+        { job_id: job.id, account_id: job.gmail_account_id, status: job.status },
+        e,
+      );
       await supabaseAdmin
         .from("backfill_jobs")
-        .update({ last_error: String((e as Error)?.message ?? e).slice(0, 500) })
+        .update({ last_error: message.slice(0, 500) })
         .eq("id", job.id);
-      results.push({ job_id: job.id, phase: "error", error: String((e as Error)?.message ?? e) });
+      results.push({ job_id: job.id, phase: "error", error: message });
     }
   }
   return { processed: results.length, results };
@@ -253,7 +259,11 @@ async function tickBackfillJob(job: BackfillJob): Promise<{ phase: string; added
           await enqueueMessageJobs(job.gmail_account_id, job.user_id, todo, 10);
           enqueuedDelta += todo.length;
         } catch (e) {
-          console.error("backfill page bulk enqueue failed", e);
+          logError(
+            "sync.backfill_page_enqueue_failed",
+            { job_id: job.id, account_id: job.gmail_account_id, batch_size: todo.length },
+            e,
+          );
         }
       }
 

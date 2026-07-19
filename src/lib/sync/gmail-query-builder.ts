@@ -25,6 +25,8 @@ const SUPPORTED_FIELDS = new Set([
 function isUsableCond(c: Cond): boolean {
   // negative ops and regex can't be expressed in Gmail search.
   if (c.op === "not_contains" || c.op === "not_equals" || c.op === "regex") return false;
+  // sender_in_group has no Gmail-native equivalent — evaluated app-side only.
+  if (c.op === "sender_in_group") return false;
   if (!SUPPORTED_FIELDS.has(c.field)) return false;
   if (!c.value || !c.value.trim()) return false;
   return true;

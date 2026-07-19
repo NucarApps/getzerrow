@@ -2,6 +2,7 @@
 // (mixed queue) and every ~5s with ?priority=0 (live-only lane).
 import { createFileRoute } from "@tanstack/react-router";
 import { runMessageJobs } from "@/lib/sync.server";
+import { JOB_WORKER_CONCURRENCY } from "@/lib/sync/config";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 import { withCronRun, logError } from "@/lib/log.server";
 
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/api/public/gmail-process-jobs")({
               : undefined;
           const t0 = Date.now();
           try {
-            const r = await runMessageJobs(limit, 16, { priority });
+            const r = await runMessageJobs(limit, JOB_WORKER_CONCURRENCY, { priority });
             return Response.json({ ...r, ok: true, run_id: runId });
           } catch (e: unknown) {
             logError(

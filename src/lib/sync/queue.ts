@@ -43,7 +43,13 @@ import { MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS, computeBackoffSeconds } from
 import { type AccountContext, loadAccountContext } from "./account-context";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { updateEmailEncrypted } from "./encrypted-writer";
-import { processGmailMessage, type ProcessTimings } from "./process-message";
+import {
+  applyFolderActions,
+  processGmailMessage,
+  resolveFolderFromContext,
+  type ProcessTimings,
+} from "./process-message";
+import { JOB_WORKER_CONCURRENCY, LIVE_BATCH_AI_THRESHOLD } from "./config";
 import type { classifyParsedEmail } from "./classify";
 
 export async function enqueueMessageJob(
@@ -116,7 +122,7 @@ type ProcessResult = {
 
 export async function runMessageJobs(
   limit = 100,
-  concurrency = 16,
+  concurrency = JOB_WORKER_CONCURRENCY,
   opts: { priority?: number } = {},
 ) {
   const STUCK_MS = 35 * 1000; // jobs in 'running' for >35s are presumed dead (worker timeout is 25s)
@@ -169,19 +175,31 @@ export async function runMessageJobs(
 
   const results: ProcessResult[] = [];
 
-  // After the first per-message pass, backfill messages still needing
-  // AI are queued here for a single batched LLM call per account.
+  // After the first per-message pass, messages still needing AI are
+  // queued here for a single batched LLM call per account. Backfill
+  // always defers; live mail defers only under a burst (see below).
+  // `applyEffects` marks live entries that still need folder side-effects
+  // (Gmail labels / archive / forward) applied after the batch resolves —
+  // backfill entries skip side-effects (don't re-forward historical mail).
   type PendingAi = {
     job: ClaimedJob;
     emailRowId: string;
     parsed: Parameters<typeof classifyParsedEmail>[0];
+    applyEffects: boolean;
   };
   const pendingAi: PendingAi[] = [];
 
+  // Under a burst, route the live lane's AI step through the batched
+  // classifier (8/call) instead of N inline calls. A single new email
+  // (claim batch below the threshold) keeps its inline, instant-folder
+  // behavior.
+  const liveBurst = claimed.length >= LIVE_BATCH_AI_THRESHOLD;
+
   const processOne = async (job: ClaimedJob) => {
     const ctx = contextByAccount.get(job.gmail_account_id);
-    // Backfill jobs (priority>=10) defer AI to the batched pass below.
-    const deferAi = job.priority >= 10;
+    const isBackfill = job.priority >= 10;
+    // Backfill always defers AI; live mail defers only during a burst.
+    const deferAi = isBackfill || liveBurst;
     const timings: ProcessTimings = { fetch: 0, ai: 0, db: 0 };
     try {
       const result = (await Promise.race([
@@ -219,7 +237,13 @@ export async function runMessageJobs(
         ctx &&
         ctx.folders.length > 0
       ) {
-        pendingAi.push({ job, emailRowId: result.email_id, parsed: result.parsed });
+        pendingAi.push({
+          job,
+          emailRowId: result.email_id,
+          parsed: result.parsed,
+          // Live (non-backfill) mail still needs folder side-effects applied.
+          applyEffects: !isBackfill,
+        });
         // Don't delete the job row yet — finalize after batch AI completes.
         return;
       }
@@ -272,7 +296,7 @@ async function reclaimStuckJobs(stuckMs: number) {
   const stuckCutoff = new Date(Date.now() - stuckMs).toISOString();
   const { data: stuck } = await supabaseAdmin
     .from("message_jobs")
-    .select("id, attempt, last_error")
+    .select("id, attempt, last_error, gmail_account_id, gmail_message_id")
     .eq("status", "running")
     .lt("locked_at", stuckCutoff);
   for (const s of stuck ?? []) {
@@ -280,6 +304,17 @@ async function reclaimStuckJobs(stuckMs: number) {
       typeof s.last_error === "string" && s.last_error.startsWith("stuck (worker timeout)");
     const nextAttempt = wasReclaimed ? (s.attempt ?? 0) + 1 : (s.attempt ?? 0);
     if (nextAttempt >= MAX_JOB_ATTEMPTS) {
+      // Populate from/subject so the operator DLQ table isn't all "—".
+      let from_addr: string | null = null;
+      let subject: string | null = null;
+      try {
+        const meta = await getMessageMetadata(s.gmail_account_id, s.gmail_message_id);
+        const p = parseMessage(meta);
+        from_addr = p.from_addr ?? null;
+        subject = p.subject ?? null;
+      } catch {
+        /* best-effort */
+      }
       await supabaseAdmin
         .from("message_jobs")
         .update({
@@ -287,6 +322,8 @@ async function reclaimStuckJobs(stuckMs: number) {
           attempt: nextAttempt,
           last_error: "stuck (worker timeout — exceeded max attempts)",
           locked_at: null,
+          from_addr,
+          subject,
         })
         .eq("id", s.id);
     } else {
@@ -391,6 +428,7 @@ type PendingAi = {
   job: ClaimedJob;
   emailRowId: string;
   parsed: Parameters<typeof classifyParsedEmail>[0];
+  applyEffects: boolean;
 };
 
 async function drainPendingAi(
@@ -411,6 +449,29 @@ async function drainPendingAi(
     Array.from(byAccount.entries()).map(async ([aid, items]) => {
       const ctx = contextByAccount.get(aid);
       if (!ctx) return;
+      // Live (non-backfill) entries still need folder side-effects (Gmail
+      // label mutations / auto-archive / forward) applied once the batch
+      // resolves their folder. Backfill entries skip this so historical
+      // mail isn't re-labelled or re-forwarded.
+      const applyLiveEffects = async (c: PendingAi, folderId: string | null) => {
+        if (!c.applyEffects || !folderId) return;
+        const folder = resolveFolderFromContext(ctx, folderId);
+        if (!folder) return;
+        const inInbox = (c.parsed.raw_labels ?? []).includes("INBOX");
+        try {
+          await applyFolderActions(
+            c.job.gmail_account_id,
+            c.job.gmail_message_id,
+            c.emailRowId,
+            folder,
+            c.parsed,
+            inInbox,
+            { persistFlags: true },
+          );
+        } catch (e) {
+          console.error("live batch folder side-effects failed", (e as Error)?.message ?? e);
+        }
+      };
       // Per-message fallback — used when the whole batch call throws AND
       // for individual emails the batch response simply omitted.
       const fallbackOne = async (c: PendingAi) => {
@@ -425,6 +486,7 @@ async function drainPendingAi(
             classification_reason: single.reason || null,
           });
           if (single.folder_id) void bumpEmailsSinceLearn(single.folder_id);
+          await applyLiveEffects(c, single.folder_id);
           await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
           results.push({ id: c.job.id, ok: true });
         } catch (innerErr: unknown) {
@@ -476,6 +538,7 @@ async function drainPendingAi(
                     : r.reason || null,
               });
               if (passes && r.folder_id) void bumpEmailsSinceLearn(r.folder_id);
+              await applyLiveEffects(c, passes ? r.folder_id : null);
               await supabaseAdmin.from("message_jobs").delete().eq("id", c.job.id);
               results.push({ id: c.job.id, ok: true });
             }),

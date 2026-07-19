@@ -1,0 +1,1 @@
+UPDATE public.carddav_settings SET resync_nonce = COALESCE(resync_nonce, 0) + 1, updated_at = now();

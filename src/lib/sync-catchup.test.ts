@@ -37,6 +37,8 @@ function folder(over: Partial<Folder> = {}): Folder {
     snooze_hours: over.snooze_hours ?? 0,
     overrides_inbox_override: over.overrides_inbox_override ?? false,
     is_cold_email: over.is_cold_email ?? false,
+    surface_ai_rule: over.surface_ai_rule ?? null,
+    surface_names: over.surface_names ?? null,
   };
 }
 
@@ -53,6 +55,8 @@ function ctx(over: Partial<AccountContext> = {}): AccountContext {
     enrichedFolders: over.enrichedFolders ?? [],
     calendarGuardEnabled: over.calendarGuardEnabled ?? false,
     calendarContacts: over.calendarContacts ?? new Set<string>(),
+    accountEmail: over.accountEmail ?? null,
+    senderGroups: over.senderGroups ?? new Map(),
   };
 }
 
@@ -72,6 +76,7 @@ function parsed(over: Partial<ReturnType<typeof import("./gmail.server").parseMe
     body_html: over.body_html ?? "",
     received_at: over.received_at ?? new Date().toISOString(),
     has_attachment: over.has_attachment ?? false,
+    has_calendar_invite: over.has_calendar_invite ?? false,
     raw_labels: over.raw_labels ?? ["INBOX"],
     is_read: over.is_read ?? false,
   };

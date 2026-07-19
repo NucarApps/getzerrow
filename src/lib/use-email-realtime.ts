@@ -12,6 +12,7 @@ export type EmailRow = {
   gmail_account_id?: string | null;
   raw_labels?: string[] | null;
   classified_by?: string | null;
+  surfaced_to_inbox?: boolean | null;
   folder?: {
     auto_archive?: boolean | null;
     hide_from_inbox?: boolean | null;
@@ -19,16 +20,22 @@ export type EmailRow = {
   [key: string]: unknown;
 };
 
-// Mail still being classified/filed by the backend (rules pending or AI
-// pending). It must never flash into the Inbox / No-rules / folder views —
-// it only appears once its final classification settles. The "All mail"
-// diagnostic scope still shows it.
-const IN_PROGRESS_CLASSIFICATIONS = new Set(["pending", "pending_ai"]);
+// Mail still being classified/filed by the backend.
+//   'pending'    — the row is still being repaired/populated (missing
+//                  body/headers); never surface it in any settled view.
+//   'pending_ai' — the row is fully parsed and only waiting on the AI
+//                  step. It IS surfaced in the Inbox ('all') so new mail
+//                  appears instantly, then settles into its folder once
+//                  AI finishes. It stays hidden from No-rules / folder
+//                  views (those only show settled mail). Kept in sync
+//                  with the server RPC get_emails_list_decrypted.
+// The "All mail" diagnostic scope shows everything regardless.
+function isFullyPending(row: EmailRow): boolean {
+  return row.classified_by === "pending";
+}
 
-function isInProgress(row: EmailRow): boolean {
-  return (
-    typeof row.classified_by === "string" && IN_PROGRESS_CLASSIFICATIONS.has(row.classified_by)
-  );
+function isPendingAi(row: EmailRow): boolean {
+  return row.classified_by === "pending_ai";
 }
 
 /**
@@ -144,18 +151,23 @@ export function applyPendingOpsToList(
 
 function matchesScope(row: EmailRow, scope: string): boolean {
   if (scope === "all_mail") return true;
-  // Everything below is a "settled" view — never surface mail that is still
-  // being classified/filed. It enters its real destination once done.
-  if (isInProgress(row)) return false;
+  // 'pending' rows are still being repaired/populated: never surface them
+  // in a settled view.
+  if (isFullyPending(row)) return false;
   if (scope === "all" || scope === "inbox") {
-    return (
-      row.is_archived !== true &&
-      Array.isArray(row.raw_labels) &&
-      row.raw_labels.includes("INBOX") &&
-      row.folder?.auto_archive !== true &&
-      row.folder?.hide_from_inbox !== true
-    );
+    const inInbox =
+      row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
+    // AI-pending mail is surfaced in the inbox immediately (gated only on
+    // the INBOX label), then settles into its folder once AI finishes.
+    if (isPendingAi(row)) return inInbox;
+    // A surfaced email is kept in the inbox even though its folder would
+    // normally hide/archive it.
+    if (row.surfaced_to_inbox === true) return inInbox;
+    return inInbox && row.folder?.auto_archive !== true && row.folder?.hide_from_inbox !== true;
   }
+  // Beyond the inbox, AI-pending mail is not yet settled: keep it hidden
+  // from archived / no-rules / folder views until classification lands.
+  if (isPendingAi(row)) return false;
   if (scope === "archived") return row.is_archived === true;
   if (scope === "no_rules") {
     if (row.folder_id !== null) return false;
@@ -164,6 +176,31 @@ function matchesScope(row: EmailRow, scope: string): boolean {
   }
   // Any other string is treated as a folder UUID.
   return row.folder_id === scope;
+}
+
+/** Structural shape of a realtime postgres_changes event as delivered by
+ * supabase-js. Kept loose so the damaged-payload guard works across event
+ * types and client versions. */
+export type RealtimeEventLike = {
+  eventType?: string;
+  errors?: unknown;
+  new?: unknown;
+  old?: unknown;
+};
+
+/**
+ * True when a realtime push arrived unusable — the realtime service flagged
+ * an error (oversized rows get stripped or replaced with an error notice) or
+ * the row payload is missing its id. Subscribers must treat a damaged push
+ * as "something changed, re-fetch" instead of silently ignoring it.
+ * Exported for unit tests.
+ */
+export function isDamagedPayload(payload: RealtimeEventLike): boolean {
+  const errs = payload.errors;
+  if (Array.isArray(errs) ? errs.length > 0 : Boolean(errs)) return true;
+  const record = payload.eventType === "DELETE" ? payload.old : payload.new;
+  if (record == null || typeof record !== "object") return true;
+  return typeof (record as { id?: unknown }).id !== "string";
 }
 
 /**
@@ -184,6 +221,14 @@ export function useEmailRealtime() {
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
+    // Liveness watchdog: a websocket can silently stop delivering while the
+    // channel still reports "joined" (a zombie socket after sleep/network
+    // flaps). We track the last time we saw ANY realtime traffic and poll
+    // the channel state; if it's no longer joined, we rebuild it proactively
+    // instead of waiting for the 30s background sync.
+    let watchdogTimer: ReturnType<typeof setInterval> | null = null;
+    let lastEventAt = Date.now();
+    const REALTIME_WATCHDOG_INTERVAL_MS = 15_000;
 
     type CachedList = EmailRow[] | { rows: EmailRow[] };
     type FolderRow = {
@@ -269,6 +314,7 @@ export function useEmailRealtime() {
     }
 
     function applyInsert(row: EmailRow) {
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "insert", row: withCachedFolder(row) });
       scheduleFlush();
     }
@@ -276,11 +322,13 @@ export function useEmailRealtime() {
     function applyUpdate(row: EmailRow) {
       // An update supersedes a pending insert (the row already exists in
       // the DB; we want the latest version).
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "update", row: withCachedFolder(row) });
       scheduleFlush();
     }
 
     function applyDelete(row: { id: string }) {
+      lastEventAt = Date.now();
       pending.set(row.id, { kind: "delete", row });
       scheduleFlush();
     }
@@ -297,6 +345,19 @@ export function useEmailRealtime() {
     // explicitly whenever an email row changes read/label/folder state.
     const bumpCounts = () => qc.invalidateQueries({ queryKey: ["folder-counts"] });
 
+    // A damaged push tells us SOMETHING changed without saying what (the
+    // realtime service strips oversized rows; RLS can withhold fields).
+    // Re-fetch the lists instead of ignoring it — throttled so an error
+    // burst costs one round-trip, not one per event.
+    let lastDamagedRefetchAt = 0;
+    function refetchFromDamagedPush() {
+      const now = Date.now();
+      if (now - lastDamagedRefetchAt < 5000) return;
+      lastDamagedRefetchAt = now;
+      qc.invalidateQueries({ queryKey: ["emails"] });
+      bumpCounts();
+    }
+
     function scheduleReconnect() {
       if (cancelled || reconnectTimer) return;
       const delays = [1000, 2000, 5000];
@@ -307,6 +368,38 @@ export function useEmailRealtime() {
         teardown();
         connect();
       }, delay);
+    }
+
+    // Watchdog: while the tab is visible, verify the channel is still
+    // actually joined. A zombie socket (joined but not delivering) or one
+    // that dropped without firing our status callback gets torn down and
+    // rebuilt here, tightening the worst case from the 30s background sync
+    // to ~15s. Skipped while hidden (realtime is expected idle) and while a
+    // reconnect is already scheduled.
+    function checkRealtimeLiveness() {
+      if (cancelled || reconnectTimer) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      const state = channel?.state;
+      const channelDead = !channel || (state !== "joined" && state !== "joining");
+      // The underlying phoenix socket can drop without our channel status
+      // callback firing (a zombie). If it reports disconnected while we've
+      // seen no realtime traffic recently, treat the channel as stale too.
+      let socketDead = false;
+      try {
+        const idleMs = Date.now() - lastEventAt;
+        socketDead = idleMs > REALTIME_WATCHDOG_INTERVAL_MS && !supabase.realtime.isConnected();
+      } catch {
+        // isConnected may not exist on older clients; ignore.
+      }
+      if (channelDead || socketDead) {
+        teardown();
+        connect();
+      }
+    }
+
+    function startWatchdog() {
+      if (watchdogTimer) return;
+      watchdogTimer = setInterval(checkRealtimeLiveness, REALTIME_WATCHDOG_INTERVAL_MS);
     }
 
     async function connect() {
@@ -327,17 +420,35 @@ export function useEmailRealtime() {
         .on(
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "emails", filter: userFilter },
-          (payload) => applyInsert(payload.new as EmailRow),
+          (payload) => {
+            if (isDamagedPayload(payload)) {
+              refetchFromDamagedPush();
+              return;
+            }
+            applyInsert(payload.new as EmailRow);
+          },
         )
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "emails", filter: userFilter },
-          (payload) => applyUpdate(payload.new as EmailRow),
+          (payload) => {
+            if (isDamagedPayload(payload)) {
+              refetchFromDamagedPush();
+              return;
+            }
+            applyUpdate(payload.new as EmailRow);
+          },
         )
         .on(
           "postgres_changes",
           { event: "DELETE", schema: "public", table: "emails", filter: userFilter },
-          (payload) => applyDelete(payload.old as { id: string }),
+          (payload) => {
+            if (isDamagedPayload(payload)) {
+              refetchFromDamagedPush();
+              return;
+            }
+            applyDelete(payload.old as { id: string });
+          },
         )
         .on(
           "postgres_changes",
@@ -347,6 +458,8 @@ export function useEmailRealtime() {
         .subscribe((status) => {
           if (status === "SUBSCRIBED") {
             reconnectAttempt = 0;
+            lastEventAt = Date.now();
+            startWatchdog();
             // Catch up on anything missed while disconnected.
             qc.invalidateQueries({ queryKey: ["emails"] });
             qc.invalidateQueries({ queryKey: ["folders"] });
@@ -391,6 +504,9 @@ export function useEmailRealtime() {
 
     const onVisible = () => {
       if (document.visibilityState === "visible") {
+        // Rebuild the channel first if it went stale while hidden, then
+        // catch up on anything realtime missed during the gap.
+        checkRealtimeLiveness();
         qc.invalidateQueries({ queryKey: ["emails"] });
         qc.invalidateQueries({ queryKey: ["folders"] });
         bumpCounts();
@@ -403,6 +519,10 @@ export function useEmailRealtime() {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
+      }
+      if (watchdogTimer) {
+        clearInterval(watchdogTimer);
+        watchdogTimer = null;
       }
       teardown();
       authSub.subscription.unsubscribe();

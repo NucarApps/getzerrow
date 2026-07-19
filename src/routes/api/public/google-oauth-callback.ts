@@ -9,6 +9,7 @@ import {
   verifyState,
   clearNeedsReconnect,
   scopeGrantsCalendar,
+  scopeGrantsContacts,
 } from "@/lib/google-oauth.server";
 import { ensureWatch } from "@/lib/gmail.server";
 import { logError, newRunId } from "@/lib/log.server";
@@ -112,13 +113,36 @@ export const Route = createFileRoute("/api/public/google-oauth-callback")({
           // calendar cold-email guard can run (and the UI can prompt a
           // reconnect when it's missing).
           try {
+            const hasContacts = scopeGrantsContacts(tokens.scope);
             await supabaseAdmin
               .from("gmail_accounts")
-              .update({ calendar_access: scopeGrantsCalendar(tokens.scope) })
+              .update({
+                calendar_access: scopeGrantsCalendar(tokens.scope),
+                contacts_access: hasContacts,
+              })
               .eq("id", account.id);
+
+            // Sync the contacts sync-state error flag with the freshly granted
+            // scopes so the settings banner reflects reality immediately,
+            // instead of waiting for the next reconcile to clear (or re-set)
+            // a stale `missing_contacts_scope` value.
+            if (hasContacts) {
+              await supabaseAdmin
+                .from("google_sync_state")
+                .update({ last_error: null })
+                .eq("user_id", userId)
+                .eq("gmail_account_id", account.id)
+                .in("last_error", ["missing_contacts_scope", "needs_reconnect"]);
+            } else {
+              await supabaseAdmin
+                .from("google_sync_state")
+                .update({ last_error: "missing_contacts_scope" })
+                .eq("user_id", userId)
+                .eq("gmail_account_id", account.id);
+            }
           } catch (e) {
             logError(
-              "oauth.calendar_access_update_failed",
+              "oauth.scope_access_update_failed",
               { run_id: runId, account_id: account.id, user_id: userId },
               e,
             );

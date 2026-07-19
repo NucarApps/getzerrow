@@ -24,6 +24,14 @@ import { proposeAssistantChanges, applyAssistantChanges } from "@/lib/ai-assista
 type Action =
   | { type: "move_email"; email_id: string; to_folder_id: string; why: string }
   | {
+      type: "move_matching";
+      field: "from" | "domain" | "subject";
+      op: "contains" | "equals" | "starts_with";
+      value: string;
+      to_folder_id: string;
+      why: string;
+    }
+  | {
       type: "add_filter";
       folder_id: string;
       field: "from" | "domain" | "subject";
@@ -32,7 +40,8 @@ type Action =
       why: string;
     }
   | { type: "remove_filter"; filter_id: string; why: string }
-  | { type: "update_folder_rule"; folder_id: string; ai_rule: string; why: string };
+  | { type: "update_folder_rule"; folder_id: string; ai_rule: string; why: string }
+  | { type: "update_folder_profile"; folder_id: string; learned_profile: string; why: string };
 
 type Proposal = {
   reply: string;
@@ -83,11 +92,17 @@ function describeAction(
     const who = e?.from_name || e?.from_addr || "this email";
     return `Move "${e?.subject ?? "email"}" from ${who} → ${folderName(folders, action.to_folder_id)}`;
   }
+  if (action.type === "move_matching") {
+    return `Move all where ${action.field} ${action.op} "${action.value}" → ${folderName(folders, action.to_folder_id)}`;
+  }
   if (action.type === "add_filter") {
     return `Add filter on "${folderName(folders, action.folder_id)}": ${action.field} ${action.op} "${action.value}"`;
   }
   if (action.type === "remove_filter") {
     return `Remove an existing filter rule`;
+  }
+  if (action.type === "update_folder_profile") {
+    return `Refine learned profile for "${folderName(folders, action.folder_id)}"`;
   }
   return `Update AI rule for "${folderName(folders, action.folder_id)}"`;
 }
@@ -257,9 +272,12 @@ export function AssistantPanel({
               <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-4 text-xs text-muted-foreground">
                 Try things like:
                 <ul className="mt-2 list-disc space-y-1 pl-4">
-                  <li>"These should go to Marketing, not Sales."</li>
-                  <li>"Send anything from @acme.com to Clients."</li>
-                  <li>"Stop routing newsletters to Receipts."</li>
+                  <li>"My Invitations folder keeps getting real replies, not invites — fix it."</li>
+                  <li>"Send anything from @acme.com to Clients, including existing mail."</li>
+                  <li>"Newsletters keep landing in Receipts — add a domain filter to stop it."</li>
+                  <li>
+                    "Look at this folder and tighten the rule so it only catches the right mail."
+                  </li>
                 </ul>
               </div>
             )}

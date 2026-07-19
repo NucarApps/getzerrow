@@ -124,6 +124,7 @@ function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-10 flex flex-col items-center text-center">
           <img src={zerrowLogo} alt="Zerrow" className="mb-3 h-28 w-auto" />
+          <h1 className="font-display text-2xl text-foreground">Sign in to Zerrow</h1>
           <p className="mt-2 text-sm text-muted-foreground">An inbox that sorts itself.</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-6">

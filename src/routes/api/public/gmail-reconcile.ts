@@ -2,32 +2,48 @@
 // emails for each connected Gmail account, repairing drift from Gmail's
 // canonical state (missing bodies, archived/deleted upstream, etc.).
 //
-// Scheduled every 15 minutes via pg_cron. Accounts that look like they
-// recently lost a history event (recent push but `error` set, or no
-// last_history_sync_at) get a larger reconcile window to compensate.
+// Scheduled every 5 minutes via pg_cron with ?max_accounts=2. Each tick
+// takes the accounts that were reconciled LEAST recently (rotation via
+// gmail_accounts.last_reconcile_at, which this handler stamps) so every
+// account gets swept on a bounded cadence and no single tick tries to
+// walk the whole fleet — the old all-accounts-per-tick behavior routinely
+// blew past the host's wall-time and died mid-run, which meant later
+// accounts/rows were never reconciled at all.
+//
+// Accounts that look like they recently lost a history event (recent
+// push but `error` set, or no last_history_sync_at) get a larger
+// reconcile window to compensate.
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { reconcileLocalInbox, syncReadState } from "@/lib/sync.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
+import { clampIntParam } from "@/lib/cron-handler.server";
 import { withCronRun, logError } from "@/lib/log.server";
 
 const DEFAULT_LIMIT = 200; // head + tail combined, walks the inbox faster
 const SUSPECT_LIMIT = 500; // bigger sweep when history drift is suspected
+const DEFAULT_MAX_ACCOUNTS = 4; // bounded even when the param is missing
 
 export const Route = createFileRoute("/api/public/gmail-reconcile")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
+        const url = new URL(request.url);
+        const maxAccounts = clampIntParam(url, "max_accounts", 1, 50, DEFAULT_MAX_ACCOUNTS);
         return withCronRun("gmail-reconcile", async ({ runId }) => {
           // Skip dead-OAuth accounts — every Gmail roundtrip inside reconcile
-          // would throw NeedsReconnectError, producing the per-15-minute ERROR
+          // would throw NeedsReconnectError, producing a per-tick ERROR
           // stream. Mirrors the same short-circuit in gmail-poll and
-          // gmail-renew-watches.
+          // gmail-renew-watches. Rotation: least-recently-reconciled first
+          // (NULLS FIRST — never-swept accounts jump the queue), served by
+          // the gmail_accounts_reconcile_due_idx index.
           const { data: accounts, error } = await supabaseAdmin
             .from("gmail_accounts")
-            .select("id, email_address, last_history_sync_at")
-            .eq("needs_reconnect", false);
+            .select("id, email_address, last_history_sync_at, last_reconcile_at")
+            .eq("needs_reconnect", false)
+            .order("last_reconcile_at", { ascending: true, nullsFirst: true })
+            .limit(maxAccounts);
           if (error) {
             logError("reconcile.accounts_query_failed", { run_id: runId }, error);
             return Response.json({ ok: false, error: error.message }, { status: 500 });
@@ -58,6 +74,16 @@ export const Route = createFileRoute("/api/public/gmail-reconcile")({
               (lastSync > 0 && Date.now() - lastSync > 30 * 60 * 1000);
             const limit = suspect ? SUSPECT_LIMIT : DEFAULT_LIMIT;
             const tAcc = Date.now();
+            // Stamp BEFORE the walk so a crash mid-account still rotates —
+            // a persistently-failing account must not hog every tick.
+            try {
+              await supabaseAdmin
+                .from("gmail_accounts")
+                .update({ last_reconcile_at: new Date().toISOString() })
+                .eq("id", acc.id);
+            } catch (e) {
+              logError("reconcile.stamp_failed", { run_id: runId, account_id: acc.id }, e);
+            }
             try {
               const r = await reconcileLocalInbox(acc.id, limit);
               // Mailbox-wide read-state diff: catches read/unread changes made

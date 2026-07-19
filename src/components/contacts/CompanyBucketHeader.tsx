@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, Pencil } from "lucide-react";
 import { CompanyLogo } from "./CompanyLogo";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Props = {
   domain: string | null;
@@ -12,6 +13,9 @@ type Props = {
   aliasCount?: number;
   logoProvider?: number | null;
   logoSourceDomain?: string | null;
+  selectable?: boolean;
+  selectionState?: "none" | "some" | "all";
+  onToggleSelectAll?: () => void;
 };
 
 export function CompanyBucketHeader({
@@ -24,6 +28,9 @@ export function CompanyBucketHeader({
   aliasCount = 0,
   logoProvider = null,
   logoSourceDomain = null,
+  selectable = false,
+  selectionState = "none",
+  onToggleSelectAll,
 }: Props) {
   const [color, setColor] = useState<string | null>(null);
 
@@ -42,6 +49,16 @@ export function CompanyBucketHeader({
         tinted ? "" : "border-border bg-card/40"
       }`}
     >
+      {selectable && (
+        <Checkbox
+          checked={
+            selectionState === "all" ? true : selectionState === "some" ? "indeterminate" : false
+          }
+          onCheckedChange={() => onToggleSelectAll?.()}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select all contacts in ${name}`}
+        />
+      )}
       <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <CompanyLogo
           domain={domain}

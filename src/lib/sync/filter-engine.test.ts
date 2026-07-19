@@ -9,6 +9,9 @@ import {
   labelOf,
   collectMatchingLeaves,
   EXCLUDE_OPS,
+  parseDomainList,
+  filterVetoes,
+  emailVetoedForFolder,
   type EmailForFilter,
 } from "./filter-engine";
 import type { Filter, Folder, RuleNode } from "./types";
@@ -47,6 +50,8 @@ function folder(over: Partial<Folder> = {}): Folder {
     snooze_hours: over.snooze_hours ?? 0,
     overrides_inbox_override: over.overrides_inbox_override ?? false,
     is_cold_email: over.is_cold_email ?? false,
+    surface_ai_rule: over.surface_ai_rule ?? null,
+    surface_names: over.surface_names ?? null,
   };
 }
 
@@ -153,13 +158,75 @@ describe("applyFilter — regex safety (ReDoS)", () => {
 });
 
 describe("EXCLUDE_OPS set", () => {
-  it("contains exactly not_contains + not_equals", () => {
+  it("contains not_contains, not_equals and domain_in", () => {
     expect(EXCLUDE_OPS.has("not_contains")).toBe(true);
     expect(EXCLUDE_OPS.has("not_equals")).toBe(true);
+    expect(EXCLUDE_OPS.has("domain_in")).toBe(true);
     // Sanity — other ops shouldn't be excluded.
     expect(EXCLUDE_OPS.has("contains")).toBe(false);
     expect(EXCLUDE_OPS.has("equals")).toBe(false);
     expect(EXCLUDE_OPS.has("regex")).toBe(false);
+  });
+});
+
+describe("domain_in allowlist", () => {
+  it("parseDomainList normalizes case, @, and separators", () => {
+    const set = parseDomainList("@Acme.com, foo.io ; bar.co\nAcme.com");
+    expect([...set].sort()).toEqual(["acme.com", "bar.co", "foo.io"]);
+  });
+
+  it("applyFilter(domain_in) is true when sender domain is in the list", () => {
+    const e = email({ from_addr: "gm@nucar.com" });
+    expect(applyFilter(e, filter("f", "domain", "domain_in", "dcd.auto,nucar.com"))).toBe(true);
+  });
+
+  it("applyFilter(domain_in) is false for an external sender", () => {
+    const e = email({ from_addr: "lawyer@sullivanlaw.com" });
+    expect(applyFilter(e, filter("f", "domain", "domain_in", "dcd.auto,nucar.com"))).toBe(false);
+  });
+
+  it("filterVetoes: allowlist vetoes external senders, admits internal ones", () => {
+    const allow = filter("f", "domain", "domain_in", "dcd.auto,nucar.com");
+    expect(filterVetoes(email({ from_addr: "x@sullivanlaw.com" }), allow)).toBe(true);
+    expect(filterVetoes(email({ from_addr: "x@nucar.com" }), allow)).toBe(false);
+  });
+
+  it("matchByFilters excludes a matched folder when the sender is outside the allowlist", () => {
+    const r = matchByFilters(
+      email({ subject: "RE: Daily Report", from_addr: "lsteinberg@sullivanlaw.com" }),
+      [folder({ id: "gm", name: "GM Responses" })],
+      [
+        filter("gm", "subject", "starts_with", "re: daily report"),
+        filter("gm", "domain", "domain_in", "dcd.auto,nucar.com"),
+      ],
+    );
+    expect(r?.kind).toBe("excluded");
+    if (r?.kind === "excluded") expect(r.exclude.op).toBe("domain_in");
+  });
+
+  it("matchByFilters keeps an internal sender that also matches an include rule", () => {
+    const r = matchByFilters(
+      email({ subject: "RE: Daily Report", from_addr: "gm@nucar.com" }),
+      [folder({ id: "gm", name: "GM Responses" })],
+      [
+        filter("gm", "subject", "starts_with", "re: daily report"),
+        filter("gm", "domain", "domain_in", "dcd.auto,nucar.com"),
+      ],
+    );
+    expect(r?.kind).toBe("match");
+    if (r?.kind === "match") expect(r.folder_id).toBe("gm");
+  });
+
+  it("emailVetoedForFolder blocks the AI path for an external sender", () => {
+    const filters = [filter("gm", "domain", "domain_in", "dcd.auto,nucar.com")];
+    expect(emailVetoedForFolder(email({ from_addr: "x@sullivanlaw.com" }), "gm", filters)).toBe(
+      true,
+    );
+    expect(emailVetoedForFolder(email({ from_addr: "x@nucar.com" }), "gm", filters)).toBe(false);
+    // A different folder's allowlist must not affect this folder.
+    expect(emailVetoedForFolder(email({ from_addr: "x@sullivanlaw.com" }), "other", filters)).toBe(
+      false,
+    );
   });
 });
 

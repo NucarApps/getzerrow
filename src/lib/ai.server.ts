@@ -2,6 +2,27 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
+import {
+  AI_BATCH_ATTEMPT_TIMEOUT_MS,
+  AI_CLASSIFY_ATTEMPT_TIMEOUT_MS,
+  AI_CLASSIFY_TOTAL_BUDGET_MS,
+} from "./sync/config";
+
+/** Race a promise against a hard per-attempt timeout so one stalled
+ * upstream model call can't eat the whole classification budget. */
+async function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race<T>([
+      p,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function getModel(modelId: string = "google/gemini-2.5-flash") {
   const key = process.env.LOVABLE_API_KEY;
@@ -24,6 +45,8 @@ export async function classifyEmail(
     subject: string;
     snippet: string;
     body_text: string;
+    in_reply_to?: string;
+    has_calendar_invite?: boolean;
   },
   folders: ClassifyFolder[],
 ) {
@@ -70,6 +93,8 @@ export async function classifyEmail(
 
   function buildPrompt(opts: { trim: boolean }) {
     const bodyLimit = opts.trim ? 2000 : 4000;
+    const isReply = !!(email.in_reply_to && email.in_reply_to.trim());
+    const hasCalendarInvite = !!email.has_calendar_invite;
     return `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
 
 Folders:
@@ -78,8 +103,11 @@ ${buildFolderList(!opts.trim)}
 Email:
 From: ${email.from_name} <${email.from_addr}>
 Subject: ${email.subject}
+Signals: ${hasCalendarInvite ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
 Body:
 ${(email.body_text || email.snippet || "").slice(0, bodyLimit)}
+
+Guidance: Treat an email as an automated calendar invite ONLY when it actually carries a calendar event. A human reply in an existing thread is NOT an automated invite — do not route it into an automated-invite folder unless that folder's rule explicitly targets replies.
 
 Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line summary AND a short reason explaining the match.`;
   }
@@ -102,13 +130,20 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
     return parts.join(" | ").slice(0, 400) || "unknown error";
   }
 
+  const deadline = Date.now() + AI_CLASSIFY_TOTAL_BUDGET_MS;
+  const budgetLeft = () => deadline - Date.now();
+
   async function tryStructured(modelId: string, trim: boolean): Promise<Out | null> {
     try {
-      const { output } = await generateText({
-        model: getModel(modelId),
-        output: Output.object({ schema }),
-        prompt: buildPrompt({ trim }),
-      });
+      const { output } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          output: Output.object({ schema }),
+          prompt: buildPrompt({ trim }),
+        }),
+        Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
+        `classify structured (${modelId})`,
+      );
       return output as Out;
     } catch (e) {
       lastError = describeError(e);
@@ -119,13 +154,17 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
 
   async function tryTextJson(modelId: string, trim: boolean): Promise<Out | null> {
     try {
-      const { text } = await generateText({
-        model: getModel(modelId),
-        prompt: `${buildPrompt({ trim })}
+      const { text } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          prompt: `${buildPrompt({ trim })}
 
 Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
 {"folder_name":"<one of: ${folderNames.map((n) => `"${n}"`).join(", ")} or \\"NONE\\">","confidence":<0..1>,"summary":"<<=140 chars>","reason":"<<=200 chars>"}`,
-      });
+        }),
+        Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
+        `classify text-json (${modelId})`,
+      );
       const cleaned = text
         .trim()
         .replace(/^```(?:json)?\s*/i, "")
@@ -146,13 +185,28 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
     }
   }
 
-  const output =
-    (await tryStructured("google/gemini-2.5-flash", false)) ||
-    (await tryTextJson("google/gemini-2.5-flash", false)) ||
-    (await tryStructured("google/gemini-2.5-flash-lite", false)) ||
-    (await tryTextJson("google/gemini-2.5-flash-lite", false)) ||
-    (await tryTextJson("openai/gpt-5-mini", true)) ||
-    (await tryTextJson("openai/gpt-5-nano", true));
+  // Run the cascade in budget-aware order: lead with the fastest model
+  // (flash-lite) so the common case returns quickly, then escalate. Each
+  // step is skipped once the total budget is exhausted.
+  type Attempt = () => Promise<Out | null>;
+  const cascade: Attempt[] = [
+    () => tryStructured("google/gemini-2.5-flash-lite", false),
+    () => tryTextJson("google/gemini-2.5-flash-lite", false),
+    () => tryStructured("google/gemini-2.5-flash", false),
+    () => tryTextJson("google/gemini-2.5-flash", false),
+    () => tryTextJson("openai/gpt-5-mini", true),
+    () => tryTextJson("openai/gpt-5-nano", true),
+  ];
+
+  let output: Out | null = null;
+  for (const attempt of cascade) {
+    if (budgetLeft() <= 0) {
+      lastError = lastError || "classification budget exhausted";
+      break;
+    }
+    output = await attempt();
+    if (output) break;
+  }
 
   if (!output)
     throw new Error(
@@ -169,6 +223,145 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
 }
 
 /**
+ * The per-folder "surface to inbox" escape hatch. When a folder's
+ * deterministic rules routed an email there, this asks the AI whether
+ * that specific email should nonetheless stay visible in the inbox,
+ * based on the folder's natural-language surface rule and the user's
+ * identity (their own address(es) + any names/aliases). Returns a plain
+ * yes/no plus a short human-readable reason.
+ *
+ * Fails "safe" toward NOT surfacing: on any unrecoverable AI error the
+ * caller keeps the normal folder behavior (the email is filed as usual),
+ * so a flaky model call never floods the inbox.
+ */
+export async function shouldSurfaceToInbox(
+  email: {
+    from_addr: string;
+    from_name: string;
+    to_addrs: string;
+    cc?: string;
+    subject: string;
+    snippet: string;
+    body_text: string;
+  },
+  opts: {
+    folderName: string;
+    surfaceRule: string;
+    identityEmails: string[];
+    identityNames: string[];
+  },
+): Promise<{ surface: boolean; reason: string }> {
+  const schema = z.object({
+    surface: z
+      .boolean()
+      .describe("true = keep this email visible in the inbox; false = file it into the folder"),
+    reason: z
+      .string()
+      .transform((s) => s.slice(0, 200))
+      .describe("Short explanation of the decision (<=200 chars)"),
+  });
+  type Out = z.infer<typeof schema>;
+
+  const identityEmails = opts.identityEmails.filter(Boolean);
+  const identityNames = opts.identityNames.filter(Boolean);
+
+  function buildPrompt(trim: boolean): string {
+    const bodyLimit = trim ? 2000 : 4000;
+    return `An email was automatically filed into the folder "${opts.folderName}" by deterministic rules. Decide whether it should ALSO be surfaced to the user's inbox (kept visible) instead of being tucked away.
+
+Surface it ONLY when it matches the user's surface rule below. Otherwise leave it filed (surface = false).
+
+User's surface rule:
+${opts.surfaceRule}
+
+User's identity (treat these as "me"):
+- Email address(es): ${identityEmails.length ? identityEmails.join(", ") : "(none provided)"}
+- Name(s)/alias(es): ${identityNames.length ? identityNames.join(", ") : "(none provided)"}
+
+Email:
+From: ${email.from_name} <${email.from_addr}>
+To: ${email.to_addrs || "(unknown)"}
+Cc: ${email.cc || "(none)"}
+Subject: ${email.subject}
+Body:
+${(email.body_text || email.snippet || "").slice(0, bodyLimit)}
+
+Answer with the decision and a short reason.`;
+  }
+
+  const deadline = Date.now() + AI_CLASSIFY_TOTAL_BUDGET_MS;
+  const budgetLeft = () => deadline - Date.now();
+  let lastError = "";
+
+  async function tryStructured(modelId: string, trim: boolean): Promise<Out | null> {
+    try {
+      const { output } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          output: Output.object({ schema }),
+          prompt: buildPrompt(trim),
+        }),
+        Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
+        `surface structured (${modelId})`,
+      );
+      return output as Out;
+    } catch (e) {
+      lastError = (e as Error)?.message?.slice(0, 300) ?? "unknown";
+      console.error(`surface structured failed (${modelId})`, lastError);
+      return null;
+    }
+  }
+
+  async function tryTextJson(modelId: string, trim: boolean): Promise<Out | null> {
+    try {
+      const { text } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          prompt: `${buildPrompt(trim)}
+
+Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:
+{"surface":<true|false>,"reason":"<<=200 chars>"}`,
+        }),
+        Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
+        `surface text-json (${modelId})`,
+      );
+      const cleaned = text
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```\s*$/i, "");
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      if (start < 0 || end <= start) {
+        lastError = `empty/non-JSON response (len=${text.length})`;
+        return null;
+      }
+      return schema.parse(JSON.parse(cleaned.slice(start, end + 1)));
+    } catch (e) {
+      lastError = (e as Error)?.message?.slice(0, 300) ?? "unknown";
+      console.error(`surface text-json failed (${modelId})`, lastError);
+      return null;
+    }
+  }
+
+  const cascade: Array<() => Promise<Out | null>> = [
+    () => tryStructured("google/gemini-2.5-flash-lite", false),
+    () => tryTextJson("google/gemini-2.5-flash-lite", false),
+    () => tryStructured("google/gemini-2.5-flash", false),
+    () => tryTextJson("google/gemini-2.5-flash", false),
+  ];
+
+  for (const attempt of cascade) {
+    if (budgetLeft() <= 0) break;
+    const out = await attempt();
+    if (out) return { surface: out.surface, reason: out.reason };
+  }
+
+  // Fail safe: keep normal folder behavior when the model can't answer.
+  console.error("surface decision returned no parseable response", lastError);
+  return { surface: false, reason: "" };
+}
+
+/**
  * Batch-classify multiple emails sharing the same folder set in a single
  * Gemini call. Returns one result per input email (in order). Used by the
  * backfill worker to amortize LLM round-trip latency across many messages.
@@ -180,6 +373,8 @@ export async function classifyEmailsBatch(
     subject: string;
     snippet: string;
     body_text: string;
+    in_reply_to?: string;
+    has_calendar_invite?: boolean;
   }>,
   folders: ClassifyFolder[],
 ): Promise<
@@ -207,13 +402,16 @@ export async function classifyEmailsBatch(
     .join("\n\n");
 
   const emailBlocks = emails
-    .map(
-      (e, i) => `--- EMAIL ${i + 1} ---
+    .map((e, i) => {
+      const isReply = !!(e.in_reply_to && e.in_reply_to.trim());
+      const hasCal = !!e.has_calendar_invite;
+      return `--- EMAIL ${i + 1} ---
 From: ${e.from_name} <${e.from_addr}>
 Subject: ${e.subject}
+Signals: ${hasCal ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
 Body:
-${(e.body_text || e.snippet || "").slice(0, 1500)}`,
-    )
+${(e.body_text || e.snippet || "").slice(0, 1500)}`;
+    })
     .join("\n\n");
 
   const itemSchema = z.object({
@@ -237,6 +435,8 @@ You are given ${emails.length} emails. For EACH one return an object with:
 - summary: one-line summary of THAT email (max 140 chars)
 - reason: short explanation citing the rule/profile/example that matched (max 200 chars)
 
+Guidance: Treat an email as an automated calendar invite ONLY when it actually carries a calendar event. A human reply in an existing thread is NOT an automated invite — do not route it into an automated-invite folder unless that folder's rule explicitly targets replies.
+
 Emails:
 ${emailBlocks}
 
@@ -257,11 +457,15 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
 
   for (const modelId of ["google/gemini-2.5-flash-lite", "google/gemini-2.5-flash"]) {
     try {
-      const { output } = await generateText({
-        model: getModel(modelId),
-        output: Output.object({ schema }),
-        prompt,
-      });
+      const { output } = await raceTimeout(
+        generateText({
+          model: getModel(modelId),
+          output: Output.object({ schema }),
+          prompt,
+        }),
+        AI_BATCH_ATTEMPT_TIMEOUT_MS,
+        `classifyEmailsBatch (${modelId})`,
+      );
       parsed = output as Out;
       break;
     } catch (e) {
@@ -689,5 +893,51 @@ Write a single, clear rule (1-2 sentences, plain text, no markdown, no quotes, n
     .trim();
 
   if (!cleaned) throw new Error("AI returned an empty rule. Try rephrasing the purpose.");
+  return cleaned.slice(0, 600);
+}
+
+// Turn a sample of emails already filed under a Gmail label into a concise,
+// classifier-friendly AI rule. Used by the folder editor's "draft from label"
+// helper. Returns a short rule string.
+export async function generateAiRuleFromLabelSamples(opts: {
+  folderName?: string;
+  samples: Array<{ from: string; subject: string; snippet: string }>;
+}): Promise<string> {
+  const samples = opts.samples.filter((s) => s.from || s.subject || s.snippet).slice(0, 40);
+  if (samples.length === 0) {
+    throw new Error("No emails found under this label to learn from.");
+  }
+
+  const sampleText = samples
+    .map((s, i) => {
+      const parts = [
+        `From: ${s.from || "(unknown)"}`,
+        s.subject ? `Subject: ${s.subject}` : "",
+        s.snippet ? `Snippet: ${s.snippet.slice(0, 200)}` : "",
+      ].filter(Boolean);
+      return `${i + 1}. ${parts.join(" | ")}`;
+    })
+    .join("\n");
+
+  const prompt = `You write concise classification rules that an email assistant uses to decide whether an incoming email belongs in a specific folder.
+
+${opts.folderName ? `Folder name: "${opts.folderName}"\n` : ""}Here is a sample of emails the user has already filed into this folder:
+${sampleText}
+
+Infer what these emails have in common and write a single, clear rule (1-2 sentences, plain text, no markdown, no quotes, no preamble) describing the kinds of emails that belong in this folder. Be specific about senders, domains, topics, and signals you observe. Do not add anything beyond the rule itself.`;
+
+  const { text } = await generateText({
+    model: getModel("google/gemini-2.5-flash"),
+    prompt,
+  });
+
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:\w+)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .replace(/^["']|["']$/g, "")
+    .trim();
+
+  if (!cleaned) throw new Error("AI returned an empty rule. Try again.");
   return cleaned.slice(0, 600);
 }

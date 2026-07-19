@@ -20,6 +20,7 @@ import { getRequestHost } from "@tanstack/react-start/server";
 import { getMessageLabels } from "./gmail.server";
 import { runMessageJobs, retryMessageJob, enqueueMessageJob } from "./sync.server";
 import { getEmailAccount } from "./gmail-helpers.server";
+import { getEmailListFieldsDecrypted } from "@/lib/sync/encrypted-reader";
 
 export const listFolderHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -41,16 +42,33 @@ export const listFolderHistory = createServerFn({ method: "POST" })
     if (!folder || folder.user_id !== context.userId) throw new Error("Not authorized");
     const limit = data.limit ?? 25;
     const offset = data.offset ?? 0;
+    // subject/from_name/ai_summary/snippet are encrypted at rest (*_enc);
+    // select only the plaintext columns here and decrypt the sensitive
+    // fields via the shared RPC helper.
     const { data: rows } = await supabaseAdmin
       .from("emails")
-      .select(
-        "id, subject, from_addr, from_name, received_at, classified_by, ai_confidence, ai_summary, snippet",
-      )
+      .select("id, from_addr, received_at, classified_by, ai_confidence")
       .eq("user_id", context.userId)
       .eq("folder_id", data.folder_id)
       .order("received_at", { ascending: false })
       .range(offset, offset + limit);
-    const all = rows ?? [];
+    const base = rows ?? [];
+    const { rows: decrypted } = await getEmailListFieldsDecrypted(base.map((r) => r.id));
+    const byId = new Map(decrypted.map((f) => [f.id, f]));
+    const all = base.map((r) => {
+      const f = byId.get(r.id);
+      return {
+        id: r.id,
+        from_addr: r.from_addr,
+        from_name: f?.from_name ?? null,
+        received_at: r.received_at,
+        classified_by: r.classified_by,
+        ai_confidence: r.ai_confidence,
+        ai_summary: f?.ai_summary ?? null,
+        subject: f?.subject ?? null,
+        snippet: f?.snippet ?? null,
+      };
+    });
     const has_more = all.length > limit;
     return { emails: has_more ? all.slice(0, limit) : all, has_more, next_offset: offset + limit };
   });

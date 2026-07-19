@@ -1,0 +1,1 @@
+ALTER TABLE public.contacts ADD COLUMN IF NOT EXISTS manual_overrides text[] NOT NULL DEFAULT '{}';

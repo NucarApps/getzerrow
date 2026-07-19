@@ -1,0 +1,319 @@
+// Recall.ai REST client — server-only. Sends meeting bots that join
+// Zoom/Meet/Teams calls to record and transcribe, then exposes the recording
+// URL, transcript, and summary. Reads RECALL_API_KEY / RECALL_REGION inside
+// each call so env injection works on the Worker runtime.
+//
+// Docs: https://docs.recall.ai/reference
+
+const DEFAULT_REGION = "us-west-2";
+const REQUEST_TIMEOUT_MS = 20_000;
+
+function recallBase(): string {
+  const region = process.env.RECALL_REGION?.trim() || DEFAULT_REGION;
+  return `https://${region}.recall.ai/api/v1`;
+}
+
+function requireApiKey(): string {
+  const key = process.env.RECALL_API_KEY;
+  if (!key) throw new Error("RECALL_API_KEY is not configured");
+  return key;
+}
+
+export class RecallApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "RecallApiError";
+    this.status = status;
+  }
+}
+
+async function recallFetch<T>(
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const res = await fetch(`${recallBase()}${path}`, {
+    method: init.method ?? "GET",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    headers: {
+      Authorization: `Token ${requireApiKey()}`,
+      "Content-Type": "application/json",
+    },
+    body: init.body ? JSON.stringify(init.body) : undefined,
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new RecallApiError(
+      `Recall API ${res.status} on ${path}: ${text.slice(0, 300)}`,
+      res.status,
+    );
+  }
+  return (text ? JSON.parse(text) : {}) as T;
+}
+
+/** Coarse platform label derived from a meeting URL. */
+export function detectPlatform(url: string): string | null {
+  const u = url.toLowerCase();
+  if (u.includes("zoom.us")) return "zoom";
+  if (u.includes("meet.google.com")) return "google_meet";
+  if (u.includes("teams.microsoft.com") || u.includes("teams.live.com")) return "microsoft_teams";
+  if (u.includes("webex.com")) return "webex";
+  return null;
+}
+
+/** Basic shape of a Recall bot resource (only the fields we use). */
+export type RecallBot = {
+  id: string;
+  status_changes?: Array<{ code: string; created_at: string; message?: string | null }>;
+  meeting_url?: { meeting_id?: string; platform?: string } | string | null;
+  recordings?: Array<{
+    id: string;
+    media_shortcuts?: {
+      video_mixed?: { data?: { download_url?: string } };
+      transcript?: {
+        data?: { download_url?: string };
+      };
+    };
+  }>;
+  video_url?: string | null;
+  meeting_participants?: Array<{
+    name?: string | null;
+    email?: string | null;
+    extra_data?: { email?: string | null } | null;
+  }> | null;
+};
+
+/** Collect any participant email addresses Recall reports (often absent). */
+export function extractParticipantEmails(bot: RecallBot): string[] {
+  const emails: string[] = [];
+  for (const p of bot.meeting_participants ?? []) {
+    const email = p.email ?? p.extra_data?.email ?? null;
+    if (email && email.includes("@")) emails.push(email.toLowerCase());
+  }
+  return emails;
+}
+
+type CreateBotInput = {
+  meetingUrl: string;
+  botName?: string;
+  /** ISO timestamp; when set, Recall schedules the bot to join at that time. */
+  joinAt?: string | null;
+  /** When set, the bot posts this message in the meeting chat on join. */
+  chatMessage?: string | null;
+  /** When true, also re-post the chat message each time a participant joins. */
+  chatResendOnJoin?: boolean;
+  /** Base64-encoded JPEG shown as the bot's video tile in the call. */
+  imageB64?: string | null;
+  /**
+   * Seconds Recall waits after everyone but the bot has left before the bot
+   * leaves on its own. Omit to keep Recall's default behavior.
+   */
+  everyoneLeftTimeoutSec?: number | null;
+  /**
+   * Seconds Recall waits while in the call but not recording (e.g. stuck in a
+   * waiting room / empty call) before leaving. Omit to keep the default.
+   */
+  inCallNotRecordingTimeoutSec?: number | null;
+};
+
+/**
+ * Create a meeting bot. Requests Recall's built-in meeting-caption transcript
+ * (no third-party transcription provider needed) plus a mixed video recording.
+ * Optionally personalizes the bot name, in-call chat message, and video-tile
+ * image from the user's saved meeting-bot settings.
+ */
+export async function createBot(input: CreateBotInput): Promise<RecallBot> {
+  const body: Record<string, unknown> = {
+    meeting_url: input.meetingUrl,
+    bot_name: input.botName?.slice(0, 100) || "Zerrow Notetaker",
+    recording_config: {
+      transcript: { provider: { meeting_captions: {} } },
+    },
+  };
+  if (input.joinAt) body.join_at = input.joinAt;
+
+  // Subscribe to real-time transcript + chat events so "Hey Zerrow / @Zerrow"
+  // wake phrases can be answered live. The webhook URL is authenticated with a
+  // per-project shared secret; Recall does not sign real-time endpoints.
+  const realtimeToken = process.env.RECALL_REALTIME_TOKEN?.trim();
+  if (realtimeToken) {
+    (body.recording_config as Record<string, unknown>).realtime_endpoints = [
+      {
+        type: "webhook",
+        url: `https://getzerrow.com/api/public/recall-realtime?t=${encodeURIComponent(realtimeToken)}`,
+        events: ["transcript.data", "participant_events.chat_message_sent"],
+      },
+    ];
+  }
+
+  const chatMessage = input.chatMessage?.trim();
+  if (chatMessage) {
+    const message = chatMessage.slice(0, 4096);
+    const chat: Record<string, unknown> = {
+      on_bot_join: { send_to: "everyone", message },
+    };
+    if (input.chatResendOnJoin) {
+      chat.on_participant_join = { exclude_host: false, message };
+    }
+    body.chat = chat;
+  }
+
+  if (input.imageB64) {
+    const image = { kind: "jpeg", b64_data: input.imageB64 };
+    body.automatic_video_output = {
+      in_call_recording: image,
+      in_call_not_recording: image,
+    };
+  }
+
+  const automaticLeave: Record<string, unknown> = {};
+  if (typeof input.everyoneLeftTimeoutSec === "number" && input.everyoneLeftTimeoutSec > 0) {
+    // Recall expects an object here: leave `timeout` seconds after the last
+    // human leaves. `activate_after` must be >= 1 per Recall's validator.
+    automaticLeave.everyone_left_timeout = {
+      timeout: Math.round(input.everyoneLeftTimeoutSec),
+      activate_after: 1,
+    };
+  }
+  if (
+    typeof input.inCallNotRecordingTimeoutSec === "number" &&
+    input.inCallNotRecordingTimeoutSec > 0
+  ) {
+    // This one is a plain number of seconds.
+    automaticLeave.in_call_not_recording_timeout = Math.round(input.inCallNotRecordingTimeoutSec);
+  }
+  if (Object.keys(automaticLeave).length > 0) {
+    body.automatic_leave = automaticLeave;
+  }
+
+  return recallFetch<RecallBot>("/bot", { method: "POST", body });
+}
+
+/** Post a chat message from the bot into the live meeting. */
+export async function sendBotChatMessage(botId: string, message: string): Promise<void> {
+  const trimmed = message.slice(0, 4096);
+  try {
+    await recallFetch(`/bot/${botId}/send_chat_message`, {
+      method: "POST",
+      body: { to: "everyone", message: trimmed },
+    });
+  } catch (e) {
+    // Some platforms (e.g. Zoom host-only chat) reject sends; log and continue.
+    if (e instanceof RecallApiError && (e.status === 400 || e.status === 403 || e.status === 404)) {
+      return;
+    }
+    throw e;
+  }
+}
+
+/** Fetch the current bot resource. */
+export async function getBot(botId: string): Promise<RecallBot> {
+  return recallFetch<RecallBot>(`/bot/${botId}`);
+}
+
+/** Remove a bot from a call (best-effort; ignores "already gone" errors). */
+export async function leaveBot(botId: string): Promise<void> {
+  try {
+    await recallFetch(`/bot/${botId}/leave_call`, { method: "POST" });
+  } catch (e) {
+    if (e instanceof RecallApiError && (e.status === 400 || e.status === 404)) return;
+    throw e;
+  }
+}
+
+/** A single speaker-labelled transcript segment we render in the UI. */
+export type TranscriptSegment = { speaker: string | null; text: string; start: number | null };
+
+type RecallTranscriptWord = { text?: string; start_timestamp?: { relative?: number } | number };
+type RecallTranscriptEntry = {
+  /** Legacy shape. */
+  speaker?: string | null;
+  /** Current shape: participant metadata carries the speaker name. */
+  participant?: { name?: string | null } | null;
+  words?: RecallTranscriptWord[];
+};
+
+function wordStart(w: RecallTranscriptWord): number | null {
+  const ts = w.start_timestamp;
+  if (typeof ts === "number") return ts;
+  if (ts && typeof ts === "object" && typeof ts.relative === "number") return ts.relative;
+  return null;
+}
+
+/** Signed download URL for a bot's finished transcript file, if ready. */
+export function extractTranscriptUrl(bot: RecallBot): string | null {
+  return bot.recordings?.[0]?.media_shortcuts?.transcript?.data?.download_url ?? null;
+}
+
+/**
+ * Fetch and normalize the transcript into speaker segments. Empty when none.
+ *
+ * Recall's legacy `GET /bot/{id}/transcript` endpoint was removed (it now
+ * returns 400). The transcript is delivered as a downloadable JSON file whose
+ * signed S3 URL lives on the recording's media shortcuts. We read that URL from
+ * the already-fetched bot, download the file, and map it to our segment shape.
+ * Returns an empty array when the transcript file isn't ready yet, so the
+ * refresh/poll path can backfill later.
+ */
+export async function getTranscript(bot: RecallBot): Promise<TranscriptSegment[]> {
+  const url = extractTranscriptUrl(bot);
+  if (!url) return [];
+
+  let entries: RecallTranscriptEntry[];
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!res.ok) return [];
+    entries = (await res.json()) as RecallTranscriptEntry[];
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(entries)) return [];
+
+  return entries
+    .map((entry) => {
+      const words = entry.words ?? [];
+      const text = words
+        .map((w) => w.text ?? "")
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const start = words.length ? wordStart(words[0]) : null;
+      const speaker = entry.participant?.name ?? entry.speaker ?? null;
+      return { speaker, text, start };
+    })
+    .filter((s) => s.text.length > 0);
+}
+
+/** Extract the mixed-video recording download URL from a bot, if ready. */
+export function extractRecordingUrl(bot: RecallBot): string | null {
+  const rec = bot.recordings?.[0];
+  const shortcut = rec?.media_shortcuts?.video_mixed?.data?.download_url;
+  return shortcut ?? bot.video_url ?? null;
+}
+
+/** Latest status code Recall reported for the bot (e.g. "done", "call_ended"). */
+export function latestStatusCode(bot: RecallBot): string | null {
+  const changes = bot.status_changes ?? [];
+  return changes.length ? changes[changes.length - 1].code : null;
+}
+
+/**
+ * Build a plain-text summary from Recall's transcript output. Keeps the feature
+ * "Recall only" (no external LLM): a compact extractive digest of the longest,
+ * most substantive segments in speaker order.
+ */
+export function summarizeTranscript(segments: TranscriptSegment[]): string | null {
+  if (!segments.length) return null;
+  const substantive = segments
+    .filter((s) => s.text.split(/\s+/).length >= 6)
+    .sort((a, b) => b.text.length - a.text.length)
+    .slice(0, 8)
+    .sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+  const chosen = substantive.length ? substantive : segments.slice(0, 5);
+  const lines = chosen.map((s) => {
+    const who = s.speaker ? `${s.speaker}: ` : "";
+    const text = s.text.length > 220 ? `${s.text.slice(0, 217)}…` : s.text;
+    return `• ${who}${text}`;
+  });
+  return `Key moments\n${lines.join("\n")}`;
+}

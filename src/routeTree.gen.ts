@@ -9,55 +9,90 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TermsRouteImport } from './routes/terms'
-import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as GuidesGmailRemindersRouteImport } from './routes/guides.gmail-reminders'
-import { Route as CHandleRouteImport } from './routes/c.$handle'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
-import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
-import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
-import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as AuthCallbackRouteImport } from './routes/auth-callback'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as DotwellKnownAppleAppSiteAssociationRouteImport } from './routes/[.]well-known.apple-app-site-association'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedFoldersRouteImport } from './routes/_authenticated/folders'
+import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
+import { Route as AuthenticatedMeetingsRouteImport } from './routes/_authenticated/meetings'
+import { Route as AuthenticatedMyCardRouteImport } from './routes/_authenticated/my-card'
+import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
+import { Route as CHandleRouteImport } from './routes/c.$handle'
+import { Route as GuidesAiSortingAgentRouteImport } from './routes/guides.ai-sorting-agent'
+import { Route as GuidesGmailRemindersRouteImport } from './routes/guides.gmail-reminders'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts.index'
-import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
-import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
-import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
-import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
-import { Route as ApiPublicGmailRetentionRouteImport } from './routes/api/public/gmail-retention'
-import { Route as ApiPublicGmailRescueClassifyRouteImport } from './routes/api/public/gmail-rescue-classify'
-import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
-import { Route as ApiPublicGmailReconcileRouteImport } from './routes/api/public/gmail-reconcile'
-import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/public/gmail-process-jobs'
-import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
-import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public/gmail-dlq-replay'
-import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
-import { Route as ApiPublicEncryptionBackfillRouteImport } from './routes/api/public/encryption-backfill'
-import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts.$id'
-import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
-import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
-import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
+import { Route as AuthenticatedContactsLabelsRouteImport } from './routes/_authenticated/contacts.labels'
+import { Route as AuthenticatedContactsScanRouteImport } from './routes/_authenticated/contacts.scan'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings.index'
+import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings.account'
+import { Route as AuthenticatedSettingsAccountsRouteImport } from './routes/_authenticated/settings.accounts'
+import { Route as AuthenticatedSettingsActivityRouteImport } from './routes/_authenticated/settings.activity'
+import { Route as AuthenticatedSettingsCarddavRouteImport } from './routes/_authenticated/settings.carddav'
+import { Route as AuthenticatedSettingsGoogleContactsRouteImport } from './routes/_authenticated/settings.google-contacts'
+import { Route as AuthenticatedSettingsInboxRouteImport } from './routes/_authenticated/settings.inbox'
+import { Route as AuthenticatedSettingsMeetingsCalendarRouteImport } from './routes/_authenticated/settings.meetings-calendar'
+import { Route as AuthenticatedSettingsMeetingsRecordingRouteImport } from './routes/_authenticated/settings.meetings-recording'
+import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
+import { Route as ApiMobileContactsRouteImport } from './routes/api/mobile/contacts'
+import { Route as ApiMobileGmailConnectRouteImport } from './routes/api/mobile/gmail-connect'
+import { Route as ApiMobileMeetingSettingsRouteImport } from './routes/api/mobile/meeting-settings'
+import { Route as ApiMobileMeetingsRouteImport } from './routes/api/mobile/meetings'
+import { Route as ApiMobilePushTestRouteImport } from './routes/api/mobile/push-test'
+import { Route as ApiPublicEncryptionBackfillRouteImport } from './routes/api/public/encryption-backfill'
+import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
+import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public/gmail-dlq-replay'
+import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
+import { Route as ApiPublicGmailProcessJobsRouteImport } from './routes/api/public/gmail-process-jobs'
+import { Route as ApiPublicGmailReconcileRouteImport } from './routes/api/public/gmail-reconcile'
+import { Route as ApiPublicGmailRenewWatchesRouteImport } from './routes/api/public/gmail-renew-watches'
+import { Route as ApiPublicGmailRescueClassifyRouteImport } from './routes/api/public/gmail-rescue-classify'
+import { Route as ApiPublicGmailRetentionRouteImport } from './routes/api/public/gmail-retention'
+import { Route as ApiPublicGmailSearchReindexRouteImport } from './routes/api/public/gmail-search-reindex'
+import { Route as ApiPublicGmailWebhookRouteImport } from './routes/api/public/gmail-webhook'
+import { Route as ApiPublicGoogleOauthCallbackRouteImport } from './routes/api/public/google-oauth-callback'
+import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
+import { Route as ApiPublicLogoRouteImport } from './routes/api/public/logo'
+import { Route as ApiPublicMeetingRecordingRouteImport } from './routes/api/public/meeting-recording'
+import { Route as ApiPublicRecallRealtimeRouteImport } from './routes/api/public/recall-realtime'
+import { Route as ApiPublicRecallWebhookRouteImport } from './routes/api/public/recall-webhook'
+import { Route as AuthenticatedContactsCompaniesIndexRouteImport } from './routes/_authenticated/contacts.companies.index'
+import { Route as AuthenticatedContactsCompaniesCompanyIdRouteImport } from './routes/_authenticated/contacts.companies.$companyId'
+import { Route as ApiMobileEmailsActionRouteImport } from './routes/api/mobile/emails.action'
+import { Route as ApiMobileEmailsFeedRouteImport } from './routes/api/mobile/emails.feed'
+import { Route as ApiPublicCarddavSplatRouteImport } from './routes/api/public/carddav/$'
+import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
+import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
+import { Route as ApiPublicHooksGoogleContactsSyncRouteImport } from './routes/api/public/hooks/google-contacts-sync'
+import { Route as ApiPublicHooksReconcileMeetingsRouteImport } from './routes/api/public/hooks/reconcile-meetings'
 import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/public/hooks/relearn-folders'
+import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
+import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
+import { Route as ApiPublicHooksScheduleMeetingBotsRouteImport } from './routes/api/public/hooks/schedule-meeting-bots'
+import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
+import { Route as ApiPublicHooksTasksCompletionScanRouteImport } from './routes/api/public/hooks/tasks-completion-scan'
 import { Route as ApiPublicOgCardHandleRouteImport } from './routes/api/public/og/card.$handle'
 
-const TermsRoute = TermsRouteImport.update({
-  id: '/terms',
-  path: '/terms',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
-  id: '/sitemap.xml',
-  path: '/sitemap.xml',
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth-callback',
+  path: '/auth-callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -65,43 +100,30 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRoute = AuthenticatedRouteImport.update({
-  id: '/_authenticated',
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
-const GuidesGmailRemindersRoute = GuidesGmailRemindersRouteImport.update({
-  id: '/guides/gmail-reminders',
-  path: '/guides/gmail-reminders',
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CHandleRoute = CHandleRouteImport.update({
-  id: '/c/$handle',
-  path: '/c/$handle',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedMyCardRoute = AuthenticatedMyCardRouteImport.update({
-  id: '/my-card',
-  path: '/my-card',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
-  id: '/inbox',
-  path: '/inbox',
+const DotwellKnownAppleAppSiteAssociationRoute =
+  DotwellKnownAppleAppSiteAssociationRouteImport.update({
+    id: '/.well-known/apple-app-site-association',
+    path: '/.well-known/apple-app-site-association',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedFoldersRoute = AuthenticatedFoldersRouteImport.update({
@@ -109,10 +131,50 @@ const AuthenticatedFoldersRoute = AuthenticatedFoldersRouteImport.update({
   path: '/folders',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
   getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedMeetingsRoute = AuthenticatedMeetingsRouteImport.update({
+  id: '/meetings',
+  path: '/meetings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedMyCardRoute = AuthenticatedMyCardRouteImport.update({
+  id: '/my-card',
+  path: '/my-card',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedTasksRoute = AuthenticatedTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const CHandleRoute = CHandleRouteImport.update({
+  id: '/c/$handle',
+  path: '/c/$handle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesAiSortingAgentRoute = GuidesAiSortingAgentRouteImport.update({
+  id: '/guides/ai-sorting-agent',
+  path: '/guides/ai-sorting-agent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesGmailRemindersRoute = GuidesGmailRemindersRouteImport.update({
+  id: '/guides/gmail-reminders',
+  path: '/guides/gmail-reminders',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedContactsIndexRoute =
   AuthenticatedContactsIndexRouteImport.update({
@@ -120,47 +182,128 @@ const AuthenticatedContactsIndexRoute =
     path: '/contacts/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const ApiPublicLogoRoute = ApiPublicLogoRouteImport.update({
-  id: '/api/public/logo',
-  path: '/api/public/logo',
+const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
+  id: '/contacts/$id',
+  path: '/contacts/$id',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedContactsLabelsRoute =
+  AuthenticatedContactsLabelsRouteImport.update({
+    id: '/contacts/labels',
+    path: '/contacts/labels',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedContactsScanRoute =
+  AuthenticatedContactsScanRouteImport.update({
+    id: '/contacts/scan',
+    path: '/contacts/scan',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsAccountRoute =
+  AuthenticatedSettingsAccountRouteImport.update({
+    id: '/account',
+    path: '/account',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsAccountsRoute =
+  AuthenticatedSettingsAccountsRouteImport.update({
+    id: '/accounts',
+    path: '/accounts',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsActivityRoute =
+  AuthenticatedSettingsActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsCarddavRoute =
+  AuthenticatedSettingsCarddavRouteImport.update({
+    id: '/carddav',
+    path: '/carddav',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsGoogleContactsRoute =
+  AuthenticatedSettingsGoogleContactsRouteImport.update({
+    id: '/google-contacts',
+    path: '/google-contacts',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsInboxRoute =
+  AuthenticatedSettingsInboxRouteImport.update({
+    id: '/inbox',
+    path: '/inbox',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsMeetingsCalendarRoute =
+  AuthenticatedSettingsMeetingsCalendarRouteImport.update({
+    id: '/meetings-calendar',
+    path: '/meetings-calendar',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsMeetingsRecordingRoute =
+  AuthenticatedSettingsMeetingsRecordingRouteImport.update({
+    id: '/meetings-recording',
+    path: '/meetings-recording',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const ApiMobileCardRoute = ApiMobileCardRouteImport.update({
+  id: '/api/mobile/card',
+  path: '/api/mobile/card',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
-  id: '/api/public/health',
-  path: '/api/public/health',
+const ApiMobileContactsRoute = ApiMobileContactsRouteImport.update({
+  id: '/api/mobile/contacts',
+  path: '/api/mobile/contacts',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicGoogleOauthCallbackRoute =
-  ApiPublicGoogleOauthCallbackRouteImport.update({
-    id: '/api/public/google-oauth-callback',
-    path: '/api/public/google-oauth-callback',
+const ApiMobileGmailConnectRoute = ApiMobileGmailConnectRouteImport.update({
+  id: '/api/mobile/gmail-connect',
+  path: '/api/mobile/gmail-connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMobileMeetingSettingsRoute =
+  ApiMobileMeetingSettingsRouteImport.update({
+    id: '/api/mobile/meeting-settings',
+    path: '/api/mobile/meeting-settings',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicGmailWebhookRoute = ApiPublicGmailWebhookRouteImport.update({
-  id: '/api/public/gmail-webhook',
-  path: '/api/public/gmail-webhook',
+const ApiMobileMeetingsRoute = ApiMobileMeetingsRouteImport.update({
+  id: '/api/mobile/meetings',
+  path: '/api/mobile/meetings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicGmailRetentionRoute = ApiPublicGmailRetentionRouteImport.update({
-  id: '/api/public/gmail-retention',
-  path: '/api/public/gmail-retention',
+const ApiMobilePushTestRoute = ApiMobilePushTestRouteImport.update({
+  id: '/api/mobile/push-test',
+  path: '/api/mobile/push-test',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicGmailRescueClassifyRoute =
-  ApiPublicGmailRescueClassifyRouteImport.update({
-    id: '/api/public/gmail-rescue-classify',
-    path: '/api/public/gmail-rescue-classify',
+const ApiPublicEncryptionBackfillRoute =
+  ApiPublicEncryptionBackfillRouteImport.update({
+    id: '/api/public/encryption-backfill',
+    path: '/api/public/encryption-backfill',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicGmailRenewWatchesRoute =
-  ApiPublicGmailRenewWatchesRouteImport.update({
-    id: '/api/public/gmail-renew-watches',
-    path: '/api/public/gmail-renew-watches',
+const ApiPublicGmailBackfillTickRoute =
+  ApiPublicGmailBackfillTickRouteImport.update({
+    id: '/api/public/gmail-backfill-tick',
+    path: '/api/public/gmail-backfill-tick',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicGmailReconcileRoute = ApiPublicGmailReconcileRouteImport.update({
-  id: '/api/public/gmail-reconcile',
-  path: '/api/public/gmail-reconcile',
+const ApiPublicGmailDlqReplayRoute = ApiPublicGmailDlqReplayRouteImport.update({
+  id: '/api/public/gmail-dlq-replay',
+  path: '/api/public/gmail-dlq-replay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicGmailPollRoute = ApiPublicGmailPollRouteImport.update({
+  id: '/api/public/gmail-poll',
+  path: '/api/public/gmail-poll',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicGmailProcessJobsRoute =
@@ -169,49 +312,126 @@ const ApiPublicGmailProcessJobsRoute =
     path: '/api/public/gmail-process-jobs',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicGmailPollRoute = ApiPublicGmailPollRouteImport.update({
-  id: '/api/public/gmail-poll',
-  path: '/api/public/gmail-poll',
+const ApiPublicGmailReconcileRoute = ApiPublicGmailReconcileRouteImport.update({
+  id: '/api/public/gmail-reconcile',
+  path: '/api/public/gmail-reconcile',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicGmailDlqReplayRoute = ApiPublicGmailDlqReplayRouteImport.update({
-  id: '/api/public/gmail-dlq-replay',
-  path: '/api/public/gmail-dlq-replay',
+const ApiPublicGmailRenewWatchesRoute =
+  ApiPublicGmailRenewWatchesRouteImport.update({
+    id: '/api/public/gmail-renew-watches',
+    path: '/api/public/gmail-renew-watches',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicGmailRescueClassifyRoute =
+  ApiPublicGmailRescueClassifyRouteImport.update({
+    id: '/api/public/gmail-rescue-classify',
+    path: '/api/public/gmail-rescue-classify',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicGmailRetentionRoute = ApiPublicGmailRetentionRouteImport.update({
+  id: '/api/public/gmail-retention',
+  path: '/api/public/gmail-retention',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicGmailBackfillTickRoute =
-  ApiPublicGmailBackfillTickRouteImport.update({
-    id: '/api/public/gmail-backfill-tick',
-    path: '/api/public/gmail-backfill-tick',
+const ApiPublicGmailSearchReindexRoute =
+  ApiPublicGmailSearchReindexRouteImport.update({
+    id: '/api/public/gmail-search-reindex',
+    path: '/api/public/gmail-search-reindex',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicEncryptionBackfillRoute =
-  ApiPublicEncryptionBackfillRouteImport.update({
-    id: '/api/public/encryption-backfill',
-    path: '/api/public/encryption-backfill',
+const ApiPublicGmailWebhookRoute = ApiPublicGmailWebhookRouteImport.update({
+  id: '/api/public/gmail-webhook',
+  path: '/api/public/gmail-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicGoogleOauthCallbackRoute =
+  ApiPublicGoogleOauthCallbackRouteImport.update({
+    id: '/api/public/google-oauth-callback',
+    path: '/api/public/google-oauth-callback',
     getParentRoute: () => rootRouteImport,
   } as any)
-const AuthenticatedContactsScanRoute =
-  AuthenticatedContactsScanRouteImport.update({
-    id: '/contacts/scan',
-    path: '/contacts/scan',
+const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
+  id: '/api/public/health',
+  path: '/api/public/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicLogoRoute = ApiPublicLogoRouteImport.update({
+  id: '/api/public/logo',
+  path: '/api/public/logo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicMeetingRecordingRoute =
+  ApiPublicMeetingRecordingRouteImport.update({
+    id: '/api/public/meeting-recording',
+    path: '/api/public/meeting-recording',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicRecallRealtimeRoute = ApiPublicRecallRealtimeRouteImport.update({
+  id: '/api/public/recall-realtime',
+  path: '/api/public/recall-realtime',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRecallWebhookRoute = ApiPublicRecallWebhookRouteImport.update({
+  id: '/api/public/recall-webhook',
+  path: '/api/public/recall-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedContactsCompaniesIndexRoute =
+  AuthenticatedContactsCompaniesIndexRouteImport.update({
+    id: '/contacts/companies/',
+    path: '/contacts/companies/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
-  id: '/contacts/$id',
-  path: '/contacts/$id',
-  getParentRoute: () => AuthenticatedRoute,
+const AuthenticatedContactsCompaniesCompanyIdRoute =
+  AuthenticatedContactsCompaniesCompanyIdRouteImport.update({
+    id: '/contacts/companies/$companyId',
+    path: '/contacts/companies/$companyId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const ApiMobileEmailsActionRoute = ApiMobileEmailsActionRouteImport.update({
+  id: '/api/mobile/emails/action',
+  path: '/api/mobile/emails/action',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicHooksSyncCalendarContactsRoute =
-  ApiPublicHooksSyncCalendarContactsRouteImport.update({
-    id: '/api/public/hooks/sync-calendar-contacts',
-    path: '/api/public/hooks/sync-calendar-contacts',
+const ApiMobileEmailsFeedRoute = ApiMobileEmailsFeedRouteImport.update({
+  id: '/api/mobile/emails/feed',
+  path: '/api/mobile/emails/feed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCarddavSplatRoute = ApiPublicCarddavSplatRouteImport.update({
+  id: '/api/public/carddav/$',
+  path: '/api/public/carddav/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicHooksCheckFolderRetryAlertsRoute =
+  ApiPublicHooksCheckFolderRetryAlertsRouteImport.update({
+    id: '/api/public/hooks/check-folder-retry-alerts',
+    path: '/api/public/hooks/check-folder-retry-alerts',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicHooksRunFolderSummaryJobsRoute =
-  ApiPublicHooksRunFolderSummaryJobsRouteImport.update({
-    id: '/api/public/hooks/run-folder-summary-jobs',
-    path: '/api/public/hooks/run-folder-summary-jobs',
+const ApiPublicHooksCheckFolderWriteAlertsRoute =
+  ApiPublicHooksCheckFolderWriteAlertsRouteImport.update({
+    id: '/api/public/hooks/check-folder-write-alerts',
+    path: '/api/public/hooks/check-folder-write-alerts',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksGoogleContactsSyncRoute =
+  ApiPublicHooksGoogleContactsSyncRouteImport.update({
+    id: '/api/public/hooks/google-contacts-sync',
+    path: '/api/public/hooks/google-contacts-sync',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksReconcileMeetingsRoute =
+  ApiPublicHooksReconcileMeetingsRouteImport.update({
+    id: '/api/public/hooks/reconcile-meetings',
+    path: '/api/public/hooks/reconcile-meetings',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksRelearnFoldersRoute =
+  ApiPublicHooksRelearnFoldersRouteImport.update({
+    id: '/api/public/hooks/relearn-folders',
+    path: '/api/public/hooks/relearn-folders',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicHooksRunFolderSummariesRoute =
@@ -220,10 +440,28 @@ const ApiPublicHooksRunFolderSummariesRoute =
     path: '/api/public/hooks/run-folder-summaries',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicHooksRelearnFoldersRoute =
-  ApiPublicHooksRelearnFoldersRouteImport.update({
-    id: '/api/public/hooks/relearn-folders',
-    path: '/api/public/hooks/relearn-folders',
+const ApiPublicHooksRunFolderSummaryJobsRoute =
+  ApiPublicHooksRunFolderSummaryJobsRouteImport.update({
+    id: '/api/public/hooks/run-folder-summary-jobs',
+    path: '/api/public/hooks/run-folder-summary-jobs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksScheduleMeetingBotsRoute =
+  ApiPublicHooksScheduleMeetingBotsRouteImport.update({
+    id: '/api/public/hooks/schedule-meeting-bots',
+    path: '/api/public/hooks/schedule-meeting-bots',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksSyncCalendarContactsRoute =
+  ApiPublicHooksSyncCalendarContactsRouteImport.update({
+    id: '/api/public/hooks/sync-calendar-contacts',
+    path: '/api/public/hooks/sync-calendar-contacts',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksTasksCompletionScanRoute =
+  ApiPublicHooksTasksCompletionScanRouteImport.update({
+    id: '/api/public/hooks/tasks-completion-scan',
+    path: '/api/public/hooks/tasks-completion-scan',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicOgCardHandleRoute = ApiPublicOgCardHandleRouteImport.update({
@@ -234,20 +472,40 @@ const ApiPublicOgCardHandleRoute = ApiPublicOgCardHandleRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth-callback': typeof AuthCallbackRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
+  '/.well-known/apple-app-site-association': typeof DotwellKnownAppleAppSiteAssociationRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/meetings': typeof AuthenticatedMeetingsRoute
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
-  '/settings': typeof AuthenticatedSettingsRoute
+  '/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/contacts/labels': typeof AuthenticatedContactsLabelsRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
+  '/settings/google-contacts': typeof AuthenticatedSettingsGoogleContactsRoute
+  '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
+  '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
+  '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
+  '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/contacts': typeof ApiMobileContactsRoute
+  '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
+  '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
+  '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
+  '/api/mobile/push-test': typeof ApiMobilePushTestRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
@@ -257,33 +515,68 @@ export interface FileRoutesByFullPath {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/gmail-search-reindex': typeof ApiPublicGmailSearchReindexRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
+  '/api/public/recall-realtime': typeof ApiPublicRecallRealtimeRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/contacts/companies/$companyId': typeof AuthenticatedContactsCompaniesCompanyIdRoute
+  '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
+  '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
+  '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
+  '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/google-contacts-sync': typeof ApiPublicHooksGoogleContactsSyncRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
+  '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
+  '/contacts/companies/': typeof AuthenticatedContactsCompaniesIndexRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth-callback': typeof AuthCallbackRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
+  '/.well-known/apple-app-site-association': typeof DotwellKnownAppleAppSiteAssociationRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/folders': typeof AuthenticatedFoldersRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/meetings': typeof AuthenticatedMeetingsRoute
   '/my-card': typeof AuthenticatedMyCardRoute
   '/reports': typeof AuthenticatedReportsRoute
-  '/settings': typeof AuthenticatedSettingsRoute
+  '/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/contacts/labels': typeof AuthenticatedContactsLabelsRoute
   '/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
+  '/settings/google-contacts': typeof AuthenticatedSettingsGoogleContactsRoute
+  '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
+  '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
+  '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
+  '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/contacts': typeof ApiMobileContactsRoute
+  '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
+  '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
+  '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
+  '/api/mobile/push-test': typeof ApiMobilePushTestRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
@@ -293,35 +586,71 @@ export interface FileRoutesByTo {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/gmail-search-reindex': typeof ApiPublicGmailSearchReindexRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
+  '/api/public/recall-realtime': typeof ApiPublicRecallRealtimeRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
+  '/settings': typeof AuthenticatedSettingsIndexRoute
+  '/contacts/companies/$companyId': typeof AuthenticatedContactsCompaniesCompanyIdRoute
+  '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
+  '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
+  '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
+  '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/google-contacts-sync': typeof ApiPublicHooksGoogleContactsSyncRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
+  '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
+  '/contacts/companies': typeof AuthenticatedContactsCompaniesIndexRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/auth-callback': typeof AuthCallbackRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
+  '/.well-known/apple-app-site-association': typeof DotwellKnownAppleAppSiteAssociationRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/folders': typeof AuthenticatedFoldersRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
+  '/_authenticated/meetings': typeof AuthenticatedMeetingsRoute
   '/_authenticated/my-card': typeof AuthenticatedMyCardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
-  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/_authenticated/tasks': typeof AuthenticatedTasksRoute
   '/c/$handle': typeof CHandleRoute
+  '/guides/ai-sorting-agent': typeof GuidesAiSortingAgentRoute
   '/guides/gmail-reminders': typeof GuidesGmailRemindersRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
+  '/_authenticated/contacts/labels': typeof AuthenticatedContactsLabelsRoute
   '/_authenticated/contacts/scan': typeof AuthenticatedContactsScanRoute
+  '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/_authenticated/settings/accounts': typeof AuthenticatedSettingsAccountsRoute
+  '/_authenticated/settings/activity': typeof AuthenticatedSettingsActivityRoute
+  '/_authenticated/settings/carddav': typeof AuthenticatedSettingsCarddavRoute
+  '/_authenticated/settings/google-contacts': typeof AuthenticatedSettingsGoogleContactsRoute
+  '/_authenticated/settings/inbox': typeof AuthenticatedSettingsInboxRoute
+  '/_authenticated/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
+  '/_authenticated/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
+  '/api/mobile/card': typeof ApiMobileCardRoute
+  '/api/mobile/contacts': typeof ApiMobileContactsRoute
+  '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
+  '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
+  '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
+  '/api/mobile/push-test': typeof ApiMobilePushTestRoute
   '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
@@ -331,35 +660,71 @@ export interface FileRoutesById {
   '/api/public/gmail-renew-watches': typeof ApiPublicGmailRenewWatchesRoute
   '/api/public/gmail-rescue-classify': typeof ApiPublicGmailRescueClassifyRoute
   '/api/public/gmail-retention': typeof ApiPublicGmailRetentionRoute
+  '/api/public/gmail-search-reindex': typeof ApiPublicGmailSearchReindexRoute
   '/api/public/gmail-webhook': typeof ApiPublicGmailWebhookRoute
   '/api/public/google-oauth-callback': typeof ApiPublicGoogleOauthCallbackRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/logo': typeof ApiPublicLogoRoute
+  '/api/public/meeting-recording': typeof ApiPublicMeetingRecordingRoute
+  '/api/public/recall-realtime': typeof ApiPublicRecallRealtimeRoute
+  '/api/public/recall-webhook': typeof ApiPublicRecallWebhookRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/_authenticated/contacts/companies/$companyId': typeof AuthenticatedContactsCompaniesCompanyIdRoute
+  '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
+  '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
+  '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
+  '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
+  '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  '/api/public/hooks/google-contacts-sync': typeof ApiPublicHooksGoogleContactsSyncRoute
+  '/api/public/hooks/reconcile-meetings': typeof ApiPublicHooksReconcileMeetingsRoute
   '/api/public/hooks/relearn-folders': typeof ApiPublicHooksRelearnFoldersRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
+  '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
+  '/_authenticated/contacts/companies/': typeof AuthenticatedContactsCompaniesIndexRoute
   '/api/public/og/card/$handle': typeof ApiPublicOgCardHandleRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/auth-callback'
     | '/login'
     | '/privacy'
     | '/sitemap.xml'
     | '/terms'
+    | '/.well-known/apple-app-site-association'
     | '/admin'
     | '/folders'
     | '/inbox'
+    | '/meetings'
     | '/my-card'
     | '/reports'
     | '/settings'
+    | '/tasks'
     | '/c/$handle'
+    | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/contacts/$id'
+    | '/contacts/labels'
     | '/contacts/scan'
+    | '/settings/account'
+    | '/settings/accounts'
+    | '/settings/activity'
+    | '/settings/carddav'
+    | '/settings/google-contacts'
+    | '/settings/inbox'
+    | '/settings/meetings-calendar'
+    | '/settings/meetings-recording'
+    | '/api/mobile/card'
+    | '/api/mobile/contacts'
+    | '/api/mobile/gmail-connect'
+    | '/api/mobile/meeting-settings'
+    | '/api/mobile/meetings'
+    | '/api/mobile/push-test'
     | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
@@ -369,33 +734,68 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-retention'
+    | '/api/public/gmail-search-reindex'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/meeting-recording'
+    | '/api/public/recall-realtime'
+    | '/api/public/recall-webhook'
     | '/contacts/'
+    | '/settings/'
+    | '/contacts/companies/$companyId'
+    | '/api/mobile/emails/action'
+    | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
+    | '/api/public/hooks/check-folder-retry-alerts'
+    | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/google-contacts-sync'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
+    | '/api/public/hooks/tasks-completion-scan'
+    | '/contacts/companies/'
     | '/api/public/og/card/$handle'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/auth-callback'
     | '/login'
     | '/privacy'
     | '/sitemap.xml'
     | '/terms'
+    | '/.well-known/apple-app-site-association'
     | '/admin'
     | '/folders'
     | '/inbox'
+    | '/meetings'
     | '/my-card'
     | '/reports'
-    | '/settings'
+    | '/tasks'
     | '/c/$handle'
+    | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/contacts/$id'
+    | '/contacts/labels'
     | '/contacts/scan'
+    | '/settings/account'
+    | '/settings/accounts'
+    | '/settings/activity'
+    | '/settings/carddav'
+    | '/settings/google-contacts'
+    | '/settings/inbox'
+    | '/settings/meetings-calendar'
+    | '/settings/meetings-recording'
+    | '/api/mobile/card'
+    | '/api/mobile/contacts'
+    | '/api/mobile/gmail-connect'
+    | '/api/mobile/meeting-settings'
+    | '/api/mobile/meetings'
+    | '/api/mobile/push-test'
     | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
@@ -405,34 +805,70 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-retention'
+    | '/api/public/gmail-search-reindex'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/meeting-recording'
+    | '/api/public/recall-realtime'
+    | '/api/public/recall-webhook'
     | '/contacts'
+    | '/settings'
+    | '/contacts/companies/$companyId'
+    | '/api/mobile/emails/action'
+    | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
+    | '/api/public/hooks/check-folder-retry-alerts'
+    | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/google-contacts-sync'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
+    | '/api/public/hooks/tasks-completion-scan'
+    | '/contacts/companies'
     | '/api/public/og/card/$handle'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/auth-callback'
     | '/login'
     | '/privacy'
     | '/sitemap.xml'
     | '/terms'
+    | '/.well-known/apple-app-site-association'
     | '/_authenticated/admin'
     | '/_authenticated/folders'
     | '/_authenticated/inbox'
+    | '/_authenticated/meetings'
     | '/_authenticated/my-card'
     | '/_authenticated/reports'
     | '/_authenticated/settings'
+    | '/_authenticated/tasks'
     | '/c/$handle'
+    | '/guides/ai-sorting-agent'
     | '/guides/gmail-reminders'
     | '/_authenticated/contacts/$id'
+    | '/_authenticated/contacts/labels'
     | '/_authenticated/contacts/scan'
+    | '/_authenticated/settings/account'
+    | '/_authenticated/settings/accounts'
+    | '/_authenticated/settings/activity'
+    | '/_authenticated/settings/carddav'
+    | '/_authenticated/settings/google-contacts'
+    | '/_authenticated/settings/inbox'
+    | '/_authenticated/settings/meetings-calendar'
+    | '/_authenticated/settings/meetings-recording'
+    | '/api/mobile/card'
+    | '/api/mobile/contacts'
+    | '/api/mobile/gmail-connect'
+    | '/api/mobile/meeting-settings'
+    | '/api/mobile/meetings'
+    | '/api/mobile/push-test'
     | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
@@ -442,27 +878,52 @@ export interface FileRouteTypes {
     | '/api/public/gmail-renew-watches'
     | '/api/public/gmail-rescue-classify'
     | '/api/public/gmail-retention'
+    | '/api/public/gmail-search-reindex'
     | '/api/public/gmail-webhook'
     | '/api/public/google-oauth-callback'
     | '/api/public/health'
     | '/api/public/logo'
+    | '/api/public/meeting-recording'
+    | '/api/public/recall-realtime'
+    | '/api/public/recall-webhook'
     | '/_authenticated/contacts/'
+    | '/_authenticated/settings/'
+    | '/_authenticated/contacts/companies/$companyId'
+    | '/api/mobile/emails/action'
+    | '/api/mobile/emails/feed'
+    | '/api/public/carddav/$'
+    | '/api/public/hooks/check-folder-retry-alerts'
+    | '/api/public/hooks/check-folder-write-alerts'
+    | '/api/public/hooks/google-contacts-sync'
+    | '/api/public/hooks/reconcile-meetings'
     | '/api/public/hooks/relearn-folders'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
+    | '/api/public/hooks/tasks-completion-scan'
+    | '/_authenticated/contacts/companies/'
     | '/api/public/og/card/$handle'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  AuthCallbackRoute: typeof AuthCallbackRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TermsRoute: typeof TermsRoute
+  DotwellKnownAppleAppSiteAssociationRoute: typeof DotwellKnownAppleAppSiteAssociationRoute
   CHandleRoute: typeof CHandleRoute
+  GuidesAiSortingAgentRoute: typeof GuidesAiSortingAgentRoute
   GuidesGmailRemindersRoute: typeof GuidesGmailRemindersRoute
+  ApiMobileCardRoute: typeof ApiMobileCardRoute
+  ApiMobileContactsRoute: typeof ApiMobileContactsRoute
+  ApiMobileGmailConnectRoute: typeof ApiMobileGmailConnectRoute
+  ApiMobileMeetingSettingsRoute: typeof ApiMobileMeetingSettingsRoute
+  ApiMobileMeetingsRoute: typeof ApiMobileMeetingsRoute
+  ApiMobilePushTestRoute: typeof ApiMobilePushTestRoute
   ApiPublicEncryptionBackfillRoute: typeof ApiPublicEncryptionBackfillRoute
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailDlqReplayRoute: typeof ApiPublicGmailDlqReplayRoute
@@ -472,45 +933,37 @@ export interface RootRouteChildren {
   ApiPublicGmailRenewWatchesRoute: typeof ApiPublicGmailRenewWatchesRoute
   ApiPublicGmailRescueClassifyRoute: typeof ApiPublicGmailRescueClassifyRoute
   ApiPublicGmailRetentionRoute: typeof ApiPublicGmailRetentionRoute
+  ApiPublicGmailSearchReindexRoute: typeof ApiPublicGmailSearchReindexRoute
   ApiPublicGmailWebhookRoute: typeof ApiPublicGmailWebhookRoute
   ApiPublicGoogleOauthCallbackRoute: typeof ApiPublicGoogleOauthCallbackRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicLogoRoute: typeof ApiPublicLogoRoute
+  ApiPublicMeetingRecordingRoute: typeof ApiPublicMeetingRecordingRoute
+  ApiPublicRecallRealtimeRoute: typeof ApiPublicRecallRealtimeRoute
+  ApiPublicRecallWebhookRoute: typeof ApiPublicRecallWebhookRoute
+  ApiMobileEmailsActionRoute: typeof ApiMobileEmailsActionRoute
+  ApiMobileEmailsFeedRoute: typeof ApiMobileEmailsFeedRoute
+  ApiPublicCarddavSplatRoute: typeof ApiPublicCarddavSplatRoute
+  ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
+  ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
+  ApiPublicHooksGoogleContactsSyncRoute: typeof ApiPublicHooksGoogleContactsSyncRoute
+  ApiPublicHooksReconcileMeetingsRoute: typeof ApiPublicHooksReconcileMeetingsRoute
   ApiPublicHooksRelearnFoldersRoute: typeof ApiPublicHooksRelearnFoldersRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
   ApiPublicHooksRunFolderSummaryJobsRoute: typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  ApiPublicHooksScheduleMeetingBotsRoute: typeof ApiPublicHooksScheduleMeetingBotsRoute
   ApiPublicHooksSyncCalendarContactsRoute: typeof ApiPublicHooksSyncCalendarContactsRoute
+  ApiPublicHooksTasksCompletionScanRoute: typeof ApiPublicHooksTasksCompletionScanRoute
   ApiPublicOgCardHandleRoute: typeof ApiPublicOgCardHandleRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/terms': {
-      id: '/terms'
-      path: '/terms'
-      fullPath: '/terms'
-      preLoaderRoute: typeof TermsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sitemap.xml': {
-      id: '/sitemap.xml'
-      path: '/sitemap.xml'
-      fullPath: '/sitemap.xml'
-      preLoaderRoute: typeof SitemapDotxmlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -520,53 +973,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth-callback': {
+      id: '/auth-callback'
+      path: '/auth-callback'
+      fullPath: '/auth-callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/guides/gmail-reminders': {
-      id: '/guides/gmail-reminders'
-      path: '/guides/gmail-reminders'
-      fullPath: '/guides/gmail-reminders'
-      preLoaderRoute: typeof GuidesGmailRemindersRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/c/$handle': {
-      id: '/c/$handle'
-      path: '/c/$handle'
-      fullPath: '/c/$handle'
-      preLoaderRoute: typeof CHandleRouteImport
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof AuthenticatedRoute
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/reports': {
-      id: '/_authenticated/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof AuthenticatedReportsRouteImport
-      parentRoute: typeof AuthenticatedRoute
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/my-card': {
-      id: '/_authenticated/my-card'
-      path: '/my-card'
-      fullPath: '/my-card'
-      preLoaderRoute: typeof AuthenticatedMyCardRouteImport
-      parentRoute: typeof AuthenticatedRoute
+    '/.well-known/apple-app-site-association': {
+      id: '/.well-known/apple-app-site-association'
+      path: '/.well-known/apple-app-site-association'
+      fullPath: '/.well-known/apple-app-site-association'
+      preLoaderRoute: typeof DotwellKnownAppleAppSiteAssociationRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/inbox': {
-      id: '/_authenticated/inbox'
-      path: '/inbox'
-      fullPath: '/inbox'
-      preLoaderRoute: typeof AuthenticatedInboxRouteImport
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/folders': {
@@ -576,116 +1029,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedFoldersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/admin': {
-      id: '/_authenticated/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+    '/_authenticated/inbox': {
+      id: '/_authenticated/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof AuthenticatedInboxRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/meetings': {
+      id: '/_authenticated/meetings'
+      path: '/meetings'
+      fullPath: '/meetings'
+      preLoaderRoute: typeof AuthenticatedMeetingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/my-card': {
+      id: '/_authenticated/my-card'
+      path: '/my-card'
+      fullPath: '/my-card'
+      preLoaderRoute: typeof AuthenticatedMyCardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/reports': {
+      id: '/_authenticated/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/tasks': {
+      id: '/_authenticated/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof AuthenticatedTasksRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/c/$handle': {
+      id: '/c/$handle'
+      path: '/c/$handle'
+      fullPath: '/c/$handle'
+      preLoaderRoute: typeof CHandleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/ai-sorting-agent': {
+      id: '/guides/ai-sorting-agent'
+      path: '/guides/ai-sorting-agent'
+      fullPath: '/guides/ai-sorting-agent'
+      preLoaderRoute: typeof GuidesAiSortingAgentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/gmail-reminders': {
+      id: '/guides/gmail-reminders'
+      path: '/guides/gmail-reminders'
+      fullPath: '/guides/gmail-reminders'
+      preLoaderRoute: typeof GuidesGmailRemindersRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/contacts/': {
       id: '/_authenticated/contacts/'
       path: '/contacts'
       fullPath: '/contacts/'
       preLoaderRoute: typeof AuthenticatedContactsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/api/public/logo': {
-      id: '/api/public/logo'
-      path: '/api/public/logo'
-      fullPath: '/api/public/logo'
-      preLoaderRoute: typeof ApiPublicLogoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/health': {
-      id: '/api/public/health'
-      path: '/api/public/health'
-      fullPath: '/api/public/health'
-      preLoaderRoute: typeof ApiPublicHealthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/google-oauth-callback': {
-      id: '/api/public/google-oauth-callback'
-      path: '/api/public/google-oauth-callback'
-      fullPath: '/api/public/google-oauth-callback'
-      preLoaderRoute: typeof ApiPublicGoogleOauthCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-webhook': {
-      id: '/api/public/gmail-webhook'
-      path: '/api/public/gmail-webhook'
-      fullPath: '/api/public/gmail-webhook'
-      preLoaderRoute: typeof ApiPublicGmailWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-retention': {
-      id: '/api/public/gmail-retention'
-      path: '/api/public/gmail-retention'
-      fullPath: '/api/public/gmail-retention'
-      preLoaderRoute: typeof ApiPublicGmailRetentionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-rescue-classify': {
-      id: '/api/public/gmail-rescue-classify'
-      path: '/api/public/gmail-rescue-classify'
-      fullPath: '/api/public/gmail-rescue-classify'
-      preLoaderRoute: typeof ApiPublicGmailRescueClassifyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-renew-watches': {
-      id: '/api/public/gmail-renew-watches'
-      path: '/api/public/gmail-renew-watches'
-      fullPath: '/api/public/gmail-renew-watches'
-      preLoaderRoute: typeof ApiPublicGmailRenewWatchesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-reconcile': {
-      id: '/api/public/gmail-reconcile'
-      path: '/api/public/gmail-reconcile'
-      fullPath: '/api/public/gmail-reconcile'
-      preLoaderRoute: typeof ApiPublicGmailReconcileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-process-jobs': {
-      id: '/api/public/gmail-process-jobs'
-      path: '/api/public/gmail-process-jobs'
-      fullPath: '/api/public/gmail-process-jobs'
-      preLoaderRoute: typeof ApiPublicGmailProcessJobsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-poll': {
-      id: '/api/public/gmail-poll'
-      path: '/api/public/gmail-poll'
-      fullPath: '/api/public/gmail-poll'
-      preLoaderRoute: typeof ApiPublicGmailPollRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-dlq-replay': {
-      id: '/api/public/gmail-dlq-replay'
-      path: '/api/public/gmail-dlq-replay'
-      fullPath: '/api/public/gmail-dlq-replay'
-      preLoaderRoute: typeof ApiPublicGmailDlqReplayRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/gmail-backfill-tick': {
-      id: '/api/public/gmail-backfill-tick'
-      path: '/api/public/gmail-backfill-tick'
-      fullPath: '/api/public/gmail-backfill-tick'
-      preLoaderRoute: typeof ApiPublicGmailBackfillTickRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/encryption-backfill': {
-      id: '/api/public/encryption-backfill'
-      path: '/api/public/encryption-backfill'
-      fullPath: '/api/public/encryption-backfill'
-      preLoaderRoute: typeof ApiPublicEncryptionBackfillRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/contacts/scan': {
-      id: '/_authenticated/contacts/scan'
-      path: '/contacts/scan'
-      fullPath: '/contacts/scan'
-      preLoaderRoute: typeof AuthenticatedContactsScanRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/contacts/$id': {
@@ -695,18 +1106,312 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/api/public/hooks/sync-calendar-contacts': {
-      id: '/api/public/hooks/sync-calendar-contacts'
-      path: '/api/public/hooks/sync-calendar-contacts'
-      fullPath: '/api/public/hooks/sync-calendar-contacts'
-      preLoaderRoute: typeof ApiPublicHooksSyncCalendarContactsRouteImport
+    '/_authenticated/contacts/labels': {
+      id: '/_authenticated/contacts/labels'
+      path: '/contacts/labels'
+      fullPath: '/contacts/labels'
+      preLoaderRoute: typeof AuthenticatedContactsLabelsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/contacts/scan': {
+      id: '/_authenticated/contacts/scan'
+      path: '/contacts/scan'
+      fullPath: '/contacts/scan'
+      preLoaderRoute: typeof AuthenticatedContactsScanRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/account': {
+      id: '/_authenticated/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/accounts': {
+      id: '/_authenticated/settings/accounts'
+      path: '/accounts'
+      fullPath: '/settings/accounts'
+      preLoaderRoute: typeof AuthenticatedSettingsAccountsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/activity': {
+      id: '/_authenticated/settings/activity'
+      path: '/activity'
+      fullPath: '/settings/activity'
+      preLoaderRoute: typeof AuthenticatedSettingsActivityRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/carddav': {
+      id: '/_authenticated/settings/carddav'
+      path: '/carddav'
+      fullPath: '/settings/carddav'
+      preLoaderRoute: typeof AuthenticatedSettingsCarddavRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/google-contacts': {
+      id: '/_authenticated/settings/google-contacts'
+      path: '/google-contacts'
+      fullPath: '/settings/google-contacts'
+      preLoaderRoute: typeof AuthenticatedSettingsGoogleContactsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/inbox': {
+      id: '/_authenticated/settings/inbox'
+      path: '/inbox'
+      fullPath: '/settings/inbox'
+      preLoaderRoute: typeof AuthenticatedSettingsInboxRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/meetings-calendar': {
+      id: '/_authenticated/settings/meetings-calendar'
+      path: '/meetings-calendar'
+      fullPath: '/settings/meetings-calendar'
+      preLoaderRoute: typeof AuthenticatedSettingsMeetingsCalendarRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/meetings-recording': {
+      id: '/_authenticated/settings/meetings-recording'
+      path: '/meetings-recording'
+      fullPath: '/settings/meetings-recording'
+      preLoaderRoute: typeof AuthenticatedSettingsMeetingsRecordingRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/api/mobile/card': {
+      id: '/api/mobile/card'
+      path: '/api/mobile/card'
+      fullPath: '/api/mobile/card'
+      preLoaderRoute: typeof ApiMobileCardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/hooks/run-folder-summary-jobs': {
-      id: '/api/public/hooks/run-folder-summary-jobs'
-      path: '/api/public/hooks/run-folder-summary-jobs'
-      fullPath: '/api/public/hooks/run-folder-summary-jobs'
-      preLoaderRoute: typeof ApiPublicHooksRunFolderSummaryJobsRouteImport
+    '/api/mobile/contacts': {
+      id: '/api/mobile/contacts'
+      path: '/api/mobile/contacts'
+      fullPath: '/api/mobile/contacts'
+      preLoaderRoute: typeof ApiMobileContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mobile/gmail-connect': {
+      id: '/api/mobile/gmail-connect'
+      path: '/api/mobile/gmail-connect'
+      fullPath: '/api/mobile/gmail-connect'
+      preLoaderRoute: typeof ApiMobileGmailConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mobile/meeting-settings': {
+      id: '/api/mobile/meeting-settings'
+      path: '/api/mobile/meeting-settings'
+      fullPath: '/api/mobile/meeting-settings'
+      preLoaderRoute: typeof ApiMobileMeetingSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mobile/meetings': {
+      id: '/api/mobile/meetings'
+      path: '/api/mobile/meetings'
+      fullPath: '/api/mobile/meetings'
+      preLoaderRoute: typeof ApiMobileMeetingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mobile/push-test': {
+      id: '/api/mobile/push-test'
+      path: '/api/mobile/push-test'
+      fullPath: '/api/mobile/push-test'
+      preLoaderRoute: typeof ApiMobilePushTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/encryption-backfill': {
+      id: '/api/public/encryption-backfill'
+      path: '/api/public/encryption-backfill'
+      fullPath: '/api/public/encryption-backfill'
+      preLoaderRoute: typeof ApiPublicEncryptionBackfillRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-backfill-tick': {
+      id: '/api/public/gmail-backfill-tick'
+      path: '/api/public/gmail-backfill-tick'
+      fullPath: '/api/public/gmail-backfill-tick'
+      preLoaderRoute: typeof ApiPublicGmailBackfillTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-dlq-replay': {
+      id: '/api/public/gmail-dlq-replay'
+      path: '/api/public/gmail-dlq-replay'
+      fullPath: '/api/public/gmail-dlq-replay'
+      preLoaderRoute: typeof ApiPublicGmailDlqReplayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-poll': {
+      id: '/api/public/gmail-poll'
+      path: '/api/public/gmail-poll'
+      fullPath: '/api/public/gmail-poll'
+      preLoaderRoute: typeof ApiPublicGmailPollRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-process-jobs': {
+      id: '/api/public/gmail-process-jobs'
+      path: '/api/public/gmail-process-jobs'
+      fullPath: '/api/public/gmail-process-jobs'
+      preLoaderRoute: typeof ApiPublicGmailProcessJobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-reconcile': {
+      id: '/api/public/gmail-reconcile'
+      path: '/api/public/gmail-reconcile'
+      fullPath: '/api/public/gmail-reconcile'
+      preLoaderRoute: typeof ApiPublicGmailReconcileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-renew-watches': {
+      id: '/api/public/gmail-renew-watches'
+      path: '/api/public/gmail-renew-watches'
+      fullPath: '/api/public/gmail-renew-watches'
+      preLoaderRoute: typeof ApiPublicGmailRenewWatchesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-rescue-classify': {
+      id: '/api/public/gmail-rescue-classify'
+      path: '/api/public/gmail-rescue-classify'
+      fullPath: '/api/public/gmail-rescue-classify'
+      preLoaderRoute: typeof ApiPublicGmailRescueClassifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-retention': {
+      id: '/api/public/gmail-retention'
+      path: '/api/public/gmail-retention'
+      fullPath: '/api/public/gmail-retention'
+      preLoaderRoute: typeof ApiPublicGmailRetentionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-search-reindex': {
+      id: '/api/public/gmail-search-reindex'
+      path: '/api/public/gmail-search-reindex'
+      fullPath: '/api/public/gmail-search-reindex'
+      preLoaderRoute: typeof ApiPublicGmailSearchReindexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail-webhook': {
+      id: '/api/public/gmail-webhook'
+      path: '/api/public/gmail-webhook'
+      fullPath: '/api/public/gmail-webhook'
+      preLoaderRoute: typeof ApiPublicGmailWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/google-oauth-callback': {
+      id: '/api/public/google-oauth-callback'
+      path: '/api/public/google-oauth-callback'
+      fullPath: '/api/public/google-oauth-callback'
+      preLoaderRoute: typeof ApiPublicGoogleOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/health': {
+      id: '/api/public/health'
+      path: '/api/public/health'
+      fullPath: '/api/public/health'
+      preLoaderRoute: typeof ApiPublicHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/logo': {
+      id: '/api/public/logo'
+      path: '/api/public/logo'
+      fullPath: '/api/public/logo'
+      preLoaderRoute: typeof ApiPublicLogoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/meeting-recording': {
+      id: '/api/public/meeting-recording'
+      path: '/api/public/meeting-recording'
+      fullPath: '/api/public/meeting-recording'
+      preLoaderRoute: typeof ApiPublicMeetingRecordingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/recall-realtime': {
+      id: '/api/public/recall-realtime'
+      path: '/api/public/recall-realtime'
+      fullPath: '/api/public/recall-realtime'
+      preLoaderRoute: typeof ApiPublicRecallRealtimeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/recall-webhook': {
+      id: '/api/public/recall-webhook'
+      path: '/api/public/recall-webhook'
+      fullPath: '/api/public/recall-webhook'
+      preLoaderRoute: typeof ApiPublicRecallWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/contacts/companies/': {
+      id: '/_authenticated/contacts/companies/'
+      path: '/contacts/companies'
+      fullPath: '/contacts/companies/'
+      preLoaderRoute: typeof AuthenticatedContactsCompaniesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/contacts/companies/$companyId': {
+      id: '/_authenticated/contacts/companies/$companyId'
+      path: '/contacts/companies/$companyId'
+      fullPath: '/contacts/companies/$companyId'
+      preLoaderRoute: typeof AuthenticatedContactsCompaniesCompanyIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/mobile/emails/action': {
+      id: '/api/mobile/emails/action'
+      path: '/api/mobile/emails/action'
+      fullPath: '/api/mobile/emails/action'
+      preLoaderRoute: typeof ApiMobileEmailsActionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mobile/emails/feed': {
+      id: '/api/mobile/emails/feed'
+      path: '/api/mobile/emails/feed'
+      fullPath: '/api/mobile/emails/feed'
+      preLoaderRoute: typeof ApiMobileEmailsFeedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/carddav/$': {
+      id: '/api/public/carddav/$'
+      path: '/api/public/carddav/$'
+      fullPath: '/api/public/carddav/$'
+      preLoaderRoute: typeof ApiPublicCarddavSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/check-folder-retry-alerts': {
+      id: '/api/public/hooks/check-folder-retry-alerts'
+      path: '/api/public/hooks/check-folder-retry-alerts'
+      fullPath: '/api/public/hooks/check-folder-retry-alerts'
+      preLoaderRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/check-folder-write-alerts': {
+      id: '/api/public/hooks/check-folder-write-alerts'
+      path: '/api/public/hooks/check-folder-write-alerts'
+      fullPath: '/api/public/hooks/check-folder-write-alerts'
+      preLoaderRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/google-contacts-sync': {
+      id: '/api/public/hooks/google-contacts-sync'
+      path: '/api/public/hooks/google-contacts-sync'
+      fullPath: '/api/public/hooks/google-contacts-sync'
+      preLoaderRoute: typeof ApiPublicHooksGoogleContactsSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/reconcile-meetings': {
+      id: '/api/public/hooks/reconcile-meetings'
+      path: '/api/public/hooks/reconcile-meetings'
+      fullPath: '/api/public/hooks/reconcile-meetings'
+      preLoaderRoute: typeof ApiPublicHooksReconcileMeetingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/relearn-folders': {
+      id: '/api/public/hooks/relearn-folders'
+      path: '/api/public/hooks/relearn-folders'
+      fullPath: '/api/public/hooks/relearn-folders'
+      preLoaderRoute: typeof ApiPublicHooksRelearnFoldersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/run-folder-summaries': {
@@ -716,11 +1421,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksRunFolderSummariesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/hooks/relearn-folders': {
-      id: '/api/public/hooks/relearn-folders'
-      path: '/api/public/hooks/relearn-folders'
-      fullPath: '/api/public/hooks/relearn-folders'
-      preLoaderRoute: typeof ApiPublicHooksRelearnFoldersRouteImport
+    '/api/public/hooks/run-folder-summary-jobs': {
+      id: '/api/public/hooks/run-folder-summary-jobs'
+      path: '/api/public/hooks/run-folder-summary-jobs'
+      fullPath: '/api/public/hooks/run-folder-summary-jobs'
+      preLoaderRoute: typeof ApiPublicHooksRunFolderSummaryJobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/schedule-meeting-bots': {
+      id: '/api/public/hooks/schedule-meeting-bots'
+      path: '/api/public/hooks/schedule-meeting-bots'
+      fullPath: '/api/public/hooks/schedule-meeting-bots'
+      preLoaderRoute: typeof ApiPublicHooksScheduleMeetingBotsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/sync-calendar-contacts': {
+      id: '/api/public/hooks/sync-calendar-contacts'
+      path: '/api/public/hooks/sync-calendar-contacts'
+      fullPath: '/api/public/hooks/sync-calendar-contacts'
+      preLoaderRoute: typeof ApiPublicHooksSyncCalendarContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/tasks-completion-scan': {
+      id: '/api/public/hooks/tasks-completion-scan'
+      path: '/api/public/hooks/tasks-completion-scan'
+      fullPath: '/api/public/hooks/tasks-completion-scan'
+      preLoaderRoute: typeof ApiPublicHooksTasksCompletionScanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/og/card/$handle': {
@@ -733,28 +1459,72 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedSettingsRouteChildren {
+  AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
+  AuthenticatedSettingsAccountsRoute: typeof AuthenticatedSettingsAccountsRoute
+  AuthenticatedSettingsActivityRoute: typeof AuthenticatedSettingsActivityRoute
+  AuthenticatedSettingsCarddavRoute: typeof AuthenticatedSettingsCarddavRoute
+  AuthenticatedSettingsGoogleContactsRoute: typeof AuthenticatedSettingsGoogleContactsRoute
+  AuthenticatedSettingsInboxRoute: typeof AuthenticatedSettingsInboxRoute
+  AuthenticatedSettingsMeetingsCalendarRoute: typeof AuthenticatedSettingsMeetingsCalendarRoute
+  AuthenticatedSettingsMeetingsRecordingRoute: typeof AuthenticatedSettingsMeetingsRecordingRoute
+  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
+}
+
+const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
+  AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
+  AuthenticatedSettingsAccountsRoute: AuthenticatedSettingsAccountsRoute,
+  AuthenticatedSettingsActivityRoute: AuthenticatedSettingsActivityRoute,
+  AuthenticatedSettingsCarddavRoute: AuthenticatedSettingsCarddavRoute,
+  AuthenticatedSettingsGoogleContactsRoute:
+    AuthenticatedSettingsGoogleContactsRoute,
+  AuthenticatedSettingsInboxRoute: AuthenticatedSettingsInboxRoute,
+  AuthenticatedSettingsMeetingsCalendarRoute:
+    AuthenticatedSettingsMeetingsCalendarRoute,
+  AuthenticatedSettingsMeetingsRecordingRoute:
+    AuthenticatedSettingsMeetingsRecordingRoute,
+  AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
+}
+
+const AuthenticatedSettingsRouteWithChildren =
+  AuthenticatedSettingsRoute._addFileChildren(
+    AuthenticatedSettingsRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedFoldersRoute: typeof AuthenticatedFoldersRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
+  AuthenticatedMeetingsRoute: typeof AuthenticatedMeetingsRoute
   AuthenticatedMyCardRoute: typeof AuthenticatedMyCardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
+  AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
+  AuthenticatedContactsLabelsRoute: typeof AuthenticatedContactsLabelsRoute
   AuthenticatedContactsScanRoute: typeof AuthenticatedContactsScanRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
+  AuthenticatedContactsCompaniesCompanyIdRoute: typeof AuthenticatedContactsCompaniesCompanyIdRoute
+  AuthenticatedContactsCompaniesIndexRoute: typeof AuthenticatedContactsCompaniesIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedFoldersRoute: AuthenticatedFoldersRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
+  AuthenticatedMeetingsRoute: AuthenticatedMeetingsRoute,
   AuthenticatedMyCardRoute: AuthenticatedMyCardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
-  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
+  AuthenticatedTasksRoute: AuthenticatedTasksRoute,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
+  AuthenticatedContactsLabelsRoute: AuthenticatedContactsLabelsRoute,
   AuthenticatedContactsScanRoute: AuthenticatedContactsScanRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
+  AuthenticatedContactsCompaniesCompanyIdRoute:
+    AuthenticatedContactsCompaniesCompanyIdRoute,
+  AuthenticatedContactsCompaniesIndexRoute:
+    AuthenticatedContactsCompaniesIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -764,12 +1534,22 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  AuthCallbackRoute: AuthCallbackRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TermsRoute: TermsRoute,
+  DotwellKnownAppleAppSiteAssociationRoute:
+    DotwellKnownAppleAppSiteAssociationRoute,
   CHandleRoute: CHandleRoute,
+  GuidesAiSortingAgentRoute: GuidesAiSortingAgentRoute,
   GuidesGmailRemindersRoute: GuidesGmailRemindersRoute,
+  ApiMobileCardRoute: ApiMobileCardRoute,
+  ApiMobileContactsRoute: ApiMobileContactsRoute,
+  ApiMobileGmailConnectRoute: ApiMobileGmailConnectRoute,
+  ApiMobileMeetingSettingsRoute: ApiMobileMeetingSettingsRoute,
+  ApiMobileMeetingsRoute: ApiMobileMeetingsRoute,
+  ApiMobilePushTestRoute: ApiMobilePushTestRoute,
   ApiPublicEncryptionBackfillRoute: ApiPublicEncryptionBackfillRoute,
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailDlqReplayRoute: ApiPublicGmailDlqReplayRoute,
@@ -779,16 +1559,33 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGmailRenewWatchesRoute: ApiPublicGmailRenewWatchesRoute,
   ApiPublicGmailRescueClassifyRoute: ApiPublicGmailRescueClassifyRoute,
   ApiPublicGmailRetentionRoute: ApiPublicGmailRetentionRoute,
+  ApiPublicGmailSearchReindexRoute: ApiPublicGmailSearchReindexRoute,
   ApiPublicGmailWebhookRoute: ApiPublicGmailWebhookRoute,
   ApiPublicGoogleOauthCallbackRoute: ApiPublicGoogleOauthCallbackRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicLogoRoute: ApiPublicLogoRoute,
+  ApiPublicMeetingRecordingRoute: ApiPublicMeetingRecordingRoute,
+  ApiPublicRecallRealtimeRoute: ApiPublicRecallRealtimeRoute,
+  ApiPublicRecallWebhookRoute: ApiPublicRecallWebhookRoute,
+  ApiMobileEmailsActionRoute: ApiMobileEmailsActionRoute,
+  ApiMobileEmailsFeedRoute: ApiMobileEmailsFeedRoute,
+  ApiPublicCarddavSplatRoute: ApiPublicCarddavSplatRoute,
+  ApiPublicHooksCheckFolderRetryAlertsRoute:
+    ApiPublicHooksCheckFolderRetryAlertsRoute,
+  ApiPublicHooksCheckFolderWriteAlertsRoute:
+    ApiPublicHooksCheckFolderWriteAlertsRoute,
+  ApiPublicHooksGoogleContactsSyncRoute: ApiPublicHooksGoogleContactsSyncRoute,
+  ApiPublicHooksReconcileMeetingsRoute: ApiPublicHooksReconcileMeetingsRoute,
   ApiPublicHooksRelearnFoldersRoute: ApiPublicHooksRelearnFoldersRoute,
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
   ApiPublicHooksRunFolderSummaryJobsRoute:
     ApiPublicHooksRunFolderSummaryJobsRoute,
+  ApiPublicHooksScheduleMeetingBotsRoute:
+    ApiPublicHooksScheduleMeetingBotsRoute,
   ApiPublicHooksSyncCalendarContactsRoute:
     ApiPublicHooksSyncCalendarContactsRoute,
+  ApiPublicHooksTasksCompletionScanRoute:
+    ApiPublicHooksTasksCompletionScanRoute,
   ApiPublicOgCardHandleRoute: ApiPublicOgCardHandleRoute,
 }
 export const routeTree = rootRouteImport

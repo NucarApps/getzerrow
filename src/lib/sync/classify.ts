@@ -19,10 +19,10 @@
 //   This module is mostly pure but does call out to ai.server.classifyEmail
 //   when no rule matches. Callers can suppress that with skipAi=true (used
 //   by backfill batch processing).
-import { classifyEmail } from "../ai.server";
+import { classifyEmail, shouldSurfaceToInbox } from "../ai.server";
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
-import { applyFilter, matchByFilters, labelOf } from "./filter-engine";
+import { applyFilter, matchByFilters, labelOf, emailVetoedForFolder } from "./filter-engine";
 import type { OverrideException } from "./types";
 
 export type ClassificationResult = {
@@ -47,8 +47,13 @@ export type ParsedEmailForClassify = {
   body_text: string;
   body_html: string;
   has_attachment: boolean;
+  has_calendar_invite?: boolean;
   received_at: string;
   raw_labels: string[] | null;
+  /** Contact-group ids the sender belongs to (populated from
+   * AccountContext.senderGroups by classifyByRules). Optional so
+   * callers building ad-hoc parsed emails don't have to compute it. */
+  sender_group_ids?: string[];
 };
 
 export type RulesClassification = ClassificationResult & {
@@ -57,6 +62,10 @@ export type RulesClassification = ClassificationResult & {
    * the rules result is final (matched, excluded, or nothing for AI to
    * do). */
   needs_ai: boolean;
+  /** True when rules routed this mail into a folder that carries a
+   * non-empty surface_ai_rule — the async surface pass must decide
+   * whether to keep the email visible in the inbox. */
+  needs_surface_check: boolean;
 };
 
 /** Synchronous rules-only classification: inbox override (+ exceptions)
@@ -84,6 +93,12 @@ export function classifyByRules(
 
   const fromAddr = (parsed.from_addr || "").toLowerCase();
   const fromDomain = fromAddr.split("@")[1] || "";
+  // Attach sender_in_group hits so applyFilter can evaluate
+  // `sender_in_group` conditions without a second DB round trip.
+  if (!parsed.sender_group_ids) {
+    const hits = context.senderGroups.get(fromAddr);
+    parsed.sender_group_ids = hits ? Array.from(hits) : [];
+  }
   const overrideHit = overrides.find((o) => {
     const val = (o.value || "").toLowerCase();
     return o.match_type === "email" ? val === fromAddr : val === fromDomain;
@@ -181,7 +196,19 @@ export function classifyByRules(
   }
 
   const needs_ai =
-    !folder_id && !aiSkipped && folderList.length > 0 && aiCandidateFolders(context).length > 0;
+    !folder_id &&
+    !aiSkipped &&
+    folderList.length > 0 &&
+    aiCandidateFolders(parsed, context).length > 0;
+
+  // A folder the rules routed into may carry a "surface to inbox" rule.
+  // Only rule-based routing (label/filter/domain) triggers the surface
+  // check — AI-classified mail runs its own pass.
+  const routedFolder = folder_id ? folderList.find((f) => f.id === folder_id) : null;
+  const needs_surface_check =
+    !!folder_id &&
+    !!routedFolder?.surface_ai_rule &&
+    routedFolder.surface_ai_rule.trim().length > 0;
 
   return {
     folder_id,
@@ -192,13 +219,19 @@ export function classifyByRules(
     matched_filter_ids,
     matched_folder_ids,
     needs_ai,
+    needs_surface_check,
   };
 }
 
-/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai. */
-function aiCandidateFolders(context: AccountContext) {
+/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai and
+ * minus any folder whose allowlist / exclusion rules the email violates (so
+ * the AI classifier can never place mail into a folder its own hard rules
+ * would reject). */
+function aiCandidateFolders(parsed: ParsedEmailForClassify, context: AccountContext) {
   const skipAiIds = new Set(context.folders.filter((f) => f.skip_ai).map((f) => f.id));
-  return context.enrichedFolders.filter((f) => !skipAiIds.has(f.id));
+  return context.enrichedFolders.filter(
+    (f) => !skipAiIds.has(f.id) && !emailVetoedForFolder(parsed, f.id, context.filters),
+  );
 }
 
 /** AI fallback pass. Call only when classifyByRules returned
@@ -210,7 +243,7 @@ export async function classifyByAi(
   base: ClassificationResult,
 ): Promise<ClassificationResult> {
   const out: ClassificationResult = { ...base };
-  const aiFolders = aiCandidateFolders(context);
+  const aiFolders = aiCandidateFolders(parsed, context);
   if (aiFolders.length === 0) return out;
   try {
     const r = await classifyEmail(parsed, aiFolders);
@@ -252,5 +285,60 @@ export async function classifyParsedEmail(
   if (rules.needs_ai && !opts.skipAi) {
     return classifyByAi(parsed, context, rules);
   }
+  // Rules routed this into a folder with a surface rule — let the AI
+  // decide whether it should be kept visible in the inbox instead.
+  if (rules.needs_surface_check && !opts.skipAi && rules.folder_id) {
+    const decision = await applySurfaceRule(parsed, context, rules.folder_id);
+    if (decision.surface) {
+      return {
+        ...rules,
+        classified_by: "surfaced_to_inbox",
+        classification_reason: decision.reason
+          ? `Surfaced to inbox: ${decision.reason}`
+          : "Surfaced to inbox by folder rule",
+      };
+    }
+  }
   return rules;
+}
+
+export type SurfaceDecision = {
+  /** True = keep the email visible in the inbox (still filed into the folder). */
+  surface: boolean;
+  reason: string;
+};
+
+/** Run a folder's "surface to inbox" rule against a rule-filed email.
+ * Only call when classifyByRules returned needs_surface_check=true.
+ * Combines the connected Gmail address with the folder's optional
+ * names/aliases as the "me" identity for the AI's judgment. */
+export async function applySurfaceRule(
+  parsed: ParsedEmailForClassify,
+  context: AccountContext,
+  folderId: string,
+): Promise<SurfaceDecision> {
+  const folder = context.folders.find((f) => f.id === folderId);
+  const rule = folder?.surface_ai_rule?.trim();
+  if (!folder || !rule) return { surface: false, reason: "" };
+
+  const identityEmails = [context.accountEmail]
+    .filter((e): e is string => !!e)
+    .map((e) => e.toLowerCase());
+  const identityNames = (folder.surface_names ?? "")
+    .split(/[,;\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return shouldSurfaceToInbox(
+    {
+      from_addr: parsed.from_addr,
+      from_name: parsed.from_name,
+      to_addrs: parsed.to_addrs,
+      cc: parsed.cc,
+      subject: parsed.subject,
+      snippet: parsed.snippet,
+      body_text: parsed.body_text,
+    },
+    { folderName: folder.name, surfaceRule: rule, identityEmails, identityNames },
+  );
 }

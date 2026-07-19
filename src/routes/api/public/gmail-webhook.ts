@@ -10,14 +10,17 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { topUpWatch } from "@/lib/gmail.server";
 import { verifyGoogleJwt } from "@/lib/google-jwt.server";
+import { redactedEndpoint, fingerprintSecret } from "@/lib/pubsub-redact";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth.server";
 import { logError, newRunId } from "@/lib/log.server";
+import { WEBHOOK_INLINE_DRAIN_BUDGET_MS, JOB_WORKER_CONCURRENCY } from "@/lib/sync/config";
 
 // Pub/Sub considers a push delivered if we ack within ~10s. We spend up to
-// INLINE_DRAIN_BUDGET_MS draining the priority=0 queue inline so brand-new
-// mail is visible before the response is returned, then ack. Anything left
-// in the queue gets picked up by the dedicated 5s gmail-process-jobs cron.
-const INLINE_DRAIN_BUDGET_MS = 4_000;
+// WEBHOOK_INLINE_DRAIN_BUDGET_MS draining the priority=0 queue inline so
+// brand-new mail is visible before the response is returned, then ack.
+// Anything left in the queue gets picked up by the dedicated 5s
+// gmail-process-jobs cron.
+const INLINE_DRAIN_BUDGET_MS = WEBHOOK_INLINE_DRAIN_BUDGET_MS;
 
 async function drainWithBudget(budgetMs: number): Promise<{ rounds: number; processed: number }> {
   const deadline = Date.now() + budgetMs;
@@ -25,7 +28,13 @@ async function drainWithBudget(budgetMs: number): Promise<{ rounds: number; proc
   let processed = 0;
   let emptyRounds = 0;
   while (Date.now() < deadline) {
-    const r = await runMessageJobs(25, 16, { priority: 0 });
+    // deferAiToCron: only insert rows here (fires realtime instantly) and
+    // hand the AI classification step to the 5s live cron, so the push ack
+    // isn't blocked on AI and stays well under Pub/Sub's ~10s deadline.
+    const r = await runMessageJobs(50, JOB_WORKER_CONCURRENCY, {
+      priority: 0,
+      deferAiToCron: true,
+    });
     rounds++;
     processed += r.processed ?? 0;
     if ((r.processed ?? 0) === 0) {
@@ -80,7 +89,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               try {
                 await supabaseAdmin.from("pubsub_events").insert({
                   event_type: "push_unauthorized",
-                  subscription: `${url.pathname}${url.search}`,
+                  subscription: redactedEndpoint(url),
                   details: `OIDC verify failed: ${result.reason}`,
                 });
               } catch (logErr) {
@@ -93,25 +102,29 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               return new Response("Unauthorized", { status: 401 });
             }
           } else {
-            // Legacy fallback — single shared secret in ?token=. Removed once
-            // every subscription is migrated to OIDC.
+            // Legacy fallback — single shared secret in ?token=. Kept only
+            // until the Pub/Sub subscription is migrated to OIDC; set
+            // GMAIL_WEBHOOK_LEGACY_DISABLED=1 (then rotate the secret) to
+            // close this door for good.
+            const legacyDisabled = process.env.GMAIL_WEBHOOK_LEGACY_DISABLED === "1";
             const expected = process.env.GMAIL_WEBHOOK_TOKEN;
             const provided = url.searchParams.get("token");
-            if (!expected || provided !== expected) {
-              const fp = (s: string | null | undefined) =>
-                s ? `${s.slice(0, 2)}…${s.slice(-2)}` : "(none)";
+            if (legacyDisabled || !expected || provided !== expected) {
               let details: string;
-              if (!expected) {
+              if (legacyDisabled) {
+                details =
+                  "Legacy ?token= auth is disabled (GMAIL_WEBHOOK_LEGACY_DISABLED=1) — subscription must present an OIDC bearer";
+              } else if (!expected) {
                 details = "Server missing GMAIL_WEBHOOK_TOKEN secret and no OIDC bearer";
               } else if (!provided) {
-                details = `No Authorization bearer and no ?token= query param (expected length ${expected.length}, fp ${fp(expected)})`;
+                details = `No Authorization bearer and no ?token= query param (expected ${fingerprintSecret(expected)})`;
               } else {
-                details = `Token mismatch (provided length ${provided.length} fp ${fp(provided)}, expected length ${expected.length} fp ${fp(expected)})`;
+                details = `Token mismatch (provided ${fingerprintSecret(provided)}, expected ${fingerprintSecret(expected)})`;
               }
               try {
                 await supabaseAdmin.from("pubsub_events").insert({
                   event_type: "push_unauthorized",
-                  subscription: `${url.pathname}${url.search}`,
+                  subscription: redactedEndpoint(url),
                   details,
                 });
               } catch (logErr) {
@@ -128,7 +141,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
             try {
               await supabaseAdmin.from("pubsub_events").insert({
                 event_type: "push_legacy_auth",
-                subscription: `${url.pathname}${url.search}`,
+                subscription: redactedEndpoint(url),
                 details: "Authenticated via legacy ?token= — migrate subscription to OIDC",
               });
             } catch (logErr) {

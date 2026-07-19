@@ -45,9 +45,19 @@ export const REARM_COOLDOWN_MS = 30 * 60 * 1000; // 30min
 // ─── Webhook ─────────────────────────────────────────────────────────────
 
 /** Time budget for the inline post-webhook drain. Pub/Sub considers a
- * push delivered if we ack within ~10s; spending up to 4s here cuts
- * push → visible latency without risking redelivery. */
+ * push delivered if we ack within ~10s. The webhook drains with
+ * `deferAiToCron` so it only inserts rows (fires realtime instantly) and
+ * hands the AI classification step off to the 5s live cron — that keeps
+ * the ack well under the deadline, so the budget only needs to cover a
+ * couple of insert rounds. */
 export const WEBHOOK_INLINE_DRAIN_BUDGET_MS = 4_000;
+
+/** When the webhook drain defers a message's AI step to the cron, the
+ * job is requeued this far in the future. Long enough that the webhook's
+ * own remaining drain rounds won't re-claim it (avoiding a re-fetch
+ * loop), short enough that the next `gmail-process-live-5s` cron tick
+ * finishes the AI pass within a few seconds. */
+export const WEBHOOK_DEFERRED_AI_REQUEUE_MS = 1_500;
 
 // ─── History sync ────────────────────────────────────────────────────────
 
@@ -59,8 +69,10 @@ export const HISTORY_LABEL_FETCH_CONCURRENCY = 5;
 // ─── AI classification budgets ───────────────────────────────────────────
 
 /** Per-model-attempt timeout inside classifyEmail's fallback cascade.
- * Without this a slow first attempt eats the whole 25s job budget. */
-export const AI_CLASSIFY_ATTEMPT_TIMEOUT_MS = 7_000;
+ * Without this a slow first attempt eats the whole 25s job budget.
+ * Lowered to 5s so a stalled model attempt fails over to the next one
+ * faster (speed-first tuning). */
+export const AI_CLASSIFY_ATTEMPT_TIMEOUT_MS = 5_000;
 
 /** Total wall-clock budget across ALL cascade attempts. Must stay under
  * the queue's 25s JOB_TIMEOUT_MS with headroom for fetch + DB writes. */
@@ -69,6 +81,20 @@ export const AI_CLASSIFY_TOTAL_BUDGET_MS = 18_000;
 /** Per-attempt timeout for the batched backfill classifier (bigger
  * prompts, only 2 attempts). */
 export const AI_BATCH_ATTEMPT_TIMEOUT_MS = 12_000;
+
+// ─── Worker concurrency ──────────────────────────────────────────────────
+
+/** Default worker-pool size for runMessageJobs. Each worker processes one
+ * message at a time (Gmail fetch + classify + DB writes); 32 keeps a
+ * limit=100 batch draining quickly while staying inside the Worker's
+ * subrequest ceiling. */
+export const JOB_WORKER_CONCURRENCY = 32;
+
+/** When a single live (priority<10) claim batch contains at least this
+ * many AI-eligible messages, the live lane routes their AI step through
+ * the batched classifier (8/call) instead of N inline calls. Below the
+ * threshold, live mail keeps its inline, instant-folder behavior. */
+export const LIVE_BATCH_AI_THRESHOLD = 12;
 
 // ─── Synchronous catch-up sync ───────────────────────────────────────────
 

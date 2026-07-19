@@ -34,6 +34,13 @@ export type Folder = {
   /** When true, the calendar cold-email guard keeps known contacts out of
    * this folder (pins them to the inbox instead of filing them here). */
   is_cold_email: boolean;
+  /** Natural-language "surface to inbox" rule. When non-empty, mail the
+   * folder's deterministic rules route here is checked by the AI, which
+   * can keep it visible in the inbox instead of tucking it away. */
+  surface_ai_rule: string | null;
+  /** Optional extra names/aliases (comma-separated) used alongside the
+   * connected Gmail address for "is this addressed to me" judgments. */
+  surface_names: string | null;
 };
 
 export type OverrideException = {

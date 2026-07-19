@@ -20,6 +20,9 @@ const TRANSIENT_DLQ_PATTERNS = [
   /\bfetch failed\b/,
   /\b429\b/,
   /unavailable/i,
+  // Worker died mid-processing (Cloudflare 25s wall-time). Reclaim path
+  // parks these in DLQ; treat as transient so a one-off burst drains.
+  /stuck \(worker timeout/i,
 ];
 
 /** Pure: does this DLQ `last_error` string look transient enough to

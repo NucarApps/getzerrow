@@ -6,11 +6,14 @@ export function EditFolderDialog({
   labels,
   open,
   onOpenChange,
+  onDeleted,
 }: {
   folder: Folder | null;
   labels: GLabel[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  /** Extra hook for callers that need to react when the folder is deleted (the sheet always closes). */
+  onDeleted?: () => void;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -20,7 +23,14 @@ export function EditFolderDialog({
         </SheetHeader>
         {folder && (
           <div className="mt-4">
-            <FolderEditor folder={folder} labels={labels} onDeleted={() => onOpenChange(false)} />
+            <FolderEditor
+              folder={folder}
+              labels={labels}
+              onDeleted={() => {
+                onOpenChange(false);
+                onDeleted?.();
+              }}
+            />
           </div>
         )}
       </SheetContent>

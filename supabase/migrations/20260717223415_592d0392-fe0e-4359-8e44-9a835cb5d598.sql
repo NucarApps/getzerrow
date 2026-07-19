@@ -1,0 +1,1 @@
+ALTER TABLE public.gmail_accounts ADD COLUMN IF NOT EXISTS contacts_access boolean NOT NULL DEFAULT false;

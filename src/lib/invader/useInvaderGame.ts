@@ -14,6 +14,8 @@ import {
   ENEMY_HALF_H,
   ENEMY_HALF_W,
   FIELD_H,
+  FIELD_W,
+  FIELD_CX,
   FORMATION_TOP,
   HIT_STOP_MS,
   INVULN_MS,
@@ -38,6 +40,7 @@ import {
   hashString,
   hitBunker,
   pickPowerupKind,
+  initialFormationX,
   spawnBoss,
   spawnBunkers,
   spawnWave,
@@ -242,7 +245,7 @@ export function useInvaderGame(): UseInvaderGameResult {
   const [newAchievements, setNewAchievements] = useState<AchievementKey[]>([]);
 
   // ---------- Per-frame refs ----------
-  const playerXRef = useRef(50);
+  const playerXRef = useRef(FIELD_CX);
   const playerCooldownRef = useRef(0);
   const invulnUntilRef = useRef(0);
   const shieldUntilRef = useRef(0);
@@ -266,7 +269,7 @@ export function useInvaderGame(): UseInvaderGameResult {
   const powerupsRef = useRef<Powerup[]>([]);
   const floatsRef = useRef<FloatText[]>([]);
 
-  const formationXRef = useRef(10);
+  const formationXRef = useRef(FIELD_CX);
   const formationYRef = useRef(FORMATION_TOP);
   const marchDirRef = useRef<1 | -1>(1);
   const marchSpeedRef = useRef(6);
@@ -390,11 +393,11 @@ export function useInvaderGame(): UseInvaderGameResult {
     particlesRef.current = [];
     powerupsRef.current = [];
     floatsRef.current = [];
-    formationXRef.current = 10;
+    formationXRef.current = initialFormationX(enemiesRef.current);
     formationYRef.current = FORMATION_TOP;
     marchDirRef.current = 1;
-    marchSpeedRef.current = 6;
-    playerXRef.current = 50;
+    marchSpeedRef.current = 9;
+    playerXRef.current = FIELD_CX;
     playerCooldownRef.current = 0;
     invulnUntilRef.current = 0;
     shieldUntilRef.current = 0;
@@ -722,7 +725,7 @@ export function useInvaderGame(): UseInvaderGameResult {
       if (keysRef.current.left) px -= PLAYER_SPEED * dts;
       if (keysRef.current.right) px += PLAYER_SPEED * dts;
       if (px < 6) px = 6;
-      if (px > 94) px = 94;
+      if (px > FIELD_W - 6) px = FIELD_W - 6;
       playerXRef.current = px;
 
       // Player firing
@@ -739,6 +742,8 @@ export function useInvaderGame(): UseInvaderGameResult {
         } else {
           bulletsRef.current.push({ id: newId(idRef), x: px, y: y0, vx: 0, pierce });
         }
+        // Muzzle flash — a few short-lived sparks at the barrel.
+        emitParticles(particlesRef.current, idRef, px, y0, "#ffe0b0", 3, 10, 140);
         playerCooldownRef.current = cooldown;
         sfx.pew();
       }
@@ -751,7 +756,7 @@ export function useInvaderGame(): UseInvaderGameResult {
           const b = arr[i];
           b.x += (b.vx ?? 0) * dts;
           b.y -= BULLET_SPEED * dts;
-          if (b.y > -2 && b.x > -2 && b.x < 102) arr[w++] = b;
+          if (b.y > -2 && b.x > -2 && b.x < FIELD_W + 2) arr[w++] = b;
         }
         arr.length = w;
         if (arr.length > MAX_PLAYER_BULLETS) arr.splice(0, arr.length - MAX_PLAYER_BULLETS);
@@ -764,12 +769,12 @@ export function useInvaderGame(): UseInvaderGameResult {
       if (bossRef.current) {
         const boss = bossRef.current;
         boss.x += boss.vx * dts * slowMul * diff.speedMul;
-        if (boss.x < 10) {
-          boss.x = 10;
+        if (boss.x < 16) {
+          boss.x = 16;
           boss.vx = Math.abs(boss.vx);
         }
-        if (boss.x > 90) {
-          boss.x = 90;
+        if (boss.x > FIELD_W - 16) {
+          boss.x = FIELD_W - 16;
           boss.vx = -Math.abs(boss.vx);
         }
         boss.fireCooldown -= dt;
@@ -828,10 +833,10 @@ export function useInvaderGame(): UseInvaderGameResult {
           setLevel(nextLvl);
           if (nextLvl >= 10) unlock("inbox_zero");
           enemiesRef.current = spawnWave(nextLvl, rngRef.current);
-          formationXRef.current = 10;
+          formationXRef.current = initialFormationX(enemiesRef.current);
           formationYRef.current = FORMATION_TOP;
           marchDirRef.current = 1;
-          marchSpeedRef.current = Math.min(30, 6 + nextLvl * 1.8);
+          marchSpeedRef.current = Math.min(48, 9 + nextLvl * 2.7);
           tookHitThisWaveRef.current = false;
         }
       }
@@ -857,10 +862,10 @@ export function useInvaderGame(): UseInvaderGameResult {
           } else {
             enemiesRef.current = spawnWave(nextLvl, rngRef.current);
           }
-          formationXRef.current = 10;
+          formationXRef.current = initialFormationX(enemiesRef.current);
           formationYRef.current = FORMATION_TOP;
           marchDirRef.current = 1;
-          marchSpeedRef.current = Math.min(30, 6 + nextLvl * 1.8);
+          marchSpeedRef.current = Math.min(48, 9 + nextLvl * 2.7);
           bulletsRef.current = [];
           enemyBulletsRef.current = [];
           tookHitThisWaveRef.current = false;
@@ -869,14 +874,14 @@ export function useInvaderGame(): UseInvaderGameResult {
           let nextX =
             formationXRef.current + dir * marchSpeedRef.current * dts * slowMul * diff.speedMul;
           const nextBounds = formationBounds(enemiesRef.current, nextX, formationYRef.current);
-          if (nextBounds.minX - ENEMY_HALF_W < 2 || nextBounds.maxX + ENEMY_HALF_W > 98) {
+          if (nextBounds.minX - ENEMY_HALF_W < 2 || nextBounds.maxX + ENEMY_HALF_W > FIELD_W - 2) {
             marchDirRef.current = dir === 1 ? -1 : 1;
             formationYRef.current += 3 + Math.min(lvl, 5);
-            marchSpeedRef.current = Math.min(30, marchSpeedRef.current * 1.12);
+            marchSpeedRef.current = Math.min(48, marchSpeedRef.current * 1.12);
             if (nextBounds.minX - ENEMY_HALF_W < 2)
               nextX = formationXRef.current + (2 + ENEMY_HALF_W - nextBounds.minX);
-            if (nextBounds.maxX + ENEMY_HALF_W > 98)
-              nextX = formationXRef.current - (nextBounds.maxX - (98 - ENEMY_HALF_W));
+            if (nextBounds.maxX + ENEMY_HALF_W > FIELD_W - 2)
+              nextX = formationXRef.current - (nextBounds.maxX - (FIELD_W - 2 - ENEMY_HALF_W));
           }
           formationXRef.current = nextX;
         }
@@ -923,9 +928,9 @@ export function useInvaderGame(): UseInvaderGameResult {
         const dir = Math.random() < 0.5 ? 1 : -1;
         ufoRef.current = {
           id: newId(idRef),
-          x: dir === 1 ? -4 : 104,
+          x: dir === 1 ? -4 : FIELD_W + 4,
           y: 7,
-          vx: dir * 28,
+          vx: dir * 44,
           value: 100 + Math.floor(Math.random() * 3) * 100,
         };
         sfx.ufo();
@@ -933,7 +938,7 @@ export function useInvaderGame(): UseInvaderGameResult {
       if (ufoRef.current) {
         const u = ufoRef.current;
         u.x += u.vx * dts;
-        if (u.x < -8 || u.x > 108) {
+        if (u.x < -8 || u.x > FIELD_W + 8) {
           ufoRef.current = null;
           nextUfoAtRef.current =
             now + UFO_MIN_INTERVAL_MS + Math.random() * (UFO_MAX_INTERVAL_MS - UFO_MIN_INTERVAL_MS);

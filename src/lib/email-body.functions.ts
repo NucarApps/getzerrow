@@ -12,6 +12,8 @@ import {
   getEmailsDecrypted,
   getEmailListFieldsDecrypted,
   getEmailsListDecrypted,
+  searchEmailsDecrypted,
+  searchEmailsParticipantsDecrypted,
 } from "./sync/encrypted-reader";
 
 export const getEmailBody = createServerFn({ method: "POST" })
@@ -83,6 +85,56 @@ export const getInboxList = createServerFn({ method: "POST" })
       folderId: data.scope === "folder" ? data.folder_id : null,
       cursor: data.cursor,
       limit: data.limit,
+    });
+    if (error) return { rows: [], error };
+    return { rows, error: null };
+  });
+
+// Ranked full-text inbox search. Runs server-side over the GIN-indexed
+// email_search_index (via the search_emails RPC), decrypts only the matched
+// rows, and returns them already ranked. The browser no longer downloads or
+// scores the whole corpus. account_id is optional — when present, results are
+// scoped to that connected Gmail account. userId is taken from the
+// authenticated context, never the client.
+export const searchInbox = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data) =>
+    z
+      .object({
+        query: z.string().trim().min(1).max(200),
+        // Parsed operator parts. When `from` or `to` is present, the search
+        // runs against the participant index across the whole mailbox.
+        from: z.string().trim().min(1).max(200).nullable().default(null),
+        to: z.string().trim().min(1).max(200).nullable().default(null),
+        rest: z.string().trim().max(200).default(""),
+        account_id: z.string().uuid().nullable().default(null),
+        limit: z.number().int().min(1).max(200).default(100),
+        offset: z.number().int().min(0).max(10000).default(0),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const hasOperator = data.from !== null || data.to !== null;
+    if (hasOperator) {
+      const { rows, error } = await searchEmailsParticipantsDecrypted({
+        userId,
+        from: data.from,
+        to: data.to,
+        rest: data.rest,
+        limit: data.limit,
+        offset: data.offset,
+        accountId: data.account_id,
+      });
+      if (error) return { rows: [], error };
+      return { rows, error: null };
+    }
+    const { rows, error } = await searchEmailsDecrypted({
+      userId,
+      query: data.query,
+      limit: data.limit,
+      offset: data.offset,
+      accountId: data.account_id,
     });
     if (error) return { rows: [], error };
     return { rows, error: null };

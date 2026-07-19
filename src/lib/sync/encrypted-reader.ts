@@ -62,7 +62,7 @@ export async function getEmailsDecrypted(
 export type DecryptedContact = {
   id: string;
   user_id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   avatar_url: string | null;
   title: string | null;
@@ -162,6 +162,7 @@ export type EmailListRow = {
   raw_labels: string[] | null;
   snoozed_until: string | null;
   gmail_message_id: string | null;
+  surfaced_to_inbox: boolean;
 };
 
 export type EmailListScope = "all" | "all_mail" | "no_rules" | "folder";
@@ -185,6 +186,73 @@ export async function getEmailsListDecrypted(args: {
   } as never);
   if (error) return { rows: [], error: error.message };
   return { rows: (data as EmailListRow[] | null) ?? [], error: null };
+}
+
+// Ranked full-text search over the user's mailbox. Uses the GIN-indexed
+// `email_search_index` tsvector via the search_emails RPC and decrypts the
+// small set of returned rows server-side, so the browser never downloads or
+// scores the whole corpus.
+export type EmailSearchRow = {
+  id: string;
+  gmail_account_id: string;
+  gmail_message_id: string | null;
+  thread_id: string | null;
+  from_addr: string | null;
+  from_name: string | null;
+  subject: string | null;
+  snippet: string | null;
+  received_at: string | null;
+  is_read: boolean;
+  is_archived: boolean;
+  folder_id: string | null;
+  rank: number;
+};
+
+export async function searchEmailsDecrypted(args: {
+  userId: string;
+  query: string;
+  limit: number;
+  offset: number;
+  accountId: string | null;
+}): Promise<{ rows: EmailSearchRow[]; error: string | null }> {
+  const { data, error } = await supabaseAdmin.rpc("search_emails", {
+    p_user_id: args.userId,
+    p_query: args.query,
+    p_limit: args.limit,
+    p_offset: args.offset,
+    p_key: getKey(),
+    p_account_id: args.accountId,
+  } as never);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data as EmailSearchRow[] | null) ?? [], error: null };
+}
+
+// Whole-mailbox `from:` / `to:` operator search. Matches sender tokens (weight
+// A) and recipient tokens (weight B) against the dedicated participant index,
+// optionally AND-ed with free-text terms against the main full-text index, then
+// decrypts only the matched rows. Distinguishes sender from recipient and is
+// not capped by the recent-rows window the client previously scanned.
+export async function searchEmailsParticipantsDecrypted(args: {
+  userId: string;
+  from: string | null;
+  to: string | null;
+  rest: string;
+  limit: number;
+  offset: number;
+  accountId: string | null;
+}): Promise<{ rows: EmailSearchRow[]; error: string | null }> {
+  const { data, error } = await supabaseAdmin.rpc("search_emails_participants", {
+    p_user_id: args.userId,
+    p_from: args.from,
+    p_to: args.to,
+    p_rest: args.rest,
+    p_limit: args.limit,
+    p_offset: args.offset,
+    p_key: getKey(),
+    p_account_id: args.accountId,
+  } as never);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data as EmailSearchRow[] | null) ?? [], error: null };
 }
 
 export type ContactListFields = {
