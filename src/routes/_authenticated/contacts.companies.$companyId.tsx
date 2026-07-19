@@ -111,6 +111,10 @@ function CompanyDetailPage() {
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
   const [mergePreviewOpen, setMergePreviewOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [domainConflict, setDomainConflict] = useState<
+    { companyId: string; companyName: string; domain: string } | null
+  >(null);
+
 
   useEffect(() => {
     if (q.data?.company) {
