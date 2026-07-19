@@ -169,10 +169,20 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
             .eq("id", r.id)
             .eq("user_id", context.userId);
         }
+        // Nudge Google sync so the corrected logo repushes.
+        try {
+          const { markGoogleContactDirty } = await import(
+            "@/lib/google-contacts/mark-dirty.server"
+          );
+          await markGoogleContactDirty(context.userId, r.id);
+        } catch {
+          // ignore
+        }
         cleared += 1;
       } else {
         kept.push(r.id);
       }
+
     }
 
     if (cleared > 0) {
