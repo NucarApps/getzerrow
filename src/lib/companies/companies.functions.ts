@@ -769,24 +769,44 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
     // Suggest a canonical: the entry with the most members, tie-break by
     // shortest name (usually the umbrella brand, e.g. "Nissan North America"
     // beats "Nissan Motor Acceptance Company" when it has more contacts).
+    const rootDomainsOf = (domains: string[]) =>
+      new Set(
+        domains
+          .map((d) => d.toLowerCase().split("."))
+          .filter((parts) => parts.length >= 2)
+          .map((parts) => parts.slice(-2).join(".")),
+      );
     let clusters = rawClusters.map((cluster) => {
       const sorted = [...cluster].sort((a, b) => {
         if (b.member_count !== a.member_count) return b.member_count - a.member_count;
         return a.name.length - b.name.length;
       });
       const canonical = sorted[0];
+      const canonicalRoots = rootDomainsOf(canonical.domains);
+      const canonicalKey = normalizeCompanyName(canonical.name);
       return {
         canonicalId: canonical.id,
         canonicalName: canonical.name,
-        members: cluster.map((c) => ({
-          id: c.id,
-          name: c.name,
-          member_count: c.member_count,
-          domains: c.domains,
-          // Default: only fold members whose token overlap looks tight.
-          // The UI lets the user check/uncheck individually.
-          include: c.id !== canonical.id,
-        })),
+        members: cluster.map((c) => {
+          // Default-checked only on deterministic evidence: a shared root
+          // domain (unique per user) or an equal normalized name. Token-only
+          // matches — dealers, zone offices, finance arms that merely share
+          // the brand word — default unchecked so a hasty "merge all" can't
+          // fold them into the factory brand. The AI pass / user can still
+          // flip them.
+          const sharesRoot = [...rootDomainsOf(c.domains)].some((r) =>
+            canonicalRoots.has(r),
+          );
+          const sameKey =
+            !!canonicalKey && normalizeCompanyName(c.name) === canonicalKey;
+          return {
+            id: c.id,
+            name: c.name,
+            member_count: c.member_count,
+            domains: c.domains,
+            include: c.id !== canonical.id && (sharesRoot || sameKey),
+          };
+        }),
         rationale: "Grouped by shared brand token / domain root.",
       };
     });

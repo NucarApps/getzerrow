@@ -198,6 +198,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
                 order() {
                   return { limit: () => result };
                 },
+                limit: () => result,
                 then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
                   result.then(onF, onR),
               };
