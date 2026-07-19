@@ -392,7 +392,12 @@ export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
     if (data.mode === "replace_primary") {
       // Preserve the old primary as a secondary so history isn't lost.
       const oldPrimary = (row.email || "").toLowerCase();
-      const patch: Record<string, unknown> = {
+      const patch: {
+        email: string;
+        company: string;
+        company_id: string;
+        name?: string;
+      } = {
         email: data.email,
         company: companyName,
         company_id: data.companyId,
@@ -417,7 +422,12 @@ export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
     } else {
       // Add-as-secondary. If contact has no primary, promote this to primary.
       if (!row.email) {
-        const patch: Record<string, unknown> = {
+        const patch: {
+          email: string;
+          company: string;
+          company_id: string;
+          name?: string;
+        } = {
           email: data.email,
           company: companyName,
           company_id: data.companyId,
