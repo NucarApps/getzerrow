@@ -26,6 +26,7 @@ import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDr
 import { GroupEditorDialog, type GroupRow } from "@/components/contacts/GroupEditorDialog";
 import { buildDescendantsById, buildGroupTree } from "@/lib/contacts/group-tree";
 import { DuplicateSuggestionsDrawer } from "@/components/contacts/DuplicateSuggestionsDrawer";
+import { MergeContactsDialog } from "@/components/contacts/MergeContactsDialog";
 import { LabelDuplicatesDrawer } from "@/components/contacts/LabelDuplicatesDrawer";
 import { EnrichmentSuggestionsDrawer } from "@/components/contacts/EnrichmentSuggestionsDrawer";
 import { GroupRulesSection } from "@/components/contacts/GroupRulesSection";
