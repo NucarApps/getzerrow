@@ -167,12 +167,40 @@ function CompanyDetailPage() {
 
   const addDomainMut = useMutation({
     mutationFn: (domain: string) => addDomainFn({ data: { id: companyId, domain } }),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      if (res && res.ok === false) {
+        setDomainConflict(res.conflict);
+        return;
+      }
       setNewDomain("");
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
+
+  const mergeConflictMut = useMutation({
+    mutationFn: async () => {
+      if (!domainConflict) return null;
+      // Merge the other (conflicting) company INTO this one so the current
+      // page stays valid and the domain lands here.
+      await mergeFn({
+        data: { sourceId: domainConflict.companyId, targetId: companyId },
+      });
+      return domainConflict.domain;
+    },
+    onSuccess: (domain) => {
+      toast.success("Companies merged");
+      setDomainConflict(null);
+      setNewDomain("");
+      if (domain) {
+        // Domain now belongs to this company via the merge — no extra insert.
+      }
+      qc.invalidateQueries({ queryKey: ["companies"] });
+      invalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Merge failed"),
+  });
+
 
   const removeDomainMut = useMutation({
     mutationFn: (id: string) => removeDomainFn({ data: { id } }),
