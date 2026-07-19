@@ -127,17 +127,16 @@ function prefixedKeys(): string[] {
 function evictOldest(): void {
   const keys = prefixedKeys();
   if (keys.length <= MAX_KEYS) return;
-  const withAge = keys.map((k) => {
-    let at: number;
-    try {
-      at = (JSON.parse(window.localStorage.getItem(k) || "{}") as { at?: number }).at ?? 0;
-    } catch {
-      at = 0;
-    }
-    return { k, at };
-  });
-  withAge.sort((a, b) => a.at - b.at); // oldest first
+  const withAge = keys.map((k) => ({ k, at: readAge(k) })).sort((a, b) => a.at - b.at); // oldest first
   for (const { k } of withAge.slice(0, withAge.length - MAX_KEYS)) {
     window.localStorage.removeItem(k);
+  }
+}
+
+function readAge(k: string): number {
+  try {
+    return (JSON.parse(window.localStorage.getItem(k) || "{}") as { at?: number }).at ?? 0;
+  } catch {
+    return 0;
   }
 }
