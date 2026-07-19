@@ -92,7 +92,10 @@ import {
   convergeBucketCompany,
   mergeCompanies,
 } from "@/lib/companies/companies.functions";
-import { buildInlineCompanyMergeSuggestions } from "@/lib/companies/inline-merge";
+import {
+  buildInlineCompanyMergeSuggestions,
+  type InlineCompanyMergeSuggestion,
+} from "@/lib/companies/inline-merge";
 import { listMeetingPeople } from "@/lib/calendar.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -530,7 +533,7 @@ function ContactsPage() {
   }
 
   const renameCompanyFn = useServerFn(renameCompanyForContacts);
-  async function performMerge(s: ReturnType<typeof buildInlineCompanyMergeSuggestions> extends Map<string, infer V> ? V : never) {
+  async function performMerge(s: InlineCompanyMergeSuggestion) {
     setMergingKey(s.normalizedName);
     try {
       if (s.kind === "company") {
