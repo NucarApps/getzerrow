@@ -55,6 +55,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -752,46 +758,33 @@ function ContactsPage() {
                 <Building2 className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">By company</span>
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSuggestOpen(true)}
-                title="AI group suggestions"
-                className="shrink-0 px-2 sm:px-3"
-              >
-                <Sparkles className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Suggest groups</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDupesOpen(true)}
-                title="Find duplicate contacts"
-                className="shrink-0 px-2 sm:px-3"
-              >
-                <Sparkles className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Find duplicates</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setLabelDupesOpen(true)}
-                title="Find duplicate labels"
-                className="shrink-0 px-2 sm:px-3"
-              >
-                <Sparkles className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Dedupe labels</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEnrichOpen(true)}
-                title="Enrich contacts from your inbox"
-                className="shrink-0 px-2 sm:px-3"
-              >
-                <Sparkles className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Enrich</span>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="AI tools"
+                    className="shrink-0 px-2 sm:px-3"
+                  >
+                    <Sparkles className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">AI tools</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setSuggestOpen(true)}>
+                    Suggest groups
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setDupesOpen(true)}>
+                    Find duplicate contacts
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setLabelDupesOpen(true)}>
+                    Find duplicate labels
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setEnrichOpen(true)}>
+                    Enrich from inbox
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 variant={selectionMode ? "default" : "outline"}
                 size="sm"
