@@ -57,10 +57,14 @@ export const uploadContactPhoto = createServerFn({ method: "POST" })
 
     // Nudge Google sync to push the new picture upstream on next run.
     try {
+      const { markGoogleContactDirty } = await import(
+        "@/lib/google-contacts/mark-dirty.server"
+      );
       await markGoogleContactDirty(context.userId, data.contactId);
     } catch {
       // Not linked to Google — no-op.
     }
+
     return { avatarUrl };
   });
 
