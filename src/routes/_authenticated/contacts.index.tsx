@@ -903,6 +903,21 @@ function ContactsPage() {
                     </button>
                   )}
                   <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={selectedIds.size < 2 || selectedIds.size > 6}
+                      onClick={() => setMergeOpen(true)}
+                      title={
+                        selectedIds.size < 2
+                          ? "Select 2–6 contacts to merge"
+                          : selectedIds.size > 6
+                            ? "Merge up to 6 at a time"
+                            : "Merge selected contacts"
+                      }
+                    >
+                      Merge…
+                    </Button>
                     <GroupPickerPopover
                       disabled={selectedIds.size === 0}
                       groupTree={groupTree}
