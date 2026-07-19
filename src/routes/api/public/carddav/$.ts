@@ -26,9 +26,7 @@ function triggerPhotoBackfill(userId: string): void {
   void (async () => {
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { autoClearMissingPhotoEtags } = await import(
-        "@/lib/google-contacts/reconcile.server"
-      );
+      const { autoClearMissingPhotoEtags } = await import("@/lib/google-contacts/reconcile.server");
       const { data: accts } = await supabaseAdmin
         .from("gmail_accounts")
         .select("id")
@@ -44,14 +42,8 @@ function triggerPhotoBackfill(userId: string): void {
 
 async function dispatch(request: Request, params: Params): Promise<Response> {
   const { verifyCardDavAuth } = await import("@/lib/carddav/auth.server");
-  const {
-    handleOptions,
-    handlePropfind,
-    handleReport,
-    handleGet,
-    handlePut,
-    handleDelete,
-  } = await import("@/lib/carddav/handlers.server");
+  const { handleOptions, handlePropfind, handleReport, handleGet, handlePut, handleDelete } =
+    await import("@/lib/carddav/handlers.server");
 
   const path = params._splat ?? "";
   const method = request.method.toUpperCase();

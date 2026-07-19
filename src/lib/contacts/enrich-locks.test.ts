@@ -1,8 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  buildLockedFieldSet,
-  computeEnrichmentFieldPatch,
-} from "./enrich-locks";
+import { buildLockedFieldSet, computeEnrichmentFieldPatch } from "./enrich-locks";
 
 // Trivial stand-in for pickBetterName — always prefers the candidate when
 // truthy, so any change would be visible in the resulting patch. The real

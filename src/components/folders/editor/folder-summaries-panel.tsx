@@ -14,7 +14,8 @@ import { Switch } from "@/components/ui/switch";
 import { Plus, Trash2, Loader2, Clock, Play, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import type { Schedule } from "./types";
-import { ScheduleForm, pad2 } from "./folder-schedule-form";
+import { ScheduleForm } from "./folder-schedule-form";
+import { pad2 } from "./schedule-utils";
 
 export function SummariesPanel({ folderId }: { folderId: string }) {
   const qc = useQueryClient();

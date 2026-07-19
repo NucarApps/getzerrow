@@ -1,9 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  hostResolvesToPublicIp,
-  isBlockedDomain,
-  isValidDomainShape,
-} from "@/lib/logo-guards";
+import { hostResolvesToPublicIp, isBlockedDomain, isValidDomainShape } from "@/lib/logo-guards";
 
 function providersFor(domain: string, size: number): string[] {
   const d = encodeURIComponent(domain);
@@ -24,7 +20,6 @@ function providersFor(domain: string, size: number): string[] {
 }
 
 const MIN_BYTES = 600;
-
 
 async function tryFetch(url: string): Promise<Response | null> {
   try {

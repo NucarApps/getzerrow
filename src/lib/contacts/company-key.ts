@@ -62,9 +62,7 @@ export function deriveCompanyKey(
     if (!name) return null;
     const canonical = canonicalize(name);
     const key =
-      normalizeCompanyName(canonical) ??
-      mildNormalizeCompanyName(canonical) ??
-      "cid:" + companyId;
+      normalizeCompanyName(canonical) ?? mildNormalizeCompanyName(canonical) ?? "cid:" + companyId;
     return { key, displayName: canonical, rawCompany: canonical, fromCompany: true };
   };
 

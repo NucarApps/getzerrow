@@ -21,10 +21,7 @@ type LinkRow = {
   gmail_account_id: string;
 };
 
-async function findLinkForContact(
-  userId: string,
-  contactId: string,
-): Promise<LinkRow | null> {
+async function findLinkForContact(userId: string, contactId: string): Promise<LinkRow | null> {
   const { data } = await supabaseAdmin
     .from("google_contact_links")
     .select("contact_id, resource_name, gmail_account_id")
@@ -53,12 +50,9 @@ async function mergeAdditive(
       .from("contact_emails")
       .select("address, position, is_primary")
       .eq("contact_id", contactId);
-    const existingSet = new Set(
-      (existing ?? []).map((r) => (r.address ?? "").toLowerCase()),
-    );
+    const existingSet = new Set((existing ?? []).map((r) => (r.address ?? "").toLowerCase()));
     const hasPrimary = (existing ?? []).some((r) => r.is_primary);
-    const startPos =
-      (existing ?? []).reduce((m, r) => Math.max(m, r.position ?? 0), -1) + 1;
+    const startPos = (existing ?? []).reduce((m, r) => Math.max(m, r.position ?? 0), -1) + 1;
     const toInsert = parsed.emails
       .filter((e) => e.address && !existingSet.has(e.address.toLowerCase()))
       .map((e, idx) => ({
@@ -84,12 +78,9 @@ async function mergeAdditive(
       .from("contact_phones")
       .select("number, position, is_primary")
       .eq("contact_id", contactId);
-    const existingSet = new Set(
-      (existing ?? []).map((r) => normalize(r.number ?? "")),
-    );
+    const existingSet = new Set((existing ?? []).map((r) => normalize(r.number ?? "")));
     const hasPrimary = (existing ?? []).some((r) => r.is_primary);
-    const startPos =
-      (existing ?? []).reduce((m, r) => Math.max(m, r.position ?? 0), -1) + 1;
+    const startPos = (existing ?? []).reduce((m, r) => Math.max(m, r.position ?? 0), -1) + 1;
     const toInsert = parsed.phones
       .filter((p) => p.number && !existingSet.has(normalize(p.number)))
       .map((p, idx) => ({
@@ -110,7 +101,11 @@ async function mergeAdditive(
   return { emailsAdded, phonesAdded };
 }
 
-async function markLinkFresh(gmailAccountId: string, resourceName: string, etag: string | null): Promise<void> {
+async function markLinkFresh(
+  gmailAccountId: string,
+  resourceName: string,
+  etag: string | null,
+): Promise<void> {
   await supabaseAdmin
     .from("google_contact_links")
     .update({ etag, last_synced_at: new Date().toISOString() })
@@ -200,11 +195,7 @@ export async function backfillMultiEmails(
     try {
       const person = await getPerson(gmailAccountId, link.resource_name);
       const parsed = personToContact(person);
-      const res = await mergeAdditive(
-        { userId, gmailAccountId },
-        link.contact_id,
-        parsed,
-      );
+      const res = await mergeAdditive({ userId, gmailAccountId }, link.contact_id, parsed);
       if (res.emailsAdded || res.phonesAdded) {
         contactsUpdated++;
         emailsAdded += res.emailsAdded;

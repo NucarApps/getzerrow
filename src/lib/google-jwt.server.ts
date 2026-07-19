@@ -69,8 +69,7 @@ export type VerifyOptions = {
 };
 
 export type VerifyResult =
-  | { ok: true; claims: GoogleJwtClaims }
-  | { ok: false; reason: VerifyFailure };
+  { ok: true; claims: GoogleJwtClaims } | { ok: false; reason: VerifyFailure };
 
 export type VerifyFailure =
   | "malformed"

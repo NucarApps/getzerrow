@@ -163,10 +163,7 @@ export async function updateContactPhoto(
  * Remove a Google contact's photo (leaves the contact itself intact).
  * Google returns the mutated Person on success.
  */
-export async function deleteContactPhoto(
-  accountId: string,
-  resourceName: string,
-): Promise<Person> {
+export async function deleteContactPhoto(accountId: string, resourceName: string): Promise<Person> {
   return call<Person>(accountId, `/${resourceName}:deleteContactPhoto`, {
     method: "DELETE",
     query: { personFields: READ_PERSON_FIELDS },
@@ -252,10 +249,7 @@ export async function updateContactGroup(
   });
 }
 
-export async function deleteContactGroup(
-  accountId: string,
-  resourceName: string,
-): Promise<void> {
+export async function deleteContactGroup(accountId: string, resourceName: string): Promise<void> {
   await call(accountId, `/${resourceName}`, {
     method: "DELETE",
     query: { deleteContacts: "false" },
@@ -269,7 +263,7 @@ export async function modifyGroupMembers(
   remove: string[],
 ): Promise<void> {
   // Google caps members:modify at ~1000 per call — chunk to stay safe.
-  const chunk = <T,>(arr: T[], n: number): T[][] => {
+  const chunk = <T>(arr: T[], n: number): T[][] => {
     const out: T[][] = [];
     for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
     return out;

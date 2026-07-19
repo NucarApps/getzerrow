@@ -126,11 +126,8 @@ import {
   withoutInbox,
   parseSearchQuery,
 } from "@/lib/email-text";
-import {
-  EmailBodyFrame,
-  EmailBodyInline,
-  hasVisibleHtml,
-} from "@/components/emails/email-body-frame";
+import { EmailBodyFrame, EmailBodyInline } from "@/components/emails/email-body-frame";
+import { hasVisibleHtml } from "@/lib/email-html";
 import { SwipeRow } from "@/components/emails/swipe-row";
 import { AiDecisionDrawer } from "@/components/emails/AiDecisionDrawer";
 

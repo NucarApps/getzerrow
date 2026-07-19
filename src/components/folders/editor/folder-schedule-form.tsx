@@ -12,18 +12,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import type { Schedule } from "./types";
-
-export const browserTz = (() => {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    return "UTC";
-  }
-})();
-
-export function pad2(n: number) {
-  return n < 10 ? `0${n}` : String(n);
-}
+import { browserTz, pad2 } from "./schedule-utils";
 
 export function ScheduleForm({
   initial,

@@ -2,15 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import {
-  ArrowLeft,
-  Building2,
-  Plus,
-  Trash2,
-  X,
-  Merge,
-  Sparkles,
-} from "lucide-react";
+import { ArrowLeft, Building2, Check, Plus, Trash2, X, Merge, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,15 +40,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
+import { listContactGroups } from "@/lib/contact-groups.functions";
+import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
 
-export const Route = createFileRoute(
-  "/_authenticated/contacts/companies/$companyId",
-)({
+export const Route = createFileRoute("/_authenticated/contacts/companies/$companyId")({
   head: () => ({
-    meta: [
-      { title: "Company — Zerrow" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "Company — Zerrow" }, { name: "robots", content: "noindex" }],
   }),
   component: CompanyDetailPage,
 });
@@ -171,9 +160,7 @@ function CompanyDetailPage() {
       if (r.added) parts.push(`${r.added} new`);
       if (r.updated) parts.push(`${r.updated} refreshed`);
       toast.success(
-        parts.length
-          ? `Discovered domains: ${parts.join(", ")}`
-          : "No new domains found",
+        parts.length ? `Discovered domains: ${parts.join(", ")}` : "No new domains found",
       );
       // Refresh both this company detail and the companies list so the logo
       // in every list view updates immediately.
@@ -198,15 +185,13 @@ function CompanyDetailPage() {
   // Prevents preloading previews for every dropdown flicker.
   const preview = useQuery({
     queryKey: ["company", companyId, "merge-preview", mergeTargetId],
-    queryFn: () =>
-      previewMergeFn({ data: { sourceId: companyId, targetId: mergeTargetId } }),
+    queryFn: () => previewMergeFn({ data: { sourceId: companyId, targetId: mergeTargetId } }),
     enabled: mergePreviewOpen && !!mergeTargetId,
     staleTime: 0,
   });
 
   const mergeMut = useMutation({
-    mutationFn: (targetId: string) =>
-      mergeFn({ data: { sourceId: companyId, targetId } }),
+    mutationFn: (targetId: string) => mergeFn({ data: { sourceId: companyId, targetId } }),
     onSuccess: (_, targetId) => {
       toast.success("Companies merged");
       qc.invalidateQueries({ queryKey: ["companies"] });
@@ -299,13 +284,9 @@ function CompanyDetailPage() {
                 }
               >
                 {d.domain}
-                <span className="text-[10px] uppercase text-muted-foreground">
-                  {d.source}
-                </span>
+                <span className="text-[10px] uppercase text-muted-foreground">{d.source}</span>
                 {d.source === "auto" && d.member_count > 0 && (
-                  <span className="text-[10px] text-muted-foreground">
-                    · {d.member_count}
-                  </span>
+                  <span className="text-[10px] text-muted-foreground">· {d.member_count}</span>
                 )}
                 {d.source === "auto" && introLabel && (
                   <span className="max-w-[140px] truncate text-[10px] text-muted-foreground">
@@ -358,6 +339,17 @@ function CompanyDetailPage() {
         </section>
       )}
 
+      <section className="mb-6 rounded-lg border p-4">
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Labels
+        </h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Labels this company belongs to. Everyone at the company gets them — including contacts
+          added later.
+        </p>
+        <CompanyLabelsSection companyId={companyId} />
+      </section>
+
       <section className="mb-6 grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
         <Labelled label="Website">
           <Input
@@ -367,10 +359,7 @@ function CompanyDetailPage() {
           />
         </Labelled>
         <Labelled label="Phone">
-          <Input
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          />
+          <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
         </Labelled>
         <Labelled label="Industry">
           <Input
@@ -387,10 +376,7 @@ function CompanyDetailPage() {
           />
         </Labelled>
         <Labelled label="City">
-          <Input
-            value={form.city}
-            onChange={(e) => setForm({ ...form, city: e.target.value })}
-          />
+          <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
         </Labelled>
         <Labelled label="State / region">
           <Input
@@ -427,9 +413,7 @@ function CompanyDetailPage() {
           Tags
         </h2>
         <div className="mb-3 flex flex-wrap gap-2">
-          {tags.length === 0 && (
-            <span className="text-sm text-muted-foreground">No tags yet.</span>
-          )}
+          {tags.length === 0 && <span className="text-sm text-muted-foreground">No tags yet.</span>}
           {tags.map((t) => (
             <Badge key={t} variant="outline" className="flex items-center gap-1.5">
               {t}
@@ -463,9 +447,7 @@ function CompanyDetailPage() {
           Members ({q.data.members.length})
         </h2>
         {q.data.members.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No contacts link to this company yet.
-          </p>
+          <p className="text-sm text-muted-foreground">No contacts link to this company yet.</p>
         ) : (
           <ul className="divide-y">
             {q.data.members.map((m) => (
@@ -518,8 +500,7 @@ function CompanyDetailPage() {
           <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-2xl">
             <AlertDialogHeader>
               <AlertDialogTitle>
-                Merge "{form.name || "this company"}" into "
-                {preview.data?.target.name ?? "…"}"?
+                Merge "{form.name || "this company"}" into "{preview.data?.target.name ?? "…"}"?
               </AlertDialogTitle>
               <AlertDialogDescription>
                 Everything below moves to the target. The source company is then deleted.
@@ -527,9 +508,7 @@ function CompanyDetailPage() {
             </AlertDialogHeader>
 
             <div className="max-h-[50vh] space-y-4 overflow-y-auto text-sm">
-              {preview.isLoading && (
-                <p className="text-muted-foreground">Loading preview…</p>
-              )}
+              {preview.isLoading && <p className="text-muted-foreground">Loading preview…</p>}
               {preview.error && (
                 <p className="text-destructive">
                   {preview.error instanceof Error
@@ -551,9 +530,7 @@ function CompanyDetailPage() {
                           <li key={c.id} className="truncate">
                             {c.name || c.email || "(unnamed)"}
                             {c.name && c.email && (
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                {c.email}
-                              </span>
+                              <span className="ml-2 text-xs text-muted-foreground">{c.email}</span>
                             )}
                           </li>
                         ))}
@@ -603,10 +580,7 @@ function CompanyDetailPage() {
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {preview.data.tags.map((t) => (
-                          <Badge
-                            key={t.tag}
-                            variant={t.conflict ? "outline" : "secondary"}
-                          >
+                          <Badge key={t.tag} variant={t.conflict ? "outline" : "secondary"}>
                             {t.tag}
                             {t.conflict && (
                               <span className="ml-1 text-[10px] uppercase text-muted-foreground">
@@ -623,15 +597,10 @@ function CompanyDetailPage() {
             </div>
 
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={mergeMut.isPending}>
-                Cancel
-              </AlertDialogCancel>
+              <AlertDialogCancel disabled={mergeMut.isPending}>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 disabled={
-                  !mergeTargetId ||
-                  mergeMut.isPending ||
-                  preview.isLoading ||
-                  !!preview.error
+                  !mergeTargetId || mergeMut.isPending || preview.isLoading || !!preview.error
                 }
                 onClick={(e) => {
                   e.preventDefault();
@@ -684,6 +653,80 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
     <div>
       <Label className="mb-1 text-xs text-muted-foreground">{label}</Label>
       {children}
+    </div>
+  );
+}
+
+/** Toggleable label chips backed by company_id group rules — each click
+ *  saves immediately and syncs memberships for the whole company. */
+function CompanyLabelsSection({ companyId }: { companyId: string }) {
+  const qc = useQueryClient();
+  const listGroups = useServerFn(listContactGroups);
+  const listLabelsFn = useServerFn(listCompanyLabels);
+  const setLabelsFn = useServerFn(setCompanyLabels);
+
+  const groupsQ = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
+  const labelsQ = useQuery({
+    queryKey: ["company-labels", companyId],
+    queryFn: () => listLabelsFn({ data: { companyId } }),
+  });
+
+  const saveMut = useMutation({
+    mutationFn: (groupIds: string[]) => setLabelsFn({ data: { companyId, groupIds } }),
+    onSuccess: (res) => {
+      toast.success(
+        res.added + res.removed > 0
+          ? `Labels updated — ${res.scanned} contact${res.scanned === 1 ? "" : "s"} synced`
+          : "Labels updated",
+      );
+      qc.invalidateQueries({ queryKey: ["company-labels", companyId] });
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  const selected = new Set(labelsQ.data?.groupIds ?? []);
+  const groups = (groupsQ.data?.groups ?? []).filter((g) => !g.auto_generated_from_group_id);
+
+  if (groupsQ.isLoading || labelsQ.isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
+  if (groups.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No labels yet — create one from the Contacts page first.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {groups.map((g) => {
+        const active = selected.has(g.id);
+        return (
+          <button
+            key={g.id}
+            type="button"
+            disabled={saveMut.isPending}
+            aria-pressed={active}
+            onClick={() => {
+              const next = new Set(selected);
+              if (next.has(g.id)) next.delete(g.id);
+              else next.add(g.id);
+              saveMut.mutate([...next]);
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
+              active
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
+            <span className="max-w-[12rem] truncate">{g.name}</span>
+            {active && <Check className="h-3 w-3" />}
+          </button>
+        );
+      })}
     </div>
   );
 }

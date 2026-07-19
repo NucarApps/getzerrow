@@ -79,7 +79,11 @@ describe("resolveCompanyLogoDomainForContact", () => {
         created_at: "2026-07-18T15:59:54.000Z",
       },
     );
-    logoChoiceRows.push({ user_id: "user-a", domain: "nissan-usa.com", source_domain: "nissanusa.com" });
+    logoChoiceRows.push({
+      user_id: "user-a",
+      domain: "nissan-usa.com",
+      source_domain: "nissanusa.com",
+    });
 
     const { resolveCompanyLogoDomainForContact } = await import("./logo-photo.server");
     const domain = await resolveCompanyLogoDomainForContact("user-a", {

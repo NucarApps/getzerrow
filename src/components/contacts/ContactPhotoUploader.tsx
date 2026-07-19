@@ -55,7 +55,17 @@ type Props = {
  * `contact-photos` bucket and marked dirty for Google/CardDAV sync so the
  * change propagates to iPhone and Google Contacts on their next tick.
  */
-export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email, website, companyDomain, companyId, avatarIsCompanyLogoSnapshot = false, onChanged }: Props) {
+export function ContactPhotoUploader({
+  contactId,
+  avatarUrl,
+  displayName,
+  email,
+  website,
+  companyDomain,
+  companyId,
+  avatarIsCompanyLogoSnapshot = false,
+  onChanged,
+}: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const upload = useServerFn(uploadContactPhoto);
@@ -81,8 +91,7 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
     enabled: !!avatarUrl && !avatarIsCompanyLogoSnapshot,
     staleTime: 50 * 60 * 1000, // refresh well before the 1h signed-URL expiry
   });
-  const displaySrc = avatarUrl && !avatarIsCompanyLogoSnapshot ? signedQuery.data ?? null : null;
-
+  const displaySrc = avatarUrl && !avatarIsCompanyLogoSnapshot ? (signedQuery.data ?? null) : null;
 
   const openPicker = () => fileRef.current?.click();
 
@@ -138,7 +147,7 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
   };
 
   const logoDomain = !displaySrc
-    ? (companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null))
+    ? companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null)
     : null;
   const logoChoice = logoDomain
     ? (logoChoicesQuery.data ?? []).find(
@@ -149,11 +158,7 @@ export function ContactPhotoUploader({ contactId, avatarUrl, displayName, email,
   return (
     <div className="group relative h-16 w-16 shrink-0">
       {displaySrc ? (
-        <img
-          src={displaySrc}
-          alt={displayName}
-          className="h-16 w-16 rounded-full object-cover"
-        />
+        <img src={displaySrc} alt={displayName} className="h-16 w-16 rounded-full object-cover" />
       ) : logoDomain ? (
         <CompanyLogo
           domain={logoDomain}

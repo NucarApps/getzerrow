@@ -8,10 +8,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Loader2, Sparkles, Merge } from "lucide-react";
 import { toast } from "sonner";
-import {
-  findDuplicateCompanies,
-  mergeCluster,
-} from "@/lib/companies/companies.functions";
+import { findDuplicateCompanies, mergeCluster } from "@/lib/companies/companies.functions";
 
 type Props = {
   open: boolean;
@@ -48,12 +45,9 @@ export function CompanyDuplicatesDrawer({ open, onOpenChange }: Props) {
   });
 
   const mergeMut = useMutation({
-    mutationFn: (vars: { canonicalId: string; foldIds: string[] }) =>
-      mergeFn({ data: vars }),
+    mutationFn: (vars: { canonicalId: string; foldIds: string[] }) => mergeFn({ data: vars }),
     onSuccess: (r) => {
-      toast.success(
-        `Merged ${r.merged} companies · reassigned ${r.movedContacts} contacts`,
-      );
+      toast.success(`Merged ${r.merged} companies · reassigned ${r.movedContacts} contacts`);
       qc.invalidateQueries({ queryKey: ["companies"] });
       qc.invalidateQueries({ queryKey: ["contact-groups"] });
       q.refetch();
@@ -71,11 +65,7 @@ export function CompanyDuplicatesDrawer({ open, onOpenChange }: Props) {
         </SheetHeader>
         <div className="mt-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Checkbox
-              id="useAi"
-              checked={useAi}
-              onCheckedChange={(v) => setUseAi(Boolean(v))}
-            />
+            <Checkbox id="useAi" checked={useAi} onCheckedChange={(v) => setUseAi(Boolean(v))} />
             <Label htmlFor="useAi" className="cursor-pointer">
               <Sparkles className="mr-1 inline h-3.5 w-3.5" />
               Let AI decide which entries are true duplicates
@@ -110,10 +100,7 @@ export function CompanyDuplicatesDrawer({ open, onOpenChange }: Props) {
               .filter((m) => m.id !== canonicalId && includes[m.id])
               .map((m) => m.id);
             return (
-              <div
-                key={cluster.canonicalId}
-                className="rounded-lg border p-4"
-              >
+              <div key={cluster.canonicalId} className="rounded-lg border p-4">
                 <p className="mb-3 text-xs text-muted-foreground">{cluster.rationale}</p>
                 <RadioGroup
                   value={canonicalId}
@@ -179,9 +166,7 @@ export function CompanyDuplicatesDrawer({ open, onOpenChange }: Props) {
                   <Button
                     size="sm"
                     disabled={foldIds.length === 0 || mergeMut.isPending}
-                    onClick={() =>
-                      mergeMut.mutate({ canonicalId, foldIds })
-                    }
+                    onClick={() => mergeMut.mutate({ canonicalId, foldIds })}
                   >
                     <Merge className="mr-1 h-3.5 w-3.5" />
                     Merge cluster

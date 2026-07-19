@@ -204,12 +204,7 @@ vi.mock("./account-context", () => ({
 }));
 
 vi.mock("./process-message", () => ({
-  async processGmailMessage(
-    accountId: string,
-    gmailId: string,
-    _userId: string,
-    _opts: unknown,
-  ) {
+  async processGmailMessage(accountId: string, gmailId: string, _userId: string, _opts: unknown) {
     const job = jobRowById.get(`${accountId}:${gmailId}`);
     if (!job) throw new Error(`no job registered for ${accountId}:${gmailId}`);
     // Test seeds the target emails row id in job.published_at_ms as a stable

@@ -31,8 +31,8 @@ function applyPut(existing: ExistingCardDavContact | null, body: string) {
 function nextEmail(existing: ExistingCardDavContact | null, body: string): string | null {
   const { patch } = applyPut(existing, body);
   return Object.prototype.hasOwnProperty.call(patch, "email")
-    ? patch.email ?? null
-    : existing?.email ?? null;
+    ? (patch.email ?? null)
+    : (existing?.email ?? null);
 }
 
 describe("CardDAV iOS sync regression: existing email must never be nulled", () => {
@@ -80,7 +80,10 @@ describe("CardDAV iOS sync regression: existing email must never be nulled", () 
 
   it("still accepts a real email edit after a blank follow-up (full loop)", () => {
     // 1. iOS resends a blank card (network hiccup / partial sync).
-    let currentEmail = nextEmail(existing, vcard(["FN:Chanell Dagesse", "EMAIL;TYPE=INTERNET;TYPE=pref:"]));
+    let currentEmail = nextEmail(
+      existing,
+      vcard(["FN:Chanell Dagesse", "EMAIL;TYPE=INTERNET;TYPE=pref:"]),
+    );
     expect(currentEmail).toBe(SAVED_EMAIL);
 
     // 2. User edits the email on the phone; iOS pushes the real value.

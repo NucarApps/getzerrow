@@ -50,7 +50,7 @@ export function parseRequestedProps(body: string): Set<string> {
   const propBlockMatch = body.match(/<\w*:?prop[^>]*>([\s\S]*?)<\/\w*:?prop>/i);
   if (!propBlockMatch) return out;
   const inner = propBlockMatch[1];
-  const tagRe = /<(\w+:)?([\w-]+)[^\/]*\/>|<(\w+:)?([\w-]+)[^>]*>[\s\S]*?<\/\3?[\w-]+>/g;
+  const tagRe = /<(\w+:)?([\w-]+)[^/]*\/>|<(\w+:)?([\w-]+)[^>]*>[\s\S]*?<\/\3?[\w-]+>/g;
   let m: RegExpExecArray | null;
   while ((m = tagRe.exec(inner))) {
     const name = (m[2] ?? m[4] ?? "").toLowerCase();
@@ -80,15 +80,9 @@ export function parseSyncCollection(body: string): {
   syncLevel: string;
   limit: number | null;
 } {
-  const tokenMatch = body.match(
-    /<(?:\w+:)?sync-token[^>]*>([\s\S]*?)<\/(?:\w+:)?sync-token>/i,
-  );
-  const levelMatch = body.match(
-    /<(?:\w+:)?sync-level[^>]*>([\s\S]*?)<\/(?:\w+:)?sync-level>/i,
-  );
-  const limitMatch = body.match(
-    /<(?:\w+:)?nresults[^>]*>([\s\S]*?)<\/(?:\w+:)?nresults>/i,
-  );
+  const tokenMatch = body.match(/<(?:\w+:)?sync-token[^>]*>([\s\S]*?)<\/(?:\w+:)?sync-token>/i);
+  const levelMatch = body.match(/<(?:\w+:)?sync-level[^>]*>([\s\S]*?)<\/(?:\w+:)?sync-level>/i);
+  const limitMatch = body.match(/<(?:\w+:)?nresults[^>]*>([\s\S]*?)<\/(?:\w+:)?nresults>/i);
   const rawLimit = limitMatch ? Number.parseInt(limitMatch[1].trim(), 10) : NaN;
   return {
     syncToken: tokenMatch ? tokenMatch[1].trim() : "",
@@ -96,4 +90,3 @@ export function parseSyncCollection(body: string): {
     limit: Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : null,
   };
 }
-

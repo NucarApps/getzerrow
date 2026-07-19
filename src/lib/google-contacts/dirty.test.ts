@@ -7,26 +7,17 @@ describe("isLocalGoogleContactDirty", () => {
   });
 
   it("treats contacts updated after the last Google sync as dirty", () => {
-    expect(
-      isLocalGoogleContactDirty(
-        "2026-07-18T12:00:01.000Z",
-        "2026-07-18T12:00:00.000Z",
-      ),
-    ).toBe(true);
+    expect(isLocalGoogleContactDirty("2026-07-18T12:00:01.000Z", "2026-07-18T12:00:00.000Z")).toBe(
+      true,
+    );
   });
 
   it("treats contacts updated before or at the last Google sync as clean", () => {
-    expect(
-      isLocalGoogleContactDirty(
-        "2026-07-18T12:00:00.000Z",
-        "2026-07-18T12:00:00.000Z",
-      ),
-    ).toBe(false);
-    expect(
-      isLocalGoogleContactDirty(
-        "2026-07-18T11:59:59.000Z",
-        "2026-07-18T12:00:00.000Z",
-      ),
-    ).toBe(false);
+    expect(isLocalGoogleContactDirty("2026-07-18T12:00:00.000Z", "2026-07-18T12:00:00.000Z")).toBe(
+      false,
+    );
+    expect(isLocalGoogleContactDirty("2026-07-18T11:59:59.000Z", "2026-07-18T12:00:00.000Z")).toBe(
+      false,
+    );
   });
 });

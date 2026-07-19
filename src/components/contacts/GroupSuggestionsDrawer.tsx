@@ -50,9 +50,7 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
       const topics = res?.stats?.topicsScanned ?? 0;
       const topicsSuffix = topics > 0 ? ` · read ${topics} inbox` : "";
       if (kept > 0) {
-        toast.success(
-          `Found ${kept} suggestion${kept === 1 ? "" : "s"}${topicsSuffix}`,
-        );
+        toast.success(`Found ${kept} suggestion${kept === 1 ? "" : "s"}${topicsSuffix}`);
       } else {
         toast.message(
           `Scanned ${pool} contacts (${ungrouped} ungrouped)${topicsSuffix} — no new suggestions`,
@@ -84,9 +82,7 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const suggestions = (q.data?.suggestions ?? []).filter(
-    (s) => s.status === "pending",
-  );
+  const suggestions = (q.data?.suggestions ?? []).filter((s) => s.status === "pending");
   const showEmpty = !q.isLoading && !rescan.isPending && suggestions.length === 0;
 
   return (
@@ -98,23 +94,16 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
             AI group suggestions
           </SheetTitle>
           <SheetDescription>
-            Zerrow reviews your contacts and proposes groups (and subgroups)
-            you can accept with one click. Nothing is applied without your
-            confirmation.
+            Zerrow reviews your contacts and proposes groups (and subgroups) you can accept with one
+            click. Nothing is applied without your confirmation.
           </SheetDescription>
         </SheetHeader>
 
         <div className="mt-4 flex items-center justify-between gap-2">
           <div className="text-sm text-muted-foreground">
-            {suggestions.length > 0
-              ? `${suggestions.length} pending`
-              : "No pending suggestions"}
+            {suggestions.length > 0 ? `${suggestions.length} pending` : "No pending suggestions"}
           </div>
-          <Button
-            size="sm"
-            onClick={() => rescan.mutate()}
-            disabled={rescan.isPending}
-          >
+          <Button size="sm" onClick={() => rescan.mutate()} disabled={rescan.isPending}>
             {rescan.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing…
@@ -130,8 +119,8 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
 
         {showEmpty && (
           <div className="mt-8 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            No suggestions yet. Click <strong>Run AI scan</strong> to have
-            Zerrow analyze your contacts and propose groups.
+            No suggestions yet. Click <strong>Run AI scan</strong> to have Zerrow analyze your
+            contacts and propose groups.
           </div>
         )}
 
@@ -145,10 +134,7 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
                   ? "Add to existing"
                   : "New group";
             return (
-              <div
-                key={s.id}
-                className="rounded-lg border border-border bg-card p-4 shadow-sm"
-              >
+              <div key={s.id} className="rounded-lg border border-border bg-card p-4 shadow-sm">
                 <div className="mb-2 flex items-center gap-2">
                   <Badge variant="secondary">{kindLabel}</Badge>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -162,18 +148,12 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
                 ) : (
                   <Input
                     value={editedName}
-                    onChange={(e) =>
-                      setNameEdits((m) => ({ ...m, [s.id]: e.target.value }))
-                    }
+                    onChange={(e) => setNameEdits((m) => ({ ...m, [s.id]: e.target.value }))}
                     className="mb-2 h-8 text-sm font-medium"
                   />
                 )}
 
-                {s.rationale && (
-                  <p className="mb-2 text-xs text-muted-foreground">
-                    {s.rationale}
-                  </p>
-                )}
+                {s.rationale && <p className="mb-2 text-xs text-muted-foreground">{s.rationale}</p>}
 
                 {s.contact_previews.length > 0 && (
                   <div className="mb-3 flex flex-wrap gap-1">
@@ -207,9 +187,7 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
                     onClick={() => applyMut.mutate(s.id)}
                     disabled={applyMut.isPending}
                   >
-                    {s.kind === "merge_into_existing"
-                      ? "Add to group"
-                      : "Create group"}
+                    {s.kind === "merge_into_existing" ? "Add to group" : "Create group"}
                   </Button>
                 </div>
               </div>

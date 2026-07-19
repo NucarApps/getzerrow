@@ -329,12 +329,15 @@ async function maybeSummarize(
       turns,
     });
 
-    await supabaseAdmin
-      .from("folder_chat_state")
-      .upsert(
-        { folder_id: folderId, user_id: userId, summary: nextSummary, summarized_through: new Date().toISOString() },
-        { onConflict: "folder_id" },
-      );
+    await supabaseAdmin.from("folder_chat_state").upsert(
+      {
+        folder_id: folderId,
+        user_id: userId,
+        summary: nextSummary,
+        summarized_through: new Date().toISOString(),
+      },
+      { onConflict: "folder_id" },
+    );
 
     await supabaseAdmin
       .from("folder_chat_messages")
@@ -361,14 +364,9 @@ export type StoredChatMessage = {
 
 export const getFolderChatHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) =>
-    z.object({ folder_id: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(
-    async ({
-      data,
-      context,
-    }): Promise<{ messages: StoredChatMessage[]; summary: string }> => {
+    async ({ data, context }): Promise<{ messages: StoredChatMessage[]; summary: string }> => {
       const { data: folderRow } = await supabaseAdmin
         .from("folders")
         .select("id, user_id")
@@ -425,9 +423,7 @@ export const getFolderChatHistory = createServerFn({ method: "POST" })
 export const discardFolderChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; message_id: string }) =>
-    z
-      .object({ folder_id: z.string().uuid(), message_id: z.string().uuid() })
-      .parse(d),
+    z.object({ folder_id: z.string().uuid(), message_id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }): Promise<{ ok: boolean }> => {
     const { data: folderRow } = await supabaseAdmin
@@ -448,11 +444,6 @@ export const discardFolderChanges = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
-
-
-
-
-
 
 type ApplyResultItem = {
   action: FolderChatAction;

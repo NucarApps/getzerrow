@@ -207,14 +207,12 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           return chain;
         },
       };
-
     },
   },
 }));
 
 vi.mock("@/lib/contacts/logo-photo.server", () => ({
-  fetchChosenCompanyLogoBytes: (userId: string, domain: string) =>
-    mockLogoFetch(userId, domain),
+  fetchChosenCompanyLogoBytes: (userId: string, domain: string) => mockLogoFetch(userId, domain),
 }));
 
 describe("buildKnownCompanyLogoShaSet", () => {
@@ -299,7 +297,7 @@ describe("buildKnownCompanyLogoShaSet", () => {
 // ---------------------------------------------------------------------------
 
 describe("iPhone photo save is treated as authoritative", () => {
-  it("PUT handler saves surviving photos with source=\"user_upload\"", async () => {
+  it('PUT handler saves surviving photos with source="user_upload"', async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const src = await fs.readFile(

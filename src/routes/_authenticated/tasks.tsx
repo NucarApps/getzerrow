@@ -66,9 +66,7 @@ function TasksPage() {
 
   const toggle = useMutation({
     mutationFn: (t: { id: string; status: string }) =>
-      t.status === "done"
-        ? reopenFn({ data: { id: t.id } })
-        : completeFn({ data: { id: t.id } }),
+      t.status === "done" ? reopenFn({ data: { id: t.id } }) : completeFn({ data: { id: t.id } }),
     onSuccess: invalidate,
   });
 
@@ -92,7 +90,7 @@ function TasksPage() {
     onSuccess: invalidate,
   });
 
-  const suggestions = q.data?.suggestions ?? [];
+  const suggestions = useMemo(() => q.data?.suggestions ?? [], [q.data]);
   const suggByTask = useMemo(() => {
     const m = new Map<string, (typeof suggestions)[number]>();
     suggestions.forEach((s) => m.set(s.task_id, s));

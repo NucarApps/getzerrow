@@ -402,8 +402,6 @@ export function useEmailRealtime() {
       watchdogTimer = setInterval(checkRealtimeLiveness, REALTIME_WATCHDOG_INTERVAL_MS);
     }
 
-
-
     async function connect() {
       const { data } = await supabase.auth.getSession();
       const session = data.session;

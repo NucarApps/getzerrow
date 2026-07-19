@@ -86,9 +86,7 @@ async function scanUser(userId: string): Promise<number> {
   let inserted = 0;
   for (const email of sent) {
     // Ask the model which of the user's open tasks this sent email likely fulfills.
-    const candidates = (tasks as OpenTask[]).filter(
-      (t) => !seen.has(`${t.id}::${email.id}`),
-    );
+    const candidates = (tasks as OpenTask[]).filter((t) => !seen.has(`${t.id}::${email.id}`));
     if (candidates.length === 0) continue;
 
     const system = [
@@ -106,7 +104,9 @@ async function scanUser(userId: string): Promise<number> {
       `Snippet: ${email.snippet ?? ""}`,
       ``,
       `OPEN TASKS:`,
-      ...candidates.map((t) => `- id=${t.id} | ${t.title}${t.notes ? ` — ${t.notes.slice(0, 200)}` : ""}`),
+      ...candidates.map(
+        (t) => `- id=${t.id} | ${t.title}${t.notes ? ` — ${t.notes.slice(0, 200)}` : ""}`,
+      ),
     ].join("\n");
 
     let parsed: z.infer<typeof MatchSchema>;

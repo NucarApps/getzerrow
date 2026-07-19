@@ -334,13 +334,14 @@ export function MeetingBotCard() {
                 onChange={(e) => setAutoLeaveMinutes(Number(e.target.value))}
                 className="w-20"
               />
-              <span className="text-sm text-muted-foreground">minutes with no one else present</span>
+              <span className="text-sm text-muted-foreground">
+                minutes with no one else present
+              </span>
             </div>
           )}
         </div>
 
         <div className="flex justify-end">
-
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             Save changes

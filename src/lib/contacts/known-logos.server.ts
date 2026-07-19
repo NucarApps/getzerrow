@@ -75,9 +75,9 @@ export async function buildKnownCompanyLogoShaSet(
 
   async function hashDomain(domain: string): Promise<void> {
     try {
-      const hit = await Promise.race<
-        Awaited<ReturnType<typeof fetchChosenCompanyLogoBytes>> | null
-      >([
+      const hit = await Promise.race<Awaited<
+        ReturnType<typeof fetchChosenCompanyLogoBytes>
+      > | null>([
         fetchChosenCompanyLogoBytes(userId, domain),
         new Promise((resolve) => setTimeout(() => resolve(null), FETCH_TIMEOUT_MS)),
       ]);

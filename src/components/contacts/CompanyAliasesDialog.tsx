@@ -28,7 +28,7 @@ import {
   setCompanyWebsiteForContacts,
 } from "@/lib/contacts/crud.functions";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
-import { listCompanyGroupAssignments, setCompanyGroups } from "@/lib/company-groups.functions";
+import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
 import { listContactGroups } from "@/lib/contact-groups.functions";
 import { normalizeCompanyName } from "@/lib/contacts/company-name";
 import { CompanyLogoPicker } from "./CompanyLogoPicker";
@@ -61,9 +61,9 @@ export function CompanyAliasesDialog({
   const clearFn = useServerFn(clearCompanyAliases);
   const promoteFn = useServerFn(promoteAliasToPrimary);
   const listChoices = useServerFn(listCompanyLogoChoices);
-  const listAssignments = useServerFn(listCompanyGroupAssignments);
+  const listLabelsFn = useServerFn(listCompanyLabels);
   const listGroups = useServerFn(listContactGroups);
-  const setGroupsFn = useServerFn(setCompanyGroups);
+  const setLabelsFn = useServerFn(setCompanyLabels);
   const renameFn = useServerFn(renameCompanyForContacts);
   const setWebsiteFn = useServerFn(setCompanyWebsiteForContacts);
   const getProfileFn = useServerFn(getCompanyProfile);
@@ -104,10 +104,10 @@ export function CompanyAliasesDialog({
   const currentProvider = currentRow?.provider ?? null;
   const currentSource = currentRow?.source_domain ?? null;
 
-  const assignmentsQ = useQuery({
-    queryKey: ["company-group-assignments"],
-    queryFn: () => listAssignments(),
-    enabled: open,
+  const companyLabelsQ = useQuery({
+    queryKey: ["company-labels", companyId ?? "none"],
+    queryFn: () => listLabelsFn({ data: { companyId: companyId! } }),
+    enabled: open && !!companyId,
   });
   const groupsQ = useQuery({
     queryKey: ["contact-groups"],
@@ -128,11 +128,10 @@ export function CompanyAliasesDialog({
     setDescriptionDraft(desc);
   }, [open, profileQ.data?.description]);
 
-  const savedGroupIds = primaryDomain
-    ? (assignmentsQ.data ?? [])
-        .filter((a) => a.primary_domain === primaryDomain)
-        .map((a) => a.group_id)
-    : [];
+  // Rule-backed truth: labels this company is IN. Membership coverage is
+  // shown as context but no longer pre-selects coincidental full coverage.
+  const initialSelection = companyLabelsQ.data?.groupIds ?? [];
+  const savedKey = initialSelection.slice().sort().join(",");
 
   const contactIdSet = new Set(contactIds);
   const memberCountByGroup = new Map<string, number>();
@@ -141,14 +140,6 @@ export function CompanyAliasesDialog({
       memberCountByGroup.set(m.group_id, (memberCountByGroup.get(m.group_id) ?? 0) + 1);
     }
   }
-  const fullyCoveredGroupIds =
-    contactIds.length > 0
-      ? [...memberCountByGroup.entries()]
-          .filter(([, n]) => n === contactIds.length)
-          .map(([id]) => id)
-      : [];
-  const initialSelection = Array.from(new Set([...savedGroupIds, ...fullyCoveredGroupIds]));
-  const savedKey = initialSelection.slice().sort().join(",");
 
   useEffect(() => {
     if (open) setSelectedGroupIds(new Set(initialSelection));
@@ -280,7 +271,7 @@ export function CompanyAliasesDialog({
       toast.success(`${alias} is now the primary`);
       qc.invalidateQueries({ queryKey: ["company-aliases"] });
       qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
-      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+      qc.invalidateQueries({ queryKey: ["company-labels"] });
       onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't promote");
@@ -290,21 +281,21 @@ export function CompanyAliasesDialog({
   }
 
   async function saveTags() {
+    if (!companyId) return;
     setBusy(true);
     try {
       const groupIds = [...selectedGroupIds];
-      const res = await setGroupsFn({
-        data: { primaryDomain: primaryDomain!, contactIds, groupIds },
-      });
+      const res = await setLabelsFn({ data: { companyId, groupIds } });
       toast.success(
         groupIds.length === 0
-          ? "Tags cleared for this company"
-          : `Tagged ${res.tagged} ${res.tagged === 1 ? "contact" : "contacts"}`,
+          ? "Labels cleared for this company"
+          : `Company labels saved — ${res.added + res.removed > 0 ? `${res.scanned} contacts synced` : "no changes"}`,
       );
-      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+      qc.invalidateQueries({ queryKey: ["company-labels"] });
       qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't save tags");
+      toast.error(e instanceof Error ? e.message : "Couldn't save labels");
     } finally {
       setBusy(false);
     }
@@ -321,7 +312,7 @@ export function CompanyAliasesDialog({
       );
       qc.invalidateQueries({ queryKey: ["contacts"] });
       qc.invalidateQueries({ queryKey: ["company-aliases"] });
-      qc.invalidateQueries({ queryKey: ["company-group-assignments"] });
+      qc.invalidateQueries({ queryKey: ["company-labels"] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't rename company");
     } finally {
@@ -596,13 +587,16 @@ export function CompanyAliasesDialog({
 
             {/* GROUPS */}
             <TabsContent value="groups" className="mt-0 space-y-2">
-              {!hasPrimary ? (
-                needsPrimary
+              {!companyId ? (
+                <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-6 text-center text-xs text-muted-foreground">
+                  This bucket isn't linked to a company record yet — save the company name first,
+                  then labels can follow the company.
+                </p>
               ) : (
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-xs uppercase tracking-widest text-muted-foreground">
-                      Tags
+                      Labels
                     </Label>
                     <span className="text-[11px] text-muted-foreground">
                       {contactIds.length} {contactIds.length === 1 ? "contact" : "contacts"}
@@ -655,8 +649,7 @@ export function CompanyAliasesDialog({
                   {groups.length > 0 && (
                     <div className="flex items-center justify-between pt-1">
                       <p className="text-[11px] text-muted-foreground">
-                        Applies to all {contactIds.length}{" "}
-                        {contactIds.length === 1 ? "contact" : "contacts"}.
+                        Everyone at this company gets these labels — including future contacts.
                       </p>
                       <Button
                         size="sm"
@@ -664,7 +657,7 @@ export function CompanyAliasesDialog({
                         onClick={saveTags}
                         disabled={busy || !tagsDirty}
                       >
-                        Save tags
+                        Save labels
                       </Button>
                     </div>
                   )}

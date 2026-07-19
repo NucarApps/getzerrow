@@ -14,8 +14,6 @@ type ContactShape = {
   company_id: string | null;
 };
 
-
-
 type DB = SupabaseClient<Database>;
 
 /**
@@ -101,19 +99,10 @@ export async function reconcileAutoCompanySubgroupsImpl(
     { data: nameAliasRows },
     { data: companyDomainRows },
   ] = await Promise.all([
-    supabase
-      .from("company_aliases")
-      .select("primary_domain, alias_domain")
-      .eq("user_id", userId),
+    supabase.from("company_aliases").select("primary_domain, alias_domain").eq("user_id", userId),
     supabase.from("companies").select("id,name").eq("user_id", userId),
-    supabase
-      .from("company_name_aliases")
-      .select("name_key,company_id")
-      .eq("user_id", userId),
-    supabase
-      .from("company_domains")
-      .select("domain,company_id")
-      .eq("user_id", userId),
+    supabase.from("company_name_aliases").select("name_key,company_id").eq("user_id", userId),
+    supabase.from("company_domains").select("domain,company_id").eq("user_id", userId),
   ]);
   const aliasMap = new Map<string, string>();
   for (const r of aliasRows ?? []) {
@@ -180,6 +169,30 @@ export async function reconcileAutoCompanySubgroupsImpl(
     }
   }
 
+  // 2b. Companies placed IN this label ("company is a member" — stored as
+  //     company_id group rules) are represented too, even with zero manual
+  //     members. Their rule-materialized contacts (source='rule') must never
+  //     be treated as strangers by step 7's cleanup.
+  const { data: companyRules } = await supabase
+    .from("contact_group_rules")
+    .select("value")
+    .eq("user_id", userId)
+    .eq("group_id", parentGroupId)
+    .eq("rule_type", "company_id")
+    .eq("auto_apply", true);
+  for (const r of companyRules ?? []) {
+    const companyId = (r as { value: string }).value;
+    const derived = deriveCompanyKey(
+      { company: null, email: null, website: null, company_id: companyId },
+      keyCtx,
+    );
+    if (!derived) continue;
+    repKeys.add(derived.key);
+    if (!fallbackDisplayNames.has(derived.key)) {
+      fallbackDisplayNames.set(derived.key, derived.displayName);
+    }
+  }
+
   // 3. Load every user contact and bucket by derived key.
   const byKey = new Map<
     string,
@@ -210,7 +223,6 @@ export async function reconcileAutoCompanySubgroupsImpl(
       }
     }
   }
-
 
   // 4. Load existing auto subgroups for this parent.
   const { data: existing, error: exErr } = await supabase
@@ -279,8 +291,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
     }
     const uid =
       "group-" +
-      (globalThis.crypto?.randomUUID?.() ??
-        `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const { data: ins, error: iErr } = await supabase
       .from("contact_groups")
       .insert({
@@ -312,10 +323,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
     if (!keptIds.has(g.id)) toDeleteIds.push(g.id);
   }
   if (toDeleteIds.length > 0) {
-    const { error: dErr } = await supabase
-      .from("contact_groups")
-      .delete()
-      .in("id", toDeleteIds);
+    const { error: dErr } = await supabase.from("contact_groups").delete().in("id", toDeleteIds);
     if (dErr) throw new Error(dErr.message);
     removed = toDeleteIds.length;
   }
@@ -346,6 +354,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
         contact_id,
         user_id: userId,
         auto_added: true,
+        source: "company_subgroup",
       })),
       { onConflict: "group_id,contact_id", ignoreDuplicates: true },
     );
@@ -353,11 +362,14 @@ export async function reconcileAutoCompanySubgroupsImpl(
     membershipsAdded += parentToAdd.length;
   }
   if (parentToRemove.length > 0) {
+    // Only rows this engine owns — rule-materialized rows (source='rule')
+    // belong to the group-rules sync engine.
     const { error: rErr } = await supabase
       .from("contact_group_members")
       .delete()
       .eq("group_id", parentGroupId)
       .eq("auto_added", true)
+      .eq("source", "company_subgroup")
       .in("contact_id", parentToRemove);
     if (rErr) throw new Error(rErr.message);
     membershipsRemoved += parentToRemove.length;
@@ -381,17 +393,16 @@ export async function reconcileAutoCompanySubgroupsImpl(
     for (const cid of current) if (!wanted.has(cid)) toRemove.push(cid);
 
     if (toAdd.length > 0) {
-      const { error: aErr } = await supabase
-        .from("contact_group_members")
-        .upsert(
-          toAdd.map((contact_id) => ({
-            group_id: g.id,
-            contact_id,
-            user_id: userId,
-            auto_added: true,
-          })),
-          { onConflict: "group_id,contact_id", ignoreDuplicates: true },
-        );
+      const { error: aErr } = await supabase.from("contact_group_members").upsert(
+        toAdd.map((contact_id) => ({
+          group_id: g.id,
+          contact_id,
+          user_id: userId,
+          auto_added: true,
+          source: "company_subgroup",
+        })),
+        { onConflict: "group_id,contact_id", ignoreDuplicates: true },
+      );
       if (aErr) throw new Error(aErr.message);
       membershipsAdded += toAdd.length;
     }
@@ -488,19 +499,10 @@ async function pruneStaleAutoSubgroupMemberships(
     { data: companyDomainRows },
     { data: contactRows },
   ] = await Promise.all([
-    supabase
-      .from("company_aliases")
-      .select("primary_domain, alias_domain")
-      .eq("user_id", userId),
+    supabase.from("company_aliases").select("primary_domain, alias_domain").eq("user_id", userId),
     supabase.from("companies").select("id,name").eq("user_id", userId),
-    supabase
-      .from("company_name_aliases")
-      .select("name_key,company_id")
-      .eq("user_id", userId),
-    supabase
-      .from("company_domains")
-      .select("domain,company_id")
-      .eq("user_id", userId),
+    supabase.from("company_name_aliases").select("name_key,company_id").eq("user_id", userId),
+    supabase.from("company_domains").select("domain,company_id").eq("user_id", userId),
     supabase
       .from("contacts")
       .select("id, company, email, website, company_id")
@@ -586,6 +588,7 @@ async function pruneStaleAutoSubgroupMemberships(
       .delete()
       .eq("group_id", group_id)
       .eq("auto_added", true)
+      .eq("source", "company_subgroup")
       .in("contact_id", cids);
   }
 }
@@ -626,11 +629,7 @@ export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
       // Chunk to keep payloads sane.
       const chunkSize = 500;
       for (let i = 0; i < allIds.length; i += chunkSize) {
-        await pruneStaleAutoSubgroupMemberships(
-          supabase,
-          userId,
-          allIds.slice(i, i + chunkSize),
-        );
+        await pruneStaleAutoSubgroupMemberships(supabase, userId, allIds.slice(i, i + chunkSize));
       }
     }
     const { data: parents, error } = await supabase
@@ -685,9 +684,7 @@ export const setAutoCompanySubgroups = createServerFn({ method: "POST" })
 /** Manual re-run for the "Re-scan now" button. */
 export const reconcileAutoCompanySubgroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string }) =>
-    z.object({ groupId: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertOwnsGroup(supabase, userId, data.groupId);
@@ -699,9 +696,7 @@ export const reconcileAutoCompanySubgroups = createServerFn({ method: "POST" })
  *  "Remove auto subgroups" cleanup button. */
 export const pruneAutoCompanySubgroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string }) =>
-    z.object({ groupId: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertOwnsGroup(supabase, userId, data.groupId);

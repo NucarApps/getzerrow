@@ -27,7 +27,9 @@ export const listContactRevisions = createServerFn({ method: "GET" })
       .limit(20);
     if (error) throw new Error(error.message);
     return (rows ?? []).map((r) => {
-      const snap = r.snapshot as { contact?: { name?: string | null; email?: string | null } } | null;
+      const snap = r.snapshot as {
+        contact?: { name?: string | null; email?: string | null };
+      } | null;
       return {
         id: r.id,
         source: r.source,

@@ -50,9 +50,7 @@ export const Route = createFileRoute("/api/public/hooks/reconcile-meetings")({
               }
               if (cfg.autoLeaveEnabled) {
                 const startRef = m.started_at ?? m.scheduled_start ?? m.created_at;
-                const ageMin = startRef
-                  ? (Date.now() - new Date(startRef).getTime()) / 60_000
-                  : 0;
+                const ageMin = startRef ? (Date.now() - new Date(startRef).getTime()) / 60_000 : 0;
                 if (ageMin >= cfg.autoLeaveMinutes + FORCE_LEAVE_GRACE_MIN) {
                   try {
                     await leaveBot(m.recall_bot_id);

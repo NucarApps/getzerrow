@@ -44,10 +44,7 @@ export function SettingsNav() {
     <>
       {/* Mobile: single select */}
       <div className="md:hidden">
-        <Select
-          value={pathname}
-          onValueChange={(to) => navigate({ to })}
-        >
+        <Select value={pathname} onValueChange={(to) => navigate({ to })}>
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>

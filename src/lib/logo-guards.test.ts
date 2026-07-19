@@ -9,9 +9,7 @@ import {
 } from "./logo-guards";
 
 /** Build a fake DoH resolver that returns fixed IPs per host+type. */
-function mockResolver(
-  map: Record<string, { A?: string[]; AAAA?: string[] }>,
-): DohResolver {
+function mockResolver(map: Record<string, { A?: string[]; AAAA?: string[] }>): DohResolver {
   return async (host, type) => map[host.toLowerCase()]?.[type] ?? [];
 }
 
@@ -109,7 +107,15 @@ describe("logo-guards: IP classifiers", () => {
   });
 
   it("marks reserved IPv6 private, including v4-mapped forms", () => {
-    for (const ip of ["::1", "::", "fc00::1", "fd12::1", "fe80::1", "ff02::1", "::ffff:127.0.0.1"]) {
+    for (const ip of [
+      "::1",
+      "::",
+      "fc00::1",
+      "fd12::1",
+      "fe80::1",
+      "ff02::1",
+      "::ffff:127.0.0.1",
+    ]) {
       expect(ipv6IsPrivate(ip)).toBe(true);
     }
   });
@@ -179,7 +185,12 @@ describe("logo-guards: hostResolvesToPublicIp (DNS-rebinding defense)", () => {
     const r: DohResolver = async () => {
       throw new Error("resolver should not be called for trusted hosts");
     };
-    for (const h of ["img.logo.dev", "logo.clearbit.com", "icons.duckduckgo.com", "www.google.com"]) {
+    for (const h of [
+      "img.logo.dev",
+      "logo.clearbit.com",
+      "icons.duckduckgo.com",
+      "www.google.com",
+    ]) {
       expect(await hostResolvesToPublicIp(h, r)).toBe(true);
     }
   });

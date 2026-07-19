@@ -12,6 +12,8 @@ export type CardDavContactPatch = {
   email?: string | null;
   name?: string | null;
   company?: string | null;
+  /** Resolved Company entity — set by the PUT handler when ORG is present. */
+  company_id?: string | null;
   title?: string | null;
   website?: string | null;
   city?: string | null;
@@ -63,7 +65,9 @@ export function buildCardDavContactPatch(input: {
     updated_at: nowIso,
   };
 
-  let emailDecision: EmailMergeDecision = existing ? "missing_existing_contact" : "missing_new_contact";
+  let emailDecision: EmailMergeDecision = existing
+    ? "missing_existing_contact"
+    : "missing_new_contact";
   let preservedEmailOverBlank = false;
 
   if (present.has("EMAIL")) {
