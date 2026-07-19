@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -110,6 +111,7 @@ export const Route = createFileRoute("/_authenticated/contacts/")({
   validateSearch: (search: Record<string, unknown>): { group?: string } =>
     typeof search.group === "string" && search.group ? { group: search.group } : {},
   component: ContactsPage,
+  errorComponent: RouteErrorFallback,
 });
 
 function ContactsPage() {
@@ -179,11 +181,31 @@ function ContactsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const q = useQuery({ queryKey: ["contacts"], queryFn: () => list() });
-  const gq = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
-  const aq = useQuery({ queryKey: ["company-aliases"], queryFn: () => listAliases() });
-  const lq = useQuery({ queryKey: ["company-logo-choices"], queryFn: () => listLogoChoices() });
-  const cq = useQuery({ queryKey: ["companies"], queryFn: () => listCompaniesFn() });
+  // These payloads are large (contacts alone can be up to 2,000 rows); keep
+  // them fresh for a couple of minutes so remounts/refocus reuse the cache
+  // instead of re-downloading. Mutations invalidate explicitly.
+  const LIST_STALE_MS = 2 * 60_000;
+  const q = useQuery({ queryKey: ["contacts"], queryFn: () => list(), staleTime: LIST_STALE_MS });
+  const gq = useQuery({
+    queryKey: ["contact-groups"],
+    queryFn: () => listGroups(),
+    staleTime: LIST_STALE_MS,
+  });
+  const aq = useQuery({
+    queryKey: ["company-aliases"],
+    queryFn: () => listAliases(),
+    staleTime: LIST_STALE_MS,
+  });
+  const lq = useQuery({
+    queryKey: ["company-logo-choices"],
+    queryFn: () => listLogoChoices(),
+    staleTime: LIST_STALE_MS,
+  });
+  const cq = useQuery({
+    queryKey: ["companies"],
+    queryFn: () => listCompaniesFn(),
+    staleTime: LIST_STALE_MS,
+  });
 
   // company_id -> preferred logo domain (first company_domain, auto or manual).
   const companyDomainById = useMemo(() => {
@@ -266,6 +288,28 @@ function ContactsPage() {
     for (const c of all) if ((contactGroupMap.get(c.id)?.length ?? 0) === 0) n++;
     return n;
   }, [q.data, contactGroupMap]);
+
+  // Incremental list rendering: mounting the whole address book (up to 2,000
+  // rows / hundreds of company sections) at once makes the page sluggish.
+  // Render a window and grow it when the sentinel at the bottom becomes
+  // visible; the window resets whenever the visible set changes.
+  const INITIAL_VISIBLE = 120;
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE);
+  }, [query, filter, groupByCompany]);
+  const listSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = listSentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setVisibleCount((n) => n + INITIAL_VISIBLE);
+      }
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  });
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -801,6 +845,40 @@ function ContactsPage() {
 
             {/* Main list */}
             <div className="min-w-0">
+              {/* Group filter (mobile) — the desktop groups rail is hidden below md,
+                  so surface the same filters as a scrollable chip row. */}
+              <div className="-mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4 pb-1 md:hidden">
+                {[
+                  {
+                    id: "all",
+                    label: "All",
+                    color: "#a3a3a3",
+                  },
+                  {
+                    id: "ungrouped",
+                    label: "Ungrouped",
+                    color: "#71717a",
+                  },
+                  ...groupTree.map(({ group: g }) => ({
+                    id: g.id,
+                    label: g.name,
+                    color: g.color,
+                  })),
+                ].map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setFilter(g.id)}
+                    className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
+                      filter === g.id
+                        ? "border-transparent bg-accent font-medium text-accent-foreground"
+                        : "border-border text-muted-foreground"
+                    }`}
+                  >
+                    <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                    {g.label}
+                  </button>
+                ))}
+              </div>
               <div className="mb-4 flex items-center gap-2">
                 <div className="relative flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -936,13 +1014,20 @@ function ContactsPage() {
                     />
                   ))}
                 </div>
+              ) : q.isError ? (
+                <div className="py-12 text-center">
+                  <p className="text-sm text-muted-foreground">Couldn't load contacts.</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => q.refetch()}>
+                    Retry
+                  </Button>
+                </div>
               ) : filtered.length === 0 ? (
                 <p className="py-12 text-center text-sm text-muted-foreground">
                   {query ? "No matches." : "No contacts yet. Scan a card or add one manually."}
                 </p>
               ) : groupByCompany ? (
                 <div className="space-y-3">
-                  {companyBuckets.map((b) => {
+                  {companyBuckets.slice(0, visibleCount).map((b) => {
                     const isCollapsed = collapsed.has(b.key);
                     return (
                       <section key={b.key} className="overflow-hidden rounded-md">
@@ -1087,10 +1172,21 @@ function ContactsPage() {
                       </section>
                     );
                   })}
+                  {companyBuckets.length > visibleCount && (
+                    <div ref={listSentinelRef} className="py-3 text-center">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setVisibleCount((n) => n + INITIAL_VISIBLE)}
+                      >
+                        Show more ({companyBuckets.length - visibleCount} more companies)
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
-                  {filtered.map((c) => {
+                  {filtered.slice(0, visibleCount).map((c) => {
                     const gids = contactGroupMap.get(c.id) ?? [];
                     // Prefer the linked company's primary domain. This ensures
                     // Aditya @ Nissan uses Nissan's logo, and personal-email
@@ -1172,6 +1268,19 @@ function ContactsPage() {
                       </li>
                     );
                   })}
+                  {filtered.length > visibleCount && (
+                    <li>
+                      <div ref={listSentinelRef} className="py-3 text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setVisibleCount((n) => n + INITIAL_VISIBLE)}
+                        >
+                          Show more ({filtered.length - visibleCount} more contacts)
+                        </Button>
+                      </div>
+                    </li>
+                  )}
                 </ul>
               )}
             </div>

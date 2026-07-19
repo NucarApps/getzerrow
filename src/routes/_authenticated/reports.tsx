@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getInboxReport, type InboxReport } from "@/lib/reports.functions";
@@ -15,6 +16,7 @@ export const Route = createFileRoute("/_authenticated/reports")({
     ],
   }),
   component: ReportsPage,
+  errorComponent: RouteErrorFallback,
 });
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

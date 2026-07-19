@@ -193,7 +193,7 @@ export function UpcomingMeetingsCard({
               return (
                 <li
                   key={`${e.accountId}:${e.id}`}
-                  className="flex items-start justify-between gap-3 py-3 first:pt-0 sm:gap-4"
+                  className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
                 >
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
@@ -222,9 +222,9 @@ export function UpcomingMeetingsCard({
                       </p>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <div className="flex shrink-0 flex-col items-stretch gap-1.5 sm:items-end">
                     {!e.hasMeetingLink ? (
-                      <span className="max-w-[168px] text-right text-xs text-muted-foreground">
+                      <span className="text-xs text-muted-foreground sm:max-w-[168px] sm:text-right">
                         No video link — the notetaker can't join
                       </span>
                     ) : e.blocked ? (
@@ -244,7 +244,7 @@ export function UpcomingMeetingsCard({
                           }}
                         >
                           <SelectTrigger
-                            className="h-8 w-[168px] text-xs"
+                            className="h-8 w-full text-xs sm:w-[168px]"
                             aria-label={`How to capture ${e.title || "this meeting"}`}
                           >
                             <SelectValue>{MODE_LABEL[mode]}</SelectValue>
@@ -258,7 +258,7 @@ export function UpcomingMeetingsCard({
                         {mode === "in_person" && (
                           <Button
                             size="sm"
-                            className="h-8 w-[168px]"
+                            className="h-8 w-full sm:w-[168px]"
                             onClick={() =>
                               onRecordInPerson({
                                 title: e.title || "Untitled meeting",
@@ -275,7 +275,7 @@ export function UpcomingMeetingsCard({
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-8 w-[168px]"
+                            className="h-8 w-full sm:w-[168px]"
                             disabled={
                               resendMutation.isPending && resendMutation.variables === e.meetingId
                             }

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useState, useMemo, useId, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useMemo, useId, useRef, lazy, Suspense } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -114,9 +114,13 @@ import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
 import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder as FolderSettings, GLabel } from "@/components/folders/FolderEditor";
+import { FOLDER_COLUMNS } from "@/components/folders/editor/types";
+import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import type { RuleNode } from "@/lib/sync/types";
-import { TrackingStandby } from "@/components/inbox/TrackingStandby";
+const TrackingStandby = lazy(() =>
+  import("@/components/inbox/TrackingStandby").then((m) => ({ default: m.TrackingStandby })),
+);
 import { AssistantPanel } from "@/components/inbox/AssistantPanel";
 import { PullToRefresh } from "@/components/inbox/PullToRefresh";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -134,6 +138,7 @@ import { AiDecisionDrawer } from "@/components/emails/AiDecisionDrawer";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   component: InboxPage,
+  errorComponent: RouteErrorFallback,
   head: () => ({
     links: [{ rel: "stylesheet", href: "/zerrow-landing.css" }],
   }),
@@ -272,7 +277,7 @@ function InboxPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("folders")
-        .select("*")
+        .select(FOLDER_COLUMNS)
         .eq("gmail_account_id", accountId!)
         .order("name", { ascending: true });
       return (data ?? []) as FolderSettings[];
@@ -1789,7 +1794,9 @@ function InboxPage() {
             onBack={() => setSelectedId(null)}
           />
         ) : (
-          <TrackingStandby />
+          <Suspense fallback={null}>
+            <TrackingStandby />
+          </Suspense>
         )}
       </div>
 

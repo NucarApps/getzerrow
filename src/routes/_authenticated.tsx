@@ -37,6 +37,7 @@ import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
+import { FOLDER_COLUMNS } from "@/components/folders/editor/types";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
 import { useContactsRealtime } from "@/lib/use-contacts-realtime";
 import { BackfillBanner } from "@/components/inbox/BackfillBanner";
@@ -214,7 +215,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     queryFn: async () => {
       const { data } = await supabase
         .from("folders")
-        .select("*")
+        .select(FOLDER_COLUMNS)
         .eq("gmail_account_id", accountId!)
         .order("name", { ascending: true });
       return (data ?? []) as Folder[];
