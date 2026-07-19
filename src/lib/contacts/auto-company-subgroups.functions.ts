@@ -169,6 +169,30 @@ export async function reconcileAutoCompanySubgroupsImpl(
     }
   }
 
+  // 2b. Companies placed IN this label ("company is a member" — stored as
+  //     company_id group rules) are represented too, even with zero manual
+  //     members. Their rule-materialized contacts (source='rule') must never
+  //     be treated as strangers by step 7's cleanup.
+  const { data: companyRules } = await supabase
+    .from("contact_group_rules")
+    .select("value")
+    .eq("user_id", userId)
+    .eq("group_id", parentGroupId)
+    .eq("rule_type", "company_id")
+    .eq("auto_apply", true);
+  for (const r of companyRules ?? []) {
+    const companyId = (r as { value: string }).value;
+    const derived = deriveCompanyKey(
+      { company: null, email: null, website: null, company_id: companyId },
+      keyCtx,
+    );
+    if (!derived) continue;
+    repKeys.add(derived.key);
+    if (!fallbackDisplayNames.has(derived.key)) {
+      fallbackDisplayNames.set(derived.key, derived.displayName);
+    }
+  }
+
   // 3. Load every user contact and bucket by derived key.
   const byKey = new Map<
     string,
@@ -330,6 +354,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
         contact_id,
         user_id: userId,
         auto_added: true,
+        source: "company_subgroup",
       })),
       { onConflict: "group_id,contact_id", ignoreDuplicates: true },
     );
@@ -337,11 +362,14 @@ export async function reconcileAutoCompanySubgroupsImpl(
     membershipsAdded += parentToAdd.length;
   }
   if (parentToRemove.length > 0) {
+    // Only rows this engine owns — rule-materialized rows (source='rule')
+    // belong to the group-rules sync engine.
     const { error: rErr } = await supabase
       .from("contact_group_members")
       .delete()
       .eq("group_id", parentGroupId)
       .eq("auto_added", true)
+      .eq("source", "company_subgroup")
       .in("contact_id", parentToRemove);
     if (rErr) throw new Error(rErr.message);
     membershipsRemoved += parentToRemove.length;
@@ -371,6 +399,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
           contact_id,
           user_id: userId,
           auto_added: true,
+          source: "company_subgroup",
         })),
         { onConflict: "group_id,contact_id", ignoreDuplicates: true },
       );
@@ -559,6 +588,7 @@ async function pruneStaleAutoSubgroupMemberships(
       .delete()
       .eq("group_id", group_id)
       .eq("auto_added", true)
+      .eq("source", "company_subgroup")
       .in("contact_id", cids);
   }
 }
