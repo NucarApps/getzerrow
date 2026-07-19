@@ -163,6 +163,33 @@ export async function fetchChosenCompanyLogoBytes(
   return hit ?? (await fetchCompanyLogoBytes(d));
 }
 
+/** Company logo bytes with the custom uploaded photo taking priority over the
+ *  picked/auto brand logo. When a company has an uploaded `logo_url`, serve
+ *  that; otherwise fall back to the domain-based brand pick/walk. This is the
+ *  single resolver CardDAV (and web fallbacks) use so a custom company photo
+ *  cascades to every member without their own avatar. */
+export async function fetchCompanyPhotoOrLogoBytes(
+  userId: string,
+  opts: { companyId?: string | null; domain: string | null },
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  if (opts.companyId) {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("companies")
+      .select("logo_url")
+      .eq("id", opts.companyId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    const logoUrl = (data as { logo_url?: string | null } | null)?.logo_url ?? null;
+    if (logoUrl) {
+      const { loadCompanyPhotoBytes } = await import("@/lib/companies/company-photo.server");
+      const custom = await loadCompanyPhotoBytes(logoUrl);
+      if (custom) return custom;
+    }
+  }
+  return fetchChosenCompanyLogoBytes(userId, opts.domain);
+}
+
 type ContactLogoRow = {
   id?: string | null;
   company_id?: string | null;

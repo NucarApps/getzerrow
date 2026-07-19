@@ -15,6 +15,8 @@ type Props = {
   aliasCount?: number;
   logoProvider?: number | null;
   logoSourceDomain?: string | null;
+  /** Custom uploaded company logo URL (wins over the brand logo). */
+  photoUrl?: string | null;
   selectable?: boolean;
   selectionState?: "none" | "some" | "all";
   onToggleSelectAll?: () => void;
@@ -31,6 +33,7 @@ export function CompanyBucketHeader({
   aliasCount = 0,
   logoProvider = null,
   logoSourceDomain = null,
+  photoUrl = null,
   selectable = false,
   selectionState = "none",
   onToggleSelectAll,
@@ -70,6 +73,7 @@ export function CompanyBucketHeader({
           onColor={setColor}
           provider={logoProvider}
           sourceDomain={logoSourceDomain}
+          photoUrl={photoUrl}
         />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-foreground">{name}</div>

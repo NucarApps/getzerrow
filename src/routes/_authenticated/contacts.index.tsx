@@ -303,6 +303,8 @@ function ContactsPage() {
     contacts: Contact[];
     /** Resolved Company entity id, when the bucket is a linked company. */
     companyId?: string;
+    /** Custom uploaded company logo URL, when set. */
+    companyLogoUrl?: string | null;
   };
 
   const aliasMap = useMemo(() => {
@@ -326,9 +328,13 @@ function ContactsPage() {
   // even when their email domain is missing/personal (fixes "two Zimmerman
   // Advertising rows" when one member has no work email).
   const companyById = useMemo(() => {
-    const m = new Map<string, { name: string; domain: string | null }>();
+    const m = new Map<string, { name: string; domain: string | null; logoUrl: string | null }>();
     for (const c of cq.data?.companies ?? []) {
-      m.set(c.id, { name: c.name, domain: c.domains?.[0]?.domain ?? null });
+      m.set(c.id, {
+        name: c.name,
+        domain: c.domains?.[0]?.domain ?? null,
+        logoUrl: (c as { logo_url?: string | null }).logo_url ?? null,
+      });
     }
     return m;
   }, [cq.data]);
@@ -373,6 +379,7 @@ function ContactsPage() {
           kind: "company",
           contacts: [],
           companyId: linkedCompanyId,
+          companyLogoUrl: company.logoUrl,
         };
       } else if (!d && manualCompany) {
         key = `name:${normalizeCompanyName(manualCompany)}`;
@@ -937,6 +944,7 @@ function ContactsPage() {
                               ? (logoSourceByDomain.get(b.domain) ?? null)
                               : null
                           }
+                          photoUrl={b.companyLogoUrl ?? null}
                           onOpen={b.kind === "company" ? () => openBucketCompany(b) : undefined}
                           opening={openingBucketKey === b.key}
                           selectable
