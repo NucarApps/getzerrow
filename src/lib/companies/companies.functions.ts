@@ -394,13 +394,18 @@ async function mergeCompaniesImpl(
     .select("domain,source")
     .eq("company_id", sourceId)
     .eq("user_id", userId);
+  // Every write below is error-checked and throws before the irreversible
+  // source-company delete at the end — a mid-merge failure must abort with
+  // the source row (and thus recoverable state) intact, never silently
+  // report ok:true after losing domains/tags/aliases.
   if (srcDomains && srcDomains.length > 0) {
-    await supabase
+    const { error: dDelErr } = await supabase
       .from("company_domains")
       .delete()
       .eq("company_id", sourceId)
       .eq("user_id", userId);
-    await supabase.from("company_domains").upsert(
+    if (dDelErr) throw new Error(dDelErr.message);
+    const { error: dUpErr } = await supabase.from("company_domains").upsert(
       srcDomains.map((d) => ({
         user_id: userId,
         company_id: targetId,
@@ -409,6 +414,7 @@ async function mergeCompaniesImpl(
       })),
       { onConflict: "user_id,domain" },
     );
+    if (dUpErr) throw new Error(dUpErr.message);
   }
   // Move tags.
   const { data: srcTags } = await supabase
@@ -417,15 +423,17 @@ async function mergeCompaniesImpl(
     .eq("company_id", sourceId)
     .eq("user_id", userId);
   if (srcTags && srcTags.length > 0) {
-    await supabase.from("company_tags").delete().eq("company_id", sourceId).eq("user_id", userId);
-    for (const t of srcTags) {
-      await supabase
-        .from("company_tags")
-        .upsert(
-          { user_id: userId, company_id: targetId, tag: t.tag },
-          { onConflict: "company_id,tag" },
-        );
-    }
+    const { error: tDelErr } = await supabase
+      .from("company_tags")
+      .delete()
+      .eq("company_id", sourceId)
+      .eq("user_id", userId);
+    if (tDelErr) throw new Error(tDelErr.message);
+    const { error: tUpErr } = await supabase.from("company_tags").upsert(
+      srcTags.map((t) => ({ user_id: userId, company_id: targetId, tag: t.tag })),
+      { onConflict: "company_id,tag", ignoreDuplicates: true },
+    );
+    if (tUpErr) throw new Error(tUpErr.message);
   }
   // Move logo hashes.
   const { data: srcHashes } = await supabase
@@ -434,12 +442,13 @@ async function mergeCompaniesImpl(
     .eq("company_id", sourceId)
     .eq("user_id", userId);
   if (srcHashes && srcHashes.length > 0) {
-    await supabase
+    const { error: hDelErr } = await supabase
       .from("company_logo_hashes")
       .delete()
       .eq("company_id", sourceId)
       .eq("user_id", userId);
-    await supabase.from("company_logo_hashes").upsert(
+    if (hDelErr) throw new Error(hDelErr.message);
+    const { error: hUpErr } = await supabase.from("company_logo_hashes").upsert(
       srcHashes.map((h) => ({
         user_id: userId,
         company_id: targetId,
@@ -450,6 +459,7 @@ async function mergeCompaniesImpl(
       })),
       { onConflict: "user_id,company_id,sha256" },
     );
+    if (hUpErr) throw new Error(hUpErr.message);
   }
   const movedIds = (movedContacts ?? []).map((row) => (row as { id: string }).id);
   // Remember source name (and its existing aliases) as aliases of target,
@@ -469,13 +479,14 @@ async function mergeCompaniesImpl(
     const sourceNames = new Set<string>([srcCompany.name]);
     for (const a of srcAliases ?? []) sourceNames.add(a.source_name);
     if (sourceNames.size > 0) {
-      const { data: strayContacts } = await supabase
+      const { data: strayContacts, error: strayErr } = await supabase
         .from("contacts")
         .update({ company_id: targetId, company: targetRow.name })
         .eq("user_id", userId)
         .is("company_id", null)
         .in("company", [...sourceNames])
         .select("id");
+      if (strayErr) throw new Error(strayErr.message);
       for (const r of strayContacts ?? []) {
         movedIds.push((r as { id: string }).id);
       }
@@ -495,9 +506,10 @@ async function mergeCompaniesImpl(
       })),
     ].filter((r) => r.name_key);
     if (aliasRows.length > 0) {
-      await supabase
+      const { error: aliasErr } = await supabase
         .from("company_name_aliases")
         .upsert(aliasRows, { onConflict: "user_id,name_key" });
+      if (aliasErr) throw new Error(aliasErr.message);
     }
   }
   // Re-point company-in-label rules at the survivor (delete the source rule
@@ -544,7 +556,12 @@ async function mergeCompaniesImpl(
       // Best-effort.
     }
   }
-  await supabase.from("companies").delete().eq("id", sourceId).eq("user_id", userId);
+  const { error: srcDelErr } = await supabase
+    .from("companies")
+    .delete()
+    .eq("id", sourceId)
+    .eq("user_id", userId);
+  if (srcDelErr) throw new Error(srcDelErr.message);
   return { ok: true, movedContacts: movedIds.length };
 }
 

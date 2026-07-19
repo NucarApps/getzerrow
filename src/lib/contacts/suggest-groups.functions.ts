@@ -570,6 +570,14 @@ export async function applySuggestionImpl(
     .eq("id", args.id)
     .eq("user_id", userId);
 
+  // Converge auto company subgroups if the target label has them enabled —
+  // every other membership-add path does this (contact-groups / group-rules),
+  // so applied AI suggestions must too or the subgroups go stale.
+  if (groupId) {
+    const { reconcileIfAuto } = await import("./auto-company-subgroups.functions");
+    await reconcileIfAuto(supabase, userId, groupId);
+  }
+
   return { ok: true, group_id: groupId, added: ids.length };
 }
 

@@ -125,14 +125,17 @@ export async function restoreContactFromRevision(
   });
   if (encErr.error) return { ok: false, error: encErr.error };
 
-  // Phones: full replace from snapshot.
-  await supabaseAdmin
+  // Phones: full replace from snapshot. Phones have no stable unique key, so
+  // this stays delete-then-insert — but both calls are now error-checked so a
+  // failed insert surfaces instead of silently leaving the contact phone-less.
+  const { error: phDelErr } = await supabaseAdmin
     .from("contact_phones")
     .delete()
     .eq("contact_id", contactId)
     .eq("user_id", userId);
+  if (phDelErr) return { ok: false, error: phDelErr.message };
   if (snap.phones.length > 0) {
-    await supabaseAdmin.from("contact_phones").insert(
+    const { error: phInsErr } = await supabaseAdmin.from("contact_phones").insert(
       snap.phones.map((p, idx) => ({
         user_id: userId,
         contact_id: contactId,
@@ -142,23 +145,44 @@ export async function restoreContactFromRevision(
         position: p.position ?? idx,
       })),
     );
+    if (phInsErr) return { ok: false, error: phInsErr.message };
   }
 
-  // Group memberships: full replace from snapshot.
-  await supabaseAdmin
-    .from("contact_group_members")
-    .delete()
-    .eq("contact_id", contactId)
-    .eq("user_id", userId);
+  // Group memberships: full replace from snapshot. Filter to groups that
+  // still exist (a snapshot group_id may since have been deleted — inserting
+  // it would FK-fail the whole batch and, before this guard, the unchecked
+  // insert followed by an unconditional delete wiped the contact's labels).
+  let restoreGroupIds = snap.group_ids;
   if (snap.group_ids.length > 0) {
-    await supabaseAdmin.from("contact_group_members").insert(
-      snap.group_ids.map((group_id) => ({
+    const { data: liveGroups } = await supabaseAdmin
+      .from("contact_groups")
+      .select("id")
+      .eq("user_id", userId)
+      .in("id", snap.group_ids);
+    restoreGroupIds = (liveGroups ?? []).map((g) => g.id);
+  }
+  if (restoreGroupIds.length > 0) {
+    const { error: gmInsErr } = await supabaseAdmin.from("contact_group_members").upsert(
+      restoreGroupIds.map((group_id) => ({
         user_id: userId,
         contact_id: contactId,
         group_id,
       })),
+      { onConflict: "group_id,contact_id", ignoreDuplicates: true },
     );
+    if (gmInsErr) return { ok: false, error: gmInsErr.message };
   }
+  const { error: gmDelErr } = await supabaseAdmin
+    .from("contact_group_members")
+    .delete()
+    .eq("contact_id", contactId)
+    .eq("user_id", userId)
+    .not(
+      "group_id",
+      "in",
+      `(${restoreGroupIds.length > 0 ? restoreGroupIds.join(",") : "'00000000-0000-0000-0000-000000000000'"})`,
+    );
+  if (gmDelErr) return { ok: false, error: gmDelErr.message };
 
   return { ok: true, error: null };
 }

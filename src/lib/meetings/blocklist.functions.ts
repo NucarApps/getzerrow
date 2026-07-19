@@ -46,9 +46,15 @@ export const addRecordBlocklistEntry = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    // ignoreDuplicates so the conflict compiles to ON CONFLICT DO NOTHING:
+    // the table grants authenticated only SELECT/INSERT/DELETE (no UPDATE),
+    // so a DO UPDATE would be denied by Postgres even on a re-add.
     const { error } = await context.supabase
       .from("meeting_record_blocklist")
-      .upsert({ user_id: context.userId, value: data.value }, { onConflict: "user_id,value" });
+      .upsert(
+        { user_id: context.userId, value: data.value },
+        { onConflict: "user_id,value", ignoreDuplicates: true },
+      );
     if (error) throw new Error(error.message);
     return { ok: true, value: data.value };
   });

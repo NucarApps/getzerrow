@@ -97,7 +97,13 @@ export const Route = createFileRoute("/api/public/logo")({
       GET: async ({ request }) => {
         const url = new URL(request.url);
         const domain = (url.searchParams.get("domain") || "").trim().toLowerCase();
-        const size = Number(url.searchParams.get("size") || "64");
+        // Clamp size to the same [256,512] band providersFor uses, so the
+        // upstream URLs (and thus the cache entry) are identical for every
+        // size in that band. Keying the cache on the raw size let a public
+        // caller vary ?size= to bypass the anti-amplification cache and force
+        // unbounded upstream fetches for one domain.
+        const rawSize = Number(url.searchParams.get("size") || "64");
+        const size = Number.isFinite(rawSize) ? Math.max(256, Math.min(512, rawSize)) : 256;
         const providerParam = url.searchParams.get("provider");
         if (!domain || !isValidDomainShape(domain) || isBlockedDomain(domain)) {
           return new Response("Bad domain", { status: 400 });

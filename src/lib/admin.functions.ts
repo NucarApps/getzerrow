@@ -331,8 +331,6 @@ export type SyncJobStatusCount = { status: string; count: number };
 export type SyncJobDlqRow = {
   id: string;
   gmail_message_id: string;
-  from_addr: string | null;
-  subject: string | null;
   attempt: number;
   last_error: string | null;
   updated_at: string;
@@ -428,7 +426,7 @@ export const getSyncJobMetrics = createServerFn({ method: "GET" })
         .limit(20000),
       supabaseAdmin
         .from("message_jobs")
-        .select("id, gmail_message_id, from_addr, subject, attempt, last_error, updated_at")
+        .select("id, gmail_message_id, attempt, last_error, updated_at")
         .eq("status", "dlq")
         .order("updated_at", { ascending: false })
         .limit(20),
@@ -484,11 +482,12 @@ export const getSyncJobMetrics = createServerFn({ method: "GET" })
         p95: percentile(latencies, 0.95),
         p99: percentile(latencies, 0.99),
       },
+      // Do not surface other users' email subjects/senders in the cross-user
+      // admin metrics view — id + message id + error are enough to triage a
+      // stuck job; full content stays scoped to the owning user's own DLQ.
       recent_dlq: (dlqRowsRes.data ?? []).map((r) => ({
         id: r.id,
         gmail_message_id: r.gmail_message_id,
-        from_addr: r.from_addr ?? null,
-        subject: r.subject ?? null,
         attempt: Number(r.attempt) || 0,
         last_error: r.last_error ?? null,
         updated_at: r.updated_at,

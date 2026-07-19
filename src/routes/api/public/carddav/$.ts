@@ -40,6 +40,12 @@ function triggerPhotoBackfill(userId: string): void {
   })();
 }
 
+// Cap request bodies before we read them into Worker memory. A vCard PUT can
+// legitimately carry a base64 PHOTO (5 MB decoded ≈ ~6.7 MB encoded plus vCard
+// overhead); 12 MB leaves headroom for that while stopping a malicious client
+// from streaming an arbitrarily large body to exhaust the isolate's memory.
+const MAX_BODY_BYTES = 12 * 1024 * 1024;
+
 async function dispatch(request: Request, params: Params): Promise<Response> {
   const { verifyCardDavAuth } = await import("@/lib/carddav/auth.server");
   const { handleOptions, handlePropfind, handleReport, handleGet, handlePut, handleDelete } =
@@ -52,6 +58,22 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
 
   const auth = await verifyCardDavAuth(request);
   if (!auth.ok) return auth.response;
+
+  // Reject oversized bodies for the methods that read the full body into
+  // memory (PUT vCard, REPORT XML). Real iOS/macOS clients always send
+  // Content-Length; when it's present and over the cap we reject before
+  // reading a single byte. (Empty/absent bodies are handled downstream: the
+  // REPORT handler rejects unrecognized bodies, and PUT applies a 5 MB photo
+  // cap on the decoded input.)
+  if (method === "PUT" || method === "REPORT") {
+    const raw = request.headers.get("content-length");
+    if (raw !== null) {
+      const len = Number(raw);
+      if (!Number.isFinite(len) || len > MAX_BODY_BYTES) {
+        return new Response("Payload Too Large", { status: 413 });
+      }
+    }
+  }
 
   if (method === "PROPFIND") {
     return handlePropfind(request, auth.userId, auth.email, path);

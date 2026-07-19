@@ -57,6 +57,11 @@ export const Route = createFileRoute("/c/$handle")({
       scripts: [
         {
           type: "application/ld+json",
+          // Escape HTML-significant characters so user-controlled fields
+          // (name/company/website) can't break out of the <script> body with
+          // a literal </script>. JSON.stringify does not escape these, and the
+          // head-script renderer injects children verbatim via
+          // dangerouslySetInnerHTML — see the stored-XSS hardening pass.
           children: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "Person",
@@ -66,7 +71,12 @@ export const Route = createFileRoute("/c/$handle")({
             ...(card.email ? { email: card.email } : {}),
             ...(card.website ? { url: card.website } : {}),
             ...(card.avatar_url ? { image: card.avatar_url } : {}),
-          }),
+          })
+            .replace(/</g, "\\u003c")
+            .replace(/>/g, "\\u003e")
+            .replace(/&/g, "\\u0026")
+            .replace(/\u2028/g, "\\u2028")
+            .replace(/\u2029/g, "\\u2029"),
         },
       ],
     };
