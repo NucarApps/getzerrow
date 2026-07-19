@@ -56,7 +56,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
-import { listContactGroups } from "@/lib/contact-groups.functions";
+import { createContactGroup, listContactGroups } from "@/lib/contact-groups.functions";
 import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
 import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-photo.functions";
 import {
@@ -853,6 +853,9 @@ function CompanyLabelsSection({ companyId }: { companyId: string }) {
   const listGroups = useServerFn(listContactGroups);
   const listLabelsFn = useServerFn(listCompanyLabels);
   const setLabelsFn = useServerFn(setCompanyLabels);
+  const createGroupFn = useServerFn(createContactGroup);
+
+  const [newLabel, setNewLabel] = useState("");
 
   const groupsQ = useQuery({ queryKey: ["contact-groups"], queryFn: () => listGroups() });
   const labelsQ = useQuery({
@@ -875,47 +878,102 @@ function CompanyLabelsSection({ companyId }: { companyId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
+  const createMut = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await createGroupFn({ data: { name } });
+      const current = new Set(labelsQ.data?.groupIds ?? []);
+      current.add(res.group.id);
+      await setLabelsFn({ data: { companyId, groupIds: [...current] } });
+      return res.group;
+    },
+    onSuccess: (group) => {
+      toast.success(`Added label "${group.name}"`);
+      setNewLabel("");
+      qc.invalidateQueries({ queryKey: ["company-labels", companyId] });
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to create label"),
+  });
+
+  const submitNew = () => {
+    const name = newLabel.trim();
+    if (!name || createMut.isPending) return;
+    createMut.mutate(name);
+  };
+
   const selected = new Set(labelsQ.data?.groupIds ?? []);
   const groups = (groupsQ.data?.groups ?? []).filter((g) => !g.auto_generated_from_group_id);
 
   if (groupsQ.isLoading || labelsQ.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
-  if (groups.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No labels yet — create one from the Contacts page first.
-      </p>
-    );
-  }
+
+  const addRow = (
+    <div className="mt-3 flex items-center gap-2">
+      <Input
+        value={newLabel}
+        onChange={(e) => setNewLabel(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submitNew();
+          }
+        }}
+        placeholder="New label name"
+        maxLength={60}
+        disabled={createMut.isPending}
+        className="h-8 max-w-xs text-sm"
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        onClick={submitNew}
+        disabled={!newLabel.trim() || createMut.isPending}
+      >
+        {createMut.isPending ? "Adding…" : "Add"}
+      </Button>
+    </div>
+  );
+
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {groups.map((g) => {
-        const active = selected.has(g.id);
-        return (
-          <button
-            key={g.id}
-            type="button"
-            disabled={saveMut.isPending}
-            aria-pressed={active}
-            onClick={() => {
-              const next = new Set(selected);
-              if (next.has(g.id)) next.delete(g.id);
-              else next.add(g.id);
-              saveMut.mutate([...next]);
-            }}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
-              active
-                ? "border-primary bg-primary/10 text-foreground"
-                : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
-            <span className="max-w-[12rem] truncate">{g.name}</span>
-            {active && <Check className="h-3 w-3" />}
-          </button>
-        );
-      })}
+    <div>
+      {groups.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No labels yet — create your first one below.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {groups.map((g) => {
+            const active = selected.has(g.id);
+            return (
+              <button
+                key={g.id}
+                type="button"
+                disabled={saveMut.isPending}
+                aria-pressed={active}
+                onClick={() => {
+                  const next = new Set(selected);
+                  if (next.has(g.id)) next.delete(g.id);
+                  else next.add(g.id);
+                  saveMut.mutate([...next]);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
+                  active
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-card/40 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
+                <span className="max-w-[12rem] truncate">{g.name}</span>
+                {active && <Check className="h-3 w-3" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {addRow}
     </div>
   );
 }
