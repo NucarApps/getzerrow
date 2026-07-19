@@ -67,14 +67,12 @@ export function computeManualOverrides(
   const set = new Set<string>(current ?? []);
   for (const [key, value] of Object.entries(patch)) {
     if (!MANUAL_TRACKED_SET.has(key)) continue;
-    const isCleared =
-      value === null || (typeof value === "string" && value.trim() === "");
+    const isCleared = value === null || (typeof value === "string" && value.trim() === "");
     if (isCleared) set.delete(key);
     else if (value !== undefined) set.add(key);
   }
   return Array.from(set).sort();
 }
-
 
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -137,22 +135,21 @@ export const getContact = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .maybeSingle();
     const linkedCompanyId = companyLink?.company_id ?? null;
-    const [{ data: emails }, { data: phones }, { data: emailRows }] =
-      await Promise.all([
-        emailsQuery,
-        supabase
-          .from("contact_phones")
-          .select("id,label,number,is_primary,position")
-          .eq("contact_id", data.id)
-          .order("position", { ascending: true })
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("contact_emails")
-          .select("id,label,address,is_primary,position")
-          .eq("contact_id", data.id)
-          .order("position", { ascending: true })
-          .order("created_at", { ascending: true }),
-      ]);
+    const [{ data: emails }, { data: phones }, { data: emailRows }] = await Promise.all([
+      emailsQuery,
+      supabase
+        .from("contact_phones")
+        .select("id,label,number,is_primary,position")
+        .eq("contact_id", data.id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("contact_emails")
+        .select("id,label,address,is_primary,position")
+        .eq("contact_id", data.id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
+    ]);
     const { resolveCompanyLogoDomainForContact } = await import("@/lib/contacts/logo-photo.server");
     const companyDomain = await resolveCompanyLogoDomainForContact(userId, {
       id: data.id,
@@ -162,7 +159,8 @@ export const getContact = createServerFn({ method: "POST" })
     });
     let avatarIsCompanyLogoSnapshot = false;
     let effectiveAvatarUrl: string | null = contact.avatar_url ?? null;
-    const avatarSource = (companyLink as { avatar_source?: string | null } | null)?.avatar_source ?? "unknown";
+    const avatarSource =
+      (companyLink as { avatar_source?: string | null } | null)?.avatar_source ?? "unknown";
     // Never self-heal photos the user explicitly chose. "user_upload" is the
     // web/app uploader; "carddav" is a legacy label for iPhone Contacts saves
     // (current writes use "user_upload" — see handlers.server.ts). Either way
@@ -170,9 +168,8 @@ export const getContact = createServerFn({ method: "POST" })
     const isUserChosenPhoto = avatarSource === "user_upload" || avatarSource === "carddav";
     if (contact.avatar_url && linkedCompanyId && !isUserChosenPhoto) {
       try {
-        const { loadContactPhotoBytes, sha256Hex, deleteContactPhoto } = await import(
-          "@/lib/contacts/photos.server"
-        );
+        const { loadContactPhotoBytes, sha256Hex, deleteContactPhoto } =
+          await import("@/lib/contacts/photos.server");
         const own = await loadContactPhotoBytes(contact.avatar_url);
         if (own) {
           const ownSha = await sha256Hex(own.bytes);
@@ -181,9 +178,7 @@ export const getContact = createServerFn({ method: "POST" })
             storedLogoSha !== null && storedLogoSha === ownSha ? storedLogoSha : null;
 
           if (matchedSha === null) {
-            const { getKnownCompanyLogoHashes } = await import(
-              "@/lib/contacts/logo-photo.server"
-            );
+            const { getKnownCompanyLogoHashes } = await import("@/lib/contacts/logo-photo.server");
             matchedSha = (await getKnownCompanyLogoHashes(userId, linkedCompanyId)).has(ownSha)
               ? ownSha
               : null;
@@ -191,17 +186,14 @@ export const getContact = createServerFn({ method: "POST" })
 
           if (matchedSha === null && companyDomain) {
             // Fast path: currently chosen logo for this contact's domain.
-            const { fetchChosenCompanyLogoBytes } = await import(
-              "@/lib/contacts/logo-photo.server"
-            );
+            const { fetchChosenCompanyLogoBytes } =
+              await import("@/lib/contacts/logo-photo.server");
             const hit = await fetchChosenCompanyLogoBytes(userId, companyDomain);
             if (hit) {
               const logoSha = await sha256Hex(hit.bytes);
               if (logoSha === ownSha) {
                 matchedSha = logoSha;
-                const { recordCompanyLogoHash } = await import(
-                  "@/lib/contacts/logo-photo.server"
-                );
+                const { recordCompanyLogoHash } = await import("@/lib/contacts/logo-photo.server");
                 await recordCompanyLogoHash({
                   userId,
                   companyId: linkedCompanyId,
@@ -218,9 +210,7 @@ export const getContact = createServerFn({ method: "POST" })
             // linked to this contact's company. Catches stale snapshots from
             // an older logo pick or a different provider that no longer
             // returns the same bytes today.
-            const { findMatchingCompanyLogoSha } = await import(
-              "@/lib/contacts/logo-photo.server"
-            );
+            const { findMatchingCompanyLogoSha } = await import("@/lib/contacts/logo-photo.server");
             matchedSha = await findMatchingCompanyLogoSha(
               userId,
               linkedCompanyId,
@@ -269,7 +259,6 @@ export const getContact = createServerFn({ method: "POST" })
       companyId: linkedCompanyId,
       avatarIsCompanyLogoSnapshot,
     };
-
   });
 export const updateContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -289,10 +278,9 @@ export const updateContact = createServerFn({ method: "POST" })
             const trimmed = v.trim().toLowerCase();
             return trimmed === "" ? null : trimmed;
           })
-          .refine(
-            (v) => v === undefined || v === null || /.+@.+\..+/.test(v),
-            { message: "Enter a valid email address" },
-          )
+          .refine((v) => v === undefined || v === null || /.+@.+\..+/.test(v), {
+            message: "Enter a valid email address",
+          })
           .refine((v) => v === undefined || v === null || v.length <= 255, {
             message: "Email is too long",
           }),
@@ -367,8 +355,8 @@ export const updateContact = createServerFn({ method: "POST" })
       .eq("id", id)
       .maybeSingle();
     const nextOverrides = computeManualOverrides(
-      (existingOverridesRow as { manual_overrides?: string[] | null } | null)
-        ?.manual_overrides ?? [],
+      (existingOverridesRow as { manual_overrides?: string[] | null } | null)?.manual_overrides ??
+        [],
       { ...data, ...encryptedPatch } as Record<string, unknown>,
     );
     (patch as Record<string, unknown>).manual_overrides = nextOverrides;
@@ -446,7 +434,6 @@ export const updateContact = createServerFn({ method: "POST" })
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
 
-
     // If company changed, reconcile any auto-company-subgroup parents this
     // contact belongs to so subgroups collapse/rename/split immediately.
     if ("company" in data) {
@@ -468,7 +455,6 @@ export const updateContact = createServerFn({ method: "POST" })
       phones: refreshedPhones ?? [],
       emails: refreshedEmails ?? [],
     };
-
   });
 
 /** Delete a contact. */
@@ -511,7 +497,6 @@ export const renameCompanyForContacts = createServerFn({ method: "POST" })
     return { updated: count ?? 0 };
   });
 
-
 /**
  * Set (or clear) the `website` field on every contact in a bucket. Used by
  * the company dialog for name-only buckets so the user can attach a primary
@@ -547,7 +532,6 @@ export const setCompanyWebsiteForContacts = createServerFn({ method: "POST" })
     }
     return { updated: count ?? 0 };
   });
-
 
 /** Manually create a contact. */
 export const createContactManual = createServerFn({ method: "POST" })

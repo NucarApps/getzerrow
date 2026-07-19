@@ -17,7 +17,6 @@ export type EmailRow = {
   is_primary: boolean | null;
 };
 
-
 // Escape a text value for a vCard property field.
 function esc(v: string | null | undefined): string {
   if (!v) return "";
@@ -125,7 +124,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-
 /** Marker headings that fence the AI-generated relationship summary inside the
  * merged NOTE field synced to iOS and Google Contacts. Kept simple and stable
  * so `stripSummaryFromNote` can reliably peel the AI block back off inbound. */
@@ -161,7 +159,10 @@ export function stripSummaryFromNote(text: string | null | undefined): string {
     // Summary-only note: nothing of the user's to keep.
     return "";
   }
-  return raw.slice(userIdx + USER_NOTES_HEADING.length).replace(/^\n+/, "").trim();
+  return raw
+    .slice(userIdx + USER_NOTES_HEADING.length)
+    .replace(/^\n+/, "")
+    .trim();
 }
 
 /**
@@ -182,7 +183,6 @@ export function contactToVCard(
   options: { includeSummary?: boolean } = {},
 ): string {
   const displayName = (contact.name && contact.name.trim()) || contact.email || "Unknown";
-
 
   // N: split "First Last" heuristically. iOS renders FN so the split just
   // has to be non-empty for the record to save cleanly.
@@ -206,8 +206,7 @@ export function contactToVCard(
   // Emit all EMAIL entries from contact_emails (fall back to the single
   // legacy contact.email column when no rows exist). Legacy placeholder
   // addresses are filtered so iOS stops caching them.
-  const isPlaceholderEmail = (v: string): boolean =>
-    /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(v);
+  const isPlaceholderEmail = (v: string): boolean => /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(v);
   const emittedEmailKeys = new Set<string>();
   const emailList: EmailRow[] = emails.length
     ? emails
@@ -230,7 +229,6 @@ export function contactToVCard(
     out.push(line(`EMAIL${params}`, esc(addr)));
     if (key) emittedEmailKeys.add(key);
   }
-
 
   // Structured phones from contact_phones plus the legacy encrypted phone field.
   const emittedPhoneKeys = new Set<string>();
@@ -288,13 +286,13 @@ export function contactToVCard(
   );
   if (noteValue) out.push(line("NOTE", esc(noteValue)));
 
-
   if (photo && photo.bytes.length > 0) {
     // vCard 3.0 form Apple's Contacts app expects. The base64 payload gets
     // line-folded by `line()` at 75 octets, matching what iOS emits itself.
-    out.push(line(`PHOTO;ENCODING=b;TYPE=${photoTypeParam(photo.mime)}`, bytesToBase64(photo.bytes)));
+    out.push(
+      line(`PHOTO;ENCODING=b;TYPE=${photoTypeParam(photo.mime)}`, bytesToBase64(photo.bytes)),
+    );
   }
-
 
   // Intentionally NOT emitting CATEGORIES for group membership. iOS Contacts
   // materializes both KIND:group vCards AND CATEGORIES tags into separate
@@ -477,14 +475,29 @@ export function parseVCard(text: string): ParsedVCard | null {
   }
 
   const out: ParsedVCard = {
-    uid: null, name: null, email: null, emails: [], company: null, title: null,
-    phones: [], address_line1: null, address_line2: null, city: null,
-    region: null, postal_code: null, country: null, website: null,
-    linkedin: null, twitter: null, notes: null,
-    categories: [], isGroup: false, memberUids: [], photo: null,
+    uid: null,
+    name: null,
+    email: null,
+    emails: [],
+    company: null,
+    title: null,
+    phones: [],
+    address_line1: null,
+    address_line2: null,
+    city: null,
+    region: null,
+    postal_code: null,
+    country: null,
+    website: null,
+    linkedin: null,
+    twitter: null,
+    notes: null,
+    categories: [],
+    isGroup: false,
+    memberUids: [],
+    photo: null,
     presentFields: new Set<PresentField>(),
   };
-
 
   let fn: string | null = null;
   let nGiven: string | null = null;
@@ -536,8 +549,7 @@ export function parseVCard(text: string): ParsedVCard | null {
         if (!em) break;
         const types = p.params.TYPE ?? [];
         const prefVals = (p.params.PREF ?? []).map((x) => x.trim());
-        const isPref =
-          types.includes("PREF") || prefVals.some((x) => x === "1" || x === "");
+        const isPref = types.includes("PREF") || prefVals.some((x) => x === "1" || x === "");
         out.emails.push({ label: emailLabelFromTypes(types), address: em, is_primary: isPref });
         if (!out.email) out.email = em;
         else if (isPref) out.email = em;
@@ -555,8 +567,7 @@ export function parseVCard(text: string): ParsedVCard | null {
         //   TEL;PREF=1:...       -> params.PREF = ["1"]
         //   TEL;PREF:...         -> bare param — parseLine routes to TYPE
         const prefVals = (p.params.PREF ?? []).map((x) => x.trim());
-        const isPref =
-          types.includes("PREF") || prefVals.some((x) => x === "1" || x === "");
+        const isPref = types.includes("PREF") || prefVals.some((x) => x === "1" || x === "");
         out.phones.push({ label: phoneLabelFromTypes(types), number: num, is_primary: isPref });
         break;
       }
@@ -707,7 +718,6 @@ export function parseVCard(text: string): ParsedVCard | null {
 
   return out;
 }
-
 
 // ---------------------------------------------------------------------------
 // GROUP vCARDS — Apple's Contacts app publishes groups as separate vCards

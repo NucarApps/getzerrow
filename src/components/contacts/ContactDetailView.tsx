@@ -353,7 +353,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         />
         <div className="flex-1 min-w-0">
           <h1 className="font-display text-2xl text-foreground">{displayName}</h1>
-          <p className="text-sm text-muted-foreground">{c.title || c.company || c.email || "No email"}</p>
+          <p className="text-sm text-muted-foreground">
+            {c.title || c.company || c.email || "No email"}
+          </p>
           <p className="text-xs text-muted-foreground mt-1">
             Source: {c.source}
             {c.enriched_at
@@ -470,7 +472,6 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       />
 
       <div className="grid gap-4 sm:grid-cols-2">
-
         <Field label="Name" icon={null}>
           <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </Field>
@@ -484,7 +485,6 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           />
         </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
-
           <Input
             value={form.website}
             onChange={(e) => setForm({ ...form, website: e.target.value })}
@@ -509,11 +509,9 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         <RepullFromGoogleButton contactId={id} />
       </div>
 
-
       <div className="mt-6">
         <PhonesEditor value={phones} onChange={setPhones} />
       </div>
-
 
       <div className="mt-6">
         <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
@@ -656,7 +654,6 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       <ContactMeetings contactId={id} />
 
       <ContactRevisions contactId={id} />
-
 
       <ShareContactDialog open={shareOpen} onOpenChange={setShareOpen} contactId={id} contact={c} />
     </div>
@@ -891,9 +888,7 @@ function ContactRevisions({ contactId }: { contactId: string }) {
 
   return (
     <section className="mt-10">
-      <h2 className="mb-3 text-xs uppercase tracking-widest text-muted-foreground">
-        History
-      </h2>
+      <h2 className="mb-3 text-xs uppercase tracking-widest text-muted-foreground">History</h2>
       <p className="mb-2 text-xs text-muted-foreground">
         Snapshots taken before syncs from iPhone. Restore if a sync wiped something you'd saved.
       </p>
@@ -942,7 +937,9 @@ function RepullFromGoogleButton({ contactId }: { contactId: string }) {
       if (res.emailsAdded || res.phonesAdded) {
         toast.success(
           `Imported ${res.emailsAdded} email${res.emailsAdded === 1 ? "" : "s"}` +
-            (res.phonesAdded ? ` and ${res.phonesAdded} phone${res.phonesAdded === 1 ? "" : "s"}` : "") +
+            (res.phonesAdded
+              ? ` and ${res.phonesAdded} phone${res.phonesAdded === 1 ? "" : "s"}`
+              : "") +
             " from Google",
         );
         qc.invalidateQueries({ queryKey: ["contact", contactId] });
@@ -982,9 +979,20 @@ const LOCKED_FIELD_LABELS: Record<string, string> = {
 };
 
 type LockedField =
-  | "name" | "title" | "company" | "phone" | "website" | "linkedin"
-  | "twitter" | "notes" | "address_line1" | "address_line2" | "city"
-  | "region" | "postal_code" | "country";
+  | "name"
+  | "title"
+  | "company"
+  | "phone"
+  | "website"
+  | "linkedin"
+  | "twitter"
+  | "notes"
+  | "address_line1"
+  | "address_line2"
+  | "city"
+  | "region"
+  | "postal_code"
+  | "country";
 
 function LockedFieldsSection({
   contactId,
@@ -1036,8 +1044,8 @@ function LockedFieldsSection({
       ) : (
         <>
           <p className="mb-2 text-xs text-muted-foreground">
-            These fields were set by you and won't be overwritten by AI enrichment.
-            Click a tag to unlock and allow enrichment to fill it again.
+            These fields were set by you and won't be overwritten by AI enrichment. Click a tag to
+            unlock and allow enrichment to fill it again.
           </p>
           <div className="flex flex-wrap gap-1.5">
             {items.map(({ field, implicit }) => {
@@ -1077,4 +1085,3 @@ function LockedFieldsSection({
     </div>
   );
 }
-

@@ -14,8 +14,6 @@ type ContactShape = {
   company_id: string | null;
 };
 
-
-
 type DB = SupabaseClient<Database>;
 
 /**
@@ -101,19 +99,10 @@ export async function reconcileAutoCompanySubgroupsImpl(
     { data: nameAliasRows },
     { data: companyDomainRows },
   ] = await Promise.all([
-    supabase
-      .from("company_aliases")
-      .select("primary_domain, alias_domain")
-      .eq("user_id", userId),
+    supabase.from("company_aliases").select("primary_domain, alias_domain").eq("user_id", userId),
     supabase.from("companies").select("id,name").eq("user_id", userId),
-    supabase
-      .from("company_name_aliases")
-      .select("name_key,company_id")
-      .eq("user_id", userId),
-    supabase
-      .from("company_domains")
-      .select("domain,company_id")
-      .eq("user_id", userId),
+    supabase.from("company_name_aliases").select("name_key,company_id").eq("user_id", userId),
+    supabase.from("company_domains").select("domain,company_id").eq("user_id", userId),
   ]);
   const aliasMap = new Map<string, string>();
   for (const r of aliasRows ?? []) {
@@ -211,7 +200,6 @@ export async function reconcileAutoCompanySubgroupsImpl(
     }
   }
 
-
   // 4. Load existing auto subgroups for this parent.
   const { data: existing, error: exErr } = await supabase
     .from("contact_groups")
@@ -279,8 +267,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
     }
     const uid =
       "group-" +
-      (globalThis.crypto?.randomUUID?.() ??
-        `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const { data: ins, error: iErr } = await supabase
       .from("contact_groups")
       .insert({
@@ -312,10 +299,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
     if (!keptIds.has(g.id)) toDeleteIds.push(g.id);
   }
   if (toDeleteIds.length > 0) {
-    const { error: dErr } = await supabase
-      .from("contact_groups")
-      .delete()
-      .in("id", toDeleteIds);
+    const { error: dErr } = await supabase.from("contact_groups").delete().in("id", toDeleteIds);
     if (dErr) throw new Error(dErr.message);
     removed = toDeleteIds.length;
   }
@@ -381,17 +365,15 @@ export async function reconcileAutoCompanySubgroupsImpl(
     for (const cid of current) if (!wanted.has(cid)) toRemove.push(cid);
 
     if (toAdd.length > 0) {
-      const { error: aErr } = await supabase
-        .from("contact_group_members")
-        .upsert(
-          toAdd.map((contact_id) => ({
-            group_id: g.id,
-            contact_id,
-            user_id: userId,
-            auto_added: true,
-          })),
-          { onConflict: "group_id,contact_id", ignoreDuplicates: true },
-        );
+      const { error: aErr } = await supabase.from("contact_group_members").upsert(
+        toAdd.map((contact_id) => ({
+          group_id: g.id,
+          contact_id,
+          user_id: userId,
+          auto_added: true,
+        })),
+        { onConflict: "group_id,contact_id", ignoreDuplicates: true },
+      );
       if (aErr) throw new Error(aErr.message);
       membershipsAdded += toAdd.length;
     }
@@ -516,9 +498,7 @@ export const setAutoCompanySubgroups = createServerFn({ method: "POST" })
 /** Manual re-run for the "Re-scan now" button. */
 export const reconcileAutoCompanySubgroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string }) =>
-    z.object({ groupId: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertOwnsGroup(supabase, userId, data.groupId);
@@ -530,9 +510,7 @@ export const reconcileAutoCompanySubgroups = createServerFn({ method: "POST" })
  *  "Remove auto subgroups" cleanup button. */
 export const pruneAutoCompanySubgroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string }) =>
-    z.object({ groupId: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertOwnsGroup(supabase, userId, data.groupId);

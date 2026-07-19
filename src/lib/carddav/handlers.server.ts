@@ -12,10 +12,7 @@ import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
 import { snapshotContact } from "@/lib/contacts/revisions.server";
 import { logInfo } from "@/lib/log.server";
 import { buildCardDavContactPatch } from "./merge";
-import {
-  saveContactPhoto,
-  loadContactPhotoBytes,
-} from "@/lib/contacts/photos.server";
+import { saveContactPhoto, loadContactPhotoBytes } from "@/lib/contacts/photos.server";
 
 import {
   buildGroupVCard,
@@ -28,7 +25,6 @@ import {
   type PhoneRow,
 } from "./vcard";
 
-
 import {
   davResponse,
   MULTISTATUS_CLOSE,
@@ -38,7 +34,6 @@ import {
   responseBlock,
   xmlEscape,
 } from "./xml";
-
 
 const BASE = "/api/public/carddav";
 const GOOGLE_SYNC_DIRTY_SENTINEL = "1970-01-01T00:00:00.000Z";
@@ -63,42 +58,48 @@ async function computeBookCTag(userId: string): Promise<string> {
   // Include contact_groups.updated_at so group renames / membership changes
   // invalidate iOS's cached copy. Include tombstone max seq so hard deletes
   // also bump the CTag.
-  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] =
-    await Promise.all([
-      supabaseAdmin
-        .from("contacts")
-        .select("updated_at")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-        .limit(1),
-      supabaseAdmin
-        .from("contact_groups")
-        .select("updated_at")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-        .limit(1),
-      supabaseAdmin
-        .from("carddav_tombstones")
-        .select("sync_seq")
-        .eq("user_id", userId)
-        .order("sync_seq", { ascending: false })
-        .limit(1),
-    ]);
-  const latest = [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
-    .filter((v): v is string => !!v)
-    .sort()
-    .pop() ?? "1970-01-01T00:00:00Z";
+  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] = await Promise.all([
+    supabaseAdmin
+      .from("contacts")
+      .select("updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1),
+    supabaseAdmin
+      .from("contact_groups")
+      .select("updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1),
+    supabaseAdmin
+      .from("carddav_tombstones")
+      .select("sync_seq")
+      .eq("user_id", userId)
+      .order("sync_seq", { ascending: false })
+      .limit(1),
+  ]);
+  const latest =
+    [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
+      .filter((v): v is string => !!v)
+      .sort()
+      .pop() ?? "1970-01-01T00:00:00Z";
   const tombSeq = (tLatest?.[0] as { sync_seq: number } | undefined)?.sync_seq ?? 0;
   const [{ count: cCount }, { count: gCount }] = await Promise.all([
-    supabaseAdmin.from("contacts").select("id", { count: "exact", head: true }).eq("user_id", userId),
-    supabaseAdmin.from("contact_groups").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    supabaseAdmin
+      .from("contacts")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
+    supabaseAdmin
+      .from("contact_groups")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
   ]);
   const style = await getGroupNameStyle(userId);
   const nonce = await getResyncNonce(userId);
   // "v2" bump: shipped with the fix that stops emitting CATEGORIES on contact
   // vCards. Forces every iPhone to do a full compare on next poll so stale
   // duplicate CATEGORIES-derived groups get cleaned up.
-  return `"${new Date(latest).getTime().toString(36)}-${(cCount ?? 0)}-${(gCount ?? 0)}-${tombSeq}-${style}-${nonce}-v2"`;
+  return `"${new Date(latest).getTime().toString(36)}-${cCount ?? 0}-${gCount ?? 0}-${tombSeq}-${style}-${nonce}-v2"`;
 }
 
 /** Manually bumped counter that participates in the book CTag. Users hit
@@ -138,8 +139,7 @@ export async function getIncludeSummaryInNotes(userId: string): Promise<boolean>
     .select("include_summary_in_notes")
     .eq("user_id", userId)
     .maybeSingle();
-  const v = (data as { include_summary_in_notes?: boolean } | null)
-    ?.include_summary_in_notes;
+  const v = (data as { include_summary_in_notes?: boolean } | null)?.include_summary_in_notes;
   return v === false ? false : true;
 }
 
@@ -151,8 +151,7 @@ export async function getUseCompanyLogoFallback(userId: string): Promise<boolean
     .select("use_company_logo_fallback")
     .eq("user_id", userId)
     .maybeSingle();
-  const v = (data as { use_company_logo_fallback?: boolean } | null)
-    ?.use_company_logo_fallback;
+  const v = (data as { use_company_logo_fallback?: boolean } | null)?.use_company_logo_fallback;
   return v === false ? false : true;
 }
 
@@ -168,9 +167,8 @@ async function loadContactPhotoOrLogo(
   const own = await loadContactPhotoBytes(row.avatar_url ?? null);
   if (own) return own;
   if (!(await getUseCompanyLogoFallback(userId))) return null;
-  const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } = await import(
-    "@/lib/contacts/logo-photo.server"
-  );
+  const { fetchChosenCompanyLogoBytes, resolveCompanyLogoDomainForContact } =
+    await import("@/lib/contacts/logo-photo.server");
   const logoDomain = await resolveCompanyLogoDomainForContact(userId, row);
   const fallback = await fetchChosenCompanyLogoBytes(userId, logoDomain);
   if (fallback) {
@@ -204,8 +202,6 @@ async function loadContactPhotoOrLogo(
   return fallback;
 }
 
-
-
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
 
 type SyncState = { updatedSince: string; seqSince: number };
@@ -227,31 +223,31 @@ function parseSyncToken(userId: string, token: string): SyncState | null {
 }
 
 async function currentSyncSnapshot(userId: string): Promise<{ updatedAt: string; seq: number }> {
-  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] =
-    await Promise.all([
-      supabaseAdmin
-        .from("contacts")
-        .select("updated_at")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-        .limit(1),
-      supabaseAdmin
-        .from("contact_groups")
-        .select("updated_at")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-        .limit(1),
-      supabaseAdmin
-        .from("carddav_tombstones")
-        .select("sync_seq")
-        .eq("user_id", userId)
-        .order("sync_seq", { ascending: false })
-        .limit(1),
-    ]);
-  const updatedAt = [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
-    .filter((v): v is string => !!v)
-    .sort()
-    .pop() ?? "1970-01-01T00:00:00Z";
+  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] = await Promise.all([
+    supabaseAdmin
+      .from("contacts")
+      .select("updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1),
+    supabaseAdmin
+      .from("contact_groups")
+      .select("updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1),
+    supabaseAdmin
+      .from("carddav_tombstones")
+      .select("sync_seq")
+      .eq("user_id", userId)
+      .order("sync_seq", { ascending: false })
+      .limit(1),
+  ]);
+  const updatedAt =
+    [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
+      .filter((v): v is string => !!v)
+      .sort()
+      .pop() ?? "1970-01-01T00:00:00Z";
   const seq = (tLatest?.[0] as { sync_seq: number } | undefined)?.sync_seq ?? 0;
   return { updatedAt, seq };
 }
@@ -261,14 +257,16 @@ async function insertTombstone(
   resourceType: "contact" | "group",
   resourceId: string,
 ): Promise<void> {
-  await supabaseAdmin
-    .from("carddav_tombstones")
-    .upsert(
-      { user_id: userId, resource_type: resourceType, resource_id: resourceId, deleted_at: new Date().toISOString() },
-      { onConflict: "user_id,resource_type,resource_id" },
-    );
+  await supabaseAdmin.from("carddav_tombstones").upsert(
+    {
+      user_id: userId,
+      resource_type: resourceType,
+      resource_id: resourceId,
+      deleted_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,resource_type,resource_id" },
+  );
 }
-
 
 async function listContactRows(userId: string): Promise<Array<{ id: string; updated_at: string }>> {
   const { data } = await supabaseAdmin
@@ -308,7 +306,8 @@ async function fetchCategoriesForContact(userId: string, contactId: string): Pro
     .from("contact_group_members")
     .select("contact_groups!inner(name,user_id)")
     .eq("contact_id", contactId);
-  const rows = (data as Array<{ contact_groups: { name: string; user_id: string } | null }> | null) ?? [];
+  const rows =
+    (data as Array<{ contact_groups: { name: string; user_id: string } | null }> | null) ?? [];
   return rows
     .map((r) => r.contact_groups)
     .filter((g): g is { name: string; user_id: string } => !!g && g.user_id === userId)
@@ -334,11 +333,10 @@ async function fetchEmails(contactId: string): Promise<EmailRow[]> {
     .select("label,address,is_primary,position")
     .eq("contact_id", contactId)
     .order("position", { ascending: true });
-  return ((data as Array<{ label: string; address: string; is_primary: boolean }> | null) ?? []).map(
-    (r) => ({ label: r.label, address: r.address, is_primary: r.is_primary }),
-  );
+  return (
+    (data as Array<{ label: string; address: string; is_primary: boolean }> | null) ?? []
+  ).map((r) => ({ label: r.label, address: r.address, is_primary: r.is_primary }));
 }
-
 
 async function markGoogleContactLinkDirty(userId: string, contactId: string): Promise<void> {
   await supabaseAdmin
@@ -395,7 +393,11 @@ function propfindPrincipal(email: string, depth: string): Response {
 }
 
 // Addressbook-level PROPFIND: return CTag + one <response> per contact.
-async function propfindAddressbook(userId: string, email: string, depth: string): Promise<Response> {
+async function propfindAddressbook(
+  userId: string,
+  email: string,
+  depth: string,
+): Promise<Response> {
   const book = addressbookHref(email);
   const ctag = await computeBookCTag(userId);
   const snap = await currentSyncSnapshot(userId);
@@ -414,7 +416,6 @@ async function propfindAddressbook(userId: string, email: string, depth: string)
     `<C:supported-address-data>` +
     `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
     `</C:supported-address-data>`;
-
 
   let body = MULTISTATUS_OPEN + responseBlock(book, bookProps);
 
@@ -493,7 +494,6 @@ async function buildContactResponse(
   ]);
   const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
 
-
   const etag = contactETag(row.id, row.updated_at);
   const props =
     `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
@@ -553,18 +553,13 @@ async function resolveGroupDisplayName(
     .select("id,name,parent_group_id")
     .eq("user_id", userId);
   const byId = new Map<string, { name: string; parent: string | null }>();
-  for (const g of data ?? [])
-    byId.set(g.id, { name: g.name, parent: g.parent_group_id ?? null });
+  for (const g of data ?? []) byId.set(g.id, { name: g.name, parent: g.parent_group_id ?? null });
   return formatGroupDisplayName(byId, groupId, ownName, style);
 }
 
 const TOMBSTONE_PRUNE_DAYS = 90;
 
-async function handleSyncCollection(
-  raw: string,
-  userId: string,
-  email: string,
-): Promise<Response> {
+async function handleSyncCollection(raw: string, userId: string, email: string): Promise<Response> {
   const { syncToken, syncLevel, limit } = parseSyncCollection(raw);
   const includeVcard = raw.toLowerCase().includes("address-data");
 
@@ -665,8 +660,6 @@ export async function handleReport(
   if (lower.includes("sync-collection")) {
     return handleSyncCollection(raw, userId, email);
   }
-
-
 
   const contactIds: string[] = [];
   const groupIds: string[] = [];
@@ -799,8 +792,6 @@ export async function handleGet(
   ]);
   const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
 
-
-
   return new Response(method === "HEAD" ? null : vcard, {
     status: 200,
     headers: {
@@ -810,7 +801,6 @@ export async function handleGet(
     },
   });
 }
-
 
 // -----------------------------------------------------------------------------
 // PUT / DELETE (two-way sync)
@@ -850,36 +840,30 @@ async function reconcileContactCategories(
   contactId: string,
   categoryNames: string[],
 ): Promise<void> {
-  const { resolveCategoryTargets, planCategoryMembership } = await import(
-    "./categories.server"
-  );
+  const { resolveCategoryTargets, planCategoryMembership } = await import("./categories.server");
 
-  const [{ data: groupRows }, { data: memberRows }, { data: aliasRows }] =
-    await Promise.all([
-      supabaseAdmin
-        .from("contact_groups")
-        .select(
-          "id,name,parent_group_id,auto_generated_from_group_id,auto_company_subgroups",
-        )
-        .eq("user_id", userId),
-      supabaseAdmin
-        .from("contact_group_members")
-        .select("group_id,auto_added")
-        .eq("contact_id", contactId)
-        .eq("user_id", userId),
-      supabaseAdmin
-        .from("company_name_aliases")
-        .select("name_key,company_id")
-        .eq("user_id", userId),
-    ]);
+  const [{ data: groupRows }, { data: memberRows }, { data: aliasRows }] = await Promise.all([
+    supabaseAdmin
+      .from("contact_groups")
+      .select("id,name,parent_group_id,auto_generated_from_group_id,auto_company_subgroups")
+      .eq("user_id", userId),
+    supabaseAdmin
+      .from("contact_group_members")
+      .select("group_id,auto_added")
+      .eq("contact_id", contactId)
+      .eq("user_id", userId),
+    supabaseAdmin.from("company_name_aliases").select("name_key,company_id").eq("user_id", userId),
+  ]);
 
-  const groups = ((groupRows ?? []) as Array<{
-    id: string;
-    name: string;
-    parent_group_id: string | null;
-    auto_generated_from_group_id: string | null;
-    auto_company_subgroups: boolean | null;
-  }>).map((g) => ({
+  const groups = (
+    (groupRows ?? []) as Array<{
+      id: string;
+      name: string;
+      parent_group_id: string | null;
+      auto_generated_from_group_id: string | null;
+      auto_company_subgroups: boolean | null;
+    }>
+  ).map((g) => ({
     id: g.id,
     name: g.name,
     parentGroupId: g.parent_group_id ?? null,
@@ -887,10 +871,12 @@ async function reconcileContactCategories(
     autoCompanySubgroups: !!g.auto_company_subgroups,
   }));
 
-  const currentMemberships = ((memberRows ?? []) as Array<{
-    group_id: string;
-    auto_added: boolean | null;
-  }>).map((m) => ({ groupId: m.group_id, autoAdded: !!m.auto_added }));
+  const currentMemberships = (
+    (memberRows ?? []) as Array<{
+      group_id: string;
+      auto_added: boolean | null;
+    }>
+  ).map((m) => ({ groupId: m.group_id, autoAdded: !!m.auto_added }));
 
   // Resolve alias name_keys to their canonical company names so a stale
   // "Nissan Motor Acceptance Company" tag lands on the merged "Nissan".
@@ -908,10 +894,7 @@ async function reconcileContactCategories(
       .select("id,name")
       .in("id", aliasCompanyIds);
     const companyNameById = new Map(
-      ((companyRows ?? []) as Array<{ id: string; name: string }>).map((c) => [
-        c.id,
-        c.name,
-      ]),
+      ((companyRows ?? []) as Array<{ id: string; name: string }>).map((c) => [c.id, c.name]),
     );
     nameAliases = new Map();
     for (const a of aliases) {
@@ -931,8 +914,7 @@ async function reconcileContactCategories(
   for (const spec of resolution.toCreate) {
     const uid =
       "group-" +
-      (globalThis.crypto?.randomUUID?.() ??
-        `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const { data: created, error } = await supabaseAdmin
       .from("contact_groups")
       .insert({
@@ -948,11 +930,7 @@ async function reconcileContactCategories(
   }
 
   const plan = planCategoryMembership({
-    resolvedGroupIds: [
-      ...resolution.matchedGroupIds,
-      ...resolution.joinParentIds,
-      ...createdIds,
-    ],
+    resolvedGroupIds: [...resolution.matchedGroupIds, ...resolution.joinParentIds, ...createdIds],
     currentMemberships,
     autoGeneratedGroupIds: new Set(
       groups.filter((g) => g.autoGeneratedFromGroupId).map((g) => g.id),
@@ -1064,8 +1042,6 @@ async function handleGroupPut(
     },
   });
 }
-
-
 
 // Handle PUT: iOS uploads a full vCard for create or replace. We honor
 // If-Match (must match current ETag) and If-None-Match: * (must not exist).
@@ -1236,7 +1212,6 @@ export async function handlePut(
     if (insEmailErr) return new Response(insEmailErr.message, { status: 500 });
   }
 
-
   // CATEGORIES → contact_group_members reconciliation. Only when the vCard
   // actually included a CATEGORIES line — iOS omits it for most edits and
   // running it unconditionally erased group membership.
@@ -1256,9 +1231,7 @@ export async function handlePut(
   // reach the contact.
   if (present.has("PHOTO") && parsed.photo && parsed.photo.bytes.length > 0) {
     try {
-      const { sha256Hex, loadContactPhotoBytes } = await import(
-        "@/lib/contacts/photos.server"
-      );
+      const { sha256Hex, loadContactPhotoBytes } = await import("@/lib/contacts/photos.server");
       const incomingSha = await sha256Hex(parsed.photo.bytes);
       const { data: fp } = await supabaseAdmin
         .from("contacts")
@@ -1267,19 +1240,15 @@ export async function handlePut(
         .eq("user_id", userId)
         .maybeSingle();
       const storedFallbackSha =
-        (fp as { company_logo_photo_sha?: string | null } | null)
-          ?.company_logo_photo_sha ?? null;
+        (fp as { company_logo_photo_sha?: string | null } | null)?.company_logo_photo_sha ?? null;
       let skip = storedFallbackSha !== null && storedFallbackSha === incomingSha;
       const companyId = (fp as { company_id?: string | null } | null)?.company_id ?? null;
       if (!skip && companyId) {
-        const { getKnownCompanyLogoHashes } = await import(
-          "@/lib/contacts/logo-photo.server"
-        );
+        const { getKnownCompanyLogoHashes } = await import("@/lib/contacts/logo-photo.server");
         skip = (await getKnownCompanyLogoHashes(userId, companyId)).has(incomingSha);
       }
       if (!skip) {
-        const currentAvatar =
-          (fp as { avatar_url?: string | null } | null)?.avatar_url ?? null;
+        const currentAvatar = (fp as { avatar_url?: string | null } | null)?.avatar_url ?? null;
         const currentBytes = await loadContactPhotoBytes(currentAvatar);
         if (currentBytes) {
           const currentSha = await sha256Hex(currentBytes.bytes);
@@ -1287,9 +1256,7 @@ export async function handlePut(
         }
       }
       if (!skip) {
-        const { buildKnownCompanyLogoShaSet } = await import(
-          "@/lib/contacts/known-logos.server"
-        );
+        const { buildKnownCompanyLogoShaSet } = await import("@/lib/contacts/known-logos.server");
         skip = (await buildKnownCompanyLogoShaSet(userId)).has(incomingSha);
       }
       if (skip) {
@@ -1303,9 +1270,14 @@ export async function handlePut(
         // app. Persist with source="user_upload" so the getContact self-heal
         // (which strips non-user photos matching a company logo) never wipes
         // it out from under the user.
-        await saveContactPhoto(userId, contactId, parsed.photo.bytes, parsed.photo.mime, "user_upload");
+        await saveContactPhoto(
+          userId,
+          contactId,
+          parsed.photo.bytes,
+          parsed.photo.mime,
+          "user_upload",
+        );
       }
-
     } catch (err) {
       logInfo("carddav.put.photo_save_failed", {
         contact_id: contactId,
@@ -1313,7 +1285,6 @@ export async function handlePut(
       });
     }
   }
-
 
   // A CardDAV edit is a local source of truth. If this contact is linked to
   // Google Contacts, force the next two-way run to push it instead of letting
@@ -1324,9 +1295,8 @@ export async function handlePut(
   // change from iOS never leaves the previous company's subgroup label behind
   // as a duplicate. No-op when the contact isn't in an auto subgroup.
   try {
-    const { reconcileAutoParentsForContacts } = await import(
-      "@/lib/contacts/auto-company-subgroups.functions"
-    );
+    const { reconcileAutoParentsForContacts } =
+      await import("@/lib/contacts/auto-company-subgroups.functions");
     await reconcileAutoParentsForContacts(supabaseAdmin, userId, [contactId]);
   } catch (err) {
     logInfo("carddav.put.auto_subgroup_reconcile_failed", {
@@ -1341,7 +1311,8 @@ export async function handlePut(
     .eq("id", contactId)
     .eq("user_id", userId)
     .maybeSingle();
-  const responseUpdatedAt = (updatedContact as { updated_at?: string } | null)?.updated_at ?? nowIso;
+  const responseUpdatedAt =
+    (updatedContact as { updated_at?: string } | null)?.updated_at ?? nowIso;
   const newEtag = contactETag(contactId, responseUpdatedAt);
   return new Response(null, {
     status: existing ? 204 : 201,
@@ -1433,4 +1404,3 @@ export async function handleDelete(
 
   return new Response(null, { status: 204 });
 }
-

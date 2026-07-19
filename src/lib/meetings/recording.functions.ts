@@ -161,9 +161,7 @@ export const resendMeetingBot = createServerFn({ method: "POST" })
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
       .from("meetings")
-      .select(
-        "id, recall_bot_id, meeting_url, status, recording_url, scheduled_start, title",
-      )
+      .select("id, recall_bot_id, meeting_url, status, recording_url, scheduled_start, title")
       .eq("id", data.id)
       .maybeSingle();
     if (!meeting) throw new Error("Meeting not found");

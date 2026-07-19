@@ -63,11 +63,16 @@ function friendlyError(err: string | null | undefined): string | null {
   if (err === "missing_contacts_scope")
     return "Google did not grant Contacts access. On the consent screen, tick the \u201cSee, edit, download and permanently delete your contacts\u201d checkbox, then reconnect.";
   if (err === "sync_disabled") return "Sync is turned off for this account.";
-  if (err === "locked") return "Another sync is already running — it should finish within about 90 seconds.";
+  if (err === "locked")
+    return "Another sync is already running — it should finish within about 90 seconds.";
   return err;
 }
 
-function AccountRow({ account }: { account: { id: string; email_address: string; needs_reauth: boolean } }) {
+function AccountRow({
+  account,
+}: {
+  account: { id: string; email_address: string; needs_reauth: boolean };
+}) {
   const qc = useQueryClient();
   const getStatus = useServerFn(getGoogleContactsSyncStatus);
   const syncNow = useServerFn(syncGoogleContactsNow);
@@ -94,8 +99,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   const total = state?.progress_total ?? 0;
 
   const mode: SyncMode =
-    (state?.sync_mode as SyncMode | undefined) ??
-    (state?.enabled ? "two_way" : "off");
+    (state?.sync_mode as SyncMode | undefined) ?? (state?.enabled ? "two_way" : "off");
   const enabled = mode !== "off";
   const intervalMinutes = (state?.sync_interval_minutes as number | undefined) ?? 15;
   const scopeGranted = statusQ.data?.scope_granted ?? null;
@@ -108,8 +112,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
         : rawLastError;
 
   const modeMut = useMutation({
-    mutationFn: (next: SyncMode) =>
-      setMode({ data: { accountId: account.id, mode: next } }),
+    mutationFn: (next: SyncMode) => setMode({ data: { accountId: account.id, mode: next } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["google-contacts-status", account.id] });
     },
@@ -160,9 +163,7 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     mutationFn: () => backfillEmails({ data: { accountId: account.id } }),
     onSuccess: (res) => {
       if (res.emailsAdded === 0 && res.phonesAdded === 0) {
-        toast.success(
-          `Scanned ${res.contactsScanned} — nothing missing`,
-        );
+        toast.success(`Scanned ${res.contactsScanned} — nothing missing`);
       } else {
         toast.success(
           `Added ${res.emailsAdded} email${res.emailsAdded === 1 ? "" : "s"}` +
@@ -189,7 +190,6 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
     onError: (e: Error) => toast.error(e.message),
   });
 
-
   async function handleReconnect() {
     setReconnecting(true);
     try {
@@ -212,7 +212,10 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
   }
 
   const errorMsg = friendlyError(lastError);
-  const needsReconnect = account.needs_reauth || lastError === "needs_reconnect" || lastError === "missing_contacts_scope";
+  const needsReconnect =
+    account.needs_reauth ||
+    lastError === "needs_reconnect" ||
+    lastError === "missing_contacts_scope";
 
   return (
     <Card className="p-4 md:p-5">
@@ -221,11 +224,11 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
           <div className="flex items-center gap-2">
             <p className="truncate font-medium">{account.email_address}</p>
             {mode === "pull_only" && (
-              <Badge variant="secondary" className="text-[10px]">Pull only</Badge>
+              <Badge variant="secondary" className="text-[10px]">
+                Pull only
+              </Badge>
             )}
-            {mode === "two_way" && (
-              <Badge className="text-[10px]">Two-way</Badge>
-            )}
+            {mode === "two_way" && <Badge className="text-[10px]">Two-way</Badge>}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Last sync: {formatWhen(statusQ.data?.state?.last_incremental_at)}
@@ -246,7 +249,9 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
                 onClick={() => syncMut.mutate()}
                 disabled={!enabled || syncMut.isPending || forceMut.isPending}
               >
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncMut.isPending ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`mr-1.5 h-3.5 w-3.5 ${syncMut.isPending ? "animate-spin" : ""}`}
+                />
                 Sync now
               </Button>
               <Button
@@ -256,7 +261,9 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
                 disabled={!enabled || syncMut.isPending || forceMut.isPending}
                 title="Discard the incremental sync token and re-scan every Google contact"
               >
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${forceMut.isPending ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`mr-1.5 h-3.5 w-3.5 ${forceMut.isPending ? "animate-spin" : ""}`}
+                />
                 Force full re-pull
               </Button>
               <Button
@@ -266,7 +273,9 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
                 disabled={!enabled || backfillMut.isPending}
                 title="Scan every linked contact and additively import any emails/phones that exist in Google but not in Zerrow"
               >
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${backfillMut.isPending ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`mr-1.5 h-3.5 w-3.5 ${backfillMut.isPending ? "animate-spin" : ""}`}
+                />
                 Recover missing emails
               </Button>
               <Button
@@ -276,7 +285,9 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
                 disabled={!enabled || backfillPhotosMut.isPending}
                 title="Clear stored photo tags for contacts without a local picture, so Google photos re-download on the next sync"
               >
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${backfillPhotosMut.isPending ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`mr-1.5 h-3.5 w-3.5 ${backfillPhotosMut.isPending ? "animate-spin" : ""}`}
+                />
                 Repull missing photos
               </Button>
             </div>
@@ -316,15 +327,12 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
             <div className="min-w-0">
               <p className="text-sm font-medium">Background sync frequency</p>
               <p className="text-xs text-muted-foreground">
-                How often we check Google for changes when you're not using
-                "Sync now".
+                How often we check Google for changes when you're not using "Sync now".
               </p>
             </div>
             <Select
               value={String(intervalMinutes)}
-              onValueChange={(v) =>
-                intervalMut.mutate(Number(v) as 5 | 15 | 60)
-              }
+              onValueChange={(v) => intervalMut.mutate(Number(v) as 5 | 15 | 60)}
               disabled={intervalMut.isPending || needsReconnect}
             >
               <SelectTrigger className="w-[140px]">
@@ -368,9 +376,9 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
           <AlertDialogHeader>
             <AlertDialogTitle>Turn on two-way sync?</AlertDialogTitle>
             <AlertDialogDescription>
-              Local changes, additions, and deletions since you imported from Google
-              will start pushing to your Google Contacts on the next sync. Make sure
-              you're done merging and cleaning up first.
+              Local changes, additions, and deletions since you imported from Google will start
+              pushing to your Google Contacts on the next sync. Make sure you're done merging and
+              cleaning up first.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -392,11 +400,10 @@ function AccountRow({ account }: { account: { id: string; email_address: string;
           <AlertDialogHeader>
             <AlertDialogTitle>Force full re-pull from Google?</AlertDialogTitle>
             <AlertDialogDescription>
-              This discards the incremental sync token and re-scans every contact
-              in your Google account. It's slower, but resets the created / updated
-              / skipped counters so you can see exactly why any contacts are missing.
-              Existing contacts won't be duplicated — they'll be re-matched by
-              Google resource name or email.
+              This discards the incremental sync token and re-scans every contact in your Google
+              account. It's slower, but resets the created / updated / skipped counters so you can
+              see exactly why any contacts are missing. Existing contacts won't be duplicated —
+              they'll be re-matched by Google resource name or email.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -518,15 +525,13 @@ function GoogleContactsSettings() {
       <Card className="p-4 md:p-6">
         <h2 className="font-display text-2xl">Google contacts sync</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Start with <strong>Pull only</strong> to import your Google contacts and
-          groups into Zerrow so you can merge duplicates and clean things up. When
-          you're ready, switch to <strong>Two-way</strong> to also push local
-          changes, adds, and deletes back to Google.
+          Start with <strong>Pull only</strong> to import your Google contacts and groups into
+          Zerrow so you can merge duplicates and clean things up. When you're ready, switch to{" "}
+          <strong>Two-way</strong> to also push local changes, adds, and deletes back to Google.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
-          The background sync runs automatically. Pick a cadence per account
-          below (every 5 min, 15 min, or hour), or hit "Sync now" for an
-          immediate run.
+          The background sync runs automatically. Pick a cadence per account below (every 5 min, 15
+          min, or hour), or hit "Sync now" for an immediate run.
         </p>
       </Card>
 

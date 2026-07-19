@@ -2,15 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import {
-  ArrowLeft,
-  Building2,
-  Plus,
-  Trash2,
-  X,
-  Merge,
-  Sparkles,
-} from "lucide-react";
+import { ArrowLeft, Building2, Plus, Trash2, X, Merge, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,14 +41,9 @@ import {
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
 
-export const Route = createFileRoute(
-  "/_authenticated/contacts/companies/$companyId",
-)({
+export const Route = createFileRoute("/_authenticated/contacts/companies/$companyId")({
   head: () => ({
-    meta: [
-      { title: "Company — Zerrow" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "Company — Zerrow" }, { name: "robots", content: "noindex" }],
   }),
   component: CompanyDetailPage,
 });
@@ -171,9 +158,7 @@ function CompanyDetailPage() {
       if (r.added) parts.push(`${r.added} new`);
       if (r.updated) parts.push(`${r.updated} refreshed`);
       toast.success(
-        parts.length
-          ? `Discovered domains: ${parts.join(", ")}`
-          : "No new domains found",
+        parts.length ? `Discovered domains: ${parts.join(", ")}` : "No new domains found",
       );
       // Refresh both this company detail and the companies list so the logo
       // in every list view updates immediately.
@@ -198,15 +183,13 @@ function CompanyDetailPage() {
   // Prevents preloading previews for every dropdown flicker.
   const preview = useQuery({
     queryKey: ["company", companyId, "merge-preview", mergeTargetId],
-    queryFn: () =>
-      previewMergeFn({ data: { sourceId: companyId, targetId: mergeTargetId } }),
+    queryFn: () => previewMergeFn({ data: { sourceId: companyId, targetId: mergeTargetId } }),
     enabled: mergePreviewOpen && !!mergeTargetId,
     staleTime: 0,
   });
 
   const mergeMut = useMutation({
-    mutationFn: (targetId: string) =>
-      mergeFn({ data: { sourceId: companyId, targetId } }),
+    mutationFn: (targetId: string) => mergeFn({ data: { sourceId: companyId, targetId } }),
     onSuccess: (_, targetId) => {
       toast.success("Companies merged");
       qc.invalidateQueries({ queryKey: ["companies"] });
@@ -299,13 +282,9 @@ function CompanyDetailPage() {
                 }
               >
                 {d.domain}
-                <span className="text-[10px] uppercase text-muted-foreground">
-                  {d.source}
-                </span>
+                <span className="text-[10px] uppercase text-muted-foreground">{d.source}</span>
                 {d.source === "auto" && d.member_count > 0 && (
-                  <span className="text-[10px] text-muted-foreground">
-                    · {d.member_count}
-                  </span>
+                  <span className="text-[10px] text-muted-foreground">· {d.member_count}</span>
                 )}
                 {d.source === "auto" && introLabel && (
                   <span className="max-w-[140px] truncate text-[10px] text-muted-foreground">
@@ -367,10 +346,7 @@ function CompanyDetailPage() {
           />
         </Labelled>
         <Labelled label="Phone">
-          <Input
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          />
+          <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
         </Labelled>
         <Labelled label="Industry">
           <Input
@@ -387,10 +363,7 @@ function CompanyDetailPage() {
           />
         </Labelled>
         <Labelled label="City">
-          <Input
-            value={form.city}
-            onChange={(e) => setForm({ ...form, city: e.target.value })}
-          />
+          <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
         </Labelled>
         <Labelled label="State / region">
           <Input
@@ -427,9 +400,7 @@ function CompanyDetailPage() {
           Tags
         </h2>
         <div className="mb-3 flex flex-wrap gap-2">
-          {tags.length === 0 && (
-            <span className="text-sm text-muted-foreground">No tags yet.</span>
-          )}
+          {tags.length === 0 && <span className="text-sm text-muted-foreground">No tags yet.</span>}
           {tags.map((t) => (
             <Badge key={t} variant="outline" className="flex items-center gap-1.5">
               {t}
@@ -463,9 +434,7 @@ function CompanyDetailPage() {
           Members ({q.data.members.length})
         </h2>
         {q.data.members.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No contacts link to this company yet.
-          </p>
+          <p className="text-sm text-muted-foreground">No contacts link to this company yet.</p>
         ) : (
           <ul className="divide-y">
             {q.data.members.map((m) => (
@@ -518,8 +487,7 @@ function CompanyDetailPage() {
           <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-2xl">
             <AlertDialogHeader>
               <AlertDialogTitle>
-                Merge "{form.name || "this company"}" into "
-                {preview.data?.target.name ?? "…"}"?
+                Merge "{form.name || "this company"}" into "{preview.data?.target.name ?? "…"}"?
               </AlertDialogTitle>
               <AlertDialogDescription>
                 Everything below moves to the target. The source company is then deleted.
@@ -527,9 +495,7 @@ function CompanyDetailPage() {
             </AlertDialogHeader>
 
             <div className="max-h-[50vh] space-y-4 overflow-y-auto text-sm">
-              {preview.isLoading && (
-                <p className="text-muted-foreground">Loading preview…</p>
-              )}
+              {preview.isLoading && <p className="text-muted-foreground">Loading preview…</p>}
               {preview.error && (
                 <p className="text-destructive">
                   {preview.error instanceof Error
@@ -551,9 +517,7 @@ function CompanyDetailPage() {
                           <li key={c.id} className="truncate">
                             {c.name || c.email || "(unnamed)"}
                             {c.name && c.email && (
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                {c.email}
-                              </span>
+                              <span className="ml-2 text-xs text-muted-foreground">{c.email}</span>
                             )}
                           </li>
                         ))}
@@ -603,10 +567,7 @@ function CompanyDetailPage() {
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {preview.data.tags.map((t) => (
-                          <Badge
-                            key={t.tag}
-                            variant={t.conflict ? "outline" : "secondary"}
-                          >
+                          <Badge key={t.tag} variant={t.conflict ? "outline" : "secondary"}>
                             {t.tag}
                             {t.conflict && (
                               <span className="ml-1 text-[10px] uppercase text-muted-foreground">
@@ -623,15 +584,10 @@ function CompanyDetailPage() {
             </div>
 
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={mergeMut.isPending}>
-                Cancel
-              </AlertDialogCancel>
+              <AlertDialogCancel disabled={mergeMut.isPending}>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 disabled={
-                  !mergeTargetId ||
-                  mergeMut.isPending ||
-                  preview.isLoading ||
-                  !!preview.error
+                  !mergeTargetId || mergeMut.isPending || preview.isLoading || !!preview.error
                 }
                 onClick={(e) => {
                   e.preventDefault();

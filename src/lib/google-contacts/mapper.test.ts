@@ -141,7 +141,13 @@ describe("personToContact", () => {
     organizations: [{ name: "Acme", title: "VP" }],
     biographies: [{ value: "Loves coffee" }],
     addresses: [
-      { streetAddress: "123 Main St", city: "SF", region: "CA", postalCode: "94105", country: "USA" },
+      {
+        streetAddress: "123 Main St",
+        city: "SF",
+        region: "CA",
+        postalCode: "94105",
+        country: "USA",
+      },
     ],
     urls: [
       { value: "https://acme.com", type: "homepage" },
@@ -166,10 +172,7 @@ describe("personToContact", () => {
     expect(parsed.patch.primary_phone).toBe("+1 415 555 0100");
     expect(parsed.phones).toHaveLength(2);
     expect(parsed.phones[0].is_primary).toBe(true);
-    expect(parsed.membershipResourceNames).toEqual([
-      "contactGroups/abc",
-      "contactGroups/xyz",
-    ]);
+    expect(parsed.membershipResourceNames).toEqual(["contactGroups/abc", "contactGroups/xyz"]);
     expect(parsed.updateTime).toBe("2026-01-01T12:00:00Z");
   });
 

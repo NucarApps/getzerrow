@@ -3,16 +3,6 @@ import DOMPurify from "dompurify";
 
 const MIN_PX = 400;
 
-export function hasVisibleHtml(html: string | null | undefined): boolean {
-  return (
-    (html ?? "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;|\s/g, "").length > 0
-  );
-}
-
 export function EmailBodyFrame({ html }: { html: string }) {
   const frameId = useId();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);

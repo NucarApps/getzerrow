@@ -28,10 +28,10 @@ export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
           .eq("enabled", true);
         if (error) {
           logError("google_contacts_cron.load_failed", { runId }, error);
-          return new Response(
-            JSON.stringify({ ok: false, error: error.message }),
-            { status: 500, headers: { "content-type": "application/json" } },
-          );
+          return new Response(JSON.stringify({ ok: false, error: error.message }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          });
         }
 
         let ok = 0;
@@ -47,10 +47,7 @@ export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
             : 0;
           // Skip accounts not yet due — respects per-account cadence. Grace of
           // 30s prevents drift from making a due tick miss.
-          if (
-            lastMs > 0 &&
-            nowMs - lastMs < intervalMin * 60_000 - 30_000
-          ) {
+          if (lastMs > 0 && nowMs - lastMs < intervalMin * 60_000 - 30_000) {
             skipped += 1;
             continue;
           }

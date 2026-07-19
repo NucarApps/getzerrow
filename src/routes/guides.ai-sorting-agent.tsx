@@ -125,18 +125,19 @@ function AiSortingAgentGuide() {
 
         <div className="mt-12 space-y-10 text-base leading-relaxed" style={{ color: INK_SOFT }}>
           <p>
-            Manual inbox triage does not scale. Once you get more than a handful of emails a day, the
-            time you spend sorting, archiving, and deciding what matters adds up fast. An AI agent
-            takes that work off your plate — it reads every message, decides where it belongs, and
-            files it automatically. This guide shows how to set one up and get to a genuinely quiet
-            inbox.
+            Manual inbox triage does not scale. Once you get more than a handful of emails a day,
+            the time you spend sorting, archiving, and deciding what matters adds up fast. An AI
+            agent takes that work off your plate — it reads every message, decides where it belongs,
+            and files it automatically. This guide shows how to set one up and get to a genuinely
+            quiet inbox.
           </p>
 
           <Section title="What an AI sorting agent actually does">
-            Unlike a static filter, an AI agent reads the full context of an email — sender, subject,
-            body, and intent — and routes it the way a thoughtful assistant would. It combines
-            deterministic rules (for the obvious cases) with AI classification (for everything else),
-            so it keeps working even when a message does not match any rule you wrote.
+            Unlike a static filter, an AI agent reads the full context of an email — sender,
+            subject, body, and intent — and routes it the way a thoughtful assistant would. It
+            combines deterministic rules (for the obvious cases) with AI classification (for
+            everything else), so it keeps working even when a message does not match any rule you
+            wrote.
           </Section>
 
           <Section title="1. Connect your Gmail account">
@@ -146,10 +147,10 @@ function AiSortingAgentGuide() {
           </Section>
 
           <Section title="2. Define the folders you think in">
-            An agent is only as useful as the destinations you give it. Create the buckets that match
-            how you actually work — clients, receipts, newsletters, awaiting reply, needs a decision.
-            You can describe each folder in plain language, and the agent uses that description to
-            decide what belongs there.
+            An agent is only as useful as the destinations you give it. Create the buckets that
+            match how you actually work — clients, receipts, newsletters, awaiting reply, needs a
+            decision. You can describe each folder in plain language, and the agent uses that
+            description to decide what belongs there.
           </Section>
 
           <Section title="3. Let the agent triage every new email">
@@ -168,9 +169,9 @@ function AiSortingAgentGuide() {
 
           <Section title="AI agent vs. Gmail filters">
             Gmail filters are rules you build and maintain by hand, one condition at a time. They
-            break the moment a sender changes or a new type of email shows up. An AI agent understands
-            meaning, generalizes across messages, and handles the long tail no rule anticipated — so
-            you spend your time replying, not maintaining filters.
+            break the moment a sender changes or a new type of email shows up. An AI agent
+            understands meaning, generalizes across messages, and handles the long tail no rule
+            anticipated — so you spend your time replying, not maintaining filters.
           </Section>
         </div>
 

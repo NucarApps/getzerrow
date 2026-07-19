@@ -217,8 +217,7 @@ export async function listGoogleCalendars(accountId: string): Promise<GoogleCale
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   });
-  if (!res.ok)
-    throw new Error(`Calendar list ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`Calendar list ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = (await res.json()) as {
     items?: Array<{ id?: string; summary?: string; summaryOverride?: string; primary?: boolean }>;
   };
@@ -295,7 +294,6 @@ export function computeCanResendBot(input: {
   return true;
 }
 
-
 const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
 
 /**
@@ -314,7 +312,6 @@ export async function listUpcomingCalendarEventsForAccount(
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
   if (eventIds.length === 0) return [];
-
 
   const [{ data: meetingRows }, { data: excludedRows }] = await Promise.all([
     supabaseAdmin
@@ -439,7 +436,6 @@ export async function listCalendarEventsWindow(
   const events = (
     await fetchEventsInWindow(accountId, daysAhead * 24 * 60, daysBack * 24 * 60)
   ).filter((e) => !isHiddenEventType(e, prefs) && !isAllDayEvent(e) && !isColorSkipped(e, prefs));
-
 
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
   if (eventIds.length === 0) return [];
@@ -569,7 +565,6 @@ export async function listCalendarEventsWindow(
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 
 /** True when the error means the `mode` column hasn't been migrated yet. */
 function isMissingModeColumn(error: { code?: string; message?: string }): boolean {
@@ -758,7 +753,6 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       if (isHiddenEventType(event, prefs) || isColorSkipped(event, prefs)) continue;
       const meetingUrl = extractMeetingUrl(event);
       if (!meetingUrl) continue;
-
 
       // Skip if we already scheduled/handled this calendar event.
       const { data: existing } = await supabaseAdmin

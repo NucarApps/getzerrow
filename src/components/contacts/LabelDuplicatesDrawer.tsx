@@ -54,8 +54,7 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
   };
 
   const mergeMut = useMutation({
-    mutationFn: (vars: { canonicalId: string; foldIds: string[] }) =>
-      mergeFn({ data: vars }),
+    mutationFn: (vars: { canonicalId: string; foldIds: string[] }) => mergeFn({ data: vars }),
     onSuccess: (r) => {
       toast.success(`Merged ${r.merged} labels · moved ${r.movedMembers} members`);
       invalidate();
@@ -110,12 +109,7 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
                 </>
               )}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => q.refetch()}
-              disabled={q.isFetching}
-            >
+            <Button size="sm" variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
               {q.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rescan"}
             </Button>
           </div>
@@ -138,13 +132,10 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
             const clusterKey = `${cluster.canonicalId}-${idx}`;
             const ov = overrides[clusterKey] ?? {};
             const canonicalId = ov.canonicalId ?? cluster.canonicalId;
-            const includes = cluster.members.reduce<Record<string, boolean>>(
-              (acc, m) => {
-                acc[m.id] = ov.includes?.[m.id] ?? m.include;
-                return acc;
-              },
-              {},
-            );
+            const includes = cluster.members.reduce<Record<string, boolean>>((acc, m) => {
+              acc[m.id] = ov.includes?.[m.id] ?? m.include;
+              return acc;
+            }, {});
             const foldIds = cluster.members
               .filter((m) => m.id !== canonicalId && includes[m.id])
               .map((m) => m.id);

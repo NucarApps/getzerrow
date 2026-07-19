@@ -72,10 +72,7 @@ export function MeetingSummary({ markdown }: { markdown: string }) {
       {blocks.map((block, i) => {
         if (block.kind === "h2") {
           return (
-            <h4
-              key={i}
-              className="mt-1 text-sm font-semibold text-foreground first:mt-0"
-            >
+            <h4 key={i} className="mt-1 text-sm font-semibold text-foreground first:mt-0">
               {block.text}
             </h4>
           );
@@ -91,11 +88,11 @@ export function MeetingSummary({ markdown }: { markdown: string }) {
           return (
             <ul key={i} className="space-y-1.5">
               {block.items.map((item, j) => (
-                <li
-                  key={j}
-                  className="flex gap-2 text-sm leading-relaxed text-muted-foreground"
-                >
-                  <span aria-hidden className="mt-2 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/60" />
+                <li key={j} className="flex gap-2 text-sm leading-relaxed text-muted-foreground">
+                  <span
+                    aria-hidden
+                    className="mt-2 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/60"
+                  />
                   <span>{renderInline(item)}</span>
                 </li>
               ))}

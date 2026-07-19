@@ -73,9 +73,7 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
     .from("google_group_links")
     .select("contact_group_id, resource_name, etag, last_synced_at")
     .eq("gmail_account_id", ids.gmailAccountId);
-  const byLocal = new Map(
-    (links ?? []).map((l) => [l.contact_group_id, l]),
-  );
+  const byLocal = new Map((links ?? []).map((l) => [l.contact_group_id, l]));
 
   let count = 0;
   for (const g of groups) {
@@ -139,17 +137,14 @@ async function pushContacts(
     .eq("user_id", ids.userId)
     .maybeSingle();
   const includeSummary =
-    (settingsRow as { include_summary_in_notes?: boolean } | null)
-      ?.include_summary_in_notes !== false;
-
+    (settingsRow as { include_summary_in_notes?: boolean } | null)?.include_summary_in_notes !==
+    false;
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
     .select("contact_id, resource_name, etag, last_synced_at, photo_etag")
     .eq("gmail_account_id", ids.gmailAccountId);
-  const byLocal = new Map(
-    (links ?? []).map((l) => [l.contact_id, l]),
-  );
+  const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
 
   let count = 0;
   for (const c of contacts as ContactRow[]) {
@@ -187,11 +182,13 @@ async function pushContacts(
         phones ?? [],
         memberResourceNames,
         undefined,
-        (emails ?? []).map((e) => ({ label: e.label, address: e.address, is_primary: e.is_primary })),
+        (emails ?? []).map((e) => ({
+          label: e.label,
+          address: e.address,
+          is_primary: e.is_primary,
+        })),
         { includeSummary },
       );
-
-
 
       if (!link) {
         const created = await createPerson(ids.gmailAccountId, body);
@@ -253,10 +250,7 @@ async function pushContacts(
               );
               const hasPrimary = (existing ?? []).some((r) => r.is_primary);
               const startPos =
-                (existing ?? []).reduce(
-                  (m, r) => Math.max(m, r.position ?? 0),
-                  -1,
-                ) + 1;
+                (existing ?? []).reduce((m, r) => Math.max(m, r.position ?? 0), -1) + 1;
               const toInsert = parsedRemote.emails
                 .filter((e) => !existingSet.has(e.address.toLowerCase()))
                 .map((e, idx) => ({
@@ -276,11 +270,7 @@ async function pushContacts(
           } catch (guardErr) {
             // If the guard itself fails, fall through to the normal update
             // (the etag path still protects against silent overwrites).
-            logError(
-              "google_contacts.push.guard_failed",
-              { ...ids, contact_id: c.id },
-              guardErr,
-            );
+            logError("google_contacts.push.guard_failed", { ...ids, contact_id: c.id }, guardErr);
           }
 
           const updated = await updatePerson(ids.gmailAccountId, link.resource_name, {
@@ -316,8 +306,7 @@ async function pushContacts(
           .maybeSingle();
         const avatarUrl = contactRow?.avatar_url ?? null;
         const previousUrl = linkRow?.photo_etag ?? null;
-        const currentLink =
-          linkRow ?? byLocal.get(c.id) ?? undefined;
+        const currentLink = linkRow ?? byLocal.get(c.id) ?? undefined;
         const resource = currentLink?.resource_name ?? null;
         if (resource && avatarUrl && avatarUrl !== previousUrl) {
           const { loadContactPhotoBytes } = await import("@/lib/contacts/photos.server");
@@ -389,7 +378,9 @@ export async function pushGroupMemberships(ids: Ids): Promise<void> {
     .from("google_contact_links")
     .select("contact_id, resource_name")
     .eq("gmail_account_id", ids.gmailAccountId);
-  const contactResourceById = new Map((contactLinks ?? []).map((l) => [l.contact_id, l.resource_name]));
+  const contactResourceById = new Map(
+    (contactLinks ?? []).map((l) => [l.contact_id, l.resource_name]),
+  );
 
   for (const gl of links) {
     // Desired member resource names.

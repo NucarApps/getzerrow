@@ -1,7 +1,14 @@
 // Round-trip guards: iOS → parse → server model → serialize → parse must
 // preserve phone, email, and notes without duplicating or corrupting them.
 import { describe, it, expect } from "vitest";
-import { parseVCard, contactToVCard, phoneKey, buildMergedNote, stripSummaryFromNote, type PhoneRow } from "./vcard";
+import {
+  parseVCard,
+  contactToVCard,
+  phoneKey,
+  buildMergedNote,
+  stripSummaryFromNote,
+  type PhoneRow,
+} from "./vcard";
 import type { DecryptedContact } from "@/lib/sync/encrypted-reader";
 
 function buildContact(overrides: Partial<DecryptedContact> = {}): DecryptedContact {
@@ -46,9 +53,7 @@ describe("phoneKey", () => {
 describe("phone round-trip", () => {
   it("does not duplicate a reformatted encrypted-phone number", () => {
     const c = buildContact({ phone: "+1 (415) 555-0100" });
-    const phones: PhoneRow[] = [
-      { label: "Mobile", number: "+14155550100", is_primary: true },
-    ];
+    const phones: PhoneRow[] = [{ label: "Mobile", number: "+14155550100", is_primary: true }];
     const vcard = contactToVCard(c, phones);
     const telLines = vcard.split("\r\n").filter((l) => l.startsWith("TEL"));
     // Only ONE TEL should be emitted even though the two numbers differ in
@@ -118,17 +123,16 @@ describe("notes round-trip", () => {
     // omitted EMAIL. That fallback is gone but stale rows can linger — the
     // serializer must not echo them or iPhone displays the placeholder as
     // the real address.
-    const c = buildContact({ email: `carddav+${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}@local.zerrow` });
+    const c = buildContact({
+      email: `carddav+${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}@local.zerrow`,
+    });
     const vcard = contactToVCard(c);
     expect(vcard).not.toContain("EMAIL");
     expect(vcard).not.toContain("local.zerrow");
   });
 });
 
-
 describe("AI summary in NOTE", () => {
-
-
   it("merges summary and user notes with summary first", () => {
     const merged = buildMergedNote("She runs ops at Acme.", "Met at conf.");
     expect(merged).toContain("🤖 Zerrow summary");
@@ -160,7 +164,6 @@ describe("AI summary in NOTE", () => {
     expect(unfolded).toContain("Prefers email.");
   });
 
-
   it("omits summary when includeSummary=false", () => {
     const c = buildContact({
       relationship_summary: "Head of design.",
@@ -171,7 +174,6 @@ describe("AI summary in NOTE", () => {
     expect(unfolded).not.toContain("Head of design.");
     expect(unfolded).toContain("Prefers email.");
   });
-
 
   it("stripSummaryFromNote returns only user portion for merged text", () => {
     const merged = buildMergedNote("AI text", "user text")!;

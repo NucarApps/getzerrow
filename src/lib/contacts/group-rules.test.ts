@@ -47,19 +47,13 @@ describe("matchRules", () => {
   });
 
   it("matches by ai_category and preserves suggest-only", () => {
-    const m = matchRules(
-      { companyId: null, aiCategory: "Software", emailDomains: [] },
-      rules,
-    );
+    const m = matchRules({ companyId: null, aiCategory: "Software", emailDomains: [] }, rules);
     expect(m.map((x) => x.groupId)).toEqual(["g2"]);
     expect(m[0].autoApply).toBe(false);
   });
 
   it("matches by company_id", () => {
-    const m = matchRules(
-      { companyId: "co-abc", aiCategory: null, emailDomains: [] },
-      rules,
-    );
+    const m = matchRules({ companyId: "co-abc", aiCategory: null, emailDomains: [] }, rules);
     expect(m.map((x) => x.groupId)).toEqual(["g3"]);
   });
 
@@ -72,10 +66,9 @@ describe("matchRules", () => {
   });
 
   it("ignores empty values", () => {
-    const m = matchRules(
-      { companyId: null, aiCategory: "software", emailDomains: [] },
-      [{ id: "r", group_id: "g", rule_type: "ai_category", value: "  ", auto_apply: true }],
-    );
+    const m = matchRules({ companyId: null, aiCategory: "software", emailDomains: [] }, [
+      { id: "r", group_id: "g", rule_type: "ai_category", value: "  ", auto_apply: true },
+    ]);
     expect(m).toEqual([]);
   });
 });

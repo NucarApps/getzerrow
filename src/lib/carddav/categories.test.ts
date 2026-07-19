@@ -58,16 +58,10 @@ describe("resolveCategoryTargets", () => {
   });
 
   it("resolves merged-away company names through aliases", () => {
-    const res = resolveCategoryTargets(
-      ["Nissan Motor Acceptance Company"],
-      GROUPS,
-      {
-        ...NO_MEMBERS,
-        nameAliases: new Map([
-          ["nissan motor acceptance company", "Nissan"],
-        ]),
-      },
-    );
+    const res = resolveCategoryTargets(["Nissan Motor Acceptance Company"], GROUPS, {
+      ...NO_MEMBERS,
+      nameAliases: new Map([["nissan motor acceptance company", "Nissan"]]),
+    });
     expect(res.matchedGroupIds).toEqual(["n"]);
     expect(res.toCreate).toEqual([]);
   });
@@ -102,11 +96,9 @@ describe("resolveCategoryTargets", () => {
 
   it("prefers a group the contact is already in on normalized multi-match", () => {
     const nissanInc = group("n2", "Nissan Inc", { parentGroupId: "d" });
-    const res = resolveCategoryTargets(
-      ["Nissan Corp."],
-      [...GROUPS, nissanInc],
-      { memberGroupIds: new Set(["n2"]) },
-    );
+    const res = resolveCategoryTargets(["Nissan Corp."], [...GROUPS, nissanInc], {
+      memberGroupIds: new Set(["n2"]),
+    });
     expect(res.matchedGroupIds).toEqual(["n2"]);
     expect(res.toCreate).toEqual([]);
   });

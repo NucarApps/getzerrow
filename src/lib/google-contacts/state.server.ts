@@ -59,10 +59,7 @@ export async function ensureSyncState(
   return data as SyncState;
 }
 
-export async function updateSyncState(
-  id: string,
-  patch: Partial<SyncState>,
-): Promise<void> {
+export async function updateSyncState(id: string, patch: Partial<SyncState>): Promise<void> {
   const { error } = await supabaseAdmin.from("google_sync_state").update(patch).eq("id", id);
   if (error) throw new Error(`Failed to update google_sync_state: ${error.message}`);
 }
@@ -91,4 +88,3 @@ export async function loadLocalContact(contactId: string): Promise<LocalContact 
     primary_phone: row.phone,
   };
 }
-

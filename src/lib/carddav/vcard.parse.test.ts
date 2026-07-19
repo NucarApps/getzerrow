@@ -51,8 +51,7 @@ describe("parseVCard", () => {
   });
 
   it("unfolds continuation lines", () => {
-    const folded =
-      "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Long \r\n Name Here\r\nEND:VCARD\r\n";
+    const folded = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Long \r\n Name Here\r\nEND:VCARD\r\n";
     expect(parseVCard(folded)!.name).toBe("Long Name Here");
   });
 
@@ -61,8 +60,7 @@ describe("parseVCard", () => {
   });
 
   it("dedupes duplicate phone numbers", () => {
-    const dup =
-      "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nTEL:+1 555\r\nTEL:+1 555\r\nEND:VCARD\r\n";
+    const dup = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nTEL:+1 555\r\nTEL:+1 555\r\nEND:VCARD\r\n";
     expect(parseVCard(dup)!.phones).toHaveLength(1);
   });
 
@@ -116,8 +114,7 @@ describe("parseVCard", () => {
 
   it("does not mark TEL/ORG present when their values are empty", () => {
     const blanks =
-      "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:x\r\nFN:X\r\n" +
-      "TEL:\r\nORG:\r\nEND:VCARD\r\n";
+      "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:x\r\nFN:X\r\n" + "TEL:\r\nORG:\r\nEND:VCARD\r\n";
     const p = parseVCard(blanks)!;
     expect(p.phones).toHaveLength(0);
     expect(p.presentFields.has("TEL")).toBe(false);
@@ -125,5 +122,3 @@ describe("parseVCard", () => {
     expect(p.company).toBeNull();
   });
 });
-
-

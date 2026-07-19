@@ -43,6 +43,8 @@ import { BackfillBanner } from "@/components/inbox/BackfillBanner";
 import { ReconnectBanner } from "@/components/inbox/ReconnectBanner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
 
+const SPECIAL_VIEWS = ["all", "all_mail", "no_rules"];
+
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
     if (typeof window === "undefined") return; // session lives in localStorage
@@ -77,11 +79,12 @@ function AuthedLayoutInner({
   const { setSelected } = useFolderSelection();
   const listAccounts = useServerFn(listMyGmailAccounts);
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
-  const accounts = accountsQ.data?.accounts ?? [];
+  const accounts = useMemo(() => accountsQ.data?.accounts ?? [], [accountsQ.data]);
 
   useEffect(() => {
     if (accounts.length === 0) return;
-    const activeExists = activeAccountId && accounts.some((account) => account.id === activeAccountId);
+    const activeExists =
+      activeAccountId && accounts.some((account) => account.id === activeAccountId);
     if (activeExists) return;
     setActiveAccountId(accounts[0].id);
     setSelected("all");
@@ -225,7 +228,6 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   // folder that holds none of this account's mail and shows empty. If the
   // selection is a folder id that doesn't exist for this account (and isn't
   // one of the special views), fall back to the Inbox view.
-  const SPECIAL_VIEWS = ["all", "all_mail", "no_rules"];
   useEffect(() => {
     if (!accountId || !foldersQ.isSuccess) return;
     if (SPECIAL_VIEWS.includes(selected)) return;

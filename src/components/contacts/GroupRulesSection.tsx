@@ -79,8 +79,8 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
       <div className="mb-2">
         <Label className="text-sm">Auto-assign rules</Label>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
-          New contacts that match a rule join this label automatically.
-          Turn a rule off "auto" to only suggest it.
+          New contacts that match a rule join this label automatically. Turn a rule off "auto" to
+          only suggest it.
         </p>
       </div>
 
@@ -103,9 +103,7 @@ export function GroupRulesSection({ groupId }: { groupId: string }) {
                 <span className="text-[10px] text-muted-foreground">Auto</span>
                 <Switch
                   checked={r.auto_apply}
-                  onCheckedChange={(v) =>
-                    toggleMut.mutate({ id: r.id, autoApply: v })
-                  }
+                  onCheckedChange={(v) => toggleMut.mutate({ id: r.id, autoApply: v })}
                 />
               </div>
               <Button

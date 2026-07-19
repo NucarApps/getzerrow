@@ -28,9 +28,7 @@ const RULE_TYPE = z.enum(["domain", "company_id", "ai_category"]);
 
 export const listGroupRules = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string }) =>
-    z.object({ groupId: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { data: rows, error } = await supabase
@@ -99,10 +97,7 @@ export const updateGroupRule = createServerFn({ method: "POST" })
     const patch: { auto_apply?: boolean; value?: string } = {};
     if (data.autoApply !== undefined) patch.auto_apply = data.autoApply;
     if (data.value !== undefined) patch.value = data.value;
-    const { error } = await supabase
-      .from("contact_group_rules")
-      .update(patch)
-      .eq("id", data.id);
+    const { error } = await supabase.from("contact_group_rules").update(patch).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -112,10 +107,7 @@ export const deleteGroupRule = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { error } = await supabase
-      .from("contact_group_rules")
-      .delete()
-      .eq("id", data.id);
+    const { error } = await supabase.from("contact_group_rules").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -181,9 +173,7 @@ export async function applyRulesForContact(
   if (matches.length === 0) return { auto: 0, suggested: 0 };
 
   const autoGroupIds = [...new Set(matches.filter((m) => m.autoApply).map((m) => m.groupId))];
-  const suggestGroupIds = [
-    ...new Set(matches.filter((m) => !m.autoApply).map((m) => m.groupId)),
-  ];
+  const suggestGroupIds = [...new Set(matches.filter((m) => !m.autoApply).map((m) => m.groupId))];
 
   let auto = 0;
   if (autoGroupIds.length > 0) {
@@ -236,9 +226,7 @@ export async function applyRulesForContact(
 /** Server-fn wrapper called from the contact edit path. */
 export const applyRulesForContactFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { contactId: string }) =>
-    z.object({ contactId: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { contactId: string }) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     return applyRulesForContact(supabase, userId, data.contactId);

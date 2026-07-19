@@ -45,17 +45,7 @@ import {
   pruneAutoCompanySubgroups,
 } from "@/lib/contacts/auto-company-subgroups.functions";
 import { buildGroupTree, eligibleParents } from "@/lib/contacts/group-tree";
-
-export const GROUP_COLORS = [
-  "#6366f1",
-  "#ef4444",
-  "#f59e0b",
-  "#10b981",
-  "#06b6d4",
-  "#8b5cf6",
-  "#ec4899",
-  "#64748b",
-];
+import { GROUP_COLORS } from "@/lib/contacts/group-colors";
 
 export type GroupRow = {
   id: string;
@@ -70,9 +60,7 @@ export type GroupRow = {
 };
 
 export type GroupEditorState =
-  | null
-  | { mode: "create"; parentId?: string | null }
-  | { mode: "edit"; group: GroupRow };
+  null | { mode: "create"; parentId?: string | null } | { mode: "edit"; group: GroupRow };
 
 // Radix Select can't represent an empty-string item value.
 const NONE = "__none__";

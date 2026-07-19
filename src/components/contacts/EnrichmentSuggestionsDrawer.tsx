@@ -112,17 +112,13 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
             <Sparkles className="h-5 w-5" /> Enrich contacts
           </SheetTitle>
           <SheetDescription>
-            Reads recent messages from each contact to extract company, title, and phone from
-            email signatures. Dismissed items are remembered so they won't be suggested again.
+            Reads recent messages from each contact to extract company, title, and phone from email
+            signatures. Dismissed items are remembered so they won't be suggested again.
           </SheetDescription>
         </SheetHeader>
 
         <div className="mt-4 flex items-center justify-between gap-2">
-          <Button
-            onClick={() => scanMutation.mutate()}
-            disabled={scanMutation.isPending}
-            size="sm"
-          >
+          <Button onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending} size="sm">
             {scanMutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
@@ -135,11 +131,7 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
           </span>
         </div>
 
-        <Tabs
-          value={tab}
-          onValueChange={(v) => setTab(v as Tab)}
-          className="mt-4"
-        >
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-4">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="pending">Pending</TabsTrigger>
             <TabsTrigger value="dismissed">Dismissed</TabsTrigger>
@@ -171,10 +163,7 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
                 </div>
                 <ul className="space-y-1.5">
                   {g.suggestions.map((s) => (
-                    <li
-                      key={s.id}
-                      className="flex items-center justify-between gap-2 text-sm"
-                    >
+                    <li key={s.id} className="flex items-center justify-between gap-2 text-sm">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -189,9 +178,7 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
                         </div>
                         <div className="truncate">{s.value}</div>
                         {s.evidence ? (
-                          <div className="text-xs text-muted-foreground truncate">
-                            {s.evidence}
-                          </div>
+                          <div className="text-xs text-muted-foreground truncate">{s.evidence}</div>
                         ) : null}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">

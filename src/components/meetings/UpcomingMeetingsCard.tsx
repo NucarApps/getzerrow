@@ -165,9 +165,7 @@ export function UpcomingMeetingsCard({
                       disabled={reconnectBusy === a.id}
                     >
                       <RefreshCw className="mr-1.5 h-3 w-3" />
-                      {reconnectBusy === a.id
-                        ? "Redirecting…"
-                        : `Reconnect ${a.email ?? "inbox"}`}
+                      {reconnectBusy === a.id ? "Redirecting…" : `Reconnect ${a.email ?? "inbox"}`}
                     </Button>
                   ))}
                 </div>
@@ -279,14 +277,12 @@ export function UpcomingMeetingsCard({
                             variant="outline"
                             className="h-8 w-[168px]"
                             disabled={
-                              resendMutation.isPending &&
-                              resendMutation.variables === e.meetingId
+                              resendMutation.isPending && resendMutation.variables === e.meetingId
                             }
                             onClick={() => resendMutation.mutate(e.meetingId as string)}
                           >
                             <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                            {resendMutation.isPending &&
-                            resendMutation.variables === e.meetingId
+                            {resendMutation.isPending && resendMutation.variables === e.meetingId
                               ? "Sending…"
                               : "Resend notetaker"}
                           </Button>

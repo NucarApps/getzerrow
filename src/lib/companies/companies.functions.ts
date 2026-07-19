@@ -57,7 +57,6 @@ async function findOrCreateCompanyByName(
   return inserted;
 }
 
-
 export async function resolveContactCompany(
   ctx: Ctx,
   companyText: string | null | undefined,
@@ -162,9 +161,7 @@ export const getCompany = createServerFn({ method: "POST" })
     // Resolve introducer display name for each auto domain.
     const introducerIds = Array.from(
       new Set(
-        (domains ?? [])
-          .map((d) => d.discovered_from_contact_id)
-          .filter((v): v is string => !!v),
+        (domains ?? []).map((d) => d.discovered_from_contact_id).filter((v): v is string => !!v),
       ),
     );
     const introducerMap = new Map<string, { name: string | null; email: string | null }>();
@@ -210,9 +207,7 @@ export const discoverCompanyDomains = createServerFn({ method: "POST" })
 
 export const createCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ name: nonEmpty(200) }).parse(d),
-  )
+  .inputValidator((d: unknown) => z.object({ name: nonEmpty(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const c = await findOrCreateCompanyByName(context, data.name);
     if (!c) throw new Error("Invalid company name");
@@ -272,9 +267,8 @@ export const updateCompany = createServerFn({ method: "POST" })
         .select("id");
       const ids = (updated ?? []).map((r) => (r as { id: string }).id);
       if (ids.length > 0) {
-        const { reconcileAutoParentsForContacts } = await import(
-          "@/lib/contacts/auto-company-subgroups.functions"
-        );
+        const { reconcileAutoParentsForContacts } =
+          await import("@/lib/contacts/auto-company-subgroups.functions");
         await reconcileAutoParentsForContacts(supabase, userId, ids);
       }
     }
@@ -284,9 +278,7 @@ export const updateCompany = createServerFn({ method: "POST" })
 export const addCompanyDomain = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z
-      .object({ id: z.string().uuid(), domain: z.string().trim().min(1).max(253) })
-      .parse(d),
+    z.object({ id: z.string().uuid(), domain: z.string().trim().min(1).max(253) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -336,9 +328,9 @@ export const setCompanyTags = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (delErr) throw new Error(delErr.message);
     if (uniq.length > 0) {
-      const { error: insErr } = await supabase.from("company_tags").insert(
-        uniq.map((tag) => ({ user_id: userId, company_id: data.id, tag })),
-      );
+      const { error: insErr } = await supabase
+        .from("company_tags")
+        .insert(uniq.map((tag) => ({ user_id: userId, company_id: data.id, tag })));
       if (insErr) throw new Error(insErr.message);
     }
     return { ok: true as const };
@@ -481,11 +473,7 @@ async function mergeCompaniesImpl(
     .eq("company_id", sourceId)
     .eq("user_id", userId);
   if (srcTags && srcTags.length > 0) {
-    await supabase
-      .from("company_tags")
-      .delete()
-      .eq("company_id", sourceId)
-      .eq("user_id", userId);
+    await supabase.from("company_tags").delete().eq("company_id", sourceId).eq("user_id", userId);
     for (const t of srcTags) {
       await supabase
         .from("company_tags")
@@ -569,16 +557,11 @@ async function mergeCompaniesImpl(
     }
   }
   if (movedIds.length > 0) {
-    const { reconcileAutoParentsForContacts } = await import(
-      "@/lib/contacts/auto-company-subgroups.functions"
-    );
+    const { reconcileAutoParentsForContacts } =
+      await import("@/lib/contacts/auto-company-subgroups.functions");
     await reconcileAutoParentsForContacts(supabase, userId, movedIds);
   }
-  await supabase
-    .from("companies")
-    .delete()
-    .eq("id", sourceId)
-    .eq("user_id", userId);
+  await supabase.from("companies").delete().eq("id", sourceId).eq("user_id", userId);
   return { ok: true, movedContacts: movedIds.length };
 }
 
@@ -591,8 +574,6 @@ export const mergeCompanies = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => mergeCompaniesImpl(context, data.sourceId, data.targetId));
-
-
 
 export const deleteCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -616,9 +597,8 @@ export const deleteCompany = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const ids = (affected ?? []).map((r) => (r as { id: string }).id);
     if (ids.length > 0) {
-      const { reconcileAutoParentsForContacts } = await import(
-        "@/lib/contacts/auto-company-subgroups.functions"
-      );
+      const { reconcileAutoParentsForContacts } =
+        await import("@/lib/contacts/auto-company-subgroups.functions");
       await reconcileAutoParentsForContacts(supabase, userId, ids);
     }
     return { ok: true as const };
@@ -641,9 +621,7 @@ type CompanyLite = {
 /** Tokenize a normalized company name into significant words. */
 function tokenize(name: string): string[] {
   const key = normalizeCompanyName(name) ?? "";
-  return key
-    .split(/[^a-z0-9]+/i)
-    .filter((t) => t.length >= 3 && !STOP_TOKENS.has(t));
+  return key.split(/[^a-z0-9]+/i).filter((t) => t.length >= 3 && !STOP_TOKENS.has(t));
 }
 
 const STOP_TOKENS = new Set([
@@ -794,11 +772,8 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
           // the brand word — default unchecked so a hasty "merge all" can't
           // fold them into the factory brand. The AI pass / user can still
           // flip them.
-          const sharesRoot = [...rootDomainsOf(c.domains)].some((r) =>
-            canonicalRoots.has(r),
-          );
-          const sameKey =
-            !!canonicalKey && normalizeCompanyName(c.name) === canonicalKey;
+          const sharesRoot = [...rootDomainsOf(c.domains)].some((r) => canonicalRoots.has(r));
+          const sameKey = !!canonicalKey && normalizeCompanyName(c.name) === canonicalKey;
           return {
             id: c.id,
             name: c.name,
@@ -917,5 +892,3 @@ export const mergeCluster = createServerFn({ method: "POST" })
     }
     return { merged, failed, movedContacts: totalMovedContacts };
   });
-
-

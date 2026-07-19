@@ -40,10 +40,7 @@ export const listContactGroups = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase } = context;
     const [{ data: groups, error: gErr }, { data: members, error: mErr }] = await Promise.all([
-      supabase
-        .from("contact_groups")
-        .select(GROUP_SELECT)
-        .order("name", { ascending: true }),
+      supabase.from("contact_groups").select(GROUP_SELECT).order("name", { ascending: true }),
       supabase.from("contact_group_members").select("group_id,contact_id"),
     ]);
     if (gErr) throw new Error(gErr.message);
@@ -55,11 +52,7 @@ export const listContactGroups = createServerFn({ method: "GET" })
     // Load folder names for linked folders so the UI can show a chip
     // without a second round trip.
     const folderIds = Array.from(
-      new Set(
-        ((groups ?? [])
-          .map((g) => g.folder_id)
-          .filter((v): v is string => !!v)) as string[],
-      ),
+      new Set((groups ?? []).map((g) => g.folder_id).filter((v): v is string => !!v) as string[]),
     );
     let folderById = new Map<string, { name: string; color: string | null }>();
     if (folderIds.length > 0) {
@@ -110,25 +103,19 @@ export const createContactGroup = createServerFn({ method: "POST" })
     const { normalizeCompanyName } = await import("@/lib/companies/normalize");
     const key = normalizeCompanyName(data.name);
     if (key) {
-      const q = supabase
-        .from("contact_groups")
-        .select(GROUP_SELECT)
-        .eq("user_id", userId);
+      const q = supabase.from("contact_groups").select(GROUP_SELECT).eq("user_id", userId);
       const scoped = data.parent_group_id
         ? q.eq("parent_group_id", data.parent_group_id)
         : q.is("parent_group_id", null);
       const { data: candidates } = await scoped;
-      const hit = (candidates ?? []).find(
-        (g) => normalizeCompanyName(g.name) === key,
-      );
+      const hit = (candidates ?? []).find((g) => normalizeCompanyName(g.name) === key);
       if (hit) return { group: hit };
     }
     // Generate a stable CardDAV UID up-front so a group created in the
     // web app is immediately visible/syncable to iPhones on next PROPFIND.
     const uid =
       "group-" +
-      (globalThis.crypto?.randomUUID?.() ??
-        `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const { data: row, error } = await supabase
       .from("contact_groups")
       .insert({
@@ -256,9 +243,7 @@ export const setContactGroups = createServerFn({ method: "POST" })
         .in("id", data.groupIds);
       const bad = (targets ?? []).find((r) => r.auto_generated_from_group_id);
       if (bad) {
-        throw new Error(
-          "Can't assign: one of the selected groups is managed automatically",
-        );
+        throw new Error("Can't assign: one of the selected groups is managed automatically");
       }
     }
 

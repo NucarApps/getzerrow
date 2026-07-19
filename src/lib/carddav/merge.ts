@@ -63,7 +63,9 @@ export function buildCardDavContactPatch(input: {
     updated_at: nowIso,
   };
 
-  let emailDecision: EmailMergeDecision = existing ? "missing_existing_contact" : "missing_new_contact";
+  let emailDecision: EmailMergeDecision = existing
+    ? "missing_existing_contact"
+    : "missing_new_contact";
   let preservedEmailOverBlank = false;
 
   if (present.has("EMAIL")) {
