@@ -189,7 +189,7 @@ export function ContactPhotoUploader({
           variant="secondary"
           onClick={onRemove}
           aria-label="Remove photo"
-          className="absolute -right-1 -bottom-1 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100"
+          className="absolute -right-1 -bottom-1 h-6 w-6 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
         >
           <Trash2 className="h-3 w-3" />
         </Button>
@@ -202,7 +202,7 @@ export function ContactPhotoUploader({
           onClick={onResetToCompany}
           aria-label="Reset to company logo"
           title="Reset to company logo"
-          className="absolute -left-1 -bottom-1 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100"
+          className="absolute -left-1 -bottom-1 h-6 w-6 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
         >
           <Building2 className="h-3 w-3" />
         </Button>

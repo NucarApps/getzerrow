@@ -27,6 +27,33 @@ import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functi
 import { resolveContactCompany } from "@/lib/companies/companies.functions";
 import { applyRulesForContact } from "./group-rules.functions";
 
+// getContact self-heal: negative cache of (user, contact, avatar_url) keys
+// whose stored photo matched NO known company logo — i.e. real portraits.
+// Without it every open of a portrait-bearing contact re-pays the photo
+// download, hashing, and provider walk. Bounded + TTL'd (per-isolate); a
+// stale entry merely delays a heal by at most the TTL.
+const SELF_HEAL_MISS_TTL_MS = 60 * 60 * 1000;
+const SELF_HEAL_MISS_MAX = 2000;
+const selfHealMissEntries = new Map<string, number>();
+const selfHealMissCache = {
+  isFresh(key: string): boolean {
+    const expiry = selfHealMissEntries.get(key);
+    if (expiry === undefined) return false;
+    if (Date.now() > expiry) {
+      selfHealMissEntries.delete(key);
+      return false;
+    }
+    return true;
+  },
+  remember(key: string): void {
+    if (selfHealMissEntries.size >= SELF_HEAL_MISS_MAX) {
+      const oldest = selfHealMissEntries.keys().next().value;
+      if (oldest !== undefined) selfHealMissEntries.delete(oldest);
+    }
+    selfHealMissEntries.set(key, Date.now() + SELF_HEAL_MISS_TTL_MS);
+  },
+};
+
 /**
  * Fields we treat as "user-owned once you edit them". Enrichment reads this
  * list from `contacts.manual_overrides` and skips any field named here that
@@ -159,14 +186,19 @@ export const getContact = createServerFn({ method: "POST" })
     });
     let avatarIsCompanyLogoSnapshot = false;
     let effectiveAvatarUrl: string | null = contact.avatar_url ?? null;
-    const avatarSource =
-      (companyLink as { avatar_source?: string | null } | null)?.avatar_source ?? "unknown";
-    // Never self-heal photos the user explicitly chose. "user_upload" is the
-    // web/app uploader; "carddav" is a legacy label for iPhone Contacts saves
-    // (current writes use "user_upload" — see handlers.server.ts). Either way
-    // a human picked the picture, so leave it alone.
-    const isUserChosenPhoto = avatarSource === "user_upload" || avatarSource === "carddav";
-    if (contact.avatar_url && linkedCompanyId && !isUserChosenPhoto) {
+    // Self-heal runs for every stored photo, including ones stamped
+    // "user_upload"/"carddav": it only ever clears on an EXACT byte match
+    // with a known company logo, which a genuine portrait can never hit.
+    // iOS echoes of pushed logo PHOTOs arrive through the CardDAV path and
+    // used to be misclassified as user-chosen, freezing an old logo forever
+    // (contact shows the live logo briefly, then flips back once the stored
+    // snapshot loads). A deliberately chosen logo-as-photo falls back to the
+    // identical live logo, so clearing is visually a no-op there too.
+    // Genuine portraits miss every tier and would otherwise pay the full
+    // pipeline (photo download + hashes + provider walk) on EVERY open —
+    // the miss cache makes that at most once per TTL per photo.
+    const selfHealKey = `${userId}:${data.id}:${contact.avatar_url ?? ""}`;
+    if (contact.avatar_url && linkedCompanyId && !selfHealMissCache.isFresh(selfHealKey)) {
       try {
         const { loadContactPhotoBytes, sha256Hex, deleteContactPhoto } =
           await import("@/lib/contacts/photos.server");
@@ -184,8 +216,18 @@ export const getContact = createServerFn({ method: "POST" })
               : null;
           }
 
+          if (matchedSha === null) {
+            // Cross-company check next — one indexed query. A snapshot of a
+            // PREVIOUS employer's logo (contact has since moved companies)
+            // matches none of the current company's variants but may be on
+            // record user-wide. Runs BEFORE any provider fetch so the case
+            // it targets never pays for the walk below.
+            const { getKnownCompanyLogoHashes } = await import("@/lib/contacts/logo-photo.server");
+            matchedSha = (await getKnownCompanyLogoHashes(userId)).has(ownSha) ? ownSha : null;
+          }
+
           if (matchedSha === null && companyDomain) {
-            // Fast path: currently chosen logo for this contact's domain.
+            // Currently chosen logo for this contact's domain (cached fetch).
             const { fetchChosenCompanyLogoBytes } =
               await import("@/lib/contacts/logo-photo.server");
             const hit = await fetchChosenCompanyLogoBytes(userId, companyDomain);
@@ -206,10 +248,10 @@ export const getContact = createServerFn({ method: "POST" })
           }
 
           if (matchedSha === null) {
-            // Broader fallback: check every provider variant for every domain
-            // linked to this contact's company. Catches stale snapshots from
-            // an older logo pick or a different provider that no longer
-            // returns the same bytes today.
+            // Last resort (uncached provider walk, up to 20 fetches): every
+            // provider variant for every domain linked to this contact's
+            // company. Catches stale snapshots from an older logo pick or a
+            // provider that no longer returns the same bytes today.
             const { findMatchingCompanyLogoSha } = await import("@/lib/contacts/logo-photo.server");
             matchedSha = await findMatchingCompanyLogoSha(
               userId,
@@ -217,6 +259,12 @@ export const getContact = createServerFn({ method: "POST" })
               ownSha,
               sha256Hex,
             );
+          }
+
+          if (matchedSha === null) {
+            // Full miss: it's a real portrait. Remember that so reopening
+            // the contact doesn't re-run the downloads and provider walk.
+            selfHealMissCache.remember(selfHealKey);
           }
 
           if (matchedSha !== null) {

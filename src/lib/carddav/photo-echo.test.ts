@@ -284,13 +284,17 @@ describe("buildKnownCompanyLogoShaSet", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Regression: photos saved via the iPhone (CardDAV PUT) must be treated as
-// user-chosen and never wiped by the getContact self-heal, regardless of
-// whether the contact has a linked company. Enforced by two contracts:
+// Regression: photos saved via the iPhone (CardDAV PUT) survive as real
+// photos. Enforced by two contracts:
 //   1. handlers.server.ts persists surviving PUT photos with
-//      source="user_upload" (not "carddav").
-//   2. crud.functions.ts skips the self-heal for both "user_upload" and the
-//      legacy "carddav" label.
+//      source="user_upload" (not "carddav") — the PUT-side logo-echo guards
+//      are what keep pushed company logos from being stored at all.
+//   2. crud.functions.ts self-heal is HASH-GATED, not source-exempted: a
+//      stored photo is cleared only when its bytes exactly match a known
+//      company logo (an echo by definition). Genuine portraits never match,
+//      so they are never wiped — while echoes that slipped through older
+//      PUT handling get healed even though they carry a user-chosen source
+//      label.
 // A behavioural end-to-end test would require stubbing the full CardDAV +
 // Supabase stack; asserting the two source contracts is cheaper and prevents
 // silent regressions.
@@ -314,14 +318,22 @@ describe("iPhone photo save is treated as authoritative", () => {
     }
   });
 
-  it("getContact self-heal exempts both user_upload and legacy carddav sources", async () => {
+  it("getContact self-heal is hash-gated, not source-exempted", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const src = await fs.readFile(
       path.resolve(process.cwd(), "src/lib/contacts/crud.functions.ts"),
       "utf8",
     );
-    expect(src).toMatch(/avatarSource === "user_upload"/);
-    expect(src).toMatch(/avatarSource === "carddav"/);
+    // The old guard skipped self-heal for "user-chosen" sources, which froze
+    // iOS logo echoes forever (they arrive stamped user_upload/carddav). The
+    // protection for real portraits is the exact-byte-match gate instead: a
+    // photo is only ever cleared when its bytes equal a known company logo.
+    expect(src).not.toMatch(/avatarSource === "user_upload"/);
+    expect(src).not.toMatch(/avatarSource === "carddav"/);
+    expect(src).toMatch(/matchedSha !== null/);
+    // Cross-company fallback: user-wide recorded logo hashes catch snapshots
+    // of a previous employer's logo.
+    expect(src).toMatch(/getKnownCompanyLogoHashes\(userId\)/);
   });
 });

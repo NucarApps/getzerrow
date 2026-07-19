@@ -323,6 +323,27 @@ function ContactsPage() {
     return m;
   }, [aq.data]);
 
+  // Company-entity lookups so bucketing can group by the LINKED company
+  // first: a contact tied to a Company row belongs in that company's bucket
+  // even when their email domain is missing/personal (fixes "two Zimmerman
+  // Advertising rows" when one member has no work email).
+  const companyById = useMemo(() => {
+    const m = new Map<string, { name: string; domain: string | null }>();
+    for (const c of cq.data?.companies ?? []) {
+      m.set(c.id, { name: c.name, domain: c.domains?.[0]?.domain ?? null });
+    }
+    return m;
+  }, [cq.data]);
+  const companyIdByDomain = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of cq.data?.companies ?? []) {
+      for (const d of c.domains ?? []) {
+        if (d.domain) m.set(d.domain.toLowerCase(), c.id);
+      }
+    }
+    return m;
+  }, [cq.data]);
+
   const companyBuckets = useMemo<Bucket[]>(() => {
     const map = new Map<string, Bucket>();
     const PERSONAL_KEY = "__personal__";
@@ -335,7 +356,26 @@ function ContactsPage() {
       let key: string;
       let bucket: Bucket | undefined;
       const manualCompany = (c.company ?? "").trim();
-      if (!d && manualCompany) {
+      // Linked company wins; contacts whose email domain belongs to a known
+      // company collapse into the same bucket even without an explicit link.
+      // Personal domains never participate in the domain lookup or in seeding
+      // the bucket's display domain — a gmail-only member of a domainless
+      // company must not turn the bucket into a "gmail.com company".
+      const workDomain = d && !isPersonalDomain(d) ? d : null;
+      const linkedCompanyId =
+        (c.company_id && companyById.has(c.company_id) ? c.company_id : null) ??
+        (workDomain ? (companyIdByDomain.get(workDomain) ?? null) : null);
+      if (linkedCompanyId) {
+        const company = companyById.get(linkedCompanyId)!;
+        key = `cid:${linkedCompanyId}`;
+        bucket = map.get(key) ?? {
+          key,
+          domain: company.domain ?? resolvedWeb ?? workDomain,
+          name: company.name,
+          kind: "company",
+          contacts: [],
+        };
+      } else if (!d && manualCompany) {
         key = `name:${normalizeCompanyName(manualCompany)}`;
         bucket = map.get(key) ?? {
           key,
@@ -396,18 +436,36 @@ function ContactsPage() {
     // Collapse name-keyed buckets whose members share a website/email domain
     // with an existing domain bucket (e.g. contacts with no email but a
     // website pointing to nucar.com should merge into the nucar.com bucket).
+    // Name-keyed buckets with no derivable domain at all fold into a company
+    // bucket with the same normalized name instead — a contact with only
+    // "Zimmerman Advertising" typed in must not mint a second company row.
     const byDomain = new Map<string, Bucket>();
+    const byNormName = new Map<string, Bucket>();
     for (const b of arr) {
-      if (b.kind === "company" && b.domain && !b.key.startsWith("name:")) {
-        byDomain.set(b.domain, b);
+      if (b.kind === "company" && !b.key.startsWith("name:")) {
+        if (b.domain) byDomain.set(b.domain, b);
+        const norm = normalizeCompanyName(b.name);
+        if (norm && !byNormName.has(norm)) byNormName.set(norm, b);
       }
     }
     const collapsed: Bucket[] = [];
     for (const b of arr) {
-      if (b.kind === "company" && b.key.startsWith("name:") && b.domain && byDomain.has(b.domain)) {
-        const dst = byDomain.get(b.domain)!;
-        dst.contacts.push(...b.contacts);
-        continue;
+      if (b.kind === "company" && b.key.startsWith("name:")) {
+        if (b.domain && byDomain.has(b.domain)) {
+          byDomain.get(b.domain)!.contacts.push(...b.contacts);
+          continue;
+        }
+        // Name fold only when the bucket has NO domain evidence at all — a
+        // derived domain that matches nothing means these contacts belong to
+        // a DIFFERENT company that merely shares a brand token ("Apex Group"
+        // at apexgroup.com must not fold into "Apex" at apex.com).
+        if (!b.domain) {
+          const norm = normalizeCompanyName(b.name);
+          if (norm && byNormName.has(norm)) {
+            byNormName.get(norm)!.contacts.push(...b.contacts);
+            continue;
+          }
+        }
       }
       collapsed.push(b);
     }
@@ -418,7 +476,7 @@ function ContactsPage() {
     const personal = collapsed.filter((b) => b.kind === "personal");
     const other = collapsed.filter((b) => b.kind === "other");
     return [...companies, ...personal, ...other];
-  }, [filtered, aliasMap]);
+  }, [filtered, aliasMap, companyById, companyIdByDomain]);
 
   // Same-name merge suggestions: buckets that share a normalized company name
   // but live on different domains. Persisted dismissals live in localStorage.
@@ -561,11 +619,20 @@ function ContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupByCompany]);
   useEffect(() => {
-    if (!initialCollapseDoneRef.current && groupByCompany && companyBuckets.length > 0) {
+    // Wait for the companies query to settle before latching: bucket keys
+    // flip from domain keys to cid:<id> once cq lands, and collapsing the
+    // pre-cq keys would leave every linked-company bucket expanded.
+    const companiesSettled = !!cq.data || cq.isError;
+    if (
+      !initialCollapseDoneRef.current &&
+      groupByCompany &&
+      companyBuckets.length > 0 &&
+      companiesSettled
+    ) {
       initialCollapseDoneRef.current = true;
       setCollapsed(new Set(companyBuckets.map((b) => b.key)));
     }
-  }, [companyBuckets, groupByCompany]);
+  }, [companyBuckets, groupByCompany, cq.data, cq.isError]);
 
   return (
     <>

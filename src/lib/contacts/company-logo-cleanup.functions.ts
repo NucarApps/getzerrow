@@ -88,6 +88,20 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     const knownLogoShas = await buildKnownCompanyLogoShaSet(context.userId);
+    const { getCompanyLogoVariantShas, getKnownCompanyLogoHashes, recordCompanyLogoHash } =
+      await import("@/lib/contacts/logo-photo.server");
+    const recordedShas = await getKnownCompanyLogoHashes(context.userId);
+    // Provider-variant hashes per company, walked at most once per batch —
+    // 10 contacts at one company must not fetch the same 7 URLs 10 times.
+    const variantShasByCompany = new Map<string, Set<string>>();
+    const variantShasFor = async (companyId: string): Promise<Set<string>> => {
+      let set = variantShasByCompany.get(companyId);
+      if (!set) {
+        set = await getCompanyLogoVariantShas(context.userId, companyId, sha256Hex);
+        variantShasByCompany.set(companyId, set);
+      }
+      return set;
+    };
 
     let cleared = 0;
     const kept: string[] = [];
@@ -117,8 +131,29 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
 
       // Clear if the stored avatar matches THIS contact's current logo, OR
       // matches any other known company-logo the user has picked (a stale
-      // snapshot from a previous mis-association).
-      const matches = (currentLogoSha && ownSha === currentLogoSha) || knownLogoShas.has(ownSha);
+      // snapshot from a previous mis-association), OR any recorded logo hash,
+      // OR any provider variant of the contact's company domains (providers
+      // re-render images over time, so today's chosen-variant bytes can miss
+      // a snapshot taken months ago). Cheap set checks run first; the
+      // provider walk is once-per-company per batch.
+      const matches =
+        (currentLogoSha && ownSha === currentLogoSha) ||
+        knownLogoShas.has(ownSha) ||
+        recordedShas.has(ownSha) ||
+        (await variantShasFor(r.company_id)).has(ownSha);
+
+      if (matches && !recordedShas.has(ownSha)) {
+        // Fingerprint the match so future getContact opens take the cheap
+        // recorded-hash path instead of re-walking providers.
+        await recordCompanyLogoHash({
+          userId: context.userId,
+          companyId: r.company_id,
+          domain: logoDomain,
+          sha256: ownSha,
+          source: "bulk_cleanup",
+        });
+        recordedShas.add(ownSha);
+      }
 
       if (matches) {
         await deleteContactPhoto(context.userId, r.id);

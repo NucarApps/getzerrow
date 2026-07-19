@@ -292,6 +292,38 @@ export function logoDomainForContact(row: {
  *
  * Bounded by design: one company × its domains × 7 providers, all cached in
  * the module-level logo byte cache, so a hit on a re-open is instant. */
+/** Hash every provider variant for every domain linked to `companyId` and
+ * return the full set (recorded hashes included). Used by the bulk logo
+ * cleanup so a batch walks each company's providers ONCE instead of once
+ * per contact. Same fetch budget as findMatchingCompanyLogoSha. */
+export async function getCompanyLogoVariantShas(
+  userId: string,
+  companyId: string,
+  computeSha: (bytes: Uint8Array) => Promise<string>,
+): Promise<Set<string>> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const shas = await getKnownCompanyLogoHashes(userId, companyId);
+
+  const { data: domainRows } = await supabaseAdmin
+    .from("company_domains")
+    .select("domain,source,member_count,created_at")
+    .eq("company_id", companyId)
+    .eq("user_id", userId);
+  const domains = sortedCompanyDomains((domainRows ?? []) as CompanyDomainRow[]);
+
+  const MAX_FETCHES = 20;
+  let budget = MAX_FETCHES;
+  for (const domain of domains) {
+    if (!isValidDomainShape(domain) || isBlockedDomain(domain)) continue;
+    for (const url of providersFor(domain)) {
+      if (budget-- <= 0) return shas;
+      const hit = await tryFetch(url);
+      if (hit) shas.add(await computeSha(hit.bytes));
+    }
+  }
+  return shas;
+}
+
 export async function findMatchingCompanyLogoSha(
   userId: string,
   companyId: string,
