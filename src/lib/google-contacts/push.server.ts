@@ -146,7 +146,7 @@ async function pushContacts(
   if (photoDirtyIds.length) {
     const { data: photoRows } = await supabaseAdmin
       .from("contacts")
-      .select("id, email, updated_at, avatar_url")
+      .select("id, email, updated_at, avatar_url, company_id")
       .eq("user_id", ids.userId)
       .not("avatar_url", "is", null)
       .in("id", photoDirtyIds.slice(0, MAX_CONTACTS_PER_RUN));
@@ -161,7 +161,7 @@ async function pushContacts(
   for (let from = 0; dirty.length < MAX_CONTACTS_PER_RUN; from += PAGE_SIZE) {
     const { data: page } = await supabaseAdmin
       .from("contacts")
-      .select("id, email, updated_at, avatar_url")
+      .select("id, email, updated_at, avatar_url, company_id")
       .eq("user_id", ids.userId)
       .order("updated_at", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
