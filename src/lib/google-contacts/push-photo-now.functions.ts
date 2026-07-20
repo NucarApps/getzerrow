@@ -4,12 +4,13 @@
 // runGoogleContactsSync for each linked Gmail account so the change lands in
 // Google People without waiting for the next cron tick.
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHost } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type PushResult = {
   contactsMarked: number;
-  accountsSynced: number;
+  accountsQueued: number;
   errors: string[];
 };
 
