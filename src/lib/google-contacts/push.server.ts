@@ -643,5 +643,36 @@ export async function pushGroupMemberships(
     }
     await progress?.increment(1);
   }
+
+  // Also reconcile Google's default "myContacts" group so previously-created
+  // contacts (which we pushed into user labels but never myContacts) get
+  // promoted from "Other contacts" to the main Contacts list.
+  try {
+    const desiredMyContacts = new Set(contactResourceById.values());
+    if (desiredMyContacts.size > 0) {
+      const remote = await getContactGroupWithMembers(
+        ids.gmailAccountId,
+        MY_CONTACTS_RESOURCE,
+      );
+      const { toAdd } = calculateMembershipDelta({
+        desiredResourceNames: desiredMyContacts,
+        currentResourceNames: remote.memberResourceNames ?? [],
+      });
+      // Never remove from myContacts — user may have imported contacts outside
+      // Zerrow that we don't track.
+      if (toAdd.length) {
+        await modifyGroupMembers(ids.gmailAccountId, MY_CONTACTS_RESOURCE, toAdd, []);
+        changedMemberships += toAdd.length;
+        logInfo("google_contacts.push.my_contacts_promoted", {
+          ...ids,
+          added: toAdd.length,
+        });
+      }
+    }
+  } catch (e) {
+    logError("google_contacts.push.my_contacts_failed", { ...ids }, e);
+  }
+
   return changedMemberships;
 }
+
