@@ -5,6 +5,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { z } from "zod";
+import {
+  isGooglePhotoLinkDirty,
+  isGooglePhotoPushDirty,
+  isLocalGoogleContactDirty,
+} from "@/lib/google-contacts/dirty";
 
 async function assertOwnsAccount(userId: string, accountId: string): Promise<void> {
   const { data, error } = await supabaseAdmin
@@ -62,7 +67,63 @@ export const getGoogleContactsSyncStatus = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertOwnsAccount(context.userId, data.accountId);
     const { getGoogleContactsStatus } = await import("@/lib/google-contacts/reconcile.server");
-    return await getGoogleContactsStatus(context.userId, data.accountId);
+    const status = await getGoogleContactsStatus(context.userId, data.accountId);
+    const [{ data: contacts }, { data: contactLinks }, { data: groupLinks }, { data: members }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("contacts")
+          .select("id, updated_at, avatar_url")
+          .eq("user_id", context.userId),
+        supabaseAdmin
+          .from("google_contact_links")
+          .select("contact_id, last_synced_at, photo_etag, photo_push_attempts, resource_name")
+          .eq("gmail_account_id", data.accountId),
+        supabaseAdmin
+          .from("google_group_links")
+          .select("contact_group_id, resource_name")
+          .eq("gmail_account_id", data.accountId),
+        supabaseAdmin
+          .from("contact_group_members")
+          .select("contact_id, group_id")
+          .eq("user_id", context.userId),
+      ]);
+    const linksByContact = new Map((contactLinks ?? []).map((link) => [link.contact_id, link]));
+    const linkedContactIds = new Set((contactLinks ?? []).map((link) => link.contact_id));
+    const linkedGroupIds = new Set((groupLinks ?? []).map((link) => link.contact_group_id));
+    const bodyPending = (contacts ?? []).filter((contact) => {
+      const link = linksByContact.get(contact.id);
+      return !link || isLocalGoogleContactDirty(contact.updated_at, link.last_synced_at);
+    }).length;
+    const photoPending = (contacts ?? []).filter((contact) => {
+      const link = linksByContact.get(contact.id);
+      if (!link) return false;
+      return (
+        isGooglePhotoLinkDirty({
+          photoEtag: link.photo_etag ?? null,
+          photoPushAttempts: link.photo_push_attempts ?? 0,
+        }) ||
+        isGooglePhotoPushDirty({
+          avatarUrl: contact.avatar_url ?? null,
+          photoEtag: link.photo_etag ?? null,
+          photoPushAttempts: link.photo_push_attempts ?? 0,
+        })
+      );
+    }).length;
+    const linkedMemberships = (members ?? []).filter(
+      (member) => linkedContactIds.has(member.contact_id) && linkedGroupIds.has(member.group_id),
+    ).length;
+    return {
+      ...status,
+      backlog: {
+        totalContacts: contacts?.length ?? 0,
+        linkedContacts: linkedContactIds.size,
+        unlinkedContacts: (contacts?.length ?? 0) - linkedContactIds.size,
+        bodyPending,
+        photoPending,
+        linkedGroups: linkedGroupIds.size,
+        linkedMemberships,
+      },
+    };
   });
 
 const SYNC_MODES = ["off", "pull_only", "two_way"] as const;

@@ -11,12 +11,18 @@ import {
   updateContactGroup,
   deleteContactGroup,
   modifyGroupMembers,
+  getContactGroupWithMembers,
   getPerson,
   PeopleApiError,
 } from "./people-client.server";
 import { contactToPerson, groupToLabel, personToContact } from "./mapper";
 import { loadLocalContact } from "./state.server";
-import { filterDirtyForPush, isGooglePhotoLinkDirty, MAX_PHOTO_PUSH_ATTEMPTS } from "./dirty";
+import {
+  calculateMembershipDelta,
+  filterDirtyForPush,
+  isGooglePhotoLinkDirty,
+  MAX_PHOTO_PUSH_ATTEMPTS,
+} from "./dirty";
 
 import type { ProgressReporter } from "./progress.server";
 
@@ -39,6 +45,7 @@ export async function pushToGoogle(
 ): Promise<{
   contactsPushed: number;
   groupsPushed: number;
+  membershipsPushed: number;
   tombstonesApplied: number;
 }> {
   logInfo("google_contacts.push.start", { ...ids });
@@ -47,15 +54,18 @@ export async function pushToGoogle(
   const groupResourceByLocal = await loadGroupMap(ids);
   await progress?.set("pushing_contacts", 0, 0);
   const contactsPushed = await pushContacts(ids, groupResourceByLocal, progress);
+  await progress?.set("pushing_memberships", 0, 0);
+  const membershipsPushed = await pushGroupMemberships(ids, progress);
   await progress?.set("applying_tombstones", 0, 0);
   const tombstonesApplied = await applyTombstones(ids, progress);
   logInfo("google_contacts.push.done", {
     ...ids,
     contacts: contactsPushed,
     groups: groupsPushed,
+    memberships: membershipsPushed,
     tombstones: tombstonesApplied,
   });
-  return { contactsPushed, groupsPushed, tombstonesApplied };
+  return { contactsPushed, groupsPushed, membershipsPushed, tombstonesApplied };
 }
 
 async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
@@ -96,6 +106,7 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
             contact_group_id: g.id,
             resource_name: created.resourceName,
             etag: created.etag ?? null,
+            last_synced_at: new Date().toISOString(),
           });
           count++;
         }
@@ -540,12 +551,16 @@ async function applyTombstones(ids: Ids, progress?: ProgressReporter): Promise<n
 }
 
 /** Reconcile membership deltas as a single members:modify per group. */
-export async function pushGroupMemberships(ids: Ids): Promise<void> {
+export async function pushGroupMemberships(
+  ids: Ids,
+  progress?: ProgressReporter,
+): Promise<number> {
   const { data: links } = await supabaseAdmin
     .from("google_group_links")
     .select("contact_group_id, resource_name")
     .eq("gmail_account_id", ids.gmailAccountId);
-  if (!links?.length) return;
+  if (!links?.length) return 0;
+  await progress?.set("pushing_memberships", 0, links.length);
 
   const { data: contactLinks } = await supabaseAdmin
     .from("google_contact_links")
@@ -555,6 +570,7 @@ export async function pushGroupMemberships(ids: Ids): Promise<void> {
     (contactLinks ?? []).map((l) => [l.contact_id, l.resource_name]),
   );
 
+  let changedMemberships = 0;
   for (const gl of links) {
     // Desired member resource names.
     const { data: members } = await supabaseAdmin
@@ -567,17 +583,31 @@ export async function pushGroupMemberships(ids: Ids): Promise<void> {
         .filter((n): n is string => !!n),
     );
 
-    // Google's current members require a separate fetch — but for
-    // simplicity, we add everything and rely on Google's idempotency.
-    if (!desired.size) continue;
     try {
-      await modifyGroupMembers(ids.gmailAccountId, gl.resource_name, [...desired], []);
+      const remote = await getContactGroupWithMembers(ids.gmailAccountId, gl.resource_name);
+      const { toAdd, toRemove } = calculateMembershipDelta({
+        desiredResourceNames: desired,
+        currentResourceNames: remote.memberResourceNames ?? [],
+      });
+      if (toAdd.length || toRemove.length) {
+        await modifyGroupMembers(ids.gmailAccountId, gl.resource_name, toAdd, toRemove);
+        changedMemberships += toAdd.length + toRemove.length;
+        logInfo("google_contacts.push.membership_updated", {
+          ...ids,
+          contact_group_id: gl.contact_group_id,
+          resource_name: gl.resource_name,
+          added: toAdd.length,
+          removed: toRemove.length,
+        });
+      }
     } catch (e) {
       logError(
         "google_contacts.push.membership_failed",
-        { ...ids, resource_name: gl.resource_name },
+        { ...ids, contact_group_id: gl.contact_group_id, resource_name: gl.resource_name },
         e,
       );
     }
+    await progress?.increment(1);
   }
+  return changedMemberships;
 }

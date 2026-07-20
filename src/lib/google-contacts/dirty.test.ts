@@ -4,6 +4,7 @@ import {
   isGooglePhotoPushDirty,
   isGooglePhotoLinkDirty,
   filterDirtyForPush,
+  calculateMembershipDelta,
   MAX_PHOTO_PUSH_ATTEMPTS,
   type PushLinkState,
 } from "./dirty";
@@ -26,6 +27,26 @@ describe("isLocalGoogleContactDirty", () => {
     expect(isLocalGoogleContactDirty("2026-07-18T11:59:59.000Z", "2026-07-18T12:00:00.000Z")).toBe(
       false,
     );
+  });
+});
+
+describe("calculateMembershipDelta", () => {
+  it("adds missing Google memberships and removes stale memberships", () => {
+    expect(
+      calculateMembershipDelta({
+        desiredResourceNames: ["people/a", "people/c"],
+        currentResourceNames: ["people/a", "people/b"],
+      }),
+    ).toEqual({ toAdd: ["people/c"], toRemove: ["people/b"] });
+  });
+
+  it("treats duplicate local memberships as a single desired Google member", () => {
+    expect(
+      calculateMembershipDelta({
+        desiredResourceNames: ["people/a", "people/a"],
+        currentResourceNames: [],
+      }),
+    ).toEqual({ toAdd: ["people/a"], toRemove: [] });
   });
 });
 

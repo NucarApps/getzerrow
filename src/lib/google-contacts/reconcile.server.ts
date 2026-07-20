@@ -121,7 +121,7 @@ export async function runGoogleContactsSync(
       last_full_sync_at: pull.usedFullResync ? now.toISOString() : state.last_full_sync_at,
       last_incremental_at: now.toISOString(),
       last_pull_count: pull.pulled,
-      last_push_count: push.contactsPushed + push.groupsPushed,
+      last_push_count: push.contactsPushed + push.groupsPushed + push.membershipsPushed,
       last_pull_created: pull.breakdown.created,
       last_pull_updated: pull.breakdown.updated,
       last_pull_skipped_no_email: pull.breakdown.skipped_no_email,
@@ -130,7 +130,11 @@ export async function runGoogleContactsSync(
       last_error: null,
       pending_bump: false,
     });
-    return { ok: true, pull: pull.pulled, push: push.contactsPushed + push.groupsPushed };
+    return {
+      ok: true,
+      pull: pull.pulled,
+      push: push.contactsPushed + push.groupsPushed + push.membershipsPushed,
+    };
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
     logError("google_contacts.run.failed", { ...ids }, e);
