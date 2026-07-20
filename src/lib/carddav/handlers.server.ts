@@ -214,7 +214,7 @@ async function loadContactPhotoOrLogo(
       // Non-fatal: fingerprinting is best-effort.
     }
   }
-  return fallback;
+  return fallback ?? own;
 }
 
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
