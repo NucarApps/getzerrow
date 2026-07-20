@@ -124,7 +124,7 @@ export const pushCompanyPhotoToGoogleNow = createServerFn({ method: "POST" })
       .eq("company_id", data.companyId);
     const contactIds = (contacts ?? []).map((c) => (c as { id: string }).id);
     if (contactIds.length === 0) {
-      return { contactsMarked: 0, accountsSynced: 0, errors: ["no_members"] };
+      return { contactsMarked: 0, accountsQueued: 0, errors: ["no_members"] };
     }
 
     const { data: links } = await supabaseAdmin
@@ -140,9 +140,13 @@ export const pushCompanyPhotoToGoogleNow = createServerFn({ method: "POST" })
       ),
     );
     if (accountIds.length === 0) {
-      return { contactsMarked: 0, accountsSynced: 0, errors: ["not_linked_to_google"] };
+      return { contactsMarked: 0, accountsQueued: 0, errors: ["not_linked_to_google"] };
     }
     await markGooglePhotoDirtyMany(context.userId, contactIds);
-    const { accountsSynced, errors } = await syncAccounts(context.userId, accountIds);
-    return { contactsMarked: contactIds.length, accountsSynced, errors };
+    const queued = triggerBackgroundSync();
+    return {
+      contactsMarked: contactIds.length,
+      accountsQueued: queued ? accountIds.length : 0,
+      errors: queued ? [] : ["background_sync_unavailable"],
+    };
   });
