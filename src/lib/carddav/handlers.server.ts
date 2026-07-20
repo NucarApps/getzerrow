@@ -1365,7 +1365,14 @@ export async function handlePut(
           // iOS keep its local copy and retry later.
           logError(
             "carddav.put.photo_save_failed",
-            { contact_id: contactId },
+            {
+              contact_id: contactId,
+              user_id: userId,
+              incoming_sha: incomingSha.slice(0, 16),
+              incoming_bytes: parsed.photo.bytes.length,
+              mime: parsed.photo.mime,
+              decision,
+            },
             saveErr,
           );
           return new Response("Failed to store contact photo", { status: 500 });
