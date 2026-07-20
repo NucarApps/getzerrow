@@ -30,6 +30,10 @@ import {
   listContactsForLogoCleanup,
   cleanupCompanyLogoPhotosBatch,
 } from "@/lib/contacts/company-logo-cleanup.functions";
+import {
+  getPhotoPrioritySettings,
+  setGlobalPhotoPriority,
+} from "@/lib/contacts/photo-priority.functions";
 
 import {
   Select,
