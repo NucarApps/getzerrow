@@ -25,6 +25,7 @@ type Ids = { userId: string; gmailAccountId: string; runId: string };
 // Cap per-run work so a big first-time push doesn't hog the cron slot.
 const MAX_CONTACTS_PER_RUN = 200;
 const MAX_GROUPS_PER_RUN = 100;
+const NO_LOCAL_PHOTO_ETAG = "no-local-photo";
 
 export async function pushToGoogle(
   ids: Ids,
@@ -372,6 +373,11 @@ async function pushContacts(
           );
           const photo = await resolveEffectiveContactPhotoForSync(ids.userId, c.id);
           if (!photo) {
+            await supabaseAdmin
+              .from("google_contact_links")
+              .update({ photo_etag: NO_LOCAL_PHOTO_ETAG, photo_push_attempts: 0 })
+              .eq("contact_id", c.id)
+              .eq("gmail_account_id", ids.gmailAccountId);
             logInfo("google_contacts.push.photo_skipped_no_avatar", {
               ...ids,
               contact_id: c.id,
