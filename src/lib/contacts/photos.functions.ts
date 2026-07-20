@@ -56,14 +56,18 @@ export const uploadContactPhoto = createServerFn({ method: "POST" })
     );
 
     // Nudge Google sync to push the new picture upstream on next run.
+    // A brand-new local photo also resets the retry budget so any previous
+    // "gave up" state doesn't keep the sync from trying again.
     try {
-      const { markGoogleContactDirty } = await import(
+      const { markGoogleContactDirty, markGooglePhotoDirty } = await import(
         "@/lib/google-contacts/mark-dirty.server"
       );
       await markGoogleContactDirty(context.userId, data.contactId);
+      await markGooglePhotoDirty(context.userId, data.contactId);
     } catch {
       // Not linked to Google — no-op.
     }
+
 
     return { avatarUrl };
   });
