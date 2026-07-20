@@ -573,6 +573,13 @@ function GoogleContactsSettings() {
           The background sync runs automatically. Pick a cadence per account below (every 5 min, 15
           min, or hour), or hit "Sync now" for an immediate run.
         </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Google Contacts doesn't support nested labels — subgroups sync as
+          <span className="font-mono"> Parent - Child</span> (e.g.{" "}
+          <span className="font-mono">Factory - VW</span>). All Zerrow contacts are added to
+          Google's default Contacts list.
+        </p>
+
       </Card>
 
       {accountsQ.isLoading ? (

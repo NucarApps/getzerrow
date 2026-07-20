@@ -1,31 +1,42 @@
-## Plan
+## Why Google shows 390 vs Zerrow's 487, and wrong labels
 
-I verified the current backend state before planning: Zerrow has 489 contacts, 456 Google-linked contacts, 31 unlinked contacts, 450 contacts still dirty for Google push, 395 photo-dirty links, 24 local labels/groups, and 23 Google-linked labels. The current sync account is enabled in `two_way` mode with Contacts access granted and no stored error.
+Confirmed against the live DB:
 
-### 1. Make the Google sync push Zerrow’s current state reliably
-- Keep Zerrow as the authoritative source for contacts, labels, memberships, and photos.
-- Ensure dirty contacts are pushed in bounded batches until the backlog drains instead of appearing “done” after only a few items.
-- Make unlinked Zerrow contacts eligible for creation in Google so the count can rise above the current ~405/456 linked set.
+1. **Google Contacts flat count (390) is the `myContacts` system group.** The People API only counts a person in Google's default "Contacts" screen if they're a member of `contactGroups/myContacts`. Zerrow's `createPerson` currently pushes only the user-defined label memberships (Factory, Vendor, etc.) and never adds `myContacts`, so every contact we create in Google lands in "Other contacts" and is invisible on that screen. That accounts for the ~97-contact gap.
 
-### 2. Fix label/group membership sync
-- Wire the existing Google group membership push helper into the main sync flow; it currently exists but is not called from `pushToGoogle`, which explains why Google groups can stay old.
-- After creating/updating contacts and labels, refresh the contact/group link maps before pushing memberships so newly-created Google contacts can be added to the correct Google groups in the same run.
-- Add structured logs/counts for group membership add failures so a specific stuck label can be traced.
+2. **Labels are flat in Google, and we push the leaf name only.** The DB has real nesting (`Factory` → `Ford, GM, Honda, Hyundai, Kia, Nissan, Stellantis, Toyota, VW`), but Google Contacts has no label hierarchy. `pushGroups` sends just `g.name`, so Google shows a top-level "VW" next to the pre-existing OEM labels rather than "Factory - VW".
 
-### 3. Add a “Zerrow source of truth” sync mode in settings
-- Add an explicit settings mode that pushes Zerrow → Google while still allowing a manual Google import/backfill when needed.
-- Make the current account use this source-of-truth behavior so old Google-side labels do not keep re-overwriting Zerrow’s labels.
-- Update the settings copy/status to show backlog counts: unlinked contacts, dirty contacts, photo-dirty contacts, and pending group memberships.
+3. **Duplicate `Factory` local group** (one linked, one with no `google_group_links` row and 1 member) is a leftover that will cause a second flat "Factory" to appear in Google on the next push.
 
-### 4. Harden photo push draining
-- Keep the existing photo failure details, but make the worker prioritize real photo changes without starving normal contact/body updates.
-- Preserve the personal-vs-company photo priority resolver when pushing to Google and when serving CardDAV to iOS.
+## Changes
 
-### 5. Add tests for the regression
-- Add unit coverage around dirty-contact selection so unlinked and dirty contacts are not skipped.
-- Add sync-level tests proving group memberships are pushed after contact/group creation and that source-of-truth mode does not pull old Google label membership back over Zerrow labels.
+### 1. Add every pushed contact to `myContacts` (fixes count)
+`src/lib/google-contacts/push.server.ts`
+- In `pushContacts`, always append `"contactGroups/myContacts"` to `memberResourceNames` before calling `contactToPerson` for both create and update paths. The People API accepts it as a normal membership.
+- In `pushGroupMemberships`, when computing the `desired` set for a group, additionally reconcile `myContacts` for every linked contact so previously-created "Other contacts" get promoted on the next sync (one extra `members:modify` per run against `contactGroups/myContacts`).
 
-### 6. Verify after implementation
-- Run the relevant tests.
-- Check the database status after one sync run to confirm the dirty/unlinked counts drop and group membership links are being attempted/pushed.
-- Use the settings/admin status to confirm sync progress and any specific Google API errors are visible.
+### 2. Flatten nested labels as `"Parent - Child"` in Google
+`src/lib/google-contacts/push.server.ts` (`pushGroups`)
+- When loading `contact_groups`, also select `parent_group_id`.
+- Resolve parent names into a map, and push the Google label name as `${parent.name} - ${g.name}` when `parent_group_id` is set (e.g. `Factory - VW`, `Vendor - Software`). Top-level groups keep their bare name.
+- On rename of either parent or child, `updated_at` bump already triggers `updateContactGroup`, so the Google label auto-renames.
+
+### 3. Clean up the duplicate local `Factory` group
+- One-shot migration merges the orphan `Factory` (no `google_group_links` row, 1 member) into the linked `Factory` group by moving `contact_group_members` and deleting the orphan.
+
+### 4. Backfill so the fix is visible immediately
+- Migration flips `google_contact_links.last_synced_at = epoch` for all rows so the next sync re-pushes every linked contact with the new `myContacts` membership.
+- Migration bumps `contact_groups.updated_at = now()` for every row with a `parent_group_id` so parent-prefixed labels get renamed in Google on the next push.
+
+### 5. Settings UI copy
+`src/routes/_authenticated/settings.google-contacts.tsx`
+- Under two-way mode, add a one-line note: "Google Contacts doesn't support nested labels — subgroups sync as `Parent - Child` (e.g. Factory - VW). All Zerrow contacts are added to Google's default Contacts list."
+
+### 6. Tests
+`src/lib/google-contacts/push.test.ts` (new)
+- Unit tests for the label-flattening helper (top-level unchanged, one level nested formatted as `Parent - Child`, missing parent falls back to leaf name).
+- Assert `myContacts` is always included in the memberships passed to `contactToPerson`.
+
+## Out of scope
+- Deeper hierarchies (Google is fundamentally flat; we only concatenate one level, matching the current UI which uses one level of nesting).
+- Any changes to CardDAV / iOS behavior — iOS handles nested groups natively and is untouched.
