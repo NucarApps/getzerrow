@@ -164,9 +164,17 @@ async function loadContactPhotoOrLogo(
   userId: string,
   row: { id: string; avatar_url?: string | null; website?: string | null; email?: string | null },
 ): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const { getEffectivePhotoPriority } = await import("@/lib/contacts/photo-priority.server");
+  const { priority } = await getEffectivePhotoPriority(userId, row.id);
   const own = await loadContactPhotoBytes(row.avatar_url ?? null);
-  if (own) return own;
-  if (!(await getUseCompanyLogoFallback(userId))) return null;
+  if (priority === "personal_only") return own;
+  if (priority === "company_first") {
+    // Try company/domain logo first, then fall back to personal photo.
+  } else if (own) {
+    // personal_first: personal wins when present.
+    return own;
+  }
+  if (!(await getUseCompanyLogoFallback(userId))) return own;
   const {
     fetchCompanyPhotoOrLogoBytes,
     resolveCompanyLogoDomainForContact,
@@ -206,7 +214,7 @@ async function loadContactPhotoOrLogo(
       // Non-fatal: fingerprinting is best-effort.
     }
   }
-  return fallback;
+  return fallback ?? own;
 }
 
 const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";

@@ -40,6 +40,10 @@ import { listMeetingsForContact } from "@/lib/meetings.functions";
 import { sendMyCard } from "@/lib/cards.functions";
 import { listContactRevisions, restoreContactRevision } from "@/lib/contacts/revisions.functions";
 import { ContactPhotoUploader } from "@/components/contacts/ContactPhotoUploader";
+import {
+  ContactPhotoPrioritySelect,
+  type PhotoPriorityValue,
+} from "@/components/contacts/PhotoPrioritySelect";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { EmailsEditor, type EmailEntry } from "@/components/contacts/EmailsEditor";
 
@@ -350,6 +354,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           companyId={q.data?.companyId ?? null}
           companyPhotoUrl={q.data?.companyPhotoUrl ?? null}
           avatarIsCompanyLogoSnapshot={q.data?.avatarIsCompanyLogoSnapshot ?? false}
+          effectivePhotoPriority={q.data?.photoPriority ?? "company_first"}
           onChanged={() => qc.invalidateQueries({ queryKey: ["contact", c.id] })}
         />
         <div className="flex-1 min-w-0">
@@ -363,6 +368,13 @@ export function ContactDetailView({ id, onDeleted }: Props) {
               ? ` · Enriched ${new Date(c.enriched_at).toLocaleDateString()}`
               : " · Not yet enriched"}
           </p>
+          <ContactPhotoPrioritySelect
+            contactId={c.id}
+            override={q.data?.contactPhotoPriorityOverride as PhotoPriorityValue | null | undefined}
+            effective={q.data?.photoPriority ?? "company_first"}
+            source={q.data?.photoPrioritySource ?? "default"}
+            onChanged={() => qc.invalidateQueries({ queryKey: ["contact", c.id] })}
+          />
         </div>
       </header>
 

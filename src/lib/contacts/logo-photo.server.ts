@@ -354,87 +354,101 @@ export async function resolveEffectiveContactPhotoForSync(
   const avatarUrl = row.avatar_url ?? null;
   const companyId = row.company_id ?? null;
 
-  if (avatarUrl) {
+  const { getEffectivePhotoPriority } = await import("@/lib/contacts/photo-priority.server");
+  const { priority } = await getEffectivePhotoPriority(userId, row.id);
+
+  const tryPersonal = async (): Promise<EffectiveContactPhoto | null> => {
+    if (!avatarUrl) return null;
     const { loadContactPhotoBytes } = await import("@/lib/contacts/photos.server");
     const avatar = await loadContactPhotoBytes(avatarUrl);
-    if (avatar) {
-      return {
-        ...avatar,
-        etag: avatarUrl,
-        source: "contact_avatar",
-        avatarUrl,
-        companyId,
-        companyLogoUrl: null,
-        domain: null,
-        sha256: null,
-      };
-    }
-  }
+    if (!avatar) return null;
+    return {
+      ...avatar,
+      etag: avatarUrl,
+      source: "contact_avatar",
+      avatarUrl,
+      companyId,
+      companyLogoUrl: null,
+      domain: null,
+      sha256: null,
+    };
+  };
 
-  let companyLogoUrl: string | null = null;
-  if (companyId) {
-    const { data: company } = await supabaseAdmin
-      .from("companies")
-      .select("logo_url")
-      .eq("id", companyId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    companyLogoUrl = (company as { logo_url?: string | null } | null)?.logo_url ?? null;
-    if (companyLogoUrl) {
-      const { loadCompanyPhotoBytes } = await import("@/lib/companies/company-photo.server");
-      const logo = await loadCompanyPhotoBytes(companyLogoUrl);
-      if (logo) {
-        const { sha256Hex } = await import("@/lib/contacts/photos.server");
-        const sha = await sha256Hex(logo.bytes);
-        await recordCompanyLogoHash({
-          userId,
-          companyId,
-          domain: null,
-          sha256: sha,
-          source: "google_push_company_photo",
-        });
-        return {
-          ...logo,
-          etag: `company-photo:${companyId}:${sha}`,
-          source: "company_photo",
-          avatarUrl,
-          companyId,
-          companyLogoUrl,
-          domain: null,
-          sha256: sha,
-        };
+  const tryCompany = async (): Promise<EffectiveContactPhoto | null> => {
+    let companyLogoUrl: string | null = null;
+    if (companyId) {
+      const { data: company } = await supabaseAdmin
+        .from("companies")
+        .select("logo_url")
+        .eq("id", companyId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      companyLogoUrl = (company as { logo_url?: string | null } | null)?.logo_url ?? null;
+      if (companyLogoUrl) {
+        const { loadCompanyPhotoBytes } = await import("@/lib/companies/company-photo.server");
+        const logo = await loadCompanyPhotoBytes(companyLogoUrl);
+        if (logo) {
+          const { sha256Hex } = await import("@/lib/contacts/photos.server");
+          const sha = await sha256Hex(logo.bytes);
+          await recordCompanyLogoHash({
+            userId,
+            companyId,
+            domain: null,
+            sha256: sha,
+            source: "google_push_company_photo",
+          });
+          return {
+            ...logo,
+            etag: `company-photo:${companyId}:${sha}`,
+            source: "company_photo",
+            avatarUrl,
+            companyId,
+            companyLogoUrl,
+            domain: null,
+            sha256: sha,
+          };
+        }
       }
     }
-  }
 
-  const domain = await resolveCompanyLogoDomainForContact(userId, {
-    id: row.id,
-    company_id: companyId,
-    website: row.website ?? null,
-    email: row.email ?? null,
-  });
-  const domainLogo = await fetchChosenCompanyLogoBytes(userId, domain);
-  if (!domainLogo) return null;
+    const domain = await resolveCompanyLogoDomainForContact(userId, {
+      id: row.id,
+      company_id: companyId,
+      website: row.website ?? null,
+      email: row.email ?? null,
+    });
+    const domainLogo = await fetchChosenCompanyLogoBytes(userId, domain);
+    if (!domainLogo) return null;
 
-  const { sha256Hex } = await import("@/lib/contacts/photos.server");
-  const sha = await sha256Hex(domainLogo.bytes);
-  await recordCompanyLogoHash({
-    userId,
-    companyId,
-    domain,
-    sha256: sha,
-    source: "google_push_domain_logo",
-  });
-  return {
-    ...domainLogo,
-    etag: `company-domain-logo:${companyId ?? "none"}:${domain ?? "none"}:${sha}`,
-    source: "company_domain_logo",
-    avatarUrl,
-    companyId,
-    companyLogoUrl,
-    domain,
-    sha256: sha,
+    const { sha256Hex } = await import("@/lib/contacts/photos.server");
+    const sha = await sha256Hex(domainLogo.bytes);
+    await recordCompanyLogoHash({
+      userId,
+      companyId,
+      domain,
+      sha256: sha,
+      source: "google_push_domain_logo",
+    });
+    return {
+      ...domainLogo,
+      etag: `company-domain-logo:${companyId ?? "none"}:${domain ?? "none"}:${sha}`,
+      source: "company_domain_logo",
+      avatarUrl,
+      companyId,
+      companyLogoUrl,
+      domain,
+      sha256: sha,
+    };
   };
+
+  if (priority === "personal_only") {
+    return await tryPersonal();
+  }
+  if (priority === "personal_first") {
+    return (await tryPersonal()) ?? (await tryCompany());
+  }
+  // company_first (default)
+  return (await tryCompany()) ?? (await tryPersonal());
 }
 
 /** Walk every provider variant for every domain linked to `companyId` and

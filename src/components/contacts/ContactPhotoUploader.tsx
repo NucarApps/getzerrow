@@ -51,6 +51,10 @@ type Props = {
    *  domain brand logo) when the contact has no photo of their own. */
   companyPhotoUrl?: string | null;
   avatarIsCompanyLogoSnapshot?: boolean;
+  /** Effective photo priority (contact > company > global). Drives which
+   *  image the avatar renders when both a personal photo AND a company
+   *  photo/logo are available. */
+  effectivePhotoPriority?: "company_first" | "personal_first" | "personal_only";
   onChanged: () => void;
 };
 
@@ -70,6 +74,7 @@ export function ContactPhotoUploader({
   companyId,
   companyPhotoUrl = null,
   avatarIsCompanyLogoSnapshot = false,
+  effectivePhotoPriority = "company_first",
   onChanged,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -177,9 +182,17 @@ export function ContactPhotoUploader({
   };
 
 
-  const logoDomain = !displaySrc
-    ? companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null)
-    : null;
+  const heuristicDomain = companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null);
+  const companyAvailable = !!(companyPhotoUrl || heuristicDomain);
+  // Priority-aware display:
+  //  - personal_only: only ever show the personal photo (or initials)
+  //  - company_first: prefer the company image when available, personal is
+  //    still the picker/upload target
+  //  - personal_first (default fallback): personal wins, company fills in
+  const showCompanyPrimary =
+    effectivePhotoPriority !== "personal_only" &&
+    (effectivePhotoPriority === "company_first" ? companyAvailable : !displaySrc && companyAvailable);
+  const logoDomain = showCompanyPrimary ? heuristicDomain : null;
   const logoChoice = logoDomain
     ? (logoChoicesQuery.data ?? []).find(
         (c) => c.domain === logoDomain || c.source_domain === logoDomain,
@@ -188,9 +201,7 @@ export function ContactPhotoUploader({
 
   return (
     <div className="group relative h-16 w-16 shrink-0">
-      {displaySrc ? (
-        <img src={displaySrc} alt={displayName} className="h-16 w-16 rounded-full object-cover" />
-      ) : logoDomain || companyPhotoUrl ? (
+      {showCompanyPrimary && (companyPhotoUrl || logoDomain) ? (
         <CompanyLogo
           domain={logoDomain}
           name={displayName}
@@ -200,6 +211,8 @@ export function ContactPhotoUploader({
           sourceDomain={logoChoice?.source_domain ?? null}
           photoUrl={companyPhotoUrl}
         />
+      ) : displaySrc ? (
+        <img src={displaySrc} alt={displayName} className="h-16 w-16 rounded-full object-cover" />
       ) : (
         <div className="grid h-16 w-16 place-items-center rounded-full bg-primary/15 text-2xl font-semibold text-primary">
           {displayName.slice(0, 1).toUpperCase()}

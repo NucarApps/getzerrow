@@ -62,6 +62,10 @@ import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functi
 import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-photo.functions";
 import { pushCompanyPhotoToGoogleNow } from "@/lib/google-contacts/push-photo-now.functions";
 import {
+  CompanyPhotoPrioritySelect,
+  type PhotoPriorityValue,
+} from "@/components/contacts/PhotoPrioritySelect";
+import {
   findCompanyPeopleByDomain,
   addCompanyPeople,
   enhanceContactWithNewEmail,
@@ -512,6 +516,34 @@ function CompanyDetailPage() {
                   />
                 </Labelled>
               </div>
+            </section>
+
+            <section className="mb-6 rounded-lg border p-4">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Photo preference
+              </h2>
+              <p className="mb-3 text-sm text-muted-foreground">
+                Overrides your global preference for people at this company. Individual contacts
+                can still override this.
+              </p>
+              <CompanyPhotoPrioritySelect
+                companyId={companyId}
+                override={
+                  ((q.data.company as { photo_priority?: PhotoPriorityValue | null })
+                    .photo_priority ?? null) as PhotoPriorityValue | null
+                }
+                effective={
+                  ((q.data.company as { photo_priority?: PhotoPriorityValue | null })
+                    .photo_priority ?? "company_first") as PhotoPriorityValue
+                }
+                source={
+                  (q.data.company as { photo_priority?: PhotoPriorityValue | null })
+                    .photo_priority
+                    ? "company"
+                    : "default"
+                }
+                onChanged={invalidate}
+              />
             </section>
 
             <section className="mb-6 rounded-lg border p-4">

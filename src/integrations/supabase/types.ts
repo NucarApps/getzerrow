@@ -136,6 +136,7 @@ export type Database = {
           created_at: string
           group_name_style: string
           include_summary_in_notes: boolean
+          photo_priority: Database["public"]["Enums"]["photo_priority"]
           resync_nonce: number
           updated_at: string
           use_company_logo_fallback: boolean
@@ -145,6 +146,7 @@ export type Database = {
           created_at?: string
           group_name_style?: string
           include_summary_in_notes?: boolean
+          photo_priority?: Database["public"]["Enums"]["photo_priority"]
           resync_nonce?: number
           updated_at?: string
           use_company_logo_fallback?: boolean
@@ -154,6 +156,7 @@ export type Database = {
           created_at?: string
           group_name_style?: string
           include_summary_in_notes?: boolean
+          photo_priority?: Database["public"]["Enums"]["photo_priority"]
           resync_nonce?: number
           updated_at?: string
           use_company_logo_fallback?: boolean
@@ -233,6 +236,7 @@ export type Database = {
           name: string
           name_key: string
           phone: string | null
+          photo_priority: Database["public"]["Enums"]["photo_priority"] | null
           postal_code: string | null
           region: string | null
           updated_at: string
@@ -253,6 +257,7 @@ export type Database = {
           name: string
           name_key: string
           phone?: string | null
+          photo_priority?: Database["public"]["Enums"]["photo_priority"] | null
           postal_code?: string | null
           region?: string | null
           updated_at?: string
@@ -273,6 +278,7 @@ export type Database = {
           name?: string
           name_key?: string
           phone?: string | null
+          photo_priority?: Database["public"]["Enums"]["photo_priority"] | null
           postal_code?: string | null
           region?: string | null
           updated_at?: string
@@ -1007,6 +1013,7 @@ export type Database = {
           name: string | null
           notes_enc: string | null
           phone_enc: string | null
+          photo_priority: Database["public"]["Enums"]["photo_priority"] | null
           postal_code: string | null
           region: string | null
           relationship_summary_enc: string | null
@@ -1040,6 +1047,7 @@ export type Database = {
           name?: string | null
           notes_enc?: string | null
           phone_enc?: string | null
+          photo_priority?: Database["public"]["Enums"]["photo_priority"] | null
           postal_code?: string | null
           region?: string | null
           relationship_summary_enc?: string | null
@@ -1073,6 +1081,7 @@ export type Database = {
           name?: string | null
           notes_enc?: string | null
           phone_enc?: string | null
+          photo_priority?: Database["public"]["Enums"]["photo_priority"] | null
           postal_code?: string | null
           region?: string | null
           relationship_summary_enc?: string | null
@@ -3466,6 +3475,7 @@ export type Database = {
         | "done"
         | "failed"
         | "processing"
+      photo_priority: "company_first" | "personal_first" | "personal_only"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3602,6 +3612,7 @@ export const Constants = {
         "failed",
         "processing",
       ],
+      photo_priority: ["company_first", "personal_first", "personal_only"],
     },
   },
 } as const
