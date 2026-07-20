@@ -34,7 +34,7 @@ export async function autoClearMissingPhotoEtags(
       .select("contact_id, contacts!inner(avatar_url)")
       .eq("user_id", userId)
       .eq("gmail_account_id", gmailAccountId)
-      .not("photo_etag", "is", null)
+      .not("google_photo_url", "is", null)
       .is("contacts.avatar_url", null)
       .limit(500);
     const ids = (links ?? [])
@@ -43,7 +43,7 @@ export async function autoClearMissingPhotoEtags(
     if (ids.length === 0) return;
     await supabaseAdmin
       .from("google_contact_links")
-      .update({ photo_etag: null })
+      .update({ google_photo_url: null })
       .eq("gmail_account_id", gmailAccountId)
       .in("contact_id", ids);
     logInfo("google_contacts.photo_backfill.cleared", {
