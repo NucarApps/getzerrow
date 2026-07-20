@@ -10,7 +10,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getContactDecrypted } from "@/lib/sync/encrypted-reader";
 import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
 import { snapshotContact } from "@/lib/contacts/revisions.server";
-import { logInfo } from "@/lib/log.server";
+import { logInfo, logError } from "@/lib/log.server";
 import { buildCardDavContactPatch } from "./merge";
 import { saveContactPhoto, loadContactPhotoBytes } from "@/lib/contacts/photos.server";
 
@@ -1339,16 +1339,31 @@ export async function handlePut(
         // app. Persist with source="user_upload" so the getContact self-heal
         // (which strips non-user photos matching a company logo) never wipes
         // it out from under the user.
-        await saveContactPhoto(
-          userId,
-          contactId,
-          parsed.photo.bytes,
-          parsed.photo.mime,
-          "user_upload",
-        );
+        try {
+          await saveContactPhoto(
+            userId,
+            contactId,
+            parsed.photo.bytes,
+            parsed.photo.mime,
+            "user_upload",
+          );
+        } catch (saveErr) {
+          // A failed save must NOT be answered with a 2xx: the next sync
+          // would serve a photo-less vCard under a fresh ETag and the client
+          // would quietly revert the photo the user just set. A 5xx makes
+          // iOS keep its local copy and retry later.
+          logError(
+            "carddav.put.photo_save_failed",
+            { contact_id: contactId },
+            saveErr,
+          );
+          return new Response("Failed to store contact photo", { status: 500 });
+        }
       }
     } catch (err) {
-      logInfo("carddav.put.photo_save_failed", {
+      // Echo-decision plumbing errors stay non-fatal: worst case we skip the
+      // photo this round; the client will re-send it on a future sync.
+      logInfo("carddav.put.photo_decision_failed", {
         contact_id: contactId,
         error: err instanceof Error ? err.message : String(err),
       });
