@@ -29,15 +29,27 @@ import type { ProgressReporter } from "./progress.server";
 type Ids = { userId: string; gmailAccountId: string; runId: string };
 
 // Cap per-run work so a big first-time push doesn't hog the cron slot.
-const MAX_CONTACTS_PER_RUN = 200;
+const MAX_CONTACTS_PER_RUN = 500;
 const MAX_GROUPS_PER_RUN = 100;
 const NO_LOCAL_PHOTO_ETAG = "no-local-photo";
-// Wall-clock budget for the push loop. The whole runGoogleContactsSync request
-// must finish inside the Worker/Safari fetch window (~30s) — this leaves room
-// for pull + finalize before Safari drops the request as "Load failed" and the
-// Worker is killed mid-loop (which leaks the sync lease). When exceeded we
-// break cleanly; the next cron tick (or user click) resumes the remainder.
-const PUSH_WALL_BUDGET_MS = 18_000;
+// Wall-clock budget for the push loop. The cron endpoint runs as a fetch
+// handler on the Cloudflare Worker; give it enough headroom to actually drain
+// a first-time backlog while still leaving margin below the request-timeout
+// ceiling. When exceeded we break cleanly; the next tick resumes.
+const PUSH_WALL_BUDGET_MS = 55_000;
+// How many contacts to push in parallel. People API calls are I/O bound and
+// each contact does ~2-3 sequential API round-trips; going wider than this
+// runs into per-user rate limits without meaningfully improving throughput.
+const CONTACT_PUSH_CONCURRENCY = 5;
+
+/** Slice `items` into fixed-size chunks preserving order. Exported for tests. */
+export function chunk<T>(items: T[], size: number): T[][] {
+  if (size <= 0) return [items];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 
 export async function pushToGoogle(
   ids: Ids,
@@ -51,6 +63,11 @@ export async function pushToGoogle(
   logInfo("google_contacts.push.start", { ...ids });
   await progress?.set("pushing_groups", 0, 0);
   const groupsPushed = await pushGroups(ids, progress);
+  // Promote every linked contact into Google's default myContacts group BEFORE
+  // the per-contact loop. On a large backlog the loop can hit the wall budget
+  // and never reach pushGroupMemberships — putting this here guarantees the
+  // count in Google's Contacts screen catches up regardless.
+  await promoteToMyContacts(ids);
   const groupResourceByLocal = await loadGroupMap(ids);
   await progress?.set("pushing_contacts", 0, 0);
   const contactsPushed = await pushContacts(ids, groupResourceByLocal, progress);
@@ -68,6 +85,39 @@ export async function pushToGoogle(
   return { contactsPushed, groupsPushed, membershipsPushed, tombstonesApplied };
 }
 
+/** Ensure every Google-linked contact is a member of `contactGroups/myContacts`,
+ *  otherwise they land in Google's "Other contacts" and don't show in the main
+ *  Contacts list count. Single `members:modify` call per run; only adds. */
+export async function promoteToMyContacts(ids: Ids): Promise<number> {
+  const { data: contactLinks } = await supabaseAdmin
+    .from("google_contact_links")
+    .select("resource_name")
+    .eq("gmail_account_id", ids.gmailAccountId);
+  const desired = new Set(
+    (contactLinks ?? [])
+      .map((l) => (l as { resource_name?: string | null }).resource_name)
+      .filter((r): r is string => !!r),
+  );
+  if (desired.size === 0) return 0;
+  try {
+    const remote = await getContactGroupWithMembers(
+      ids.gmailAccountId,
+      MY_CONTACTS_RESOURCE,
+    );
+    const { toAdd } = calculateMembershipDelta({
+      desiredResourceNames: desired,
+      currentResourceNames: remote.memberResourceNames ?? [],
+    });
+    if (!toAdd.length) return 0;
+    await modifyGroupMembers(ids.gmailAccountId, MY_CONTACTS_RESOURCE, toAdd, []);
+    logInfo("google_contacts.push.my_contacts_promoted", { ...ids, added: toAdd.length });
+    return toAdd.length;
+  } catch (e) {
+    logError("google_contacts.push.my_contacts_failed", { ...ids }, e);
+    return 0;
+  }
+}
+
 async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
   const { data } = await supabaseAdmin
     .from("google_group_links")
@@ -75,6 +125,7 @@ async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
     .eq("gmail_account_id", ids.gmailAccountId);
   return new Map((data ?? []).map((r) => [r.contact_group_id, r.resource_name]));
 }
+
 
 /** Google Contacts labels are flat. Concatenate one level of local nesting
  *  as "Parent - Child" (e.g. "Factory - VW") so subgroups show up in Google
@@ -243,16 +294,9 @@ async function pushContacts(
 
   let count = 0;
   const pushStartedAt = Date.now();
-  for (const c of contacts) {
-    if (Date.now() - pushStartedAt > PUSH_WALL_BUDGET_MS) {
-      logInfo("google_contacts.push.budget_exceeded", {
-        ...ids,
-        processed: count,
-        remaining: contacts.length - count,
-        budget_ms: PUSH_WALL_BUDGET_MS,
-      });
-      break;
-    }
+  const budgetHit = () => Date.now() - pushStartedAt > PUSH_WALL_BUDGET_MS;
+  const processOne = async (c: ContactRow): Promise<void> => {
+
     const link = byLocal.get(c.id);
     const linkPhotoEtag = (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
     const linkGooglePhotoUrl =
@@ -263,7 +307,7 @@ async function pushContacts(
 
     try {
       const local = await loadLocalContact(c.id);
-      if (!local) continue;
+      if (!local) return;
 
       const { data: phones } = await supabaseAdmin
         .from("contact_phones")
@@ -546,9 +590,23 @@ async function pushContacts(
       logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
     }
     await progress?.increment(1);
+  };
+
+  for (const batch of chunk(contacts, CONTACT_PUSH_CONCURRENCY)) {
+    if (budgetHit()) {
+      logInfo("google_contacts.push.budget_exceeded", {
+        ...ids,
+        processed: count,
+        remaining: contacts.length - count,
+        budget_ms: PUSH_WALL_BUDGET_MS,
+      });
+      break;
+    }
+    await Promise.all(batch.map(processOne));
   }
   return count;
 }
+
 
 async function applyTombstones(ids: Ids, progress?: ProgressReporter): Promise<number> {
   const { data: tombs } = await supabaseAdmin
@@ -644,34 +702,9 @@ export async function pushGroupMemberships(
     await progress?.increment(1);
   }
 
-  // Also reconcile Google's default "myContacts" group so previously-created
-  // contacts (which we pushed into user labels but never myContacts) get
-  // promoted from "Other contacts" to the main Contacts list.
-  try {
-    const desiredMyContacts = new Set(contactResourceById.values());
-    if (desiredMyContacts.size > 0) {
-      const remote = await getContactGroupWithMembers(
-        ids.gmailAccountId,
-        MY_CONTACTS_RESOURCE,
-      );
-      const { toAdd } = calculateMembershipDelta({
-        desiredResourceNames: desiredMyContacts,
-        currentResourceNames: remote.memberResourceNames ?? [],
-      });
-      // Never remove from myContacts — user may have imported contacts outside
-      // Zerrow that we don't track.
-      if (toAdd.length) {
-        await modifyGroupMembers(ids.gmailAccountId, MY_CONTACTS_RESOURCE, toAdd, []);
-        changedMemberships += toAdd.length;
-        logInfo("google_contacts.push.my_contacts_promoted", {
-          ...ids,
-          added: toAdd.length,
-        });
-      }
-    }
-  } catch (e) {
-    logError("google_contacts.push.my_contacts_failed", { ...ids }, e);
-  }
+  // myContacts promotion is handled by promoteToMyContacts() at the start of
+  // the push, so it runs even when the per-contact loop hits the wall budget.
+
 
   return changedMemberships;
 }

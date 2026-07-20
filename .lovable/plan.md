@@ -1,42 +1,39 @@
-## Why Google shows 390 vs Zerrow's 487, and wrong labels
+## Why the last run only moved 7 contacts
 
-Confirmed against the live DB:
+DB confirms the migration ran and forced 447 stale rows. Since then one sync completed and only pushed 7 contacts before the 18 s wall-clock budget cut the loop off; the remaining 440 are still at `last_synced_at = epoch`, and the 33 unlinked Zerrow contacts (489 vs 456) haven't been created in Google yet. `pushGroupMemberships` — which is where the `myContacts` promotion I added lives — sits at the end of `pushToGoogle`, so on a large backlog it's budget-starved and never runs. That's why Google's Contacts count barely moved (388) and subgroup labels still haven't been renamed to `Parent - Child`.
 
-1. **Google Contacts flat count (390) is the `myContacts` system group.** The People API only counts a person in Google's default "Contacts" screen if they're a member of `contactGroups/myContacts`. Zerrow's `createPerson` currently pushes only the user-defined label memberships (Factory, Vendor, etc.) and never adds `myContacts`, so every contact we create in Google lands in "Other contacts" and is invisible on that screen. That accounts for the ~97-contact gap.
-
-2. **Labels are flat in Google, and we push the leaf name only.** The DB has real nesting (`Factory` → `Ford, GM, Honda, Hyundai, Kia, Nissan, Stellantis, Toyota, VW`), but Google Contacts has no label hierarchy. `pushGroups` sends just `g.name`, so Google shows a top-level "VW" next to the pre-existing OEM labels rather than "Factory - VW".
-
-3. **Duplicate `Factory` local group** (one linked, one with no `google_group_links` row and 1 member) is a leftover that will cause a second flat "Factory" to appear in Google on the next push.
+At the current drain rate (7 / 5 min) it would take ~5 hours to catch up. The pipeline works, it's just throttled far too hard for a first-time push of ~450 rows.
 
 ## Changes
 
-### 1. Add every pushed contact to `myContacts` (fixes count)
+### 1. Raise per-run throughput
 `src/lib/google-contacts/push.server.ts`
-- In `pushContacts`, always append `"contactGroups/myContacts"` to `memberResourceNames` before calling `contactToPerson` for both create and update paths. The People API accepts it as a normal membership.
-- In `pushGroupMemberships`, when computing the `desired` set for a group, additionally reconcile `myContacts` for every linked contact so previously-created "Other contacts" get promoted on the next sync (one extra `members:modify` per run against `contactGroups/myContacts`).
+- Bump `PUSH_WALL_BUDGET_MS` from 18 s to 55 s. The cron endpoint runs in a Cloudflare Worker HTTP handler (default 30 s subrequest cap per outgoing fetch, but overall wall much longer for scheduled/http); 55 s leaves room for pull + finalize inside a ~90 s ceiling.
+- Bump `MAX_CONTACTS_PER_RUN` from 200 to 500 so the selection isn't the cap on backlog days.
+- Push contacts in parallel chunks of 5 (`Promise.all` inside the loop) instead of one-at-a-time. Each People API call is ~200-400 ms; serial `for` under-uses the request budget.
+- Keep per-iteration wall check so we still break cleanly on the 55 s boundary.
 
-### 2. Flatten nested labels as `"Parent - Child"` in Google
-`src/lib/google-contacts/push.server.ts` (`pushGroups`)
-- When loading `contact_groups`, also select `parent_group_id`.
-- Resolve parent names into a map, and push the Google label name as `${parent.name} - ${g.name}` when `parent_group_id` is set (e.g. `Factory - VW`, `Vendor - Software`). Top-level groups keep their bare name.
-- On rename of either parent or child, `updated_at` bump already triggers `updateContactGroup`, so the Google label auto-renames.
+### 2. Move `myContacts` promotion out of the starved tail
+`src/lib/google-contacts/push.server.ts` (`pushToGoogle`)
+- Extract the myContacts-only reconcile from `pushGroupMemberships` into its own `promoteToMyContacts(ids)` step and call it **before** the per-contact loop, so it always runs even when the loop later hits the budget. It's a single `members:modify` request per run.
+- Keep the label-membership reconcile in `pushGroupMemberships` for real user labels (Factory, Vendor, etc.) as-is.
 
-### 3. Clean up the duplicate local `Factory` group
-- One-shot migration merges the orphan `Factory` (no `google_group_links` row, 1 member) into the linked `Factory` group by moving `contact_group_members` and deleting the orphan.
+### 3. Force one large drain pass now
+- Migration re-arms `google_contact_links.last_synced_at = epoch` for any row still stale (idempotent), and marks the 33 unlinked contacts' `updated_at = now()` so they surface into the dirty scan. Once #1 and #2 ship, the next 3-4 cron ticks (every 5 min) should fully close the 489-vs-388 gap and rename all subgroups to `Parent - Child`.
 
-### 4. Backfill so the fix is visible immediately
-- Migration flips `google_contact_links.last_synced_at = epoch` for all rows so the next sync re-pushes every linked contact with the new `myContacts` membership.
-- Migration bumps `contact_groups.updated_at = now()` for every row with a `parent_group_id` so parent-prefixed labels get renamed in Google on the next push.
+### 4. Surface backlog explicitly in the Admin dashboard
+`src/routes/_authenticated/admin.tsx` + a small server fn in `src/lib/google-contacts.functions.ts`
+- Add a "Google Contacts backlog" card showing per-account: pending body, pending photo, unlinked-to-Google count, and last drain size, so you can watch the number tick down in real time instead of guessing from Google's UI.
 
-### 5. Settings UI copy
-`src/routes/_authenticated/settings.google-contacts.tsx`
-- Under two-way mode, add a one-line note: "Google Contacts doesn't support nested labels — subgroups sync as `Parent - Child` (e.g. Factory - VW). All Zerrow contacts are added to Google's default Contacts list."
-
-### 6. Tests
-`src/lib/google-contacts/push.test.ts` (new)
-- Unit tests for the label-flattening helper (top-level unchanged, one level nested formatted as `Parent - Child`, missing parent falls back to leaf name).
-- Assert `myContacts` is always included in the memberships passed to `contactToPerson`.
+### 5. Test the new throughput math
+`src/lib/google-contacts/push.test.ts`
+- Unit test for a `chunk(array, size)` helper (extracted for the parallel loop).
+- Unit test that the extracted `computeMyContactsAdditions(desiredResourceNames, remoteMemberResourceNames)` returns only the diff (already covered by `calculateMembershipDelta`; add a case asserting we never remove).
 
 ## Out of scope
-- Deeper hierarchies (Google is fundamentally flat; we only concatenate one level, matching the current UI which uses one level of nesting).
-- Any changes to CardDAV / iOS behavior — iOS handles nested groups natively and is untouched.
+- Any change to CardDAV / iOS behavior.
+- Changing the cron cadence (5 min already correct; the fix is per-run throughput).
+- Structural rewrite of `pushContacts` — only the loop shape changes.
+
+## Follow-up if this doesn't close the gap
+If after ~30 minutes the backlog is still large, the next lever is running the push in a background `waitUntil` after the HTTP response is sent, so the Worker can use its full CPU budget without a client-visible wait. I'll suggest that only if we see the 55 s budget still getting hit.
