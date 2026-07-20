@@ -186,7 +186,10 @@ export function pickBetterName(
 const PHONE_NUMBER_RE = /^[+\d\s().,#*;:x/A-Za-z-]{3,60}$/;
 export const phoneEntrySchema = z.object({
   label: z.string().trim().min(1).max(20),
-  number: z.string().trim().min(3).max(60).regex(PHONE_NUMBER_RE, "Invalid phone format"),
+  number: z
+    .string()
+    .transform((v) => v.replace(/[\s\u00A0]+/g, " ").trim())
+    .pipe(z.string().min(3).max(60).regex(PHONE_NUMBER_RE, "Invalid phone format")),
   is_primary: z.boolean().optional(),
 });
 
