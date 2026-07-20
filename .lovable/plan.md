@@ -1,67 +1,34 @@
-## Goal
-Introduce a photo priority setting — global default, per-company override, per-contact override — that decides whether Zerrow shows the person's photo or the company logo first. Precedence: **contact > company > global**, default = **company first**. The chosen priority is also what gets pushed to iOS (CardDAV) and Google Contacts.
+## What's happening
 
-## Data model (one migration)
+Both symptoms have the same root cause: `runGoogleContactsSync` is invoked **inline** from the UI request and can exceed Safari's ~30-60s fetch wall.
 
-Add three enum-typed columns; `NULL` at contact/company means "inherit".
+1. **"Sync to Google now" for Roberta → Load failed.** `pushContactPhotoToGoogleNow` (`src/lib/google-contacts/push-photo-now.functions.ts`) marks the link dirty and then awaits `runGoogleContactsSync(...)` per linked account. That call runs the whole pull + push loop (up to `MAX_CONTACTS_PER_RUN = 200` including photo bytes, no wall-clock budget in `push.server.ts`). Safari drops the request as "Load failed" while the Worker keeps running until it's killed — and when the Worker is killed mid-push, the `finally` in `runGoogleContactsSync` may not run, so `locked_at` stays set.
 
-```sql
-CREATE TYPE public.photo_priority AS ENUM ('company_first','personal_first','personal_only');
+2. **Full resync stuck at 29.** Same story from `forceFullGoogleContactsResync` + `syncGoogleContactsNow` in `settings.google-contacts.tsx`. The progress row is updated as the push loop advances (last processed = 29), the request is cut, the lease stays held, and while the UI polls every 1s it just re-reads the same 29. `LEASE_STALE_MS = 90s` eventually clears it, but by then the user has clicked again and hit "locked".
 
-ALTER TABLE public.carddav_settings
-  ADD COLUMN photo_priority public.photo_priority NOT NULL DEFAULT 'company_first';
+## Fix
 
-ALTER TABLE public.companies
-  ADD COLUMN photo_priority public.photo_priority;   -- NULL = inherit global
+Make sync calls from the UI **fire-and-forget** and give the push loop a real wall-clock budget so it can't wedge again.
 
-ALTER TABLE public.contacts
-  ADD COLUMN photo_priority public.photo_priority;   -- NULL = inherit company/global
-```
+### 1. `src/lib/google-contacts/push-photo-now.functions.ts`
+- Keep the ownership check + `resolveEffectiveContactPhotoForSync` pre-check + `markGooglePhotoDirty(...)`.
+- Replace the sequential `await runGoogleContactsSync(...)` loop with a fire-and-forget dispatch of one background run per linked account using `waitUntil`-style `void`ed promise (or a short `POST` to `/api/public/hooks/google-contacts-sync` with `CRON_SECRET`). Return immediately with `{ contactsMarked, accountsQueued }` so the toast becomes "Queued sync — photo will appear in Google shortly" instead of blocking.
+- Same treatment for `pushCompanyPhotoToGoogleNow`.
 
-Existing rows get the `company_first` default globally; company/contact overrides start `NULL` so behavior matches today for anyone who had a personal photo (contact override defaults to inheriting company_first → company logo wins).
+### 2. `src/lib/google-contacts/push.server.ts`
+- Add a `PUSH_WALL_BUDGET_MS` (~18s) checked between contacts in the push loop (and between photo uploads). When exceeded, log `google_contacts.push.budget_exceeded`, break out cleanly, and let the next cron tick pick up the rest. This mirrors `CATCHUP_TOTAL_BUDGET_MS` in the Gmail sync lane so we finish under the Worker limit and the `finally` in `runGoogleContactsSync` actually runs → lease releases.
 
-## Server: single resolver
+### 3. `src/lib/google-contacts/reconcile.server.ts`
+- Drop `LEASE_STALE_MS` from 90s to 30s so a genuinely killed run recovers faster next click. (Compatible with the new push budget: a healthy run now finishes well under 30s.)
+- On the "locked" early-return, include `last_progress_processed` in the returned error payload so we can log/toast "another sync is already in progress" instead of appearing stuck.
 
-New helper `src/lib/contacts/photo-priority.server.ts`:
+### 4. `src/routes/_authenticated/settings.google-contacts.tsx` (thin UI wiring only)
+- Change the `forceMut` / `syncMut` `onSuccess` copy to reflect the async model: "Sync started — this can take a minute for large accounts." No behavior change beyond messaging; the existing 1s poll on `locked_at` already surfaces progress.
 
-- `resolveEffectivePriority({ contactPriority, companyPriority, globalPriority })` — pure precedence function.
-- `resolveEffectivePhoto(contactRow, companyRow, settingsRow)` — returns `{ kind: "personal"|"company"|"initials", bytesUrl, hash }` by combining the priority with existing `avatar_url` / company `logo_url` / domain-resolved logo. Reuses `loadContactPhotoBytes` and the domain-logo path already in `logo-photo.server.ts`.
+### Verification
+- Manual: click "Sync to Google now" on Roberta → toast is instant, `google_contact_links.photo_etag` clears, `google_sync_state.locked_at` sets then clears within one budget window, photo appears in Google People.
+- Manual: click "Force full re-pull" → UI shows progress advancing past 29, lease releases cleanly.
+- Log check: `google_contacts.push.budget_exceeded` fires only on large accounts and the following cron tick completes the remainder.
+- Regression: `src/lib/google-contacts/dirty.test.ts` still green; no schema changes.
 
-Use this resolver in:
-
-1. `src/lib/contacts/crud.functions.ts` `getContact` — replace the current company-first heuristic with the priority-aware resolver. Also return the effective priority and its source (`contact` / `company` / `global`) so the UI can label the override.
-2. `src/lib/carddav/handlers.server.ts` — vCard `PHOTO` writes use the resolver's chosen bytes.
-3. `src/lib/google-contacts/push.server.ts` — photo push loop calls the resolver and uses its bytes + hash (already the shape it wants). "Personal only" contacts stop pushing the company logo.
-4. `src/lib/google-contacts/push-photo-now.functions.ts` — same resolver; the "no photo" toast still fires only when the resolver returns `initials`.
-
-Anywhere that already reads `avatar_url` directly for sync stays as-is (source of truth for personal bytes); only the "what should the outside world see" decision funnels through the resolver.
-
-## Server: writes
-
-Add three `createServerFn`s in `src/lib/contacts/photo-priority.functions.ts`, all `.middleware([requireSupabaseAuth])`:
-
-- `setGlobalPhotoPriority({ priority })` → updates `carddav_settings`.
-- `setCompanyPhotoPriority({ companyId, priority | null })` → updates `companies.photo_priority` (null clears override).
-- `setContactPhotoPriority({ contactId, priority | null })` → updates `contacts.photo_priority`.
-
-Each write marks the affected contact(s) photo-dirty for Google + bumps CardDAV CTag so iOS re-pulls, via existing `markGoogleContactPhotoDirty` / CardDAV resync helpers.
-
-## UI
-
-- **Global**: new "Photo preference" section on the existing contact settings page (three-way radio: Company first · Personal first · Personal only).
-- **Company** (`src/routes/_authenticated/companies.$id.tsx`): small "Photo shown to me and my devices" select — `Inherit (…)` / Company first / Personal first / Personal only.
-- **Contact** (`src/components/contacts/ContactDetailView.tsx`, near the photo uploader): same select with `Inherit from company` default. Show a hint chip like "Showing: Company logo (from company override)" so it's clear what wins.
-- `CompanyLogo.tsx` / `ContactPhotoUploader.tsx` — no logic change; they just receive the URL/`photoUrl` the resolver picked (already the prop shape).
-
-## Tests
-
-`src/lib/contacts/photo-priority.test.ts`:
-- Precedence: contact override beats company override beats global.
-- `company_first` returns company bytes when both exist.
-- `personal_first` returns personal bytes when both exist, falls back to company.
-- `personal_only` never returns company bytes (falls to initials).
-- Google push and CardDAV write both consume the resolver output (light spy test).
-
-## Out of scope
-
-No change to how domain logos are discovered, how personal photos are uploaded, or the iOS "echo" guard. No new storage buckets. No UI redesign beyond the three settings controls.
+No DB migration needed.
