@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent } from "react";
-import { Camera, Trash2, Loader2, Building2 } from "lucide-react";
+import { Camera, Trash2, Loader2, Building2, RefreshCw } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -13,6 +13,8 @@ import {
   getContactPhotoSignedUrl,
 } from "@/lib/contacts/photos.functions";
 import { resetContactToCompanyLogo } from "@/lib/contacts/company-logo-cleanup.functions";
+import { pushContactPhotoToGoogleNow } from "@/lib/google-contacts/push-photo-now.functions";
+
 
 const ALLOWED = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type AllowedMime = (typeof ALLOWED)[number];
