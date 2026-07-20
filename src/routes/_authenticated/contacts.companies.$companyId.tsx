@@ -828,8 +828,10 @@ function CompanyPhotoSection({
   const qc = useQueryClient();
   const uploadFn = useServerFn(uploadCompanyPhoto);
   const removeFn = useServerFn(removeCompanyPhoto);
+  const pushToGoogleFn = useServerFn(pushCompanyPhotoToGoogleNow);
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["company", companyId] });
