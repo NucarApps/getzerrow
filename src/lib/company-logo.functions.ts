@@ -62,6 +62,7 @@ export const setCompanyLogoChoice = createServerFn({ method: "POST" })
     );
     if (error) throw new Error(error.message);
     await bumpCarddavResync(userId);
+    await markContactsForDomainPhotoDirty(userId, data.domain);
     return { ok: true as const };
   });
 
@@ -77,8 +78,40 @@ export const clearCompanyLogoChoice = createServerFn({ method: "POST" })
       .eq("domain", data.domain);
     if (error) throw new Error(error.message);
     await bumpCarddavResync(userId);
+    await markContactsForDomainPhotoDirty(userId, data.domain);
     return { ok: true as const };
   });
+
+/** After a brand-logo choice for a domain changes, mark the photos of every
+ * linked contact whose company owns that domain as dirty so the next Google
+ * push repushes the new logo bytes. Best-effort; failures are swallowed. */
+async function markContactsForDomainPhotoDirty(userId: string, domain: string): Promise<void> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: dom } = await supabaseAdmin
+      .from("company_domains")
+      .select("company_id")
+      .eq("user_id", userId)
+      .eq("domain", domain)
+      .maybeSingle();
+    const companyId = (dom as { company_id?: string } | null)?.company_id;
+    if (!companyId) return;
+    const { data: contacts } = await supabaseAdmin
+      .from("contacts")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("company_id", companyId);
+    const ids = (contacts ?? []).map((c) => (c as { id: string }).id);
+    if (!ids.length) return;
+    const { markGooglePhotoDirtyMany } = await import(
+      "@/lib/google-contacts/mark-dirty.server"
+    );
+    await markGooglePhotoDirtyMany(userId, ids);
+  } catch {
+    // Non-fatal.
+  }
+}
+
 
 /** Bump the user's CardDAV resync nonce so iPhone picks up the new logo on
  * its next poll. Uses the admin client to upsert into `carddav_settings`
