@@ -69,10 +69,10 @@ export async function pushToGoogle(
   // count in Google's Contacts screen catches up regardless.
   await promoteToMyContacts(ids);
   const groupResourceByLocal = await loadGroupMap(ids);
-  await progress?.set("pushing_contacts", 0, 0);
-  const contactsPushed = await pushContacts(ids, groupResourceByLocal, progress);
   await progress?.set("pushing_memberships", 0, 0);
   const membershipsPushed = await pushGroupMemberships(ids, progress);
+  await progress?.set("pushing_contacts", 0, 0);
+  const contactsPushed = await pushContacts(ids, groupResourceByLocal, progress);
   await progress?.set("applying_tombstones", 0, 0);
   const tombstonesApplied = await applyTombstones(ids, progress);
   logInfo("google_contacts.push.done", {
@@ -159,22 +159,28 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
     .from("contact_groups")
     .select("id, name, updated_at, parent_group_id")
     .eq("user_id", ids.userId)
-    .order("updated_at", { ascending: true })
-    .limit(MAX_GROUPS_PER_RUN);
-  if (!groups?.length) return 0;
-  await progress?.set("pushing_groups", 0, groups.length);
-
+    .order("updated_at", { ascending: true });
   const parentNameById = new Map<string, string>();
-  for (const g of groups) parentNameById.set(g.id, g.name);
+  for (const g of groups ?? []) parentNameById.set(g.id, g.name);
 
   const { data: links } = await supabaseAdmin
     .from("google_group_links")
     .select("contact_group_id, resource_name, etag, last_synced_at")
     .eq("gmail_account_id", ids.gmailAccountId);
   const byLocal = new Map((links ?? []).map((l) => [l.contact_group_id, l]));
+  const candidates = (groups ?? [])
+    .filter((g) => {
+      const link = byLocal.get(g.id);
+      if (!link) return true;
+      if (!link.last_synced_at) return true;
+      return new Date(g.updated_at) > new Date(link.last_synced_at);
+    })
+    .slice(0, MAX_GROUPS_PER_RUN);
+  if (!candidates.length) return 0;
+  await progress?.set("pushing_groups", 0, candidates.length);
 
   let count = 0;
-  for (const g of groups) {
+  for (const g of candidates) {
     const link = byLocal.get(g.id);
     const label = formatGoogleLabelName(g.name, g.parent_group_id ?? null, parentNameById);
     try {
@@ -191,8 +197,13 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
           });
           count++;
         }
-      } else if (link.last_synced_at && new Date(g.updated_at) > new Date(link.last_synced_at)) {
-        const updated = await updateContactGroup(ids.gmailAccountId, link.resource_name, label);
+      } else if (link.etag) {
+        const updated = await updateContactGroup(
+          ids.gmailAccountId,
+          link.resource_name,
+          label,
+          link.etag,
+        );
         await supabaseAdmin
           .from("google_group_links")
           .update({ etag: updated.etag ?? null, last_synced_at: new Date().toISOString() })

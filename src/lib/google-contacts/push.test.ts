@@ -5,6 +5,7 @@ import {
   formatGoogleLabelName,
   withMyContacts,
 } from "./push.server";
+import { buildContactGroupUpdateBody, getContactGroupMemberQuery } from "./people-client.server";
 
 describe("chunk", () => {
   it("splits into fixed-size groups preserving order", () => {
@@ -62,5 +63,27 @@ describe("withMyContacts", () => {
 
   it("works for empty memberships", () => {
     expect(withMyContacts([])).toEqual([MY_CONTACTS_RESOURCE]);
+  });
+});
+
+describe("People contact group requests", () => {
+  it("builds group rename payloads with resourceName and etag", () => {
+    expect(
+      buildContactGroupUpdateBody("contactGroups/abc", "Factory - VW", "group-etag"),
+    ).toEqual({
+      contactGroup: {
+        resourceName: "contactGroups/abc",
+        etag: "group-etag",
+        name: "Factory - VW",
+      },
+      updateGroupFields: "name",
+    });
+  });
+
+  it("does not include memberResourceNames in the groupFields mask", () => {
+    expect(getContactGroupMemberQuery()).toEqual({
+      groupFields: "name,groupType,memberCount",
+      maxMembers: "10000",
+    });
   });
 });

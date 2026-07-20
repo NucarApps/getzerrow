@@ -7,6 +7,7 @@ import { READ_PERSON_FIELDS, UPDATE_PERSON_FIELDS, type Person } from "./mapper"
 const BASE = "https://people.googleapis.com/v1";
 const TIMEOUT_MS = 20_000;
 const CONTACT_GROUP_LIST_FIELDS = "name,groupType";
+const CONTACT_GROUP_MEMBER_FIELDS = "name,groupType,memberCount";
 
 export const CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts";
 
@@ -199,6 +200,14 @@ export type ContactGroup = {
   memberCount?: number;
 };
 
+export function getContactGroupMemberQuery(): Record<string, string> {
+  return { groupFields: CONTACT_GROUP_MEMBER_FIELDS, maxMembers: "10000" };
+}
+
+export function buildContactGroupUpdateBody(resourceName: string, name: string, etag: string) {
+  return { contactGroup: { resourceName, etag, name }, updateGroupFields: "name" };
+}
+
 export type GroupsPage = {
   contactGroups?: ContactGroup[];
   nextPageToken?: string;
@@ -227,7 +236,10 @@ export async function getContactGroupWithMembers(
   resourceName: string,
 ): Promise<ContactGroup> {
   return call<ContactGroup>(accountId, `/${resourceName}`, {
-    query: { groupFields: "name,groupType,memberResourceNames", maxMembers: "10000" },
+    // `memberResourceNames` is returned for GET when `maxMembers` is set, but
+    // it is not a valid groupFields mask path. Including it makes Google reject
+    // the request with INVALID_ARGUMENT.
+    query: getContactGroupMemberQuery(),
   });
 }
 
@@ -242,10 +254,11 @@ export async function updateContactGroup(
   accountId: string,
   resourceName: string,
   name: string,
+  etag: string,
 ): Promise<ContactGroup> {
   return call<ContactGroup>(accountId, `/${resourceName}`, {
     method: "PUT",
-    body: { contactGroup: { name }, updateGroupFields: "name" },
+    body: buildContactGroupUpdateBody(resourceName, name, etag),
   });
 }
 
