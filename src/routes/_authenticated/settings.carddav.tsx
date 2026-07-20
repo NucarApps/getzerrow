@@ -530,3 +530,41 @@ function CardDavSettings() {
     </div>
   );
 }
+
+function GlobalPhotoPriorityRow() {
+  const qc = useQueryClient();
+  const getPref = useServerFn(getPhotoPrioritySettings);
+  const setPref = useServerFn(setGlobalPhotoPriority);
+  const q = useQuery({ queryKey: ["photo-priority-global"], queryFn: () => getPref() });
+  const value = q.data?.global ?? "company_first";
+  return (
+    <div className="flex items-start justify-between gap-4 border-t pt-4">
+      <div className="flex-1">
+        <p className="text-sm font-medium">Photo preference</p>
+        <p className="text-sm text-muted-foreground">
+          Choose which image shows first for every contact and sync destination. Companies and
+          individual contacts can override this.
+        </p>
+      </div>
+      <select
+        className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+        value={value}
+        disabled={q.isLoading}
+        onChange={async (e) => {
+          const priority = e.target.value as "company_first" | "personal_first" | "personal_only";
+          try {
+            await setPref({ data: { priority } });
+            qc.invalidateQueries({ queryKey: ["photo-priority-global"] });
+            toast.success("Photo preference updated");
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Update failed");
+          }
+        }}
+      >
+        <option value="company_first">Company photo first</option>
+        <option value="personal_first">Personal photo first</option>
+        <option value="personal_only">Personal photo only</option>
+      </select>
+    </div>
+  );
+}
