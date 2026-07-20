@@ -198,9 +198,7 @@ type ContactLogoRow = {
 };
 
 export type EffectiveContactPhotoSource =
-  | "contact_avatar"
-  | "company_photo"
-  | "company_domain_logo";
+  "contact_avatar" | "company_photo" | "company_domain_logo";
 
 export type EffectiveContactPhoto = {
   bytes: Uint8Array;

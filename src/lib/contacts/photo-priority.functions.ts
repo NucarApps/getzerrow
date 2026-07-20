@@ -15,10 +15,7 @@ export const setGlobalPhotoPriority = createServerFn({ method: "POST" })
     const { bumpResyncNonce } = await import("@/lib/carddav/settings.functions");
     const { error } = await supabase
       .from("carddav_settings")
-      .upsert(
-        { user_id: userId, photo_priority: data.priority },
-        { onConflict: "user_id" },
-      );
+      .upsert({ user_id: userId, photo_priority: data.priority }, { onConflict: "user_id" });
     if (error) throw new Error(error.message);
     await bumpResyncNonce(supabase, userId);
     await markAllContactsPhotoDirty(userId);
@@ -28,9 +25,7 @@ export const setGlobalPhotoPriority = createServerFn({ method: "POST" })
 export const setCompanyPhotoPriority = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z
-      .object({ companyId: z.string().uuid(), priority: PRIORITY.nullable() })
-      .parse(d),
+    z.object({ companyId: z.string().uuid(), priority: PRIORITY.nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -55,9 +50,7 @@ export const setCompanyPhotoPriority = createServerFn({ method: "POST" })
 export const setContactPhotoPriority = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z
-      .object({ contactId: z.string().uuid(), priority: PRIORITY.nullable() })
-      .parse(d),
+    z.object({ contactId: z.string().uuid(), priority: PRIORITY.nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;

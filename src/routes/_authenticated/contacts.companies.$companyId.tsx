@@ -117,10 +117,11 @@ function CompanyDetailPage() {
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
   const [mergePreviewOpen, setMergePreviewOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [domainConflict, setDomainConflict] = useState<
-    { companyId: string; companyName: string; domain: string } | null
-  >(null);
-
+  const [domainConflict, setDomainConflict] = useState<{
+    companyId: string;
+    companyName: string;
+    domain: string;
+  } | null>(null);
 
   useEffect(() => {
     if (q.data?.company) {
@@ -206,7 +207,6 @@ function CompanyDetailPage() {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Merge failed"),
   });
-
 
   const removeDomainMut = useMutation({
     mutationFn: (id: string) => removeDomainFn({ data: { id } }),
@@ -319,11 +319,21 @@ function CompanyDetailPage() {
 
         <Tabs defaultValue="people">
           <TabsList className="mb-4 flex w-full gap-1 overflow-x-auto whitespace-nowrap">
-            <TabsTrigger value="people" className="flex-shrink-0">People</TabsTrigger>
-            <TabsTrigger value="details" className="flex-shrink-0">Details</TabsTrigger>
-            <TabsTrigger value="domains" className="flex-shrink-0">Domains</TabsTrigger>
-            <TabsTrigger value="logo" className="flex-shrink-0">Logo</TabsTrigger>
-            <TabsTrigger value="labels" className="flex-shrink-0">Labels</TabsTrigger>
+            <TabsTrigger value="people" className="flex-shrink-0">
+              People
+            </TabsTrigger>
+            <TabsTrigger value="details" className="flex-shrink-0">
+              Details
+            </TabsTrigger>
+            <TabsTrigger value="domains" className="flex-shrink-0">
+              Domains
+            </TabsTrigger>
+            <TabsTrigger value="logo" className="flex-shrink-0">
+              Logo
+            </TabsTrigger>
+            <TabsTrigger value="labels" className="flex-shrink-0">
+              Labels
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="people">
@@ -523,8 +533,8 @@ function CompanyDetailPage() {
                 Photo preference
               </h2>
               <p className="mb-3 text-sm text-muted-foreground">
-                Overrides your global preference for people at this company. Individual contacts
-                can still override this.
+                Overrides your global preference for people at this company. Individual contacts can
+                still override this.
               </p>
               <CompanyPhotoPrioritySelect
                 companyId={companyId}
@@ -537,8 +547,7 @@ function CompanyDetailPage() {
                     .photo_priority ?? "company_first") as PhotoPriorityValue
                 }
                 source={
-                  (q.data.company as { photo_priority?: PhotoPriorityValue | null })
-                    .photo_priority
+                  (q.data.company as { photo_priority?: PhotoPriorityValue | null }).photo_priority
                     ? "company"
                     : "default"
                 }
@@ -771,9 +780,8 @@ function CompanyDetailPage() {
                     <AlertDialogTitle>Domain already in use</AlertDialogTitle>
                     <AlertDialogDescription>
                       <span className="font-mono">{domainConflict?.domain}</span> is already
-                      assigned to{" "}
-                      <span className="font-medium">{domainConflict?.companyName}</span>. Two
-                      companies can't share a domain. Merge{" "}
+                      assigned to <span className="font-medium">{domainConflict?.companyName}</span>
+                      . Two companies can't share a domain. Merge{" "}
                       <span className="font-medium">{domainConflict?.companyName}</span> into{" "}
                       <span className="font-medium">{form.name || "this company"}</span>?
                     </AlertDialogDescription>
@@ -795,7 +803,6 @@ function CompanyDetailPage() {
                 </AlertDialogContent>
               </AlertDialog>
               <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete “{form.name || "this company"}”?</AlertDialogTitle>
@@ -863,7 +870,6 @@ function CompanyPhotoSection({
   const pushToGoogleFn = useServerFn(pushCompanyPhotoToGoogleNow);
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["company", companyId] });
@@ -1287,7 +1293,8 @@ function CompanyPeopleFinder({ companyId, onAdded }: { companyId: string; onAdde
                         </span>
                         {suggestion.contactEmail && suggestion.contactName && (
                           <span className="text-muted-foreground">
-                            {" "}({suggestion.contactEmail})
+                            {" "}
+                            ({suggestion.contactEmail})
                           </span>
                         )}
                         {suggestion.sameCompanyId ? " · already at this company" : ""}

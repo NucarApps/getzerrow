@@ -103,15 +103,12 @@ async function markContactsForDomainPhotoDirty(userId: string, domain: string): 
       .eq("company_id", companyId);
     const ids = (contacts ?? []).map((c) => (c as { id: string }).id);
     if (!ids.length) return;
-    const { markGooglePhotoDirtyMany } = await import(
-      "@/lib/google-contacts/mark-dirty.server"
-    );
+    const { markGooglePhotoDirtyMany } = await import("@/lib/google-contacts/mark-dirty.server");
     await markGooglePhotoDirtyMany(userId, ids);
   } catch {
     // Non-fatal.
   }
 }
-
 
 /** Bump the user's CardDAV resync nonce so iPhone picks up the new logo on
  * its next poll. Uses the admin client to upsert into `carddav_settings`

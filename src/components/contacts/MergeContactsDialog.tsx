@@ -17,10 +17,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  getContactsMergePayload,
-  mergeContactsManual,
-} from "@/lib/contacts/dedup.functions";
+import { getContactsMergePayload, mergeContactsManual } from "@/lib/contacts/dedup.functions";
 
 type Props = {
   open: boolean;
@@ -84,26 +81,29 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
         continue;
       }
       const other = q.data.contacts.find(
-        (c) => (c as Record<string, unknown>)[f.key] != null &&
+        (c) =>
+          (c as Record<string, unknown>)[f.key] != null &&
           String((c as Record<string, unknown>)[f.key]).length > 0,
       );
       if (other) nextChoice[f.key] = other.id;
     }
     setFieldChoice(nextChoice);
     // Notes: default to whichever contact actually has notes, prefer primary.
-    const withNotes = q.data.contacts.find((c) => c.id === pid && c.notes)
-      ?? q.data.contacts.find((c) => c.notes);
+    const withNotes =
+      q.data.contacts.find((c) => c.id === pid && c.notes) ?? q.data.contacts.find((c) => c.notes);
     setNotesSource(withNotes?.id ?? pid);
     // Keep all phones/emails by default, primary from primary contact.
     setKeepPhones(new Set(q.data.phones.map((p) => p.id)));
     setKeepEmails(new Set(q.data.emails.map((e) => e.id)));
-    const pp = q.data.phones.find((p) => p.contact_id === pid && p.is_primary)
-      ?? q.data.phones.find((p) => p.contact_id === pid)
-      ?? q.data.phones[0];
+    const pp =
+      q.data.phones.find((p) => p.contact_id === pid && p.is_primary) ??
+      q.data.phones.find((p) => p.contact_id === pid) ??
+      q.data.phones[0];
     setPrimaryPhone(pp?.id ?? null);
-    const pe = q.data.emails.find((e) => e.contact_id === pid && e.is_primary)
-      ?? q.data.emails.find((e) => e.contact_id === pid)
-      ?? q.data.emails[0];
+    const pe =
+      q.data.emails.find((e) => e.contact_id === pid && e.is_primary) ??
+      q.data.emails.find((e) => e.contact_id === pid) ??
+      q.data.emails[0];
     setPrimaryEmail(pe?.id ?? null);
     setExcludedGroups(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,8 +116,7 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
       const fields: Record<string, string | null> = {};
       for (const [fieldKey, sourceId] of Object.entries(fieldChoice)) {
         const src = q.data.contacts.find((c) => c.id === sourceId) as
-          | Record<string, unknown>
-          | undefined;
+          Record<string, unknown> | undefined;
         fields[fieldKey] = (src?.[fieldKey] as string | null | undefined) ?? null;
       }
       const emailsPayload = q.data.emails
@@ -239,9 +238,7 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
                         </div>
                         <RadioGroup
                           value={fieldChoice[f.key] ?? ""}
-                          onValueChange={(v) =>
-                            setFieldChoice((s) => ({ ...s, [f.key]: v }))
-                          }
+                          onValueChange={(v) => setFieldChoice((s) => ({ ...s, [f.key]: v }))}
                           className="grid gap-1"
                         >
                           {opts.map((o) => (
@@ -320,9 +317,7 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
                           <div className="min-w-0 flex-1">
                             <div className="truncate">
                               {e.address}
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                {e.label}
-                              </span>
+                              <span className="ml-2 text-xs text-muted-foreground">{e.label}</span>
                             </div>
                             <div className="truncate text-[11px] text-muted-foreground">
                               from {owner?.name || owner?.email}
@@ -371,9 +366,7 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
                           <div className="min-w-0 flex-1">
                             <div className="truncate">
                               {p.number}
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                {p.label}
-                              </span>
+                              <span className="ml-2 text-xs text-muted-foreground">{p.label}</span>
                             </div>
                             <div className="truncate text-[11px] text-muted-foreground">
                               from {owner?.name || owner?.email}
