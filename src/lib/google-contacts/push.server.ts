@@ -409,7 +409,14 @@ async function pushContacts(
               await updateContactPhoto(ids.gmailAccountId, resource, photo.bytes);
               await supabaseAdmin
                 .from("google_contact_links")
-                .update({ photo_etag: photo.etag, photo_push_attempts: 0 })
+                .update({
+                  photo_etag: photo.etag,
+                  photo_push_attempts: 0,
+                  last_photo_error: null,
+                  last_photo_error_at: null,
+                  last_photo_status: null,
+                  last_photo_reason: null,
+                })
                 .eq("contact_id", c.id)
                 .eq("gmail_account_id", ids.gmailAccountId);
               logInfo("google_contacts.push.photo_uploaded", {
@@ -423,12 +430,25 @@ async function pushContacts(
                 photo_etag: photo.etag,
                 previous_photo_etag: linkPhotoEtag,
                 google_photo_url: linkGooglePhotoUrl,
+                bytes: photo.bytes.length,
               });
             } catch (uploadErr) {
               const nextAttempts = linkPhotoAttempts + 1;
+              const status =
+                uploadErr instanceof PeopleApiError ? uploadErr.status : undefined;
+              const reason =
+                uploadErr instanceof PeopleApiError ? uploadErr.googleReason : null;
+              const message =
+                uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
               await supabaseAdmin
                 .from("google_contact_links")
-                .update({ photo_push_attempts: nextAttempts })
+                .update({
+                  photo_push_attempts: nextAttempts,
+                  last_photo_error: message.slice(0, 500),
+                  last_photo_error_at: new Date().toISOString(),
+                  last_photo_status: typeof status === "number" ? status : null,
+                  last_photo_reason: reason,
+                })
                 .eq("contact_id", c.id)
                 .eq("gmail_account_id", ids.gmailAccountId);
               const payload = {
@@ -445,6 +465,9 @@ async function pushContacts(
                 google_photo_url: linkGooglePhotoUrl,
                 attempts: nextAttempts,
                 max_attempts: MAX_PHOTO_PUSH_ATTEMPTS,
+                google_status: status ?? null,
+                google_reason: reason,
+                bytes: photo.bytes.length,
               };
               if (nextAttempts >= MAX_PHOTO_PUSH_ATTEMPTS) {
                 logError("google_contacts.push.photo_gave_up", payload, uploadErr);
@@ -455,6 +478,22 @@ async function pushContacts(
           }
         }
       } catch (photoErr) {
+        const status =
+          photoErr instanceof PeopleApiError ? photoErr.status : undefined;
+        const reason =
+          photoErr instanceof PeopleApiError ? photoErr.googleReason : null;
+        const message =
+          photoErr instanceof Error ? photoErr.message : String(photoErr);
+        await supabaseAdmin
+          .from("google_contact_links")
+          .update({
+            last_photo_error: message.slice(0, 500),
+            last_photo_error_at: new Date().toISOString(),
+            last_photo_status: typeof status === "number" ? status : null,
+            last_photo_reason: reason,
+          })
+          .eq("contact_id", c.id)
+          .eq("gmail_account_id", ids.gmailAccountId);
         logError(
           "google_contacts.push.photo_failed",
           {
@@ -464,6 +503,8 @@ async function pushContacts(
             avatar_url: currentAvatar,
             photo_etag: linkPhotoEtag,
             google_photo_url: linkGooglePhotoUrl,
+            google_status: status ?? null,
+            google_reason: reason,
           },
           photoErr,
         );
