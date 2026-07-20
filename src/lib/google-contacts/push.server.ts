@@ -123,7 +123,9 @@ async function pushContacts(
 ): Promise<number> {
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
-    .select("contact_id, resource_name, etag, last_synced_at, photo_etag, photo_push_attempts")
+    .select(
+      "contact_id, resource_name, etag, last_synced_at, photo_etag, google_photo_url, photo_push_attempts",
+    )
     .eq("gmail_account_id", ids.gmailAccountId);
   const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
 
