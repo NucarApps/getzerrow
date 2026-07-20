@@ -294,16 +294,9 @@ async function pushContacts(
 
   let count = 0;
   const pushStartedAt = Date.now();
-  for (const c of contacts) {
-    if (Date.now() - pushStartedAt > PUSH_WALL_BUDGET_MS) {
-      logInfo("google_contacts.push.budget_exceeded", {
-        ...ids,
-        processed: count,
-        remaining: contacts.length - count,
-        budget_ms: PUSH_WALL_BUDGET_MS,
-      });
-      break;
-    }
+  const budgetHit = () => Date.now() - pushStartedAt > PUSH_WALL_BUDGET_MS;
+  const processOne = async (c: ContactRow): Promise<void> => {
+
     const link = byLocal.get(c.id);
     const linkPhotoEtag = (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
     const linkGooglePhotoUrl =
