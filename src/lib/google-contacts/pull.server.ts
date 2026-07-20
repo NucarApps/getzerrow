@@ -206,13 +206,12 @@ async function applyGroupChanges(
 
     const existing = byResource.get(g.resourceName);
     if (existing) {
-      await supabaseAdmin
-        .from("contact_groups")
-        .update({ name })
-        .eq("id", existing.contact_group_id);
+      // Zerrow is the source of truth for labels. Keep the remote etag fresh
+      // so the next push can rename Google back to the local label, but do
+      // not let stale Google label names overwrite local group names.
       await supabaseAdmin
         .from("google_group_links")
-        .update({ etag: g.etag ?? null, last_synced_at: new Date().toISOString() })
+        .update({ etag: g.etag ?? null })
         .eq("gmail_account_id", ids.gmailAccountId)
         .eq("resource_name", g.resourceName);
     } else {
