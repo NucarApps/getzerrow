@@ -882,6 +882,29 @@ function CompanyPhotoSection({
     }
   };
 
+  const onSyncToGoogle = async () => {
+    setBusy(true);
+    try {
+      const res = await pushToGoogleFn({ data: { companyId } });
+      if (res.errors.includes("not_linked_to_google")) {
+        toast.error("No members are linked to Google yet — run a contacts sync first.");
+      } else if (res.errors.includes("no_members")) {
+        toast.error("This company has no contacts to sync.");
+      } else if (res.accountsSynced > 0) {
+        toast.success(`Photo pushed to Google for ${res.contactsMarked} contact(s)`);
+      } else if (res.errors.length > 0) {
+        toast.error(res.errors[0] === "locked" ? "Sync already running" : res.errors[0]);
+      } else {
+        toast.success("Queued for the next sync");
+      }
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Push failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex items-center gap-4">
       <CompanyLogo domain={primaryDomain} name={name} size={56} photoUrl={logoUrl} />
@@ -904,7 +927,11 @@ function CompanyPhotoSection({
             <Trash2 className="mr-2 h-4 w-4" /> Remove
           </Button>
         )}
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onSyncToGoogle}>
+          <RefreshCw className="mr-2 h-4 w-4" /> Sync to Google now
+        </Button>
       </div>
+
       <input
         ref={fileRef}
         type="file"
