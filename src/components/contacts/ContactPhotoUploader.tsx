@@ -51,6 +51,10 @@ type Props = {
    *  domain brand logo) when the contact has no photo of their own. */
   companyPhotoUrl?: string | null;
   avatarIsCompanyLogoSnapshot?: boolean;
+  /** Effective photo priority (contact > company > global). Drives which
+   *  image the avatar renders when both a personal photo AND a company
+   *  photo/logo are available. */
+  effectivePhotoPriority?: "company_first" | "personal_first" | "personal_only";
   onChanged: () => void;
 };
 
