@@ -74,6 +74,7 @@ export function ContactPhotoUploader({
   companyId,
   companyPhotoUrl = null,
   avatarIsCompanyLogoSnapshot = false,
+  effectivePhotoPriority = "company_first",
   onChanged,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
