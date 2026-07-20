@@ -26,6 +26,12 @@ type Ids = { userId: string; gmailAccountId: string; runId: string };
 const MAX_CONTACTS_PER_RUN = 200;
 const MAX_GROUPS_PER_RUN = 100;
 const NO_LOCAL_PHOTO_ETAG = "no-local-photo";
+// Wall-clock budget for the push loop. The whole runGoogleContactsSync request
+// must finish inside the Worker/Safari fetch window (~30s) — this leaves room
+// for pull + finalize before Safari drops the request as "Load failed" and the
+// Worker is killed mid-loop (which leaks the sync lease). When exceeded we
+// break cleanly; the next cron tick (or user click) resumes the remainder.
+const PUSH_WALL_BUDGET_MS = 18_000;
 
 export async function pushToGoogle(
   ids: Ids,
