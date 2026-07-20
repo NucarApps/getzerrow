@@ -29,10 +29,12 @@ async function assertOwnsCompany(userId: string, companyId: string): Promise<voi
 }
 
 /** Nudge Google sync to repush the logo for every contact linked to this
- *  company, so the change reaches Google People too (best-effort). */
+ *  company, so the change reaches Google People too (best-effort). Also
+ *  resets each contact's photo retry counter so any previous "gave up" state
+ *  doesn't keep the sync from trying again after the logo swap. */
 async function markCompanyContactsDirty(userId: string, companyId: string): Promise<void> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { markGoogleContactsDirty } = await import(
+  const { markGoogleContactsDirty, markGooglePhotoDirtyMany } = await import(
     "@/lib/google-contacts/mark-dirty.server"
   );
   const { data: contacts } = await supabaseAdmin
@@ -42,7 +44,9 @@ async function markCompanyContactsDirty(userId: string, companyId: string): Prom
     .eq("company_id", companyId);
   const ids = (contacts ?? []).map((c) => (c as { id: string }).id);
   await markGoogleContactsDirty(userId, ids);
+  await markGooglePhotoDirtyMany(userId, ids);
 }
+
 
 
 export const uploadCompanyPhoto = createServerFn({ method: "POST" })
