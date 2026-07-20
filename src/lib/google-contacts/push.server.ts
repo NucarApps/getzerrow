@@ -159,8 +159,7 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
     .from("contact_groups")
     .select("id, name, updated_at, parent_group_id")
     .eq("user_id", ids.userId)
-    .order("updated_at", { ascending: true })
-    .limit(MAX_GROUPS_PER_RUN);
+    .order("updated_at", { ascending: true });
   const parentNameById = new Map<string, string>();
   for (const g of groups ?? []) parentNameById.set(g.id, g.name);
 
