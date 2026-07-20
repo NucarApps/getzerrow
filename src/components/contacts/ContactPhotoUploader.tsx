@@ -162,10 +162,26 @@ export function ContactPhotoUploader({
     setBusy(true);
     try {
       const res = await pushToGoogle({ data: { contactId } });
+      const lastFailure = res.recentFailures?.[0];
+      const failureDetail = lastFailure
+        ? [
+            lastFailure.status ? `Google ${lastFailure.status}` : null,
+            lastFailure.reason,
+            lastFailure.error,
+          ]
+            .filter(Boolean)
+            .join(" — ")
+        : null;
       if (res.errors.includes("no_photo_on_contact")) {
         toast.error("No photo to sync — upload one first or set a company logo.");
       } else if (res.errors.includes("not_linked_to_google")) {
         toast.error("This contact isn't linked to Google yet — sync it once first.");
+      } else if (failureDetail) {
+        // Surface the concrete People API reason so "Load failed" toasts stop
+        // being opaque. The push worker already retries — this is diagnostic.
+        toast.error(`Sync queued, last attempt failed: ${failureDetail}`, {
+          duration: 10_000,
+        });
       } else if (res.accountsQueued > 0) {
         toast.success("Sync started — photo will land in Google shortly");
       } else if (res.errors.length > 0) {

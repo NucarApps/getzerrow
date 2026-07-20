@@ -1941,6 +1941,10 @@ export type Database = {
           gmail_account_id: string
           google_photo_url: string | null
           id: string
+          last_photo_error: string | null
+          last_photo_error_at: string | null
+          last_photo_reason: string | null
+          last_photo_status: number | null
           last_synced_at: string
           photo_etag: string | null
           photo_push_attempts: number
@@ -1955,6 +1959,10 @@ export type Database = {
           gmail_account_id: string
           google_photo_url?: string | null
           id?: string
+          last_photo_error?: string | null
+          last_photo_error_at?: string | null
+          last_photo_reason?: string | null
+          last_photo_status?: number | null
           last_synced_at?: string
           photo_etag?: string | null
           photo_push_attempts?: number
@@ -1969,6 +1977,10 @@ export type Database = {
           gmail_account_id?: string
           google_photo_url?: string | null
           id?: string
+          last_photo_error?: string | null
+          last_photo_error_at?: string | null
+          last_photo_reason?: string | null
+          last_photo_status?: number | null
           last_synced_at?: string
           photo_etag?: string | null
           photo_push_attempts?: number
