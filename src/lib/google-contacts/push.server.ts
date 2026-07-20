@@ -590,9 +590,23 @@ async function pushContacts(
       logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
     }
     await progress?.increment(1);
+  };
+
+  for (const batch of chunk(contacts, CONTACT_PUSH_CONCURRENCY)) {
+    if (budgetHit()) {
+      logInfo("google_contacts.push.budget_exceeded", {
+        ...ids,
+        processed: count,
+        remaining: contacts.length - count,
+        budget_ms: PUSH_WALL_BUDGET_MS,
+      });
+      break;
+    }
+    await Promise.all(batch.map(processOne));
   }
   return count;
 }
+
 
 async function applyTombstones(ids: Ids, progress?: ProgressReporter): Promise<number> {
   const { data: tombs } = await supabaseAdmin
