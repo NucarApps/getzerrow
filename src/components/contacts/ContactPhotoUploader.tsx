@@ -157,7 +157,9 @@ export function ContactPhotoUploader({
     setBusy(true);
     try {
       const res = await pushToGoogle({ data: { contactId } });
-      if (res.errors.includes("not_linked_to_google")) {
+      if (res.errors.includes("no_photo_on_contact")) {
+        toast.error("No photo to sync — upload one first or set a company logo.");
+      } else if (res.errors.includes("not_linked_to_google")) {
         toast.error("This contact isn't linked to Google yet — sync it once first.");
       } else if (res.accountsSynced > 0) {
         toast.success("Photo pushed to Google");
