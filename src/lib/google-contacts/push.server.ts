@@ -16,11 +16,7 @@ import {
 } from "./people-client.server";
 import { contactToPerson, groupToLabel, personToContact } from "./mapper";
 import { loadLocalContact } from "./state.server";
-import {
-  isLocalGoogleContactDirty,
-  isGooglePhotoPushDirty,
-  MAX_PHOTO_PUSH_ATTEMPTS,
-} from "./dirty";
+import { filterDirtyForPush, MAX_PHOTO_PUSH_ATTEMPTS } from "./dirty";
 
 import type { ProgressReporter } from "./progress.server";
 
@@ -117,6 +113,7 @@ type ContactRow = {
   id: string;
   email: string | null;
   updated_at: string;
+  avatar_url: string | null;
 };
 
 async function pushContacts(
@@ -124,13 +121,33 @@ async function pushContacts(
   groupResourceByLocal: Map<string, string>,
   progress?: ProgressReporter,
 ): Promise<number> {
-  const { data: contacts } = await supabaseAdmin
-    .from("contacts")
-    .select("id, email, updated_at")
-    .eq("user_id", ids.userId)
-    .order("updated_at", { ascending: true })
-    .limit(MAX_CONTACTS_PER_RUN);
-  if (!contacts?.length) return 0;
+  const { data: links } = await supabaseAdmin
+    .from("google_contact_links")
+    .select("contact_id, resource_name, etag, last_synced_at, photo_etag, photo_push_attempts")
+    .eq("gmail_account_id", ids.gmailAccountId);
+  const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
+
+  // Page through ALL contacts and keep only dirty ones (unlinked, body-dirty,
+  // or photo-dirty), oldest-updated first for fairness. The old implementation
+  // examined a blind oldest-200 slice with no dirtiness filter, which starved
+  // recently-edited contacts on accounts with more than 200 rows: fresh edits
+  // (every photo save bumps updated_at) sorted past the window and were never
+  // pushed.
+  const dirty: ContactRow[] = [];
+  const PAGE_SIZE = 1000;
+  for (let from = 0; dirty.length < MAX_CONTACTS_PER_RUN; from += PAGE_SIZE) {
+    const { data: page } = await supabaseAdmin
+      .from("contacts")
+      .select("id, email, updated_at, avatar_url")
+      .eq("user_id", ids.userId)
+      .order("updated_at", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (!page?.length) break;
+    dirty.push(...filterDirtyForPush(page as ContactRow[], byLocal));
+    if (page.length < PAGE_SIZE) break;
+  }
+  const contacts = dirty.slice(0, MAX_CONTACTS_PER_RUN);
+  if (!contacts.length) return 0;
   await progress?.set("pushing_contacts", 0, contacts.length);
 
   // Per-user preference: fold Zerrow's AI relationship summary into the NOTE
@@ -145,46 +162,14 @@ async function pushContacts(
     (settingsRow as { include_summary_in_notes?: boolean } | null)?.include_summary_in_notes !==
     false;
 
-  const { data: links } = await supabaseAdmin
-    .from("google_contact_links")
-    .select("contact_id, resource_name, etag, last_synced_at, photo_etag, photo_push_attempts")
-    .eq("gmail_account_id", ids.gmailAccountId);
-  const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
-
-  // Load avatar_url per contact so we can also treat a photo-only change as
-  // dirty (avatar_url !== photo_etag) even when the person body is in sync.
-  const contactIds = (contacts as ContactRow[]).map((c) => c.id);
-  const avatarByContact = new Map<string, string | null>();
-  if (contactIds.length > 0) {
-    const { data: avatarRows } = await supabaseAdmin
-      .from("contacts")
-      .select("id, avatar_url")
-      .in("id", contactIds);
-    for (const row of avatarRows ?? []) {
-      const r = row as { id: string; avatar_url: string | null };
-      avatarByContact.set(r.id, r.avatar_url ?? null);
-    }
-  }
   let count = 0;
-  for (const c of contacts as ContactRow[]) {
+  for (const c of contacts) {
     const link = byLocal.get(c.id);
     const linkPhotoEtag =
       (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
     const linkPhotoAttempts =
       (link as { photo_push_attempts?: number | null } | undefined)?.photo_push_attempts ?? 0;
-    const currentAvatar = avatarByContact.get(c.id) ?? null;
-    const photoIsDirty = isGooglePhotoPushDirty({
-      avatarUrl: currentAvatar,
-      photoEtag: linkPhotoEtag,
-      photoPushAttempts: linkPhotoAttempts,
-    });
-    // Skip only when neither the person body nor the photo needs updating.
-    if (
-      link &&
-      !isLocalGoogleContactDirty(c.updated_at, link.last_synced_at) &&
-      !photoIsDirty
-    )
-      continue;
+    const currentAvatar = c.avatar_url ?? null;
 
 
 
@@ -228,6 +213,10 @@ async function pushContacts(
       // Track the resource_name of a freshly-created Google contact so the
       // photo push below can attach the avatar in the same iteration.
       let createdResourceName: string | null = null;
+      // When a guard decides the person body must not be pushed this run, we
+      // skip the body update but still fall through to the photo push below —
+      // the photo goes through its own endpoint and can't clobber fields.
+      let skipBodyUpdate = false;
       if (!link) {
         const created = await createPerson(ids.gmailAccountId, body);
         if (created.resourceName) {
@@ -304,8 +293,7 @@ async function pushContacts(
               if (toInsert.length) {
                 await supabaseAdmin.from("contact_emails").insert(toInsert);
               }
-              await progress?.increment(1);
-              continue;
+              skipBodyUpdate = true;
             }
           } catch (guardErr) {
             // If the guard itself fails, fall through to the normal update
@@ -313,22 +301,25 @@ async function pushContacts(
             logError("google_contacts.push.guard_failed", { ...ids, contact_id: c.id }, guardErr);
           }
 
-          const updated = await updatePerson(ids.gmailAccountId, link.resource_name, {
-            ...body,
-            etag: link.etag,
-          });
-          await supabaseAdmin
-            .from("google_contact_links")
-            .update({ etag: updated.etag ?? null, last_synced_at: new Date().toISOString() })
-            .eq("contact_id", c.id)
-            .eq("gmail_account_id", ids.gmailAccountId);
-          count++;
+          if (!skipBodyUpdate) {
+            const updated = await updatePerson(ids.gmailAccountId, link.resource_name, {
+              ...body,
+              etag: link.etag,
+            });
+            await supabaseAdmin
+              .from("google_contact_links")
+              .update({ etag: updated.etag ?? null, last_synced_at: new Date().toISOString() })
+              .eq("contact_id", c.id)
+              .eq("gmail_account_id", ids.gmailAccountId);
+            count++;
+          }
         } catch (e) {
           if (e instanceof PeopleApiError && e.isEtagConflict) {
             logInfo("google_contacts.push.etag_conflict_skip", { ...ids, contact_id: c.id });
-            continue;
+            skipBodyUpdate = true;
+          } else {
+            throw e;
           }
-          throw e;
         }
       }
 

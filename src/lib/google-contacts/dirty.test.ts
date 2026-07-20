@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   isLocalGoogleContactDirty,
   isGooglePhotoPushDirty,
+  filterDirtyForPush,
   MAX_PHOTO_PUSH_ATTEMPTS,
+  type PushLinkState,
 } from "./dirty";
 
 describe("isLocalGoogleContactDirty", () => {
@@ -75,5 +77,53 @@ describe("isGooglePhotoPushDirty", () => {
         photoPushAttempts: MAX_PHOTO_PUSH_ATTEMPTS + 3,
       }),
     ).toBe(false);
+  });
+});
+
+describe("filterDirtyForPush", () => {
+  const syncedLink = (overrides: Partial<PushLinkState> = {}): PushLinkState => ({
+    last_synced_at: "2026-07-19T12:00:00.000Z",
+    photo_etag: null,
+    photo_push_attempts: 0,
+    ...overrides,
+  });
+  const row = (id: string, updatedAt: string, avatarUrl: string | null = null) => ({
+    id,
+    updated_at: updatedAt,
+    avatar_url: avatarUrl,
+  });
+
+  it("keeps unlinked contacts (they must be created on Google)", () => {
+    const rows = [row("a", "2026-07-01T00:00:00.000Z")];
+    expect(filterDirtyForPush(rows, new Map())).toEqual(rows);
+  });
+
+  it("drops clean linked contacts and keeps body-dirty ones regardless of position", () => {
+    // Regression: the old push selected a blind oldest-200 slice, so a
+    // recently-edited contact (newest updated_at) was never examined on
+    // accounts with more than 200 rows. Selection must be dirtiness-first.
+    const rows = [
+      row("stale-clean", "2026-01-01T00:00:00.000Z"),
+      row("recently-edited", "2026-07-19T18:00:00.000Z"),
+    ];
+    const links = new Map<string, PushLinkState>([
+      ["stale-clean", syncedLink()],
+      ["recently-edited", syncedLink()], // edited after last_synced_at → dirty
+    ]);
+    expect(filterDirtyForPush(rows, links).map((r) => r.id)).toEqual(["recently-edited"]);
+  });
+
+  it("keeps photo-only dirty contacts even when the body is in sync", () => {
+    const rows = [row("photo-added", "2026-07-19T11:00:00.000Z", "storage://new.jpg")];
+    const links = new Map<string, PushLinkState>([["photo-added", syncedLink()]]);
+    expect(filterDirtyForPush(rows, links).map((r) => r.id)).toEqual(["photo-added"]);
+  });
+
+  it("drops photo-dirty contacts that exhausted the retry budget", () => {
+    const rows = [row("gave-up", "2026-07-19T11:00:00.000Z", "storage://new.jpg")];
+    const links = new Map<string, PushLinkState>([
+      ["gave-up", syncedLink({ photo_push_attempts: MAX_PHOTO_PUSH_ATTEMPTS })],
+    ]);
+    expect(filterDirtyForPush(rows, links)).toEqual([]);
   });
 });
