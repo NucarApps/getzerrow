@@ -6,10 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const GOOGLE_SYNC_DIRTY_SENTINEL = "1970-01-01T00:00:00.000Z";
 
-export async function markGoogleContactDirty(
-  userId: string,
-  contactId: string,
-): Promise<void> {
+export async function markGoogleContactDirty(userId: string, contactId: string): Promise<void> {
   await supabaseAdmin
     .from("google_contact_links")
     .update({ last_synced_at: GOOGLE_SYNC_DIRTY_SENTINEL })
@@ -35,10 +32,7 @@ export async function markGoogleContactsDirty(
  *  would otherwise cap out at MAX_PHOTO_PUSH_ATTEMPTS forever. Body
  *  dirtiness is deliberately left alone — the photo push runs on its own
  *  endpoint and doesn't need a matching body write. */
-export async function markGooglePhotoDirty(
-  userId: string,
-  contactId: string,
-): Promise<void> {
+export async function markGooglePhotoDirty(userId: string, contactId: string): Promise<void> {
   await supabaseAdmin
     .from("google_contact_links")
     .update({ photo_etag: null, photo_push_attempts: 0 })

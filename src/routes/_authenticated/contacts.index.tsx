@@ -734,7 +734,7 @@ function ContactsPage() {
 
           {/* Mobile groups: horizontal pill scroller */}
           <div className="mb-4 -mx-4 px-4 md:hidden max-w-full overflow-hidden">
-            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <GroupPill
                 active={filter === "all"}
                 color="#a3a3a3"
@@ -759,6 +759,7 @@ function ContactsPage() {
                     label={depth > 0 ? `${"— ".repeat(depth)}${g.name}` : g.name}
                     count={g.count}
                     onClick={() => setFilter(g.id)}
+                    onEdit={isAuto ? undefined : () => setGroupDialog({ mode: "edit", group: g })}
                     locked={isAuto}
                   />
                 );
@@ -1422,11 +1423,11 @@ function GroupPill({
       </button>
       {locked && active && (
         <span
-          className="mr-1 grid h-5 w-5 place-items-center rounded-full text-muted-foreground/70"
+          className="mr-1 grid h-7 w-7 place-items-center rounded-full text-muted-foreground/70"
           title="Managed automatically from the parent group"
           aria-label="Managed automatically"
         >
-          <Lock className="h-3 w-3" />
+          <Lock className="h-3.5 w-3.5" />
         </span>
       )}
       {!locked && onEdit && active && (
@@ -1435,10 +1436,10 @@ function GroupPill({
             e.stopPropagation();
             onEdit();
           }}
-          className="mr-1 grid h-5 w-5 place-items-center rounded-full text-muted-foreground hover:bg-background/50 hover:text-foreground"
+          className="mr-1 grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:bg-background/50 hover:text-foreground"
           aria-label={`Edit ${label}`}
         >
-          <Pencil className="h-3 w-3" />
+          <Pencil className="h-3.5 w-3.5" />
         </button>
       )}
     </div>

@@ -382,7 +382,6 @@ export const addCompanyDomain = createServerFn({ method: "POST" })
     return { ok: true as const, domain };
   });
 
-
 export const removeCompanyDomain = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
@@ -683,7 +682,9 @@ async function mergeCompaniesImpl(
     });
   } catch (err) {
     console.warn("[mergeCompanies] discover_company_domains failed", {
-      sourceId, targetId, error: err instanceof Error ? err.message : String(err),
+      sourceId,
+      targetId,
+      error: err instanceof Error ? err.message : String(err),
     });
   }
   if (movedIds.length > 0) {
@@ -693,7 +694,9 @@ async function mergeCompaniesImpl(
       await reconcileAutoParentsForContacts(supabase, userId, movedIds);
     } catch (err) {
       console.warn("[mergeCompanies] reconcileAutoParentsForContacts failed", {
-        sourceId, targetId, error: err instanceof Error ? err.message : String(err),
+        sourceId,
+        targetId,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
     try {
@@ -705,7 +708,9 @@ async function mergeCompaniesImpl(
       });
     } catch (err) {
       console.warn("[mergeCompanies] syncCompanyRuleMemberships failed", {
-        sourceId, targetId, error: err instanceof Error ? err.message : String(err),
+        sourceId,
+        targetId,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
@@ -732,7 +737,6 @@ async function mergeCompaniesImpl(
   }
   return { ok: true, movedContacts: movedIds.length };
 }
-
 
 export const mergeCompanies = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -979,7 +983,7 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
         if (apiKey) {
           const { generateText, Output, NoObjectGeneratedError } = await import("ai");
           const gateway = createLovableAiGatewayProvider(apiKey);
-          const model = gateway("google/gemini-3.1-flash-lite");
+          const model = gateway("google/gemini-2.5-flash");
           const AiSchema = z.object({
             clusters: z.array(
               z.object({

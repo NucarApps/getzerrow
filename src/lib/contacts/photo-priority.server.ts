@@ -42,7 +42,8 @@ export async function getEffectivePhotoPriority(
       .eq("id", companyId)
       .eq("user_id", userId)
       .maybeSingle();
-    companyPriority = (company as { photo_priority?: PhotoPriority | null } | null)?.photo_priority ?? null;
+    companyPriority =
+      (company as { photo_priority?: PhotoPriority | null } | null)?.photo_priority ?? null;
   }
 
   const { data: settings } = await supabaseAdmin

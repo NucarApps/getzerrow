@@ -11,11 +11,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import { extractDomain, isPersonalDomain } from "@/lib/company-domains";
 import { isLikelyHuman } from "@/lib/contacts-helpers.server";
-import {
-  emailLocalPart,
-  nameMatchConfidence,
-  normalizeNameLoose,
-} from "@/lib/contacts/name-match";
+import { emailLocalPart, nameMatchConfidence, normalizeNameLoose } from "@/lib/contacts/name-match";
 
 type PossibleMatch = {
   contactId: string;
@@ -99,14 +95,8 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
         .eq("user_id", userId)
         .or(calOr)
         .limit(5000),
-      supabase
-        .from("contacts")
-        .select("id,name,email,company_id")
-        .eq("user_id", userId),
-      supabase
-        .from("contact_emails")
-        .select("contact_id,address")
-        .eq("user_id", userId),
+      supabase.from("contacts").select("id,name,email,company_id").eq("user_id", userId),
+      supabase.from("contact_emails").select("contact_id,address").eq("user_id", userId),
       supabase.from("gmail_accounts").select("email_address").eq("user_id", userId),
     ]);
 
@@ -269,9 +259,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
         }
       }
 
-      person.possibleMatches = [...seen.values()]
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3);
+      person.possibleMatches = [...seen.values()].sort((a, b) => b.score - a.score).slice(0, 3);
     }
 
     // Optional AI disambiguation when the top two matches tie on score. Best-effort.
@@ -284,7 +272,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
       );
       if (needsAI.length > 0 && needsAI.length <= 20) {
         try {
-          const model = createLovableAiGatewayProvider(key)("google/gemini-3.1-flash-lite");
+          const model = createLovableAiGatewayProvider(key)("google/gemini-2.5-flash");
           const schema = z.object({
             picks: z.array(
               z.object({
@@ -409,14 +397,12 @@ export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
         .eq("user_id", userId);
       if (upErr) throw new Error(upErr.message);
       if (oldPrimary && oldPrimary !== data.email) {
-        await supabase
-          .from("contact_emails")
-          .insert({
-            user_id: userId,
-            contact_id: row.id,
-            address: oldPrimary,
-            is_primary: false,
-          });
+        await supabase.from("contact_emails").insert({
+          user_id: userId,
+          contact_id: row.id,
+          address: oldPrimary,
+          is_primary: false,
+        });
       }
     } else {
       // Add-as-secondary. If contact has no primary, promote this to primary.
@@ -462,9 +448,7 @@ export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
 
     // Converge label rules + auto-subgroups just like addCompanyPeople.
     try {
-      const { syncCompanyRuleMemberships } = await import(
-        "@/lib/contacts/group-rules.functions"
-      );
+      const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
       await syncCompanyRuleMemberships(supabase, userId, {
         companyIds: [data.companyId],
         contactIds: [row.id],
@@ -474,9 +458,8 @@ export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
       // Non-fatal.
     }
     try {
-      const { reconcileAutoParentsForContacts } = await import(
-        "@/lib/contacts/auto-company-subgroups.functions"
-      );
+      const { reconcileAutoParentsForContacts } =
+        await import("@/lib/contacts/auto-company-subgroups.functions");
       await reconcileAutoParentsForContacts(supabase, userId, [row.id]);
     } catch {
       // Non-fatal.
@@ -484,7 +467,6 @@ export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
 
     return { contactId: row.id };
   });
-
 
 export const addCompanyPeople = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -532,7 +514,10 @@ export const addCompanyPeople = createServerFn({ method: "POST" })
       .in("email", emails);
     if (exErr) throw new Error(exErr.message);
 
-    const existingByEmail = new Map<string, { id: string; company_id: string | null; name: string | null }>();
+    const existingByEmail = new Map<
+      string,
+      { id: string; company_id: string | null; name: string | null }
+    >();
     for (const r of (existingRows ?? []) as Array<{
       id: string;
       email: string | null;
@@ -548,7 +533,7 @@ export const addCompanyPeople = createServerFn({ method: "POST" })
     // Update contacts that already exist but aren't linked to a company yet.
     const toUpdate = [...existingByEmail.entries()].filter(([, r]) => !r.company_id);
     for (const [email, row] of toUpdate) {
-      const n = !row.name ? nameByEmail.get(email) ?? null : null;
+      const n = !row.name ? (nameByEmail.get(email) ?? null) : null;
       const patch = n
         ? { company: companyName, company_id: data.companyId, name: n }
         : { company: companyName, company_id: data.companyId };
@@ -582,7 +567,6 @@ export const addCompanyPeople = createServerFn({ method: "POST" })
       if (insErr) throw new Error(insErr.message);
       for (const r of (inserted ?? []) as Array<{ id: string }>) contactIds.push(r.id);
     }
-
 
     // Converge: label rules for the company now apply to the new contacts,
     // domains re-derive, auto-subgroups reconcile. Best-effort.

@@ -31,9 +31,9 @@ describe("isLocalGoogleContactDirty", () => {
 
 describe("isGooglePhotoPushDirty", () => {
   it("is not dirty when there is no local avatar", () => {
-    expect(
-      isGooglePhotoPushDirty({ avatarUrl: null, photoEtag: null, photoPushAttempts: 0 }),
-    ).toBe(false);
+    expect(isGooglePhotoPushDirty({ avatarUrl: null, photoEtag: null, photoPushAttempts: 0 })).toBe(
+      false,
+    );
   });
 
   it("is not dirty when the pushed etag already matches the local avatar", () => {
@@ -88,7 +88,10 @@ describe("isGooglePhotoLinkDirty", () => {
 
   it("does not revisit links that already recorded a photo outcome", () => {
     expect(
-      isGooglePhotoLinkDirty({ photoEtag: "company-domain-logo:company:domain:sha", photoPushAttempts: 0 }),
+      isGooglePhotoLinkDirty({
+        photoEtag: "company-domain-logo:company:domain:sha",
+        photoPushAttempts: 0,
+      }),
     ).toBe(false);
     expect(isGooglePhotoLinkDirty({ photoEtag: "no-local-photo", photoPushAttempts: 0 })).toBe(
       false,

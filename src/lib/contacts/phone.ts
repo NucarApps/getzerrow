@@ -44,8 +44,7 @@ export function normalizePhones(raw: readonly (string | null | undefined)[]): st
 }
 
 export type PhoneValidationResult =
-  | { ok: true; normalized: string }
-  | { ok: false; normalized: string; reason: string };
+  { ok: true; normalized: string } | { ok: false; normalized: string; reason: string };
 
 export function validatePhoneNumber(raw: string): PhoneValidationResult {
   const normalized = normalizePhoneDisplay(raw);
@@ -61,9 +60,7 @@ export function validatePhoneNumber(raw: string): PhoneValidationResult {
     return {
       ok: false,
       normalized,
-      reason: bad
-        ? `"${bad}" isn't a valid phone character`
-        : "Phone contains invalid characters",
+      reason: bad ? `"${bad}" isn't a valid phone character` : "Phone contains invalid characters",
     };
   }
   return { ok: true, normalized };

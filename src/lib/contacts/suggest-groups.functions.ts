@@ -305,7 +305,7 @@ export async function runContactGroupSuggestionsImpl(supabase: DB, userId: strin
     }));
 
     const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-3.1-flash-lite");
+    const model = gateway("google/gemini-2.5-flash");
 
     const prompt = `You are helping organize a user's contact list into meaningful groups.
 

@@ -34,9 +34,8 @@ async function assertOwnsCompany(userId: string, companyId: string): Promise<voi
  *  doesn't keep the sync from trying again after the logo swap. */
 async function markCompanyContactsDirty(userId: string, companyId: string): Promise<void> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { markGoogleContactsDirty, markGooglePhotoDirtyMany } = await import(
-    "@/lib/google-contacts/mark-dirty.server"
-  );
+  const { markGoogleContactsDirty, markGooglePhotoDirtyMany } =
+    await import("@/lib/google-contacts/mark-dirty.server");
   const { data: contacts } = await supabaseAdmin
     .from("contacts")
     .select("id")
@@ -46,8 +45,6 @@ async function markCompanyContactsDirty(userId: string, companyId: string): Prom
   await markGoogleContactsDirty(userId, ids);
   await markGooglePhotoDirtyMany(userId, ids);
 }
-
-
 
 export const uploadCompanyPhoto = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

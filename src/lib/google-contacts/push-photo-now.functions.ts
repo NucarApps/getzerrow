@@ -126,8 +126,12 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
 
     // Pre-check with the exact resolver the Google push worker uses. This
     // includes the domain/company logo shown in Zerrow, not just stored photos.
-    const { resolveEffectiveContactPhotoForSync } = await import("@/lib/contacts/logo-photo.server");
-    const effectivePhoto = await resolveEffectiveContactPhotoForSync(context.userId, data.contactId);
+    const { resolveEffectiveContactPhotoForSync } =
+      await import("@/lib/contacts/logo-photo.server");
+    const effectivePhoto = await resolveEffectiveContactPhotoForSync(
+      context.userId,
+      data.contactId,
+    );
     if (!effectivePhoto) {
       return {
         contactsMarked: 0,

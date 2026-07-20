@@ -137,7 +137,14 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
           </div>
         )}
 
-        {!q.isLoading && clusters.length === 0 && (
+        {!q.isLoading && q.isError && (
+          <div className="mt-8 rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center text-sm text-destructive">
+            Couldn&apos;t scan for duplicate labels
+            {q.error instanceof Error ? `: ${q.error.message}` : ""}. Tap Rescan to try again.
+          </div>
+        )}
+
+        {!q.isLoading && !q.isError && clusters.length === 0 && (
           <div className="mt-8 rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
             No duplicate labels detected.
           </div>

@@ -145,12 +145,11 @@ async function pushContacts(
   const dirty: ContactRow[] = [];
   const seen = new Set<string>();
   const photoDirtyIds = (links ?? [])
-    .filter(
-      (l) =>
-        isGooglePhotoLinkDirty({
-          photoEtag: l.photo_etag ?? null,
-          photoPushAttempts: l.photo_push_attempts ?? 0,
-        }),
+    .filter((l) =>
+      isGooglePhotoLinkDirty({
+        photoEtag: l.photo_etag ?? null,
+        photoPushAttempts: l.photo_push_attempts ?? 0,
+      }),
     )
     .map((l) => l.contact_id);
   if (photoDirtyIds.length) {
@@ -213,15 +212,12 @@ async function pushContacts(
       break;
     }
     const link = byLocal.get(c.id);
-    const linkPhotoEtag =
-      (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
+    const linkPhotoEtag = (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
     const linkGooglePhotoUrl =
       (link as { google_photo_url?: string | null } | undefined)?.google_photo_url ?? null;
     const linkPhotoAttempts =
       (link as { photo_push_attempts?: number | null } | undefined)?.photo_push_attempts ?? 0;
     const currentAvatar = c.avatar_url ?? null;
-
-
 
     try {
       const local = await loadLocalContact(c.id);
@@ -285,7 +281,6 @@ async function pushContacts(
           count++;
         }
       } else if (link.etag) {
-
         try {
           // Conflict guard: if Google has emails we don't, abort the push
           // and flip the link back to "trust remote" so the next pull will
@@ -384,9 +379,8 @@ async function pushContacts(
         const previousUrl = linkPhotoEtag;
         const resource = link?.resource_name ?? createdResourceName;
         if (resource && linkPhotoAttempts < MAX_PHOTO_PUSH_ATTEMPTS) {
-          const { resolveEffectiveContactPhotoForSync } = await import(
-            "@/lib/contacts/logo-photo.server"
-          );
+          const { resolveEffectiveContactPhotoForSync } =
+            await import("@/lib/contacts/logo-photo.server");
           const photo = await resolveEffectiveContactPhotoForSync(ids.userId, c.id);
           if (!photo) {
             await supabaseAdmin
@@ -434,12 +428,9 @@ async function pushContacts(
               });
             } catch (uploadErr) {
               const nextAttempts = linkPhotoAttempts + 1;
-              const status =
-                uploadErr instanceof PeopleApiError ? uploadErr.status : undefined;
-              const reason =
-                uploadErr instanceof PeopleApiError ? uploadErr.googleReason : null;
-              const message =
-                uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+              const status = uploadErr instanceof PeopleApiError ? uploadErr.status : undefined;
+              const reason = uploadErr instanceof PeopleApiError ? uploadErr.googleReason : null;
+              const message = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
               await supabaseAdmin
                 .from("google_contact_links")
                 .update({
@@ -478,12 +469,9 @@ async function pushContacts(
           }
         }
       } catch (photoErr) {
-        const status =
-          photoErr instanceof PeopleApiError ? photoErr.status : undefined;
-        const reason =
-          photoErr instanceof PeopleApiError ? photoErr.googleReason : null;
-        const message =
-          photoErr instanceof Error ? photoErr.message : String(photoErr);
+        const status = photoErr instanceof PeopleApiError ? photoErr.status : undefined;
+        const reason = photoErr instanceof PeopleApiError ? photoErr.googleReason : null;
+        const message = photoErr instanceof Error ? photoErr.message : String(photoErr);
         await supabaseAdmin
           .from("google_contact_links")
           .update({
@@ -513,7 +501,6 @@ async function pushContacts(
       logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
     }
     await progress?.increment(1);
-
   }
   return count;
 }

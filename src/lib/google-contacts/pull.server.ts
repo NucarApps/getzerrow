@@ -289,12 +289,10 @@ async function applyPersonChanges(
       {
         contact_id: l.contact_id,
         last_synced_at: l.last_synced_at ?? null,
-        google_photo_url:
-          (l as { google_photo_url?: string | null }).google_photo_url ?? null,
+        google_photo_url: (l as { google_photo_url?: string | null }).google_photo_url ?? null,
       },
     ]),
   );
-
 
   // Existing group links for membership diffing.
   const { data: groupLinks } = await supabaseAdmin

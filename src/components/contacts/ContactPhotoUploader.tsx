@@ -15,7 +15,6 @@ import {
 import { resetContactToCompanyLogo } from "@/lib/contacts/company-logo-cleanup.functions";
 import { pushContactPhotoToGoogleNow } from "@/lib/google-contacts/push-photo-now.functions";
 
-
 const ALLOWED = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type AllowedMime = (typeof ALLOWED)[number];
 
@@ -85,7 +84,6 @@ export function ContactPhotoUploader({
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
   const resetToCompany = useServerFn(resetContactToCompanyLogo);
   const pushToGoogle = useServerFn(pushContactPhotoToGoogleNow);
-
 
   // Shares its cache key with the contacts list page so the network hit is
   // deduped when the drawer opens over the list.
@@ -197,8 +195,8 @@ export function ContactPhotoUploader({
     }
   };
 
-
-  const heuristicDomain = companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null);
+  const heuristicDomain =
+    companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null);
   const companyAvailable = !!(companyPhotoUrl || heuristicDomain);
   // Priority-aware display:
   //  - personal_only: only ever show the personal photo (or initials)
@@ -207,7 +205,9 @@ export function ContactPhotoUploader({
   //  - personal_first (default fallback): personal wins, company fills in
   const showCompanyPrimary =
     effectivePhotoPriority !== "personal_only" &&
-    (effectivePhotoPriority === "company_first" ? companyAvailable : !displaySrc && companyAvailable);
+    (effectivePhotoPriority === "company_first"
+      ? companyAvailable
+      : !displaySrc && companyAvailable);
   const logoDomain = showCompanyPrimary ? heuristicDomain : null;
   const logoChoice = logoDomain
     ? (logoChoicesQuery.data ?? []).find(

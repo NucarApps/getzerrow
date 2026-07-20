@@ -141,6 +141,12 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
         <div className="mt-4 space-y-3">
           {query.isLoading ? (
             <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : query.isError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+              Couldn&apos;t load suggestions
+              {query.error instanceof Error ? `: ${query.error.message}` : ""}. Try running the scan
+              again.
+            </div>
           ) : groups.length === 0 ? (
             <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
               {isDismissed

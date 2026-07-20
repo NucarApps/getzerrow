@@ -88,7 +88,12 @@ export function buildInlineCompanyMergeSuggestions(
       ),
     );
     const suggestion: InlineCompanyMergeSuggestion = {
-      kind: primary.companyId && sourceCompanyIds.length > 0 ? "company" : aliasDomains.length > 0 ? "alias" : "rename",
+      kind:
+        primary.companyId && sourceCompanyIds.length > 0
+          ? "company"
+          : aliasDomains.length > 0
+            ? "alias"
+            : "rename",
       normalizedName,
       displayName: entry.displayName,
       primaryBucketKey: primary.key,

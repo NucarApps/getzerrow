@@ -10,7 +10,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 
-
 async function assertOwnsContact(userId: string, contactId: string): Promise<void> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data } = await supabaseAdmin
@@ -59,9 +58,8 @@ export const uploadContactPhoto = createServerFn({ method: "POST" })
     // A brand-new local photo also resets the retry budget so any previous
     // "gave up" state doesn't keep the sync from trying again.
     try {
-      const { markGoogleContactDirty, markGooglePhotoDirty } = await import(
-        "@/lib/google-contacts/mark-dirty.server"
-      );
+      const { markGoogleContactDirty, markGooglePhotoDirty } =
+        await import("@/lib/google-contacts/mark-dirty.server");
       await markGoogleContactDirty(context.userId, data.contactId);
       await markGooglePhotoDirty(context.userId, data.contactId);
     } catch {
@@ -97,9 +95,8 @@ export const removeContactPhoto = createServerFn({ method: "POST" })
     const { deleteContactPhoto } = await import("@/lib/contacts/photos.server");
     await deleteContactPhoto(context.userId, data.contactId);
     try {
-      const { markGoogleContactDirty, markGooglePhotoDirty } = await import(
-        "@/lib/google-contacts/mark-dirty.server"
-      );
+      const { markGoogleContactDirty, markGooglePhotoDirty } =
+        await import("@/lib/google-contacts/mark-dirty.server");
       await markGoogleContactDirty(context.userId, data.contactId);
       await markGooglePhotoDirty(context.userId, data.contactId);
     } catch {
