@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   MY_CONTACTS_RESOURCE,
+  chunk,
+  formatGoogleLabelName,
+  withMyContacts,
+} from "./push.server";
+
+describe("chunk", () => {
+  it("splits into fixed-size groups preserving order", () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+  it("returns [] for empty input", () => {
+    expect(chunk<number>([], 5)).toEqual([]);
+  });
+  it("returns a single chunk for size >= length", () => {
+    expect(chunk([1, 2], 5)).toEqual([[1, 2]]);
+  });
+  it("falls back to one chunk for non-positive size", () => {
+    expect(chunk([1, 2, 3], 0)).toEqual([[1, 2, 3]]);
+  });
+});
+
   formatGoogleLabelName,
   withMyContacts,
 } from "./push.server";
