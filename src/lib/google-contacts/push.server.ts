@@ -307,7 +307,7 @@ async function pushContacts(
 
     try {
       const local = await loadLocalContact(c.id);
-      if (!local) continue;
+      if (!local) return;
 
       const { data: phones } = await supabaseAdmin
         .from("contact_phones")
