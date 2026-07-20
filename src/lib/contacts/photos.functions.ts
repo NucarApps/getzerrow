@@ -68,6 +68,23 @@ export const uploadContactPhoto = createServerFn({ method: "POST" })
       // Not linked to Google — no-op.
     }
 
+    // Bump the CardDAV resync nonce so iOS pulls the new picture on next
+    // sync. The CardDAV serve path already honors the effective photo
+    // priority (contact override → company → global default) via
+    // getEffectivePhotoPriority, so iOS sees personal vs company per the
+    // user's configured preference — no override forced here.
+    try {
+      const { bumpResyncNonce } = await import("@/lib/carddav/settings.functions");
+      await bumpResyncNonce(context.supabase, context.userId);
+      const { logInfo } = await import("@/lib/log.server");
+      logInfo("carddav.resync_nonce_bumped", {
+        user_id: context.userId,
+        contact_id: data.contactId,
+        reason: "photo_upload",
+      });
+    } catch {
+      // Non-fatal — the next scheduled sync will still pick it up.
+    }
 
     return { avatarUrl };
   });
@@ -87,6 +104,20 @@ export const removeContactPhoto = createServerFn({ method: "POST" })
       await markGooglePhotoDirty(context.userId, data.contactId);
     } catch {
       // ignore
+    }
+
+    // Push removal to iOS on next sync — same lever as upload.
+    try {
+      const { bumpResyncNonce } = await import("@/lib/carddav/settings.functions");
+      await bumpResyncNonce(context.supabase, context.userId);
+      const { logInfo } = await import("@/lib/log.server");
+      logInfo("carddav.resync_nonce_bumped", {
+        user_id: context.userId,
+        contact_id: data.contactId,
+        reason: "photo_remove",
+      });
+    } catch {
+      // Non-fatal.
     }
 
     return { ok: true };
