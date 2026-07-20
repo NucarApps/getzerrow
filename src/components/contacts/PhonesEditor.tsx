@@ -8,7 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Phone, Plus, Star, Trash2 } from "lucide-react";
+import { AlertCircle, Phone, Plus, Star, Trash2 } from "lucide-react";
+import { validatePhoneNumber } from "@/lib/contacts/phone";
 
 export type PhoneEntry = {
   label: string;
