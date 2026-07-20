@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isLocalGoogleContactDirty,
   isGooglePhotoPushDirty,
+  isGooglePhotoLinkDirty,
   filterDirtyForPush,
   MAX_PHOTO_PUSH_ATTEMPTS,
   type PushLinkState,
@@ -76,6 +77,27 @@ describe("isGooglePhotoPushDirty", () => {
         photoEtag: null,
         photoPushAttempts: MAX_PHOTO_PUSH_ATTEMPTS + 3,
       }),
+    ).toBe(false);
+  });
+});
+
+describe("isGooglePhotoLinkDirty", () => {
+  it("visits linked contacts with no pushed photo etag so fallback logos can be resolved", () => {
+    expect(isGooglePhotoLinkDirty({ photoEtag: null, photoPushAttempts: 0 })).toBe(true);
+  });
+
+  it("does not revisit links that already recorded a photo outcome", () => {
+    expect(
+      isGooglePhotoLinkDirty({ photoEtag: "company-domain-logo:company:domain:sha", photoPushAttempts: 0 }),
+    ).toBe(false);
+    expect(isGooglePhotoLinkDirty({ photoEtag: "no-local-photo", photoPushAttempts: 0 })).toBe(
+      false,
+    );
+  });
+
+  it("stops retrying after MAX_PHOTO_PUSH_ATTEMPTS", () => {
+    expect(
+      isGooglePhotoLinkDirty({ photoEtag: null, photoPushAttempts: MAX_PHOTO_PUSH_ATTEMPTS }),
     ).toBe(false);
   });
 });

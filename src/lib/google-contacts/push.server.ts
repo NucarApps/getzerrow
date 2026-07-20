@@ -16,7 +16,7 @@ import {
 } from "./people-client.server";
 import { contactToPerson, groupToLabel, personToContact } from "./mapper";
 import { loadLocalContact } from "./state.server";
-import { filterDirtyForPush, MAX_PHOTO_PUSH_ATTEMPTS } from "./dirty";
+import { filterDirtyForPush, isGooglePhotoLinkDirty, MAX_PHOTO_PUSH_ATTEMPTS } from "./dirty";
 
 import type { ProgressReporter } from "./progress.server";
 
@@ -25,6 +25,7 @@ type Ids = { userId: string; gmailAccountId: string; runId: string };
 // Cap per-run work so a big first-time push doesn't hog the cron slot.
 const MAX_CONTACTS_PER_RUN = 200;
 const MAX_GROUPS_PER_RUN = 100;
+const NO_LOCAL_PHOTO_ETAG = "no-local-photo";
 
 export async function pushToGoogle(
   ids: Ids,
@@ -131,16 +132,19 @@ async function pushContacts(
   const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
 
   // Two-pass dirty selection so photo-dirty contacts don't starve behind a
-  // large body-dirty backlog. First pass targets contacts that need a photo
-  // upload (avatar set + no photo_etag on the link). Second pass fills the
-  // remaining per-run budget with body-dirty rows, oldest-updated first.
+  // large body-dirty backlog. First pass targets links that need a photo
+  // upload, including company/domain-logo fallbacks where avatar_url is null.
+  // Second pass fills the remaining per-run budget with body-dirty rows,
+  // oldest-updated first.
   const dirty: ContactRow[] = [];
   const seen = new Set<string>();
   const photoDirtyIds = (links ?? [])
     .filter(
       (l) =>
-        (l.photo_etag == null) &&
-        ((l.photo_push_attempts ?? 0) < MAX_PHOTO_PUSH_ATTEMPTS),
+        isGooglePhotoLinkDirty({
+          photoEtag: l.photo_etag ?? null,
+          photoPushAttempts: l.photo_push_attempts ?? 0,
+        }),
     )
     .map((l) => l.contact_id);
   if (photoDirtyIds.length) {
@@ -148,7 +152,6 @@ async function pushContacts(
       .from("contacts")
       .select("id, email, updated_at, avatar_url, company_id")
       .eq("user_id", ids.userId)
-      .not("avatar_url", "is", null)
       .in("id", photoDirtyIds.slice(0, MAX_CONTACTS_PER_RUN));
     for (const r of (photoRows ?? []) as ContactRow[]) {
       if (!seen.has(r.id)) {
@@ -354,80 +357,84 @@ async function pushContacts(
         }
       }
 
-      // Photo push: upload the local avatar bytes to Google whenever the
-      // avatar_url on record differs from the last URL we pushed
-      // (`photo_etag`). Runs after the person body update so the People API
-      // has a fresh Person to attach the photo to. Failures leave photo_etag
-      // untouched and bump photo_push_attempts; after MAX_PHOTO_PUSH_ATTEMPTS
-      // we stop retrying and log a give-up alert.
+      // Photo push: upload the effective local photo bytes to Google whenever
+      // the resolver etag differs from the last one we pushed (`photo_etag`).
+      // This includes contact portraits, uploaded company logos, and selected
+      // company-domain logos. Runs after the person body update so the People
+      // API has a fresh Person to attach the photo to. Failures leave
+      // photo_etag untouched and bump photo_push_attempts; after
+      // MAX_PHOTO_PUSH_ATTEMPTS we stop retrying and log a give-up alert.
       try {
-        const avatarUrl = currentAvatar;
         const previousUrl = linkPhotoEtag;
         const resource = link?.resource_name ?? createdResourceName;
-        if (resource && !avatarUrl) {
-          logInfo("google_contacts.push.photo_skipped_no_avatar", {
-            ...ids,
-            contact_id: c.id,
-            company_id: c.company_id,
-            photo_etag: linkPhotoEtag,
-            google_photo_url: linkGooglePhotoUrl,
-          });
-        }
-        if (
-          resource &&
-          avatarUrl &&
-          avatarUrl !== previousUrl &&
-          linkPhotoAttempts < MAX_PHOTO_PUSH_ATTEMPTS
-        ) {
-          const { loadContactPhotoBytes } = await import("@/lib/contacts/photos.server");
-          const { updateContactPhoto } = await import("./people-client.server");
-          try {
-            const photo = await loadContactPhotoBytes(avatarUrl);
-            if (!photo) {
-              // No bytes at the stored avatar_url — record loudly so the
-              // operator can see WHY Google never got the picture.
-              logError(
-                "google_contacts.push.photo_bytes_missing",
-                {
-                  ...ids,
-                  contact_id: c.id,
-                  company_id: c.company_id,
-                  avatar_url: avatarUrl,
-                  photo_etag: linkPhotoEtag,
-                  google_photo_url: linkGooglePhotoUrl,
-                  attempts: linkPhotoAttempts,
-                },
-              );
-            } else {
-              await updateContactPhoto(ids.gmailAccountId, resource, photo.bytes);
-              await supabaseAdmin
-                .from("google_contact_links")
-                .update({ photo_etag: avatarUrl, photo_push_attempts: 0 })
-                .eq("contact_id", c.id)
-                .eq("gmail_account_id", ids.gmailAccountId);
-            }
-          } catch (uploadErr) {
-            const nextAttempts = linkPhotoAttempts + 1;
+        if (resource && linkPhotoAttempts < MAX_PHOTO_PUSH_ATTEMPTS) {
+          const { resolveEffectiveContactPhotoForSync } = await import(
+            "@/lib/contacts/logo-photo.server"
+          );
+          const photo = await resolveEffectiveContactPhotoForSync(ids.userId, c.id);
+          if (!photo) {
             await supabaseAdmin
               .from("google_contact_links")
-              .update({ photo_push_attempts: nextAttempts })
+              .update({ photo_etag: NO_LOCAL_PHOTO_ETAG, photo_push_attempts: 0 })
               .eq("contact_id", c.id)
               .eq("gmail_account_id", ids.gmailAccountId);
-            const payload = {
+            logInfo("google_contacts.push.photo_skipped_no_avatar", {
               ...ids,
               contact_id: c.id,
               company_id: c.company_id,
-              resource_name: resource,
-              avatar_url: avatarUrl,
+              avatar_url: currentAvatar,
               photo_etag: linkPhotoEtag,
               google_photo_url: linkGooglePhotoUrl,
-              attempts: nextAttempts,
-              max_attempts: MAX_PHOTO_PUSH_ATTEMPTS,
-            };
-            if (nextAttempts >= MAX_PHOTO_PUSH_ATTEMPTS) {
-              logError("google_contacts.push.photo_gave_up", payload, uploadErr);
-            } else {
-              logError("google_contacts.push.photo_failed", payload, uploadErr);
+            });
+          }
+          if (photo && photo.etag !== previousUrl) {
+            const { updateContactPhoto } = await import("./people-client.server");
+            try {
+              await updateContactPhoto(ids.gmailAccountId, resource, photo.bytes);
+              await supabaseAdmin
+                .from("google_contact_links")
+                .update({ photo_etag: photo.etag, photo_push_attempts: 0 })
+                .eq("contact_id", c.id)
+                .eq("gmail_account_id", ids.gmailAccountId);
+              logInfo("google_contacts.push.photo_uploaded", {
+                ...ids,
+                contact_id: c.id,
+                company_id: photo.companyId,
+                avatar_url: photo.avatarUrl,
+                company_logo_url: photo.companyLogoUrl,
+                logo_domain: photo.domain,
+                photo_source: photo.source,
+                photo_etag: photo.etag,
+                previous_photo_etag: linkPhotoEtag,
+                google_photo_url: linkGooglePhotoUrl,
+              });
+            } catch (uploadErr) {
+              const nextAttempts = linkPhotoAttempts + 1;
+              await supabaseAdmin
+                .from("google_contact_links")
+                .update({ photo_push_attempts: nextAttempts })
+                .eq("contact_id", c.id)
+                .eq("gmail_account_id", ids.gmailAccountId);
+              const payload = {
+                ...ids,
+                contact_id: c.id,
+                company_id: photo.companyId,
+                resource_name: resource,
+                avatar_url: photo.avatarUrl,
+                company_logo_url: photo.companyLogoUrl,
+                logo_domain: photo.domain,
+                photo_source: photo.source,
+                photo_etag: linkPhotoEtag,
+                resolved_photo_etag: photo.etag,
+                google_photo_url: linkGooglePhotoUrl,
+                attempts: nextAttempts,
+                max_attempts: MAX_PHOTO_PUSH_ATTEMPTS,
+              };
+              if (nextAttempts >= MAX_PHOTO_PUSH_ATTEMPTS) {
+                logError("google_contacts.push.photo_gave_up", payload, uploadErr);
+              } else {
+                logError("google_contacts.push.photo_failed", payload, uploadErr);
+              }
             }
           }
         }

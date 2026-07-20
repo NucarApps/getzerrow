@@ -27,6 +27,19 @@ export function isGooglePhotoPushDirty(input: {
   return attempts < MAX_PHOTO_PUSH_ATTEMPTS;
 }
 
+/** True when a linked Google contact should be visited by the photo lane.
+ *  This intentionally does not require `avatar_url`: contacts can inherit an
+ *  uploaded company logo or selected domain logo even when they have no own
+ *  stored photo. The worker resolves the effective bytes later. */
+export function isGooglePhotoLinkDirty(input: {
+  photoEtag: string | null | undefined;
+  photoPushAttempts: number | null | undefined;
+}): boolean {
+  if (input.photoEtag !== null && input.photoEtag !== undefined) return false;
+  const attempts = input.photoPushAttempts ?? 0;
+  return attempts < MAX_PHOTO_PUSH_ATTEMPTS;
+}
+
 export type PushCandidate = {
   id: string;
   updated_at: string;
