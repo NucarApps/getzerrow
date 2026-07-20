@@ -197,6 +197,23 @@ type ContactLogoRow = {
   email?: string | null;
 };
 
+export type EffectiveContactPhotoSource =
+  | "contact_avatar"
+  | "company_photo"
+  | "company_domain_logo";
+
+export type EffectiveContactPhoto = {
+  bytes: Uint8Array;
+  mime: string;
+  etag: string;
+  source: EffectiveContactPhotoSource;
+  avatarUrl: string | null;
+  companyId: string | null;
+  companyLogoUrl: string | null;
+  domain: string | null;
+  sha256: string | null;
+};
+
 type CompanyDomainRow = {
   domain: string;
   source?: string | null;
@@ -309,6 +326,115 @@ export function logoDomainForContact(row: {
   email?: string | null;
 }): string | null {
   return contactLogoDomain(row.website ?? null, row.email ?? null);
+}
+
+/** Resolve the actual photo bytes that should be pushed to external contact
+ *  stores. A contact portrait wins; otherwise members inherit the linked
+ *  company's uploaded logo, then the chosen/domain logo Zerrow displays. */
+export async function resolveEffectiveContactPhotoForSync(
+  userId: string,
+  contactId: string,
+): Promise<EffectiveContactPhoto | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: contact } = await supabaseAdmin
+    .from("contacts")
+    .select("id,avatar_url,company_id,website,email")
+    .eq("id", contactId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const row = contact as {
+    id?: string | null;
+    avatar_url?: string | null;
+    company_id?: string | null;
+    website?: string | null;
+    email?: string | null;
+  } | null;
+  if (!row?.id) return null;
+
+  const avatarUrl = row.avatar_url ?? null;
+  const companyId = row.company_id ?? null;
+
+  if (avatarUrl) {
+    const { loadContactPhotoBytes } = await import("@/lib/contacts/photos.server");
+    const avatar = await loadContactPhotoBytes(avatarUrl);
+    if (avatar) {
+      return {
+        ...avatar,
+        etag: avatarUrl,
+        source: "contact_avatar",
+        avatarUrl,
+        companyId,
+        companyLogoUrl: null,
+        domain: null,
+        sha256: null,
+      };
+    }
+  }
+
+  let companyLogoUrl: string | null = null;
+  if (companyId) {
+    const { data: company } = await supabaseAdmin
+      .from("companies")
+      .select("logo_url")
+      .eq("id", companyId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    companyLogoUrl = (company as { logo_url?: string | null } | null)?.logo_url ?? null;
+    if (companyLogoUrl) {
+      const { loadCompanyPhotoBytes } = await import("@/lib/companies/company-photo.server");
+      const logo = await loadCompanyPhotoBytes(companyLogoUrl);
+      if (logo) {
+        const { sha256Hex } = await import("@/lib/contacts/photos.server");
+        const sha = await sha256Hex(logo.bytes);
+        await recordCompanyLogoHash({
+          userId,
+          companyId,
+          domain: null,
+          sha256: sha,
+          source: "google_push_company_photo",
+        });
+        return {
+          ...logo,
+          etag: `company-photo:${companyId}:${sha}`,
+          source: "company_photo",
+          avatarUrl,
+          companyId,
+          companyLogoUrl,
+          domain: null,
+          sha256: sha,
+        };
+      }
+    }
+  }
+
+  const domain = await resolveCompanyLogoDomainForContact(userId, {
+    id: row.id,
+    company_id: companyId,
+    website: row.website ?? null,
+    email: row.email ?? null,
+  });
+  const domainLogo = await fetchChosenCompanyLogoBytes(userId, domain);
+  if (!domainLogo) return null;
+
+  const { sha256Hex } = await import("@/lib/contacts/photos.server");
+  const sha = await sha256Hex(domainLogo.bytes);
+  await recordCompanyLogoHash({
+    userId,
+    companyId,
+    domain,
+    sha256: sha,
+    source: "google_push_domain_logo",
+  });
+  return {
+    ...domainLogo,
+    etag: `company-domain-logo:${companyId ?? "none"}:${domain ?? "none"}:${sha}`,
+    source: "company_domain_logo",
+    avatarUrl,
+    companyId,
+    companyLogoUrl,
+    domain,
+    sha256: sha,
+  };
 }
 
 /** Walk every provider variant for every domain linked to `companyId` and
