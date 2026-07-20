@@ -80,7 +80,7 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
     if (!effectivePhoto) {
       return {
         contactsMarked: 0,
-        accountsSynced: 0,
+        accountsQueued: 0,
         errors: ["no_photo_on_contact"],
       };
     }
@@ -98,11 +98,15 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
       ),
     );
     if (accountIds.length === 0) {
-      return { contactsMarked: 0, accountsSynced: 0, errors: ["not_linked_to_google"] };
+      return { contactsMarked: 0, accountsQueued: 0, errors: ["not_linked_to_google"] };
     }
     await markGooglePhotoDirty(context.userId, data.contactId);
-    const { accountsSynced, errors } = await syncAccounts(context.userId, accountIds);
-    return { contactsMarked: 1, accountsSynced, errors };
+    const queued = triggerBackgroundSync();
+    return {
+      contactsMarked: 1,
+      accountsQueued: queued ? accountIds.length : 0,
+      errors: queued ? [] : ["background_sync_unavailable"],
+    };
   });
 
 export const pushCompanyPhotoToGoogleNow = createServerFn({ method: "POST" })
