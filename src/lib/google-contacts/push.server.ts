@@ -127,13 +127,33 @@ async function pushContacts(
     .eq("gmail_account_id", ids.gmailAccountId);
   const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
 
-  // Page through ALL contacts and keep only dirty ones (unlinked, body-dirty,
-  // or photo-dirty), oldest-updated first for fairness. The old implementation
-  // examined a blind oldest-200 slice with no dirtiness filter, which starved
-  // recently-edited contacts on accounts with more than 200 rows: fresh edits
-  // (every photo save bumps updated_at) sorted past the window and were never
-  // pushed.
+  // Two-pass dirty selection so photo-dirty contacts don't starve behind a
+  // large body-dirty backlog. First pass targets contacts that need a photo
+  // upload (avatar set + no photo_etag on the link). Second pass fills the
+  // remaining per-run budget with body-dirty rows, oldest-updated first.
   const dirty: ContactRow[] = [];
+  const seen = new Set<string>();
+  const photoDirtyIds = (links ?? [])
+    .filter(
+      (l) =>
+        (l.photo_etag == null) &&
+        ((l.photo_push_attempts ?? 0) < MAX_PHOTO_PUSH_ATTEMPTS),
+    )
+    .map((l) => l.contact_id);
+  if (photoDirtyIds.length) {
+    const { data: photoRows } = await supabaseAdmin
+      .from("contacts")
+      .select("id, email, updated_at, avatar_url")
+      .eq("user_id", ids.userId)
+      .not("avatar_url", "is", null)
+      .in("id", photoDirtyIds.slice(0, MAX_CONTACTS_PER_RUN));
+    for (const r of (photoRows ?? []) as ContactRow[]) {
+      if (!seen.has(r.id)) {
+        seen.add(r.id);
+        dirty.push(r);
+      }
+    }
+  }
   const PAGE_SIZE = 1000;
   for (let from = 0; dirty.length < MAX_CONTACTS_PER_RUN; from += PAGE_SIZE) {
     const { data: page } = await supabaseAdmin
@@ -143,10 +163,16 @@ async function pushContacts(
       .order("updated_at", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (!page?.length) break;
-    dirty.push(...filterDirtyForPush(page as ContactRow[], byLocal));
+    for (const r of filterDirtyForPush(page as ContactRow[], byLocal)) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      dirty.push(r);
+      if (dirty.length >= MAX_CONTACTS_PER_RUN) break;
+    }
     if (page.length < PAGE_SIZE) break;
   }
   const contacts = dirty.slice(0, MAX_CONTACTS_PER_RUN);
+
   if (!contacts.length) return 0;
   await progress?.set("pushing_contacts", 0, contacts.length);
 
