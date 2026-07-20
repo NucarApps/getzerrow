@@ -76,16 +76,45 @@ async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
   return new Map((data ?? []).map((r) => [r.contact_group_id, r.resource_name]));
 }
 
+/** Google Contacts labels are flat. Concatenate one level of local nesting
+ *  as "Parent - Child" (e.g. "Factory - VW") so subgroups show up in Google
+ *  under a recognizable prefix. Top-level groups keep their bare name. */
+export function formatGoogleLabelName(
+  name: string,
+  parentGroupId: string | null,
+  parentNameById: Map<string, string>,
+): string {
+  if (!parentGroupId) return name;
+  const parent = parentNameById.get(parentGroupId);
+  if (!parent) return name;
+  if (name.startsWith(`${parent} - `)) return name;
+  return `${parent} - ${name}`;
+}
+
+/** Google's default "Contacts" screen only shows members of the myContacts
+ *  system group. Zerrow pushes contacts into user labels but must also add
+ *  them here or they land in "Other contacts" and appear missing. */
+export const MY_CONTACTS_RESOURCE = "contactGroups/myContacts";
+
+export function withMyContacts(memberResourceNames: string[]): string[] {
+  return memberResourceNames.includes(MY_CONTACTS_RESOURCE)
+    ? memberResourceNames
+    : [...memberResourceNames, MY_CONTACTS_RESOURCE];
+}
+
 async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number> {
   // All local groups + linked resource (LEFT JOIN via two queries).
   const { data: groups } = await supabaseAdmin
     .from("contact_groups")
-    .select("id, name, updated_at")
+    .select("id, name, updated_at, parent_group_id")
     .eq("user_id", ids.userId)
     .order("updated_at", { ascending: true })
     .limit(MAX_GROUPS_PER_RUN);
   if (!groups?.length) return 0;
   await progress?.set("pushing_groups", 0, groups.length);
+
+  const parentNameById = new Map<string, string>();
+  for (const g of groups) parentNameById.set(g.id, g.name);
 
   const { data: links } = await supabaseAdmin
     .from("google_group_links")
@@ -96,9 +125,10 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
   let count = 0;
   for (const g of groups) {
     const link = byLocal.get(g.id);
+    const label = formatGoogleLabelName(g.name, g.parent_group_id ?? null, parentNameById);
     try {
       if (!link) {
-        const created = await createContactGroup(ids.gmailAccountId, g.name);
+        const created = await createContactGroup(ids.gmailAccountId, label);
         if (created.resourceName) {
           await supabaseAdmin.from("google_group_links").insert({
             user_id: ids.userId,
@@ -111,7 +141,7 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
           count++;
         }
       } else if (link.last_synced_at && new Date(g.updated_at) > new Date(link.last_synced_at)) {
-        const updated = await updateContactGroup(ids.gmailAccountId, link.resource_name, g.name);
+        const updated = await updateContactGroup(ids.gmailAccountId, link.resource_name, label);
         await supabaseAdmin
           .from("google_group_links")
           .update({ etag: updated.etag ?? null, last_synced_at: new Date().toISOString() })
@@ -126,6 +156,7 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
   }
   return count;
 }
+
 
 type ContactRow = {
   id: string;
@@ -250,9 +281,12 @@ async function pushContacts(
         .from("contact_group_members")
         .select("group_id")
         .eq("contact_id", c.id);
-      const memberResourceNames = (memberships ?? [])
-        .map((m) => groupResourceByLocal.get(m.group_id))
-        .filter((n): n is string => !!n);
+      const memberResourceNames = withMyContacts(
+        (memberships ?? [])
+          .map((m) => groupResourceByLocal.get(m.group_id))
+          .filter((n): n is string => !!n),
+      );
+
 
       const body = contactToPerson(
         local,
