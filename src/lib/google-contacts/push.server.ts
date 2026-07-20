@@ -388,54 +388,54 @@ async function pushContacts(
             });
           }
           if (photo && photo.etag !== previousUrl) {
-          const { updateContactPhoto } = await import("./people-client.server");
-          try {
-            await updateContactPhoto(ids.gmailAccountId, resource, photo.bytes);
-            await supabaseAdmin
-              .from("google_contact_links")
-              .update({ photo_etag: photo.etag, photo_push_attempts: 0 })
-              .eq("contact_id", c.id)
-              .eq("gmail_account_id", ids.gmailAccountId);
-            logInfo("google_contacts.push.photo_uploaded", {
-              ...ids,
-              contact_id: c.id,
-              company_id: photo.companyId,
-              avatar_url: photo.avatarUrl,
-              company_logo_url: photo.companyLogoUrl,
-              logo_domain: photo.domain,
-              photo_source: photo.source,
-              photo_etag: photo.etag,
-              previous_photo_etag: linkPhotoEtag,
-              google_photo_url: linkGooglePhotoUrl,
-            });
-          } catch (uploadErr) {
-            const nextAttempts = linkPhotoAttempts + 1;
-            await supabaseAdmin
-              .from("google_contact_links")
-              .update({ photo_push_attempts: nextAttempts })
-              .eq("contact_id", c.id)
-              .eq("gmail_account_id", ids.gmailAccountId);
-            const payload = {
-              ...ids,
-              contact_id: c.id,
-              company_id: photo.companyId,
-              resource_name: resource,
-              avatar_url: photo.avatarUrl,
-              company_logo_url: photo.companyLogoUrl,
-              logo_domain: photo.domain,
-              photo_source: photo.source,
-              photo_etag: linkPhotoEtag,
-              resolved_photo_etag: photo.etag,
-              google_photo_url: linkGooglePhotoUrl,
-              attempts: nextAttempts,
-              max_attempts: MAX_PHOTO_PUSH_ATTEMPTS,
-            };
-            if (nextAttempts >= MAX_PHOTO_PUSH_ATTEMPTS) {
-              logError("google_contacts.push.photo_gave_up", payload, uploadErr);
-            } else {
-              logError("google_contacts.push.photo_failed", payload, uploadErr);
+            const { updateContactPhoto } = await import("./people-client.server");
+            try {
+              await updateContactPhoto(ids.gmailAccountId, resource, photo.bytes);
+              await supabaseAdmin
+                .from("google_contact_links")
+                .update({ photo_etag: photo.etag, photo_push_attempts: 0 })
+                .eq("contact_id", c.id)
+                .eq("gmail_account_id", ids.gmailAccountId);
+              logInfo("google_contacts.push.photo_uploaded", {
+                ...ids,
+                contact_id: c.id,
+                company_id: photo.companyId,
+                avatar_url: photo.avatarUrl,
+                company_logo_url: photo.companyLogoUrl,
+                logo_domain: photo.domain,
+                photo_source: photo.source,
+                photo_etag: photo.etag,
+                previous_photo_etag: linkPhotoEtag,
+                google_photo_url: linkGooglePhotoUrl,
+              });
+            } catch (uploadErr) {
+              const nextAttempts = linkPhotoAttempts + 1;
+              await supabaseAdmin
+                .from("google_contact_links")
+                .update({ photo_push_attempts: nextAttempts })
+                .eq("contact_id", c.id)
+                .eq("gmail_account_id", ids.gmailAccountId);
+              const payload = {
+                ...ids,
+                contact_id: c.id,
+                company_id: photo.companyId,
+                resource_name: resource,
+                avatar_url: photo.avatarUrl,
+                company_logo_url: photo.companyLogoUrl,
+                logo_domain: photo.domain,
+                photo_source: photo.source,
+                photo_etag: linkPhotoEtag,
+                resolved_photo_etag: photo.etag,
+                google_photo_url: linkGooglePhotoUrl,
+                attempts: nextAttempts,
+                max_attempts: MAX_PHOTO_PUSH_ATTEMPTS,
+              };
+              if (nextAttempts >= MAX_PHOTO_PUSH_ATTEMPTS) {
+                logError("google_contacts.push.photo_gave_up", payload, uploadErr);
+              } else {
+                logError("google_contacts.push.photo_failed", payload, uploadErr);
+              }
             }
-          }
           }
         }
       } catch (photoErr) {
