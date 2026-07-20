@@ -62,6 +62,10 @@ import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functi
 import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-photo.functions";
 import { pushCompanyPhotoToGoogleNow } from "@/lib/google-contacts/push-photo-now.functions";
 import {
+  CompanyPhotoPrioritySelect,
+  type PhotoPriorityValue,
+} from "@/components/contacts/PhotoPrioritySelect";
+import {
   findCompanyPeopleByDomain,
   addCompanyPeople,
   enhanceContactWithNewEmail,
