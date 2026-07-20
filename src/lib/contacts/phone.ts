@@ -1,23 +1,39 @@
-// Pure phone-normalization helper. Reused by Google-pull dedup and the
-// duplicate scanner. We deliberately keep this dumb — full E.164 parsing is
-// overkill for our matching needs. Two rules:
-//   1) strip everything that isn't a digit
-//   2) if the result is >= 10 digits, keep only the last 10 (this collapses
-//      US country-code variants "+1 415 555 0000" ↔ "415-555-0000")
-// Callers should treat an empty string as "no phone".
+/**
+ * Client-safe phone validation. Mirrors the server schema
+ * (phoneEntrySchema in contacts-helpers.server.ts) so users get the same
+ * verdict inline before we round-trip to the server.
+ */
 
-export function normalizePhone(input: string | null | undefined): string {
-  if (!input) return "";
-  const digits = String(input).replace(/\D+/g, "");
-  if (digits.length >= 10) return digits.slice(-10);
-  return digits;
+const PHONE_NUMBER_RE = /^[+\d\s().,#*;:x/A-Za-z-]{3,60}$/;
+
+/** Trim edges and collapse runs of any whitespace (incl. NBSP/tab/newline) to a single space. */
+export function normalizePhoneDisplay(raw: string): string {
+  return raw.replace(/[\s\u00A0]+/g, " ").trim();
 }
 
-export function normalizePhones(inputs: (string | null | undefined)[]): string[] {
-  const out = new Set<string>();
-  for (const p of inputs) {
-    const n = normalizePhone(p);
-    if (n) out.add(n);
+export type PhoneValidationResult =
+  | { ok: true; normalized: string }
+  | { ok: false; normalized: string; reason: string };
+
+export function validatePhoneNumber(raw: string): PhoneValidationResult {
+  const normalized = normalizePhoneDisplay(raw);
+  if (normalized.length < 3) {
+    return { ok: false, normalized, reason: "Phone must be at least 3 characters" };
   }
-  return Array.from(out);
+  if (normalized.length > 60) {
+    return { ok: false, normalized, reason: "Phone must be 60 characters or fewer" };
+  }
+  if (!PHONE_NUMBER_RE.test(normalized)) {
+    // Point at the first character that failed to help the user find it.
+    const allow = /[+\d\s().,#*;:x/A-Za-z-]/;
+    const bad = Array.from(normalized).find((ch) => !allow.test(ch));
+    return {
+      ok: false,
+      normalized,
+      reason: bad
+        ? `"${bad}" isn't a valid phone character`
+        : "Phone contains invalid characters",
+    };
+  }
+  return { ok: true, normalized };
 }
