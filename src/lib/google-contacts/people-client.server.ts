@@ -227,7 +227,10 @@ export async function getContactGroupWithMembers(
   resourceName: string,
 ): Promise<ContactGroup> {
   return call<ContactGroup>(accountId, `/${resourceName}`, {
-    query: { groupFields: "name,groupType,memberResourceNames", maxMembers: "10000" },
+    // `memberResourceNames` is returned for GET when `maxMembers` is set, but
+    // it is not a valid groupFields mask path. Including it makes Google reject
+    // the request with INVALID_ARGUMENT.
+    query: { groupFields: "name,groupType,memberCount", maxMembers: "10000" },
   });
 }
 
@@ -242,10 +245,11 @@ export async function updateContactGroup(
   accountId: string,
   resourceName: string,
   name: string,
+  etag: string,
 ): Promise<ContactGroup> {
   return call<ContactGroup>(accountId, `/${resourceName}`, {
     method: "PUT",
-    body: { contactGroup: { name }, updateGroupFields: "name" },
+    body: { contactGroup: { resourceName, etag, name }, updateGroupFields: "name" },
   });
 }
 
