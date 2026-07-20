@@ -10,7 +10,7 @@ import { z } from "zod";
 import { authenticateRequest } from "@/lib/mobile-auth.server";
 import { logError } from "@/lib/log.server";
 
-const PHONE_NUMBER_RE = /^[+\d\s().,#x/A-Za-z-]{3,60}$/;
+const PHONE_NUMBER_RE = /^[+\d\s().,#*;:x/A-Za-z-]{3,60}$/;
 
 const phoneSchema = z.object({
   label: z.string().trim().min(1).max(20),
