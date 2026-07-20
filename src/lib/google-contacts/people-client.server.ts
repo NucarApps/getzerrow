@@ -227,7 +227,7 @@ export async function getContactGroupWithMembers(
   resourceName: string,
 ): Promise<ContactGroup> {
   return call<ContactGroup>(accountId, `/${resourceName}`, {
-    query: { maxMembers: "10000" },
+    query: { groupFields: "name,groupType,memberResourceNames", maxMembers: "10000" },
   });
 }
 

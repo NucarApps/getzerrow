@@ -234,6 +234,7 @@ function AccountRow({
             Last sync: {formatWhen(statusQ.data?.state?.last_incremental_at)}
           </p>
           {statusQ.data?.state && <PullBreakdown state={statusQ.data.state} />}
+          {statusQ.data?.backlog && <SyncBacklog backlog={statusQ.data.backlog} />}
         </div>
 
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -318,7 +319,7 @@ function AccountRow({
             id={`mode-two-${account.id}`}
             value="two_way"
             title="Two-way sync"
-            description="Pull from Google and push local changes, adds, and deletes back to Google."
+            description="Use Zerrow as the source of truth for contacts, photos, and label memberships while still importing new Google contacts."
           />
         </RadioGroup>
 
@@ -504,6 +505,8 @@ function stepLabel(step: string | null): string {
       return "Pushing groups to Google";
     case "pushing_contacts":
       return "Pushing contacts to Google";
+    case "pushing_memberships":
+      return "Pushing labels to Google";
     case "applying_tombstones":
       return "Applying deletions";
     case "finalizing":
@@ -513,6 +516,43 @@ function stepLabel(step: string | null): string {
     default:
       return "Working…";
   }
+}
+
+type SyncBacklogShape = {
+  totalContacts: number;
+  linkedContacts: number;
+  unlinkedContacts: number;
+  bodyPending: number;
+  photoPending: number;
+  linkedGroups: number;
+  linkedMemberships: number;
+};
+
+function SyncBacklog({ backlog }: { backlog: SyncBacklogShape }) {
+  const pending = backlog.bodyPending + backlog.photoPending;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+      <Badge variant={pending > 0 ? "secondary" : "outline"} className="font-normal">
+        {pending} pending
+      </Badge>
+      <Badge variant="outline" className="font-normal">
+        {backlog.linkedContacts} / {backlog.totalContacts} linked
+      </Badge>
+      {backlog.unlinkedContacts > 0 && (
+        <Badge variant="secondary" className="font-normal">
+          {backlog.unlinkedContacts} to create
+        </Badge>
+      )}
+      {backlog.photoPending > 0 && (
+        <Badge variant="secondary" className="font-normal">
+          {backlog.photoPending} photos
+        </Badge>
+      )}
+      <Badge variant="outline" className="font-normal">
+        {backlog.linkedGroups} labels · {backlog.linkedMemberships} memberships
+      </Badge>
+    </div>
+  );
 }
 
 function GoogleContactsSettings() {

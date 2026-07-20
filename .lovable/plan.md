@@ -1,29 +1,31 @@
-## Root cause (confirmed)
+## Plan
 
-The Google Contacts sync cron endpoint has been returning **401 Unauthorized on every 5‑minute tick for the last 2+ days**, so no pull/push has actually run.
+I verified the current backend state before planning: Zerrow has 489 contacts, 456 Google-linked contacts, 31 unlinked contacts, 450 contacts still dirty for Google push, 395 photo-dirty links, 24 local labels/groups, and 23 Google-linked labels. The current sync account is enabled in `two_way` mode with Contacts access granted and no stored error.
 
-Confirmed by:
-- Worker logs: every `POST /api/public/hooks/google-contacts-sync` → 401 (last hour, and pattern is continuous).
-- `google_sync_state` for `chris@nucar.com`: `last_incremental_at = 2026-07-18 14:17`, `locked_at` stuck at `2026-07-20 04:40` from the last run that actually got in.
-- `cron.job_run_details` shows pg_cron dispatches every 5 min succeeded (they only report the `net.http_post` enqueue, not the HTTP response).
-- `gmail_accounts`: `needs_reconnect=false`, `contacts_access=true` — auth to Google is fine.
+### 1. Make the Google sync push Zerrow’s current state reliably
+- Keep Zerrow as the authoritative source for contacts, labels, memberships, and photos.
+- Ensure dirty contacts are pushed in bounded batches until the backlog drains instead of appearing “done” after only a few items.
+- Make unlinked Zerrow contacts eligible for creation in Google so the count can rise above the current ~405/456 linked set.
 
-Why 401: pg_cron sends `Authorization: Bearer <private.cron_settings.cron_secret>`. The endpoint validates with `isAuthorizedCron` (env‑only, checks `process.env.CRON_SECRET`). The DB‑stored cron secret and the worker env `CRON_SECRET` don't match, so the check fails. Every other cron endpoint (e.g. `gmail-poll`) uses `isAuthorizedCronRequest`, which also falls back to `cron_secret_matches` RPC against `private.cron_settings` — that's why they return 200 while this one 401s.
+### 2. Fix label/group membership sync
+- Wire the existing Google group membership push helper into the main sync flow; it currently exists but is not called from `pushToGoogle`, which explains why Google groups can stay old.
+- After creating/updating contacts and labels, refresh the contact/group link maps before pushing memberships so newly-created Google contacts can be added to the correct Google groups in the same run.
+- Add structured logs/counts for group membership add failures so a specific stuck label can be traced.
 
-`src/routes/api/public/hooks/google-contacts-sync.ts` is the only public hook still on the sync-only helper.
+### 3. Add a “Zerrow source of truth” sync mode in settings
+- Add an explicit settings mode that pushes Zerrow → Google while still allowing a manual Google import/backfill when needed.
+- Make the current account use this source-of-truth behavior so old Google-side labels do not keep re-overwriting Zerrow’s labels.
+- Update the settings copy/status to show backlog counts: unlinked contacts, dirty contacts, photo-dirty contacts, and pending group memberships.
 
-## Fix
+### 4. Harden photo push draining
+- Keep the existing photo failure details, but make the worker prioritize real photo changes without starving normal contact/body updates.
+- Preserve the personal-vs-company photo priority resolver when pushing to Google and when serving CardDAV to iOS.
 
-1. In `src/routes/api/public/hooks/google-contacts-sync.ts`:
-   - Replace `isAuthorizedCron` with `await isAuthorizedCronRequest(request)`.
-   - Replace the local `unauthorized()` helper with the shared `unauthorizedResponse()` for consistency.
-2. Clear the stuck lease so the next cron tick isn't blocked (belt‑and‑suspenders — code already reclaims after 30 s, but let's not wait):
-   - `UPDATE google_sync_state SET locked_at = NULL, progress_step = NULL WHERE locked_at IS NOT NULL;`
-3. Verify:
-   - Watch worker logs for `google-contacts-sync → 200` on the next 5‑minute tick.
-   - Re‑query `google_sync_state`: `last_incremental_at` should advance, `last_pull_count`/`last_push_count` should update, `last_error` stays null.
-   - Spot‑check that queued dirty rows (`google_contact_links` with `photo_etag IS NULL` or sentinel `last_synced_at`) drain over subsequent runs.
+### 5. Add tests for the regression
+- Add unit coverage around dirty-contact selection so unlinked and dirty contacts are not skipped.
+- Add sync-level tests proving group memberships are pushed after contact/group creation and that source-of-truth mode does not pull old Google label membership back over Zerrow labels.
 
-## Out of scope
-
-No changes to pull/push logic, mapping, or photo handling — those paths work; they just haven't been running.
+### 6. Verify after implementation
+- Run the relevant tests.
+- Check the database status after one sync run to confirm the dirty/unlinked counts drop and group membership links are being attempted/pushed.
+- Use the settings/admin status to confirm sync progress and any specific Google API errors are visible.

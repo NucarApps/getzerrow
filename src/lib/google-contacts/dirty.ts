@@ -75,3 +75,15 @@ export function filterDirtyForPush<T extends PushCandidate>(
     );
   });
 }
+
+export function calculateMembershipDelta(input: {
+  desiredResourceNames: Iterable<string>;
+  currentResourceNames: Iterable<string>;
+}): { toAdd: string[]; toRemove: string[] } {
+  const desired = new Set(input.desiredResourceNames);
+  const current = new Set(input.currentResourceNames);
+  return {
+    toAdd: [...desired].filter((resourceName) => !current.has(resourceName)),
+    toRemove: [...current].filter((resourceName) => !desired.has(resourceName)),
+  };
+}
