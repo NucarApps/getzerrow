@@ -196,6 +196,8 @@ async function pushContacts(
     const link = byLocal.get(c.id);
     const linkPhotoEtag =
       (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
+    const linkGooglePhotoUrl =
+      (link as { google_photo_url?: string | null } | undefined)?.google_photo_url ?? null;
     const linkPhotoAttempts =
       (link as { photo_push_attempts?: number | null } | undefined)?.photo_push_attempts ?? 0;
     const currentAvatar = c.avatar_url ?? null;
