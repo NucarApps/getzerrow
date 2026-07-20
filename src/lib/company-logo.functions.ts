@@ -84,7 +84,9 @@ export const clearCompanyLogoChoice = createServerFn({ method: "POST" })
  * its next poll. Uses the admin client to upsert into `carddav_settings`
  * without needing a settings row to preexist. Failure is non-fatal — the
  * logo pick still succeeds; iOS just won't refresh until the next real edit
- * or a manual "Force iPhone resync". */
+ * or a manual "Force iPhone resync". Also marks the photo state of every
+ * contact whose company resolves through this domain as photo-dirty, so
+ * Google Contacts also learns about the new logo on the next sync. */
 async function bumpCarddavResync(userId: string): Promise<void> {
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
