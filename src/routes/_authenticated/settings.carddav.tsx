@@ -419,6 +419,7 @@ function CardDavSettings() {
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           />
         </div>
+        <GlobalPhotoPriorityRow />
       </Card>
 
       <Card className="p-5">
