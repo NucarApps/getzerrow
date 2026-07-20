@@ -278,14 +278,23 @@ async function applyPersonChanges(
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
-    .select("contact_id, resource_name, etag, last_synced_at")
+    .select("contact_id, resource_name, etag, last_synced_at, google_photo_url")
     .eq("gmail_account_id", ids.gmailAccountId);
-  const byResource = new Map<string, { contact_id: string; last_synced_at: string | null }>(
+  const byResource = new Map<
+    string,
+    { contact_id: string; last_synced_at: string | null; google_photo_url: string | null }
+  >(
     (links ?? []).map((l) => [
       l.resource_name,
-      { contact_id: l.contact_id, last_synced_at: l.last_synced_at ?? null },
+      {
+        contact_id: l.contact_id,
+        last_synced_at: l.last_synced_at ?? null,
+        google_photo_url:
+          (l as { google_photo_url?: string | null }).google_photo_url ?? null,
+      },
     ]),
   );
+
 
   // Existing group links for membership diffing.
   const { data: groupLinks } = await supabaseAdmin
@@ -539,16 +548,19 @@ async function applyPersonChanges(
         .eq("contact_id", contactId)
         .in("group_id", toRemove);
     }
-    // Photo sync: only refetch bytes when the remote URL changed since our
-    // last pull (`photo_etag` stores the previously-seen URL). Google's
-    // photos URL is a signed link that changes when the picture changes, so
-    // comparing URLs is a cheap change detector; refetch + upload otherwise.
-    // User-chosen photos (iPhone/web) are never overwritten by a Google
-    // refetch — the etag is still recorded so we don't retry forever.
-    let nextPhotoEtag: string | null | undefined = undefined;
+    // Photo sync: only refetch bytes when Google's remote URL changed since
+    // our last pull (`google_photo_url` stores the previously-seen Google
+    // URL). Google's photos URL is a signed link that changes when the
+    // picture changes, so comparing URLs is a cheap change detector; refetch
+    // + upload otherwise. User-chosen photos (iPhone/web) are never
+    // overwritten by a Google refetch — the URL is still recorded so we don't
+    // retry forever. NOTE: this column is intentionally separate from
+    // `photo_etag`, which the push loop uses to remember what WE last sent
+    // to Google. Mixing them made pull and push re-ship the same picture
+    // back and forth on every cycle.
+    let nextGooglePhotoUrl: string | null | undefined = undefined;
     if (parsed.photoUrl) {
-      const linkRow = link as { photo_etag?: string | null } | undefined;
-      const previous = linkRow?.photo_etag ?? null;
+      const previous = link?.google_photo_url ?? null;
       if (previous !== parsed.photoUrl) {
         try {
           const { decideGooglePhotoPull } = await import("./photo-pull-decision");
@@ -583,10 +595,10 @@ async function applyPersonChanges(
               if (decision.action === "save") {
                 await saveContactPhoto(ids.userId, contactId!, bytes.bytes, bytes.mime, "google");
               }
-              nextPhotoEtag = parsed.photoUrl;
+              nextGooglePhotoUrl = parsed.photoUrl;
             }
           } else if (decision.recordEtag) {
-            nextPhotoEtag = parsed.photoUrl;
+            nextGooglePhotoUrl = parsed.photoUrl;
           }
         } catch (err) {
           logError("google_contacts.pull.photo_failed", { ...ids, contact_id: contactId }, err);
@@ -602,10 +614,11 @@ async function applyPersonChanges(
         resource_name: p.resourceName,
         etag: p.etag ?? null,
         last_synced_at: new Date().toISOString(),
-        ...(nextPhotoEtag !== undefined ? { photo_etag: nextPhotoEtag } : {}),
+        ...(nextGooglePhotoUrl !== undefined ? { google_photo_url: nextGooglePhotoUrl } : {}),
       },
       { onConflict: "gmail_account_id,contact_id" },
     );
+
     if (contactId) touchedContactIds.add(contactId);
     await progress?.increment(1);
   }

@@ -1930,6 +1930,7 @@ export type Database = {
           created_at: string
           etag: string | null
           gmail_account_id: string
+          google_photo_url: string | null
           id: string
           last_synced_at: string
           photo_etag: string | null
@@ -1943,6 +1944,7 @@ export type Database = {
           created_at?: string
           etag?: string | null
           gmail_account_id: string
+          google_photo_url?: string | null
           id?: string
           last_synced_at?: string
           photo_etag?: string | null
@@ -1956,6 +1958,7 @@ export type Database = {
           created_at?: string
           etag?: string | null
           gmail_account_id?: string
+          google_photo_url?: string | null
           id?: string
           last_synced_at?: string
           photo_etag?: string | null
