@@ -153,6 +153,27 @@ export function ContactPhotoUploader({
       setBusy(false);
     }
   };
+  const onSyncToGoogle = async () => {
+    setBusy(true);
+    try {
+      const res = await pushToGoogle({ data: { contactId } });
+      if (res.errors.includes("not_linked_to_google")) {
+        toast.error("This contact isn't linked to Google yet — sync it once first.");
+      } else if (res.accountsSynced > 0) {
+        toast.success("Photo pushed to Google");
+      } else if (res.errors.length > 0) {
+        toast.error(res.errors[0] === "locked" ? "Sync already running" : res.errors[0]);
+      } else {
+        toast.success("Queued for the next sync");
+      }
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Push failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
 
   const logoDomain = !displaySrc
     ? companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null)
