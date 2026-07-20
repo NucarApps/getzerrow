@@ -1,25 +1,24 @@
-## Plan
+## Problem
 
-1. **Fix Google label rename failures**
-   - Update the Google contact-group API wrapper to send the saved group `etag` and `resourceName` when renaming labels.
-   - This addresses the observed People API error: `Fingerprint is missing`, which is why labels such as `Factory - VW` are not appearing correctly.
+Deleting a contact or a label fails with:
 
-2. **Fix Google membership reads for `myContacts` and labels**
-   - Correct the contact-group member fetch so it does not request invalid `memberResourceNames` in `groupFields`.
-   - This addresses the observed `Invalid groupFields mask path: "member_resource_names"` error that prevented promoting Zerrow contacts into Google’s main Contacts list.
+> new row violates row-level security policy for table "google_contact_tombstones"
 
-3. **Make label reconciliation run before the contact backlog**
-   - Keep label creation/renaming and `myContacts` promotion at the start of the push flow so they run even while hundreds of contacts remain dirty.
-   - Ensure group membership reconciliation can run independently instead of waiting behind contact body/photo updates.
+`google_contact_tombstones` has a `BEFORE DELETE` trigger on both `contacts` and `contact_groups` that inserts a tombstone row so the Google Contacts push worker can propagate the delete upstream. A prior migration (`20260719123000_…`) marked those trigger functions `SECURITY DEFINER` to avoid a "permission denied" error, but the table's RLS only exposes a `SELECT` policy — there is no `INSERT` policy at all, and Postgres still checks RLS `WITH CHECK` for the executing role (the definer role isn't `BYPASSRLS`). So every user-scoped delete of a contact or label is aborted.
 
-4. **Improve contact backlog draining**
-   - Preserve the existing source-of-truth behavior, but make the sync tick process contacts in bounded batches with clear progress so repeated syncs keep reducing the dirty count.
-   - Avoid letting photo retries or stale links block body/label sync.
+## Fix
 
-5. **Add regression tests**
-   - Add tests for the contact-group rename payload requiring `etag`.
-   - Add tests for the corrected group member fetch mask and label formatting behavior.
+Add the missing INSERT policy (and matching grant) to `google_contact_tombstones` so the trigger's insert is accepted when the row belongs to the current user.
 
-6. **Verify with backend logs/status**
-   - Re-run the Google contacts sync endpoint after changes.
-   - Check that the previous `Fingerprint is missing` and `Invalid groupFields mask path` errors disappear, and that dirty contact/link counts decrease.
+Migration (one file):
+
+- `GRANT INSERT ON public.google_contact_tombstones TO authenticated;`
+- `CREATE POLICY "Users insert their google tombstones" ON public.google_contact_tombstones FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);`
+
+`auth.uid()` is preserved across `SECURITY DEFINER` (it reads the request JWT, not the role), so `user_id` populated by the trigger from `google_contact_links.user_id` matches the caller. Admin/service paths already bypass RLS and continue to work. No app code changes.
+
+## Verification
+
+- Delete a contact and a label from the UI — both succeed; a row appears in `google_contact_tombstones` for the linked Google resource.
+- Deleting a contact with no Google link still succeeds (trigger inserts zero rows).
+- Run the Supabase linter to confirm no new warnings.
