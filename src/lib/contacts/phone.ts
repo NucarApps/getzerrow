@@ -17,18 +17,18 @@ export function normalizePhoneDisplay(raw: string): string {
 }
 
 /**
- * Canonical dedup/match key: keep a leading '+' if present, strip
- * everything except digits. Returns "" when nothing usable remains.
+ * Canonical dedup/match key. Strips all non-digits, and when the result is
+ * 10+ digits keeps only the last 10 so US country-code variants collapse
+ * ("+1 415 555 0100" ↔ "415-555-0100" → "4155550100"). Returns "" when
+ * nothing usable remains.
  */
 export function normalizePhone(raw: string | null | undefined): string {
   if (!raw) return "";
-  const trimmed = String(raw).trim();
-  if (!trimmed) return "";
-  const hasPlus = trimmed.startsWith("+");
-  const digits = trimmed.replace(/\D+/g, "");
+  const digits = String(raw).replace(/\D+/g, "");
   if (!digits) return "";
-  return hasPlus ? `+${digits}` : digits;
+  return digits.length >= 10 ? digits.slice(-10) : digits;
 }
+
 
 /** Normalize a list, dropping empties and duplicates while preserving order. */
 export function normalizePhones(raw: readonly (string | null | undefined)[]): string[] {
