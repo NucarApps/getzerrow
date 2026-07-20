@@ -59,6 +59,7 @@ import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
 import { createContactGroup, listContactGroups } from "@/lib/contact-groups.functions";
 import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
 import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-photo.functions";
+import { pushCompanyPhotoToGoogleNow } from "@/lib/google-contacts/push-photo-now.functions";
 import {
   findCompanyPeopleByDomain,
   addCompanyPeople,
