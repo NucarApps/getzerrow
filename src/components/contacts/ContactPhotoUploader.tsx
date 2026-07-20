@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent } from "react";
-import { Camera, Trash2, Loader2, Building2 } from "lucide-react";
+import { Camera, Trash2, Loader2, Building2, RefreshCw } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -13,6 +13,8 @@ import {
   getContactPhotoSignedUrl,
 } from "@/lib/contacts/photos.functions";
 import { resetContactToCompanyLogo } from "@/lib/contacts/company-logo-cleanup.functions";
+import { pushContactPhotoToGoogleNow } from "@/lib/google-contacts/push-photo-now.functions";
+
 
 const ALLOWED = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type AllowedMime = (typeof ALLOWED)[number];
@@ -77,6 +79,8 @@ export function ContactPhotoUploader({
   const signUrl = useServerFn(getContactPhotoSignedUrl);
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
   const resetToCompany = useServerFn(resetContactToCompanyLogo);
+  const pushToGoogle = useServerFn(pushContactPhotoToGoogleNow);
+
 
   // Shares its cache key with the contacts list page so the network hit is
   // deduped when the drawer opens over the list.
@@ -149,6 +153,27 @@ export function ContactPhotoUploader({
       setBusy(false);
     }
   };
+  const onSyncToGoogle = async () => {
+    setBusy(true);
+    try {
+      const res = await pushToGoogle({ data: { contactId } });
+      if (res.errors.includes("not_linked_to_google")) {
+        toast.error("This contact isn't linked to Google yet — sync it once first.");
+      } else if (res.accountsSynced > 0) {
+        toast.success("Photo pushed to Google");
+      } else if (res.errors.length > 0) {
+        toast.error(res.errors[0] === "locked" ? "Sync already running" : res.errors[0]);
+      } else {
+        toast.success("Queued for the next sync");
+      }
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Push failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
 
   const logoDomain = !displaySrc
     ? companyDomain?.trim() || contactLogoDomain(website ?? null, email ?? null)
@@ -212,6 +237,20 @@ export function ContactPhotoUploader({
           <Building2 className="h-3 w-3" />
         </Button>
       ) : null}
+      {!busy ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="secondary"
+          onClick={onSyncToGoogle}
+          aria-label="Sync photo to Google now"
+          title="Sync photo to Google now"
+          className="absolute -right-1 -top-1 h-6 w-6 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+        >
+          <RefreshCw className="h-3 w-3" />
+        </Button>
+      ) : null}
+
       <input
         ref={fileRef}
         type="file"
