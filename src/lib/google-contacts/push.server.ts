@@ -63,6 +63,11 @@ export async function pushToGoogle(
   logInfo("google_contacts.push.start", { ...ids });
   await progress?.set("pushing_groups", 0, 0);
   const groupsPushed = await pushGroups(ids, progress);
+  // Promote every linked contact into Google's default myContacts group BEFORE
+  // the per-contact loop. On a large backlog the loop can hit the wall budget
+  // and never reach pushGroupMemberships — putting this here guarantees the
+  // count in Google's Contacts screen catches up regardless.
+  await promoteToMyContacts(ids);
   const groupResourceByLocal = await loadGroupMap(ids);
   await progress?.set("pushing_contacts", 0, 0);
   const contactsPushed = await pushContacts(ids, groupResourceByLocal, progress);
@@ -80,6 +85,39 @@ export async function pushToGoogle(
   return { contactsPushed, groupsPushed, membershipsPushed, tombstonesApplied };
 }
 
+/** Ensure every Google-linked contact is a member of `contactGroups/myContacts`,
+ *  otherwise they land in Google's "Other contacts" and don't show in the main
+ *  Contacts list count. Single `members:modify` call per run; only adds. */
+export async function promoteToMyContacts(ids: Ids): Promise<number> {
+  const { data: contactLinks } = await supabaseAdmin
+    .from("google_contact_links")
+    .select("resource_name")
+    .eq("gmail_account_id", ids.gmailAccountId);
+  const desired = new Set(
+    (contactLinks ?? [])
+      .map((l) => (l as { resource_name?: string | null }).resource_name)
+      .filter((r): r is string => !!r),
+  );
+  if (desired.size === 0) return 0;
+  try {
+    const remote = await getContactGroupWithMembers(
+      ids.gmailAccountId,
+      MY_CONTACTS_RESOURCE,
+    );
+    const { toAdd } = calculateMembershipDelta({
+      desiredResourceNames: desired,
+      currentResourceNames: remote.memberResourceNames ?? [],
+    });
+    if (!toAdd.length) return 0;
+    await modifyGroupMembers(ids.gmailAccountId, MY_CONTACTS_RESOURCE, toAdd, []);
+    logInfo("google_contacts.push.my_contacts_promoted", { ...ids, added: toAdd.length });
+    return toAdd.length;
+  } catch (e) {
+    logError("google_contacts.push.my_contacts_failed", { ...ids }, e);
+    return 0;
+  }
+}
+
 async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
   const { data } = await supabaseAdmin
     .from("google_group_links")
@@ -87,6 +125,7 @@ async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
     .eq("gmail_account_id", ids.gmailAccountId);
   return new Map((data ?? []).map((r) => [r.contact_group_id, r.resource_name]));
 }
+
 
 /** Google Contacts labels are flat. Concatenate one level of local nesting
  *  as "Parent - Child" (e.g. "Factory - VW") so subgroups show up in Google
