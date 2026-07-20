@@ -106,6 +106,20 @@ export const removeContactPhoto = createServerFn({ method: "POST" })
       // ignore
     }
 
+    // Push removal to iOS on next sync — same lever as upload.
+    try {
+      const { bumpResyncNonce } = await import("@/lib/carddav/settings.functions");
+      await bumpResyncNonce(context.supabase, context.userId);
+      const { logInfo } = await import("@/lib/log.server");
+      logInfo("carddav.resync_nonce_bumped", {
+        user_id: context.userId,
+        contact_id: data.contactId,
+        reason: "photo_remove",
+      });
+    } catch {
+      // Non-fatal.
+    }
+
     return { ok: true };
   });
 
