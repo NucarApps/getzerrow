@@ -278,14 +278,23 @@ async function applyPersonChanges(
 
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
-    .select("contact_id, resource_name, etag, last_synced_at")
+    .select("contact_id, resource_name, etag, last_synced_at, google_photo_url")
     .eq("gmail_account_id", ids.gmailAccountId);
-  const byResource = new Map<string, { contact_id: string; last_synced_at: string | null }>(
+  const byResource = new Map<
+    string,
+    { contact_id: string; last_synced_at: string | null; google_photo_url: string | null }
+  >(
     (links ?? []).map((l) => [
       l.resource_name,
-      { contact_id: l.contact_id, last_synced_at: l.last_synced_at ?? null },
+      {
+        contact_id: l.contact_id,
+        last_synced_at: l.last_synced_at ?? null,
+        google_photo_url:
+          (l as { google_photo_url?: string | null }).google_photo_url ?? null,
+      },
     ]),
   );
+
 
   // Existing group links for membership diffing.
   const { data: groupLinks } = await supabaseAdmin
