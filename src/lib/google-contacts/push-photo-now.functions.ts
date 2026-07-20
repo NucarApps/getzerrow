@@ -35,26 +35,34 @@ async function assertOwnsCompany(userId: string, companyId: string): Promise<voi
   if (!data) throw new Error("Company not found");
 }
 
-/** Kick off runGoogleContactsSync for each linked Gmail account. Runs
- *  sequentially so we don't race on the per-account lease. Returns the count
- *  actually attempted plus any per-account errors (non-fatal to the request). */
-async function syncAccounts(
-  userId: string,
-  accountIds: readonly string[],
-): Promise<{ accountsSynced: number; errors: string[] }> {
-  const { runGoogleContactsSync } = await import("./reconcile.server");
-  const errors: string[] = [];
-  let accountsSynced = 0;
-  for (const accountId of accountIds) {
-    try {
-      const res = await runGoogleContactsSync(userId, accountId);
-      if (res.ok) accountsSynced++;
-      else if (res.error && res.error !== "locked") errors.push(res.error);
-    } catch (e) {
-      errors.push(e instanceof Error ? e.message : String(e));
-    }
+/** Fire-and-forget: kick the Google Contacts sync hook in the background so
+ *  the "Sync now" server fn returns immediately. Awaiting runGoogleContactsSync
+ *  inline can exceed Safari's fetch wall on large accounts (surfaces as
+ *  "Load failed") and leaks the sync lease when the worker is killed. The
+ *  hook endpoint runs in its own Worker request scoped by CRON_SECRET. */
+function triggerBackgroundSync(): void {
+  try {
+    const { getRequestHost } = require("@tanstack/react-start/server") as {
+      getRequestHost: () => string;
+    };
+    const host = getRequestHost();
+    const cronSecret = process.env.CRON_SECRET;
+    if (!host || !cronSecret) return;
+    // keepalive lets the outbound fetch outlive the parent response on Workers.
+    void fetch(`https://${host}/api/public/hooks/google-contacts-sync`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${cronSecret}`,
+      },
+      body: "{}",
+      keepalive: true,
+    }).catch(() => {
+      // Non-fatal — the periodic cron will pick it up on the next tick.
+    });
+  } catch {
+    // Non-fatal — a missing host/secret just means the periodic cron handles it.
   }
-  return { accountsSynced, errors };
 }
 
 export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
