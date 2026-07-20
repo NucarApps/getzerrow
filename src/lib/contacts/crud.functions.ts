@@ -310,6 +310,27 @@ export const getContact = createServerFn({ method: "POST" })
         avatarIsCompanyLogoSnapshot = false;
       }
     }
+    const { getEffectivePhotoPriority } = await import("@/lib/contacts/photo-priority.server");
+    const { priority: photoPriority, source: photoPrioritySource } =
+      await getEffectivePhotoPriority(userId, data.id);
+    const { data: contactOverrideRow } = await supabase
+      .from("contacts")
+      .select("photo_priority")
+      .eq("id", data.id)
+      .maybeSingle();
+    const contactPhotoPriorityOverride =
+      (contactOverrideRow as { photo_priority?: string | null } | null)?.photo_priority ?? null;
+    let companyPhotoPriorityOverride: string | null = null;
+    if (linkedCompanyId) {
+      const { data: companyOverrideRow } = await supabase
+        .from("companies")
+        .select("photo_priority")
+        .eq("id", linkedCompanyId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      companyPhotoPriorityOverride =
+        (companyOverrideRow as { photo_priority?: string | null } | null)?.photo_priority ?? null;
+    }
     return {
       contact: { ...contact, avatar_url: effectiveAvatarUrl },
       recentEmails: emails ?? [],
@@ -319,6 +340,10 @@ export const getContact = createServerFn({ method: "POST" })
       companyId: linkedCompanyId,
       companyPhotoUrl,
       avatarIsCompanyLogoSnapshot,
+      photoPriority,
+      photoPrioritySource,
+      contactPhotoPriorityOverride,
+      companyPhotoPriorityOverride,
     };
   });
 export const updateContact = createServerFn({ method: "POST" })
