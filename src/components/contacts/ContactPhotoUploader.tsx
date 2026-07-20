@@ -237,6 +237,20 @@ export function ContactPhotoUploader({
           <Building2 className="h-3 w-3" />
         </Button>
       ) : null}
+      {!busy ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="secondary"
+          onClick={onSyncToGoogle}
+          aria-label="Sync photo to Google now"
+          title="Sync photo to Google now"
+          className="absolute -right-1 -top-1 h-6 w-6 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+        >
+          <RefreshCw className="h-3 w-3" />
+        </Button>
+      ) : null}
+
       <input
         ref={fileRef}
         type="file"
