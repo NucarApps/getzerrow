@@ -10,6 +10,7 @@ export type ProgressStep =
   | "pulling_contacts"
   | "pushing_groups"
   | "pushing_contacts"
+  | "pushing_memberships"
   | "applying_tombstones"
   | "finalizing"
   | "done";
