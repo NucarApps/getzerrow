@@ -83,7 +83,7 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
   });
 
   const suggestions = (q.data?.suggestions ?? []).filter((s) => s.status === "pending");
-  const showEmpty = !q.isLoading && !rescan.isPending && suggestions.length === 0;
+  const showEmpty = !q.isLoading && !q.isError && !rescan.isPending && suggestions.length === 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -116,6 +116,13 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
             )}
           </Button>
         </div>
+
+        {q.isError && (
+          <div className="mt-8 rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center text-sm text-destructive">
+            Couldn&apos;t load suggestions
+            {q.error instanceof Error ? `: ${q.error.message}` : ""}. Try running the scan again.
+          </div>
+        )}
 
         {showEmpty && (
           <div className="mt-8 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">

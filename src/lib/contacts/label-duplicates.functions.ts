@@ -145,7 +145,7 @@ export const findDuplicateLabels = createServerFn({ method: "POST" })
         if (apiKey) {
           const { generateText, Output, NoObjectGeneratedError } = await import("ai");
           const gateway = createLovableAiGatewayProvider(apiKey);
-          const model = gateway("google/gemini-3.1-flash-lite");
+          const model = gateway("google/gemini-2.5-flash");
           const AiSchema = z.object({
             clusters: z.array(
               z.object({

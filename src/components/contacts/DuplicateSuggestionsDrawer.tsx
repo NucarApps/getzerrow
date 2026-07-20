@@ -105,6 +105,12 @@ export function DuplicateSuggestionsDrawer({ open, onOpenChange }: Props) {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
+          ) : query.isError ? (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 py-8 text-center text-sm text-destructive">
+              Couldn&apos;t load duplicate suggestions
+              {query.error instanceof Error ? `: ${query.error.message}` : ""}. Try running the scan
+              again.
+            </p>
           ) : suggestions.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               No pending duplicate suggestions. Run a scan to look for new ones.

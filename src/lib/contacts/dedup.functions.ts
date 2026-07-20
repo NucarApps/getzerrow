@@ -180,7 +180,7 @@ async function judgeCluster(
   cluster: ClusterInput,
 ): Promise<z.infer<typeof AiSchema>> {
   const gateway = createLovableAiGatewayProvider(apiKey);
-  const model = gateway("google/gemini-3.1-flash-lite");
+  const model = gateway("google/gemini-2.5-flash");
   const prompt = `You review a small group of contact rows and decide whether they represent the same real person.
 
 Contacts (JSON):
@@ -830,10 +830,7 @@ export const mergeContactsManual = createServerFn({ method: "POST" })
     }
 
     // 8) Delete losers.
-    const { error: delErr } = await supabaseAdmin
-      .from("contacts")
-      .delete()
-      .in("id", data.loserIds);
+    const { error: delErr } = await supabaseAdmin.from("contacts").delete().in("id", data.loserIds);
     if (delErr) throw new Error(`Failed to delete losers: ${delErr.message}`);
 
     // 9) Bump CardDAV resync so iOS pulls the change.

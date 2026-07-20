@@ -154,7 +154,7 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
     );
 
     const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-3.1-flash-lite");
+    const model = gateway("google/gemini-2.5-flash");
     let aiSuccess = 0;
     let aiEmpty = 0;
 
