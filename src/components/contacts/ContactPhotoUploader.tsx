@@ -79,6 +79,8 @@ export function ContactPhotoUploader({
   const signUrl = useServerFn(getContactPhotoSignedUrl);
   const listLogoChoices = useServerFn(listCompanyLogoChoices);
   const resetToCompany = useServerFn(resetContactToCompanyLogo);
+  const pushToGoogle = useServerFn(pushContactPhotoToGoogleNow);
+
 
   // Shares its cache key with the contacts list page so the network hit is
   // deduped when the drawer opens over the list.
