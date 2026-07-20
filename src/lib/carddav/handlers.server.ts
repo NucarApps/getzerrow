@@ -1347,6 +1347,17 @@ export async function handlePut(
             parsed.photo.mime,
             "user_upload",
           );
+          // A fresh iPhone-uploaded photo also resets the Google photo retry
+          // budget so any previous "gave up" state doesn't keep the next
+          // sync from actually uploading it to Google Contacts.
+          try {
+            const { markGooglePhotoDirty } = await import(
+              "@/lib/google-contacts/mark-dirty.server"
+            );
+            await markGooglePhotoDirty(userId, contactId);
+          } catch {
+            // Not linked to Google — no-op.
+          }
         } catch (saveErr) {
           // A failed save must NOT be answered with a 2xx: the next sync
           // would serve a photo-less vCard under a fresh ETag and the client
@@ -1360,6 +1371,7 @@ export async function handlePut(
           return new Response("Failed to store contact photo", { status: 500 });
         }
       }
+
     } catch (err) {
       // Echo-decision plumbing errors stay non-fatal: worst case we skip the
       // photo this round; the client will re-send it on a future sync.
