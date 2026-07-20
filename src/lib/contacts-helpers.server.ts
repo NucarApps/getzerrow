@@ -183,7 +183,7 @@ export function pickBetterName(
   return cTokens.length >= eTokens.length ? c : e;
 }
 
-const PHONE_NUMBER_RE = /^[+\d\s().,#x/A-Za-z-]{3,60}$/;
+const PHONE_NUMBER_RE = /^[+\d\s().,#*;:x/A-Za-z-]{3,60}$/;
 export const phoneEntrySchema = z.object({
   label: z.string().trim().min(1).max(20),
   number: z.string().trim().min(3).max(60).regex(PHONE_NUMBER_RE, "Invalid phone format"),
