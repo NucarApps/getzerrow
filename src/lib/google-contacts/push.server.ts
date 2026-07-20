@@ -114,6 +114,7 @@ type ContactRow = {
   email: string | null;
   updated_at: string;
   avatar_url: string | null;
+  company_id: string | null;
 };
 
 async function pushContacts(
