@@ -41,14 +41,11 @@ async function assertOwnsCompany(userId: string, companyId: string): Promise<voi
  *  inline can exceed Safari's fetch wall on large accounts (surfaces as
  *  "Load failed") and leaks the sync lease when the worker is killed. The
  *  hook endpoint runs in its own Worker request scoped by CRON_SECRET. */
-function triggerBackgroundSync(): void {
+function triggerBackgroundSync(): boolean {
   try {
-    const { getRequestHost } = require("@tanstack/react-start/server") as {
-      getRequestHost: () => string;
-    };
     const host = getRequestHost();
     const cronSecret = process.env.CRON_SECRET;
-    if (!host || !cronSecret) return;
+    if (!host || !cronSecret) return false;
     // keepalive lets the outbound fetch outlive the parent response on Workers.
     void fetch(`https://${host}/api/public/hooks/google-contacts-sync`, {
       method: "POST",
@@ -61,8 +58,10 @@ function triggerBackgroundSync(): void {
     }).catch(() => {
       // Non-fatal — the periodic cron will pick it up on the next tick.
     });
+    return true;
   } catch {
     // Non-fatal — a missing host/secret just means the periodic cron handles it.
+    return false;
   }
 }
 
