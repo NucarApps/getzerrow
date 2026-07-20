@@ -166,8 +166,8 @@ export function ContactPhotoUploader({
         toast.error("No photo to sync — upload one first or set a company logo.");
       } else if (res.errors.includes("not_linked_to_google")) {
         toast.error("This contact isn't linked to Google yet — sync it once first.");
-      } else if (res.accountsSynced > 0) {
-        toast.success("Photo pushed to Google");
+      } else if (res.accountsQueued > 0) {
+        toast.success("Sync started — photo will land in Google shortly");
       } else if (res.errors.length > 0) {
         toast.error(res.errors[0] === "locked" ? "Sync already running" : res.errors[0]);
       } else {

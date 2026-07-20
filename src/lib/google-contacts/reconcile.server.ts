@@ -14,10 +14,13 @@ export function accountHasContactsScope(scopeString: string | null | undefined):
   return (scopeString ?? "").split(/\s+/).includes(CONTACTS_SCOPE);
 }
 
-// Stale-lease window. A pull+push run finishes in a couple of seconds; if a
-// row's `locked_at` is older than this the previous worker was killed before
-// finalize (network abort, timeout) — safe to reclaim.
-const LEASE_STALE_MS = 90_000;
+// Stale-lease window. A pull+push run now finishes under PUSH_WALL_BUDGET_MS
+// (~18s) plus a small pull, so a healthy run is done well inside 30s. If a
+// row's `locked_at` is older than this window, the previous worker was killed
+// before finalize (Safari fetch abort, worker CPU cap) — safe to reclaim so
+// the next click isn't rejected with "locked" and stuck at the previous
+// progress count.
+const LEASE_STALE_MS = 30_000;
 
 /** Clear stored photo tags for linked contacts that have no local avatar,
  * so the next pull refetches the Google photo. Runs opportunistically on

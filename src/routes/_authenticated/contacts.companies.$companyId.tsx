@@ -922,8 +922,8 @@ function CompanyPhotoSection({
         toast.error("No members are linked to Google yet — run a contacts sync first.");
       } else if (res.errors.includes("no_members")) {
         toast.error("This company has no contacts to sync.");
-      } else if (res.accountsSynced > 0) {
-        toast.success(`Photo pushed to Google for ${res.contactsMarked} contact(s)`);
+      } else if (res.accountsQueued > 0) {
+        toast.success(`Sync started for ${res.contactsMarked} contact(s)`);
       } else if (res.errors.length > 0) {
         toast.error(res.errors[0] === "locked" ? "Sync already running" : res.errors[0]);
       } else {

@@ -4,12 +4,13 @@
 // runGoogleContactsSync for each linked Gmail account so the change lands in
 // Google People without waiting for the next cron tick.
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHost } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type PushResult = {
   contactsMarked: number;
-  accountsSynced: number;
+  accountsQueued: number;
   errors: string[];
 };
 
@@ -35,26 +36,33 @@ async function assertOwnsCompany(userId: string, companyId: string): Promise<voi
   if (!data) throw new Error("Company not found");
 }
 
-/** Kick off runGoogleContactsSync for each linked Gmail account. Runs
- *  sequentially so we don't race on the per-account lease. Returns the count
- *  actually attempted plus any per-account errors (non-fatal to the request). */
-async function syncAccounts(
-  userId: string,
-  accountIds: readonly string[],
-): Promise<{ accountsSynced: number; errors: string[] }> {
-  const { runGoogleContactsSync } = await import("./reconcile.server");
-  const errors: string[] = [];
-  let accountsSynced = 0;
-  for (const accountId of accountIds) {
-    try {
-      const res = await runGoogleContactsSync(userId, accountId);
-      if (res.ok) accountsSynced++;
-      else if (res.error && res.error !== "locked") errors.push(res.error);
-    } catch (e) {
-      errors.push(e instanceof Error ? e.message : String(e));
-    }
+/** Fire-and-forget: kick the Google Contacts sync hook in the background so
+ *  the "Sync now" server fn returns immediately. Awaiting runGoogleContactsSync
+ *  inline can exceed Safari's fetch wall on large accounts (surfaces as
+ *  "Load failed") and leaks the sync lease when the worker is killed. The
+ *  hook endpoint runs in its own Worker request scoped by CRON_SECRET. */
+function triggerBackgroundSync(): boolean {
+  try {
+    const host = getRequestHost();
+    const cronSecret = process.env.CRON_SECRET;
+    if (!host || !cronSecret) return false;
+    // keepalive lets the outbound fetch outlive the parent response on Workers.
+    void fetch(`https://${host}/api/public/hooks/google-contacts-sync`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${cronSecret}`,
+      },
+      body: "{}",
+      keepalive: true,
+    }).catch(() => {
+      // Non-fatal — the periodic cron will pick it up on the next tick.
+    });
+    return true;
+  } catch {
+    // Non-fatal — a missing host/secret just means the periodic cron handles it.
+    return false;
   }
-  return { accountsSynced, errors };
 }
 
 export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
@@ -72,7 +80,7 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
     if (!effectivePhoto) {
       return {
         contactsMarked: 0,
-        accountsSynced: 0,
+        accountsQueued: 0,
         errors: ["no_photo_on_contact"],
       };
     }
@@ -90,11 +98,15 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
       ),
     );
     if (accountIds.length === 0) {
-      return { contactsMarked: 0, accountsSynced: 0, errors: ["not_linked_to_google"] };
+      return { contactsMarked: 0, accountsQueued: 0, errors: ["not_linked_to_google"] };
     }
     await markGooglePhotoDirty(context.userId, data.contactId);
-    const { accountsSynced, errors } = await syncAccounts(context.userId, accountIds);
-    return { contactsMarked: 1, accountsSynced, errors };
+    const queued = triggerBackgroundSync();
+    return {
+      contactsMarked: 1,
+      accountsQueued: queued ? accountIds.length : 0,
+      errors: queued ? [] : ["background_sync_unavailable"],
+    };
   });
 
 export const pushCompanyPhotoToGoogleNow = createServerFn({ method: "POST" })
@@ -112,7 +124,7 @@ export const pushCompanyPhotoToGoogleNow = createServerFn({ method: "POST" })
       .eq("company_id", data.companyId);
     const contactIds = (contacts ?? []).map((c) => (c as { id: string }).id);
     if (contactIds.length === 0) {
-      return { contactsMarked: 0, accountsSynced: 0, errors: ["no_members"] };
+      return { contactsMarked: 0, accountsQueued: 0, errors: ["no_members"] };
     }
 
     const { data: links } = await supabaseAdmin
@@ -128,9 +140,13 @@ export const pushCompanyPhotoToGoogleNow = createServerFn({ method: "POST" })
       ),
     );
     if (accountIds.length === 0) {
-      return { contactsMarked: 0, accountsSynced: 0, errors: ["not_linked_to_google"] };
+      return { contactsMarked: 0, accountsQueued: 0, errors: ["not_linked_to_google"] };
     }
     await markGooglePhotoDirtyMany(context.userId, contactIds);
-    const { accountsSynced, errors } = await syncAccounts(context.userId, accountIds);
-    return { contactsMarked: contactIds.length, accountsSynced, errors };
+    const queued = triggerBackgroundSync();
+    return {
+      contactsMarked: contactIds.length,
+      accountsQueued: queued ? accountIds.length : 0,
+      errors: queued ? [] : ["background_sync_unavailable"],
+    };
   });
