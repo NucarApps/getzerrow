@@ -1,28 +1,29 @@
-## Goal
+## Root cause (confirmed)
 
-When a photo is uploaded to Zerrow (contact photo uploader), it should:
-1. Push to CardDAV so iOS pulls the updated picture on the next sync.
-2. Honor the effective per-contact photo priority (personal vs company first) — no forced override; the setting the user configured is respected as-is.
+The Google Contacts sync cron endpoint has been returning **401 Unauthorized on every 5‑minute tick for the last 2+ days**, so no pull/push has actually run.
 
-Today `uploadContactPhoto` saves the image and marks Google-linked contacts dirty, but does not bump the CardDAV resync nonce, so iPhones don't see the change until an unrelated sync happens. It also doesn't touch photo priority (correct — Zerrow uploads shouldn't auto-flip preference; the display resolver already honors whatever priority is set).
+Confirmed by:
+- Worker logs: every `POST /api/public/hooks/google-contacts-sync` → 401 (last hour, and pattern is continuous).
+- `google_sync_state` for `chris@nucar.com`: `last_incremental_at = 2026-07-18 14:17`, `locked_at` stuck at `2026-07-20 04:40` from the last run that actually got in.
+- `cron.job_run_details` shows pg_cron dispatches every 5 min succeeded (they only report the `net.http_post` enqueue, not the HTTP response).
+- `gmail_accounts`: `needs_reconnect=false`, `contacts_access=true` — auth to Google is fine.
 
-## Changes
+Why 401: pg_cron sends `Authorization: Bearer <private.cron_settings.cron_secret>`. The endpoint validates with `isAuthorizedCron` (env‑only, checks `process.env.CRON_SECRET`). The DB‑stored cron secret and the worker env `CRON_SECRET` don't match, so the check fails. Every other cron endpoint (e.g. `gmail-poll`) uses `isAuthorizedCronRequest`, which also falls back to `cron_secret_matches` RPC against `private.cron_settings` — that's why they return 200 while this one 401s.
 
-1. **`src/lib/contacts/photos.functions.ts`** — in `uploadContactPhoto.handler` (after the successful `saveContactPhoto` and Google dirty-marking):
-   - Bump the CardDAV resync nonce via existing `bumpResyncNonce(context.supabase, context.userId)` from `@/lib/carddav/settings.functions`. Wrap in try/catch — non-fatal.
-   - Do the same in `removeContactPhoto.handler` so removals also propagate to iOS.
+`src/routes/api/public/hooks/google-contacts-sync.ts` is the only public hook still on the sync-only helper.
 
-2. **CardDAV serve path** — verify `loadContactPhotoOrLogo` in `src/lib/carddav/handlers.server.ts` already uses `getEffectivePhotoPriority` (it does, from the earlier photo-priority work), so iOS will receive personal-vs-company per the resolved preference automatically once the resync nonce triggers a refresh. No changes needed there.
+## Fix
 
-3. **Logging** — add a structured `carddav.resync_nonce_bumped` event with `contact_id` and `reason: "photo_upload"` / `"photo_remove"` for traceability.
+1. In `src/routes/api/public/hooks/google-contacts-sync.ts`:
+   - Replace `isAuthorizedCron` with `await isAuthorizedCronRequest(request)`.
+   - Replace the local `unauthorized()` helper with the shared `unauthorizedResponse()` for consistency.
+2. Clear the stuck lease so the next cron tick isn't blocked (belt‑and‑suspenders — code already reclaims after 30 s, but let's not wait):
+   - `UPDATE google_sync_state SET locked_at = NULL, progress_step = NULL WHERE locked_at IS NOT NULL;`
+3. Verify:
+   - Watch worker logs for `google-contacts-sync → 200` on the next 5‑minute tick.
+   - Re‑query `google_sync_state`: `last_incremental_at` should advance, `last_pull_count`/`last_push_count` should update, `last_error` stays null.
+   - Spot‑check that queued dirty rows (`google_contact_links` with `photo_etag IS NULL` or sentinel `last_synced_at`) drain over subsequent runs.
 
-## Non-goals
+## Out of scope
 
-- No change to the photo-priority resolver — Zerrow uploads honor whatever the effective priority is (contact override → company → global default).
-- No auto-switch of `photo_priority` on Zerrow upload. (The earlier CardDAV iOS PUT plan handled the iOS-side auto-switch to `personal_first`; Zerrow uploads keep the user's chosen preference intact.)
-- No schema changes.
-
-## Technical notes
-
-- `bumpResyncNonce` is the standard mechanism used elsewhere (label rules, priority changes) to force iOS/other CardDAV clients to re-fetch — same lever here.
-- The photo remains stored as `avatar_source="user_upload"`, so the self-heal in `getContact` won't wipe it.
+No changes to pull/push logic, mapping, or photo handling — those paths work; they just haven't been running.

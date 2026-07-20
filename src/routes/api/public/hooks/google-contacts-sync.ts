@@ -2,20 +2,17 @@
 //
 //   POST /api/public/hooks/google-contacts-sync   (Bearer CRON_SECRET)
 import { createFileRoute } from "@tanstack/react-router";
-import { isAuthorizedCron } from "@/lib/cron-auth.server";
+import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runGoogleContactsSync } from "@/lib/google-contacts/reconcile.server";
 import { logError, logInfo, newRunId } from "@/lib/log.server";
-
-function unauthorized() {
-  return new Response("Unauthorized", { status: 401 });
-}
 
 export const Route = createFileRoute("/api/public/hooks/google-contacts-sync")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!isAuthorizedCron(request)) return unauthorized();
+        if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
+
         const runId = newRunId();
 
         // Enabled accounts: join sync_state.enabled=true with gmail_accounts
