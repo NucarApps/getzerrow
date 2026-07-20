@@ -133,6 +133,7 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
         contactsMarked: 0,
         accountsQueued: 0,
         errors: ["no_photo_on_contact"],
+        recentFailures: await loadRecentFailures(context.userId, [data.contactId]),
       };
     }
 
@@ -149,7 +150,12 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
       ),
     );
     if (accountIds.length === 0) {
-      return { contactsMarked: 0, accountsQueued: 0, errors: ["not_linked_to_google"] };
+      return {
+        contactsMarked: 0,
+        accountsQueued: 0,
+        errors: ["not_linked_to_google"],
+        recentFailures: [],
+      };
     }
     await markGooglePhotoDirty(context.userId, data.contactId);
     const queued = triggerBackgroundSync();
@@ -157,6 +163,7 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
       contactsMarked: 1,
       accountsQueued: queued ? accountIds.length : 0,
       errors: queued ? [] : ["background_sync_unavailable"],
+      recentFailures: await loadRecentFailures(context.userId, [data.contactId]),
     };
   });
 
