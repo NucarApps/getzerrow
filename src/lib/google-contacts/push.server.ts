@@ -29,15 +29,27 @@ import type { ProgressReporter } from "./progress.server";
 type Ids = { userId: string; gmailAccountId: string; runId: string };
 
 // Cap per-run work so a big first-time push doesn't hog the cron slot.
-const MAX_CONTACTS_PER_RUN = 200;
+const MAX_CONTACTS_PER_RUN = 500;
 const MAX_GROUPS_PER_RUN = 100;
 const NO_LOCAL_PHOTO_ETAG = "no-local-photo";
-// Wall-clock budget for the push loop. The whole runGoogleContactsSync request
-// must finish inside the Worker/Safari fetch window (~30s) — this leaves room
-// for pull + finalize before Safari drops the request as "Load failed" and the
-// Worker is killed mid-loop (which leaks the sync lease). When exceeded we
-// break cleanly; the next cron tick (or user click) resumes the remainder.
-const PUSH_WALL_BUDGET_MS = 18_000;
+// Wall-clock budget for the push loop. The cron endpoint runs as a fetch
+// handler on the Cloudflare Worker; give it enough headroom to actually drain
+// a first-time backlog while still leaving margin below the request-timeout
+// ceiling. When exceeded we break cleanly; the next tick resumes.
+const PUSH_WALL_BUDGET_MS = 55_000;
+// How many contacts to push in parallel. People API calls are I/O bound and
+// each contact does ~2-3 sequential API round-trips; going wider than this
+// runs into per-user rate limits without meaningfully improving throughput.
+const CONTACT_PUSH_CONCURRENCY = 5;
+
+/** Slice `items` into fixed-size chunks preserving order. Exported for tests. */
+export function chunk<T>(items: T[], size: number): T[][] {
+  if (size <= 0) return [items];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 
 export async function pushToGoogle(
   ids: Ids,
