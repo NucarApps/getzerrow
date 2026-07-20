@@ -65,6 +65,34 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { markGooglePhotoDirty } = await import("./mark-dirty.server");
 
+    // Pre-check: there must be SOMETHING to push. Google's People API needs
+    // real photo bytes — if the contact has no avatar_url and the linked
+    // company has no logo_url, marking dirty and running the sync is a
+    // silent no-op and the user is left wondering why nothing changed.
+    const { data: contact } = await supabaseAdmin
+      .from("contacts")
+      .select("avatar_url, company_id")
+      .eq("id", data.contactId)
+      .maybeSingle();
+    const avatarUrl = (contact as { avatar_url?: string | null } | null)?.avatar_url ?? null;
+    const companyId = (contact as { company_id?: string | null } | null)?.company_id ?? null;
+    let companyLogoUrl: string | null = null;
+    if (!avatarUrl && companyId) {
+      const { data: company } = await supabaseAdmin
+        .from("companies")
+        .select("logo_url")
+        .eq("id", companyId)
+        .maybeSingle();
+      companyLogoUrl = (company as { logo_url?: string | null } | null)?.logo_url ?? null;
+    }
+    if (!avatarUrl && !companyLogoUrl) {
+      return {
+        contactsMarked: 0,
+        accountsSynced: 0,
+        errors: ["no_photo_on_contact"],
+      };
+    }
+
     const { data: links } = await supabaseAdmin
       .from("google_contact_links")
       .select("gmail_account_id")

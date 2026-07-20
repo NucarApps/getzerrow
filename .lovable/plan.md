@@ -1,31 +1,34 @@
-## Problem
+## What I found
 
-Roberta Cote's primary phone is stored as `800-225-1865;7160` (main + extension separated by `;`). Saving the contact runs the whole phones array through `phoneEntrySchema`, whose regex rejects the semicolon:
+Roberta Cote (contact `875e7215…`, linked to Google as `people/c1814011048600397749`) currently has:
 
-```
-/^[+\d\s().,#x/A-Za-z-]{3,60}$/
-```
+- `avatar_url = NULL` on the contact row
+- `card_image_url = NULL`
+- her company (Fred C. Church, Inc.) also has `logo_url = NULL`
 
-So any save (even to an unrelated field like Notes) fails with "Invalid phone format" on `phones.0.number`. Same regex lives in the mobile route.
+So when you press **Sync to Google now**, `pushContactPhotoToGoogleNow` marks the link photo-dirty and runs the sync, but `pushContacts` skips the photo upload because `avatarUrl` is null — nothing is ever POSTed to People API's `updateContactPhoto`. That matches your symptom (no error, no update in Google) and is why nothing changes for her specifically.
 
-## Fix
+Two things need to happen:
 
-Widen the allowed phone character set to include the common extension separators used by iOS/Google Contacts and vCard sources — `;`, `*`, and `:` — while keeping the length + shape guard.
+### 1. Root-cause the missing avatar_url
 
-New regex:
-```
-/^[+\d\s().,#*;:x/A-Za-z-]{3,60}$/
-```
+I need to know where you set the picture, because the fix differs:
 
-## Files to change
+- **Uploaded in Zerrow (drag-drop on the contact avatar):** the uploader is failing silently before it writes `avatar_url`. I'll add error surfacing + verify the upload path in `ContactPhotoUploader`.
+- **Set on iPhone via CardDAV:** the PHOTO from the last PUT was probably discarded by the company-logo echo guard (`known-logos.server.ts`) or by `avatar_source` tagging. I'll inspect the last CardDAV PUT for her card and adjust the guard so a real user photo isn't dropped.
+- **Meant to inherit the company logo:** Fred C. Church has no `logo_url` — the plan is to set a company logo, not sync per-contact.
 
-- `src/lib/contacts-helpers.server.ts` — update `PHONE_NUMBER_RE`.
-- `src/routes/api/mobile/contacts.ts` — update the mirrored `PHONE_NUMBER_RE` so the mobile create path stays in sync.
+### 2. Make "Sync to Google now" honest
 
-No data migration needed — existing rows already contain `;`, they just couldn't round-trip through validation.
+Regardless of #1, the button today silently succeeds when there's nothing to push. I'll:
 
-## Verification
+- Have `pushContactPhotoToGoogleNow` pre-check `avatar_url` (and fall back to the resolved company logo when appropriate) and return `no_photo_on_contact` when neither exists, so the toast tells you clearly instead of showing "synced".
+- Add a `logInfo("google_contacts.push.photo_skipped_no_avatar", …)` inside `pushContacts` so future silent skips show up in logs.
 
-- Re-open Roberta Cote, edit Notes, save → succeeds.
-- Add a phone like `+1 555-123-4567;123` in the editor → saves.
-- Existing pure-digit / formatted numbers still validate.
+### Technical notes
+
+- Files touched: `src/lib/google-contacts/push-photo-now.functions.ts`, `src/lib/google-contacts/push.server.ts`, and (depending on #1 answer) either `src/components/contacts/ContactPhotoUploader.tsx` or `src/lib/carddav/handlers.server.ts` + `known-logos.server.ts`.
+- No schema changes.
+- Add a small unit test that `pushContactPhotoToGoogleNow` returns `no_photo_on_contact` when both contact and company photo are missing.
+
+**Before I implement:** where did you set Roberta's picture — uploaded inside Zerrow, set on your iPhone Contacts app, or did you expect it to come from the company logo?

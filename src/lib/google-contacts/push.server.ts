@@ -364,6 +364,15 @@ async function pushContacts(
         const avatarUrl = currentAvatar;
         const previousUrl = linkPhotoEtag;
         const resource = link?.resource_name ?? createdResourceName;
+        if (resource && !avatarUrl) {
+          logInfo("google_contacts.push.photo_skipped_no_avatar", {
+            ...ids,
+            contact_id: c.id,
+            company_id: c.company_id,
+            photo_etag: linkPhotoEtag,
+            google_photo_url: linkGooglePhotoUrl,
+          });
+        }
         if (
           resource &&
           avatarUrl &&
