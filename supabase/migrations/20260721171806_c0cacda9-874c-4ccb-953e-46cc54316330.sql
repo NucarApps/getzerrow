@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.record_carddav_contact_tombstone() FROM PUBLIC, anon, authenticated;
