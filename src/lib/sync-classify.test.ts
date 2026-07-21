@@ -15,7 +15,7 @@ function folder(over: Partial<Folder> = {}): Folder {
     id: over.id ?? "f-default",
     name: over.name ?? "Default",
     gmail_label_id: over.gmail_label_id ?? null,
-    ai_rule: over.ai_rule ?? null,
+    ai_rule: over.ai_rule ?? "route mail here",
     learned_profile: over.learned_profile ?? null,
     last_learned_at: over.last_learned_at ?? null,
     auto_archive: over.auto_archive ?? false,
@@ -429,7 +429,7 @@ describe("classifyParsedEmail — skipAi behavior", () => {
 // process-message can finalize the row in a single INSERT (no flicker).
 // It must be false for every terminal rules outcome.
 describe("classifyByRules — needs_ai", () => {
-  const enriched = (id: string, name: string) => ({ id, name, ai_rule: null });
+  const enriched = (id: string, name: string) => ({ id, name, ai_rule: "route mail here" });
 
   it("true when nothing matched and AI-eligible folders exist", () => {
     const f = folder({ id: "f1", name: "Work" });

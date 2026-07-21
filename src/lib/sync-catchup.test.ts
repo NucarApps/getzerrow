@@ -20,7 +20,7 @@ function folder(over: Partial<Folder> = {}): Folder {
     id: over.id ?? "f-default",
     name: over.name ?? "Default",
     gmail_label_id: over.gmail_label_id ?? null,
-    ai_rule: over.ai_rule ?? null,
+    ai_rule: over.ai_rule ?? "route mail here",
     learned_profile: over.learned_profile ?? null,
     last_learned_at: over.last_learned_at ?? null,
     auto_archive: over.auto_archive ?? false,
@@ -105,7 +105,7 @@ describe("buildCatchupRow", () => {
     const c = ctx({
       folders: [f],
       filters: [filter("f1", "from", "contains", "@acme.com")],
-      enrichedFolders: [{ id: "f1", name: "Work", ai_rule: null }],
+      enrichedFolders: [{ id: "f1", name: "Work", ai_rule: "route mail here" }],
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "billing@acme.com" }), c);
     expect(built).not.toBeNull();
@@ -120,7 +120,7 @@ describe("buildCatchupRow", () => {
     const c = ctx({
       folders: [f],
       filters: [filter("f1", "from", "contains", "@news.test")],
-      enrichedFolders: [{ id: "f1", name: "Newsletters", ai_rule: null }],
+      enrichedFolders: [{ id: "f1", name: "Newsletters", ai_rule: "route mail here" }],
     });
     const built = buildCatchupRow(
       job,
@@ -136,7 +136,7 @@ describe("buildCatchupRow", () => {
     const c = ctx({
       folders: [f],
       filters: [filter("f1", "subject", "contains", "sale")],
-      enrichedFolders: [{ id: "f1", name: "Promo", ai_rule: null }],
+      enrichedFolders: [{ id: "f1", name: "Promo", ai_rule: "route mail here" }],
     });
     const built = buildCatchupRow(job, parsed({ subject: "Big sale", is_read: false }), c);
     expect(built!.upsert.is_read).toBe(true);
@@ -146,7 +146,7 @@ describe("buildCatchupRow", () => {
     const f = folder({ id: "f1", name: "Work" });
     const c = ctx({
       folders: [f],
-      enrichedFolders: [{ id: "f1", name: "Work", ai_rule: null }],
+      enrichedFolders: [{ id: "f1", name: "Work", ai_rule: "route mail here" }],
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "nobody@nowhere.test" }), c);
     expect(built!.needs_ai).toBe(true);
@@ -159,7 +159,7 @@ describe("buildCatchupRow", () => {
     const c = ctx({
       folders: [f],
       overrides: [{ id: "o1", match_type: "domain", value: "vip.example" }],
-      enrichedFolders: [{ id: "f1", name: "Work", ai_rule: null }],
+      enrichedFolders: [{ id: "f1", name: "Work", ai_rule: "route mail here" }],
     });
     const built = buildCatchupRow(job, parsed({ from_addr: "ceo@vip.example" }), c);
     expect(built!.needs_ai).toBe(false);

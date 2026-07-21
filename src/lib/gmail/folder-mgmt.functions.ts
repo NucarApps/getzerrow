@@ -478,15 +478,17 @@ export const listFolderSummaries = createServerFn({ method: "POST" })
     return { schedules: rows ?? [] };
   });
 
-// Derive AI defaults when creating a folder. Extracted as a pure helper so
-// the "label-linked → mirror only" rule is unit-testable without touching
-// Supabase. See folder-mgmt.defaults.test.ts.
-export function deriveFolderAiDefaults(gmailLabelId: string | null | undefined): {
+// Defaults for a newly created folder. A brand-new folder should do
+// nothing rule- or AI-wise until the user gives it explicit intent
+// (filter_tree or ai_rule) — regardless of whether it was linked to an
+// existing Gmail label or created alongside a fresh one. Gmail-label
+// routing still works because that's a Gmail-side signal, not a Zerrow
+// classification. See folder-mgmt.defaults.test.ts.
+export function deriveFolderAiDefaults(_gmailLabelId: string | null | undefined): {
   skip_ai: boolean;
   min_ai_confidence: number;
 } {
-  const linked = !!gmailLabelId;
-  return { skip_ai: linked, min_ai_confidence: linked ? 0.75 : 0 };
+  return { skip_ai: true, min_ai_confidence: 0.75 };
 }
 
 // Create a new folder owned by the authenticated user. Historically this was
@@ -518,10 +520,10 @@ export const createFolder = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Confirms the account belongs to the caller; throws otherwise.
     await getOwnedAccount(context.userId, data.account_id);
-    // Safer defaults when the folder is linked to an existing Gmail label:
-    // the user is asking to mirror what Gmail already sorted, not to invent
-    // new AI matches. Unlinked folders keep the current AI-on default so
-    // users who intend to define AI/filter rules aren't blocked.
+    // New folders start inert: no filter tree, no AI rule, skip_ai=true.
+    // Nothing should be classified into them until the user adds explicit
+    // intent (rules or AI prompt) via the folder editor. Gmail-label
+    // routing still works — that's a Gmail-side signal, not classification.
     const { skip_ai: skipAiDefault, min_ai_confidence: minAiConfidenceDefault } =
       deriveFolderAiDefaults(data.gmail_label_id);
     const linkedLabel = !!data.gmail_label_id;
