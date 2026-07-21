@@ -35,7 +35,10 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
   const mergeFn = useServerFn(mergeLabelCluster);
   const bulkFn = useServerFn(consolidateLabelDuplicates);
   const qc = useQueryClient();
-  const [useAi, setUseAi] = useState(false);
+  // AI near-match pass on by default — it's a single bounded model call,
+  // and this drawer is launched from the "AI tools" menu; running it with
+  // AI off made the tool look broken.
+  const [useAi, setUseAi] = useState(true);
   const [overrides, setOverrides] = useState<
     Record<string, { canonicalId?: string; includes?: Record<string, boolean> }>
   >({});

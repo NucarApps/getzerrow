@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useRef } from "react";
 import { Loader2, Merge, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import {
   mergeContactDuplicate,
   scanContactDuplicates,
 } from "@/lib/contacts/dedup.functions";
+import { getContactAiScanStatus } from "@/lib/contacts/ai-scan-status.functions";
 
 type Props = {
   open: boolean;
@@ -36,19 +38,47 @@ export function DuplicateSuggestionsDrawer({ open, onOpenChange }: Props) {
   const doMerge = useServerFn(mergeContactDuplicate);
   const doDismiss = useServerFn(dismissContactDuplicate);
 
+  const scanStatus = useServerFn(getContactAiScanStatus);
+
   const query = useQuery({
     queryKey: ["contact-duplicate-suggestions"],
     queryFn: () => list(),
     enabled: open,
   });
 
+  // Scans run in the background worker (they take up to ~10 model calls) —
+  // poll the job status while one is queued/running and refresh the list
+  // when it finishes.
+  const statusQ = useQuery({
+    queryKey: ["contact-ai-scan", "dedup_scan"],
+    queryFn: () => scanStatus({ data: { kind: "dedup_scan" } }),
+    enabled: open,
+    refetchInterval: (q) => {
+      const s = q.state.data?.job?.status;
+      return s === "pending" || s === "running" ? 4_000 : false;
+    },
+  });
+  const job = statusQ.data?.job ?? null;
+  const scanActive = job?.status === "pending" || job?.status === "running";
+  const prevActiveRef = useRef(false);
+  useEffect(() => {
+    if (prevActiveRef.current && !scanActive) {
+      void qc.invalidateQueries({ queryKey: ["contact-duplicate-suggestions"] });
+      if (job?.status === "done") toast.success("Duplicate scan finished");
+      if (job?.status === "failed") toast.error(`Duplicate scan failed: ${job.error ?? "unknown"}`);
+    }
+    prevActiveRef.current = scanActive;
+  }, [scanActive, job?.status, job?.error, qc]);
+
   const scanMutation = useMutation({
     mutationFn: () => scan(),
     onSuccess: (res) => {
-      toast.success(
-        `Analyzed ${res.clustersAnalyzed} of ${res.clustersTotal} clusters — ${res.created} suggestions`,
+      toast.message(
+        res.alreadyQueued
+          ? "A duplicate scan is already running — results will appear here."
+          : "Duplicate scan queued — results appear here as clusters are judged (usually within ~2 minutes).",
       );
-      void qc.invalidateQueries({ queryKey: ["contact-duplicate-suggestions"] });
+      void qc.invalidateQueries({ queryKey: ["contact-ai-scan", "dedup_scan"] });
     },
     onError: (err: Error) => toast.error(err.message || "Scan failed"),
   });
@@ -87,18 +117,34 @@ export function DuplicateSuggestionsDrawer({ open, onOpenChange }: Props) {
         </SheetHeader>
 
         <div className="mt-4 flex items-center gap-2">
-          <Button size="sm" onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending}>
-            {scanMutation.isPending ? (
+          <Button
+            size="sm"
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending || scanActive}
+          >
+            {scanMutation.isPending || scanActive ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Sparkles className="h-4 w-4 mr-2" />
             )}
-            Run duplicate scan
+            {scanActive ? "Scanning…" : "Run duplicate scan"}
           </Button>
           {query.isFetching && !query.isLoading && (
             <span className="text-xs text-muted-foreground">Refreshing…</span>
           )}
         </div>
+
+        {scanActive && (
+          <p className="mt-3 rounded-md border border-border bg-accent/30 px-3 py-2 text-xs text-muted-foreground">
+            A background scan is running — suggestions appear below as clusters are judged. You can
+            close this drawer; the scan keeps going.
+          </p>
+        )}
+        {job?.status === "failed" && !scanActive && (
+          <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            The last scan failed{job.error ? `: ${job.error}` : ""}. Run it again to retry.
+          </p>
+        )}
 
         <div className="mt-4 space-y-3">
           {query.isLoading ? (

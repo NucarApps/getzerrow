@@ -25,6 +25,33 @@ const SUGGEST_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const MIN_CONTACTS_FOR_SUGGEST = 5;
 const ACTIVITY_WINDOW_DAYS = 45;
 
+export type UserScanKind = "dedup_scan" | "signature_scan";
+
+/** Queue a whole-user AI scan (duplicate detection / signature enrichment)
+ * for the 2-minute worker. Idempotent: the partial unique index on live
+ * jobs makes a second enqueue while one is pending/running a no-op. */
+export async function enqueueUserScanJob(
+  userId: string,
+  kind: UserScanKind,
+): Promise<{ queued: boolean; alreadyQueued: boolean }> {
+  const { error } = await enrichJobsTable().insert({
+    user_id: userId,
+    kind,
+    contact_id: null,
+    status: "pending",
+  } as never);
+  if (error) {
+    // 23505 = unique violation on the live-job index → a scan is already
+    // queued or running; treat as success so the UI just starts polling.
+    if ((error as { code?: string }).code === "23505") {
+      return { queued: false, alreadyQueued: true };
+    }
+    throw new Error(error.message);
+  }
+  logInfo("contact_enrich.scan_enqueued", { user_id: userId, kind });
+  return { queued: true, alreadyQueued: false };
+}
+
 type Db = typeof supabaseAdmin;
 
 async function loadEmailActivity(
@@ -323,7 +350,7 @@ export async function processContactEnrichJobs(limit: number): Promise<{
   const jobs = (claimed ?? []) as unknown as Array<{
     id: string;
     user_id: string;
-    kind: "bio" | "suggest";
+    kind: "bio" | "suggest" | "dedup_scan" | "signature_scan";
     contact_id: string | null;
   }>;
 
@@ -353,7 +380,9 @@ export async function processContactEnrichJobs(limit: number): Promise<{
       } else if (job.kind === "suggest") {
         const { runContactGroupSuggestionsImpl } = await import("./suggest-groups.functions");
         try {
-          await runContactGroupSuggestionsImpl(supabaseAdmin, job.user_id);
+          await runContactGroupSuggestionsImpl(supabaseAdmin, job.user_id, {
+            source: "background",
+          });
         } catch (e) {
           // The 5-minute rescan cooldown is not a failure — still gate
           // whatever pending suggestions exist.
@@ -361,6 +390,12 @@ export async function processContactEnrichJobs(limit: number): Promise<{
         }
         const gate = await autoApplyHighConfidenceSuggestions(job.user_id);
         autoApplied += gate.applied;
+      } else if (job.kind === "dedup_scan") {
+        const { scanContactDuplicatesImpl } = await import("./dedup.functions");
+        await scanContactDuplicatesImpl(job.user_id);
+      } else if (job.kind === "signature_scan") {
+        const { scanContactEnrichmentImpl } = await import("./enrich-suggest.functions");
+        await scanContactEnrichmentImpl(supabaseAdmin, job.user_id);
       }
       await finish(true);
       succeeded++;

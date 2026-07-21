@@ -44,10 +44,18 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
     mutationFn: () => runScan(),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["contact-group-suggestions"] });
-      const kept = res?.stats?.kept ?? 0;
-      const pool = res?.stats?.contactPool ?? 0;
-      const ungrouped = res?.stats?.ungroupedTotal ?? 0;
-      const topics = res?.stats?.topicsScanned ?? 0;
+      const stats = res?.stats;
+      if (stats && "cached" in stats && stats.cached) {
+        const mins = Math.max(1, Math.round((stats.cachedAgeSeconds ?? 0) / 60));
+        toast.message(
+          `Showing results from a scan ${mins} min ago — a fresh scan unlocks in ${stats.cooldownRemainingSeconds}s.`,
+        );
+        return;
+      }
+      const kept = stats && "kept" in stats ? (stats.kept ?? 0) : 0;
+      const pool = stats && "contactPool" in stats ? (stats.contactPool ?? 0) : 0;
+      const ungrouped = stats && "ungroupedTotal" in stats ? (stats.ungroupedTotal ?? 0) : 0;
+      const topics = stats && "topicsScanned" in stats ? (stats.topicsScanned ?? 0) : 0;
       const topicsSuffix = topics > 0 ? ` · read ${topics} inbox` : "";
       if (kept > 0) {
         toast.success(`Found ${kept} suggestion${kept === 1 ? "" : "s"}${topicsSuffix}`);
