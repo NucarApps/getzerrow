@@ -223,14 +223,21 @@ export function classifyByRules(
   };
 }
 
-/** AI-eligible folder set: enrichedFolders minus folders flagged skip_ai and
- * minus any folder whose allowlist / exclusion rules the email violates (so
- * the AI classifier can never place mail into a folder its own hard rules
+/** AI-eligible folder set. A folder is only considered by the AI classifier
+ * when the user has explicitly given it intent — a non-empty `ai_rule`.
+ * Rules-only folders (filter_tree/simple filters) are handled by
+ * matchByFilters and don't need to appear here. Folders with `skip_ai=true`
+ * or whose own hard exclusion rules the email violates are also removed
+ * (the AI classifier must never place mail into a folder its own rules
  * would reject). */
 function aiCandidateFolders(parsed: ParsedEmailForClassify, context: AccountContext) {
-  const skipAiIds = new Set(context.folders.filter((f) => f.skip_ai).map((f) => f.id));
+  const eligibleIds = new Set(
+    context.folders
+      .filter((f) => !f.skip_ai && (f.ai_rule ?? "").trim().length > 0)
+      .map((f) => f.id),
+  );
   return context.enrichedFolders.filter(
-    (f) => !skipAiIds.has(f.id) && !emailVetoedForFolder(parsed, f.id, context.filters),
+    (f) => eligibleIds.has(f.id) && !emailVetoedForFolder(parsed, f.id, context.filters),
   );
 }
 
