@@ -42,6 +42,7 @@ import {
   type ActionOutcome,
   type FolderActionRow,
 } from "./action-dispatch";
+import { loadThreadEmailsForClassify, threadScopeEnabled } from "./thread-context";
 import { notifyInboxMail } from "../push.server";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
@@ -392,7 +393,10 @@ export async function processGmailMessage(
       !existing.folder_id;
     if (stuckPending) {
       const context = opts.context ?? (await loadAccountContext(accountId, userId));
-      const rules = classifyByRules(parsed, context);
+      const threadEmails = threadScopeEnabled(context)
+        ? await loadThreadEmailsForClassify(accountId, parsed.thread_id, parsed.gmail_message_id)
+        : [];
+      const rules = classifyByRules(parsed, context, { threadEmails });
       if (rules.needs_ai && opts.skipAi) {
         // AI still deferred (backfill lane) — leave the row pending and
         // signal the caller to queue it for the batched AI pass.
@@ -475,7 +479,12 @@ export async function processGmailMessage(
   //    flash through the Inbox, no second UPDATE event.
   const _tRules = performance.now();
   const context = opts.context ?? (await loadAccountContext(accountId, userId));
-  const rules = classifyByRules(parsed, context);
+  // Thread-scope rules (task 6): only fetch prior thread messages when at
+  // least one folder opted in — everyone else pays nothing.
+  const threadEmails = threadScopeEnabled(context)
+    ? await loadThreadEmailsForClassify(accountId, parsed.thread_id, parsed.gmail_message_id)
+    : [];
+  const rules = classifyByRules(parsed, context, { threadEmails });
   if (t) t.ai += performance.now() - _tRules;
   const aiDeferred = rules.needs_ai && Boolean(opts.skipAi);
 

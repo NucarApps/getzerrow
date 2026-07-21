@@ -278,6 +278,10 @@ export type FolderMatch =
       matched_filters: Filter[];
       all_matched_folder_ids: string[];
       tree_used: boolean;
+      /** True when the winning folder is thread-scoped and only a PRIOR
+       * message in the thread satisfied its rules (the incoming message
+       * alone would not have matched). */
+      matched_via_thread: boolean;
     }
   | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
 
@@ -286,6 +290,25 @@ export type FolderMatch =
  * not_contains/not_equals rule, or null if nothing matched. */
 export function matchByFilters(
   email: EmailForFilter,
+  folders: Folder[],
+  filters: Filter[],
+): FolderMatch | null {
+  return matchByFiltersOnThread(email, [], folders, filters);
+}
+
+/** Thread-aware variant of matchByFilters. For folders with
+ * run_on_threads=true the include rules are evaluated per message across
+ * [email, ...threadEmails] — the folder matches when ANY message
+ * satisfies them (task 6). All other folders keep exact message-scope
+ * behavior, and priority/tiebreak sorting is shared across both kinds so
+ * a thread match never jumps the priority order.
+ *
+ * Exclude/veto rules always evaluate against the INCOMING message only:
+ * routing decisions veto on the mail actually being routed, not on
+ * historical thread content. */
+export function matchByFiltersOnThread(
+  email: EmailForFilter,
+  threadEmails: EmailForFilter[],
   folders: Folder[],
   filters: Filter[],
 ): FolderMatch | null {
@@ -299,12 +322,17 @@ export function matchByFilters(
     filter: Filter | null;
     allMatches: Filter[];
     treeUsed: boolean;
+    viaThread: boolean;
   }> = [];
   const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
   for (const folder of folders) {
     const fs = byFolder.get(folder.id) || [];
     const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
     const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
+    const candidates =
+      folder.run_on_threads === true && threadEmails.length > 0
+        ? [email, ...threadEmails]
+        : [email];
 
     // Tree takes precedence when present and non-empty. Validate BEFORE
     // countConds — the validator's depth check stops descending at the
@@ -316,17 +344,27 @@ export function matchByFilters(
     const hasTree =
       !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
 
-    let passes: boolean;
+    // Find the first message (incoming first) that satisfies the folder's
+    // include rules — each message is evaluated against the FULL rule
+    // (per-message all/any or tree), never mixing fields across messages.
+    let matchIndex = -1;
     let includeHits: Filter[] = [];
     if (hasTree) {
-      passes = evalNode(email, tree!);
+      matchIndex = candidates.findIndex((c) => evalNode(c, tree!));
     } else {
       if (includes.length === 0) continue;
-      includeHits = includes.filter((f) => applyFilter(email, f));
       const logic = folder.filter_logic === "all" ? "all" : "any";
-      passes = logic === "all" ? includeHits.length === includes.length : includeHits.length > 0;
+      for (let i = 0; i < candidates.length; i++) {
+        const hits = includes.filter((f) => applyFilter(candidates[i], f));
+        const passes = logic === "all" ? hits.length === includes.length : hits.length > 0;
+        if (passes) {
+          matchIndex = i;
+          includeHits = hits;
+          break;
+        }
+      }
     }
-    if (!passes) continue;
+    if (matchIndex < 0) continue;
 
     // An exclude filter VETOes the folder when its positive condition holds:
     //   not_contains X → veto if the field contains X
@@ -342,6 +380,7 @@ export function matchByFilters(
       filter: hasTree ? null : (includeHits[0] ?? null),
       allMatches: hasTree ? [] : includeHits,
       treeUsed: hasTree,
+      viaThread: matchIndex > 0,
     });
   }
   if (matched.length > 0) {
@@ -356,6 +395,7 @@ export function matchByFilters(
       matched_filters: matched[0].allMatches,
       all_matched_folder_ids: matched.map((m) => m.folder.id),
       tree_used: matched[0].treeUsed,
+      matched_via_thread: matched[0].viaThread,
     };
   }
   if (excludedFolders.length > 0) {
