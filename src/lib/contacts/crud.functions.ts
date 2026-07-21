@@ -336,9 +336,24 @@ export const getContact = createServerFn({ method: "POST" })
       companyPhotoPriorityOverride =
         (companyOverrideRow as { photo_priority?: string | null } | null)?.photo_priority ?? null;
     }
+    // Decrypt subjects for the recent-emails section (≤10 ids, one RPC).
+    // Without this the detail view rendered a list of bare timestamps.
+    let recentEmails: Array<{ id: string; received_at: string | null; subject: string | null }> = (
+      emails ?? []
+    ).map((e) => ({ id: e.id, received_at: e.received_at, subject: null }));
+    if (emails && emails.length > 0) {
+      const { getEmailListFieldsDecrypted } = await import("@/lib/sync/encrypted-reader");
+      const { rows: decRows2 } = await getEmailListFieldsDecrypted(emails.map((e) => e.id));
+      const subjById = new Map(decRows2.map((r) => [r.id, r.subject ?? null]));
+      recentEmails = emails.map((e) => ({
+        id: e.id,
+        received_at: e.received_at,
+        subject: subjById.get(e.id) ?? null,
+      }));
+    }
     return {
       contact: { ...contact, avatar_url: effectiveAvatarUrl },
-      recentEmails: emails ?? [],
+      recentEmails,
       phones: phones ?? [],
       emails: emailRows ?? [],
       companyDomain,

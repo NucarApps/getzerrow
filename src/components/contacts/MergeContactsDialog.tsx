@@ -154,6 +154,10 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
       qc.invalidateQueries({ queryKey: ["contacts"] });
       qc.invalidateQueries({ queryKey: ["contact"] });
       qc.invalidateQueries({ queryKey: ["contact-duplicates"] });
+      // Merging moves group memberships to the survivor — without this the
+      // group counts and membership chips stay stale (contacts realtime only
+      // watches the contacts table, not contact_group_members).
+      qc.invalidateQueries({ queryKey: ["contact-groups"] });
       onOpenChange(false);
       onMerged?.(res.survivorId);
     },

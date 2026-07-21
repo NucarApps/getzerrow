@@ -56,6 +56,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
+import { Field } from "@/components/contacts/Field";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
 import { createContactGroup, listContactGroups } from "@/lib/contact-groups.functions";
 import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
@@ -465,66 +466,66 @@ function CompanyDetailPage() {
 
           <TabsContent value="details">
             <section className="mb-6 grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-              <Labelled label="Website">
+              <Field label="Website">
                 <Input
                   value={form.website}
                   onChange={(e) => setForm({ ...form, website: e.target.value })}
                   placeholder="https://…"
                 />
-              </Labelled>
-              <Labelled label="Phone">
+              </Field>
+              <Field label="Phone">
                 <Input
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 />
-              </Labelled>
-              <Labelled label="Industry">
+              </Field>
+              <Field label="Industry">
                 <Input
                   value={form.industry}
                   onChange={(e) => setForm({ ...form, industry: e.target.value })}
                   placeholder="e.g. Automotive"
                 />
-              </Labelled>
-              <Labelled label="Address">
+              </Field>
+              <Field label="Address">
                 <Input
                   value={form.address_line1}
                   onChange={(e) => setForm({ ...form, address_line1: e.target.value })}
                   placeholder="Street"
                 />
-              </Labelled>
-              <Labelled label="City">
+              </Field>
+              <Field label="City">
                 <Input
                   value={form.city}
                   onChange={(e) => setForm({ ...form, city: e.target.value })}
                 />
-              </Labelled>
-              <Labelled label="State / region">
+              </Field>
+              <Field label="State / region">
                 <Input
                   value={form.region}
                   onChange={(e) => setForm({ ...form, region: e.target.value })}
                 />
-              </Labelled>
-              <Labelled label="Postal code">
+              </Field>
+              <Field label="Postal code">
                 <Input
                   value={form.postal_code}
                   onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
                 />
-              </Labelled>
-              <Labelled label="Country">
+              </Field>
+              <Field label="Country">
                 <Input
                   value={form.country}
                   onChange={(e) => setForm({ ...form, country: e.target.value })}
                 />
-              </Labelled>
+              </Field>
               <div className="sm:col-span-2">
-                <Labelled label="Description">
+                <Field label="Description">
                   <Textarea
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
                     rows={4}
                     placeholder="What does this company do?"
                   />
-                </Labelled>
+                </Field>
               </div>
             </section>
 
@@ -836,15 +837,6 @@ function CompanyDetailPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </div>
-  );
-}
-
-function Labelled({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <Label className="mb-1 text-xs text-muted-foreground">{label}</Label>
-      {children}
     </div>
   );
 }

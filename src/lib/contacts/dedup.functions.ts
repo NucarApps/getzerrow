@@ -846,15 +846,8 @@ export const mergeContactsManual = createServerFn({ method: "POST" })
 
     // 9) Bump CardDAV resync so iOS pulls the change.
     {
-      const { data: s } = await supabaseAdmin
-        .from("carddav_settings")
-        .select("resync_nonce")
-        .eq("user_id", userId)
-        .maybeSingle();
-      const next = ((s as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
-      await supabaseAdmin
-        .from("carddav_settings")
-        .upsert({ user_id: userId, resync_nonce: next } as never, { onConflict: "user_id" });
+      const { bumpResyncNonce } = await import("@/lib/carddav/settings.functions");
+      await bumpResyncNonce(supabaseAdmin, userId);
     }
 
     // 10) Reconcile subgroups; mark related suggestions as merged.
