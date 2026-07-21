@@ -36,13 +36,21 @@ export const Route = createFileRoute("/api/public/gmail-renew-watches")({
             try {
               const w = await ensureWatch(acc.id, null); // force renew
               if (w) {
+                // Only refresh the expiration. w.historyId is Gmail's CURRENT
+                // mailbox head — writing it over an existing cursor skips any
+                // not-yet-synced messages in between (silent mail loss). Seed
+                // the cursor only when the account has none.
                 await supabaseAdmin
                   .from("gmail_accounts")
                   .update({
-                    history_id: w.historyId,
                     watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
                   })
                   .eq("id", acc.id);
+                await supabaseAdmin
+                  .from("gmail_accounts")
+                  .update({ history_id: w.historyId })
+                  .eq("id", acc.id)
+                  .is("history_id", null);
               }
               ok++;
             } catch (e: unknown) {

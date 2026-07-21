@@ -70,13 +70,23 @@ export const Route = createFileRoute("/api/public/gmail-poll")({
               try {
                 const w = await ensureWatch(acc.id, null);
                 if (w) {
+                  // Never overwrite an existing history cursor with the watch
+                  // response's historyId: users.watch returns Gmail's CURRENT
+                  // head, and jumping there would silently skip every message
+                  // between the stored cursor and now — the exact gap the
+                  // syncSinceHistory call below exists to catch up. Only seed
+                  // the cursor for accounts that have none at all.
                   await supabaseAdmin
                     .from("gmail_accounts")
                     .update({
-                      history_id: w.historyId,
                       watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
                     })
                     .eq("id", acc.id);
+                  await supabaseAdmin
+                    .from("gmail_accounts")
+                    .update({ history_id: w.historyId })
+                    .eq("id", acc.id)
+                    .is("history_id", null);
                   rearmedCount++;
                   try {
                     await supabaseAdmin.from("pubsub_events").insert({

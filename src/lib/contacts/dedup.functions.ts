@@ -784,13 +784,17 @@ export const mergeContactsManual = createServerFn({ method: "POST" })
         .eq("contact_id", data.primaryId);
       const already = new Set((primaryLinks ?? []).map((l) => l.gmail_account_id));
       for (const l of dupLinks) {
-        loserGoogleResources.push({
-          gmail_account_id: l.gmail_account_id,
-          resource_name: l.resource_name,
-        });
         if (already.has(l.gmail_account_id)) {
           // Collision — this link would be redundant; drop it so the merge
           // deletes cleanly and tombstone push handles the Google side.
+          // Only COLLISION resources are tombstoned: a link that gets
+          // reassigned to the survivor below is now the survivor's live
+          // Google representation — tombstoning it would delete the
+          // survivor from Google Contacts.
+          loserGoogleResources.push({
+            gmail_account_id: l.gmail_account_id,
+            resource_name: l.resource_name,
+          });
           await supabaseAdmin
             .from("google_contact_links")
             .delete()
@@ -807,26 +811,33 @@ export const mergeContactsManual = createServerFn({ method: "POST" })
       }
     }
 
-    // 7) Tombstones — CardDAV per loser id, Google per loser resource.
+    // 7) Tombstones — CardDAV per loser id, Google per collision resource.
     if (data.loserIds.length > 0) {
-      await supabaseAdmin.from("carddav_tombstones").insert(
+      const { error: cdErr } = await supabaseAdmin.from("carddav_tombstones").upsert(
         data.loserIds.map((id) => ({
           user_id: userId,
           resource_type: "contact",
           resource_id: id,
           deleted_at: new Date().toISOString(),
         })),
+        { onConflict: "user_id,resource_type,resource_id" },
       );
+      if (cdErr) throw new Error(`Failed to write CardDAV tombstones: ${cdErr.message}`);
     }
     if (loserGoogleResources.length > 0) {
-      await supabaseAdmin.from("google_contact_tombstones").insert(
+      // kind must be 'contact' — the table CHECK allows ('contact','group')
+      // only. This insert used to pass kind:'person' and fail silently on
+      // the constraint, so merged Google duplicates were never deleted
+      // upstream and resurfaced on the next pull.
+      const { error: gErr } = await supabaseAdmin.from("google_contact_tombstones").insert(
         loserGoogleResources.map((r) => ({
           user_id: userId,
           gmail_account_id: r.gmail_account_id,
-          kind: "person",
+          kind: "contact",
           resource_name: r.resource_name,
         })),
       );
+      if (gErr) throw new Error(`Failed to write Google tombstones: ${gErr.message}`);
     }
 
     // 8) Delete losers.

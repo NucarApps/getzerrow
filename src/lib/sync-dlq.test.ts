@@ -39,6 +39,27 @@ describe("isTransientDlqError", () => {
     expect(isTransientDlqError("service unavailable")).toBe(true);
   });
 
+  it("matches quota/rate-limit reasons even when Gmail reports them as 403", () => {
+    expect(
+      isTransientDlqError(
+        'Gmail API 403 on /users/me/messages/abc: {"reason":"userRateLimitExceeded"}',
+      ),
+    ).toBe(true);
+    expect(
+      isTransientDlqError(
+        'Gmail API 403 on /users/me/messages/abc: {"reason":"rateLimitExceeded"}',
+      ),
+    ).toBe(true);
+    expect(
+      isTransientDlqError('Gmail API 403 on /users/me/messages/abc: {"reason":"quotaExceeded"}'),
+    ).toBe(true);
+    expect(
+      isTransientDlqError(
+        'Gmail API 403 on /users/me/messages/abc: {"reason":"dailyLimitExceeded"}',
+      ),
+    ).toBe(true);
+  });
+
   it("does NOT match permanent 4xx errors (auth, bad request)", () => {
     expect(isTransientDlqError("Gmail API 400 on /users/me/messages/abc: bad request")).toBe(false);
     expect(

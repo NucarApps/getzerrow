@@ -20,6 +20,13 @@ const TRANSIENT_DLQ_PATTERNS = [
   /\bfetch failed\b/,
   /\b429\b/,
   /unavailable/i,
+  // Gmail quota/rate-limit reasons ride on 403 as well as 429. The quota
+  // window resets on its own (seconds for flow limits, midnight PT for the
+  // daily cap), so these are transient by definition. Generic 403s (auth,
+  // insufficient scope) intentionally do NOT match.
+  /quotaExceeded/i,
+  /RateLimitExceeded/i,
+  /dailyLimitExceeded/i,
   // Worker died mid-processing (Cloudflare 25s wall-time). Reclaim path
   // parks these in DLQ; treat as transient so a one-off burst drains.
   /stuck \(worker timeout/i,

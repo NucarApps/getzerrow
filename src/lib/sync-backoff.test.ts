@@ -76,10 +76,16 @@ describe("computeBackoffSeconds", () => {
 describe("withAccountLock", () => {
   afterEach(() => vi.useRealTimers());
 
-  it("coalesces overlapping calls into one execution per account", async () => {
+  it("coalesces overlapping callers onto the in-flight run plus one follow-up", async () => {
+    // The follow-up exists so an event that arrived AFTER the in-flight run
+    // read its history cursor still gets a fresh pass (instead of being
+    // handed the in-flight run's stale result). N overlapping callers
+    // therefore trigger at most 2 executions, never N.
+    let calls = 0;
     const fn = vi.fn(async () => {
+      calls++;
       await new Promise((r) => setTimeout(r, 10));
-      return Math.random();
+      return calls;
     });
 
     const [a, b, c] = await Promise.all([
@@ -88,9 +94,19 @@ describe("withAccountLock", () => {
       withAccountLock("acc-1", fn),
     ]);
 
-    expect(fn).toHaveBeenCalledTimes(1);
-    expect(a).toBe(b);
+    // Caller 1 owns run #1; callers 2 and 3 coalesce onto the single
+    // follow-up run #2.
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(a).toBe(1);
+    expect(b).toBe(2);
     expect(b).toBe(c);
+  });
+
+  it("runs a fresh pass for a caller that arrives after the lock cleared", async () => {
+    const fn = vi.fn(async () => "x");
+    await withAccountLock("acc-seq", fn);
+    await withAccountLock("acc-seq", fn);
+    expect(fn).toHaveBeenCalledTimes(2);
   });
 
   it("does NOT block calls for different accounts", async () => {

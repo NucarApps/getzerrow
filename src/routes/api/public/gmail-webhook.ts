@@ -279,10 +279,14 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
                   try {
                     const w = await topUpWatch(acc.id, acc.watch_expiration);
                     if (w) {
+                      // Refresh the expiration only — w.historyId is Gmail's
+                      // current head, and overwriting the stored cursor with
+                      // it would skip any events the sync above hasn't
+                      // processed yet. The cursor advances through the
+                      // monotonic bump path inside syncSinceHistory.
                       await supabaseAdmin
                         .from("gmail_accounts")
                         .update({
-                          history_id: w.historyId,
                           watch_expiration: new Date(parseInt(w.expiration, 10)).toISOString(),
                         })
                         .eq("id", acc.id);

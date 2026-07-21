@@ -603,6 +603,17 @@ async function applyPersonChanges(
       }
     }
 
+    // Stamp last_synced_at from the contact row's ACTUAL updated_at, not a
+    // fresh now(): the apply above is multi-step (and the photo branch can
+    // fetch external bytes), so a user edit landing inside that window
+    // would otherwise be time-stamped as already-synced and never pushed.
+    // Reading back after our last contact write shrinks that race window
+    // from the whole apply to a single round-trip.
+    const { data: stampRow } = await supabaseAdmin
+      .from("contacts")
+      .select("updated_at")
+      .eq("id", contactId)
+      .maybeSingle();
     await supabaseAdmin.from("google_contact_links").upsert(
       {
         user_id: ids.userId,
@@ -610,7 +621,7 @@ async function applyPersonChanges(
         contact_id: contactId,
         resource_name: p.resourceName,
         etag: p.etag ?? null,
-        last_synced_at: new Date().toISOString(),
+        last_synced_at: stampRow?.updated_at ?? new Date().toISOString(),
         ...(nextGooglePhotoUrl !== undefined ? { google_photo_url: nextGooglePhotoUrl } : {}),
       },
       { onConflict: "gmail_account_id,contact_id" },

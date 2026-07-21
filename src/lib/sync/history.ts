@@ -115,11 +115,22 @@ async function syncSinceHistoryLocked(
     let lastHistoryId: string | undefined;
     const MAX_HISTORY_PAGES = 25;
     let pages = 0;
+    let walkComplete = false;
     while (pages < MAX_HISTORY_PAGES) {
       const hist = await listHistory(accountId, account.history_id, pageToken);
       pages++;
       if (hist.historyId) lastHistoryId = hist.historyId;
+      // New adds discovered on THIS page (dedup against earlier pages), and
+      // the highest per-record history id on the page. The page's adds are
+      // enqueued and the cursor bumped to that record id BEFORE we move on,
+      // so a mid-walk death (worker kill, quota 403 on a later page) can
+      // never leave the cursor ahead of un-enqueued mail.
+      const pageAdded: string[] = [];
+      let pageMaxRecordId: string | undefined;
       for (const h of hist.history || []) {
+        if (h.id && (!pageMaxRecordId || gmailHistoryIdGreater(h.id, pageMaxRecordId))) {
+          pageMaxRecordId = h.id;
+        }
         // Only messagesAdded is authoritative "new mail". Label-only and
         // delete-only records also carry a generic `messages` list; the
         // old fallback dumped those ids into seenAdded, which made the
@@ -129,6 +140,7 @@ async function syncSinceHistoryLocked(
         for (const m of added) {
           if (seenAdded.has(m.id)) continue;
           seenAdded.add(m.id);
+          pageAdded.push(m.id);
         }
         for (const ev of h.labelsAdded ?? []) {
           labelOps.push({
@@ -184,48 +196,47 @@ async function syncSinceHistoryLocked(
           toDelete.add(ev.message.id);
         }
       }
-      // Advance the stored history cursor AFTER each successful page, not
-      // only after the entire walk. If a later page 403s (quota) or 5xxs,
-      // the next push restarts from the page we already drained instead
-      // of replaying the whole backlog from the original startHistoryId.
-      // bump_history_id_if_greater is monotonic, so this is safe.
-      if (hist.historyId) {
+      // Make this page's new mail durable BEFORE advancing the cursor past
+      // it. Enqueue is one idempotent bulk upsert; if it throws, the error
+      // propagates to the outer catch with the cursor still behind this
+      // page's records, so the next push/poll replays them instead of
+      // losing them.
+      if (pageAdded.length > 0) {
+        await enqueueMessageJobs(accountId, account.user_id, pageAdded, 0, {
+          publishedAtMs: opts.publishedAtMs ?? null,
+        });
+      }
+      // Advance the cursor to the last history RECORD id processed on this
+      // page — NOT the response-level `historyId`, which is the mailbox's
+      // CURRENT head on every page. Bumping to head mid-walk left a window
+      // where a killed worker (or a quota error on a later page) silently
+      // skipped every message still in the walk. bump_history_id_if_greater
+      // is monotonic, so overlapping writers can't regress the cursor.
+      if (pageMaxRecordId) {
         try {
-          await bumpHistoryAndWatch(accountId, hist.historyId);
+          await bumpHistoryAndStamp(accountId, pageMaxRecordId, {});
         } catch (e) {
           logError(
             "sync.bump_history_page_failed",
-            { account_id: accountId, page_history_id: hist.historyId },
+            { account_id: accountId, page_history_id: pageMaxRecordId },
             e,
           );
         }
       }
       pageToken = hist.nextPageToken;
-      if (!pageToken) break;
+      if (!pageToken) {
+        walkComplete = true;
+        break;
+      }
     }
     if (pages >= MAX_HISTORY_PAGES && pageToken) {
+      // Cursor stays at the last processed record id — the remainder of the
+      // backlog resumes on the next push/poll instead of being skipped.
       logError(
         "sync.history_pages_capped",
         { account_id: accountId, pages, max: MAX_HISTORY_PAGES },
         new Error("history pagination cap hit"),
       );
-    }
-
-    // Bulk-enqueue all newly-added messages in one upsert (vs the previous
-    // N×sequential upserts). The published_at_ms is threaded through so any
-    // worker can populate emails.published_at_ms when it drains the job.
-    if (seenAdded.size > 0) {
-      try {
-        await enqueueMessageJobs(accountId, account.user_id, Array.from(seenAdded), 0, {
-          publishedAtMs: opts.publishedAtMs ?? null,
-        });
-      } catch (e) {
-        logError(
-          "sync.bulk_enqueue_failed",
-          { account_id: accountId, user_id: account.user_id, count: seenAdded.size },
-          e,
-        );
-      }
     }
 
     // Apply label ops sequentially per message. We SKIP ops whose message
@@ -275,10 +286,12 @@ async function syncSinceHistoryLocked(
       }
     }
 
-    // Only advance the stored history cursor after every page has been
-    // processed — otherwise a later page's archive event would be skipped
-    // on the next sync.
-    if (lastHistoryId) await bumpHistoryAndWatch(accountId, lastHistoryId);
+    // Only stamp the response-level historyId (the mailbox head) once the
+    // WHOLE walk finished and every page's adds are enqueued. On a capped
+    // walk the cursor stays at the last processed record so the next sync
+    // resumes the backlog. This is also the one place the watch top-up
+    // runs — once per sync, not once per page.
+    if (walkComplete && lastHistoryId) await bumpHistoryAndWatch(accountId, lastHistoryId);
     // Stamp two timestamps:
     //   last_history_sync_at — ticks on every successful sync (push OR poll).
     //     Used for "we touched this account recently" UX.
@@ -481,13 +494,17 @@ async function bumpHistoryAndWatch(accountId: string, historyId: string) {
   // land last and the next sync re-fetches a window we've already
   // processed. bump_history_id_if_greater rejects any incoming id that's
   // not strictly higher than what's currently in the DB.
-  if (watch) {
-    await bumpHistoryAndStamp(accountId, watch.historyId, {
-      watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString(),
-    });
-  } else {
-    await bumpHistoryAndStamp(accountId, historyId, {});
-  }
+  //
+  // The cursor is ALWAYS bumped to the caller's historyId — never to
+  // watch.historyId. users.watch returns the mailbox's CURRENT head, and
+  // stamping head here would skip any events between the position the
+  // caller actually processed and now. The watch response only contributes
+  // its refreshed expiration.
+  await bumpHistoryAndStamp(
+    accountId,
+    historyId,
+    watch ? { watch_expiration: new Date(parseInt(watch.expiration, 10)).toISOString() } : {},
+  );
 }
 
 /** Bump history_id with a monotonic guard via an atomic SQL RPC. If a
