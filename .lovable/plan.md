@@ -1,63 +1,71 @@
-# Fix silently-failing folder creation
+# What the screenshot actually shows
 
-## What's actually broken
+Jared re-created the folder after the earlier grants fix landed. It exists in the DB now (`folder_id 50e9ea60…`, linked to Gmail `Label_27`) and the banner at the top is his 6-month backfill still running (55,530 / 55,656).
 
-Jared's "Kennect" folder was created in Zerrow on 2026-07-21. The Gmail label was created successfully, but no row exists in `public.folders` — for him or, in fact, for anyone since 2026-06-09.
+Current contents of Kenect Reports = 105 emails, decided by:
 
-Root cause: `public.folders` has **no `GRANT`s** for `anon`, `authenticated`, or `service_role`. PostgREST rejects the client-side insert in `AddFolderDialog.tsx` regardless of RLS. The rest of the app doesn't feel this because nearly every other write goes through `supabaseAdmin` (service role bypasses grants). Folder-create is one of the last remaining direct client writes.
+| Source | Count | Notes |
+|---|---|---|
+| `gmail_labeled` / `gmail_label` | 72 | Already labeled `Label_27` in Gmail — Zerrow correctly followed the label. |
+| `manual_move` | 24 | Jared moved them himself. |
+| `ai` | **9** | Matched Zerrow's *learned profile* for the folder, **without** a Gmail label and **without** any user-authored rule. |
 
-The "emails going into Kennect that make no sense" that Jared sees is the Gmail label picking up mail via Gmail's own smart-label heuristics — Zerrow isn't classifying anything into it, because it doesn't know the folder exists.
+So the "emails going into it that make no sense" are the **9 AI-classified rows**. The folder has:
 
-Same missing-grants pattern is present on 10 other user tables, but they aren't user-visible today because all their writes go through server functions with `supabaseAdmin`. Grants are still worth restoring for defense in depth, but I'll keep that scoped.
+- `filter_tree`: empty
+- `ai_rule`: empty
+- `learned_profile`: **auto-populated** (linking a Gmail label triggers `learnFromLinkedLabel`, which learns from historical labeled mail — mostly dealer / auto-industry senders in his case, so the profile is broad enough to catch adjacent mail)
+- `min_ai_confidence`: **0** (accepts any AI match)
+- `skip_ai`: **false**
 
-## Changes
+That combination is the root cause: a label-linked folder with no explicit user intent still competes for every incoming email via the learned profile at zero confidence floor. This is the default across the app, not specific to Jared.
 
-### 1. Migration: restore table grants + policy-scoped grants
+# Plan
 
-One migration that adds the standard grant block to every user table currently missing it. All are `auth.uid() = user_id`-scoped, so no `anon` grants:
+## 1. Product fix — safer defaults for label-linked folders
 
-```
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.<t> TO authenticated;
-GRANT ALL ON public.<t> TO service_role;
-```
+Change `createFolder` (already the new server function) so that when the user picks **"Link to existing Gmail label"** (i.e. `gmail_label_id` is provided at creation), the folder starts as **label-only**:
 
-Tables covered: `folders`, `emails`, `contacts`, `companies`, `tasks`, `meetings`, `message_jobs`, `folder_examples`, `folder_filters`, `inbox_overrides`, `my_cards`.
+- `skip_ai = true`
+- `min_ai_confidence = 0.75` (kept for when they later opt into AI)
 
-This alone unblocks `AddFolderDialog` for every new signup, immediately.
+Rationale: a user linking an existing Gmail label is saying "these are already sorted, mirror it" — not "invent new rules to fill this folder". If they later want AI too, `EditFolderDialog` already exposes the toggles.
 
-### 2. Move folder-create to a server function (harden the write path)
+Folders created **without** a Gmail label (pure Zerrow folder they intend to define rules for) keep the current AI-on default.
 
-`AddFolderDialog.tsx` doing a raw `supabase.from("folders").insert(...)` from the browser is inconsistent with the rest of the codebase and is what made this class of failure silent (a toast the user missed, no server-side log).
+Files:
+- `src/lib/gmail/folder-mgmt.functions.ts` — set `skip_ai: true, min_ai_confidence: 0.75` in the insert when `gmail_label_id` is provided.
+- No UI changes required; existing edit UI already lets them re-enable AI.
 
-- Add `createFolder` in `src/lib/gmail/folder-mgmt.functions.ts`:
-  - `createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])`
-  - Zod input: `{ account_id, name, color, gmail_label_id? }`
-  - Verifies `getOwnedAccount(userId, account_id)`.
-  - Inserts via `supabaseAdmin` (owner is the authenticated user).
-  - Returns `{ id }`.
-- Update `AddFolderDialog.tsx`:
-  - Replace the direct `supabase.from("folders").insert(...)` with `useServerFn(createFolder)`.
-  - Keep the existing `createGmailLabel` → `createFolder` → `learnFolderFromLabel` sequence.
-  - Any thrown error surfaces via toast (was already the pattern for the label call).
+## 2. One-time cleanup for Jared
 
-### 3. Restore Jared's Kennect folder
+- Set his Kenect Reports folder to `skip_ai=true` so no more incidental AI matches file into it.
+- Reclassify the 9 AI-routed rows: null out `folder_id`, requeue via `message_jobs`, so they route by the current (correct) label / rule state. Manual moves and Gmail-labeled rows are untouched.
 
-After the migration lands, insert the missing row for Jared (`user_id = e8fb5402-…`, his `gmail_account_id`), linked to the existing Kennect Gmail label id (I'll look up the label id from Gmail at apply-time using his account context), then enqueue `learnFromLinkedLabel` so previously-labeled mail is pulled into the folder and future mail is classified.
+## 3. Guardrails / verification
 
-If I can't confirm the Gmail label id safely, I'll fall back to creating an unlinked folder and let him link the label in the UI.
+- Log in `gmail.create_folder` audit whether `skip_ai_default` was applied, so we can measure if new label-linked folders still collect AI-classified stragglers post-change.
+- Add a test in `src/lib/gmail/folder-mgmt.test.ts` (new) covering: label-linked create → `skip_ai=true`; unlabeled create → `skip_ai=false`.
 
 ## Out of scope
 
-- No changes to RLS policies — they're already correct.
-- No refactor of other user-visible write paths — none of them use the browser Supabase client for writes today.
-- No security-linter follow-ups unrelated to grants.
+- No changes to the classifier itself. The 9-row overfit here is a defaults problem, not a model problem.
+- No sweep of other users' existing label-linked folders. If we later want that, it's a one-shot migration to set `skip_ai=true` for folders that have a `gmail_label_id`, an empty `filter_tree`, and no `ai_rule` — happy to do that as a follow-up once we've validated the new default in the wild.
 
 ## Technical details
 
-- Migration file: `supabase/migrations/<ts>_restore_public_table_grants.sql` — pure `GRANT` statements, no schema changes.
-- New server fn: `createFolder` in `src/lib/gmail/folder-mgmt.functions.ts`.
-- Client edit: `src/components/folders/AddFolderDialog.tsx` — swap insert for server fn call; delete `supabase.auth.getUser()` (server fn has `context.userId`).
-- Verification after apply:
-  1. `SELECT count(*) FROM public.folders WHERE created_at > now() - interval '1 hour'` after re-running Jared's create.
-  2. Watch `stack_modern--server-function-logs` for `createFolder` invocations.
-  3. Confirm Jared's inbox starts showing rule/AI activity in `executed_rules` for Kennect.
+The insert in `createFolder`:
+
+```ts
+.insert({
+  user_id: context.userId,
+  gmail_account_id: data.account_id,
+  name: data.name,
+  color: data.color ?? "#3b82f6",
+  gmail_label_id: data.gmail_label_id ?? null,
+  skip_ai: data.gmail_label_id ? true : false,
+  min_ai_confidence: data.gmail_label_id ? 0.75 : 0,
+})
+```
+
+Jared cleanup runs as one `supabase--insert` call (UPDATE folder + UPDATE emails + INSERT message_jobs).
