@@ -15,7 +15,7 @@ function folder(over: Partial<Folder> = {}): Folder {
     id: over.id ?? "f-default",
     name: over.name ?? "Default",
     gmail_label_id: over.gmail_label_id ?? null,
-    ai_rule: over.ai_rule ?? null,
+    ai_rule: over.ai_rule ?? "route mail here",
     learned_profile: over.learned_profile ?? null,
     last_learned_at: over.last_learned_at ?? null,
     auto_archive: over.auto_archive ?? false,
