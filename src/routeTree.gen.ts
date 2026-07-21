@@ -79,6 +79,7 @@ import { Route as ApiPublicHooksRelearnFoldersRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksRunContactEnrichJobsRouteImport } from './routes/api/public/hooks/run-contact-enrich-jobs'
 import { Route as ApiPublicHooksRunFolderSummariesRouteImport } from './routes/api/public/hooks/run-folder-summaries'
 import { Route as ApiPublicHooksRunFolderSummaryJobsRouteImport } from './routes/api/public/hooks/run-folder-summary-jobs'
+import { Route as ApiPublicHooksRunScheduledActionsRouteImport } from './routes/api/public/hooks/run-scheduled-actions'
 import { Route as ApiPublicHooksScheduleMeetingBotsRouteImport } from './routes/api/public/hooks/schedule-meeting-bots'
 import { Route as ApiPublicHooksSyncCalendarContactsRouteImport } from './routes/api/public/hooks/sync-calendar-contacts'
 import { Route as ApiPublicHooksTasksCompletionScanRouteImport } from './routes/api/public/hooks/tasks-completion-scan'
@@ -467,6 +468,12 @@ const ApiPublicHooksRunFolderSummaryJobsRoute =
     path: '/api/public/hooks/run-folder-summary-jobs',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksRunScheduledActionsRoute =
+  ApiPublicHooksRunScheduledActionsRouteImport.update({
+    id: '/api/public/hooks/run-scheduled-actions',
+    path: '/api/public/hooks/run-scheduled-actions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksScheduleMeetingBotsRoute =
   ApiPublicHooksScheduleMeetingBotsRouteImport.update({
     id: '/api/public/hooks/schedule-meeting-bots',
@@ -561,6 +568,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/run-contact-enrich-jobs': typeof ApiPublicHooksRunContactEnrichJobsRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/run-scheduled-actions': typeof ApiPublicHooksRunScheduledActionsRoute
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
@@ -635,6 +643,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/run-contact-enrich-jobs': typeof ApiPublicHooksRunContactEnrichJobsRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/run-scheduled-actions': typeof ApiPublicHooksRunScheduledActionsRoute
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
@@ -712,6 +721,7 @@ export interface FileRoutesById {
   '/api/public/hooks/run-contact-enrich-jobs': typeof ApiPublicHooksRunContactEnrichJobsRoute
   '/api/public/hooks/run-folder-summaries': typeof ApiPublicHooksRunFolderSummariesRoute
   '/api/public/hooks/run-folder-summary-jobs': typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  '/api/public/hooks/run-scheduled-actions': typeof ApiPublicHooksRunScheduledActionsRoute
   '/api/public/hooks/schedule-meeting-bots': typeof ApiPublicHooksScheduleMeetingBotsRoute
   '/api/public/hooks/sync-calendar-contacts': typeof ApiPublicHooksSyncCalendarContactsRoute
   '/api/public/hooks/tasks-completion-scan': typeof ApiPublicHooksTasksCompletionScanRoute
@@ -789,6 +799,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/run-contact-enrich-jobs'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/run-scheduled-actions'
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/hooks/tasks-completion-scan'
@@ -863,6 +874,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/run-contact-enrich-jobs'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/run-scheduled-actions'
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/hooks/tasks-completion-scan'
@@ -939,6 +951,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/run-contact-enrich-jobs'
     | '/api/public/hooks/run-folder-summaries'
     | '/api/public/hooks/run-folder-summary-jobs'
+    | '/api/public/hooks/run-scheduled-actions'
     | '/api/public/hooks/schedule-meeting-bots'
     | '/api/public/hooks/sync-calendar-contacts'
     | '/api/public/hooks/tasks-completion-scan'
@@ -993,6 +1006,7 @@ export interface RootRouteChildren {
   ApiPublicHooksRunContactEnrichJobsRoute: typeof ApiPublicHooksRunContactEnrichJobsRoute
   ApiPublicHooksRunFolderSummariesRoute: typeof ApiPublicHooksRunFolderSummariesRoute
   ApiPublicHooksRunFolderSummaryJobsRoute: typeof ApiPublicHooksRunFolderSummaryJobsRoute
+  ApiPublicHooksRunScheduledActionsRoute: typeof ApiPublicHooksRunScheduledActionsRoute
   ApiPublicHooksScheduleMeetingBotsRoute: typeof ApiPublicHooksScheduleMeetingBotsRoute
   ApiPublicHooksSyncCalendarContactsRoute: typeof ApiPublicHooksSyncCalendarContactsRoute
   ApiPublicHooksTasksCompletionScanRoute: typeof ApiPublicHooksTasksCompletionScanRoute
@@ -1491,6 +1505,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksRunFolderSummaryJobsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/run-scheduled-actions': {
+      id: '/api/public/hooks/run-scheduled-actions'
+      path: '/api/public/hooks/run-scheduled-actions'
+      fullPath: '/api/public/hooks/run-scheduled-actions'
+      preLoaderRoute: typeof ApiPublicHooksRunScheduledActionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/schedule-meeting-bots': {
       id: '/api/public/hooks/schedule-meeting-bots'
       path: '/api/public/hooks/schedule-meeting-bots'
@@ -1649,6 +1670,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksRunFolderSummariesRoute: ApiPublicHooksRunFolderSummariesRoute,
   ApiPublicHooksRunFolderSummaryJobsRoute:
     ApiPublicHooksRunFolderSummaryJobsRoute,
+  ApiPublicHooksRunScheduledActionsRoute:
+    ApiPublicHooksRunScheduledActionsRoute,
   ApiPublicHooksScheduleMeetingBotsRoute:
     ApiPublicHooksScheduleMeetingBotsRoute,
   ApiPublicHooksSyncCalendarContactsRoute:
@@ -1660,3 +1683,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

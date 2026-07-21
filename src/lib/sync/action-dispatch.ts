@@ -31,6 +31,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logError } from "@/lib/log.server";
+import { validateWebhookUrl } from "../webhook/url-guard";
 import type { ActionFolder } from "./process-message";
 
 // folder_actions/scheduled_actions are not in the generated Supabase
@@ -47,6 +48,8 @@ export type FolderActionRow = {
   label_id: string | null;
   move_to_folder_id: string | null;
   delay_minutes: number;
+  /** call_webhook only — validated by the SSRF guard before enqueue. */
+  webhook_url?: string | null;
 };
 
 export type MutationPlan = {
@@ -141,20 +144,35 @@ export async function dispatchFolderActions(input: DispatchInput): Promise<{
       payload: null,
     };
 
+    const enqueue = async (delayMinutes: number) => {
+      if (!input.userId) throw new Error("queued action requires user context");
+      const runAt = new Date(Date.now() + delayMinutes * 60_000).toISOString();
+      const { error } = await adminTable("scheduled_actions").insert({
+        user_id: input.userId,
+        folder_action_id: action.id,
+        email_id: input.emailRowId,
+        run_at: runAt,
+      });
+      if (error) throw new Error(error.message);
+      outcome.status = "pending";
+      outcome.payload = { ...(outcome.payload ?? {}), run_at: runAt };
+    };
+
     try {
+      // Webhooks always run through the queue (network I/O never blocks
+      // the classify hot path); the SSRF guard rejects bad URLs up front.
+      if (!isSynthetic && action.action_type === "call_webhook") {
+        const guard = validateWebhookUrl(action.webhook_url ?? "");
+        if (!guard.ok) throw new Error(guard.reason);
+        outcome.payload = { webhook_url: action.webhook_url };
+        await enqueue(action.delay_minutes);
+        outcomes.push(outcome);
+        continue;
+      }
+
       // Delayed explicit actions queue instead of running inline.
       if (!isSynthetic && action.delay_minutes > 0) {
-        if (!input.userId) throw new Error("delayed action requires user context");
-        const runAt = new Date(Date.now() + action.delay_minutes * 60_000).toISOString();
-        const { error } = await adminTable("scheduled_actions").insert({
-          user_id: input.userId,
-          folder_action_id: action.id,
-          email_id: input.emailRowId,
-          run_at: runAt,
-        });
-        if (error) throw new Error(error.message);
-        outcome.status = "pending";
-        outcome.payload = { run_at: runAt };
+        await enqueue(action.delay_minutes);
         outcomes.push(outcome);
         continue;
       }
