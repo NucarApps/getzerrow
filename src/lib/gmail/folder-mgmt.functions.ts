@@ -478,15 +478,17 @@ export const listFolderSummaries = createServerFn({ method: "POST" })
     return { schedules: rows ?? [] };
   });
 
-// Derive AI defaults when creating a folder. Extracted as a pure helper so
-// the "label-linked → mirror only" rule is unit-testable without touching
-// Supabase. See folder-mgmt.defaults.test.ts.
-export function deriveFolderAiDefaults(gmailLabelId: string | null | undefined): {
+// Defaults for a newly created folder. A brand-new folder should do
+// nothing rule- or AI-wise until the user gives it explicit intent
+// (filter_tree or ai_rule) — regardless of whether it was linked to an
+// existing Gmail label or created alongside a fresh one. Gmail-label
+// routing still works because that's a Gmail-side signal, not a Zerrow
+// classification. See folder-mgmt.defaults.test.ts.
+export function deriveFolderAiDefaults(_gmailLabelId: string | null | undefined): {
   skip_ai: boolean;
   min_ai_confidence: number;
 } {
-  const linked = !!gmailLabelId;
-  return { skip_ai: linked, min_ai_confidence: linked ? 0.75 : 0 };
+  return { skip_ai: true, min_ai_confidence: 0.75 };
 }
 
 // Create a new folder owned by the authenticated user. Historically this was
