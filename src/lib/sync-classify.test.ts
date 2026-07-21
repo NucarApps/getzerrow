@@ -429,7 +429,7 @@ describe("classifyParsedEmail — skipAi behavior", () => {
 // process-message can finalize the row in a single INSERT (no flicker).
 // It must be false for every terminal rules outcome.
 describe("classifyByRules — needs_ai", () => {
-  const enriched = (id: string, name: string) => ({ id, name, ai_rule: null });
+  const enriched = (id: string, name: string) => ({ id, name, ai_rule: "route mail here" });
 
   it("true when nothing matched and AI-eligible folders exist", () => {
     const f = folder({ id: "f1", name: "Work" });
