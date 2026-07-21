@@ -90,9 +90,8 @@ export function AddFolderDialog({
       } else {
         labelId = labelChoice;
       }
-      let inserted: { id: string } | null = null;
       try {
-        inserted = await createFolderFn({
+        await createFolderFn({
           data: {
             account_id: accountId,
             name: name.trim(),
