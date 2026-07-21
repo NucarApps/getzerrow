@@ -110,24 +110,11 @@ export function AddFolderDialog({
       qc.invalidateQueries({ queryKey: ["folders"] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       onOpenChange(false);
-      if (labelId && inserted?.id) {
-        toast.message("Pulling emails from Gmail…");
-        try {
-          const r = await learnFn({ data: { folder_id: inserted.id } });
-          const pulled = (r?.claimed ?? 0) + (r?.ingested ?? 0);
-          toast.success(
-            `Folder created. Linked ${pulled} email${pulled === 1 ? "" : "s"} from Gmail.`,
-          );
-        } catch (e: unknown) {
-          toast.warning(
-            `Folder created. Couldn't pull from Gmail: ${e instanceof Error ? e.message : "error"}`,
-          );
-        }
-        qc.invalidateQueries({ queryKey: ["emails"] });
-        qc.invalidateQueries({ queryKey: ["emails-summary"] });
-      } else {
-        toast.success("Folder created.");
-      }
+      toast.success(
+        labelId
+          ? "Folder created. Open it and click Re-learn to pull matching Gmail messages."
+          : "Folder created.",
+      );
     } finally {
       setBusy(false);
     }
