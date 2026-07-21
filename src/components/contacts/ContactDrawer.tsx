@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   AlertDialog,
@@ -10,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ContactDetailView } from "./ContactDetailView";
+import { ContactDetailView, type ContactEditorFlush } from "./ContactDetailView";
 
 type Props = {
   contactId: string | null;
@@ -19,19 +20,43 @@ type Props = {
 };
 
 export function ContactDrawer({ contactId, open, onOpenChange }: Props) {
-  // Guard against silently discarding unsaved edits: the detail view reports
-  // its dirty state, and a close attempt while dirty asks first.
+  // Edits autosave as you type, so closing normally just flushes any pending
+  // save. The discard dialog only appears when flushing is NOT safe — an
+  // invalid (half-typed) email/phone row is blocking autosave.
   const [dirty, setDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const flushRef = useRef<ContactEditorFlush | null>(null);
   const handleDirtyChange = useCallback((d: boolean) => setDirty(d), []);
 
+  function close() {
+    setDirty(false);
+    onOpenChange(false);
+  }
+
   function handleOpenChange(v: boolean) {
-    if (!v && dirty) {
+    if (v) {
+      onOpenChange(v);
+      return;
+    }
+    if (!dirty) {
+      close();
+      return;
+    }
+    const flush = flushRef.current;
+    if (!flush) {
       setConfirmDiscard(true);
       return;
     }
-    if (!v) setDirty(false);
-    onOpenChange(v);
+    void flush().then((result) => {
+      if (result === "invalid") {
+        setConfirmDiscard(true);
+      } else {
+        if (result === "error") {
+          toast.error("Couldn't save your latest edits — they may not have been stored.");
+        }
+        close();
+      }
+    });
   }
 
   return (
@@ -42,11 +67,9 @@ export function ContactDrawer({ contactId, open, onOpenChange }: Props) {
             <div className="mt-2">
               <ContactDetailView
                 id={contactId}
-                onDeleted={() => {
-                  setDirty(false);
-                  onOpenChange(false);
-                }}
+                onDeleted={close}
                 onDirtyChange={handleDirtyChange}
+                flushRef={flushRef}
               />
             </div>
           )}
@@ -57,7 +80,8 @@ export function ContactDrawer({ contactId, open, onOpenChange }: Props) {
           <AlertDialogHeader>
             <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              You have edits that haven't been saved. Closing now will throw them away.
+              An email or phone entry is incomplete, so your latest edits couldn't be autosaved.
+              Closing now will throw them away.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -66,8 +90,7 @@ export function ContactDrawer({ contactId, open, onOpenChange }: Props) {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 setConfirmDiscard(false);
-                setDirty(false);
-                onOpenChange(false);
+                close();
               }}
             >
               Discard changes

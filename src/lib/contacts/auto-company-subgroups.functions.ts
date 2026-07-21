@@ -653,7 +653,23 @@ export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
       }
     }
     await dropEmptyAutoSubgroups(supabase, userId);
-    return { reconciled, membershipsAdded: totalAdded, membershipsRemoved: totalRemoved };
+    // Also re-materialize label-rule memberships ("company X is in label G",
+    // domain rules, AI-category rules) so contacts whose signals changed
+    // outside a rule-sync trigger — e.g. a company gained a label while the
+    // contact was only domain-associated — stop showing as "Ungrouped".
+    // Dynamic import: group-rules.functions imports from this module.
+    let ruleSync = { scanned: 0, added: 0, removed: 0 };
+    try {
+      const { syncCompanyRuleMemberships } = await import("./group-rules.functions");
+      ruleSync = await syncCompanyRuleMemberships(supabase, userId, { full: true });
+    } catch {
+      // Best-effort; the next label edit or sync re-runs it.
+    }
+    return {
+      reconciled,
+      membershipsAdded: totalAdded + ruleSync.added,
+      membershipsRemoved: totalRemoved + ruleSync.removed,
+    };
   });
 
 /** Flip the toggle. When enabling, run an immediate reconcile so the user

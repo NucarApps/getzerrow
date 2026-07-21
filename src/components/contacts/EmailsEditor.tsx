@@ -1,4 +1,5 @@
 import { Mail } from "lucide-react";
+import { isValidEmailAddress } from "@/lib/contacts/email-address";
 import { EntriesEditor } from "./EntriesEditor";
 
 export type EmailEntry = {
@@ -13,7 +14,7 @@ const LABEL_OPTIONS = ["work", "home", "other"] as const;
 // that would sync a junk address to CardDAV/Google. Mirrors PhonesEditor's
 // inline validation, which this editor previously lacked entirely.
 function validateEmail(raw: string): string | null {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim()) ? null : "Enter a valid email address";
+  return isValidEmailAddress(raw) ? null : "Enter a valid email address";
 }
 
 type Props = {

@@ -46,6 +46,8 @@ import {
 } from "@/components/contacts/PhotoPrioritySelect";
 import { PhonesEditor, type PhoneEntry } from "@/components/contacts/PhonesEditor";
 import { EmailsEditor, type EmailEntry } from "@/components/contacts/EmailsEditor";
+import { isValidEmailAddress } from "@/lib/contacts/email-address";
+import { validatePhoneNumber } from "@/lib/contacts/phone";
 
 import { toast } from "sonner";
 import {
@@ -75,12 +77,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Field } from "@/components/contacts/Field";
 
+export type ContactEditorFlush = () => Promise<"saved" | "invalid" | "error">;
+
 type Props = {
   id: string;
   onDeleted?: () => void;
   /** Reports whether the form has unsaved edits — hosts (the drawer) use it
    * to guard against silently discarding changes on close. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Host-provided ref the view fills with a "save now" function, so a
+   * closing drawer can flush pending edits instead of asking to discard. */
+  flushRef?: React.MutableRefObject<ContactEditorFlush | null>;
 };
 
 function errorMessage(e: unknown): string | undefined {
@@ -89,7 +96,7 @@ function errorMessage(e: unknown): string | undefined {
 
 type ContactQueryData = Awaited<ReturnType<typeof getContact>>;
 
-export function ContactDetailView({ id, onDeleted, onDirtyChange }: Props) {
+export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Props) {
   const qc = useQueryClient();
   const fetchOne = useServerFn(getContact);
   const enrich = useServerFn(enrichContact);
@@ -173,21 +180,40 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange }: Props) {
   // or a cross-device sync would otherwise silently clobber in-progress
   // edits mid-typing.
   const [dirty, setDirty] = useState(false);
+  // Monotonic edit counter: a save only clears `dirty` if no edits happened
+  // while its request was in flight.
+  const editVersionRef = useRef(0);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
+  function markEdited() {
+    editVersionRef.current += 1;
+    setDirty(true);
+    // A fresh keystroke re-arms autosave after a failed save (the effect
+    // below deliberately never retries an error on its own — that would be
+    // an infinite retry loop against a persistent server failure).
+    setSaveStatus((s) => (s === "error" ? "idle" : s));
+  }
   function patchForm(patch: Partial<typeof form>) {
     setForm((prev) => ({ ...prev, ...patch }));
-    setDirty(true);
+    markEdited();
   }
   function changePhones(next: PhoneEntry[]) {
     setPhones(next);
-    setDirty(true);
+    markEdited();
   }
   function changeEmails(next: EmailEntry[]) {
     setEmails(next);
-    setDirty(true);
+    markEdited();
   }
+
+  // Autosave gate: never sync a half-typed email address or phone number.
+  // While any non-empty row is invalid, autosave pauses (the row shows its
+  // inline error) and the manual Save button remains the escape hatch.
+  const entriesValid =
+    emails.every((e) => !e.address.trim() || isValidEmailAddress(e.address)) &&
+    phones.every((p) => !p.number.trim() || validatePhoneNumber(p.number).ok);
 
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
@@ -305,7 +331,9 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange }: Props) {
     }
   }
 
-  async function save() {
+  async function performSave(opts: { manual: boolean }): Promise<boolean> {
+    const versionAtStart = editVersionRef.current;
+    setSaveStatus("saving");
     try {
       // Drop empty phone rows.
       const cleanPhones = phones
@@ -343,14 +371,55 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange }: Props) {
         },
       });
 
-      toast.success("Saved");
-      setDirty(false);
+      if (opts.manual) toast.success("Saved");
+      // Only mark clean if nothing was typed while the request was in
+      // flight — otherwise the newer edits would be stranded as "saved".
+      if (editVersionRef.current === versionAtStart) setDirty(false);
+      setSaveStatus("saved");
       qc.invalidateQueries({ queryKey: ["contact", id] });
-      qc.invalidateQueries({ queryKey: ["contacts"] });
+      // Autosaves rely on the contacts realtime subscription to refresh the
+      // big list (300ms-debounced); refetching 2,000 rows after every typing
+      // pause would be wasteful. Manual saves refresh it immediately.
+      if (opts.manual) qc.invalidateQueries({ queryKey: ["contacts"] });
+      return true;
     } catch (e: unknown) {
-      toast.error(errorMessage(e) ?? "Save failed");
+      setSaveStatus("error");
+      if (opts.manual) toast.error(errorMessage(e) ?? "Save failed");
+      return false;
     }
   }
+
+  function save() {
+    return performSave({ manual: true });
+  }
+
+  // Autosave: edits persist ~1s after the user stops typing — no Save click
+  // needed. The timer resets on every keystroke; saves are skipped while a
+  // request is already in flight (the effect re-fires via saveStatus once it
+  // settles, so trailing edits still get flushed) and while any entry row is
+  // invalid.
+  useEffect(() => {
+    if (!dirty || !entriesValid || saveStatus === "saving" || saveStatus === "error") return;
+    const t = setTimeout(() => {
+      void performSave({ manual: false });
+    }, 1_000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, entriesValid, saveStatus, form, phones, emails]);
+
+  // Flush hook for the host (drawer close): save now if it's safe to.
+  useEffect(() => {
+    if (!flushRef) return;
+    flushRef.current = async () => {
+      if (!dirty) return "saved";
+      if (!entriesValid) return "invalid";
+      return (await performSave({ manual: false })) ? "saved" : "error";
+    };
+    return () => {
+      flushRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flushRef, dirty, entriesValid, form, phones, emails, id]);
 
   async function send() {
     if (!q.data?.contact) return;
@@ -740,8 +809,21 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange }: Props) {
         />
       </div>
 
-      <div className="mt-6 flex justify-end">
-        <Button onClick={save}>
+      <div className="mt-6 flex items-center justify-end gap-3">
+        <span className="text-xs text-muted-foreground" aria-live="polite">
+          {saveStatus === "saving"
+            ? "Saving…"
+            : dirty && !entriesValid
+              ? "Autosave paused — fix the highlighted fields"
+              : saveStatus === "error"
+                ? "Couldn't save — edit again or press Save to retry"
+                : dirty
+                  ? "Unsaved changes…"
+                  : saveStatus === "saved"
+                    ? "All changes saved"
+                    : ""}
+        </span>
+        <Button onClick={save} disabled={saveStatus === "saving"}>
           <Save className="mr-2 h-4 w-4" /> Save
         </Button>
       </div>

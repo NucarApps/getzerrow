@@ -60,6 +60,22 @@ export async function syncCompanyRuleMemberships(
 ): Promise<{ scanned: number; added: number; removed: number }> {
   const rules = await loadUserRules(supabase, userId);
 
+  // domain -> company_id for the user. "Company X is in label G" must also
+  // cover contacts who belong to X only through their email domain (the
+  // contacts list buckets them under X the same way) — otherwise a
+  // claycars.com contact with no explicit company link shows under the
+  // company's label in the UI yet counts as "Ungrouped".
+  const companyIdByDomain = new Map<string, string>();
+  {
+    const { data: domRows } = await supabase
+      .from("company_domains")
+      .select("domain,company_id")
+      .eq("user_id", userId);
+    for (const r of (domRows ?? []) as Array<{ domain: string | null; company_id: string }>) {
+      if (r.domain) companyIdByDomain.set(r.domain.toLowerCase(), r.company_id);
+    }
+  }
+
   // Resolve the contact scope. Group-scoped changes (rule added/removed)
   // need a full scan to find NEW matches; company/contact scopes stay narrow.
   const scanAll = !!opts.full || (opts.groupIds?.length ?? 0) > 0;
@@ -71,6 +87,24 @@ export async function syncCompanyRuleMemberships(
       .eq("user_id", userId)
       .in("company_id", opts.companyIds!);
     for (const r of data ?? []) scopeIds.add(r.id);
+    // Domain-associated members (no explicit company link) are in scope too.
+    const scopeDomains = [...companyIdByDomain.entries()]
+      .filter(([, cid]) => opts.companyIds!.includes(cid))
+      .map(([d]) => d);
+    for (const domain of scopeDomains) {
+      const { data: byPrimary } = await supabase
+        .from("contacts")
+        .select("id")
+        .eq("user_id", userId)
+        .ilike("email", `%@${domain}`);
+      for (const r of byPrimary ?? []) scopeIds.add(r.id);
+      const { data: bySecondary } = await supabase
+        .from("contact_emails")
+        .select("contact_id")
+        .eq("user_id", userId)
+        .ilike("address", `%@${domain}`);
+      for (const r of bySecondary ?? []) scopeIds.add(r.contact_id);
+    }
     // Contacts that LEFT these companies still hold rule rows in the
     // companies' labels — include current rule-row holders of those labels.
     const ruleGroupIds = rules
@@ -143,13 +177,26 @@ export async function syncCompanyRuleMemberships(
 
   const signalsByContact = new Map<string, ContactSignals>();
   for (const c of contactRows) {
+    const emailDomains = collectEmailDomains([
+      { address: c.email },
+      ...(emailsByContact.get(c.id) ?? []),
+    ]);
+    // Effective company: the explicit link wins; otherwise the first email
+    // domain that maps to a company (mirrors the contacts-list bucketing).
+    let effectiveCompanyId = c.company_id ?? null;
+    if (!effectiveCompanyId) {
+      for (const d of emailDomains) {
+        const cid = companyIdByDomain.get(d);
+        if (cid) {
+          effectiveCompanyId = cid;
+          break;
+        }
+      }
+    }
     signalsByContact.set(c.id, {
-      companyId: c.company_id ?? null,
+      companyId: effectiveCompanyId,
       aiCategory: c.ai_category ?? null,
-      emailDomains: collectEmailDomains([
-        { address: c.email },
-        ...(emailsByContact.get(c.id) ?? []),
-      ]),
+      emailDomains,
     });
   }
 
