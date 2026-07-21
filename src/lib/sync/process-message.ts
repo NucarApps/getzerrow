@@ -20,6 +20,7 @@
 //   by the webhook when it enqueued), processGmailMessage persists it
 //   onto emails.published_at_ms so get_sync_latency_stats() can compute
 //   push → visible latency.
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, modifyMessage, parseMessage, sendMessage } from "../gmail.server";
 import type { AccountContext } from "./account-context";
@@ -35,6 +36,12 @@ import {
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
 import { recordExecution } from "./executed-rules";
+import {
+  dispatchFolderActions,
+  mergeFlagActions,
+  type ActionOutcome,
+  type FolderActionRow,
+} from "./action-dispatch";
 import { notifyInboxMail } from "../push.server";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
@@ -105,11 +112,17 @@ function computeFolderEffects(
   return { effectiveArchive, addLabels, removeLabels, snoozedUntil };
 }
 
-/** Apply Gmail label changes, auto-forward, and (optionally) the local
- * flag patch for an email routed into `folder`.
+/** Apply the folder's actions to an email routed into it: explicit
+ * folder_actions rows plus the legacy flags mapped to synthetic actions
+ * (see mergeFlagActions). Handlers contribute to one mutation plan, so
+ * Gmail still sees a single modifyMessage call and the emails row a
+ * single update — identical batching to the pre-dispatcher code.
+ * Returns per-action outcomes for the executed_actions audit trail.
  *
  * persistFlags=false → the caller already wrote is_archived / is_read /
- * snoozed_until in the INSERT; only Gmail mutations + forward state run.
+ * snoozed_until in the INSERT; synthetic (flag-derived) actions skip
+ * their local patch. Explicit action rows always patch — their effects
+ * are never folded into the insert.
  * persistFlags=true  → patch those flags onto the existing row (the AI
  * path and the rescue sweep, where classification lands post-insert). */
 export async function applyFolderActions(
@@ -127,37 +140,47 @@ export async function applyFolderActions(
     snippet: string;
   },
   inInbox: boolean,
-  opts: { persistFlags: boolean },
-) {
-  const { effectiveArchive, addLabels, removeLabels, snoozedUntil } = computeFolderEffects(
-    folder,
-    parsed,
-    inInbox,
-  );
+  opts: { persistFlags: boolean; userId?: string },
+): Promise<ActionOutcome[]> {
+  // folder_actions is not in the generated Supabase types yet — untyped
+  // accessor, same pattern as executed-rules.ts.
+  const { data: actionRows } = await (supabaseAdmin as unknown as SupabaseClient)
+    .from("folder_actions")
+    .select("id, action_type, label_id, move_to_folder_id, delay_minutes")
+    .eq("folder_id", folder.id)
+    .eq("enabled", true);
+  const actions = mergeFlagActions(folder, (actionRows ?? []) as FolderActionRow[]);
 
-  if (addLabels.length || removeLabels.length) {
+  const { plan, outcomes } = await dispatchFolderActions({
+    actions,
+    parsed: { raw_labels: parsed.raw_labels },
+    inInbox,
+    persistFlags: opts.persistFlags,
+    emailRowId,
+    userId: opts.userId,
+    resolveMoveTarget: async (folderId) => {
+      const { data } = await supabaseAdmin
+        .from("folders")
+        .select("gmail_label_id")
+        .eq("id", folderId)
+        .maybeSingle();
+      return data ?? null;
+    },
+  });
+
+  if (plan.addLabels.length || plan.removeLabels.length) {
     try {
-      await modifyMessage(accountId, gmailId, addLabels, removeLabels);
+      await modifyMessage(accountId, gmailId, plan.addLabels, plan.removeLabels);
     } catch (e) {
       console.error("modify failed", e);
     }
   }
 
-  const patch: {
-    is_archived?: boolean;
-    is_read?: boolean;
-    snoozed_until?: string;
-    forwarded_to?: string;
-    forwarded_at?: string;
-    forward_attempts?: number;
-    forward_last_error?: string | null;
-    forward_next_retry_at?: string | null;
-  } = {};
-  if (opts.persistFlags) {
-    if (inInbox && effectiveArchive) patch.is_archived = true;
-    if (folder.auto_mark_read) patch.is_read = true;
-    if (snoozedUntil) patch.snoozed_until = snoozedUntil;
-  }
+  // Snooze + forward remain legacy folder-column behaviors until their
+  // action types land (later tasks).
+  const { snoozedUntil } = computeFolderEffects(folder, parsed, inInbox);
+  const patch: Record<string, unknown> = { ...plan.patch };
+  if (opts.persistFlags && snoozedUntil) patch.snoozed_until = snoozedUntil;
   if (folder.forward_to) {
     try {
       await sendMessage(
@@ -172,6 +195,13 @@ export async function applyFolderActions(
       patch.forward_attempts = 0;
       patch.forward_last_error = null;
       patch.forward_next_retry_at = null;
+      outcomes.push({
+        action_type: "forward",
+        folder_action_id: null,
+        status: "applied",
+        error: null,
+        payload: { to: folder.forward_to },
+      });
     } catch (e) {
       // Schedule a retry instead of silently dropping. Counter +
       // next_retry_at are picked up by retryForwardAttempts.
@@ -181,11 +211,22 @@ export async function applyFolderActions(
       patch.forward_attempts = 1;
       patch.forward_last_error = errMsg;
       patch.forward_next_retry_at = nextRetry;
+      outcomes.push({
+        action_type: "forward",
+        folder_action_id: null,
+        status: "error",
+        error: errMsg,
+        payload: { to: folder.forward_to },
+      });
     }
   }
   if (Object.keys(patch).length > 0) {
-    await supabaseAdmin.from("emails").update(patch).eq("id", emailRowId);
+    await supabaseAdmin
+      .from("emails")
+      .update(patch as never)
+      .eq("id", emailRowId);
   }
+  return outcomes;
 }
 
 /** Persist a classification outcome onto an existing email row via the
@@ -361,15 +402,22 @@ export async function processGmailMessage(
       const final = rules.needs_ai ? await classifyByAi(parsed, context, rules) : rules;
       if (t) t.ai += performance.now() - _tAi;
       let audited: ClassificationResult = final;
+      let actionOutcomes: ActionOutcome[] = [];
       if (final.folder_id) {
         const folder =
           resolveFolderFromContext(context, final.folder_id) ??
           (await fetchActionFolder(final.folder_id));
         if (folder) {
           const inInboxNow = (parsed.raw_labels ?? []).includes("INBOX");
-          await applyFolderActions(accountId, gmailId, existing.id, folder, parsed, inInboxNow, {
-            persistFlags: true,
-          });
+          actionOutcomes = await applyFolderActions(
+            accountId,
+            gmailId,
+            existing.id,
+            folder,
+            parsed,
+            inInboxNow,
+            { persistFlags: true, userId },
+          );
           // Respect the folder's surface rule when rules routed it here.
           if (rules.needs_surface_check && !rules.needs_ai && !opts.skipAi) {
             const eff = computeFolderEffects(folder, parsed, inInboxNow);
@@ -400,6 +448,7 @@ export async function processGmailMessage(
         parsed,
         context,
         classification: audited,
+        actions: actionOutcomes,
       });
       return {
         id: existing.id,
@@ -522,6 +571,7 @@ export async function processGmailMessage(
   let final: ClassificationResult = rules;
   let execStatus: "pending" | undefined;
   let execError: string | null = null;
+  let actionOutcomes: ActionOutcome[] = [];
   let result:
     | {
         id: string;
@@ -538,9 +588,15 @@ export async function processGmailMessage(
     if (rules.folder_id) {
       void bumpEmailsSinceLearn(rules.folder_id);
       if (rulesFolder) {
-        await applyFolderActions(accountId, gmailId, inserted.id, rulesFolder, parsed, inInbox, {
-          persistFlags: false,
-        });
+        actionOutcomes = await applyFolderActions(
+          accountId,
+          gmailId,
+          inserted.id,
+          rulesFolder,
+          parsed,
+          inInbox,
+          { persistFlags: false, userId },
+        );
         // Escape hatch: let the folder's surface rule pull a personal /
         // for-you email back to the inbox (still filed in the folder).
         if (rules.needs_surface_check && !opts.skipAi) {
@@ -584,9 +640,15 @@ export async function processGmailMessage(
         const folder =
           resolveFolderFromContext(context, folder_id) ?? (await fetchActionFolder(folder_id));
         if (folder) {
-          await applyFolderActions(accountId, gmailId, inserted.id, folder, parsed, inInbox, {
-            persistFlags: true,
-          });
+          actionOutcomes = await applyFolderActions(
+            accountId,
+            gmailId,
+            inserted.id,
+            folder,
+            parsed,
+            inInbox,
+            { persistFlags: true, userId },
+          );
         }
       }
       const _tDb = performance.now();
@@ -618,6 +680,7 @@ export async function processGmailMessage(
     classification: final,
     status: execStatus,
     error: execError,
+    actions: actionOutcomes,
   });
 
   return result;
