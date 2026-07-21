@@ -3,6 +3,15 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 import {
+  UNTRUSTED_BOUNDARY_INSTRUCTION,
+  sanitizeEmailForPrompt,
+  sanitizeUntrustedText,
+  wrapUntrustedEmail,
+  capConfidenceForFlags,
+  sanitizeReasonNote,
+  type SanitizeFlag,
+} from "./ai-untrusted";
+import {
   AI_BATCH_ATTEMPT_TIMEOUT_MS,
   AI_CLASSIFY_ATTEMPT_TIMEOUT_MS,
   AI_CLASSIFY_TOTAL_BUDGET_MS,
@@ -91,21 +100,28 @@ export async function classifyEmail(
       .describe("Short explanation of WHY this folder was chosen (<=200 chars)"),
   });
 
+  // Sanitize the attacker-controlled fields once, up front. Any rule that
+  // fires caps the returned confidence below (distrust-on-tamper).
+  const guarded = sanitizeEmailForPrompt(email);
+
   function buildPrompt(opts: { trim: boolean }) {
     const bodyLimit = opts.trim ? 2000 : 4000;
     const isReply = !!(email.in_reply_to && email.in_reply_to.trim());
     const hasCalendarInvite = !!email.has_calendar_invite;
     return `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
 
+${UNTRUSTED_BOUNDARY_INSTRUCTION}
+
 Folders:
 ${buildFolderList(!opts.trim)}
 
+Signals (derived server-side): ${hasCalendarInvite ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
+
 Email:
-From: ${email.from_name} <${email.from_addr}>
-Subject: ${email.subject}
-Signals: ${hasCalendarInvite ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
+${wrapUntrustedEmail(`From: ${guarded.from_name} <${guarded.from_addr}>
+Subject: ${guarded.subject}
 Body:
-${(email.body_text || email.snippet || "").slice(0, bodyLimit)}
+${guarded.body.slice(0, bodyLimit)}`)}
 
 Guidance: Treat an email as an automated calendar invite ONLY when it actually carries a calendar event. A human reply in an existing thread is NOT an automated invite — do not route it into an automated-invite folder unless that folder's rule explicitly targets replies.
 
@@ -216,9 +232,9 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
   const match = folders.find((f) => f.name.toLowerCase() === output!.folder_name.toLowerCase());
   return {
     folder_id: match?.id ?? null,
-    confidence: output.confidence,
+    confidence: capConfidenceForFlags(output.confidence, guarded.flags),
     summary: output.summary,
-    reason: output.reason,
+    reason: `${output.reason}${sanitizeReasonNote(guarded.flags)}`,
   };
 }
 
@@ -265,9 +281,17 @@ export async function shouldSurfaceToInbox(
   const identityEmails = opts.identityEmails.filter(Boolean);
   const identityNames = opts.identityNames.filter(Boolean);
 
+  // Recipient lists are attacker-influenced too (Reply-To games, spoofed
+  // To/Cc) — sanitize them alongside the standard fields.
+  const guarded = sanitizeEmailForPrompt(email);
+  const toAddrs = sanitizeUntrustedText(email.to_addrs ?? "", 500).text;
+  const cc = sanitizeUntrustedText(email.cc ?? "", 500).text;
+
   function buildPrompt(trim: boolean): string {
     const bodyLimit = trim ? 2000 : 4000;
     return `An email was automatically filed into the folder "${opts.folderName}" by deterministic rules. Decide whether it should ALSO be surfaced to the user's inbox (kept visible) instead of being tucked away.
+
+${UNTRUSTED_BOUNDARY_INSTRUCTION}
 
 Surface it ONLY when it matches the user's surface rule below. Otherwise leave it filed (surface = false).
 
@@ -279,12 +303,12 @@ User's identity (treat these as "me"):
 - Name(s)/alias(es): ${identityNames.length ? identityNames.join(", ") : "(none provided)"}
 
 Email:
-From: ${email.from_name} <${email.from_addr}>
-To: ${email.to_addrs || "(unknown)"}
-Cc: ${email.cc || "(none)"}
-Subject: ${email.subject}
+${wrapUntrustedEmail(`From: ${guarded.from_name} <${guarded.from_addr}>
+To: ${toAddrs || "(unknown)"}
+Cc: ${cc || "(none)"}
+Subject: ${guarded.subject}
 Body:
-${(email.body_text || email.snippet || "").slice(0, bodyLimit)}
+${guarded.body.slice(0, bodyLimit)}`)}
 
 Answer with the decision and a short reason.`;
   }
@@ -401,16 +425,21 @@ export async function classifyEmailsBatch(
     })
     .join("\n\n");
 
+  // Per-email sanitization; each email's flags cap its own result below.
+  const guardedEmails = emails.map((e) => sanitizeEmailForPrompt(e));
+  const flagsByIndex: SanitizeFlag[][] = guardedEmails.map((g) => g.flags);
+
   const emailBlocks = emails
     .map((e, i) => {
+      const g = guardedEmails[i];
       const isReply = !!(e.in_reply_to && e.in_reply_to.trim());
       const hasCal = !!e.has_calendar_invite;
       return `--- EMAIL ${i + 1} ---
-From: ${e.from_name} <${e.from_addr}>
-Subject: ${e.subject}
-Signals: ${hasCal ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
+Signals (derived server-side): ${hasCal ? "carries a calendar event (.ics/text-calendar)" : "no calendar event attached"}; ${isReply ? "is a reply in an existing thread" : "is not a reply"}
+${wrapUntrustedEmail(`From: ${g.from_name} <${g.from_addr}>
+Subject: ${g.subject}
 Body:
-${(e.body_text || e.snippet || "").slice(0, 1500)}`;
+${g.body.slice(0, 1500)}`)}`;
     })
     .join("\n\n");
 
@@ -424,6 +453,8 @@ ${(e.body_text || e.snippet || "").slice(0, 1500)}`;
   const schema = z.object({ results: z.array(itemSchema) });
 
   const prompt = `You categorize incoming emails into the user's folders based on each folder's rule, learned profile, and example emails.
+
+${UNTRUSTED_BOUNDARY_INSTRUCTION}
 
 Folders:
 ${folderList}
@@ -489,11 +520,12 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
         reason: "No batch result for this email",
       };
     const match = folders.find((f) => f.name.toLowerCase() === r.folder_name.toLowerCase());
+    const flags = flagsByIndex[i] ?? [];
     return {
       folder_id: match?.id ?? null,
-      confidence: r.confidence,
+      confidence: capConfidenceForFlags(r.confidence, flags),
       summary: r.summary,
-      reason: r.reason,
+      reason: `${r.reason}${sanitizeReasonNote(flags)}`,
     };
   });
 }
