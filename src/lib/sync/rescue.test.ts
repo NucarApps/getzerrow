@@ -74,7 +74,7 @@ function makeFolder(overrides: Partial<Folder> = {}): Folder {
     id: "folder-1",
     name: "Receipts",
     gmail_label_id: null,
-    ai_rule: null,
+    ai_rule: "route mail here",
     learned_profile: null,
     last_learned_at: null,
     auto_archive: false,
