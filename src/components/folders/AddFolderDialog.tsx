@@ -49,7 +49,10 @@ export function AddFolderDialog({
   const qc = useQueryClient();
   const createLabel = useServerFn(createGmailLabel);
   const createFolderFn = useServerFn(createFolder);
-  const learnFn = useServerFn(learnFolderFromLabel);
+  // Auto-learn on create was intentionally removed. New folders stay
+  // inert (no ingestion, no mirroring) even when linked to an existing
+  // Gmail label — the user opts in later via "Re-learn" in the folder
+  // editor or by adding an AI rule / filter.
   const [name, setName] = useState("");
   const [labelChoice, setLabelChoice] = useState<string>(NEW_LABEL);
   const [parentLabelId, setParentLabelId] = useState<string>("");
