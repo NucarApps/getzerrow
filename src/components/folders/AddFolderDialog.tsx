@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { createGmailLabel, learnFolderFromLabel } from "@/lib/gmail.functions";
+import { createGmailLabel } from "@/lib/gmail.functions";
 import { createFolder } from "@/lib/gmail/folder-mgmt.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +49,10 @@ export function AddFolderDialog({
   const qc = useQueryClient();
   const createLabel = useServerFn(createGmailLabel);
   const createFolderFn = useServerFn(createFolder);
-  const learnFn = useServerFn(learnFolderFromLabel);
+  // Auto-learn on create was intentionally removed. New folders stay
+  // inert (no ingestion, no mirroring) even when linked to an existing
+  // Gmail label — the user opts in later via "Re-learn" in the folder
+  // editor or by adding an AI rule / filter.
   const [name, setName] = useState("");
   const [labelChoice, setLabelChoice] = useState<string>(NEW_LABEL);
   const [parentLabelId, setParentLabelId] = useState<string>("");
@@ -87,9 +90,8 @@ export function AddFolderDialog({
       } else {
         labelId = labelChoice;
       }
-      let inserted: { id: string } | null = null;
       try {
-        inserted = await createFolderFn({
+        await createFolderFn({
           data: {
             account_id: accountId,
             name: name.trim(),
@@ -107,24 +109,11 @@ export function AddFolderDialog({
       qc.invalidateQueries({ queryKey: ["folders"] });
       qc.invalidateQueries({ queryKey: ["folders-full"] });
       onOpenChange(false);
-      if (labelId && inserted?.id) {
-        toast.message("Pulling emails from Gmail…");
-        try {
-          const r = await learnFn({ data: { folder_id: inserted.id } });
-          const pulled = (r?.claimed ?? 0) + (r?.ingested ?? 0);
-          toast.success(
-            `Folder created. Linked ${pulled} email${pulled === 1 ? "" : "s"} from Gmail.`,
-          );
-        } catch (e: unknown) {
-          toast.warning(
-            `Folder created. Couldn't pull from Gmail: ${e instanceof Error ? e.message : "error"}`,
-          );
-        }
-        qc.invalidateQueries({ queryKey: ["emails"] });
-        qc.invalidateQueries({ queryKey: ["emails-summary"] });
-      } else {
-        toast.success("Folder created.");
-      }
+      toast.success(
+        labelId
+          ? "Folder created. Open it and click Re-learn to pull matching Gmail messages."
+          : "Folder created.",
+      );
     } finally {
       setBusy(false);
     }
