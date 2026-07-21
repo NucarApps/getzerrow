@@ -146,7 +146,7 @@ export async function applyFolderActions(
   // accessor, same pattern as executed-rules.ts.
   const { data: actionRows } = await (supabaseAdmin as unknown as SupabaseClient)
     .from("folder_actions")
-    .select("id, action_type, label_id, move_to_folder_id, delay_minutes")
+    .select("id, action_type, label_id, move_to_folder_id, delay_minutes, webhook_url")
     .eq("folder_id", folder.id)
     .eq("enabled", true);
   const actions = mergeFlagActions(folder, (actionRows ?? []) as FolderActionRow[]);
