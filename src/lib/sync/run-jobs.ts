@@ -299,7 +299,12 @@ export async function runMessageJobs(
       return;
     }
 
-    const terminal = status === 400 || status === 401 || status === 403;
+    // Quota/rate-limit errors surface as HTTP 403 too (userRateLimitExceeded,
+    // dailyLimitExceeded, …). gmail.server.ts marks those retryable — they
+    // must go through the backoff path, never straight to DLQ, or a quota
+    // burst silently parks a whole batch of new mail.
+    const terminal =
+      (status === 400 || status === 401 || status === 403) && !retryable && !isQuotaExceeded;
     const currentAttempt = job.attempt ?? 0;
     const nextAttempt =
       retryable && currentAttempt < RETRYABLE_FREE_ATTEMPTS ? currentAttempt : currentAttempt + 1;

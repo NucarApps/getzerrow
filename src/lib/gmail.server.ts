@@ -69,8 +69,17 @@ function parseRetryAfter(header: string | null): number | null {
 }
 
 function parseQuotaReason(body: string): boolean {
-  // Google returns `{ error: { errors: [{ reason: "quotaExceeded" | "rateLimitExceeded" | "userRateLimitExceeded" }]}}`.
-  return /quotaExceeded|userRateLimitExceeded/.test(body);
+  // Google returns `{ error: { errors: [{ reason: "quotaExceeded" | "rateLimitExceeded" | "userRateLimitExceeded" | "dailyLimitExceeded" }]}}`.
+  // Gmail surfaces these as HTTP 403 as well as 429 — both must be treated
+  // as transient, never as terminal auth failures.
+  return /quotaExceeded|userRateLimitExceeded|rateLimitExceeded|dailyLimitExceeded/.test(body);
+}
+
+function parseDailyQuotaReason(body: string): boolean {
+  // Only the DAILY cap resets at midnight PT. Per-100s flow limits
+  // (userRateLimitExceeded / rateLimitExceeded) clear within seconds and
+  // must use the short retryable backoff table, not the until-midnight wait.
+  return /dailyLimitExceeded/.test(body);
 }
 
 async function gmailFetch<T = unknown>(
@@ -102,13 +111,18 @@ async function gmailFetch<T = unknown>(
   }
   const text = await res.text();
   if (!res.ok) {
-    const retryAfter = res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null;
-    const isQuota = res.status === 429 && parseQuotaReason(text);
+    // Gmail reports per-user quota/rate-limit errors as HTTP 403 as well as
+    // 429. A quota 403 is transient — it must go through the retry/backoff
+    // path, not be classified as a terminal auth failure.
+    const isRateLimited = (res.status === 429 || res.status === 403) && parseQuotaReason(text);
+    const retryAfter =
+      res.status === 429 || isRateLimited ? parseRetryAfter(res.headers.get("retry-after")) : null;
+    const isDailyQuota = (res.status === 429 || res.status === 403) && parseDailyQuotaReason(text);
     throw new GmailApiError(
       `Gmail API ${res.status} on ${path}: ${text.slice(0, 500)}`,
       res.status,
-      isRetryableStatus(res.status),
-      { retryAfterSeconds: retryAfter, isQuotaExceeded: isQuota },
+      isRetryableStatus(res.status) || isRateLimited,
+      { retryAfterSeconds: retryAfter, isQuotaExceeded: isDailyQuota },
     );
   }
   return text ? JSON.parse(text) : ({} as T);
@@ -272,6 +286,11 @@ export async function listHistory(accountId: string, startHistoryId: string, pag
   if (pageToken) params.set("pageToken", pageToken);
   return gmailFetch<{
     history?: Array<{
+      // Per-record history id. Unlike the response-level `historyId` (which
+      // is the mailbox's CURRENT head on every page), this marks the actual
+      // position of the record in the history stream — the only safe value
+      // to advance a durable cursor to mid-walk.
+      id?: string;
       messages?: Array<{ id: string; threadId: string }>;
       messagesAdded?: Array<{ message: { id: string; threadId: string; labelIds?: string[] } }>;
       messagesDeleted?: Array<{ message: { id: string; threadId: string; labelIds?: string[] } }>;

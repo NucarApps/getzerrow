@@ -369,6 +369,12 @@ export const trashEmail = createServerFn({ method: "POST" })
         },
         e,
       );
+      // Do NOT delete the local row when Gmail wasn't updated: the message
+      // is still live in Gmail's INBOX, so reconcile would re-ingest it and
+      // the "trashed" email would ghost back. Surface the failure instead.
+      throw new Error("Couldn't move the email to Gmail's trash — please try again.", {
+        cause: e,
+      });
     }
     await supabaseAdmin.from("emails").delete().eq("id", data.id);
     return { ok: true };

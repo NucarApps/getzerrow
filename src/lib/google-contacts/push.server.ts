@@ -688,9 +688,17 @@ export async function pushGroupMemberships(
 
     try {
       const remote = await getContactGroupWithMembers(ids.gmailAccountId, gl.resource_name);
+      // Only reconcile members Zerrow actually knows about. A remote member
+      // with no google_contact_links row (not yet pulled/linked — e.g. a
+      // partially-synced large account) is invisible to `desired`, and
+      // removing it would strip legitimate Google-side label memberships
+      // on every push cycle.
+      const knownResources = new Set(contactResourceById.values());
       const { toAdd, toRemove } = calculateMembershipDelta({
         desiredResourceNames: desired,
-        currentResourceNames: remote.memberResourceNames ?? [],
+        currentResourceNames: (remote.memberResourceNames ?? []).filter((rn) =>
+          knownResources.has(rn),
+        ),
       });
       if (toAdd.length || toRemove.length) {
         await modifyGroupMembers(ids.gmailAccountId, gl.resource_name, toAdd, toRemove);

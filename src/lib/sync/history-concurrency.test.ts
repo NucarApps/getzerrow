@@ -5,13 +5,15 @@
 // exported entry point with N overlapping callers and assert on the
 // observable queue/lease behavior:
 //
-//   1. withAccountLock coalesces overlapping calls for the same account
-//      (single Gmail listHistory, single enqueue, single history-id bump,
-//      identical result promise for every caller).
+//   1. withAccountLock coalesces overlapping calls for the same account:
+//      the first caller owns the in-flight run; all overlapping callers
+//      share exactly ONE follow-up run (so an event arriving mid-walk is
+//      picked up by the follow-up instead of being swallowed until the
+//      next poll tick).
 //   2. Different accounts do NOT coalesce — they run in parallel.
 //   3. Once the in-flight promise resolves, a new call runs fresh.
-//   4. Bootstrap (account.history_id null) is coalesced too — never runs
-//      twice from concurrent callers.
+//   4. Bootstrap (account.history_id null) coalesces the same way — N
+//      concurrent callers produce at most the run + one follow-up.
 //   5. The bump_history_id_if_greater RPC is the only path used to
 //      advance history_id (monotonic guard is preserved even when many
 //      history pages are drained in one locked run).
@@ -141,6 +143,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
 type HistoryPage = {
   historyId?: string;
   history?: Array<{
+    id?: string;
     messages?: Array<{ id: string }>;
     messagesAdded?: Array<{ message: { id: string; labelIds?: string[] } }>;
     labelsAdded?: [];
@@ -288,12 +291,16 @@ describe("syncSinceHistory concurrency (withAccountLock contract)", () => {
     release();
     const results = await Promise.all(promises);
 
-    // All 5 callers observe the identical resolved value (from ONE run).
-    for (const r of results) expect(r).toEqual({ synced: 2 });
+    // Caller 1 gets the in-flight run's result. Callers 2-5 coalesce onto
+    // exactly ONE follow-up run (their triggering event may postdate the
+    // in-flight run's listHistory call, so they must not be handed its
+    // stale result). The follow-up's page queue is empty → synced: 0.
+    expect(results[0]).toEqual({ synced: 2 });
+    for (const r of results.slice(1)) expect(r).toEqual({ synced: 0 });
 
-    // Exactly one Gmail listHistory + one enqueue call, regardless of
-    // how many callers piled in.
-    expect(listHistoryCalls).toHaveLength(1);
+    // One listHistory for the in-flight run + one for the single follow-up —
+    // NOT one per caller. Only the first run had mail to enqueue.
+    expect(listHistoryCalls).toHaveLength(2);
     expect(enqueueCalls).toHaveLength(1);
     expect(enqueueCalls[0]).toMatchObject({
       accountId: "acc-A",
@@ -303,14 +310,15 @@ describe("syncSinceHistory concurrency (withAccountLock contract)", () => {
     });
 
     // history_id advanced exactly once, via the monotonic RPC (never a
-    // raw UPDATE to gmail_accounts.history_id).
+    // raw UPDATE to gmail_accounts.history_id). The fake records carry no
+    // per-record id, so only the end-of-walk head bump fires.
     const bumpCalls = rpcCalls.filter((c) => c.fn === "bump_history_id_if_greater");
-    // One end-of-run bump + one per-page bump for the drained page.
     expect(bumpCalls.length).toBeGreaterThanOrEqual(1);
-    for (const c of bumpCalls) {
-      expect(c.args.p_account_id).toBe("acc-A");
-      expect(c.args.p_new_history_id).toBe("1050");
-    }
+    for (const c of bumpCalls) expect(c.args.p_account_id).toBe("acc-A");
+    // The in-flight run stamps its drained head. (The follow-up run also
+    // stamps its own — possibly stale — head; the RPC's monotonic guard is
+    // what makes that a safe no-op in production.)
+    expect(bumpCalls[0].args.p_new_history_id).toBe("1050");
     const rawHistoryUpdates = updateCalls.filter(
       (u) => u.table === "gmail_accounts" && "history_id" in u.patch,
     );
@@ -422,7 +430,7 @@ describe("syncSinceHistory concurrency (withAccountLock contract)", () => {
     expect(enqueueCalls).toHaveLength(0);
   });
 
-  it("bumps history_id via the monotonic RPC once per drained page", async () => {
+  it("enqueues each page's adds before bumping, and bumps to record ids — not the head", async () => {
     seedAccount({
       id: "acc-A",
       user_id: "user-A",
@@ -430,36 +438,35 @@ describe("syncSinceHistory concurrency (withAccountLock contract)", () => {
       history_id: "500",
       watch_expiration: null,
     });
-    // Two pages: nextPageToken forces the loop to advance and bump between.
+    // Two pages. The response-level historyId is the mailbox's CURRENT head
+    // (identical semantics on every page); the per-record `id` marks the
+    // actual walk position. Per-page bumps must use the record ids so a
+    // mid-walk death never leaves the cursor ahead of un-enqueued mail.
     queuePage("acc-A", {
-      historyId: "600",
-      history: [{ messagesAdded: [{ message: { id: "m1" } }] }],
+      historyId: "700",
+      history: [
+        { id: "550", messagesAdded: [{ message: { id: "m1" } }] },
+        { id: "560", messagesAdded: [] },
+      ],
       nextPageToken: "PAGE2",
     });
     queuePage("acc-A", {
       historyId: "700",
-      history: [{ messagesAdded: [{ message: { id: "m2" } }] }],
+      history: [{ id: "650", messagesAdded: [{ message: { id: "m2" } }] }],
     });
 
     const r = await syncSinceHistory("acc-A");
     expect(r).toEqual({ synced: 2 });
 
-    // 2 pages drained → 2 per-page bumps, plus 1 end-of-run bump = 3.
-    // Ordering must be monotonic (never regresses).
+    // Page 1 bumps to its max record id (560), page 2 to 650, then the
+    // completed walk stamps the head (700). Ordering must be monotonic.
     const bumps = rpcCalls
       .filter((c) => c.fn === "bump_history_id_if_greater")
       .map((c) => String(c.args.p_new_history_id));
-    expect(bumps.length).toBeGreaterThanOrEqual(2);
-    let prev = -Infinity;
-    for (const b of bumps) {
-      const n = Number(b);
-      expect(n).toBeGreaterThanOrEqual(prev);
-      prev = n;
-    }
-    // Last bump reflects the last page's historyId.
-    expect(bumps[bumps.length - 1]).toBe("700");
-    // Only one enqueue call carrying every id from both pages.
-    expect(enqueueCalls).toHaveLength(1);
-    expect(enqueueCalls[0].ids).toEqual(["m1", "m2"]);
+    expect(bumps).toEqual(["560", "650", "700"]);
+    // Each page's adds were enqueued as their own call, BEFORE that page's
+    // cursor bump — not accumulated until the end of the walk.
+    expect(enqueueCalls).toHaveLength(2);
+    expect(enqueueCalls.map((c) => c.ids)).toEqual([["m1"], ["m2"]]);
   });
 });

@@ -105,11 +105,16 @@ export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase } = context;
+    // Deterministic order under the row cap: without ORDER BY, Postgres
+    // returns an arbitrary 2000-row subset once the address book exceeds
+    // the cap — WHICH contacts vanish would change between refetches.
     const { data, error } = await supabase
       .from("contacts")
       .select(
         "id,email,name,title,company,company_id,website,avatar_url,source,enriched_at,created_at",
       )
+      .order("name", { ascending: true, nullsFirst: false })
+      .order("id", { ascending: true })
       .limit(2000);
     if (error) throw new Error(error.message);
     const rows = (data ?? []).slice().sort((a, b) => {

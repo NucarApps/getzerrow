@@ -14,6 +14,7 @@ export type EmailRow = {
   raw_labels?: string[] | null;
   classified_by?: string | null;
   surfaced_to_inbox?: boolean | null;
+  snoozed_until?: string | null;
   folder?: {
     auto_archive?: boolean | null;
     hide_from_inbox?: boolean | null;
@@ -179,6 +180,13 @@ function matchesScope(row: EmailRow, scope: string): boolean {
   // 'pending' rows are still being repaired/populated: never surface them
   // in a settled view.
   if (isFullyPending(row)) return false;
+  // Snoozed mail is excluded from every settled view server-side (the
+  // get_emails_list_decrypted RPC filters snoozed_until > now() for all
+  // scopes except all_mail) — a realtime event must not splice it back in.
+  if (typeof row.snoozed_until === "string") {
+    const until = new Date(row.snoozed_until).getTime();
+    if (Number.isFinite(until) && until > Date.now()) return false;
+  }
   if (scope === "all" || scope === "inbox") {
     const inInbox =
       row.is_archived !== true && Array.isArray(row.raw_labels) && row.raw_labels.includes("INBOX");
@@ -357,7 +365,8 @@ export function useEmailRealtime() {
       } else {
         rafHandle = setTimeout(flush, 16) as unknown as number;
       }
-      bumpCounts();
+      // Counts are bumped once per batch in flush() — bumping here too made
+      // every realtime batch invalidate folder-counts twice.
     }
 
     function applyInsert(row: EmailRow) {

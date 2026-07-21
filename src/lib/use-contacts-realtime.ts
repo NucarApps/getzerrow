@@ -24,7 +24,13 @@ export function useContactsRealtime() {
 
     const refresh = () => {
       qc.invalidateQueries({ queryKey: ["contacts"] });
+      // Open detail views use ["contact", id] — without this, a cross-device
+      // edit (iPhone CardDAV, Google sync, card scan) updates the list but
+      // leaves an already-open drawer showing stale fields.
+      qc.invalidateQueries({ queryKey: ["contact"] });
       qc.invalidateQueries({ queryKey: ["contact-groups"] });
+      // Company buckets are derived from contacts' company fields.
+      qc.invalidateQueries({ queryKey: ["companies"] });
       qc.invalidateQueries({ queryKey: ["company-aliases"] });
       qc.invalidateQueries({ queryKey: ["company-logo-choices"] });
     };

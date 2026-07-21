@@ -23,6 +23,7 @@ function row(over: Partial<EmailRow> = {}): EmailRow {
     gmail_account_id: "gmail_account_id" in over ? over.gmail_account_id : ACC,
     raw_labels: "raw_labels" in over ? over.raw_labels : ["INBOX"],
     classified_by: "classified_by" in over ? over.classified_by : null,
+    snoozed_until: "snoozed_until" in over ? over.snoozed_until : null,
     folder: "folder" in over ? over.folder : null,
   };
 }
@@ -149,6 +150,32 @@ describe("rowBelongsInList", () => {
 //                  hidden from No-rules / folder views.
 // The rules-final row goes straight to its folder; 'all_mail' shows
 // everything including in-progress mail (diagnostic view).
+describe("rowBelongsInList — snoozed rows", () => {
+  const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const past = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+  it("excludes actively-snoozed rows from every settled view (matches the server RPC)", () => {
+    expect(rowBelongsInList(row({ snoozed_until: future }), ["emails", ACC, "all"])).toBe(false);
+    expect(
+      rowBelongsInList(row({ snoozed_until: future, folder_id: "f-1" }), ["emails", ACC, "f-1"]),
+    ).toBe(false);
+    expect(rowBelongsInList(row({ snoozed_until: future }), ["emails", ACC, "no_rules"])).toBe(
+      false,
+    );
+  });
+
+  it("keeps snoozed rows visible in the all_mail diagnostic scope", () => {
+    expect(rowBelongsInList(row({ snoozed_until: future }), ["emails", ACC, "all_mail"])).toBe(
+      true,
+    );
+  });
+
+  it("treats an elapsed snooze as not snoozed", () => {
+    expect(rowBelongsInList(row({ snoozed_until: past }), ["emails", ACC, "all"])).toBe(true);
+    expect(rowBelongsInList(row({ snoozed_until: null }), ["emails", ACC, "all"])).toBe(true);
+  });
+});
+
 describe("rowBelongsInList — classification insert shapes", () => {
   // Real inbox query keys are ["emails", accountId, scope, pageKey].
   const key = (scope: string) => ["emails", ACC, scope, "page:1:start"];

@@ -53,11 +53,12 @@ export const REARM_COOLDOWN_MS = 30 * 60 * 1000; // 30min
 export const WEBHOOK_INLINE_DRAIN_BUDGET_MS = 4_000;
 
 /** When the webhook drain defers a message's AI step to the cron, the
- * job is requeued this far in the future. Long enough that the webhook's
- * own remaining drain rounds won't re-claim it (avoiding a re-fetch
- * loop), short enough that the next `gmail-process-live-5s` cron tick
- * finishes the AI pass within a few seconds. */
-export const WEBHOOK_DEFERRED_AI_REQUEUE_MS = 1_500;
+ * job is requeued this far in the future. MUST exceed
+ * WEBHOOK_INLINE_DRAIN_BUDGET_MS — otherwise the webhook's own remaining
+ * drain rounds re-claim the deferred job and re-fetch the message from
+ * Gmail a third time. Still short enough that the next
+ * `gmail-process-live-5s` cron tick finishes the AI pass within seconds. */
+export const WEBHOOK_DEFERRED_AI_REQUEUE_MS = 5_000;
 
 // ─── History sync ────────────────────────────────────────────────────────
 
