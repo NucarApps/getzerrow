@@ -138,12 +138,22 @@ export function FolderEditor({
   });
 
   async function save() {
+    // Auto-activate: once the user gives the folder any intent (an AI prompt,
+    // a filter tree, or a linked Gmail label), flip skip_ai off so the
+    // classifier considers it. Folders with no intent stay inert (skip_ai
+    // stays true) regardless of what the local toggle says.
+    const trimmedAiRule = local.ai_rule?.trim() || null;
+    const hasFilterTree = local.filter_tree != null;
+    const hasGmailLabel = !!local.gmail_label_id;
+    const hasIntent = !!trimmedAiRule || hasFilterTree || hasGmailLabel;
+    const skipAi = hasIntent ? (local.skip_ai ?? false) : true;
+
     const { error } = await supabase
       .from("folders")
       .update({
         name: local.name,
         color: local.color,
-        ai_rule: local.ai_rule,
+        ai_rule: trimmedAiRule,
         gmail_label_id: local.gmail_label_id,
         auto_archive: local.auto_archive,
         auto_mark_read: local.auto_mark_read,
@@ -151,7 +161,7 @@ export function FolderEditor({
         filter_logic: local.filter_logic ?? "any",
         auto_star: local.auto_star ?? false,
         hide_from_inbox: local.hide_from_inbox ?? false,
-        skip_ai: local.skip_ai ?? false,
+        skip_ai: skipAi,
         filter_tree: local.filter_tree ?? null,
         forward_to: local.forward_to?.trim() || null,
         min_ai_confidence: Math.min(1, Math.max(0, local.min_ai_confidence ?? 0)),
