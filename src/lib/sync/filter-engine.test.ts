@@ -8,6 +8,9 @@ import {
   matchByFilters,
   labelOf,
   collectMatchingLeaves,
+  validateRuleNode,
+  MAX_FILTER_TREE_DEPTH,
+  MAX_FILTER_TREE_LEAVES,
   EXCLUDE_OPS,
   parseDomainList,
   filterVetoes,
@@ -437,5 +440,86 @@ describe("collectMatchingLeaves", () => {
       { field: "subject", op: "contains", value: "credit" },
       { field: "domain", op: "equals", value: "docusign.net" },
     ]);
+  });
+});
+
+describe("filter-tree bounds (validateRuleNode)", () => {
+  /** depth-N chain: group > group > … > cond. Depth counts the root. */
+  function chain(depth: number): RuleNode {
+    let node: RuleNode = { type: "cond", field: "subject", op: "contains", value: "x" };
+    for (let i = 1; i < depth; i++) node = { type: "group", op: "and", children: [node] };
+    return node;
+  }
+  /** flat group with N leaves that all match subject "Hello". */
+  function wide(leaves: number): RuleNode {
+    return {
+      type: "group",
+      op: "or",
+      children: Array.from({ length: leaves }, () => ({
+        type: "cond" as const,
+        field: "subject",
+        op: "contains",
+        value: "hello",
+      })),
+    };
+  }
+
+  it("accepts trees at the depth and leaf limits", () => {
+    expect(validateRuleNode(chain(MAX_FILTER_TREE_DEPTH))).toEqual({ ok: true });
+    expect(validateRuleNode(wide(MAX_FILTER_TREE_LEAVES))).toEqual({ ok: true });
+  });
+
+  it("rejects a tree nested past MAX_FILTER_TREE_DEPTH", () => {
+    const v = validateRuleNode(chain(MAX_FILTER_TREE_DEPTH + 1));
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.reason).toContain(`${MAX_FILTER_TREE_DEPTH} levels`);
+  });
+
+  it("rejects a tree with more than MAX_FILTER_TREE_LEAVES conditions", () => {
+    const v = validateRuleNode(wide(MAX_FILTER_TREE_LEAVES + 1));
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.reason).toContain(`${MAX_FILTER_TREE_LEAVES} conditions`);
+  });
+
+  it("rejects malformed nodes with descriptive reasons", () => {
+    const unknownType = { type: "nope" } as unknown as RuleNode;
+    const badChildren = { type: "group", op: "and", children: "x" } as unknown as RuleNode;
+    const badCond = {
+      type: "cond",
+      field: "subject",
+      op: "contains",
+      value: 5,
+    } as unknown as RuleNode;
+    const badOp = { type: "group", op: "xor", children: [] } as unknown as RuleNode;
+    expect(validateRuleNode(unknownType)).toMatchObject({ ok: false });
+    expect(validateRuleNode(badChildren)).toMatchObject({ ok: false });
+    expect(validateRuleNode(badCond)).toMatchObject({ ok: false });
+    expect(validateRuleNode(badOp)).toMatchObject({ ok: false });
+  });
+
+  it("an out-of-bounds tree never matches its folder (inert, no flat-filter fallback)", () => {
+    const f = folder({ id: "f-big", name: "Big", filter_tree: wide(MAX_FILTER_TREE_LEAVES + 1) });
+    // A flat filter that WOULD match — must not be used as a fallback for
+    // the superseded tree.
+    const flat = [filter("f-big", "subject", "contains", "hello")];
+    expect(matchByFilters(email({ subject: "Hello there" }), [f], flat)).toBeNull();
+  });
+
+  it("a maliciously deep tree is handled without evaluating (no stack blowup)", () => {
+    const f = folder({ id: "f-deep", name: "Deep", filter_tree: chain(50_000) });
+    expect(matchByFilters(email({ subject: "x" }), [f], [])).toBeNull();
+  });
+
+  it("collectMatchingLeaves short-circuits on out-of-bounds trees", () => {
+    expect(
+      collectMatchingLeaves(email({ subject: "hello" }), wide(MAX_FILTER_TREE_LEAVES + 1)),
+    ).toEqual([]);
+    expect(collectMatchingLeaves(email({ subject: "hello" }), wide(3))).toHaveLength(3);
+  });
+
+  it("a tree at the limits still evaluates normally", () => {
+    const f = folder({ id: "f-ok", name: "Ok", filter_tree: wide(MAX_FILTER_TREE_LEAVES) });
+    const m = matchByFilters(email({ subject: "Hello there" }), [f], []);
+    expect(m).toMatchObject({ kind: "match", folder_id: "f-ok", tree_used: true });
   });
 });
