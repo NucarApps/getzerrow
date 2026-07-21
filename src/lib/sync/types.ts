@@ -41,6 +41,11 @@ export type Folder = {
   /** Optional extra names/aliases (comma-separated) used alongside the
    * connected Gmail address for "is this addressed to me" judgments. */
   surface_names: string | null;
+  /** When true, the folder's deterministic rules evaluate against the
+   * whole thread (incoming message + recent prior messages) instead of
+   * the single message. Optional so test fixtures and older cached
+   * contexts keep working; absent means false. */
+  run_on_threads?: boolean;
 };
 
 export type OverrideException = {

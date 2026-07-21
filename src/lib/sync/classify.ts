@@ -22,7 +22,13 @@
 import { classifyEmail, shouldSurfaceToInbox } from "../ai.server";
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
-import { applyFilter, matchByFilters, labelOf, emailVetoedForFolder } from "./filter-engine";
+import {
+  applyFilter,
+  matchByFiltersOnThread,
+  labelOf,
+  emailVetoedForFolder,
+  type EmailForFilter,
+} from "./filter-engine";
 import type { OverrideException } from "./types";
 
 export type ClassificationResult = {
@@ -75,7 +81,13 @@ export type RulesClassification = ClassificationResult & {
 export function classifyByRules(
   parsed: ParsedEmailForClassify,
   context: AccountContext,
-  opts: { skipGmailLabelMatch?: boolean } = {},
+  opts: {
+    skipGmailLabelMatch?: boolean;
+    /** Prior messages of the same thread (decrypted, truncated) — used by
+     * folders with run_on_threads=true. Callers without thread context
+     * omit it and every folder behaves message-scoped (task 6 gating). */
+    threadEmails?: EmailForFilter[];
+  } = {},
 ): RulesClassification {
   const folderList = context.folders;
   const filterList = context.filters;
@@ -125,7 +137,9 @@ export function classifyByRules(
   const labeledFolder = opts.skipGmailLabelMatch
     ? undefined
     : folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
-  const folderMatch = labeledFolder ? null : matchByFilters(parsed, folderList, filterList);
+  const folderMatch = labeledFolder
+    ? null
+    : matchByFiltersOnThread(parsed, opts.threadEmails ?? [], folderList, filterList);
   const beatingFolderId =
     overrideHit && folderMatch?.kind === "match"
       ? (folderMatch.all_matched_folder_ids.find((fid) => {
@@ -165,6 +179,10 @@ export function classifyByRules(
             classified_by === "domain_rule"
               ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, winningFolderId)}`
               : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
+        }
+        if (m.matched_via_thread) {
+          classification_reason =
+            (classification_reason ?? "") + " (matched an earlier message in this thread)";
         }
         if (beatingFolderId && overrideHit) {
           classification_reason =
@@ -285,10 +303,18 @@ export async function classifyParsedEmail(
   parsed: ParsedEmailForClassify,
   userId: string,
   accountId: string,
-  opts: { skipGmailLabelMatch?: boolean; context?: AccountContext; skipAi?: boolean } = {},
+  opts: {
+    skipGmailLabelMatch?: boolean;
+    context?: AccountContext;
+    skipAi?: boolean;
+    threadEmails?: EmailForFilter[];
+  } = {},
 ): Promise<ClassificationResult> {
   const context = opts.context ?? (await loadAccountContext(accountId, userId));
-  const rules = classifyByRules(parsed, context, { skipGmailLabelMatch: opts.skipGmailLabelMatch });
+  const rules = classifyByRules(parsed, context, {
+    skipGmailLabelMatch: opts.skipGmailLabelMatch,
+    threadEmails: opts.threadEmails,
+  });
   if (rules.needs_ai && !opts.skipAi) {
     return classifyByAi(parsed, context, rules);
   }
