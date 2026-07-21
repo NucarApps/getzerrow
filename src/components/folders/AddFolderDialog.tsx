@@ -68,7 +68,6 @@ export function AddFolderDialog({
     if (!name.trim() || !accountId) return;
     setBusy(true);
     try {
-      const userId = (await supabase.auth.getUser()).data.user!.id;
       let labelId: string | null = null;
       if (labelChoice === NEW_LABEL) {
         try {
@@ -88,19 +87,18 @@ export function AddFolderDialog({
       } else {
         labelId = labelChoice;
       }
-      const { data: inserted, error } = await supabase
-        .from("folders")
-        .insert({
-          name: name.trim(),
-          user_id: userId,
-          gmail_account_id: accountId,
-          gmail_label_id: labelId,
-          color: pickColor(),
-        })
-        .select("id")
-        .single();
-      if (error) {
-        toast.error(error.message);
+      let inserted: { id: string } | null = null;
+      try {
+        inserted = await createFolderFn({
+          data: {
+            account_id: accountId,
+            name: name.trim(),
+            color: pickColor(),
+            gmail_label_id: labelId,
+          },
+        });
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Failed to create folder");
         return;
       }
       setName("");
