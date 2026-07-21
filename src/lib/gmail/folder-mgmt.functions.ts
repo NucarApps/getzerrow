@@ -507,6 +507,13 @@ export const createFolder = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Confirms the account belongs to the caller; throws otherwise.
     await getOwnedAccount(context.userId, data.account_id);
+    // Safer defaults when the folder is linked to an existing Gmail label:
+    // the user is asking to mirror what Gmail already sorted, not to invent
+    // new AI matches. Unlinked folders keep the current AI-on default so
+    // users who intend to define AI/filter rules aren't blocked.
+    const linkedLabel = !!data.gmail_label_id;
+    const skipAiDefault = linkedLabel;
+    const minAiConfidenceDefault = linkedLabel ? 0.75 : 0;
     const { data: row, error } = await supabaseAdmin
       .from("folders")
       .insert({
@@ -515,6 +522,8 @@ export const createFolder = createServerFn({ method: "POST" })
         name: data.name,
         color: data.color ?? "#3b82f6",
         gmail_label_id: data.gmail_label_id ?? null,
+        skip_ai: skipAiDefault,
+        min_ai_confidence: minAiConfidenceDefault,
       })
       .select("id")
       .single();
@@ -530,7 +539,9 @@ export const createFolder = createServerFn({ method: "POST" })
       user_id: context.userId,
       account_id: data.account_id,
       folder_id: row.id,
-      linked_label: !!data.gmail_label_id,
+      linked_label: linkedLabel,
+      skip_ai_default: skipAiDefault,
+      min_ai_confidence_default: minAiConfidenceDefault,
     });
     return { id: row.id };
   });
