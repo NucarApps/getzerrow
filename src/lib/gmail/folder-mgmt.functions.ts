@@ -520,10 +520,10 @@ export const createFolder = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Confirms the account belongs to the caller; throws otherwise.
     await getOwnedAccount(context.userId, data.account_id);
-    // Safer defaults when the folder is linked to an existing Gmail label:
-    // the user is asking to mirror what Gmail already sorted, not to invent
-    // new AI matches. Unlinked folders keep the current AI-on default so
-    // users who intend to define AI/filter rules aren't blocked.
+    // New folders start inert: no filter tree, no AI rule, skip_ai=true.
+    // Nothing should be classified into them until the user adds explicit
+    // intent (rules or AI prompt) via the folder editor. Gmail-label
+    // routing still works — that's a Gmail-side signal, not classification.
     const { skip_ai: skipAiDefault, min_ai_confidence: minAiConfidenceDefault } =
       deriveFolderAiDefaults(data.gmail_label_id);
     const linkedLabel = !!data.gmail_label_id;
