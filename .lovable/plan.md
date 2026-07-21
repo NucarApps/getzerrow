@@ -1,24 +1,63 @@
-## Problem
+# Fix silently-failing folder creation
 
-Deleting a contact or a label fails with:
+## What's actually broken
 
-> new row violates row-level security policy for table "google_contact_tombstones"
+Jared's "Kennect" folder was created in Zerrow on 2026-07-21. The Gmail label was created successfully, but no row exists in `public.folders` — for him or, in fact, for anyone since 2026-06-09.
 
-`google_contact_tombstones` has a `BEFORE DELETE` trigger on both `contacts` and `contact_groups` that inserts a tombstone row so the Google Contacts push worker can propagate the delete upstream. A prior migration (`20260719123000_…`) marked those trigger functions `SECURITY DEFINER` to avoid a "permission denied" error, but the table's RLS only exposes a `SELECT` policy — there is no `INSERT` policy at all, and Postgres still checks RLS `WITH CHECK` for the executing role (the definer role isn't `BYPASSRLS`). So every user-scoped delete of a contact or label is aborted.
+Root cause: `public.folders` has **no `GRANT`s** for `anon`, `authenticated`, or `service_role`. PostgREST rejects the client-side insert in `AddFolderDialog.tsx` regardless of RLS. The rest of the app doesn't feel this because nearly every other write goes through `supabaseAdmin` (service role bypasses grants). Folder-create is one of the last remaining direct client writes.
 
-## Fix
+The "emails going into Kennect that make no sense" that Jared sees is the Gmail label picking up mail via Gmail's own smart-label heuristics — Zerrow isn't classifying anything into it, because it doesn't know the folder exists.
 
-Add the missing INSERT policy (and matching grant) to `google_contact_tombstones` so the trigger's insert is accepted when the row belongs to the current user.
+Same missing-grants pattern is present on 10 other user tables, but they aren't user-visible today because all their writes go through server functions with `supabaseAdmin`. Grants are still worth restoring for defense in depth, but I'll keep that scoped.
 
-Migration (one file):
+## Changes
 
-- `GRANT INSERT ON public.google_contact_tombstones TO authenticated;`
-- `CREATE POLICY "Users insert their google tombstones" ON public.google_contact_tombstones FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);`
+### 1. Migration: restore table grants + policy-scoped grants
 
-`auth.uid()` is preserved across `SECURITY DEFINER` (it reads the request JWT, not the role), so `user_id` populated by the trigger from `google_contact_links.user_id` matches the caller. Admin/service paths already bypass RLS and continue to work. No app code changes.
+One migration that adds the standard grant block to every user table currently missing it. All are `auth.uid() = user_id`-scoped, so no `anon` grants:
 
-## Verification
+```
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.<t> TO authenticated;
+GRANT ALL ON public.<t> TO service_role;
+```
 
-- Delete a contact and a label from the UI — both succeed; a row appears in `google_contact_tombstones` for the linked Google resource.
-- Deleting a contact with no Google link still succeeds (trigger inserts zero rows).
-- Run the Supabase linter to confirm no new warnings.
+Tables covered: `folders`, `emails`, `contacts`, `companies`, `tasks`, `meetings`, `message_jobs`, `folder_examples`, `folder_filters`, `inbox_overrides`, `my_cards`.
+
+This alone unblocks `AddFolderDialog` for every new signup, immediately.
+
+### 2. Move folder-create to a server function (harden the write path)
+
+`AddFolderDialog.tsx` doing a raw `supabase.from("folders").insert(...)` from the browser is inconsistent with the rest of the codebase and is what made this class of failure silent (a toast the user missed, no server-side log).
+
+- Add `createFolder` in `src/lib/gmail/folder-mgmt.functions.ts`:
+  - `createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])`
+  - Zod input: `{ account_id, name, color, gmail_label_id? }`
+  - Verifies `getOwnedAccount(userId, account_id)`.
+  - Inserts via `supabaseAdmin` (owner is the authenticated user).
+  - Returns `{ id }`.
+- Update `AddFolderDialog.tsx`:
+  - Replace the direct `supabase.from("folders").insert(...)` with `useServerFn(createFolder)`.
+  - Keep the existing `createGmailLabel` → `createFolder` → `learnFolderFromLabel` sequence.
+  - Any thrown error surfaces via toast (was already the pattern for the label call).
+
+### 3. Restore Jared's Kennect folder
+
+After the migration lands, insert the missing row for Jared (`user_id = e8fb5402-…`, his `gmail_account_id`), linked to the existing Kennect Gmail label id (I'll look up the label id from Gmail at apply-time using his account context), then enqueue `learnFromLinkedLabel` so previously-labeled mail is pulled into the folder and future mail is classified.
+
+If I can't confirm the Gmail label id safely, I'll fall back to creating an unlinked folder and let him link the label in the UI.
+
+## Out of scope
+
+- No changes to RLS policies — they're already correct.
+- No refactor of other user-visible write paths — none of them use the browser Supabase client for writes today.
+- No security-linter follow-ups unrelated to grants.
+
+## Technical details
+
+- Migration file: `supabase/migrations/<ts>_restore_public_table_grants.sql` — pure `GRANT` statements, no schema changes.
+- New server fn: `createFolder` in `src/lib/gmail/folder-mgmt.functions.ts`.
+- Client edit: `src/components/folders/AddFolderDialog.tsx` — swap insert for server fn call; delete `supabase.auth.getUser()` (server fn has `context.userId`).
+- Verification after apply:
+  1. `SELECT count(*) FROM public.folders WHERE created_at > now() - interval '1 hour'` after re-running Jared's create.
+  2. Watch `stack_modern--server-function-logs` for `createFolder` invocations.
+  3. Confirm Jared's inbox starts showing rule/AI activity in `executed_rules` for Kennect.
