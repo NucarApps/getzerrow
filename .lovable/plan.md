@@ -1,71 +1,75 @@
-# What the screenshot actually shows
 
-Jared re-created the folder after the earlier grants fix landed. It exists in the DB now (`folder_id 50e9ea60…`, linked to Gmail `Label_27`) and the banner at the top is his 6-month backfill still running (55,530 / 55,656).
+# Goal
 
-Current contents of Kenect Reports = 105 emails, decided by:
+A newly created folder should do **nothing** — no AI classification, no filing — until the user explicitly gives it rules (filter tree) or an AI prompt (`ai_rule`). Linking a Gmail label just mirrors what Gmail already labeled; it does not authorize Zerrow to invent new matches.
 
-| Source | Count | Notes |
-|---|---|---|
-| `gmail_labeled` / `gmail_label` | 72 | Already labeled `Label_27` in Gmail — Zerrow correctly followed the label. |
-| `manual_move` | 24 | Jared moved them himself. |
-| `ai` | **9** | Matched Zerrow's *learned profile* for the folder, **without** a Gmail label and **without** any user-authored rule. |
+This replaces my earlier "mirror-only when linked to existing label" heuristic, which was wrong because the default "Create new Gmail label" path also sets `gmail_label_id` and would have incorrectly disabled AI on every fresh folder.
 
-So the "emails going into it that make no sense" are the **9 AI-classified rows**. The folder has:
+# The rule
 
-- `filter_tree`: empty
-- `ai_rule`: empty
-- `learned_profile`: **auto-populated** (linking a Gmail label triggers `learnFromLinkedLabel`, which learns from historical labeled mail — mostly dealer / auto-industry senders in his case, so the profile is broad enough to catch adjacent mail)
-- `min_ai_confidence`: **0** (accepts any AI match)
-- `skip_ai`: **false**
+A folder is "active" for classification only if at least one is true:
+- It has a non-empty `filter_tree` (user-authored rules), **or**
+- It has a non-empty `ai_rule` (user-authored AI prompt).
 
-That combination is the root cause: a label-linked folder with no explicit user intent still competes for every incoming email via the learned profile at zero confidence floor. This is the default across the app, not specific to Jared.
+Otherwise it's inert:
+- Gmail-labeled mail still lands in it (that's Gmail, not Zerrow).
+- Manual moves still work and still teach the learned profile.
+- The classifier does **not** consider the folder — no rule match attempts, no AI profile match, regardless of `learned_profile` or `min_ai_confidence`.
 
-# Plan
+# Changes
 
-## 1. Product fix — safer defaults for label-linked folders
+## 1. Create defaults — `src/lib/gmail/folder-mgmt.functions.ts`
 
-Change `createFolder` (already the new server function) so that when the user picks **"Link to existing Gmail label"** (i.e. `gmail_label_id` is provided at creation), the folder starts as **label-only**:
+Replace `deriveFolderAiDefaults` with a single default applied to every new folder regardless of label linkage:
 
-- `skip_ai = true`
-- `min_ai_confidence = 0.75` (kept for when they later opt into AI)
+- `skip_ai: true`
+- `min_ai_confidence: 0.75`
+- `filter_tree: null`
+- `ai_rule: null`
 
-Rationale: a user linking an existing Gmail label is saying "these are already sorted, mirror it" — not "invent new rules to fill this folder". If they later want AI too, `EditFolderDialog` already exposes the toggles.
+`learned_profile` is still populated on label-link (via `learnFromLinkedLabel`) so it's ready the moment the user opts in — but `skip_ai=true` keeps it dormant.
 
-Folders created **without** a Gmail label (pure Zerrow folder they intend to define rules for) keep the current AI-on default.
+Update the unit test in `src/lib/gmail/folder-mgmt.defaults.test.ts` to assert the same defaults for both linked and unlinked folders.
 
-Files:
-- `src/lib/gmail/folder-mgmt.functions.ts` — set `skip_ai: true, min_ai_confidence: 0.75` in the insert when `gmail_label_id` is provided.
-- No UI changes required; existing edit UI already lets them re-enable AI.
+## 2. Classifier gate — `src/lib/sync/classify.ts` (and/or `process-message.ts` where folders are enumerated)
 
-## 2. One-time cleanup for Jared
-
-- Set his Kenect Reports folder to `skip_ai=true` so no more incidental AI matches file into it.
-- Reclassify the 9 AI-routed rows: null out `folder_id`, requeue via `message_jobs`, so they route by the current (correct) label / rule state. Manual moves and Gmail-labeled rows are untouched.
-
-## 3. Guardrails / verification
-
-- Log in `gmail.create_folder` audit whether `skip_ai_default` was applied, so we can measure if new label-linked folders still collect AI-classified stragglers post-change.
-- Add a test in `src/lib/gmail/folder-mgmt.test.ts` (new) covering: label-linked create → `skip_ai=true`; unlabeled create → `skip_ai=false`.
-
-## Out of scope
-
-- No changes to the classifier itself. The 9-row overfit here is a defaults problem, not a model problem.
-- No sweep of other users' existing label-linked folders. If we later want that, it's a one-shot migration to set `skip_ai=true` for folders that have a `gmail_label_id`, an empty `filter_tree`, and no `ai_rule` — happy to do that as a follow-up once we've validated the new default in the wild.
-
-## Technical details
-
-The insert in `createFolder`:
+Add an "is folder active" check before the folder is considered for matching:
 
 ```ts
-.insert({
-  user_id: context.userId,
-  gmail_account_id: data.account_id,
-  name: data.name,
-  color: data.color ?? "#3b82f6",
-  gmail_label_id: data.gmail_label_id ?? null,
-  skip_ai: data.gmail_label_id ? true : false,
-  min_ai_confidence: data.gmail_label_id ? 0.75 : 0,
-})
+const isActive =
+  (folder.filter_tree && hasConditions(folder.filter_tree)) ||
+  (folder.ai_rule && folder.ai_rule.trim().length > 0);
+if (!isActive) continue;
 ```
 
-Jared cleanup runs as one `supabase--insert` call (UPDATE folder + UPDATE emails + INSERT message_jobs).
+This is the real safety net — even if a legacy folder still has `skip_ai=false` and a `learned_profile`, it won't classify unless the user has added rules or an AI prompt. Manual moves and Gmail-label routing (which happen before the classifier) are untouched.
+
+## 3. Auto-enable when the user adds intent — `EditFolderDialog` save path
+
+When a folder transitions from inert → having a `filter_tree` or `ai_rule` for the first time, flip `skip_ai=false` automatically so the user's newly added AI prompt actually runs. Rules-only folders can stay `skip_ai=true`.
+
+Implemented as a small helper in `folder-mgmt.functions.ts` called from the update server fn — no UI change required.
+
+## 4. Backfill for existing users
+
+One-shot migration or `supabase--insert` to set `skip_ai=true` and `min_ai_confidence=0.75` on every folder that currently has:
+- empty/null `filter_tree`, **and**
+- empty/null `ai_rule`
+
+This retroactively fixes Jared's "Kenect Reports" situation for anyone else in the same shape. Users who already authored rules or an AI prompt are left alone.
+
+## 5. Reclassify affected mail
+
+For every folder the backfill touched, find emails filed with `classified_by='ai'` where the folder is now inert, null their `folder_id`, and requeue as `classify` jobs — same shape as the one-off cleanup we already ran for Jared.
+
+## 6. Tests
+
+- `folder-mgmt.defaults.test.ts` — every new folder starts inert (`skip_ai=true`, no rules, no ai_rule).
+- New test in `src/lib/sync/classify.test.ts` (or nearest existing) — a folder with `learned_profile` but no `filter_tree`/`ai_rule` is skipped by the classifier even with `skip_ai=false`.
+- New test — a folder gets `ai_rule` added; the update path flips `skip_ai=false`.
+
+# Out of scope
+
+- No classifier model changes.
+- No UI copy changes in `AddFolderDialog` — the current label-link flow keeps working, it just doesn't auto-classify anymore.
+- No changes to `learnFromLinkedLabel` — the profile is still learned in the background so activation is instant when the user opts in.
