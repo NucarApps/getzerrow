@@ -17,6 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logError } from "@/lib/log.server";
 import type { AccountContext } from "./account-context";
+import type { ActionOutcome } from "./action-dispatch";
 import type { ClassificationResult, ParsedEmailForClassify } from "./classify";
 import { collectMatchingLeaves } from "./filter-engine";
 
@@ -82,6 +83,9 @@ export type RecordExecutionInput = {
   /** False for user-initiated re-classification. The ingest pipeline (the
    * only caller today) is always automated. */
   automated?: boolean;
+  /** Per-action outcomes from the dispatcher (task 4). Persisted as
+   * executed_actions child rows; payloads are action config only. */
+  actions?: ActionOutcome[];
 };
 
 export async function recordExecution(input: RecordExecutionInput): Promise<void> {
@@ -91,7 +95,7 @@ export async function recordExecution(input: RecordExecutionInput): Promise<void
     const key = process.env.EMAIL_ENC_KEY;
     if (!key) throw new Error("EMAIL_ENC_KEY not configured");
     const leaves = matchedLeavesFor(input.parsed, input.context, c);
-    const { error } = await adminRpc("record_executed_rule", {
+    const { data: ruleId, error } = await adminRpc("record_executed_rule", {
       p_user_id: input.userId,
       p_gmail_account_id: input.gmailAccountId,
       p_email_id: input.emailId,
@@ -108,6 +112,24 @@ export async function recordExecution(input: RecordExecutionInput): Promise<void
       p_key: key,
     });
     if (error) throw new Error(error.message);
+    // Per-action audit rows (task 4). Plain insert — payloads carry
+    // action configuration only, never email content or AI output.
+    if (ruleId && input.actions && input.actions.length > 0) {
+      const nowIso = new Date().toISOString();
+      const { error: actionsError } = await (supabaseAdmin as unknown as SupabaseClient)
+        .from("executed_actions")
+        .insert(
+          input.actions.map((a) => ({
+            executed_rule_id: ruleId as string,
+            action_type: a.action_type,
+            status: a.status,
+            error: a.error,
+            payload: a.payload,
+            ran_at: a.status === "pending" ? null : nowIso,
+          })),
+        );
+      if (actionsError) throw new Error(actionsError.message);
+    }
   } catch (e) {
     logError(
       "executed_rules.record_failed",

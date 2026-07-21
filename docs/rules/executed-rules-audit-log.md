@@ -24,11 +24,10 @@ last 500 decisions.
 Indexes: `(user_id, created_at DESC)`, `(folder_id, created_at DESC)`, `(email_id)`.
 
 **`executed_actions`** — per-action child rows (`action_type`, `status`,
-`error`, `payload`, `ran_at`). Created now so the schema lands as one unit;
-**no code writes to it yet** — the per-action dispatcher arrives with
-`folder_actions` (task 4), which owns honest per-action statuses. Its
-`payload` must only ever hold action _configuration_ (label ids, forward
-address), never email content or AI output.
+`error`, `payload`, `ran_at`). Written by the action dispatcher since
+task 4 (`docs/rules/folder-actions-dispatch.md`) with honest per-action
+statuses. Its `payload` must only ever hold action _configuration_ (label
+ids, forward address), never email content or AI output.
 
 ### Encryption deviation from the task spec
 
