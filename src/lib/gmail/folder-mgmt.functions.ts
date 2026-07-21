@@ -513,7 +513,7 @@ export const createFolder = createServerFn({ method: "POST" })
         user_id: context.userId,
         gmail_account_id: data.account_id,
         name: data.name,
-        color: data.color ?? null,
+        color: data.color ?? "#3b82f6",
         gmail_label_id: data.gmail_label_id ?? null,
       })
       .select("id")
