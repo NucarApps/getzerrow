@@ -659,6 +659,59 @@ export type Database = {
           },
         ]
       }
+      contact_enrich_jobs: {
+        Row: {
+          attempts: number
+          contact_id: string | null
+          created_at: string
+          error: string | null
+          finished_at: string | null
+          id: string
+          kind: string
+          locked_at: string | null
+          started_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempts?: number
+          contact_id?: string | null
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          kind: string
+          locked_at?: string | null
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempts?: number
+          contact_id?: string | null
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          kind?: string
+          locked_at?: string | null
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_enrich_jobs_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_enrichment_suggestions: {
         Row: {
           confidence: string
@@ -797,8 +850,11 @@ export type Database = {
       }
       contact_group_suggestions: {
         Row: {
+          auto_applied: boolean
+          confidence: string
           contact_ids: string[]
           created_at: string
+          evidence: Json | null
           existing_group_id: string | null
           id: string
           kind: string
@@ -811,8 +867,11 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          auto_applied?: boolean
+          confidence?: string
           contact_ids?: string[]
           created_at?: string
+          evidence?: Json | null
           existing_group_id?: string | null
           id?: string
           kind?: string
@@ -825,8 +884,11 @@ export type Database = {
           user_id: string
         }
         Update: {
+          auto_applied?: boolean
+          confidence?: string
           contact_ids?: string[]
           created_at?: string
+          evidence?: Json | null
           existing_group_id?: string | null
           id?: string
           kind?: string
@@ -3006,6 +3068,16 @@ export type Database = {
           p_watch_expiration?: string
         }
         Returns: boolean
+      }
+      claim_contact_enrich_jobs: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts: number
+          contact_id: string
+          id: string
+          kind: string
+          user_id: string
+        }[]
       }
       claim_folder_summary_jobs: {
         Args: { p_limit?: number }
