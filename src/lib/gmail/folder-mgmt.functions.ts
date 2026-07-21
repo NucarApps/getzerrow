@@ -478,6 +478,17 @@ export const listFolderSummaries = createServerFn({ method: "POST" })
     return { schedules: rows ?? [] };
   });
 
+// Derive AI defaults when creating a folder. Extracted as a pure helper so
+// the "label-linked → mirror only" rule is unit-testable without touching
+// Supabase. See folder-mgmt.defaults.test.ts.
+export function deriveFolderAiDefaults(gmailLabelId: string | null | undefined): {
+  skip_ai: boolean;
+  min_ai_confidence: number;
+} {
+  const linked = !!gmailLabelId;
+  return { skip_ai: linked, min_ai_confidence: linked ? 0.75 : 0 };
+}
+
 // Create a new folder owned by the authenticated user. Historically this was
 // done via a direct `supabase.from("folders").insert(...)` from the browser,
 // which silently failed after grants on public.folders were dropped. Doing
