@@ -478,6 +478,63 @@ export const listFolderSummaries = createServerFn({ method: "POST" })
     return { schedules: rows ?? [] };
   });
 
+// Create a new folder owned by the authenticated user. Historically this was
+// done via a direct `supabase.from("folders").insert(...)` from the browser,
+// which silently failed after grants on public.folders were dropped. Doing
+// the insert here with supabaseAdmin makes the write path consistent with
+// the rest of the app and surfaces failures as server-function errors.
+export const createFolder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (d: {
+      account_id: string;
+      name: string;
+      color?: string | null;
+      gmail_label_id?: string | null;
+    }) =>
+      z
+        .object({
+          account_id: z.string().uuid(),
+          name: z.string().trim().min(1).max(120),
+          color: z
+            .string()
+            .regex(/^#[0-9a-fA-F]{6}$/)
+            .nullish(),
+          gmail_label_id: z.string().max(200).nullish(),
+        })
+        .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    // Confirms the account belongs to the caller; throws otherwise.
+    await getOwnedAccount(context.userId, data.account_id);
+    const { data: row, error } = await supabaseAdmin
+      .from("folders")
+      .insert({
+        user_id: context.userId,
+        gmail_account_id: data.account_id,
+        name: data.name,
+        color: data.color ?? null,
+        gmail_label_id: data.gmail_label_id ?? null,
+      })
+      .select("id")
+      .single();
+    if (error || !row) {
+      logError(
+        "gmail.create_folder.insert_failed",
+        { user_id: context.userId, account_id: data.account_id },
+        error,
+      );
+      throw new Error(error?.message ?? "Failed to create folder");
+    }
+    logAudit("gmail.create_folder", {
+      user_id: context.userId,
+      account_id: data.account_id,
+      folder_id: row.id,
+      linked_label: !!data.gmail_label_id,
+    });
+    return { id: row.id };
+  });
+
 export const createFolderSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
