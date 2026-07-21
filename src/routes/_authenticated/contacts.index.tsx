@@ -65,6 +65,11 @@ import {
 } from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import { AddContactsDialog } from "@/components/contacts/AddContactsDialog";
+import {
+  getContactAiToolsStatus,
+  type AiToolStatus,
+} from "@/lib/contacts/ai-scan-status.functions";
+import { formatDistanceToNow } from "date-fns";
 import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.functions";
 import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
 import { normalizeCompanyName } from "@/lib/contacts/company-name";
@@ -134,6 +139,29 @@ function ScannedBadge() {
   );
 }
 
+/** AI-tools menu row: tool name plus a live "N pending · scanned X ago"
+ * subtitle so it's obvious the tools are alive (or that a scan is running). */
+function AiToolItem({ label, status }: { label: string; status?: AiToolStatus }) {
+  let subtitle: string | null = null;
+  if (status) {
+    const parts: string[] = [];
+    if (status.scanActive) parts.push("scan running…");
+    if (status.pendingCount > 0) parts.push(`${status.pendingCount} pending`);
+    if (status.lastActivityAt) {
+      parts.push(`updated ${formatDistanceToNow(new Date(status.lastActivityAt))} ago`);
+    } else if (!status.scanActive) {
+      parts.push("never scanned");
+    }
+    subtitle = parts.join(" · ");
+  }
+  return (
+    <div className="flex min-w-0 flex-col">
+      <span>{label}</span>
+      {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
+    </div>
+  );
+}
+
 function ContactsPage() {
   const qc = useQueryClient();
   const nav = useNavigate();
@@ -191,6 +219,17 @@ function ContactsPage() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const bulkAddToGroups = useServerFn(addContactsToGroups);
   const backfillAutoGroups = useServerFn(reconcileAllAutoGroups);
+
+  // Per-tool status shown inside the AI tools menu; fetched lazily when the
+  // menu opens (and kept while any drawer is open so counts stay current).
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
+  const aiToolsStatusFn = useServerFn(getContactAiToolsStatus);
+  const aiStatusQ = useQuery({
+    queryKey: ["contact-ai-tools-status"],
+    queryFn: () => aiToolsStatusFn(),
+    enabled: aiMenuOpen || suggestOpen || dupesOpen || enrichOpen,
+    staleTime: 15_000,
+  });
 
   // Once per browser tab session: reconcile every auto-company-subgroup parent
   // so groups pick up contacts added since the last reconcile (Google sync,
@@ -933,7 +972,7 @@ function ContactsPage() {
                     </span>
                   </Button>
                 )}
-                <DropdownMenu>
+                <DropdownMenu onOpenChange={setAiMenuOpen}>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="outline"
@@ -945,18 +984,21 @@ function ContactsPage() {
                       <span className="hidden sm:inline">AI tools</span>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" className="w-64">
                     <DropdownMenuItem onSelect={() => setSuggestOpen(true)}>
-                      Suggest groups
+                      <AiToolItem label="Suggest groups" status={aiStatusQ.data?.groups} />
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setDupesOpen(true)}>
-                      Find duplicate contacts
+                      <AiToolItem
+                        label="Find duplicate contacts"
+                        status={aiStatusQ.data?.duplicates}
+                      />
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setLabelDupesOpen(true)}>
-                      Find duplicate labels
+                      <AiToolItem label="Find duplicate labels" />
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setEnrichOpen(true)}>
-                      Enrich from inbox
+                      <AiToolItem label="Enrich from inbox" status={aiStatusQ.data?.enrichment} />
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

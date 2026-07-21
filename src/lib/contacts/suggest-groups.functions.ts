@@ -130,9 +130,16 @@ export const getContactGroupSuggestions = createServerFn({ method: "GET" })
 /** Core of the AI grouping scan. Callable with any client (user-scoped
  * server fn below, or supabaseAdmin from the background enrichment worker),
  * so EVERY query filters on the explicit userId. Rate limited. */
-export async function runContactGroupSuggestionsImpl(supabase: DB, userId: string) {
+export async function runContactGroupSuggestionsImpl(
+  supabase: DB,
+  userId: string,
+  opts: { source?: "manual" | "background" } = {},
+) {
   {
-    // Rate limit: at most one scan per 5 minutes.
+    // Rate limit: at most one scan per 5 minutes. The background 'suggest'
+    // job shares this cooldown with the drawer's button — a manual click
+    // inside the window returns the cached run instead of erroring, so a
+    // cron run minutes earlier never surfaces as "Please wait 240s".
     const { data: last } = await supabase
       .from("contact_group_suggestions")
       .select("created_at")
@@ -143,7 +150,18 @@ export async function runContactGroupSuggestionsImpl(supabase: DB, userId: strin
       const age = Date.now() - new Date(last[0].created_at).getTime();
       if (age < RESCAN_COOLDOWN_MS) {
         const wait = Math.ceil((RESCAN_COOLDOWN_MS - age) / 1000);
-        throw new Error(`Please wait ${wait}s before running another AI scan.`);
+        if (opts.source === "background") {
+          throw new Error(`Please wait ${wait}s before running another AI scan.`);
+        }
+        const suggestions = await loadLatestSuggestions(supabase, userId);
+        return {
+          suggestions,
+          stats: {
+            cached: true as const,
+            cachedAgeSeconds: Math.round(age / 1000),
+            cooldownRemainingSeconds: wait,
+          },
+        };
       }
     }
 

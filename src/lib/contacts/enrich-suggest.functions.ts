@@ -59,20 +59,17 @@ const SignatureExtraction = z.object({
 });
 type SignatureExtraction = z.infer<typeof SignatureExtraction>;
 
-/** Kick off a scan across contacts and produce enrichment suggestions. */
-export const scanContactEnrichment = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { strictness?: number } | undefined) =>
-    z
-      .object({ strictness: z.number().int().min(1).max(5).optional() })
-      .default({})
-      .parse(d ?? {}),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const userId = context.userId;
-    const strictness = data.strictness ?? 3;
-
+/** Core enrichment scan — runs in the background worker (contact_enrich_jobs
+ * kind 'signature_scan'), never inline in a request: it makes up to
+ * MAX_AI_EXTRACTIONS sequential model calls plus email decryption per
+ * contact, minutes of wall-time the old inline design couldn't survive.
+ * All queries filter on the explicit userId — callers pass supabaseAdmin. */
+export async function scanContactEnrichmentImpl(
+  supabase: typeof supabaseAdmin,
+  userId: string,
+  strictness = 3,
+) {
+  {
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
 
@@ -83,6 +80,7 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
     const { data: rawCandidates, error: cErr } = await supabase
       .from("contacts")
       .select("id, name, email, company, title, updated_at")
+      .eq("user_id", userId)
       .order("updated_at", { ascending: false })
       .limit(MAX_CONTACTS_PER_RUN * 3);
     if (cErr) throw new Error(cErr.message);
@@ -111,6 +109,7 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
     const { data: pendingRows } = await supabase
       .from("contact_enrichment_suggestions")
       .select("contact_id, field, value, source, status")
+      .eq("user_id", userId)
       .in("status", ["pending", "dismissed"]);
     const existing = new Set(
       (pendingRows ?? []).map((r) => `${r.contact_id}|${r.field}|${(r.value ?? "").toLowerCase()}`),
@@ -148,6 +147,7 @@ export const scanContactEnrichment = createServerFn({ method: "POST" })
     const { data: allContactEmails } = await supabase
       .from("contacts")
       .select("email")
+      .eq("user_id", userId)
       .not("email", "is", null);
     const knownEmails = new Set(
       (allContactEmails ?? []).map((r) => (r.email ?? "").toLowerCase()).filter(Boolean),
@@ -387,6 +387,7 @@ ${corpus}`;
         const { count } = await supabase
           .from("contacts")
           .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
           .eq("email", addr);
         if ((count ?? 0) > 0) continue;
 
@@ -424,6 +425,24 @@ ${corpus}`;
     });
 
     return { scanned: candidates.length, created: rows.length, run_id: runId };
+  }
+}
+
+/** Queue an enrichment scan for the background worker (results land in the
+ * suggestions list, which the drawer polls). The strictness knob keeps its
+ * default in the background path. */
+export const scanContactEnrichment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { strictness?: number } | undefined) =>
+    z
+      .object({ strictness: z.number().int().min(1).max(5).optional() })
+      .default({})
+      .parse(d ?? {}),
+  )
+  .handler(async ({ context }) => {
+    const { enqueueUserScanJob } = await import("./enrich-jobs.server");
+    const r = await enqueueUserScanJob(context.userId, "signature_scan");
+    return { queued: true, alreadyQueued: r.alreadyQueued };
   });
 
 function rank(c: NameMatchConfidence): number {

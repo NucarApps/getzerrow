@@ -4,6 +4,7 @@ import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { logInfo } from "@/lib/log.server";
 import { normalizePhone } from "./phone";
 import { emailLocalPart, firstLastTokens, normalizeNameLoose } from "./name-match";
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
@@ -175,43 +176,84 @@ type ClusterInput = {
   >;
 };
 
-async function judgeCluster(
+/** Clusters per model call. Batching turns an 80-cluster scan from 80
+ * sequential calls (minutes — guaranteed wall-time death when run inline)
+ * into ≤10, and lets a whole scan finish inside one background-worker tick. */
+const JUDGE_BATCH_SIZE = 8;
+
+const BatchAiSchema = z.object({
+  verdicts: z.array(
+    z.object({
+      cluster: z.number().int().positive(),
+      same_person: z.boolean(),
+      confidence: z.enum(["high", "medium", "low"]),
+      reason: z.string(),
+    }),
+  ),
+});
+
+/** Judge up to JUDGE_BATCH_SIZE clusters in one model call. Returns a map of
+ * 1-based cluster index → verdict. A failed call returns an EMPTY map — the
+ * caller skips those clusters and keeps going instead of aborting the scan. */
+async function judgeClustersBatch(
   apiKey: string,
-  cluster: ClusterInput,
-): Promise<z.infer<typeof AiSchema>> {
+  clusters: ClusterInput[],
+): Promise<Map<number, z.infer<typeof AiSchema>>> {
   const gateway = createLovableAiGatewayProvider(apiKey);
   const model = gateway("google/gemini-2.5-flash");
-  const prompt = `You review a small group of contact rows and decide whether they represent the same real person.
+  const blocks = clusters
+    .map((c, idx) => `Cluster ${idx + 1}:\n${JSON.stringify(c.contacts)}`)
+    .join("\n\n");
+  const prompt = `You review small groups ("clusters") of contact rows and decide, for EACH cluster independently, whether its rows represent the same real person.
 
-Contacts (JSON):
-${JSON.stringify(cluster.contacts)}
+${blocks}
 
-Return JSON matching the schema:
-- same_person: true when they clearly represent the same real person, false otherwise
+Return JSON matching the schema — one verdict per cluster, using the cluster's number:
+- same_person: true when the rows clearly represent the same real person, false otherwise
 - confidence: high (strong signals: shared phone or same email prefix + matching name), medium (matching name + company or partial signals), low (only weak clues)
 - reason: one short sentence naming the deciding signal(s), max 200 characters.
 
 Rules:
 - Two people at the same company with different names are NOT duplicates.
 - Different emails on the same phone number is a strong duplicate signal.
-- Missing fields shouldn't lower confidence when the fields present match.`;
+- Missing fields shouldn't lower confidence when the fields present match.
+- Never merge verdicts across clusters; judge each on its own rows only.`;
+
+  const out = new Map<number, z.infer<typeof AiSchema>>();
+  let parsed: z.infer<typeof BatchAiSchema> | null = null;
   try {
     const { output } = await generateText({
       model,
-      output: Output.object({ schema: AiSchema }),
+      output: Output.object({ schema: BatchAiSchema }),
       prompt,
     });
-    return output;
+    parsed = output;
   } catch (error) {
     if (NoObjectGeneratedError.isInstance(error)) {
       try {
-        return AiSchema.parse(JSON.parse(error.text ?? "{}"));
+        parsed = BatchAiSchema.parse(JSON.parse(error.text ?? "{}"));
       } catch {
-        return { same_person: false, confidence: "low", reason: "AI response unparseable" };
+        // Unparseable raw text — `parsed` stays null and every cluster in
+        // this batch is skipped (counted as an AI failure by the caller).
       }
+    } else {
+      logInfo("contact_dedup.judge_batch_failed", {
+        clusters: clusters.length,
+        message: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+      });
+      return out;
     }
-    throw error;
   }
+  for (const v of parsed?.verdicts ?? []) {
+    if (v.cluster >= 1 && v.cluster <= clusters.length && !out.has(v.cluster)) {
+      out.set(v.cluster, {
+        same_person: v.same_person,
+        confidence: v.confidence,
+        reason: v.reason,
+      });
+    }
+  }
+  return out;
 }
 
 export type DuplicateSuggestion = {
@@ -226,90 +268,142 @@ export type DuplicateSuggestion = {
   contacts: Array<ContactWithPhones>;
 };
 
-export const scanContactDuplicates = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context;
+/** Core duplicate scan — runs in the background worker (contact_enrich_jobs
+ * kind 'dedup_scan'), never inline in a request: with the AI judge batched
+ * at JUDGE_BATCH_SIZE it still needs up to ~10 model calls. Non-destructive:
+ * existing pending suggestions are only pruned AFTER a fully-judged scan,
+ * dismissed suggestions are never resurrected, and a failed judge batch
+ * skips its clusters instead of aborting the run. */
+export async function scanContactDuplicatesImpl(userId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [{ data: contacts }, { data: phones }] = await Promise.all([
-      supabase
-        .from("contacts")
-        .select("id, name, email, company, title, city, source, created_at")
-        .eq("user_id", userId),
-      supabase.from("contact_phones").select("contact_id, number").eq("user_id", userId),
-    ]);
+  const [{ data: contacts }, { data: phones }] = await Promise.all([
+    supabaseAdmin
+      .from("contacts")
+      .select("id, name, email, company, title, city, source, created_at")
+      .eq("user_id", userId),
+    supabaseAdmin.from("contact_phones").select("contact_id, number").eq("user_id", userId),
+  ]);
 
-    if (!contacts || contacts.length < 2) {
-      return {
-        clustersAnalyzed: 0,
-        clustersTotal: 0,
-        created: 0,
-        truncated: false,
-      };
+  if (!contacts || contacts.length < 2) {
+    return { clustersAnalyzed: 0, clustersTotal: 0, created: 0, truncated: false, aiFailures: 0 };
+  }
+
+  const phoneByContact = new Map<string, string[]>();
+  for (const p of (phones ?? []) as PhoneRow[]) {
+    const list = phoneByContact.get(p.contact_id) ?? [];
+    list.push(p.number);
+    phoneByContact.set(p.contact_id, list);
+  }
+  const withPhones: ContactWithPhones[] = (contacts as ContactRow[]).map((c) => ({
+    ...c,
+    phones: phoneByContact.get(c.id) ?? [],
+  }));
+
+  const clusters = buildClusters(withPhones);
+  const clustersTotal = clusters.length;
+  const truncated = clustersTotal > MAX_CLUSTERS;
+  const workingSet = clusters.slice(0, MAX_CLUSTERS);
+
+  const apiKey = process.env.LOVABLE_API_KEY;
+
+  // Existing suggestions by primary contact: dismissed ones must never be
+  // re-proposed, and pending ones let us prune stale rows at the end.
+  const { data: existingRows } = await supabaseAdmin
+    .from("contact_duplicate_suggestions")
+    .select("primary_contact_id, status")
+    .eq("user_id", userId);
+  const statusByPrimary = new Map(
+    ((existingRows ?? []) as Array<{ primary_contact_id: string; status: string }>).map((r) => [
+      r.primary_contact_id,
+      r.status,
+    ]),
+  );
+
+  type Judged = {
+    cluster: Cluster;
+    primary: ContactWithPhones;
+    duplicates: ContactWithPhones[];
+    verdict: z.infer<typeof AiSchema>;
+  };
+  const judged: Judged[] = [];
+  const needsAi: Array<{
+    cluster: Cluster;
+    primary: ContactWithPhones;
+    duplicates: ContactWithPhones[];
+  }> = [];
+
+  for (const cluster of workingSet) {
+    const members = cluster.contacts.slice(0, MAX_CLUSTER_SIZE);
+    const primary = pickPrimary(members);
+    const duplicates = members.filter((c) => c.id !== primary.id);
+    if (duplicates.length === 0) continue;
+
+    // Deterministic high-confidence signals bypass the AI cost.
+    if (cluster.signal === "exact_phone") {
+      judged.push({
+        cluster,
+        primary,
+        duplicates,
+        verdict: {
+          same_person: true,
+          confidence: "high",
+          reason: "Shared phone number across rows",
+        },
+      });
+    } else if (cluster.signal === "name_email_local") {
+      judged.push({
+        cluster,
+        primary,
+        duplicates,
+        verdict: {
+          same_person: true,
+          confidence: "high",
+          reason: "Same name and email address prefix",
+        },
+      });
+    } else if (cluster.signal === "email_localpart") {
+      judged.push({
+        cluster,
+        primary,
+        duplicates,
+        verdict: {
+          same_person: true,
+          confidence: "medium",
+          reason: "Same email prefix on different domains",
+        },
+      });
+    } else if (!apiKey) {
+      // AI unavailable — still record blocking clusters at reduced confidence.
+      judged.push({
+        cluster,
+        primary,
+        duplicates,
+        verdict: {
+          same_person: true,
+          confidence: cluster.signal === "name_company" ? "medium" : "low",
+          reason:
+            cluster.signal === "name_company"
+              ? "Same name and company"
+              : cluster.signal === "loose_name"
+                ? "Similar first + last name"
+                : "Same name across rows",
+        },
+      });
+    } else {
+      needsAi.push({ cluster, primary, duplicates });
     }
+  }
 
-    const phoneByContact = new Map<string, string[]>();
-    for (const p of (phones ?? []) as PhoneRow[]) {
-      const list = phoneByContact.get(p.contact_id) ?? [];
-      list.push(p.number);
-      phoneByContact.set(p.contact_id, list);
-    }
-    const withPhones: ContactWithPhones[] = (contacts as ContactRow[]).map((c) => ({
-      ...c,
-      phones: phoneByContact.get(c.id) ?? [],
-    }));
-
-    const clusters = buildClusters(withPhones);
-    const clustersTotal = clusters.length;
-    const truncated = clustersTotal > MAX_CLUSTERS;
-    const workingSet = clusters.slice(0, MAX_CLUSTERS);
-
-    const apiKey = process.env.LOVABLE_API_KEY;
-
-    // Clear previous pending suggestions before writing new ones so the UI
-    // never shows a stale mix.
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin
-      .from("contact_duplicate_suggestions")
-      .delete()
-      .eq("user_id", userId)
-      .eq("status", "pending");
-
-    let created = 0;
-
-    for (const cluster of workingSet) {
-      const members = cluster.contacts.slice(0, MAX_CLUSTER_SIZE);
-      const primary = pickPrimary(members);
-      const duplicates = members.filter((c) => c.id !== primary.id);
-      if (duplicates.length === 0) continue;
-
-      let confidence: "high" | "medium" | "low";
-      let reason: string;
-      let samePerson = true;
-
-      // Deterministic high-confidence signals bypass the AI cost.
-      if (cluster.signal === "exact_phone") {
-        confidence = "high";
-        reason = "Shared phone number across rows";
-      } else if (cluster.signal === "name_email_local") {
-        confidence = "high";
-        reason = "Same name and email address prefix";
-      } else if (cluster.signal === "email_localpart") {
-        confidence = "medium";
-        reason = "Same email prefix on different domains";
-      } else if (!apiKey) {
-        // AI unavailable — still record blocking clusters at reduced confidence.
-        confidence = cluster.signal === "name_company" ? "medium" : "low";
-        reason =
-          cluster.signal === "name_company"
-            ? "Same name and company"
-            : cluster.signal === "loose_name"
-              ? "Similar first + last name"
-              : "Same name across rows";
-      } else {
-        const verdict = await judgeCluster(apiKey, {
-          ids: members.map((c) => c.id),
-          contacts: members.map((c) => ({
+  let aiFailures = 0;
+  if (apiKey && needsAi.length > 0) {
+    for (let i = 0; i < needsAi.length; i += JUDGE_BATCH_SIZE) {
+      const batch = needsAi.slice(i, i + JUDGE_BATCH_SIZE);
+      const verdicts = await judgeClustersBatch(
+        apiKey,
+        batch.map(({ cluster, primary, duplicates }) => ({
+          ids: [primary, ...duplicates].map((c) => c.id),
+          contacts: [primary, ...duplicates].map((c) => ({
             id: c.id,
             name: c.name,
             email: c.email,
@@ -318,30 +412,96 @@ export const scanContactDuplicates = createServerFn({ method: "POST" })
             city: c.city,
             phones: c.phones.map((p) => normalizePhone(p) || p),
           })),
-        });
-        samePerson = verdict.same_person;
-        confidence = verdict.confidence;
-        reason = verdict.reason.slice(0, 400);
-      }
-
-      if (!samePerson) continue;
-
-      const { error: insErr } = await supabaseAdmin.from("contact_duplicate_suggestions").upsert(
-        {
-          user_id: userId,
-          primary_contact_id: primary.id,
-          duplicate_contact_ids: duplicates.map((c) => c.id),
-          confidence,
-          reason,
-          signals: { blocking: cluster.signal, key: cluster.key },
-          status: "pending",
-        },
-        { onConflict: "user_id,primary_contact_id" },
+        })),
       );
-      if (!insErr) created++;
+      batch.forEach((entry, idx) => {
+        const verdict = verdicts.get(idx + 1);
+        if (!verdict) {
+          aiFailures++;
+          return;
+        }
+        judged.push({ ...entry, verdict });
+      });
     }
+  }
 
-    return { clustersAnalyzed: workingSet.length, clustersTotal, created, truncated };
+  let created = 0;
+  let skippedDismissed = 0;
+  const confirmedPrimaryIds = new Set<string>();
+  for (const { cluster, primary, duplicates, verdict } of judged) {
+    if (!verdict.same_person) continue;
+    if (statusByPrimary.get(primary.id) === "dismissed") {
+      skippedDismissed++;
+      continue;
+    }
+    const { error: insErr } = await supabaseAdmin.from("contact_duplicate_suggestions").upsert(
+      {
+        user_id: userId,
+        primary_contact_id: primary.id,
+        duplicate_contact_ids: duplicates.map((c) => c.id),
+        confidence: verdict.confidence,
+        reason: verdict.reason.slice(0, 400),
+        signals: { blocking: cluster.signal, key: cluster.key },
+        status: "pending",
+      },
+      { onConflict: "user_id,primary_contact_id" },
+    );
+    if (insErr) {
+      logInfo("contact_dedup.upsert_failed", {
+        user_id: userId,
+        primary_contact_id: primary.id,
+        message: insErr.message.slice(0, 200),
+      });
+    } else {
+      created++;
+      confirmedPrimaryIds.add(primary.id);
+    }
+  }
+
+  // Prune stale pending suggestions LAST, and only after a complete scan —
+  // an AI failure or truncated cluster list must never wipe results the
+  // user still needs to review.
+  if (!truncated && aiFailures === 0) {
+    const stalePrimaryIds = (
+      (existingRows ?? []) as Array<{
+        primary_contact_id: string;
+        status: string;
+      }>
+    )
+      .filter((r) => r.status === "pending" && !confirmedPrimaryIds.has(r.primary_contact_id))
+      .map((r) => r.primary_contact_id);
+    if (stalePrimaryIds.length > 0) {
+      await supabaseAdmin
+        .from("contact_duplicate_suggestions")
+        .delete()
+        .eq("user_id", userId)
+        .eq("status", "pending")
+        .in("primary_contact_id", stalePrimaryIds);
+    }
+  }
+
+  logInfo("contact_dedup.scan_complete", {
+    user_id: userId,
+    clusters_total: clustersTotal,
+    clusters_analyzed: workingSet.length,
+    created,
+    skipped_dismissed: skippedDismissed,
+    ai_failures: aiFailures,
+    truncated,
+  });
+
+  return { clustersAnalyzed: workingSet.length, clustersTotal, created, truncated, aiFailures };
+}
+
+/** Queue a duplicate scan for the background worker (results land in the
+ * suggestions list, which the drawer polls). Running the scan inline was
+ * the old design and it timed out — see scanContactDuplicatesImpl. */
+export const scanContactDuplicates = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { enqueueUserScanJob } = await import("./enrich-jobs.server");
+    const r = await enqueueUserScanJob(context.userId, "dedup_scan");
+    return { queued: true, alreadyQueued: r.alreadyQueued };
   });
 
 export const listContactDuplicateSuggestions = createServerFn({ method: "GET" })

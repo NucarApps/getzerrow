@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Check, Loader2, RotateCcw, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getContactAiScanStatus } from "@/lib/contacts/ai-scan-status.functions";
 import {
   applyContactEnrichmentSuggestion,
   dismissContactEnrichmentSuggestion,
@@ -62,17 +63,41 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
     void qc.invalidateQueries({ queryKey: ["contact-enrichment-suggestions"] });
   };
 
+  // Scans run in the background worker (up to 40 signature extractions per
+  // run) — poll job status while one is active and refresh when it lands.
+  const scanStatus = useServerFn(getContactAiScanStatus);
+  const statusQ = useQuery({
+    queryKey: ["contact-ai-scan", "signature_scan"],
+    queryFn: () => scanStatus({ data: { kind: "signature_scan" } }),
+    enabled: open,
+    refetchInterval: (q) => {
+      const s = q.state.data?.job?.status;
+      return s === "pending" || s === "running" ? 4_000 : false;
+    },
+  });
+  const job = statusQ.data?.job ?? null;
+  const scanActive = job?.status === "pending" || job?.status === "running";
+  const prevActiveRef = useRef(false);
+  useEffect(() => {
+    if (prevActiveRef.current && !scanActive) {
+      invalidateBoth();
+      if (job?.status === "done") toast.success("Inbox enrichment scan finished");
+      if (job?.status === "failed")
+        toast.error(`Enrichment scan failed: ${job.error ?? "unknown"}`);
+    }
+    prevActiveRef.current = scanActive;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanActive, job?.status, job?.error]);
+
   const scanMutation = useMutation({
     mutationFn: () => scan({ data: { strictness: 3 } }),
     onSuccess: (res) => {
-      if (res.created === 0) {
-        toast(`Scanned ${res.scanned} contacts — no new suggestions`);
-      } else {
-        toast.success(
-          `Scanned ${res.scanned} contacts — ${res.created} new suggestion${res.created === 1 ? "" : "s"}`,
-        );
-      }
-      invalidateBoth();
+      toast.message(
+        res.alreadyQueued
+          ? "An enrichment scan is already running — results will appear here."
+          : "Enrichment scan queued — suggestions appear here as signatures are read (usually within ~2 minutes).",
+      );
+      void qc.invalidateQueries({ queryKey: ["contact-ai-scan", "signature_scan"] });
     },
     onError: (err: Error) => toast.error(err.message || "Scan failed"),
   });
@@ -118,18 +143,34 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
         </SheetHeader>
 
         <div className="mt-4 flex items-center justify-between gap-2">
-          <Button onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending} size="sm">
-            {scanMutation.isPending ? (
+          <Button
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending || scanActive}
+            size="sm"
+          >
+            {scanMutation.isPending || scanActive ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Sparkles className="h-4 w-4 mr-2" />
             )}
-            {groups.length > 0 ? "Rescan" : "Run enrichment scan"}
+            {scanActive ? "Scanning…" : groups.length > 0 ? "Rescan" : "Run enrichment scan"}
           </Button>
           <span className="text-xs text-muted-foreground">
             {groups.length} contact{groups.length === 1 ? "" : "s"}
           </span>
         </div>
+
+        {scanActive && (
+          <p className="mt-3 rounded-md border border-border bg-accent/30 px-3 py-2 text-xs text-muted-foreground">
+            A background scan is reading signatures — suggestions appear below as they're found. You
+            can close this drawer; the scan keeps going.
+          </p>
+        )}
+        {job?.status === "failed" && !scanActive && (
+          <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            The last scan failed{job.error ? `: ${job.error}` : ""}. Run it again to retry.
+          </p>
+        )}
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-4">
           <TabsList className="grid grid-cols-2 w-full">
