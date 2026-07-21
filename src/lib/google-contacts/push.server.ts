@@ -50,7 +50,6 @@ export function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-
 export async function pushToGoogle(
   ids: Ids,
   progress?: ProgressReporter,
@@ -100,10 +99,7 @@ export async function promoteToMyContacts(ids: Ids): Promise<number> {
   );
   if (desired.size === 0) return 0;
   try {
-    const remote = await getContactGroupWithMembers(
-      ids.gmailAccountId,
-      MY_CONTACTS_RESOURCE,
-    );
+    const remote = await getContactGroupWithMembers(ids.gmailAccountId, MY_CONTACTS_RESOURCE);
     const { toAdd } = calculateMembershipDelta({
       desiredResourceNames: desired,
       currentResourceNames: remote.memberResourceNames ?? [],
@@ -125,7 +121,6 @@ async function loadGroupMap(ids: Ids): Promise<Map<string, string>> {
     .eq("gmail_account_id", ids.gmailAccountId);
   return new Map((data ?? []).map((r) => [r.contact_group_id, r.resource_name]));
 }
-
 
 /** Google Contacts labels are flat. Concatenate one level of local nesting
  *  as "Parent - Child" (e.g. "Factory - VW") so subgroups show up in Google
@@ -219,7 +214,6 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
   return count;
 }
 
-
 type ContactRow = {
   id: string;
   email: string | null;
@@ -307,7 +301,6 @@ async function pushContacts(
   const pushStartedAt = Date.now();
   const budgetHit = () => Date.now() - pushStartedAt > PUSH_WALL_BUDGET_MS;
   const processOne = async (c: ContactRow): Promise<void> => {
-
     const link = byLocal.get(c.id);
     const linkPhotoEtag = (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
     const linkGooglePhotoUrl =
@@ -341,7 +334,6 @@ async function pushContacts(
           .map((m) => groupResourceByLocal.get(m.group_id))
           .filter((n): n is string => !!n),
       );
-
 
       const body = contactToPerson(
         local,
@@ -618,7 +610,6 @@ async function pushContacts(
   return count;
 }
 
-
 async function applyTombstones(ids: Ids, progress?: ProgressReporter): Promise<number> {
   const { data: tombs } = await supabaseAdmin
     .from("google_contact_tombstones")
@@ -654,10 +645,7 @@ async function applyTombstones(ids: Ids, progress?: ProgressReporter): Promise<n
 }
 
 /** Reconcile membership deltas as a single members:modify per group. */
-export async function pushGroupMemberships(
-  ids: Ids,
-  progress?: ProgressReporter,
-): Promise<number> {
+export async function pushGroupMemberships(ids: Ids, progress?: ProgressReporter): Promise<number> {
   const { data: links } = await supabaseAdmin
     .from("google_group_links")
     .select("contact_group_id, resource_name")
@@ -724,7 +712,5 @@ export async function pushGroupMemberships(
   // myContacts promotion is handled by promoteToMyContacts() at the start of
   // the push, so it runs even when the per-contact loop hits the wall budget.
 
-
   return changedMemberships;
 }
-

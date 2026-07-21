@@ -22,7 +22,6 @@ export function accountHasContactsScope(scopeString: string | null | undefined):
 // stuck at the previous progress count.
 const LEASE_STALE_MS = 90_000;
 
-
 /** Clear stored photo tags for linked contacts that have no local avatar,
  * so the next pull refetches the Google photo. Runs opportunistically on
  * every sync — the pull loop only downloads bytes for rows whose etag was

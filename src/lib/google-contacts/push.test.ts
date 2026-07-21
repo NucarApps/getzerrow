@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  MY_CONTACTS_RESOURCE,
-  chunk,
-  formatGoogleLabelName,
-  withMyContacts,
-} from "./push.server";
+import { MY_CONTACTS_RESOURCE, chunk, formatGoogleLabelName, withMyContacts } from "./push.server";
 import { buildContactGroupUpdateBody, getContactGroupMemberQuery } from "./people-client.server";
 
 describe("chunk", () => {
@@ -21,8 +16,6 @@ describe("chunk", () => {
     expect(chunk([1, 2, 3], 0)).toEqual([[1, 2, 3]]);
   });
 });
-
-
 
 describe("formatGoogleLabelName", () => {
   const parentNames = new Map<string, string>([
@@ -68,9 +61,7 @@ describe("withMyContacts", () => {
 
 describe("People contact group requests", () => {
   it("builds group rename payloads with resourceName and etag", () => {
-    expect(
-      buildContactGroupUpdateBody("contactGroups/abc", "Factory - VW", "group-etag"),
-    ).toEqual({
+    expect(buildContactGroupUpdateBody("contactGroups/abc", "Factory - VW", "group-etag")).toEqual({
       contactGroup: {
         resourceName: "contactGroups/abc",
         etag: "group-etag",
