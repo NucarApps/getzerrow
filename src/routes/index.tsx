@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { useMissionTelemetry } from "@/components/landing/useMissionTelemetry";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+import zerrowShip from "@/assets/zerrow-ship.png";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -10,22 +11,24 @@ export const Route = createFileRoute("/")({
   },
   head: () => ({
     meta: [
-      { title: "Zerrow — An inbox that sorts itself" },
+      { title: "Zerrow — Every email finds its planet" },
       {
         name: "description",
         content:
-          "Zerrow uses AI to sort your Gmail into the folders you actually use. Stop triaging. Start reading the email that matters.",
+          "Zerrow is the cosmic sorting office for your Gmail. Newsletters, receipts, and cold pitches sort themselves onto the right planets — your inbox stays a quiet little home planet.",
       },
-      { property: "og:title", content: "Zerrow — An inbox that sorts itself" },
+      { property: "og:title", content: "Zerrow — Every email finds its planet" },
       {
         property: "og:description",
-        content: "AI-powered Gmail sorting built around the folders you already think in.",
+        content:
+          "The cosmic sorting office for your Gmail. Every email sorts itself onto the right planet — your inbox stays quiet.",
       },
       { property: "og:url", content: "https://getzerrow.com/" },
-      { name: "twitter:title", content: "Zerrow — An inbox that sorts itself" },
+      { name: "twitter:title", content: "Zerrow — Every email finds its planet" },
       {
         name: "twitter:description",
-        content: "AI-powered Gmail sorting built around the folders you already think in.",
+        content:
+          "The cosmic sorting office for your Gmail. Every email sorts itself onto the right planet — your inbox stays quiet.",
       },
     ],
     links: [
@@ -33,7 +36,7 @@ export const Route = createFileRoute("/")({
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap",
       },
       { rel: "stylesheet", href: "/zerrow-landing.css" },
       { rel: "canonical", href: "https://getzerrow.com/" },
@@ -63,10 +66,10 @@ export const Route = createFileRoute("/")({
             },
             {
               "@type": "Question",
-              name: "What if it gets it wrong?",
+              name: "What if it lands on the wrong planet?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "Move the email to the correct folder and Zerrow learns from it. The next time a similar email arrives, it routes correctly. You can also hit Reanalyze on any single message, and the Rule activity log shows exactly why each decision was made.",
+                text: "Drag the email to the right folder and Zerrow learns the route. Hit Reanalyze on any message, and the rule activity log shows exactly why each decision was made.",
               },
             },
             {
@@ -86,28 +89,144 @@ export const Route = createFileRoute("/")({
 });
 
 function LandingPage() {
-  useMissionTelemetry();
+  const [eaten, setEaten] = useState(4096);
+  const [burping, setBurping] = useState(false);
+  const burp = () => {
+    if (burping) return;
+    setEaten((e) => e + 1);
+    setBurping(true);
+    setTimeout(() => setBurping(false), 550);
+  };
+
   return (
     <div className="landing">
-      {/* DEEP-SPACE BACKDROP — parallax star layers + one calm comet */}
+      {/* DEEP-SPACE SKY — nebula, star drift, twinkles, shooting stars, flyby */}
       <div className="sky" aria-hidden="true">
+        <div className="sky__base"></div>
+        <div className="sky__nebula"></div>
+        <div className="sky__band"></div>
         <div className="sky__stars sky__stars--far"></div>
+        <div className="sky__stars sky__stars--mid"></div>
         <div className="sky__stars sky__stars--near"></div>
-        <div className="sky__comet"></div>
-      </div>
-
-      {/* CALM TELEMETRY BAR */}
-      <div className="statusbar">
-        <div className="statusbar__inner">
-          <span className="statusbar__status">
-            <span className="statusbar__dot" aria-hidden="true"></span>
-            Status // All systems nominal
-          </span>
-          <span className="statusbar__pill">Sorting sequence · ZRW-001</span>
-          <span className="statusbar__readout">
-            Mission clock <b id="met-val">T+00:00:00</b>
+        <span
+          className="tw"
+          style={{ top: "14%", left: "22%", width: 3, height: 3, animationDuration: "3.2s" }}
+        ></span>
+        <span
+          className="tw"
+          style={{
+            top: "22%",
+            left: "44%",
+            width: 2,
+            height: 2,
+            animationDuration: "4.4s",
+            animationDelay: "1.8s",
+          }}
+        ></span>
+        <span
+          className="tw"
+          style={{
+            top: "52%",
+            left: "88%",
+            width: 3,
+            height: 3,
+            animationDuration: "3.5s",
+            animationDelay: ".9s",
+          }}
+        ></span>
+        <span
+          className="tw tw--amber"
+          style={{
+            top: "72%",
+            left: "34%",
+            width: 2,
+            height: 2,
+            animationDuration: "5s",
+            animationDelay: "2.4s",
+          }}
+        ></span>
+        <span
+          className="tw"
+          style={{
+            top: "90%",
+            left: "14%",
+            width: 2.5,
+            height: 2.5,
+            animationDuration: "4.2s",
+            animationDelay: "3.1s",
+          }}
+        ></span>
+        <span
+          className="tw"
+          style={{
+            top: "44%",
+            left: "6%",
+            width: 2,
+            height: 2,
+            animationDuration: "3.8s",
+            animationDelay: "1.4s",
+          }}
+        ></span>
+        <span
+          className="tw tw--amber"
+          style={{
+            top: "36%",
+            left: "78%",
+            width: 2.5,
+            height: 2.5,
+            animationDuration: "4.1s",
+            animationDelay: "1.2s",
+          }}
+        ></span>
+        <span
+          className="tw"
+          style={{
+            top: "64%",
+            left: "10%",
+            width: 2.5,
+            height: 2.5,
+            animationDuration: "3.7s",
+            animationDelay: "2s",
+          }}
+        ></span>
+        <span
+          className="tw"
+          style={{
+            top: "82%",
+            left: "62%",
+            width: 3,
+            height: 3,
+            animationDuration: "4.6s",
+            animationDelay: ".6s",
+          }}
+        ></span>
+        <span
+          className="tw tw--orange"
+          style={{
+            top: "8%",
+            left: "56%",
+            width: 2,
+            height: 2,
+            animationDuration: "3.9s",
+            animationDelay: "2.6s",
+          }}
+        ></span>
+        <div className="shoot" style={{ top: "6%", left: -180, transform: "rotate(28deg)" }}>
+          <span className="shoot__streak">
+            <i></i>
+            <i></i>
           </span>
         </div>
+        <div
+          className="shoot shoot--amber"
+          style={{ top: "38%", left: -160, transform: "rotate(14deg)" }}
+        >
+          <span className="shoot__streak">
+            <i></i>
+            <i></i>
+          </span>
+        </div>
+        <img className="sky__flyby" src={zerrowShip} alt="" />
       </div>
 
       {/* NAV */}
@@ -116,225 +235,302 @@ function LandingPage() {
           <img className="brand__logo" src={zerrowLogo} alt="Zerrow" />
         </a>
         <nav className="nav__links">
-          <a href="#features">Flight systems</a>
-          <a href="#beyond">Beyond the inbox</a>
-          <a href="#how">Launch sequence</a>
-          <a href="#faq">FAQ</a>
+          <a href="#planets">The planets</a>
+          <a href="#fieldguide">Field guide</a>
+          <a href="#flightplan">Flight plan</a>
+          <a href="#transmissions">Transmissions</a>
         </nav>
         <div className="nav__cta">
           <Link className="btn btn--ghost" to="/login">
             Sign in
           </Link>
           <Link className="btn btn--primary" to="/login">
-            Get started <span aria-hidden="true">→</span>
+            Hop aboard <span aria-hidden="true">→</span>
           </Link>
         </div>
       </header>
 
       <main>
-        {/* HERO */}
+        {/* HERO + ORBIT SYSTEM */}
         <section className="hero" id="top">
-          <div className="hero__horizon" aria-hidden="true"></div>
-          <div className="hero__chip">
-            <span className="statusbar__dot" aria-hidden="true"></span>
-            Mission directive · eliminate inbox clutter
-          </div>
+          <div className="kicker">The Zerrow system · pop. your email</div>
           <h1 className="hero__title">
-            An inbox that <span className="hero__grad">sorts itself.</span>
+            Every email finds <span className="accent">its planet.</span>
           </h1>
           <p className="hero__sub">
-            Zerrow reads every new email the second it lands and files it into the folders you
-            actually use — <b>newsletters, invoices, cold pitches, calendar invites</b>. The only
-            thing left in orbit is the email that deserves your attention.
+            Zerrow is the cosmic sorting office for your Gmail. Newsletters orbit Planet Newsletter.
+            Receipts join the Receipt Ring. Cold pitches? <b>Straight into the black hole.</b> Your
+            inbox stays a quiet little home planet.
           </p>
           <div className="hero__cta">
             <Link className="btn btn--primary btn--lg" to="/login">
-              Connect Gmail <span aria-hidden="true">→</span>
+              Connect Gmail — begin the voyage <span aria-hidden="true">→</span>
             </Link>
-            <a className="btn btn--ghost btn--lg" href="#how">
-              See the launch sequence
+            <a className="btn btn--ghost btn--lg" href="#planets">
+              Tour the planets
             </a>
           </div>
-          <div className="hero__fineprint">Free to try · Works with your existing Gmail labels</div>
+          <div className="hero__fineprint">Free to try · Uses your existing Gmail labels</div>
 
-          {/* MISSION CONSOLE MOCKUP */}
-          <div className="dash" aria-label="Zerrow sorting emails in real time">
-            <div className="dash__chrome">
-              <span className="dash__lights" aria-hidden="true">
-                <i></i>
-                <i></i>
+          <div className="orbit" aria-label="Emails orbiting into folder planets">
+            <div className="orbit__sun"></div>
+            <div className="orbit__sunring"></div>
+            <img className="orbit__ship" src={zerrowShip} alt="" />
+            <div className="orbit__homelbl">
+              <span>Home · your inbox</span>
+            </div>
+            <div className="orbit__track orbit__track--inner"></div>
+            <div className="orbit__track orbit__track--outer"></div>
+            <div className="orbit__spin orbit__spin--inner">
+              <div className="carrier carrier--inner carrier--top">
+                <div className="planet planet--amber" style={{ width: 68, height: 68 }}></div>
+                <div className="planet__lbl" style={{ color: "var(--amber)" }}>
+                  Planet Newsletter
+                </div>
+              </div>
+              <div className="carrier carrier--inner carrier--bottom">
+                <div style={{ position: "relative", width: 60, height: 60 }}>
+                  <div className="planet planet--grey" style={{ width: 60, height: 60 }}></div>
+                  <div className="planet__ring" style={{ width: 96, height: 26 }}></div>
+                </div>
+                <div className="planet__lbl" style={{ color: "var(--muted-2)", marginTop: 10 }}>
+                  The Receipt Ring
+                </div>
+              </div>
+            </div>
+            <div className="orbit__spin orbit__spin--outer">
+              <div className="carrier carrier--outer carrier--right">
+                <div className="planet planet--green" style={{ width: 52, height: 52 }}></div>
+                <div className="planet__lbl" style={{ color: "var(--green)" }}>
+                  Invite Isle
+                </div>
+              </div>
+              <div className="carrier carrier--outer carrier--left">
+                <button
+                  type="button"
+                  className={`bhole${burping ? " bhole--burp" : ""}`}
+                  onClick={burp}
+                  title="Feed me a cold pitch"
+                  aria-label="Feed the black hole a cold pitch"
+                  style={{ border: 0, padding: 0, background: "transparent", display: "block" }}
+                >
+                  <span className="bhole__glow"></span>
+                  <span className="bhole__core"></span>
+                </button>
+                <div className="planet__lbl" style={{ color: "var(--orange)", marginTop: 12 }}>
+                  The Black Hole
+                  <br />
+                  <small>cold pitches · {eaten.toLocaleString("en-US")} eaten</small>
+                </div>
+              </div>
+            </div>
+            <div className="orbit__spin orbit__spin--courier">
+              <span className="mail">
                 <i></i>
               </span>
-              <span className="dash__label">Zerrow · Live telemetry</span>
-              <span className="dash__chip">CH-01 · Routing</span>
             </div>
-            <div className="dash__body">
-              <div className="dash__stream">
-                <div className="dash__row dash__row--active">
-                  <span className="dash__folder">Invoices</span>
-                  <span className="dash__meta">Stripe · payment received</span>
-                  <span className="dash__tag">routed</span>
-                </div>
-                <div className="dash__row">
-                  <span className="dash__folder">Newsletters</span>
-                  <span className="dash__meta">The Daily · weekly digest</span>
-                  <span className="dash__tag">routed</span>
-                </div>
-                <div className="dash__row">
-                  <span className="dash__folder">Cold pitches</span>
-                  <span className="dash__meta">Unsolicited outreach</span>
-                  <span className="dash__tag">routed</span>
-                </div>
-                <div className="dash__row dash__row--keep">
-                  <span className="dash__folder">Inbox</span>
-                  <span className="dash__meta">Alex Chen · re: Thursday's demo</span>
-                  <span className="dash__tag dash__tag--keep">kept for you</span>
-                </div>
-              </div>
-              <div className="dash__focus">
-                <div className="dash__ring">
-                  99%
-                  <span className="dash__satellite" aria-hidden="true"></span>
-                </div>
-                <div className="dash__focus-lbl">Classification accuracy</div>
-                <div className="dash__focus-sub">
-                  <span id="inbox-count">0</span> messages sorted today
-                </div>
-              </div>
+            <div className="orbit__spin orbit__spin--courier2">
+              <span className="mail">
+                <i></i>
+              </span>
             </div>
+            <div className="orbit__track orbit__track--courier"></div>
           </div>
 
           {/* STATS */}
           <div className="stats">
             <div className="stat">
-              <div className="stat__num">
-                <span id="stat-routed">142</span>
-              </div>
-              <div className="stat__lbl">Messages routed · last 24h</div>
+              <div className="stat__num">1,248</div>
+              <div className="stat__lbl">Deliveries since breakfast</div>
             </div>
-            <div className="stat">
+            <div className="stat stat--orange">
               <div className="stat__num">99.2%</div>
-              <div className="stat__lbl">Classification accuracy</div>
+              <div className="stat__lbl">Land on the right planet</div>
             </div>
             <div className="stat">
               <div className="stat__num">2.4s</div>
-              <div className="stat__lbl">Median sort time</div>
+              <div className="stat__lbl">Average delivery time</div>
             </div>
           </div>
         </section>
 
-        <div className="orbit-line" aria-hidden="true">
-          <span></span>
-        </div>
-
-        {/* FLIGHT SYSTEMS — FEATURES */}
-        <section className="section" id="features">
+        {/* TOUR THE SYSTEM — PLANET CARDS */}
+        <section className="section" id="planets">
           <header className="sect-head">
-            <div className="sect-kicker">Flight systems</div>
+            <div className="kicker">Tour the system</div>
             <h2 className="sect-title">
-              Built for people who'd rather <em>not</em> live in their inbox.
+              You name the planets. <span className="accent">Zerrow flies the mail.</span>
             </h2>
             <p className="sect-lede">
-              Every system on board is calibrated to one objective: keep the inbox at zero without
-              making you babysit it.
+              A folder is just a planet with a one-line description. Write it in plain English —
+              Zerrow handles the gravity.
             </p>
           </header>
 
-          <div className="cards">
-            <article className="card">
-              <div className="card__sys">SYS-01 · Guidance</div>
-              <h3 className="card__title">Folders you define, in plain English</h3>
-              <p className="card__body">
-                Tell Zerrow what belongs in each folder — receipts from Stripe, cold pitches, client
-                invites. Deterministic rules fire first, AI handles the judgment calls. No regex
-                required.
-              </p>
+          <div className="pcards">
+            <article className="pcard pcard--amber">
+              <div className="pcard__icon pcard__icon--bob planet planet--amber"></div>
+              <div>
+                <div className="pcard__tag" style={{ color: "var(--amber)" }}>
+                  Planet Newsletter
+                </div>
+                <h3>Where the digests go to be read on purpose</h3>
+                <p>
+                  "Anything with an unsubscribe link and good intentions." Every issue lands here
+                  with a one-line AI summary, so Sunday-morning-you can catch up over coffee.
+                </p>
+              </div>
             </article>
-            <article className="card">
-              <div className="card__sys">SYS-02 · Propulsion</div>
-              <h3 className="card__title">Real-time sorting as mail arrives</h3>
-              <p className="card__body">
-                Zerrow listens to Gmail's push events. New mail is read, summarized, and filed
-                within seconds — long before you open the app, on every device.
-              </p>
+            <article className="pcard pcard--grey">
+              <div className="pcard__icon pcard__icon--bob" style={{ animationDuration: "6s" }}>
+                <div className="planet planet--grey" style={{ width: 64, height: 64 }}></div>
+                <div className="planet__ring" style={{ width: 100, height: 28 }}></div>
+              </div>
+              <div>
+                <div className="pcard__tag" style={{ color: "var(--muted-2)" }}>
+                  The Receipt Ring
+                </div>
+                <h3>Every invoice, orbiting in order</h3>
+                <p>
+                  Stripe receipts, subscription renewals, that thing you expensed. Filed instantly,
+                  labeled in Gmail, and findable the day your accountant comes asking.
+                </p>
+              </div>
             </article>
-            <article className="card">
-              <div className="card__sys">SYS-03 · Comms</div>
-              <h3 className="card__title">AI summaries and suggested replies</h3>
-              <p className="card__body">
-                Every email gets a one-line summary so you can scan the day in a minute. Need to
-                respond? Zerrow drafts a concise, on-tone reply you review and send.
-              </p>
+            <article className="pcard pcard--orange">
+              <div className="pcard__icon">
+                <span className="bhole__glow" style={{ inset: -8 }}></span>
+                <span
+                  className="bhole__core"
+                  style={{ inset: 4, boxShadow: "inset 0 0 16px rgba(0,0,0,.9)" }}
+                ></span>
+              </div>
+              <div>
+                <div className="pcard__tag" style={{ color: "var(--orange)" }}>
+                  The Black Hole
+                </div>
+                <h3>Cold pitches check in. They don't check out.</h3>
+                <p>
+                  "Quick call this week?" No. Unsolicited outreach is detected and pulled past the
+                  event horizon — while the calendar guard keeps real humans safely out of its
+                  gravity.
+                </p>
+              </div>
             </article>
-            <article className="card">
-              <div className="card__sys">SYS-04 · Flight recorder</div>
-              <h3 className="card__title">A mission log for every decision</h3>
-              <p className="card__body">
-                The Rule activity log records why each email went where it did — which rule fired,
-                what the AI decided, and at what confidence. No black boxes on this ship.
-              </p>
-            </article>
-            <article className="card">
-              <div className="card__sys">SYS-05 · Life support</div>
-              <h3 className="card__title">Human mail never gets lost</h3>
-              <p className="card__body">
-                Surface rules pull personal messages back to the inbox even when a folder claims
-                them, overrides pin trusted senders, and the calendar guard keeps real contacts out
-                of the cold-pitch bin.
-              </p>
-            </article>
-            <article className="card">
-              <div className="card__sys">SYS-06 · Autopilot</div>
-              <h3 className="card__title">Learns from your moves</h3>
-              <p className="card__body">
-                Drag an email into a different folder and Zerrow updates that folder's profile.
-                Added a new folder? Reanalyze any message and it reroutes against your latest rules.
-              </p>
+            <article className="pcard pcard--home">
+              <div
+                className="pcard__icon pcard__icon--bob planet planet--sun"
+                style={{ animationDuration: "4.5s" }}
+              ></div>
+              <div>
+                <div className="pcard__tag" style={{ color: "var(--orange)" }}>
+                  Home · your inbox
+                </div>
+                <h3>Population: only mail that matters</h3>
+                <p>
+                  Surface rules pull personal messages home even when a planet claims them, and
+                  trusted senders get a permanent visa. What's left is email from actual humans,
+                  about actual things.
+                </p>
+              </div>
             </article>
           </div>
+
+          <p className="pcards__note">
+            Filed something wrong? Drag it to the right planet and Zerrow learns the route. Every
+            decision is logged — <b>which rule fired, what the AI decided, at what confidence.</b>{" "}
+            No mystery meteors.
+          </p>
         </section>
 
-        <div className="orbit-line" aria-hidden="true">
-          <span></span>
-        </div>
-
-        {/* BEYOND THE INBOX */}
-        <section className="section" id="beyond">
+        {/* FIELD GUIDE — CONTACTS + SECURITY */}
+        <section className="section" id="fieldguide" style={{ paddingTop: 24 }}>
           <header className="sect-head">
-            <div className="sect-kicker">Beyond the inbox</div>
-            <h2 className="sect-title">
-              The rest of the <em>crew</em>.
+            <div className="kicker">Field guide</div>
+            <h2 className="sect-title" style={{ marginBottom: 0 }}>
+              Life beyond <span className="accent">the mailbox.</span>
             </h2>
-            <p className="sect-lede">
-              Email is the mission — but Zerrow keeps the whole ship in order while it's at it.
-            </p>
           </header>
 
           <div className="duo">
-            <article className="duo__panel">
-              <div className="card__sys">MOD-01 · Crew manifest</div>
-              <h3 className="duo__title">Contacts that maintain themselves</h3>
+            <article className="duo__panel duo__panel--amber">
+              <div className="duo__stars">
+                <span
+                  className="tw tw--amber"
+                  style={{ top: 8, left: 6, width: 5, height: 5, animationDuration: "3s" }}
+                ></span>
+                <span
+                  className="tw"
+                  style={{
+                    top: 34,
+                    left: 44,
+                    width: 4,
+                    height: 4,
+                    animationDuration: "4s",
+                    animationDelay: "1s",
+                  }}
+                ></span>
+                <span
+                  className="tw"
+                  style={{
+                    top: 12,
+                    left: 86,
+                    width: 5,
+                    height: 5,
+                    animationDuration: "3.4s",
+                    animationDelay: ".5s",
+                  }}
+                ></span>
+                <span
+                  className="tw tw--amber"
+                  style={{
+                    top: 58,
+                    left: 98,
+                    width: 4,
+                    height: 4,
+                    animationDuration: "4.4s",
+                    animationDelay: "1.6s",
+                  }}
+                ></span>
+                <span
+                  className="tw"
+                  style={{
+                    top: 62,
+                    left: 20,
+                    width: 4,
+                    height: 4,
+                    animationDuration: "3.8s",
+                    animationDelay: "2.2s",
+                  }}
+                ></span>
+              </div>
+              <div className="pcard__tag" style={{ color: "var(--amber)" }}>
+                The constellation of contacts
+              </div>
+              <h3 className="duo__title">A crew roster that writes itself</h3>
               <p className="duo__body">
-                Zerrow builds rich contact cards from your mail: AI-written bios, automatic company
-                groups, duplicate detection, and signature scanning that fills in phone numbers and
-                titles — synced with iPhone and Google contacts.
+                Every email quietly polishes your address book. AI-written bios, automatic company
+                groups, duplicate stars merged with one tap, and signature scanning that fills in
+                phone numbers and titles while you sleep.
               </p>
-              <ul className="duo__list">
+              <ul className="duo__list duo__list--amber">
                 <li>AI bios &amp; relationship summaries</li>
-                <li>Duplicate detection with one-tap merge</li>
+                <li>Duplicate detection, one-tap merge</li>
                 <li>Smart company &amp; role groups</li>
-                <li>iPhone (CardDAV) + Google sync</li>
+                <li>Synced to iPhone (CardDAV) + Google</li>
               </ul>
             </article>
-            <article className="duo__panel">
-              <div className="card__sys">MOD-02 · Hull integrity</div>
-              <h3 className="duo__title">Built like a vault</h3>
+            <article className="duo__panel duo__panel--orange">
+              <div className="pcard__tag" style={{ color: "var(--orange)" }}>
+                The vault at the edge of space
+              </div>
+              <h3 className="duo__title">Your mail stays yours</h3>
               <p className="duo__body">
-                Your mail is yours. Zerrow encrypts email content, summaries, and contact details at
-                rest, connects through Google OAuth with least-privilege scopes, and scopes every
-                row of data to your account alone.
+                Content, summaries, and contact details encrypted at rest. Google OAuth with
+                least-privilege scopes — we never see a password. Every row of data sealed to your
+                account, and one button to disconnect and purge it all.
               </p>
-              <ul className="duo__list">
+              <ul className="duo__list duo__list--orange">
                 <li>Content encrypted at rest</li>
                 <li>Google OAuth — no passwords stored</li>
                 <li>Row-level security on every table</li>
@@ -344,69 +540,74 @@ function LandingPage() {
           </div>
         </section>
 
-        <div className="orbit-line" aria-hidden="true">
-          <span></span>
-        </div>
-
-        {/* LAUNCH SEQUENCE — HOW IT WORKS */}
-        <section className="section" id="how">
+        {/* FLIGHT PLAN — HOW IT WORKS */}
+        <section className="section" id="flightplan">
           <header className="sect-head">
-            <div className="sect-kicker">Launch sequence</div>
-            <h2 className="sect-title">Three steps to inbox zero. Then it keeps itself there.</h2>
+            <div className="kicker">Flight plan</div>
+            <h2 className="sect-title">
+              Three stops to <span className="accent">a quiet inbox.</span>
+            </h2>
             <p className="sect-lede">
-              Sign on, describe your folders, hand over the controls. Zerrow flies the rest of the
-              mission.
+              Ninety seconds of setup, then the sorting office runs itself. Forever.
             </p>
           </header>
 
           <div className="steps">
+            <svg
+              className="steps__path"
+              viewBox="0 0 600 20"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M0 14 Q150 -6 300 10 T600 6"
+                fill="none"
+                stroke="rgba(255,107,61,.4)"
+                strokeWidth="1.5"
+                strokeDasharray="6 8"
+              />
+            </svg>
             <div className="step">
-              <div className="step__num">T−3</div>
-              <h3 className="step__title">Connect Gmail</h3>
+              <div className="step__num step__num--sun">1</div>
+              <h3 className="step__title">Board with Google</h3>
               <p className="step__body">
-                Sign in with Google. Zerrow connects to your existing Gmail account using OAuth — no
-                password, no migration.
+                OAuth, not passwords. Your Gmail stays exactly where it is — Zerrow just gets a jump
+                seat.
               </p>
             </div>
             <div className="step">
-              <div className="step__num">T−2</div>
-              <h3 className="step__title">Describe your folders</h3>
+              <div className="step__num step__num--amber">2</div>
+              <h3 className="step__title">Chart your planets</h3>
               <p className="step__body">
-                Create a folder and write a one-line rule in plain English. Zerrow learns the rest
-                from a handful of examples.
+                One plain-English line per folder. "Receipts and renewals." Done. Zerrow learns the
+                rest from examples.
               </p>
             </div>
             <div className="step">
-              <div className="step__num">T−1</div>
-              <h3 className="step__title">Open a clean inbox</h3>
+              <div className="step__num step__num--grey">3</div>
+              <h3 className="step__title">Come home to quiet</h3>
               <p className="step__body">
-                Newsletters land in Newsletters. Receipts land in Receipts. Your inbox shows what's
-                left — the email that actually wants you.
+                New mail sorts itself in seconds, labels sync everywhere, and your inbox holds only
+                what matters.
               </p>
             </div>
           </div>
         </section>
 
-        <div className="orbit-line" aria-hidden="true">
-          <span></span>
-        </div>
-
-        {/* FAQ */}
-        <section className="section" id="faq">
+        {/* TRANSMISSIONS — FAQ */}
+        <section className="section" id="transmissions">
           <header className="sect-head">
-            <div className="sect-kicker">Pre-flight checks</div>
-            <h2 className="sect-title">
-              Questions, <em>answered</em>.
+            <div className="kicker">Incoming transmissions</div>
+            <h2 className="sect-title" style={{ marginBottom: 0 }}>
+              You asked. <span className="accent">Ground control answered.</span>
             </h2>
-            <p className="sect-lede">
-              Everything you need to know before you hand Zerrow the keys to your inbox.
-            </p>
           </header>
 
           <div className="faq">
             <details className="faq-item" open>
               <summary>
-                <span>Does Zerrow store my emails?</span>
+                <span className="faq-tx">TX-01</span>
+                <span className="faq-q">Does Zerrow store my emails?</span>
                 <span className="faq-toggle" aria-hidden="true">
                   +
                 </span>
@@ -420,61 +621,63 @@ function LandingPage() {
             </details>
             <details className="faq-item">
               <summary>
-                <span>Will it move emails in Gmail itself?</span>
+                <span className="faq-tx">TX-02</span>
+                <span className="faq-q">Will it move emails in Gmail itself?</span>
                 <span className="faq-toggle" aria-hidden="true">
                   +
                 </span>
               </summary>
               <div className="faq-body">
-                Yes — when Zerrow files an email into a folder, it applies the matching Gmail label
+                Yes — when Zerrow files an email onto a planet, it applies the matching Gmail label
                 so your <b>phone, web, and other clients stay in sync</b>.
               </div>
             </details>
             <details className="faq-item">
               <summary>
-                <span>What if it gets it wrong?</span>
+                <span className="faq-tx">TX-03</span>
+                <span className="faq-q">What if it lands on the wrong planet?</span>
                 <span className="faq-toggle" aria-hidden="true">
                   +
                 </span>
               </summary>
               <div className="faq-body">
-                Move the email to the correct folder and Zerrow learns from it. The next time a
-                similar email arrives, it routes correctly. You can also hit <b>Reanalyze</b> on any
-                single message — and the <b>Rule activity log</b> shows exactly why each decision
-                was made.
+                Drag the email to the right folder and Zerrow learns the route. Hit <b>Reanalyze</b>{" "}
+                on any message, and the <b>rule activity log</b> shows exactly why each decision was
+                made.
               </div>
             </details>
             <details className="faq-item">
               <summary>
-                <span>Which mail providers are supported?</span>
+                <span className="faq-tx">TX-04</span>
+                <span className="faq-q">Which mail providers are supported?</span>
                 <span className="faq-toggle" aria-hidden="true">
                   +
                 </span>
               </summary>
               <div className="faq-body">
-                <b>Gmail and Google Workspace</b> today. Other providers may come later.
+                <b>Gmail and Google Workspace</b> today. Other galaxies under consideration.
               </div>
             </details>
           </div>
         </section>
 
         {/* CTA */}
-        <section className="section cta" id="cta">
+        <section className="section" style={{ paddingTop: 24, paddingBottom: 96 }}>
           <div className="cta__inner">
-            <div className="sect-kicker">Ready for ignition</div>
+            <img className="cta__ship" src={zerrowShip} alt="" />
             <h2 className="cta__title">
-              Take your inbox <em>back</em>.
+              Give your inbox <span className="accent">a solar system.</span>
             </h2>
             <p className="cta__sub">
-              Connect Gmail in 30 seconds. Zerrow does the rest. Email shouldn't be a job — and
-              Zerrow is the assistant that finally treats it like one.
+              Thirty seconds to connect Gmail. Then every email knows exactly where it lives — and
+              so do you.
             </p>
             <div className="cta__actions">
               <Link className="btn btn--primary btn--lg" to="/login">
-                Get started — it's free <span aria-hidden="true">↗</span>
+                Hop aboard — it's free <span aria-hidden="true">↗</span>
               </Link>
-              <a className="btn btn--ghost btn--lg" href="#features">
-                Review flight systems
+              <a className="btn btn--ghost btn--lg" href="#planets">
+                Tour the planets again
               </a>
             </div>
           </div>
@@ -483,14 +686,13 @@ function LandingPage() {
         {/* FOOTER */}
         <footer className="footer">
           <div className="footer__inner">
-            <div>© 2026 Zerrow · An inbox that sorts itself</div>
-            <div className="footer__trail">
-              <span className="statusbar__dot" aria-hidden="true"></span>
-              <span>Mission clock</span>
-              <span id="footer-met">T+00:00:00</span>
+            <div>© 2026 Zerrow · The cosmic sorting office</div>
+            <div className="footer__status">
+              <i aria-hidden="true"></i>
+              <span>All planets reporting in</span>
             </div>
             <div className="footer__links">
-              <a href="#features">Features</a>
+              <a href="#planets">Features</a>
               <Link to="/guides/gmail-reminders">Gmail reminders guide</Link>
               <Link to="/privacy">Privacy</Link>
               <Link to="/terms">Terms</Link>
