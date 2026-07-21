@@ -41,6 +41,7 @@ import { Route as AuthenticatedSettingsGoogleContactsRouteImport } from './route
 import { Route as AuthenticatedSettingsInboxRouteImport } from './routes/_authenticated/settings.inbox'
 import { Route as AuthenticatedSettingsMeetingsCalendarRouteImport } from './routes/_authenticated/settings.meetings-calendar'
 import { Route as AuthenticatedSettingsMeetingsRecordingRouteImport } from './routes/_authenticated/settings.meetings-recording'
+import { Route as AuthenticatedSettingsRuleActivityRouteImport } from './routes/_authenticated/settings.rule-activity'
 import { Route as ApiMobileCardRouteImport } from './routes/api/mobile/card'
 import { Route as ApiMobileContactsRouteImport } from './routes/api/mobile/contacts'
 import { Route as ApiMobileGmailConnectRouteImport } from './routes/api/mobile/gmail-connect'
@@ -253,6 +254,12 @@ const AuthenticatedSettingsMeetingsRecordingRoute =
   AuthenticatedSettingsMeetingsRecordingRouteImport.update({
     id: '/meetings-recording',
     path: '/meetings-recording',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsRuleActivityRoute =
+  AuthenticatedSettingsRuleActivityRouteImport.update({
+    id: '/rule-activity',
+    path: '/rule-activity',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
 const ApiMobileCardRoute = ApiMobileCardRouteImport.update({
@@ -514,6 +521,7 @@ export interface FileRoutesByFullPath {
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
+  '/settings/rule-activity': typeof AuthenticatedSettingsRuleActivityRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
@@ -587,6 +595,7 @@ export interface FileRoutesByTo {
   '/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
+  '/settings/rule-activity': typeof AuthenticatedSettingsRuleActivityRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
@@ -663,6 +672,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/inbox': typeof AuthenticatedSettingsInboxRoute
   '/_authenticated/settings/meetings-calendar': typeof AuthenticatedSettingsMeetingsCalendarRoute
   '/_authenticated/settings/meetings-recording': typeof AuthenticatedSettingsMeetingsRecordingRoute
+  '/_authenticated/settings/rule-activity': typeof AuthenticatedSettingsRuleActivityRoute
   '/api/mobile/card': typeof ApiMobileCardRoute
   '/api/mobile/contacts': typeof ApiMobileContactsRoute
   '/api/mobile/gmail-connect': typeof ApiMobileGmailConnectRoute
@@ -739,6 +749,7 @@ export interface FileRouteTypes {
     | '/settings/inbox'
     | '/settings/meetings-calendar'
     | '/settings/meetings-recording'
+    | '/settings/rule-activity'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
@@ -812,6 +823,7 @@ export interface FileRouteTypes {
     | '/settings/inbox'
     | '/settings/meetings-calendar'
     | '/settings/meetings-recording'
+    | '/settings/rule-activity'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
@@ -887,6 +899,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/inbox'
     | '/_authenticated/settings/meetings-calendar'
     | '/_authenticated/settings/meetings-recording'
+    | '/_authenticated/settings/rule-activity'
     | '/api/mobile/card'
     | '/api/mobile/contacts'
     | '/api/mobile/gmail-connect'
@@ -1212,6 +1225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsMeetingsRecordingRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/rule-activity': {
+      id: '/_authenticated/settings/rule-activity'
+      path: '/rule-activity'
+      fullPath: '/settings/rule-activity'
+      preLoaderRoute: typeof AuthenticatedSettingsRuleActivityRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/api/mobile/card': {
       id: '/api/mobile/card'
       path: '/api/mobile/card'
@@ -1511,6 +1531,7 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsInboxRoute: typeof AuthenticatedSettingsInboxRoute
   AuthenticatedSettingsMeetingsCalendarRoute: typeof AuthenticatedSettingsMeetingsCalendarRoute
   AuthenticatedSettingsMeetingsRecordingRoute: typeof AuthenticatedSettingsMeetingsRecordingRoute
+  AuthenticatedSettingsRuleActivityRoute: typeof AuthenticatedSettingsRuleActivityRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
 }
 
@@ -1526,6 +1547,8 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
     AuthenticatedSettingsMeetingsCalendarRoute,
   AuthenticatedSettingsMeetingsRecordingRoute:
     AuthenticatedSettingsMeetingsRecordingRoute,
+  AuthenticatedSettingsRuleActivityRoute:
+    AuthenticatedSettingsRuleActivityRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
 }
 
@@ -1637,3 +1660,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
