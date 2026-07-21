@@ -1369,6 +1369,123 @@ export type Database = {
           },
         ]
       }
+      executed_actions: {
+        Row: {
+          action_type: string
+          created_at: string
+          error: string | null
+          executed_rule_id: string
+          id: string
+          payload: Json | null
+          ran_at: string | null
+          status: string
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          error?: string | null
+          executed_rule_id: string
+          id?: string
+          payload?: Json | null
+          ran_at?: string | null
+          status?: string
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          error?: string | null
+          executed_rule_id?: string
+          id?: string
+          payload?: Json | null
+          ran_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "executed_actions_executed_rule_id_fkey"
+            columns: ["executed_rule_id"]
+            isOneToOne: false
+            referencedRelation: "executed_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      executed_rules: {
+        Row: {
+          ai_confidence: number | null
+          automated: boolean
+          classified_by: string
+          created_at: string
+          email_id: string | null
+          error: string | null
+          folder_id: string | null
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          matched_filter_ids: string[]
+          matched_leaf_json: Json | null
+          reason_enc: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          automated?: boolean
+          classified_by: string
+          created_at?: string
+          email_id?: string | null
+          error?: string | null
+          folder_id?: string | null
+          gmail_account_id: string
+          gmail_message_id: string
+          id?: string
+          matched_filter_ids?: string[]
+          matched_leaf_json?: Json | null
+          reason_enc?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          automated?: boolean
+          classified_by?: string
+          created_at?: string
+          email_id?: string | null
+          error?: string | null
+          folder_id?: string | null
+          gmail_account_id?: string
+          gmail_message_id?: string
+          id?: string
+          matched_filter_ids?: string[]
+          matched_leaf_json?: Json | null
+          reason_enc?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "executed_rules_email_id_fkey"
+            columns: ["email_id"]
+            isOneToOne: false
+            referencedRelation: "emails"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "executed_rules_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "executed_rules_gmail_account_id_fkey"
+            columns: ["gmail_account_id"]
+            isOneToOne: false
+            referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       folder_chat_messages: {
         Row: {
           actions: Json | null
@@ -3378,6 +3495,33 @@ export type Database = {
           success: boolean
         }[]
       }
+      list_executed_rules: {
+        Args: {
+          p_account_id: string
+          p_cursor: string
+          p_folder_id: string
+          p_key: string
+          p_limit: number
+          p_user_id: string
+        }
+        Returns: {
+          ai_confidence: number
+          automated: boolean
+          classified_by: string
+          created_at: string
+          email_id: string
+          error: string
+          folder_id: string
+          folder_name: string
+          gmail_account_id: string
+          gmail_message_id: string
+          id: string
+          matched_filter_ids: string[]
+          matched_leaf_json: Json
+          reason: string
+          status: string
+        }[]
+      }
       list_my_gmail_accounts_with_status: {
         Args: never
         Returns: {
@@ -3394,6 +3538,25 @@ export type Database = {
       prune_carddav_tombstones: {
         Args: { p_keep_days?: number }
         Returns: number
+      }
+      record_executed_rule: {
+        Args: {
+          p_ai_confidence: number
+          p_automated: boolean
+          p_classified_by: string
+          p_email_id: string
+          p_error: string
+          p_folder_id: string
+          p_gmail_account_id: string
+          p_gmail_message_id: string
+          p_key: string
+          p_matched_filter_ids: string[]
+          p_matched_leaf_json: Json
+          p_reason: string
+          p_status: string
+          p_user_id: string
+        }
+        Returns: string
       }
       reindex_email_participants: {
         Args: { p_batch_limit: number; p_key: string }
