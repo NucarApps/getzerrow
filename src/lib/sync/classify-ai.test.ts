@@ -140,6 +140,28 @@ describe("classifyByAi — candidate folder set", () => {
     const offered = classifyEmailMock.mock.calls[0][1] as Array<{ id: string }>;
     expect(offered.map((f) => f.id)).toEqual(["f-a"]);
   });
+
+  it("excludes folders without an ai_rule — inert folders never reach the AI classifier", async () => {
+    // Folder A has a learned_profile but no ai_rule — the classic Jared
+    // "label-linked folder with only a learned profile" shape. AI must
+    // treat it as inert.
+    const context = ctx({
+      folders: [
+        folder({ id: "f-a", name: "A", ai_rule: null, learned_profile: "big profile" }),
+        folder({ id: "f-b", name: "B", ai_rule: "route work mail here" }),
+      ],
+    });
+    classifyEmailMock.mockResolvedValue({
+      folder_id: null,
+      confidence: 0,
+      summary: "",
+      reason: "",
+    });
+    await classifyByAi(email(), context, base());
+    expect(classifyEmailMock).toHaveBeenCalledTimes(1);
+    const offered = classifyEmailMock.mock.calls[0][1] as Array<{ id: string }>;
+    expect(offered.map((f) => f.id)).toEqual(["f-b"]);
+  });
 });
 
 describe("classifyByAi — confidence gating", () => {
