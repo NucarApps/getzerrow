@@ -1,6 +1,9 @@
 /* ============================================================
-   ZERROW — Mission Control landing page (simplified)
-   Palette: NASA orange + bone on deep space
+   ZERROW — Mission Control landing page (space edition)
+   Palette: NASA orange + bone on deep space (unchanged)
+   NOTE: this file is also linked by the app shell — the global
+   html/body rules below must stay compatible with the inbox.
+   All landing-only decoration is scoped under `.landing`.
    ============================================================ */
 
 :root {
@@ -115,10 +118,131 @@ main,
     transform: translateY(0);
   }
 }
+@keyframes zl-drift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+@keyframes zl-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes zl-comet {
+  0%,
+  86% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(-28deg);
+  }
+  88% {
+    opacity: 0.9;
+  }
+  96%,
+  100% {
+    opacity: 0;
+    transform: translate(-52vw, 30vh) rotate(-28deg);
+  }
+}
+
+/* ============ LANDING-ONLY SKY (parallax stars + comet) ============ */
+/* Decorative elements (planet horizon, comet) intentionally overhang the
+   viewport — clip them so they never create horizontal scroll. */
+.landing {
+  overflow-x: clip;
+}
+.landing .sky {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.landing .sky__stars {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 200%;
+  background-repeat: repeat;
+}
+.landing .sky__stars--far {
+  background-image:
+    radial-gradient(1px 1px at 22px 44px, rgba(255, 255, 255, 0.35), transparent 60%),
+    radial-gradient(1px 1px at 180px 120px, rgba(255, 255, 255, 0.25), transparent 60%),
+    radial-gradient(1px 1px at 310px 220px, rgba(255, 255, 255, 0.3), transparent 60%),
+    radial-gradient(1px 1px at 420px 60px, rgba(255, 255, 255, 0.2), transparent 60%),
+    radial-gradient(1px 1px at 520px 300px, rgba(255, 255, 255, 0.28), transparent 60%);
+  background-size: 560px 360px;
+  animation: zl-drift 340s linear infinite;
+  opacity: 0.7;
+}
+.landing .sky__stars--near {
+  background-image:
+    radial-gradient(1.4px 1.4px at 80px 90px, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(1.2px 1.2px at 260px 40px, rgba(245, 185, 66, 0.45), transparent 60%),
+    radial-gradient(1.6px 1.6px at 400px 260px, rgba(255, 255, 255, 0.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 560px 160px, rgba(255, 107, 61, 0.4), transparent 60%),
+    radial-gradient(1.4px 1.4px at 660px 320px, rgba(255, 255, 255, 0.45), transparent 60%);
+  background-size: 720px 420px;
+  animation: zl-drift 180s linear infinite;
+  opacity: 0.8;
+}
+.landing .sky__comet {
+  position: absolute;
+  top: 12%;
+  right: -140px;
+  width: 140px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85));
+  box-shadow: 0 0 12px 1px rgba(255, 255, 255, 0.35);
+  opacity: 0;
+  animation: zl-comet 26s ease-in infinite 6s;
+}
+
+/* Orbit-line section divider */
+.landing .orbit-line {
+  position: relative;
+  z-index: 1;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 24px;
+  height: 1px;
+}
+.landing .orbit-line::before {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--line-bright) 20%,
+    var(--line-bright) 80%,
+    transparent
+  );
+}
+.landing .orbit-line span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 0 5px rgba(255, 107, 61, 0.12);
+}
 
 /* ====================== STATUS BAR ====================== */
 .statusbar {
-  background: #06090f;
+  background: rgba(6, 9, 15, 0.85);
+  backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--line);
   font-family: var(--mono);
   font-size: 11px;
@@ -185,7 +309,7 @@ main,
 }
 .nav__links {
   display: flex;
-  gap: 32px;
+  gap: 28px;
   font-size: 14px;
   color: var(--bone-dim);
 }
@@ -243,14 +367,36 @@ main,
 
 /* ====================== HERO ====================== */
 .hero {
+  position: relative;
+  isolation: isolate;
   max-width: 940px;
   margin: 0 auto;
-  padding: 64px 24px 40px;
+  padding: 72px 24px 56px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   animation: zl-rise 0.6s ease both;
+}
+/* Planet horizon — an orange crescent the console floats above */
+.hero__horizon {
+  position: absolute;
+  left: 50%;
+  bottom: -340px;
+  width: min(1500px, 160vw);
+  height: 760px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 107, 61, 0.28);
+  background: radial-gradient(
+    closest-side at 50% 0%,
+    rgba(255, 107, 61, 0.14),
+    rgba(255, 107, 61, 0.04) 40%,
+    transparent 68%
+  );
+  box-shadow: 0 -30px 120px -50px var(--orange-glow);
+  z-index: -1;
+  pointer-events: none;
 }
 .hero__chip {
   display: inline-flex;
@@ -306,12 +452,13 @@ main,
   color: var(--muted-2);
 }
 
-/* ====================== DASHBOARD MOCKUP ====================== */
+/* ====================== MISSION CONSOLE MOCKUP ====================== */
 .dash {
   width: 100%;
   max-width: 960px;
   margin: 56px auto 0;
-  background: var(--panel);
+  background: rgba(19, 24, 38, 0.92);
+  backdrop-filter: blur(4px);
   border: 1px solid var(--line-bright);
   border-radius: 14px;
   overflow: hidden;
@@ -346,6 +493,17 @@ main,
   text-transform: uppercase;
   color: var(--muted-2);
 }
+.dash__chip {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--orange);
+  border: 1px solid rgba(255, 107, 61, 0.3);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
 .dash__body {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
@@ -355,7 +513,7 @@ main,
 .dash__stream {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   text-align: left;
 }
 .dash__row {
@@ -366,7 +524,7 @@ main,
     "meta tag";
   align-items: center;
   gap: 2px 12px;
-  padding: 14px 16px;
+  padding: 13px 16px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.02);
@@ -375,7 +533,11 @@ main,
   border-color: rgba(255, 107, 61, 0.4);
   background: rgba(255, 107, 61, 0.06);
 }
-.dash__row:not(.dash__row--active) {
+.dash__row--keep {
+  border-color: rgba(245, 185, 66, 0.35);
+  background: rgba(245, 185, 66, 0.05);
+}
+.dash__row:not(.dash__row--active):not(.dash__row--keep) {
   opacity: 0.88;
 }
 .dash__folder {
@@ -400,18 +562,23 @@ main,
   border-radius: 999px;
   padding: 3px 9px;
 }
+.dash__tag--keep {
+  color: var(--amber);
+  border-color: rgba(245, 185, 66, 0.4);
+}
 .dash__focus {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: 20px;
+  padding: 24px 20px;
   border-radius: 12px;
   border: 1px solid rgba(255, 107, 61, 0.2);
   background: radial-gradient(circle at 50% 40%, rgba(255, 107, 61, 0.08), transparent 70%);
 }
 .dash__ring {
+  position: relative;
   width: 118px;
   height: 118px;
   border-radius: 50%;
@@ -424,6 +591,32 @@ main,
   box-shadow:
     0 0 0 8px rgba(255, 107, 61, 0.06),
     0 0 32px -6px var(--orange-glow);
+}
+/* Dashed orbit track + a small satellite circling the accuracy ring */
+.dash__ring::before {
+  content: "";
+  position: absolute;
+  inset: -22px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 107, 61, 0.28);
+}
+.dash__satellite {
+  position: absolute;
+  inset: -22px;
+  border-radius: 50%;
+  animation: zl-orbit 16s linear infinite;
+}
+.dash__satellite::before {
+  content: "";
+  position: absolute;
+  top: -3.5px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 10px 1px rgba(245, 185, 66, 0.55);
 }
 .dash__focus-lbl {
   font-family: var(--mono);
@@ -521,30 +714,38 @@ main,
   gap: 18px;
 }
 .card {
-  padding: 32px;
+  padding: 30px;
   border-radius: 14px;
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: rgba(19, 24, 38, 0.85);
   transition:
     border-color 0.18s ease,
-    transform 0.18s ease;
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
 }
 .card:hover {
   border-color: rgba(255, 107, 61, 0.45);
   transform: translateY(-3px);
+  box-shadow: 0 24px 48px -32px var(--orange-glow);
 }
-.card__badge {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 107, 61, 0.3);
-  background: rgba(255, 107, 61, 0.08);
-  color: var(--orange);
+.card__sys {
   font-family: var(--mono);
-  font-size: 13px;
-  margin-bottom: 22px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--orange);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.card__sys::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 0 4px rgba(255, 107, 61, 0.12);
 }
 .card__title {
   font-size: 19px;
@@ -557,13 +758,80 @@ main,
   margin: 0;
 }
 
-/* ====================== STEPS ====================== */
+/* ====================== BEYOND THE INBOX (duo panels) ====================== */
+.duo {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+.duo__panel {
+  padding: 36px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(ellipse 90% 60% at 50% 0%, rgba(255, 107, 61, 0.06), transparent 70%),
+    rgba(19, 24, 38, 0.85);
+  transition:
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+.duo__panel:hover {
+  border-color: rgba(255, 107, 61, 0.4);
+  transform: translateY(-2px);
+}
+.duo__title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+}
+.duo__body {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+.duo__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--bone-dim);
+}
+.duo__list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.duo__list li::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--orange);
+  box-shadow: 0 0 6px rgba(255, 107, 61, 0.5);
+}
+
+/* ====================== LAUNCH SEQUENCE (steps) ====================== */
 .steps {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 40px;
 }
+.steps::before {
+  content: "";
+  position: absolute;
+  top: 24px;
+  left: 16%;
+  right: 16%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 107, 61, 0.3), transparent);
+}
 .step {
+  position: relative;
   text-align: center;
 }
 .step__num {
@@ -574,9 +842,11 @@ main,
   place-items: center;
   border-radius: 50%;
   border: 1px solid rgba(255, 107, 61, 0.4);
+  background: var(--bg);
   color: var(--orange);
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: 14px;
+  box-shadow: 0 0 0 6px rgba(255, 107, 61, 0.06);
 }
 .step__title {
   font-size: 20px;
@@ -602,7 +872,7 @@ main,
 .faq-item {
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--panel);
+  background: rgba(19, 24, 38, 0.85);
   overflow: hidden;
 }
 .faq-item summary {
@@ -643,6 +913,8 @@ main,
 
 /* ====================== CTA ====================== */
 .cta__inner {
+  position: relative;
+  overflow: hidden;
   max-width: 760px;
   margin: 0 auto;
   text-align: center;
@@ -652,6 +924,19 @@ main,
   background:
     radial-gradient(ellipse 70% 100% at 50% 0%, rgba(255, 107, 61, 0.12), transparent 70%),
     var(--panel);
+}
+.cta__inner::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -240px;
+  width: 900px;
+  height: 420px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border-top: 1px solid rgba(255, 107, 61, 0.3);
+  background: radial-gradient(closest-side at 50% 0%, rgba(255, 107, 61, 0.1), transparent 70%);
+  pointer-events: none;
 }
 .cta__title {
   font-size: clamp(34px, 5vw, 56px);
@@ -671,6 +956,7 @@ main,
   margin: 0 auto 32px;
 }
 .cta__actions {
+  position: relative;
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
@@ -712,10 +998,27 @@ main,
   color: var(--orange);
 }
 
+/* ====================== MOTION SAFETY ====================== */
+@media (prefers-reduced-motion: reduce) {
+  .landing .sky__stars,
+  .landing .sky__comet,
+  .dash__satellite,
+  .statusbar__dot {
+    animation: none;
+  }
+  .hero,
+  .dash {
+    animation: none;
+  }
+}
+
 /* ====================== RESPONSIVE ====================== */
 @media (max-width: 900px) {
   .cards {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .duo {
+    grid-template-columns: 1fr;
   }
   .steps {
     gap: 28px;
@@ -732,6 +1035,9 @@ main,
   .dash__body {
     grid-template-columns: 1fr;
   }
+  .dash__chip {
+    display: none;
+  }
   .cards {
     grid-template-columns: 1fr;
   }
@@ -739,12 +1045,21 @@ main,
     grid-template-columns: 1fr;
     gap: 36px;
   }
+  .steps::before {
+    display: none;
+  }
   .section {
     padding: 72px 20px;
+  }
+  .duo__panel {
+    padding: 28px;
   }
 }
 
 @media (max-width: 520px) {
+  .statusbar__readout {
+    display: none;
+  }
   .stats {
     grid-template-columns: 1fr;
     gap: 24px;
