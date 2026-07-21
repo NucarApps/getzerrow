@@ -163,7 +163,55 @@ export function emailVetoedForFolder(
   );
 }
 
-function evalNode(email: EmailForFilter, node: RuleNode): boolean {
+// ─── Tree bounds ─────────────────────────────────────────────────────────
+// ReDoS bounds cap each condition; these cap the tree itself. A
+// filter_tree with thousands of leaves (or absurd nesting) is a DoS on
+// the classify hot path, so oversized/malformed trees are rejected at
+// save time (FolderEditor) and evaluate to "no match" at classify time.
+
+export const MAX_FILTER_TREE_DEPTH = 8;
+export const MAX_FILTER_TREE_LEAVES = 128;
+
+export type RuleNodeValidation = { ok: true } | { ok: false; reason: string };
+
+/** Structural + size validation for a folder's filter_tree. Checks node
+ * shape (unknown types, non-string cond fields, non-array children),
+ * nesting depth ≤ MAX_FILTER_TREE_DEPTH, and total leaf count ≤
+ * MAX_FILTER_TREE_LEAVES. O(n) with early exit — safe to call on
+ * untrusted trees. */
+export function validateRuleNode(node: RuleNode): RuleNodeValidation {
+  let leaves = 0;
+  function walk(n: RuleNode, depth: number): string | null {
+    if (depth > MAX_FILTER_TREE_DEPTH) {
+      return `rule groups nested deeper than ${MAX_FILTER_TREE_DEPTH} levels`;
+    }
+    if (!n || typeof n !== "object") return "malformed rule node (not an object)";
+    if (n.type === "cond") {
+      if (typeof n.field !== "string" || typeof n.op !== "string" || typeof n.value !== "string") {
+        return "malformed condition (field/op/value must be strings)";
+      }
+      leaves++;
+      if (leaves > MAX_FILTER_TREE_LEAVES) {
+        return `more than ${MAX_FILTER_TREE_LEAVES} conditions in one rule tree`;
+      }
+      return null;
+    }
+    if (n.type === "group") {
+      if (n.op !== "and" && n.op !== "or") return 'malformed group (op must be "and" or "or")';
+      if (!Array.isArray(n.children)) return "malformed group (children must be an array)";
+      for (const c of n.children) {
+        const err = walk(c, depth + 1);
+        if (err) return err;
+      }
+      return null;
+    }
+    return `malformed rule node (unknown type "${String((n as { type?: unknown }).type)}")`;
+  }
+  const err = walk(node, 1);
+  return err ? { ok: false, reason: err } : { ok: true };
+}
+
+function evalNodeUnchecked(email: EmailForFilter, node: RuleNode): boolean {
   if (node.type === "cond") {
     return applyFilter(email, {
       id: "",
@@ -173,8 +221,16 @@ function evalNode(email: EmailForFilter, node: RuleNode): boolean {
       value: node.value,
     });
   }
-  if (node.op === "and") return node.children.every((c) => evalNode(email, c));
-  return node.children.some((c) => evalNode(email, c));
+  if (node.op === "and") return node.children.every((c) => evalNodeUnchecked(email, c));
+  return node.children.some((c) => evalNodeUnchecked(email, c));
+}
+
+/** Evaluate a rule tree against an email. Trees exceeding the bounds (or
+ * structurally malformed) never match — the folder's tree is inert until
+ * fixed, rather than a classify-time DoS. */
+function evalNode(email: EmailForFilter, node: RuleNode): boolean {
+  if (!validateRuleNode(node).ok) return false;
+  return evalNodeUnchecked(email, node);
 }
 
 function countConds(node: RuleNode): number {
@@ -184,8 +240,17 @@ function countConds(node: RuleNode): number {
 /** Walk a rule tree and return field/op/value for every leaf
  * (`type: "cond"`) that evaluates true against `email`. The UI uses
  * this to pinpoint which leaf(s) in a folder's filter_tree matched,
- * since tree leaves don't have folder_filters row IDs. */
+ * since tree leaves don't have folder_filters row IDs. Out-of-bounds /
+ * malformed trees short-circuit to no leaves, mirroring evalNode. */
 export function collectMatchingLeaves(
+  email: EmailForFilter,
+  node: RuleNode,
+): Array<{ field: string; op: string; value: string }> {
+  if (!validateRuleNode(node).ok) return [];
+  return collectLeavesUnchecked(email, node);
+}
+
+function collectLeavesUnchecked(
   email: EmailForFilter,
   node: RuleNode,
 ): Array<{ field: string; op: string; value: string }> {
@@ -200,7 +265,7 @@ export function collectMatchingLeaves(
       ? [{ field: node.field, op: node.op, value: node.value }]
       : [];
   }
-  return node.children.flatMap((c) => collectMatchingLeaves(email, c));
+  return node.children.flatMap((c) => collectLeavesUnchecked(email, c));
 }
 
 // ─── Folder matching ────────────────────────────────────────────────────
@@ -241,8 +306,13 @@ export function matchByFilters(
     const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
     const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
 
-    // Tree takes precedence when present and non-empty.
+    // Tree takes precedence when present and non-empty. Validate BEFORE
+    // countConds — the validator's depth check stops descending at the
+    // cap, so a maliciously deep tree can't blow the stack here. An
+    // out-of-bounds/malformed tree makes the folder inert (no fallback to
+    // the flat filters, which the tree superseded and may be stale).
     const tree = folder.filter_tree;
+    if (tree && !validateRuleNode(tree).ok) continue;
     const hasTree =
       !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
 

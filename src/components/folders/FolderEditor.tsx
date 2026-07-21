@@ -52,6 +52,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { validateRuleNode } from "@/lib/sync/filter-engine";
 import { FolderChatPanel } from "./FolderChatPanel";
 import { FolderHealthCard } from "./FolderHealthCard";
 import { HistoryPanel } from "./editor/folder-history-panel";
@@ -138,6 +139,16 @@ export function FolderEditor({
   });
 
   async function save() {
+    // Bounds/shape check before persisting — an oversized or malformed
+    // rule tree would be inert at classify time (filter-engine caps), so
+    // reject it here with the reason instead of saving a dead rule.
+    if (local.filter_tree) {
+      const v = validateRuleNode(local.filter_tree);
+      if (!v.ok) {
+        toast.error(`Can't save rule groups: ${v.reason}`);
+        return;
+      }
+    }
     // Auto-activate: once the user gives the folder any intent (an AI prompt,
     // a filter tree, or a linked Gmail label), flip skip_ai off so the
     // classifier considers it. Folders with no intent stay inert (skip_ai
