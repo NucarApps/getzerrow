@@ -522,9 +522,9 @@ export const createFolder = createServerFn({ method: "POST" })
     // the user is asking to mirror what Gmail already sorted, not to invent
     // new AI matches. Unlinked folders keep the current AI-on default so
     // users who intend to define AI/filter rules aren't blocked.
+    const { skip_ai: skipAiDefault, min_ai_confidence: minAiConfidenceDefault } =
+      deriveFolderAiDefaults(data.gmail_label_id);
     const linkedLabel = !!data.gmail_label_id;
-    const skipAiDefault = linkedLabel;
-    const minAiConfidenceDefault = linkedLabel ? 0.75 : 0;
     const { data: row, error } = await supabaseAdmin
       .from("folders")
       .insert({
