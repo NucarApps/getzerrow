@@ -111,27 +111,15 @@ async function markContactsForDomainPhotoDirty(userId: string, domain: string): 
 }
 
 /** Bump the user's CardDAV resync nonce so iPhone picks up the new logo on
- * its next poll. Uses the admin client to upsert into `carddav_settings`
- * without needing a settings row to preexist. Failure is non-fatal — the
- * logo pick still succeeds; iOS just won't refresh until the next real edit
- * or a manual "Force iPhone resync". Also marks the photo state of every
- * contact whose company resolves through this domain as photo-dirty, so
- * Google Contacts also learns about the new logo on the next sync. */
+ * its next poll. Delegates to the shared bumpResyncNonce (this file used to
+ * carry its own copy). Failure is non-fatal — the logo pick still succeeds;
+ * iOS just won't refresh until the next real edit or a manual "Force iPhone
+ * resync". */
 async function bumpCarddavResync(userId: string): Promise<void> {
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data } = await supabaseAdmin
-      .from("carddav_settings")
-      .select("resync_nonce")
-      .eq("user_id", userId)
-      .maybeSingle();
-    const next = ((data as { resync_nonce?: number } | null)?.resync_nonce ?? 0) + 1;
-    await supabaseAdmin
-      .from("carddav_settings")
-      .upsert(
-        { user_id: userId, resync_nonce: next, updated_at: new Date().toISOString() },
-        { onConflict: "user_id" },
-      );
+    const { bumpResyncNonce } = await import("@/lib/carddav/settings.functions");
+    await bumpResyncNonce(supabaseAdmin, userId);
   } catch {
     // Swallow — resync bump is best-effort.
   }

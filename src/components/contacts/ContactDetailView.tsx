@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Sparkles,
   Send,
@@ -63,10 +63,24 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Field } from "@/components/contacts/Field";
 
 type Props = {
   id: string;
   onDeleted?: () => void;
+  /** Reports whether the form has unsaved edits — hosts (the drawer) use it
+   * to guard against silently discarding changes on close. */
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 function errorMessage(e: unknown): string | undefined {
@@ -75,7 +89,7 @@ function errorMessage(e: unknown): string | undefined {
 
 type ContactQueryData = Awaited<ReturnType<typeof getContact>>;
 
-export function ContactDetailView({ id, onDeleted }: Props) {
+export function ContactDetailView({ id, onDeleted, onDirtyChange }: Props) {
   const qc = useQueryClient();
   const fetchOne = useServerFn(getContact);
   const enrich = useServerFn(enrichContact);
@@ -108,13 +122,29 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   }, [gq.data, id]);
 
   async function toggleGroup(gid: string) {
+    const adding = !myGroupIds.has(gid);
     const next = new Set(myGroupIds);
-    if (next.has(gid)) next.delete(gid);
-    else next.add(gid);
+    if (adding) next.add(gid);
+    else next.delete(gid);
+    // Optimistic: patch the cached memberships so the chip appears/disappears
+    // immediately instead of after a full contact-groups refetch.
+    type GroupsData = { memberships?: Array<{ contact_id: string; group_id: string }> } & Record<
+      string,
+      unknown
+    >;
+    const prev = qc.getQueryData<GroupsData>(["contact-groups"]);
+    qc.setQueryData<GroupsData | undefined>(["contact-groups"], (old) => {
+      if (!old?.memberships) return old;
+      const memberships = adding
+        ? [...old.memberships, { contact_id: id, group_id: gid }]
+        : old.memberships.filter((m) => !(m.contact_id === id && m.group_id === gid));
+      return { ...old, memberships };
+    });
     try {
       await setGroups({ data: { contactId: id, groupIds: [...next] } });
       qc.invalidateQueries({ queryKey: ["contact-groups"] });
     } catch (e: unknown) {
+      if (prev) qc.setQueryData(["contact-groups"], prev);
       toast.error(errorMessage(e) ?? "Failed");
     }
   }
@@ -138,14 +168,43 @@ export function ContactDetailView({ id, onDeleted }: Props) {
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [emails, setEmails] = useState<EmailEntry[]>([]);
 
+  // Unsaved-edits tracking. While dirty, the seed effect below must NOT
+  // overwrite the form from a refetch — auto-enrich, realtime invalidation,
+  // or a cross-device sync would otherwise silently clobber in-progress
+  // edits mid-typing.
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  function patchForm(patch: Partial<typeof form>) {
+    setForm((prev) => ({ ...prev, ...patch }));
+    setDirty(true);
+  }
+  function changePhones(next: PhoneEntry[]) {
+    setPhones(next);
+    setDirty(true);
+  }
+  function changeEmails(next: EmailEntry[]) {
+    setEmails(next);
+    setDirty(true);
+  }
+
   const [enriching, setEnriching] = useState(false);
   const [sending, setSending] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [cardImageOpen, setCardImageOpen] = useState(false);
 
+  // Track which contact the form was last seeded for: switching contacts
+  // always reseeds (and clears dirty), but a refetch of the SAME contact
+  // must never overwrite unsaved edits.
+  const seededForIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (q.data?.contact) {
       const c = q.data.contact;
+      const isNewContact = seededForIdRef.current !== c.id;
+      if (!isNewContact && dirty) return;
+      seededForIdRef.current = c.id;
+      if (isNewContact) setDirty(false);
       setForm({
         name: c.name ?? "",
         title: c.title ?? "",
@@ -285,6 +344,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
       });
 
       toast.success("Saved");
+      setDirty(false);
       qc.invalidateQueries({ queryKey: ["contact", id] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
     } catch (e: unknown) {
@@ -316,22 +376,34 @@ export function ContactDetailView({ id, onDeleted }: Props) {
     }
   }
 
-  async function remove() {
-    if (!confirm("Delete this contact?")) return;
-    await del({ data: { id } });
-    toast.success("Deleted");
-    qc.invalidateQueries({ queryKey: ["contacts"] });
-    onDeleted?.();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmRemoveCard, setConfirmRemoveCard] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function performDelete() {
+    setDeleting(true);
+    try {
+      await del({ data: { id } });
+      toast.success("Deleted");
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      setConfirmDelete(false);
+      onDeleted?.();
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) ?? "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  async function removeCardImage() {
-    if (!confirm("Remove the saved card image?")) return;
+  async function performRemoveCardImage() {
     try {
       await update({ data: { id, card_image_url: null } });
       qc.invalidateQueries({ queryKey: ["contact", id] });
       toast.success("Card image removed");
     } catch (e: unknown) {
       toast.error(errorMessage(e) ?? "Failed");
+    } finally {
+      setConfirmRemoveCard(false);
     }
   }
 
@@ -472,10 +544,33 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           size="sm"
           variant="ghost"
           className="text-destructive w-full sm:w-auto sm:ml-auto"
-          onClick={remove}
+          onClick={() => setConfirmDelete(true)}
         >
           <Trash2 className="mr-2 h-4 w-4" /> Delete
         </Button>
+        <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete “{displayName}”?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The contact is removed from Zerrow and, on the next sync, from your connected
+                address books.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void performDelete();
+                }}
+              >
+                {deleting ? "Deleting…" : "Delete contact"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <LockedFieldsSection
@@ -486,44 +581,32 @@ export function ContactDetailView({ id, onDeleted }: Props) {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Name" icon={null}>
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input value={form.name} onChange={(e) => patchForm({ name: e.target.value })} />
         </Field>
         <Field label="Title" icon={null}>
-          <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <Input value={form.title} onChange={(e) => patchForm({ title: e.target.value })} />
         </Field>
         <Field label="Company" icon={<Building2 className="h-3.5 w-3.5" />}>
-          <CompanyCombobox
-            value={form.company}
-            onChange={(v) => setForm({ ...form, company: v })}
-          />
+          <CompanyCombobox value={form.company} onChange={(v) => patchForm({ company: v })} />
         </Field>
         <Field label="Website" icon={<Globe className="h-3.5 w-3.5" />}>
-          <Input
-            value={form.website}
-            onChange={(e) => setForm({ ...form, website: e.target.value })}
-          />
+          <Input value={form.website} onChange={(e) => patchForm({ website: e.target.value })} />
         </Field>
         <Field label="LinkedIn" icon={<Linkedin className="h-3.5 w-3.5" />}>
-          <Input
-            value={form.linkedin}
-            onChange={(e) => setForm({ ...form, linkedin: e.target.value })}
-          />
+          <Input value={form.linkedin} onChange={(e) => patchForm({ linkedin: e.target.value })} />
         </Field>
         <Field label="Twitter / X" icon={<Twitter className="h-3.5 w-3.5" />}>
-          <Input
-            value={form.twitter}
-            onChange={(e) => setForm({ ...form, twitter: e.target.value })}
-          />
+          <Input value={form.twitter} onChange={(e) => patchForm({ twitter: e.target.value })} />
         </Field>
       </div>
 
       <div className="mt-6">
-        <EmailsEditor value={emails} onChange={setEmails} />
+        <EmailsEditor value={emails} onChange={changeEmails} />
         <RepullFromGoogleButton contactId={id} />
       </div>
 
       <div className="mt-6">
-        <PhonesEditor value={phones} onChange={setPhones} />
+        <PhonesEditor value={phones} onChange={changePhones} />
       </div>
 
       <div className="mt-6">
@@ -535,7 +618,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
             <Label className="text-xs text-muted-foreground">Address line 1</Label>
             <Input
               value={form.address_line1}
-              onChange={(e) => setForm({ ...form, address_line1: e.target.value })}
+              onChange={(e) => patchForm({ address_line1: e.target.value })}
               placeholder="Street address"
             />
           </div>
@@ -543,34 +626,28 @@ export function ContactDetailView({ id, onDeleted }: Props) {
             <Label className="text-xs text-muted-foreground">Address line 2</Label>
             <Input
               value={form.address_line2}
-              onChange={(e) => setForm({ ...form, address_line2: e.target.value })}
+              onChange={(e) => patchForm({ address_line2: e.target.value })}
               placeholder="Apt, suite, floor (optional)"
             />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">City</Label>
-            <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+            <Input value={form.city} onChange={(e) => patchForm({ city: e.target.value })} />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">State / region</Label>
-            <Input
-              value={form.region}
-              onChange={(e) => setForm({ ...form, region: e.target.value })}
-            />
+            <Input value={form.region} onChange={(e) => patchForm({ region: e.target.value })} />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Postal code</Label>
             <Input
               value={form.postal_code}
-              onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
+              onChange={(e) => patchForm({ postal_code: e.target.value })}
             />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Country</Label>
-            <Input
-              value={form.country}
-              onChange={(e) => setForm({ ...form, country: e.target.value })}
-            />
+            <Input value={form.country} onChange={(e) => patchForm({ country: e.target.value })} />
           </div>
         </div>
       </div>
@@ -605,10 +682,32 @@ export function ContactDetailView({ id, onDeleted }: Props) {
                 size="sm"
                 variant="ghost"
                 className="text-destructive"
-                onClick={removeCardImage}
+                onClick={() => setConfirmRemoveCard(true)}
               >
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Remove image
               </Button>
+              <AlertDialog open={confirmRemoveCard} onOpenChange={setConfirmRemoveCard}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Remove the saved card image?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The scanned business-card photo is deleted; the contact's details stay.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void performRemoveCardImage();
+                      }}
+                    >
+                      Remove image
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
           <Dialog open={cardImageOpen} onOpenChange={setCardImageOpen}>
@@ -636,7 +735,7 @@ export function ContactDetailView({ id, onDeleted }: Props) {
         <Textarea
           rows={4}
           value={form.notes}
-          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          onChange={(e) => patchForm({ notes: e.target.value })}
           placeholder="Private notes about this contact…"
         />
       </div>
@@ -655,8 +754,13 @@ export function ContactDetailView({ id, onDeleted }: Props) {
           <ul className="divide-y divide-border rounded-md border border-border bg-card/40">
             {q.data.recentEmails.map((e) => (
               <li key={e.id} className="px-4 py-2 text-sm">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{e.received_at ? new Date(e.received_at).toLocaleString() : ""}</span>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 flex-1 truncate text-foreground">
+                    {e.subject || "(no subject)"}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {e.received_at ? new Date(e.received_at).toLocaleDateString() : ""}
+                  </span>
                 </div>
               </li>
             ))}
@@ -849,26 +953,6 @@ function ShareContactDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Field({
-  label,
-  icon,
-  children,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <Label className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-        {icon}
-        {label}
-      </Label>
-      {children}
-    </div>
   );
 }
 
