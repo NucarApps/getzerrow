@@ -579,7 +579,6 @@ function GoogleContactsSettings() {
           <span className="font-mono">Factory - VW</span>). All Zerrow contacts are added to
           Google's default Contacts list.
         </p>
-
       </Card>
 
       {accountsQ.isLoading ? (

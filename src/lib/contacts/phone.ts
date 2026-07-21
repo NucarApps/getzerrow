@@ -29,7 +29,6 @@ export function normalizePhone(raw: string | null | undefined): string {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
-
 /** Normalize a list, dropping empties and duplicates while preserving order. */
 export function normalizePhones(raw: readonly (string | null | undefined)[]): string[] {
   const seen = new Set<string>();

@@ -240,12 +240,13 @@ export async function sendMessage(
     inReplyTo ? `In-Reply-To: ${inReplyTo}` : "",
     inReplyTo ? `References: ${inReplyTo}` : "",
     'Content-Type: text/plain; charset="UTF-8"',
-    "",
-    body,
   ]
     .filter(Boolean)
     .join("\r\n");
-  const raw = Buffer.from(headers)
+  // RFC 822 requires an empty line between headers and body — keep it outside
+  // the filter(Boolean) above, which would otherwise strip it.
+  const message = `${headers}\r\n\r\n${body}`;
+  const raw = Buffer.from(message)
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
