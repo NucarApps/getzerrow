@@ -64,6 +64,13 @@ vi.mock("./folder-learn", () => ({
   bumpEmailsSinceLearn: (folderId: string) => bumpEmailsSinceLearn(folderId),
 }));
 
+// The audit insert is best-effort and covered by executed-rules.test.ts;
+// mocked here so these tests stay focused on the pipeline itself.
+const recordExecution = vi.fn(async (_input: unknown) => {});
+vi.mock("./executed-rules", () => ({
+  recordExecution: (input: unknown) => recordExecution(input),
+}));
+
 const notifyInboxMail = vi.fn(async (..._args: unknown[]) => {});
 vi.mock("../push.server", () => ({
   notifyInboxMail: (...args: unknown[]) => notifyInboxMail(...args),
@@ -220,6 +227,7 @@ beforeEach(() => {
   bumpEmailsSinceLearn.mockClear();
   notifyInboxMail.mockClear();
   loadAccountContext.mockClear();
+  recordExecution.mockClear();
 });
 
 describe("existing-row paths", () => {

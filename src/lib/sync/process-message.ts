@@ -34,6 +34,7 @@ import {
 } from "./classify";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
+import { recordExecution } from "./executed-rules";
 import { notifyInboxMail } from "../push.server";
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
@@ -212,7 +213,8 @@ async function persistClassification(emailId: string, c: ClassificationResult) {
  * the user). When yes, reverse the folder's hiding — put it back in the
  * inbox and mark it surfaced — while keeping it filed in the folder.
  * When no (or the AI can't decide), the email stays filed as usual.
- * Returns true when the email was surfaced. */
+ * Returns the persisted surfaced classification, or null when the email
+ * stays filed. */
 async function maybeSurfaceRuleFiledEmail(
   accountId: string,
   gmailId: string,
@@ -222,9 +224,9 @@ async function maybeSurfaceRuleFiledEmail(
   context: AccountContext,
   base: ClassificationResult,
   wasHiddenFromInbox: boolean,
-): Promise<boolean> {
+): Promise<ClassificationResult | null> {
   const decision = await applySurfaceRule(parsed, context, folder.id);
-  if (!decision.surface) return false;
+  if (!decision.surface) return null;
 
   // Reverse the folder's hide: re-add INBOX (and UNREAD if auto-marked
   // read) in Gmail. The folder label stays, so it's still filed.
@@ -249,14 +251,15 @@ async function maybeSurfaceRuleFiledEmail(
     })
     .eq("id", emailId);
 
-  await persistClassification(emailId, {
+  const surfaced: ClassificationResult = {
     ...base,
     classified_by: "surfaced_to_inbox",
     classification_reason: decision.reason
       ? `Surfaced to inbox: ${decision.reason}`
       : "Surfaced to inbox by folder rule",
-  });
-  return true;
+  };
+  await persistClassification(emailId, surfaced);
+  return surfaced;
 }
 
 export async function processGmailMessage(
@@ -357,6 +360,7 @@ export async function processGmailMessage(
       const _tAi = performance.now();
       const final = rules.needs_ai ? await classifyByAi(parsed, context, rules) : rules;
       if (t) t.ai += performance.now() - _tAi;
+      let audited: ClassificationResult = final;
       if (final.folder_id) {
         const folder =
           resolveFolderFromContext(context, final.folder_id) ??
@@ -367,10 +371,9 @@ export async function processGmailMessage(
             persistFlags: true,
           });
           // Respect the folder's surface rule when rules routed it here.
-          let surfaced = false;
           if (rules.needs_surface_check && !rules.needs_ai && !opts.skipAi) {
             const eff = computeFolderEffects(folder, parsed, inInboxNow);
-            surfaced = await maybeSurfaceRuleFiledEmail(
+            const surfaced = await maybeSurfaceRuleFiledEmail(
               accountId,
               gmailId,
               existing.id,
@@ -380,21 +383,24 @@ export async function processGmailMessage(
               final,
               inInboxNow && eff.effectiveArchive,
             );
-          }
-          if (surfaced) {
-            void bumpEmailsSinceLearn(final.folder_id);
-            return {
-              id: existing.id,
-              email_id: existing.id,
-              folder_id: final.folder_id,
-              parsed,
-              reclassified: true,
-            };
+            if (surfaced) audited = surfaced;
           }
         }
         void bumpEmailsSinceLearn(final.folder_id);
       }
-      await persistClassification(existing.id, final);
+      // The surfaced outcome was already persisted inside maybeSurface.
+      if (audited === final) await persistClassification(existing.id, final);
+      // Audit: a retry that completes a stuck classification is its own
+      // execution — record it so the activity log reflects the final state.
+      await recordExecution({
+        userId,
+        gmailAccountId: accountId,
+        emailId: existing.id,
+        gmailMessageId: parsed.gmail_message_id,
+        parsed,
+        context,
+        classification: audited,
+      });
       return {
         id: existing.id,
         email_id: existing.id,
@@ -510,9 +516,25 @@ export async function processGmailMessage(
     }
   }
 
-  // 2) Rules-final path: Gmail label mutations + forward. Flags are
-  //    already in the row from the INSERT.
+  // Every fresh ingest funnels into exactly ONE recordExecution call below
+  // — the rules-final, deferred-AI, and AI branches all converge there, so
+  // the audit log gets exactly one executed_rules row per ingested email.
+  let final: ClassificationResult = rules;
+  let execStatus: "pending" | undefined;
+  let execError: string | null = null;
+  let result:
+    | {
+        id: string;
+        email_id: string;
+        folder_id: string | null;
+        parsed: ReturnType<typeof parseMessage>;
+        needs_ai: boolean;
+      }
+    | { id: string; classify_failed: boolean };
+
   if (!rules.needs_ai) {
+    // 2) Rules-final path: Gmail label mutations + forward. Flags are
+    //    already in the row from the INSERT.
     if (rules.folder_id) {
       void bumpEmailsSinceLearn(rules.folder_id);
       if (rulesFolder) {
@@ -522,7 +544,7 @@ export async function processGmailMessage(
         // Escape hatch: let the folder's surface rule pull a personal /
         // for-you email back to the inbox (still filed in the folder).
         if (rules.needs_surface_check && !opts.skipAi) {
-          await maybeSurfaceRuleFiledEmail(
+          const surfaced = await maybeSurfaceRuleFiledEmail(
             accountId,
             gmailId,
             inserted.id,
@@ -532,53 +554,71 @@ export async function processGmailMessage(
             rules,
             inInbox && (rulesEffects?.effectiveArchive ?? false),
           );
+          if (surfaced) final = surfaced;
         }
       }
     }
-    return {
+    result = {
       id: inserted.id,
       email_id: inserted.id,
       folder_id: rules.folder_id,
       parsed,
       needs_ai: false,
     };
-  }
-
-  // 3) Backfill lane: defer AI to the caller's batched pass.
-  if (aiDeferred) {
-    return { id: inserted.id, email_id: inserted.id, folder_id: null, parsed, needs_ai: true };
-  }
-
-  // 4) AI pass. The email is already visible in Inbox, so a slow or
-  //    failed call costs classification latency, not visibility.
-  let folder_id: string | null;
-  try {
-    const _tAi = performance.now();
-    const c = await classifyByAi(parsed, context, rules);
-    if (t) t.ai += performance.now() - _tAi;
-    folder_id = c.folder_id ?? null;
-    if (folder_id) {
-      const folder =
-        resolveFolderFromContext(context, folder_id) ?? (await fetchActionFolder(folder_id));
-      if (folder) {
-        await applyFolderActions(accountId, gmailId, inserted.id, folder, parsed, inInbox, {
-          persistFlags: true,
-        });
+  } else if (aiDeferred) {
+    // 3) Backfill lane: defer AI to the caller's batched pass. The audit
+    //    row mirrors the email row's 'pending_ai' state.
+    final = { ...rules, classified_by: "pending_ai" };
+    execStatus = "pending";
+    result = { id: inserted.id, email_id: inserted.id, folder_id: null, parsed, needs_ai: true };
+  } else {
+    // 4) AI pass. The email is already visible in Inbox, so a slow or
+    //    failed call costs classification latency, not visibility.
+    try {
+      const _tAi = performance.now();
+      const c = await classifyByAi(parsed, context, rules);
+      if (t) t.ai += performance.now() - _tAi;
+      final = c;
+      const folder_id = c.folder_id ?? null;
+      if (folder_id) {
+        const folder =
+          resolveFolderFromContext(context, folder_id) ?? (await fetchActionFolder(folder_id));
+        if (folder) {
+          await applyFolderActions(accountId, gmailId, inserted.id, folder, parsed, inInbox, {
+            persistFlags: true,
+          });
+        }
       }
+      const _tDb = performance.now();
+      await persistClassification(inserted.id, c);
+      if (folder_id) void bumpEmailsSinceLearn(folder_id);
+      if (t) t.db += performance.now() - _tDb;
+      result = { id: inserted.id, email_id: inserted.id, folder_id, parsed, needs_ai: false };
+    } catch (e) {
+      console.error("classify failed (email already visible in Inbox)", e);
+      execError = (e as Error)?.message?.slice(0, 200) ?? "unknown";
+      const reason = `Classification failed: ${execError}`;
+      await updateEmailEncrypted({
+        email_id: inserted.id,
+        classified_by: "unclassified",
+        classification_reason: reason,
+      });
+      final = { ...rules, classified_by: "unclassified", classification_reason: reason };
+      result = { id: inserted.id, classify_failed: true };
     }
-    const _tDb = performance.now();
-    await persistClassification(inserted.id, c);
-    if (folder_id) void bumpEmailsSinceLearn(folder_id);
-    if (t) t.db += performance.now() - _tDb;
-  } catch (e) {
-    console.error("classify failed (email already visible in Inbox)", e);
-    await updateEmailEncrypted({
-      email_id: inserted.id,
-      classified_by: "unclassified",
-      classification_reason: `Classification failed: ${(e as Error)?.message?.slice(0, 200) ?? "unknown"}`,
-    });
-    return { id: inserted.id, classify_failed: true };
   }
 
-  return { id: inserted.id, email_id: inserted.id, folder_id, parsed, needs_ai: false };
+  await recordExecution({
+    userId,
+    gmailAccountId: accountId,
+    emailId: inserted.id,
+    gmailMessageId: parsed.gmail_message_id,
+    parsed,
+    context,
+    classification: final,
+    status: execStatus,
+    error: execError,
+  });
+
+  return result;
 }
