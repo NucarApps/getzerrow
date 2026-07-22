@@ -455,7 +455,10 @@ function CompanyDetailPage() {
                 name={form.name}
                 primaryDomain={primaryDomain}
                 logoUrl={(q.data.company as { logo_url?: string | null }).logo_url ?? null}
+                provider={logoProvider}
+                sourceDomain={logoSourceDomain}
               />
+
               {primaryDomain && (
                 <div className="mt-4 border-t pt-4">
                   <p className="mb-3 text-xs text-muted-foreground">Or pick a brand logo:</p>
