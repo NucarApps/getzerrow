@@ -1,32 +1,39 @@
-# Keep the planets orbiting on mobile
+## What's happening
 
-## Diagnosis (confirmed)
-- No mobile-width CSS turns off orbit motion. Emulated iPhone viewport at `http://localhost:8080/` shows `.orbit__spin--inner` animating (`transform` sampled at two timestamps differs).
-- The `prefers-reduced-motion: reduce` block at `public/zerrow-landing.css` lines 1147–1162 disables `.orbit__spin`, `.carrier`, `.orbit__ship`, and `.pcard__icon--bob`. iOS enables `prefers-reduced-motion` whenever "Reduce Motion" is on in Accessibility settings, and Low Power Mode can imply it as well — matching the symptom "planets not animated on mobile".
+The `X` + `getzerrow.com` bar and bottom share/refresh/compass toolbar in your screenshot are iOS Safari's own browser chrome — not Zerrow UI. Your Home Screen icon is opening the site in a regular Safari tab because the project has no web app manifest and no `apple-mobile-web-app-capable` meta tag. That means iOS shows browser chrome on every page. Why it seems to "go away" on Inbox: Safari auto-collapses the toolbar when the page scrolls the window; Inbox happens to hit that; Contacts (sticky header + inner scroll container starting at top) doesn't, so the chrome stays fully expanded.
 
-## Change
-Split the reduced-motion rule into two tiers so the brand-critical orbit keeps rotating on mobile while the visually noisy motion still calms down.
+The correct fix is to make Zerrow install as a full-screen home-screen app so there is no Safari chrome at all — on Contacts or anywhere else.
 
-### Kept muted under Reduce Motion (unchanged)
-- `.sky__stars`, `.sky__flyby`, `.shoot__streak`, `.tw` (twinkles), `.bhole__glow`, `.cta__ship`, `.steps__path path`, `.footer__status i`.
+## Plan (manifest-only PWA — no service worker, no offline)
 
-### Now allowed under Reduce Motion, at slower speeds
-- `.orbit__spin--inner` and its counter-rotating `.carrier--inner`: 34s → 90s.
-- `.orbit__spin--outer` and `.carrier--outer`: 52s → 140s.
-- `.orbit__spin--courier` / `--courier2`: 18s → 48s.
-- `.orbit__ship` bob: 4s → 8s.
-- `.pcard__icon--bob`: 5s → 10s.
+1. **Add `public/manifest.webmanifest`** with:
+   - `name: "Zerrow"`, `short_name: "Zerrow"`
+   - `start_url: "/inbox"`, `scope: "/"`, `id: "/"`
+   - `display: "standalone"`, `orientation: "portrait"`
+   - `background_color: "#0a0e1a"`, `theme_color: "#0a0e1a"` (matches app background)
+   - Icon entries pointing at existing `public/` icons (reuse current favicon/apple-touch icons; no new art).
 
-The slower durations preserve the "orbit is alive" cue without the fast motion that Reduce Motion is meant to filter out. Rotation is a soft, decorative loop — WCAG's reduced-motion guidance targets vestibular triggers (parallax, spin bursts, autoplay video), not gentle continuous rotation.
+2. **Extend `src/routes/__root.tsx` head()** with:
+   - `<link rel="manifest" href="/manifest.webmanifest">`
+   - `<meta name="theme-color" content="#0a0e1a">`
+   - `<meta name="apple-mobile-web-app-capable" content="yes">`
+   - `<meta name="mobile-web-app-capable" content="yes">`
+   - `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`
+   - `<meta name="apple-mobile-web-app-title" content="Zerrow">`
+   - Update viewport to `width=device-width, initial-scale=1, viewport-fit=cover` so the app draws under the notch cleanly in standalone mode.
 
-## File touched
-- `public/zerrow-landing.css` — replace the single `@media (prefers-reduced-motion: reduce)` block (lines 1147–1162) with the two-tier version described above. No JSX or component changes.
+3. **No service worker, no `vite-plugin-pwa`, no offline caching** — those aren't needed for hiding the Safari chrome and add risk to previews.
 
-## Verification
-- Emulated mobile viewport with reduced-motion forced on: sample `.orbit__spin--inner` transform at t=0 and t=2s and confirm they differ (currently identical when reduced motion is on).
-- Emulated mobile viewport with reduced-motion off: confirm original 34s / 52s / 18s durations still apply (no regression on default users).
-- Visually skim the hero section at 402×725 to make sure nothing else animates faster than before.
+## What you'll need to do on your phone
 
-## Out of scope
-- No changes to the planet cards below the fold, the black-hole burp, or any JS.
-- No new dependency or Motion/GSAP wiring.
+iOS caches Home Screen manifest fields at install time. To pick up the change:
+- Delete the current Zerrow icon from your Home Screen
+- Reopen `getzerrow.com` in Safari → Share → **Add to Home Screen**
+- Launch from the new icon — it will open full-screen with no URL bar, no bottom toolbar, on Contacts and every other page
+
+Users who already added an icon will keep seeing browser chrome until they re-add it once; new visitors get the standalone experience on first install.
+
+## Non-goals
+
+- Not adding offline mode, service workers, push notifications, or install prompts.
+- Not changing the Contacts scroll layout — the standalone launch removes the chrome entirely, so the Inbox/Contacts scroll difference stops mattering.

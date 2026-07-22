@@ -1,0 +1,17 @@
+{
+  "name": "Zerrow",
+  "short_name": "Zerrow",
+  "id": "/",
+  "start_url": "/inbox",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0e1a",
+  "theme_color": "#0a0e1a",
+  "icons": [
+    { "src": "/favicon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/favicon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/favicon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
