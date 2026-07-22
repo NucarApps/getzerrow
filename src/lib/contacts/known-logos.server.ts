@@ -49,7 +49,7 @@ export async function buildKnownCompanyLogoShaSet(
     .from("company_domains")
     .select("domain")
     .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(120);
   for (const row of cdomains ?? []) {
     const d = (row as { domain?: string | null }).domain;
