@@ -53,6 +53,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { validateRuleNode } from "@/lib/sync/filter-engine";
+import { simulateRule } from "@/lib/sync/simulate-rule.functions";
+import type { SimulationResult } from "@/lib/sync/simulate-rule";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FolderChatPanel } from "./FolderChatPanel";
 import { FolderHealthCard } from "./FolderHealthCard";
 import { HistoryPanel } from "./editor/folder-history-panel";
@@ -129,6 +138,9 @@ export function FolderEditor({
   const [purpose, setPurpose] = useState("");
   const [generatingRule, setGeneratingRule] = useState(false);
   const [draftingFromLabel, setDraftingFromLabel] = useState(false);
+  const simulateFn = useServerFn(simulateRule);
+  const [simBusy, setSimBusy] = useState(false);
+  const [simResult, setSimResult] = useState<SimulationResult | null>(null);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
@@ -428,6 +440,31 @@ export function FolderEditor({
     }
   }
 
+  async function runSimulation() {
+    setSimBusy(true);
+    try {
+      const r = await simulateFn({
+        data: {
+          account_id: folder.gmail_account_id,
+          folder_id: folder.id,
+          days: 7,
+          draft: {
+            name: local.name || folder.name,
+            filter_logic: (local.filter_logic ?? "any") as "any" | "all",
+            filter_tree: local.filter_tree ?? null,
+            priority: local.priority ?? 0,
+          },
+          filters: filters.map((f) => ({ field: f.field, op: f.op, value: f.value })),
+        },
+      });
+      setSimResult(r);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Simulation failed");
+    } finally {
+      setSimBusy(false);
+    }
+  }
+
   async function draftFromLabel() {
     if (!folder.gmail_label_id) {
       toast.error("Link a Gmail label first, then save.");
@@ -539,6 +576,16 @@ export function FolderEditor({
         <TabsContent value="rules" className="mt-4">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
             <FilterIcon className="h-3.5 w-3.5" /> Rules
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto h-7"
+              disabled={simBusy}
+              onClick={runSimulation}
+              title="Dry-run these rules against the last 7 days of mail — nothing moves"
+            >
+              {simBusy ? "Simulating…" : "Preview against last 7 days"}
+            </Button>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Deterministic conditions are checked first. Anything they don't match can still be
@@ -1184,6 +1231,80 @@ export function FolderEditor({
           </Button>
         </div>
       )}
+
+      {/* Rule simulator results (task 10): dry-run only — nothing moved. */}
+      <Dialog
+        open={!!simResult}
+        onOpenChange={(v) => {
+          if (!v) setSimResult(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Preview — last 7 days</DialogTitle>
+            <DialogDescription>
+              {simResult
+                ? `${simResult.scanned} emails scanned · ${simResult.moves} would move here · ${simResult.excluded} vetoed by exclude rules · ${simResult.no_change} untouched. Dry run — nothing moved.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {simResult && (
+            <div className="max-h-[55vh] space-y-3 overflow-y-auto">
+              {simResult.moves === 0 && simResult.excluded === 0 && (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No matches in the window — try broadening a rule or a longer window.
+                </p>
+              )}
+              {simResult.would_route.length > 0 && (
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
+                    Would move here ({simResult.moves}
+                    {simResult.moves > simResult.would_route.length
+                      ? ` · showing ${simResult.would_route.length}`
+                      : ""}
+                    )
+                  </div>
+                  <ul className="divide-y divide-border rounded-md border border-border">
+                    {simResult.would_route.map((h) => (
+                      <li key={h.email_id} className="px-3 py-2 text-sm">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="truncate font-medium">{h.from_addr}</span>
+                          {h.matched_leaves[0] && (
+                            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                              {h.matched_leaves[0].field} {h.matched_leaves[0].op} "
+                              {h.matched_leaves[0].value.slice(0, 30)}"
+                            </span>
+                          )}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {h.subject || "(no subject)"}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {simResult.would_exclude.length > 0 && (
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-destructive">
+                    Vetoed by exclude rules ({simResult.excluded})
+                  </div>
+                  <ul className="divide-y divide-border rounded-md border border-border">
+                    {simResult.would_exclude.map((h) => (
+                      <li key={h.email_id} className="px-3 py-2 text-sm">
+                        <div className="truncate font-medium">{h.from_addr}</div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {h.subject || "(no subject)"}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
