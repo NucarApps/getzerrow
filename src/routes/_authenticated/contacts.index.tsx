@@ -1356,8 +1356,8 @@ function ContactsPage() {
                               {personInitial}
                             </div>
                           )}
-                          <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                            <span className="truncate text-sm font-medium text-foreground">
+                          <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+                            <span className="truncate text-[15px] font-medium text-foreground sm:text-sm">
                               {c.name || c.email}
                             </span>
                             <span className="min-w-0 truncate text-xs text-muted-foreground">
