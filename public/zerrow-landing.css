@@ -1145,21 +1145,44 @@ main,
 
 /* ====================== MOTION SAFETY ====================== */
 @media (prefers-reduced-motion: reduce) {
+  /* High-intensity motion: fully disabled to respect vestibular triggers. */
   .sky__stars,
   .shoot__streak,
   .sky__flyby,
   .tw,
-  .orbit__spin,
-  .carrier,
-  .orbit__ship,
-  .pcard__icon--bob,
   .bhole__glow,
   .cta__ship,
   .steps__path path,
   .footer__status i {
     animation: none !important;
   }
+
+  /* Soft continuous loops: slowed rather than killed, so the hero orbit
+     still reads as "alive" on mobile devices with Reduce Motion on. */
+  .orbit__spin--inner {
+    animation-duration: 90s !important;
+  }
+  .carrier--inner {
+    animation-duration: 90s !important;
+  }
+  .orbit__spin--outer {
+    animation-duration: 140s !important;
+  }
+  .carrier--outer {
+    animation-duration: 140s !important;
+  }
+  .orbit__spin--courier,
+  .orbit__spin--courier2 {
+    animation-duration: 48s !important;
+  }
+  .orbit__ship {
+    animation-duration: 8s !important;
+  }
+  .pcard__icon--bob {
+    animation-duration: 10s !important;
+  }
 }
+
 
 /* ====================== RESPONSIVE ====================== */
 @media (max-width: 900px) {
