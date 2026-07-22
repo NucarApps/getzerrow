@@ -942,6 +942,34 @@ function ContactsPage() {
               )}
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <Button
+                variant={mobileSearchOpen ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setMobileSearchOpen((v) => !v);
+                  setMobileAiOpen(false);
+                }}
+                className="h-8 w-8 p-0 sm:hidden"
+                aria-label="Search contacts"
+                aria-pressed={mobileSearchOpen}
+                title="Search"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={mobileAiOpen ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setMobileAiOpen((v) => !v);
+                  setMobileSearchOpen(false);
+                }}
+                className="h-8 w-8 p-0 sm:hidden"
+                aria-label="AI suggestions"
+                aria-pressed={mobileAiOpen}
+                title="AI suggestions"
+              >
+                <Sparkles className="h-4 w-4" />
+              </Button>
               <Button variant="outline" size="sm" asChild className="h-8 w-8 p-0">
                 <Link to="/my-card" aria-label="My card" title="My card">
                   <IdCard className="h-4 w-4" />
